@@ -187,7 +187,7 @@ export default function ProgramInfoPage() {
                 {currentPage === totalPages ? (
                      <Button asChild>
                         <Link href="/applications">
-                            Continue <ArrowRight className="ml-2 h-4 w-4" />
+                            Start Application <ArrowRight className="ml-2 h-4 w-4" />
                         </Link>
                     </Button>
                 ) : (
@@ -207,5 +207,7 @@ export default function ProgramInfoPage() {
     </div>
   );
 }
+
+    
 
     
