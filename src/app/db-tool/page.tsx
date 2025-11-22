@@ -37,11 +37,11 @@ const fakeApplicationTemplate = {
     bestContactLanguage: 'English',
     hasCapacity: 'Yes' as const,
     hasLegalRep: 'No' as const, 
-    repName: '',
-    repRelationship: '',
-    repPhone: '',
-    repEmail: '',
-    repLanguage: '',
+    repName: 'Legal Rep',
+    repRelationship: 'Lawyer',
+    repPhone: '(555) 111-2222',
+    repEmail: 'legal@rep.com',
+    repLanguage: 'English',
 
     // Step 2: Location Information
     currentLocation: 'SNF',
@@ -58,7 +58,7 @@ const fakeApplicationTemplate = {
     // Step 3: Health Plan & Pathway
     healthPlan: 'Health Net' as const,
     pathway: 'SNF Diversion' as const,
-    meetsSnfTransitionCriteria: null,
+    meetsSnfTransitionCriteria: false, // Set to false since pathway is Diversion
     meetsSnfDiversionCriteria: true, // Must be true if pathway is SNF Diversion
     snfDiversionReason: 'Member requires substantial help with ADLs but can be safely cared for in the community with support.',
     
