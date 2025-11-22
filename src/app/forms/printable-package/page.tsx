@@ -13,7 +13,7 @@ const forms = [
     { name: 'HIPAA Authorization', icon: FileText, href: '/forms/hipaa-authorization/printable' },
     { name: 'Liability Waiver', icon: FileText, href: '/forms/liability-waiver/printable' },
     { name: 'Freedom of Choice Waiver', icon: FileText, href: '/forms/freedom-of-choice/printable' },
-    { name: 'Declaration of Eligibility (for SNF Diversion only)', icon: FileText, href: '#' },
+    { name: 'Declaration of Eligibility (for SNF Diversion only)', icon: FileText, href: '/forms/declaration-of-eligibility/printable' },
     { name: 'LIC 602A - Physician\'s Report', icon: ExternalLink, href: '#' },
 ];
 

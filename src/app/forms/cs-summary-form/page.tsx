@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useUser, useFirestore } from '@/firebase';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, collection } from 'firebase/firestore';
 
 import Step1 from './components/Step1';
 import Step2 from './components/Step2';
@@ -36,7 +36,6 @@ const formSchema = z.object({
   referrerRelationship: z.string().min(1, 'Relationship is required'),
   memberPhone: z.string().optional(),
   memberEmail: z.string().email().optional().or(z.literal('')),
-  isBestContact: z.boolean().default(false),
   bestContactName: z.string().optional(),
   bestContactRelationship: z.string().optional(),
   bestContactPhone: z.string().optional(),
@@ -65,13 +64,23 @@ const formSchema = z.object({
 
   // Step 3
   pathway: z.enum(['SNF Transition', 'SNF Diversion'], { required_error: 'Please select a pathway.' }),
-  eligibilityCriteria: z.array(z.string()).refine(value => value.some(item => item), {
-    message: "You must select at least one eligibility criterion.",
-  }),
-  ispContactName: z.string().min(1, 'ISP contact name is required'),
-  ispContactAgency: z.string().min(1, 'Agency is required'),
-  ispContactPhone: z.string().min(1, 'Phone is required'),
-  ispContactEmail: z.string().email('Invalid email address').optional().or(z.literal('')),
+  snfTransitionEligibility: z.enum(['Yes', 'No', 'N/A']).optional(),
+  snfDiversionEligibility: z.enum(['Yes', 'No', 'N/A']).optional(),
+  snfDiversionReason: z.string().optional(),
+  ispFirstName: z.string().optional(),
+  ispLastName: z.string().optional(),
+  ispRelationship: z.string().optional(),
+  ispFacilityName: z.string().optional(),
+  ispPhone: z.string().optional(),
+  ispEmail: z.string().email().optional().or(z.literal('')),
+  ispCopyCurrent: z.boolean().default(false),
+  ispCopyCustomary: z.boolean().default(false),
+  ispAddress: z.string().optional(),
+  ispCity: z.string().optional(),
+  ispState: z.string().optional(),
+  ispZip: z.string().optional(),
+  ispCounty: z.string().optional(),
+  onALWWaitlist: z.enum(['Yes', 'No', 'Unknown']).optional(),
   hasPrefRCFE: z.enum(['Yes', 'No']),
   rcfeName: z.string().optional(),
   rcfeAdminName: z.string().optional(),
@@ -94,7 +103,7 @@ const stepFields: Record<number, FieldName<FormValues>[]> = {
   1: [
     'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'confirmMemberMediCalNum',
     'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'referrerFirstName', 'referrerLastName',
-    'referrerEmail', 'referrerPhone', 'referrerRelationship', 'memberPhone', 'memberEmail', 'isBestContact', 'hasCapacity',
+    'referrerEmail', 'referrerPhone', 'referrerRelationship', 'memberPhone', 'memberEmail', 'hasCapacity',
     'bestContactName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
     'hasLegalRep', 'repName', 'repRelationship', 'repPhone', 'repEmail', 'repLanguage'
   ],
@@ -103,7 +112,10 @@ const stepFields: Record<number, FieldName<FormValues>[]> = {
     'copyAddress', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'healthPlan'
   ],
   3: [
-    'pathway', 'eligibilityCriteria', 'ispContactName', 'ispContactAgency', 'ispContactPhone', 'ispContactEmail', 'hasPrefRCFE',
+    'pathway', 'snfTransitionEligibility', 'snfDiversionEligibility', 'snfDiversionReason',
+    'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail',
+    'ispCopyCurrent', 'ispCopyCustomary', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty',
+    'onALWWaitlist', 'hasPrefRCFE',
     'rcfeName', 'rcfeAdminName', 'rcfeAddress', 'rcfeAdminPhone', 'rcfeAdminEmail'
   ],
 };
@@ -127,9 +139,7 @@ function CsSummaryFormComponent() {
   const methods = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      isBestContact: false,
       copyAddress: false,
-      eligibilityCriteria: [],
     }
   });
 

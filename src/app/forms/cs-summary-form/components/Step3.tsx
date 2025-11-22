@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useFormContext } from 'react-hook-form';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -9,38 +9,62 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import type { FormValues } from '../page';
 import { Label } from '@/components/ui/label';
-
-const snfTransitionCriteria = [
-  { id: 'snf_criteria_1', label: 'Currently resides in an SNF' },
-  { id: 'snf_criteria_2', label: 'Expresses a desire to move to the community' },
-  { id: 'snf_criteria_3', label: 'Has needs that can be safely met in the community' },
-];
-
-const snfDiversionCriteria = [
-  { id: 'div_criteria_1', label: 'At risk of SNF admission' },
-  { id: 'div_criteria_2', label: 'Requires assistance with ADLs/IADLs' },
-  { id: 'div_criteria_3', label: 'Community-based care is a viable alternative' },
-];
+import { Textarea } from '@/components/ui/textarea';
+import { useEffect } from 'react';
 
 export default function Step3() {
-  const { control, watch } = useFormContext<FormValues>();
+  const { control, setValue, watch } = useFormContext<FormValues>();
   const pathway = watch('pathway');
   
-  const eligibilityItems = pathway === 'SNF Transition' ? snfTransitionCriteria : snfDiversionCriteria;
+  const ispCopyCurrent = useWatch({ control, name: 'ispCopyCurrent' });
+  const ispCopyCustomary = useWatch({ control, name: 'ispCopyCustomary' });
+  const currentAddress = {
+    address: watch('currentAddress'),
+    city: watch('currentCity'),
+    state: watch('currentState'),
+    zip: watch('currentZip'),
+  };
+  const customaryAddress = {
+    address: watch('customaryAddress'),
+    city: watch('customaryCity'),
+    state: watch('customaryState'),
+    zip: watch('customaryZip'),
+  };
+
+  useEffect(() => {
+    if (ispCopyCurrent) {
+      setValue('ispAddress', currentAddress.address);
+      setValue('ispCity', currentAddress.city);
+      setValue('ispState', currentAddress.state);
+      setValue('ispZip', currentAddress.zip);
+      setValue('ispCopyCustomary', false);
+    }
+  }, [ispCopyCurrent, currentAddress.address, currentAddress.city, currentAddress.state, currentAddress.zip, setValue]);
+  
+  useEffect(() => {
+    if (ispCopyCustomary) {
+      setValue('ispAddress', customaryAddress.address);
+      setValue('ispCity', customaryAddress.city);
+      setValue('ispState', customaryAddress.state);
+      setValue('ispZip', customaryAddress.zip);
+      setValue('ispCopyCurrent', false);
+    }
+  }, [ispCopyCustomary, customaryAddress.address, customaryAddress.city, customaryAddress.state, customaryAddress.zip, setValue]);
 
   return (
     <div className="space-y-6">
       <Card className="border-l-4 border-accent">
         <CardHeader>
-          <CardTitle>Pathway Selection</CardTitle>
+          <CardTitle>Pathway & Eligibility</CardTitle>
           <CardDescription>Choose the pathway that best describes the member's situation.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-6">
           <FormField
             control={control}
             name="pathway"
             render={({ field }) => (
               <FormItem className="space-y-3">
+                <FormLabel>Pathway Selection</FormLabel>
                 <FormControl>
                   <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormItem>
@@ -63,74 +87,150 @@ export default function Step3() {
               </FormItem>
             )}
           />
+
+          {pathway === 'SNF Transition' && (
+            <div className="space-y-4 p-4 border rounded-md">
+                <FormField
+                    control={control}
+                    name="snfTransitionEligibility"
+                    render={({ field }) => (
+                        <FormItem className="space-y-3">
+                        <FormLabel>Does the member meet all criteria for SNF Transition?</FormLabel>
+                        <FormControl>
+                            <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-4">
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Yes" /></FormControl><FormLabel className="font-normal">Yes</FormLabel></FormItem>
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="No" /></FormControl><FormLabel className="font-normal">No</FormLabel></FormItem>
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="N/A" /></FormControl><FormLabel className="font-normal">N/A</FormLabel></FormItem>
+                            </RadioGroup>
+                        </FormControl>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
+            </div>
+          )}
+          
+          {pathway === 'SNF Diversion' && (
+            <div className="space-y-4 p-4 border rounded-md">
+                 <FormField
+                    control={control}
+                    name="snfDiversionEligibility"
+                    render={({ field }) => (
+                        <FormItem className="space-y-3">
+                        <FormLabel>Does the member meet all criteria for SNF Diversion?</FormLabel>
+                        <FormControl>
+                            <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-4">
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Yes" /></FormControl><FormLabel className="font-normal">Yes</FormLabel></FormItem>
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="No" /></FormControl><FormLabel className="font-normal">No</FormLabel></FormItem>
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="N/A" /></FormControl><FormLabel className="font-normal">N/A</FormLabel></FormItem>
+                            </RadioGroup>
+                        </FormControl>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                 <FormField
+                    control={control}
+                    name="snfDiversionReason"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>Reason for SNF Diversion</FormLabel>
+                        <FormControl>
+                            <Textarea {...field} value={field.value ?? ''} />
+                        </FormControl>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                    />
+            </div>
+          )}
         </CardContent>
       </Card>
       
-      {pathway && (
+      <Card className="border-l-4 border-accent">
+          <CardHeader><CardTitle>Individual Service Plan (ISP) Contact</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField control={control} name="ispFirstName" render={({ field }) => (
+                    <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+                 <FormField control={control} name="ispLastName" render={({ field }) => (
+                    <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField control={control} name="ispRelationship" render={({ field }) => (
+                    <FormItem><FormLabel>Relationship to Member</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={control} name="ispFacilityName" render={({ field }) => (
+                    <FormItem><FormLabel>Facility Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField control={control} name="ispPhone" render={({ field }) => (
+                    <FormItem><FormLabel>Phone</FormLabel><FormControl><Input type="tel" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={control} name="ispEmail" render={({ field }) => (
+                    <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+              </div>
+          </CardContent>
+      </Card>
+       <Card className="border-l-4 border-accent">
+          <CardHeader><CardTitle>ISP Assessment Location</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <FormField control={control} name="ispCopyCurrent" render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>ISP contact location is same as member's current location</FormLabel></div></FormItem>
+            )} />
+            <FormField control={control} name="ispCopyCustomary" render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0"><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl><div className="space-y-1 leading-none"><FormLabel>ISP contact location is same as member's customary residence</FormLabel></div></FormItem>
+            )} />
+            <div className="space-y-4 p-4 border rounded-md">
+                <FormField control={control} name="ispAddress" render={({ field }) => (
+                    <FormItem><FormLabel>Address</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField control={control} name="ispCity" render={({ field }) => (
+                        <FormItem><FormLabel>City</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={control} name="ispState" render={({ field }) => (
+                        <FormItem><FormLabel>State</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField control={control} name="ispZip" render={({ field }) => (
+                        <FormItem><FormLabel>Zip Code</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={control} name="ispCounty" render={({ field }) => (
+                        <FormItem><FormLabel>County</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                </div>
+            </div>
+          </CardContent>
+       </Card>
+
         <Card className="border-l-4 border-accent">
-            <CardHeader>
-                <CardTitle>Eligibility Screening</CardTitle>
-                <CardDescription>Check all criteria that apply based on the selected pathway.</CardDescription>
-            </CardHeader>
+            <CardHeader><CardTitle>Assisted Living Waiver (ALW) Status</CardTitle></CardHeader>
             <CardContent>
                 <FormField
                     control={control}
-                    name="eligibilityCriteria"
-                    render={() => (
-                        <FormItem>
-                        {eligibilityItems.map((item) => (
-                            <FormField
-                            key={item.id}
-                            control={control}
-                            name="eligibilityCriteria"
-                            render={({ field }) => {
-                                return (
-                                <FormItem key={item.id} className="flex flex-row items-start space-x-3 space-y-0">
-                                    <FormControl>
-                                        <Checkbox
-                                            checked={field.value?.includes(item.id)}
-                                            onCheckedChange={(checked) => {
-                                                return checked
-                                                ? field.onChange([...(field.value || []), item.id])
-                                                : field.onChange(
-                                                    (field.value || [])?.filter(
-                                                    (value) => value !== item.id
-                                                    )
-                                                )
-                                            }}
-                                        />
-                                    </FormControl>
-                                    <FormLabel className="font-normal">{item.label}</FormLabel>
-                                </FormItem>
-                                )
-                            }}
-                            />
-                        ))}
+                    name="onALWWaitlist"
+                    render={({ field }) => (
+                        <FormItem className="space-y-3">
+                        <FormLabel>Is the member currently on the ALW waitlist?</FormLabel>
+                        <FormControl>
+                            <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-4">
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Yes" /></FormControl><FormLabel className="font-normal">Yes</FormLabel></FormItem>
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="No" /></FormControl><FormLabel className="font-normal">No</FormLabel></FormItem>
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Unknown" /></FormControl><FormLabel className="font-normal">Unknown</FormLabel></FormItem>
+                            </RadioGroup>
+                        </FormControl>
                         <FormMessage />
                         </FormItem>
                     )}
                 />
             </CardContent>
         </Card>
-      )}
-
-      <Card className="border-l-4 border-accent">
-          <CardHeader><CardTitle>ISP Contact</CardTitle><CardDescription>Person coordinating the Individual Service Plan.</CardDescription></CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField control={control} name="ispContactName" render={({ field }) => (
-                  <FormItem><FormLabel>Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={control} name="ispContactAgency" render={({ field }) => (
-                  <FormItem><FormLabel>Agency</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={control} name="ispContactPhone" render={({ field }) => (
-                  <FormItem><FormLabel>Phone</FormLabel><FormControl><Input type="tel" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-              )} />
-               <FormField control={control} name="ispContactEmail" render={({ field }) => (
-                  <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-              )} />
-          </CardContent>
-      </Card>
       
       <Card className="border-l-4 border-accent">
         <CardHeader><CardTitle>RCFE Selection</CardTitle></CardHeader>
