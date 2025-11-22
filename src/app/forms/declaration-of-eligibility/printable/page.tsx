@@ -7,23 +7,17 @@ import { Printer, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 const Field = ({ label, className = '' }: { label: string; className?: string }) => (
-  <div className={`pt-4 ${className}`}>
-    <label className="block text-sm font-medium text-gray-700">{label}</label>
-    <div className="mt-1 h-6 border-b border-gray-400"></div>
+  <div className={`pt-2 ${className}`}>
+    <label className="block text-xs font-medium text-gray-700">{label}</label>
+    <div className="mt-1 h-5 border-b border-gray-400"></div>
   </div>
 );
 
 const LongField = ({ className = '' }: { className?: string }) => (
-  <div className={`pt-4 ${className}`}>
-    <div className="mt-1 h-6 border-b border-gray-400"></div>
+  <div className={`pt-2 ${className}`}>
+    <div className="mt-1 h-5 border-b border-gray-400"></div>
   </div>
 );
-
-
-const SectionTitle = ({ children }: { children: React.ReactNode }) => (
-    <h2 className="text-xl font-semibold text-gray-800 border-b pb-2 mb-4 mt-8">{children}</h2>
-);
-
 
 export default function PrintableDeclarationOfEligibilityPage() {
 
@@ -32,9 +26,9 @@ export default function PrintableDeclarationOfEligibilityPage() {
   };
   
   return (
-    <div className="bg-gray-50 min-h-screen">
-      <div className="container mx-auto py-8 px-4">
-        <div className="bg-white p-8 shadow-lg rounded-lg print:shadow-none">
+    <div className="bg-gray-50 min-h-screen print:bg-white">
+      <div className="container mx-auto py-8 px-4 print:p-0">
+        <div className="bg-white p-8 shadow-lg rounded-lg print:shadow-none print:p-4">
           <div className="flex justify-between items-start mb-8 print:hidden">
             <Button variant="outline" asChild>
                 <Link href="/forms/printable-package">
@@ -48,31 +42,31 @@ export default function PrintableDeclarationOfEligibilityPage() {
             </Button>
           </div>
           
-           <div className="text-center mb-10">
-                <h1 className="text-3xl font-bold text-gray-800 tracking-tight">Declaration of Eligibility</h1>
-                <p className="mt-2 text-md text-gray-500 max-w-2xl mx-auto">This form is for a Physician/AP to establish presumptive eligibility and must be signed by the member's Primary Care Provider (PCP) or a provider with an established relationship with the member.</p>
+           <div className="text-center mb-6">
+                <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Declaration of Eligibility</h1>
+                <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This form is for a Physician/AP to establish presumptive eligibility and must be signed by the member's Primary Care Provider (PCP) or a provider with an established relationship with the member.</p>
             </div>
 
           <form>
-            <div className="space-y-8">
+            <div className="space-y-6 text-sm">
                 <div>
-                    <h3 className="text-lg font-semibold">To be completed by the Primary Care Provider (PCP) or other physician/practitioner (practitioner).</h3>
-                    <div className="prose prose-sm max-w-none text-gray-700 space-y-4 mt-4">
+                    <h3 className="text-base font-semibold">To be completed by the Primary Care Provider (PCP) or other physician/practitioner (practitioner).</h3>
+                    <div className="prose prose-sm max-w-none text-gray-700 space-y-3 mt-3">
                         <p>
-                            I, <span className="inline-block border-b border-gray-400 w-64"></span>, in the professional capacity as a <span className="inline-block border-b border-gray-400 w-64"></span>, affirm that Member <span className="inline-block border-b border-gray-400 w-64"></span> is currently receiving a medically necessary Skilled Nursing Facility Level of Care (SNF LOC) or meets the minimum criteria for receiving SNF LOC services and, in lieu of entering a facility, is choosing to remain in the community and continue receiving medically necessary SNF LOC services in an assisted living facility for the following reason(s):
+                            I, <span className="inline-block border-b border-gray-400 w-56"></span>, in the professional capacity as a <span className="inline-block border-b border-gray-400 w-56"></span>, affirm that Member <span className="inline-block border-b border-gray-400 w-56"></span> is currently receiving a medically necessary Skilled Nursing Facility Level of Care (SNF LOC) or meets the minimum criteria for receiving SNF LOC services and, in lieu of entering a facility, is choosing to remain in the community and continue receiving medically necessary SNF LOC services in an assisted living facility for the following reason(s):
                         </p>
                     </div>
-                    <Field label="Medical Record Number (MRN)" />
+                    <Field label="Medi-Cal Number (Health Net) or Medical Record Number (Kaiser)" />
 
-                    <div className="mt-6">
-                        <label className="block text-sm font-medium text-gray-700">1. Please provide a short narrative on why you believe the member is at risk for premature institutionalization and his/her need for the CS:</label>
+                    <div className="mt-4">
+                        <label className="block text-xs font-medium text-gray-700">1. Please provide a short narrative on why you believe the member is at risk for premature institutionalization and his/her need for the CS:</label>
                         <LongField />
                         <LongField />
                         <LongField />
                         <LongField />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-4">
                         <Field label="Provider's Title" />
                         <Field label="Provider's NPI #" />
                         <Field label="Provider's Phone" />
@@ -89,3 +83,5 @@ export default function PrintableDeclarationOfEligibilityPage() {
     </div>
   );
 }
+
+    

@@ -7,30 +7,30 @@ import { Printer, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 const Field = ({ label, className = '' }: { label: string; className?: string }) => (
-  <div className={`pt-4 ${className}`}>
-    <label className="block text-sm font-medium text-gray-700">{label}</label>
-    <div className="mt-1 h-6 border-b border-gray-400"></div>
+  <div className={`pt-2 ${className}`}>
+    <label className="block text-xs font-medium text-gray-700">{label}</label>
+    <div className="mt-1 h-5 border-b border-gray-400"></div>
   </div>
 );
 
 const CheckboxField = ({ label }: { label: string }) => (
-    <div className="flex items-center mt-4">
-        <div className="h-5 w-5 border border-gray-400 rounded-sm"></div>
-        <label className="ml-3 text-sm text-gray-700">{label}</label>
+    <div className="flex items-center mt-2">
+        <div className="h-4 w-4 border border-gray-400 rounded-sm"></div>
+        <label className="ml-2 text-xs text-gray-700">{label}</label>
     </div>
 );
 
 const SectionTitle = ({ children }: { children: React.ReactNode }) => (
-    <h2 className="text-xl font-semibold text-gray-800 border-b pb-2 mb-4 mt-8">{children}</h2>
+    <h2 className="text-base font-semibold text-gray-800 border-b pb-1 mb-2 mt-4">{children}</h2>
 );
 
 function PrintableCsSummaryFormContent() {
   return (
     <form>
-            <div className="space-y-8">
+            <div className="space-y-4">
               <div>
                 <SectionTitle>Member Information</SectionTitle>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                   <Field label="First Name" />
                   <Field label="Last Name" />
                   <Field label="Date of Birth (MM/DD/YYYY)" />
@@ -45,7 +45,7 @@ function PrintableCsSummaryFormContent() {
 
               <div>
                 <SectionTitle>Your Information (Person Filling Out Form)</SectionTitle>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                   <Field label="First Name" />
                   <Field label="Last Name" />
                   <Field label="Your Phone" />
@@ -56,12 +56,12 @@ function PrintableCsSummaryFormContent() {
 
               <div>
                 <SectionTitle>Member Contact Information</SectionTitle>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                   <Field label="Member Phone" />
                   <Field label="Member Email" />
                 </div>
-                <h3 className="text-lg font-medium text-gray-800 mt-6">Best Contact Person (if not member)</h3>
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-2">
+                <h3 className="text-sm font-medium text-gray-800 mt-4">Best Contact Person (if not member)</h3>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Name" />
                     <Field label="Relationship to Member" />
                     <Field label="Phone" />
@@ -72,23 +72,23 @@ function PrintableCsSummaryFormContent() {
 
               <div>
                 <SectionTitle>Legal Representative</SectionTitle>
-                 <div className="space-y-4">
-                    <p className="text-sm font-medium text-gray-700">Does member have capacity to make their own decisions?</p>
-                    <div className="flex gap-8">
+                 <div className="space-y-2">
+                    <p className="text-xs font-medium text-gray-700">Does member have capacity to make their own decisions?</p>
+                    <div className="flex gap-6">
                         <CheckboxField label="Yes" />
                         <CheckboxField label="No" />
                         <CheckboxField label="Unknown" />
                     </div>
                  </div>
-                 <div className="space-y-4 mt-6">
-                    <p className="text-sm font-medium text-gray-700">Does member have a legal representative? (e.g., power of attorney)</p>
-                    <div className="flex gap-8">
+                 <div className="space-y-2 mt-3">
+                    <p className="text-xs font-medium text-gray-700">Does member have a legal representative? (e.g., power of attorney)</p>
+                    <div className="flex gap-6">
                         <CheckboxField label="Yes" />
                         <CheckboxField label="No" />
                     </div>
                  </div>
-                 <h3 className="text-lg font-medium text-gray-800 mt-6">Representative's Contact Info</h3>
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-2">
+                 <h3 className="text-sm font-medium text-gray-800 mt-4">Representative's Contact Info</h3>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Name" />
                     <Field label="Relationship to Member" />
                     <Field label="Phone" />
@@ -100,16 +100,16 @@ function PrintableCsSummaryFormContent() {
               <div>
                 <SectionTitle>Location Information</SectionTitle>
                 <Field label="Member's Current Location (SNF, Hospital, Home, etc.)" className="sm:col-span-2" />
-                <h3 className="text-lg font-medium text-gray-800 mt-6">Current Address</h3>
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-2">
+                <h3 className="text-sm font-medium text-gray-800 mt-4">Current Address</h3>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Street Address" className="sm:col-span-2"/>
                     <Field label="City" />
                     <Field label="State" />
                     <Field label="ZIP Code" />
                  </div>
                 <CheckboxField label="Customary residence is the same as current location." />
-                <h3 className="text-lg font-medium text-gray-800 mt-6">Customary Residence (if different)</h3>
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-2">
+                <h3 className="text-sm font-medium text-gray-800 mt-4">Customary Residence (if different)</h3>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Street Address" className="sm:col-span-2"/>
                     <Field label="City" />
                     <Field label="State" />
@@ -119,38 +119,38 @@ function PrintableCsSummaryFormContent() {
 
               <div>
                 <SectionTitle>Health Plan & Pathway</SectionTitle>
-                 <div className="space-y-4 mt-6">
-                    <p className="text-sm font-medium text-gray-700">Health Plan (Managed Care Plan)</p>
-                    <div className="flex gap-8">
+                 <div className="space-y-2 mt-3">
+                    <p className="text-xs font-medium text-gray-700">Health Plan (Managed Care Plan)</p>
+                    <div className="flex gap-6">
                         <CheckboxField label="Kaiser Permanente" />
                         <CheckboxField label="Health Net" />
                         <CheckboxField label="Other" />
                     </div>
                  </div>
-                <p className="text-sm font-medium text-gray-700 mt-6">Pathway Selection</p>
-                 <div className="flex gap-8">
+                <p className="text-xs font-medium text-gray-700 mt-4">Pathway Selection</p>
+                 <div className="flex gap-6">
                     <CheckboxField label="SNF Transition" />
                     <CheckboxField label="SNF Diversion" />
                 </div>
                 
-                <div className="mt-6 space-y-4">
-                    <h3 className="text-lg font-medium text-gray-800">SNF Transition Eligibility Requirements</h3>
-                    <p className="text-sm text-gray-600">Enables a current SNF resident to transfer to a RCFE or ARF.</p>
-                    <ul className="list-decimal pl-6 space-y-2 text-sm text-gray-700">
-                        <li>Has resided in a SNF for at least 60 consecutive days (which can include a combination of Medicare and Medi-Cal days and back and forth from SNF-hospital-SNF); and</li>
+                <div className="mt-4 space-y-2 text-xs">
+                    <h3 className="text-sm font-medium text-gray-800">SNF Transition Eligibility Requirements</h3>
+                    <p className="text-gray-600">Enables a current SNF resident to transfer to a RCFE or ARF.</p>
+                    <ul className="list-decimal pl-5 space-y-1 text-gray-700">
+                        <li>Has resided in a SNF for at least 60 consecutive days; and</li>
                         <li>Is willing to live in RCFE as an alternative to a SNF; and</li>
                         <li>Is able to safely reside in RCFE with appropriate and cost-effective supports and services.</li>
                     </ul>
                     <CheckboxField label="All criteria for SNF Transition have been met." />
                 </div>
 
-                <div className="mt-6 space-y-4">
-                    <h3 className="text-lg font-medium text-gray-800">SNF Diversion Eligibility Requirements</h3>
-                    <p className="text-sm text-gray-600">Transition a member who, without this support, would need to reside in a SNF and instead transitions him/her to RCFE or ARF.</p>
-                     <ul className="list-decimal pl-6 space-y-2 text-sm text-gray-700">
+                <div className="mt-4 space-y-2 text-xs">
+                    <h3 className="text-sm font-medium text-gray-800">SNF Diversion Eligibility Requirements</h3>
+                    <p className="text-gray-600">Transition a member who, without this support, would need to reside in a SNF and instead transitions him/her to RCFE or ARF.</p>
+                     <ul className="list-decimal pl-5 space-y-1 text-gray-700">
                         <li>Interested in remaining in the community; and</li>
                         <li>Is able to safely reside in RCFE with appropriate and cost-effective supports and services; and</li>
-                        <li>Must be currently at medically necessary SNF level of care: e.g., require substantial help with activities of daily living (help with dressing, bathing, incontinence, etc.) or at risk of premature institutionalization; and meet the criteria to receive those services in RCFE or ARF.</li>
+                        <li>Must be currently at medically necessary SNF level of care.</li>
                     </ul>
                     <CheckboxField label="All criteria for SNF Diversion have been met." />
                     <Field label="Reason for SNF Diversion" className="sm:col-span-2" />
@@ -159,8 +159,8 @@ function PrintableCsSummaryFormContent() {
 
               <div>
                 <SectionTitle>ISP & Facility Information</SectionTitle>
-                 <h3 className="text-lg font-medium text-gray-800 mt-6">Individual Service Plan (ISP) Contact</h3>
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-2">
+                 <h3 className="text-sm font-medium text-gray-800 mt-4">Individual Service Plan (ISP) Contact</h3>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="First Name" />
                     <Field label="Last Name" />
                     <Field label="Relationship to Member" />
@@ -169,12 +169,12 @@ function PrintableCsSummaryFormContent() {
                     <Field label="Email" />
                  </div>
                  
-                 <h3 className="text-lg font-medium text-gray-800 mt-6">ISP Assessment Location</h3>
-                 <div className="space-y-2 mt-2">
+                 <h3 className="text-sm font-medium text-gray-800 mt-4">ISP Assessment Location</h3>
+                 <div className="space-y-1 mt-1">
                     <CheckboxField label="ISP contact location is same as member's current location" />
                     <CheckboxField label="ISP contact location is same as member's customary residence" />
                  </div>
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-2">
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Address" className="sm:col-span-2"/>
                     <Field label="City" />
                     <Field label="State" />
@@ -182,24 +182,24 @@ function PrintableCsSummaryFormContent() {
                     <Field label="County" />
                  </div>
 
-                <h3 className="text-lg font-medium text-gray-800 mt-6">Assisted Living Waiver (ALW) Status</h3>
-                <p className="text-sm text-gray-700 mt-2">Is the member currently on the ALW waitlist?</p>
-                <div className="flex gap-8">
+                <h3 className="text-sm font-medium text-gray-800 mt-4">Assisted Living Waiver (ALW) Status</h3>
+                <p className="text-xs text-gray-700 mt-1">Is the member currently on the ALW waitlist?</p>
+                <div className="flex gap-6">
                     <CheckboxField label="Yes" />
                     <CheckboxField label="No" />
                     <CheckboxField label="Unknown" />
                 </div>
 
-                <h3 className="text-lg font-medium text-gray-800 mt-6">RCFE Selection</h3>
-                <div className="space-y-4 mt-6">
-                    <p className="text-sm font-medium text-gray-700">Has a preferred assisted living facility (RCFE) been chosen?</p>
-                    <div className="flex gap-8">
+                <h3 className="text-sm font-medium text-gray-800 mt-4">RCFE Selection</h3>
+                <div className="space-y-2 mt-3">
+                    <p className="text-xs font-medium text-gray-700">Has a preferred assisted living facility (RCFE) been chosen?</p>
+                    <div className="flex gap-6">
                         <CheckboxField label="Yes" />
                         <CheckboxField label="No" />
                     </div>
                 </div>
-                <h4 className="text-md font-medium text-gray-800 mt-6">Preferred Facility Details</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-2">
+                <h4 className="text-xs font-medium text-gray-800 mt-4">Preferred Facility Details</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Facility Name" className="sm:col-span-2"/>
                     <Field label="Facility Address" className="sm:col-span-2"/>
                     <Field label="Administrator Name" />
@@ -219,9 +219,9 @@ export default function PrintableCsSummaryForm() {
   };
   
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div className="bg-gray-50 min-h-screen print:bg-white">
       <div className="container mx-auto py-8 px-4 print:p-0">
-        <div className="bg-white p-8 shadow-lg rounded-lg print:shadow-none print:p-0">
+        <div className="bg-white p-8 shadow-lg rounded-lg print:shadow-none print:p-4">
           <div className="flex justify-between items-start mb-8 print:hidden">
             <Button variant="outline" asChild>
                 <Link href="/forms/printable-package">
@@ -235,9 +235,9 @@ export default function PrintableCsSummaryForm() {
             </Button>
           </div>
           
-           <div className="text-center mb-10">
-                <h1 className="text-3xl font-bold text-gray-800 tracking-tight">CS Member Summary</h1>
-                <p className="mt-2 text-md text-gray-500 max-w-2xl mx-auto">This form gathers essential information about the member to determine eligibility for the CalAIM Community Supports program.</p>
+           <div className="text-center mb-6">
+                <h1 className="text-2xl font-bold text-gray-800 tracking-tight">CS Member Summary</h1>
+                <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This form gathers essential information about the member to determine eligibility for the CalAIM Community Supports program.</p>
             </div>
 
           <PrintableCsSummaryFormContent />
@@ -246,3 +246,5 @@ export default function PrintableCsSummaryForm() {
     </div>
   );
 }
+
+    

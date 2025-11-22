@@ -7,20 +7,20 @@ import { Printer, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 const Field = ({ label, className = '' }: { label: string; className?: string }) => (
-  <div className={`pt-4 ${className}`}>
-    <label className="block text-sm font-medium text-gray-700">{label}</label>
-    <div className="mt-1 h-6 border-b border-gray-400"></div>
+  <div className={`pt-2 ${className}`}>
+    <label className="block text-xs font-medium text-gray-700">{label}</label>
+    <div className="mt-1 h-5 border-b border-gray-400"></div>
   </div>
 );
 
 const SectionTitle = ({ children }: { children: React.ReactNode }) => (
-    <h2 className="text-xl font-semibold text-gray-800 border-b pb-2 mb-4 mt-8">{children}</h2>
+    <h2 className="text-base font-semibold text-gray-800 border-b pb-1 mb-2 mt-4">{children}</h2>
 );
 
 const CheckboxField = ({ label }: { label: string }) => (
-    <div className="flex items-center mt-4">
-        <div className="h-5 w-5 border border-gray-400 rounded-sm"></div>
-        <label className="ml-3 text-sm text-gray-700">{label}</label>
+    <div className="flex items-center mt-2">
+        <div className="h-4 w-4 border border-gray-400 rounded-sm"></div>
+        <label className="ml-2 text-xs text-gray-700">{label}</label>
     </div>
 );
 
@@ -31,9 +31,9 @@ export default function PrintableHipaaForm() {
   };
   
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div className="bg-gray-50 min-h-screen print:bg-white">
       <div className="container mx-auto py-8 px-4 print:p-0">
-        <div className="bg-white p-8 shadow-lg rounded-lg print:shadow-none print:p-0">
+        <div className="bg-white p-8 shadow-lg rounded-lg print:shadow-none print:p-4">
           <div className="flex justify-between items-start mb-8 print:hidden">
             <Button variant="outline" asChild>
                 <Link href="/forms/printable-package">
@@ -47,22 +47,22 @@ export default function PrintableHipaaForm() {
             </Button>
           </div>
           
-           <div className="text-center mb-10">
-                <h1 className="text-3xl font-bold text-gray-800 tracking-tight">HIPAA Authorization Form</h1>
-                <p className="mt-2 text-md text-gray-500 max-w-2xl mx-auto">Authorization for Use or Disclosure of Protected Health Information (PHI).</p>
+           <div className="text-center mb-6">
+                <h1 className="text-2xl font-bold text-gray-800 tracking-tight">HIPAA Authorization Form</h1>
+                <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">Authorization for Use or Disclosure of Protected Health Information (PHI).</p>
             </div>
 
           <form>
-            <div className="space-y-8">
+            <div className="space-y-4">
               <div>
                 <SectionTitle>Patient Information</SectionTitle>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                   <Field label="Patient Name" />
                   <Field label="Medi-Cal Number (Health Net) or Medical Record Number (Kaiser)" />
                 </div>
               </div>
 
-              <div className="prose prose-sm max-w-none text-gray-700 space-y-4">
+              <div className="prose prose-xs max-w-none text-gray-700 space-y-3">
                   <p>This form, when completed and signed by you, authorizes the use and/or disclosure of your protected health information. The information authorized for release may include information related to HIV/AIDS, mental health, and substance use, unless specified otherwise.</p>
                   
                   <div>
@@ -103,14 +103,14 @@ export default function PrintableHipaaForm() {
 
               <div>
                 <SectionTitle>Sensitive Information</SectionTitle>
-                <p className="text-sm text-gray-700">This includes information related to substance abuse, mental health conditions, and HIV/AIDS.</p>
-                <h4 className="font-semibold mt-4 text-gray-800">Do you authorize the release of sensitive information?</h4>
+                <p className="text-xs text-gray-700">This includes information related to substance abuse, mental health conditions, and HIV/AIDS.</p>
+                <h4 className="font-semibold mt-2 text-xs text-gray-800">Do you authorize the release of sensitive information?</h4>
                 <CheckboxField label="Yes, I authorize the release of this information." />
               </div>
               
               <div>
                 <SectionTitle>Signature</SectionTitle>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-2">
                     <Field label="Signature (Full Name)" />
                     <Field label="Date" />
                 </div>
@@ -124,3 +124,5 @@ export default function PrintableHipaaForm() {
     </div>
   );
 }
+
+    
