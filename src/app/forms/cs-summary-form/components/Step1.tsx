@@ -48,8 +48,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>First Name</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="John" />
+                    <Input {...field} value={field.value ?? ''} />
                   </FormControl>
+                  <FormDescription>e.g., John</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -61,8 +62,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Last Name</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="Doe" />
+                    <Input {...field} value={field.value ?? ''} />
                   </FormControl>
+                   <FormDescription>e.g., Doe</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -130,7 +132,7 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Medi-Cal Number</FormLabel>
                   <FormControl>
-                    <Input {...field} />
+                    <Input {...field} value={field.value ?? ''} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -143,7 +145,7 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Confirm Medi-Cal Number</FormLabel>
                   <FormControl>
-                    <Input {...field} />
+                    <Input {...field} value={field.value ?? ''} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -158,7 +160,7 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>MRN</FormLabel>
                   <FormControl>
-                    <Input {...field} />
+                    <Input {...field} value={field.value ?? ''} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -171,7 +173,7 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Confirm MRN</FormLabel>
                   <FormControl>
-                    <Input {...field} />
+                    <Input {...field} value={field.value ?? ''} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -185,8 +187,9 @@ export default function Step1() {
               <FormItem>
                 <FormLabel>Preferred Language</FormLabel>
                 <FormControl>
-                  <Input {...field} placeholder="e.g., English, Spanish" />
+                  <Input {...field} value={field.value ?? ''} />
                 </FormControl>
+                <FormDescription>e.g., English, Spanish</FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -207,8 +210,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>First Name</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="Jane" />
+                    <Input {...field} value={field.value ?? ''} />
                   </FormControl>
+                  <FormDescription>e.g., Jane</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -220,8 +224,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Last Name</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="Smith" />
+                    <Input {...field} value={field.value ?? ''} />
                   </FormControl>
+                  <FormDescription>e.g., Smith</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -235,8 +240,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input type="email" {...field} placeholder="jane.smith@example.com" />
+                    <Input type="email" {...field} value={field.value ?? ''} />
                   </FormControl>
+                  <FormDescription>e.g., jane.smith@example.com</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -248,8 +254,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Phone</FormLabel>
                   <FormControl>
-                    <Input type="tel" {...field} placeholder="(123) 456-7890" />
+                    <Input type="tel" {...field} value={field.value ?? ''} />
                   </FormControl>
+                  <FormDescription>e.g., (123) 456-7890</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -262,8 +269,9 @@ export default function Step1() {
               <FormItem>
                 <FormLabel>Relationship to Member</FormLabel>
                 <FormControl>
-                  <Input {...field} placeholder="e.g., Family Member, Social Worker" />
+                  <Input {...field} value={field.value ?? ''} />
                 </FormControl>
+                <FormDescription>e.g., Family Member, Social Worker</FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -273,5 +281,3 @@ export default function Step1() {
     </div>
   );
 }
-
-    
