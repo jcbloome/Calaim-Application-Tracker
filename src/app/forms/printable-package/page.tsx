@@ -9,7 +9,6 @@ import Link from 'next/link';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 
 const forms = [
     { name: 'CS Member Summary', icon: FileText, href: '/forms/cs-summary-form/printable' },
@@ -118,7 +117,7 @@ export default function ApplicationSubmissionPage() {
                             <div className="space-y-2">
                                 <Label htmlFor="mediCalNumber">Member's Medi-Cal or Medical Record Number</Label>
                                 <Input id="mediCalNumber" placeholder="987654321A or MRN" />
-                                <p className="text-sm text-muted-foreground">
+                                <p className="text-xs text-muted-foreground">
                                   Medi-Cal Number for Health Net, Medical Record Number for Kaiser.
                                 </p>
                             </div>
@@ -139,20 +138,40 @@ export default function ApplicationSubmissionPage() {
                                 Select 'Other' for members switching to Health Net or Kaiser but who do not yet have it.
                             </p>
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="documentsUploaded">Names of Documents Uploaded</Label>
-                            <Textarea id="documentsUploaded" placeholder="e.g., HIPAA Authorization, Liability Waiver, Physician's Report..." />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="fileUpload">Upload Documents</Label>
-                            <div className="relative flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100">
-                                <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center">
-                                    <UploadCloud className="w-8 h-8 mb-2 text-gray-400" />
-                                    <p className="font-semibold">Click or drag files here to upload</p>
-                                    <p className="text-xs text-gray-500">PDF, JPG, PNG up to 5MB.</p>
+                        <div className="space-y-4 rounded-lg border p-4">
+                            <h3 className="font-medium text-base">Upload Documents</h3>
+                            <p className="text-sm text-muted-foreground">
+                                Please categorize each document you upload using the dropdown menu next to the file input.
+                            </p>
+                            <div className="grid grid-cols-1 gap-4">
+                                {['file-1', 'file-2', 'file-3', 'file-4', 'file-5', 'file-6'].map(id => (
+                                    <div key={id} className="flex flex-col sm:flex-row gap-2 items-center">
+                                        <div className="w-full sm:w-1/2">
+                                            <Label htmlFor={id} className="sr-only">File</Label>
+                                            <Input id={id} type="file" />
+                                        </div>
+                                        <div className="w-full sm:w-1/2">
+                                            <Select>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select document type..." />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="hipaa">HIPAA</SelectItem>
+                                                    <SelectItem value="declaration">Declaration of Eligibility</SelectItem>
+                                                    <SelectItem value="liability">Liability Waiver</SelectItem>
+                                                    <SelectItem value="lic602a">LIC 602A (Physician's Report)</SelectItem>
+                                                    <SelectItem value="freedom-of-choice">Freedom of Choice Waiver</SelectItem>
+                                                    <SelectItem value="proof-of-income">Proof of Income</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+                                ))}
+                                 <div className="text-sm text-muted-foreground pt-2">
+                                    <strong>Proof of Income:</strong> This should be either the most recent Social Security annual award letter or 3 months of recent bank statements showing Social Security income.
                                 </div>
-                                <Input id="fileUpload" type="file" className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer" multiple />
                             </div>
+
                         </div>
                          <Button type="submit" className="w-full">
                             <Send className="mr-2 h-4 w-4" />
