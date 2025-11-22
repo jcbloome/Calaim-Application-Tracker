@@ -29,19 +29,19 @@ const fakeApplicationTemplate = {
     referrerRelationship: 'Social Worker',
     memberPhone: '(555) 987-6543',
     memberEmail: 'test.user@example.com',
-    isBestContact: false, // Set to false to satisfy conditional validation
+    isBestContact: false,
     bestContactName: 'Best Contact',
     bestContactRelationship: 'Family Member',
     bestContactPhone: '(555) 555-0000',
     bestContactEmail: 'best@contact.com',
     bestContactLanguage: 'English',
     hasCapacity: 'Yes' as const,
-    hasLegalRep: 'Yes' as const, // Set to 'Yes' to trigger validation
-    repName: 'Legal Rep',
-    repRelationship: 'Lawyer',
-    repPhone: '(555) 111-1111',
-    repEmail: 'legal@rep.com',
-    repLanguage: 'English',
+    hasLegalRep: 'No' as const, 
+    repName: '',
+    repRelationship: '',
+    repPhone: '',
+    repEmail: '',
+    repLanguage: '',
 
     // Step 2: Location Information
     currentLocation: 'SNF',

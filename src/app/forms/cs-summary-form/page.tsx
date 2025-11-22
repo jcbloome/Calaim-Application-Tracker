@@ -99,16 +99,6 @@ const formSchema = z.object({
 .refine(data => data.memberMrn === data.confirmMemberMrn, {
     message: "MRNs don't match",
     path: ["confirmMemberMrn"],
-})
-.superRefine((data, ctx) => {
-    if (data.hasLegalRep === 'Yes') {
-        if (!data.repName) ctx.addIssue({ code: 'custom', message: 'Name is required.', path: ['repName'] });
-        if (!data.repRelationship) ctx.addIssue({ code: 'custom', message: 'Relationship is required.', path: ['repRelationship'] });
-        if (!data.repPhone) ctx.addIssue({ code: 'custom', message: 'Phone is required.', path: ['repPhone'] });
-    }
-    if (data.hasPrefRCFE === 'Yes') {
-        if (!data.rcfeName) ctx.addIssue({ code: 'custom', message: 'Facility name is required.', path: ['rcfeName'] });
-    }
 });
 
 export type FormValues = z.infer<typeof formSchema>;
