@@ -4,7 +4,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, FormProvider } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -76,7 +75,7 @@ const formSchema = z.object({
   ispAddress: z.string().optional(),
   ispCity: z.string().optional(),
   ispState: z.string().optional(),
-ispaZip: z.string().optional(),
+  ispZip: z.string().optional(),
   ispCounty: z.string().optional(),
   onALWWaitlist: z.any().optional(),
   hasPrefRCFE: z.any().optional(),
@@ -116,7 +115,6 @@ function CsSummaryFormComponent() {
   const { data: userProfile } = useDoc(userProfileDocRef);
 
   const methods = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
     defaultValues: {
       isBestContact: false,
       copyAddress: false,
@@ -160,14 +158,11 @@ function CsSummaryFormComponent() {
   }, [applicationId, user, firestore, methods]);
 
 
-  const { trigger, handleSubmit } = methods;
+  const { handleSubmit } = methods;
 
-  const nextStep = async () => {
-    const isValid = await trigger();
-    if (isValid) {
-      if (currentStep < steps.length) {
-        setCurrentStep(currentStep + 1);
-      }
+  const nextStep = () => {
+    if (currentStep < steps.length) {
+      setCurrentStep(currentStep + 1);
     }
   };
 
