@@ -85,8 +85,8 @@ body {
   body {
     @apply bg-background text-foreground;
     background-image: radial-gradient(
-      ellipse 60% 80% at 50% -10%,
-      hsl(220 60% 90% / 0.6),
+      ellipse 80% 80% at 50% -20%,
+      hsl(220 70% 85% / 0.7),
       transparent
     );
     background-repeat: no-repeat;
