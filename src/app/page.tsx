@@ -14,8 +14,8 @@ export default function Home() {
     <>
       <Header />
       <main className="flex-grow flex items-center justify-center p-4 sm:p-6 md:p-8">
-        <Card className="w-full max-w-2xl shadow-2xl">
-          <CardHeader className="items-center text-center p-6">
+        <Card className="w-full max-w-4xl shadow-2xl">
+          <CardHeader className="items-center text-center p-6 sm:p-10">
             {mascot && (
               <Image
                 src={mascot.imageUrl}
@@ -23,19 +23,19 @@ export default function Home() {
                 width={200}
                 height={200}
                 data-ai-hint={mascot.imageHint}
-                className="w-48 h-48 object-contain rounded-full mb-4"
+                className="w-48 h-48 object-contain rounded-full mb-6"
               />
             )}
-            <CardTitle className="text-4xl font-bold">Connect CalAIM</CardTitle>
-            <CardDescription className="text-base max-w-md">
+            <CardTitle className="text-5xl font-bold">Connect CalAIM</CardTitle>
+            <CardDescription className="text-lg max-w-2xl mt-2">
               The Connections Care Home Consultants application portal for the California
               Advancing and Innovating Medi-Cal (CalAIM) Community Support for Assisted
               Transitions (SNF Diversion/Transition) for Health Net and Kaiser.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col items-center p-6 pt-0">
-             <Button asChild size="lg">
-                <Link href="/info">Let's Go! <ArrowRight className="ml-2 h-4 w-4" /></Link>
+          <CardContent className="flex flex-col items-center p-6 pt-0 sm:pb-10">
+             <Button asChild size="lg" className="text-lg py-7 px-8">
+                <Link href="/info">Let's Go! <ArrowRight className="ml-2 h-5 w-5" /></Link>
               </Button>
           </CardContent>
         </Card>
