@@ -1,6 +1,8 @@
+
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 import {
   Users,
   LayoutGrid,
@@ -32,6 +34,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const auth = useAuth();
   const router = useRouter();
 
+  useEffect(() => {
+    if (isUserLoading) return; // Wait until user status is resolved
+
+    // If not logged in and not on the login page, redirect to admin login
+    if (!user && pathname !== '/admin/login') {
+      router.push('/admin/login');
+    }
+  }, [user, isUserLoading, pathname, router]);
+
   if (isUserLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -39,16 +50,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
     );
   }
-
-  // If not logged in and not on the login page, redirect to admin login
-  if (!user && pathname !== '/admin/login') {
-    router.push('/admin/login');
-    return null;
-  }
   
   // If on the login page, just render children (the login page)
   if (pathname === '/admin/login') {
     return <>{children}</>;
+  }
+
+  // If there's no user at this point (and we're not on the login page),
+  // it means we're about to redirect, so we can render a loader to avoid flicker.
+  if (!user) {
+     return (
+      <div className="flex items-center justify-center h-screen">
+        <p>Redirecting...</p>
+      </div>
+    );
   }
 
   const isAuthorized = user?.email === ADMIN_EMAIL;
