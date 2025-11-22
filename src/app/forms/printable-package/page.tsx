@@ -1,20 +1,53 @@
+'use client';
+
 import { Header } from '@/components/Header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
+import { Button } from '@/components/ui/button';
+import { Printer, Square, Circle } from 'lucide-react';
+
+const PrintableField = ({ label, className }: { label: string, className?: string }) => (
+  <div className={`space-y-1 ${className}`}>
+    <label className="text-sm font-medium text-muted-foreground">{label}</label>
+    <div className="h-8 border-b border-gray-300"></div>
+  </div>
+);
+
+const PrintableCheckbox = ({ label }: { label: string }) => (
+    <div className="flex items-center space-x-2">
+        <Square className="h-4 w-4 text-gray-400" />
+        <span className="text-sm">{label}</span>
+    </div>
+)
+
+const PrintableRadio = ({ label }: { label: string }) => (
+     <div className="flex items-center space-x-2">
+        <Circle className="h-4 w-4 text-gray-400" />
+        <span className="text-sm">{label}</span>
+    </div>
+)
+
 
 export default function PrintablePackage() {
+
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
     <>
       <Header />
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
         <div className="max-w-4xl mx-auto space-y-8 print:space-y-4">
-          <div className="text-center print:hidden">
-            <h1 className="text-3xl font-bold">Printable Forms Package</h1>
-            <p className="text-muted-foreground">All necessary forms in one place for easy printing.</p>
+          <div className="flex justify-between items-center print:hidden">
+            <div>
+                <h1 className="text-3xl font-bold">Printable Forms Package</h1>
+                <p className="text-muted-foreground">All necessary forms in one place for easy printing.</p>
+            </div>
+            <Button onClick={handlePrint}>
+                <Printer className="mr-2 h-4 w-4" />
+                Print
+            </Button>
           </div>
           
           {/* CS Member Summary */}
@@ -24,53 +57,55 @@ export default function PrintablePackage() {
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Member Information */}
-              <div className="space-y-2">
-                <h3 className="font-semibold">Member Information</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1"><Label>First Name</Label><Input disabled /></div>
-                  <div className="space-y-1"><Label>Last Name</Label><Input disabled /></div>
-                  <div className="space-y-1"><Label>Date of Birth (MM/DD/YYYY)</Label><Input disabled /></div>
-                  <div className="space-y-1"><Label>Age</Label><Input disabled /></div>
-                  <div className="space-y-1"><Label>Medi-Cal Number</Label><Input disabled /></div>
-                  <div className="space-y-1"><Label>Confirm Medi-Cal Number</Label><Input disabled /></div>
-                  <div className="space-y-1"><Label>Medical Record Number (MRN)</Label><Input disabled /></div>
-                  <div className="space-y-1"><Label>Confirm Medical Record Number</Label><Input disabled /></div>
-                  <div className="col-span-2 space-y-1"><Label>Preferred Language</Label><Input disabled /></div>
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg">Member Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                  <PrintableField label="First Name" />
+                  <PrintableField label="Last Name" />
+                  <PrintableField label="Date of Birth (MM/DD/YYYY)" />
+                  <PrintableField label="Age" />
+                  <PrintableField label="Medi-Cal Number" />
+                  <PrintableField label="Confirm Medi-Cal Number" />
+                  <PrintableField label="Medical Record Number (MRN)" />
+                  <PrintableField label="Confirm Medical Record Number" />
+                  <PrintableField label="Preferred Language" className="md:col-span-2"/>
                 </div>
               </div>
               <Separator />
 
               {/* Your Information */}
-              <div className="space-y-2">
-                <h3 className="font-semibold">Your Information (Person Filling Out Form)</h3>
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1"><Label>First Name</Label><Input disabled /></div>
-                    <div className="space-y-1"><Label>Last Name</Label><Input disabled /></div>
-                    <div className="space-y-1"><Label>Relationship to Member</Label><Input disabled /></div>
-                    <div className="space-y-1"><Label>Referral Source Name</Label><Input disabled /></div>
-                    <div className="space-y-1"><Label>Your Phone</Label><Input disabled /></div>
-                    <div className="space-y-1"><Label>Your Email</Label><Input disabled /></div>
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg">Your Information (Person Filling Out Form)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                    <PrintableField label="First Name" />
+                    <PrintableField label="Last Name" />
+                    <PrintableField label="Relationship to Member" />
+                    <PrintableField label="Referral Source Name" />
+                    <PrintableField label="Your Phone" />
+                    <PrintableField label="Your Email" />
                 </div>
               </div>
               <Separator />
 
               {/* Member Contact */}
               <div className="space-y-4">
-                <h3 className="font-semibold">Member Contact Information</h3>
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1"><Label>Member Phone</Label><Input disabled /></div>
-                    <div className="space-y-1"><Label>Member Email</Label><Input disabled /></div>
+                <h3 className="font-semibold text-lg">Member Contact Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                    <PrintableField label="Member Phone" />
+                    <PrintableField label="Member Email" />
                 </div>
-                <div className="flex items-center space-x-2"><Checkbox id="best-contact-printable" disabled /><Label htmlFor="best-contact-printable">Member is the best contact person.</Label></div>
+                <div className="pt-2">
+                    <PrintableCheckbox label="Member is the best contact person." />
+                </div>
                 <div className="p-4 border rounded-md space-y-4">
                     <h4 className="font-medium">Best Contact Person</h4>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1"><Label>First Name</Label><Input disabled /></div>
-                        <div className="space-y-1"><Label>Last Name</Label><Input disabled /></div>
-                        <div className="space-y-1"><Label>Relationship to Member</Label><Input disabled /></div>
-                        <div className="space-y-1"><Label>Phone</Label><Input disabled /></div>
-                        <div className="space-y-1"><Label>Email</Label><Input disabled /></div>
-                        <div className="space-y-1"><Label>Best Contact's Preferred Language</Label><Input disabled /></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                        <PrintableField label="First Name" />
+                        <PrintableField label="Last Name" />
+                        <PrintableField label="Relationship to Member" />
+                        <PrintableField label="Phone" />
+                        <PrintableField label="Email" />
+                        <PrintableField label="Best Contact's Preferred Language" />
                     </div>
                 </div>
               </div>
@@ -78,54 +113,56 @@ export default function PrintablePackage() {
 
               {/* Legal Representative */}
               <div className="space-y-4">
-                  <h3 className="font-semibold">Legal Representative</h3>
+                  <h3 className="font-semibold text-lg">Legal Representative</h3>
                   <div className="space-y-2">
-                      <Label>Does member have capacity to make own health care decisions?</Label>
-                      <RadioGroup className="flex space-x-4"><RadioGroupItem value="yes" id="p-cap-yes" disabled /><Label htmlFor="p-cap-yes">Yes</Label><RadioGroupItem value="no" id="p-cap-no" disabled /><Label htmlFor="p-cap-no">No</Label></RadioGroup>
+                      <label className="text-sm">Does member have capacity to make own health care decisions?</label>
+                      <div className="flex space-x-4 pt-1"><PrintableRadio label="Yes" /><PrintableRadio label="No" /></div>
                   </div>
                    <div className="space-y-2">
-                      <Label>If no capacity, does he/she have a legal Authorized Rep (AR)?</Label>
-                      <RadioGroup className="flex space-x-4"><RadioGroupItem value="yes" id="p-ar-yes" disabled /><Label htmlFor="p-ar-yes">Yes</Label><RadioGroupItem value="no" id="p-ar-no" disabled /><Label htmlFor="p-ar-no">No</Label><RadioGroupItem value="na" id="p-ar-na" disabled /><Label htmlFor="p-ar-na">N/A</Label></RadioGroup>
+                      <label className="text-sm">If no capacity, does he/she have a legal Authorized Rep (AR)?</label>
+                      <div className="flex space-x-4 pt-1"><PrintableRadio label="Yes" /><PrintableRadio label="No" /><PrintableRadio label="N/A" /></div>
                   </div>
-                  <div className="flex items-center space-x-2"><Checkbox id="poa-same-printable" disabled /><Label htmlFor="poa-same-printable">POA/AR is the same as the Best Contact.</Label></div>
-                  <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1"><Label>POA/AR First Name</Label><Input disabled /></div>
-                      <div className="space-y-1"><Label>POA/AR Last Name</Label><Input disabled /></div>
-                      <div className="space-y-1"><Label>POA/AR Relationship to Member</Label><Input disabled /></div>
-                      <div className="space-y-1"><Label>POA/AR Phone</Label><Input disabled /></div>
-                      <div className="col-span-2 space-y-1"><Label>POA/AR Email</Label><Input disabled /></div>
+                  <div className="pt-2">
+                    <PrintableCheckbox label="POA/AR is the same as the Best Contact." />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                      <PrintableField label="POA/AR First Name" />
+                      <PrintableField label="POA/AR Last Name" />
+                      <PrintableField label="POA/AR Relationship to Member" />
+                      <PrintableField label="POA/AR Phone" />
+                      <PrintableField label="POA/AR Email" className="md:col-span-2" />
                   </div>
               </div>
 
             </CardContent>
           </Card>
 
-           <Card className="print:shadow-none print:border-none">
+           <Card className="print:shadow-none print:border-none print:break-before-page">
             <CardHeader>
               <CardTitle>HIPAA Authorization Form</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-                <p>This form, when completed and signed by you, authorizes the use and/or disclosure of your protected health information. The information authorized for release may include information related to HIV/AIDS, mental health, and substance use, unless specified otherwise.</p>
-                <div className="grid grid-cols-2 gap-4 items-end">
-                     <div className="space-y-1"><Label>Patient Name</Label><Input disabled /></div>
-                     <div className="space-y-1"><Label>Medi-Cal Number</Label><Input disabled /></div>
+                <p className="text-sm text-muted-foreground">This form, when completed and signed by you, authorizes the use and/or disclosure of your protected health information. The information authorized for release may include information related to HIV/AIDS, mental health, and substance use, unless specified otherwise.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 items-end">
+                     <PrintableField label="Patient Name" />
+                     <PrintableField label="Medi-Cal Number" />
                 </div>
-                <div className="space-y-4">
-                    <div><p className="font-medium text-sm">Person(s) or organization(s) authorized to make the disclosure:</p><p className="text-sm text-muted-foreground">any health care related agency or person providing information for the purpose of applying for the CalAIM CS for Assisted Living Transitions</p></div>
-                    <div><p className="font-medium text-sm">Person(s) or organization(s) authorized to receive the information:</p><p className="text-sm text-muted-foreground">Connections Care Home Consultants, LLC</p></div>
-                     <div><p className="font-medium text-sm">Specific information to be disclosed:</p><p className="text-sm text-muted-foreground">All medical records necessary for Community Supports (CS) application.</p></div>
-                </div>
-                <div className="space-y-2">
-                    <Label>Do you authorize the release of sensitive information?</Label>
-                    <RadioGroup className="flex space-x-4"><RadioGroupItem value="yes" id="p-sens-yes" disabled /><Label htmlFor="p-sens-yes">Yes</Label><RadioGroupItem value="no" id="p-sens-no" disabled /><Label htmlFor="p-sens-no">No</Label></RadioGroup>
+                <div className="space-y-4 text-sm">
+                    <div><p className="font-medium">Person(s) or organization(s) authorized to make the disclosure:</p><p className="text-muted-foreground">any health care related agency or person providing information for the purpose of applying for the CalAIM CS for Assisted Living Transitions</p></div>
+                    <div><p className="font-medium">Person(s) or organization(s) authorized to receive the information:</p><p className="text-muted-foreground">Connections Care Home Consultants, LLC</p></div>
+                     <div><p className="font-medium">Specific information to be disclosed:</p><p className="text-muted-foreground">All medical records necessary for Community Supports (CS) application.</p></div>
                 </div>
                 <div className="space-y-2">
-                    <Label>Who is signing this form?</Label>
-                    <RadioGroup className="flex space-x-4"><RadioGroupItem value="member" id="p-sign-mem" disabled /><Label htmlFor="p-sign-mem">I am (the member)</Label><RadioGroupItem value="rep" id="p-sign-rep" disabled /><Label htmlFor="p-sign-rep">An authorized representative</Label></RadioGroup>
+                    <label className="text-sm">Do you authorize the release of sensitive information?</label>
+                     <div className="flex space-x-4 pt-1"><PrintableRadio label="Yes" /><PrintableRadio label="No" /></div>
                 </div>
-                 <div className="grid grid-cols-3 gap-4 border-t pt-4">
-                    <div className="col-span-2 space-y-1"><Label>Signature (Full Name)</Label><Input disabled /></div>
-                    <div className="space-y-1"><Label>Date</Label><Input disabled type="date" /></div>
+                <div className="space-y-2">
+                    <label className="text-sm">Who is signing this form?</label>
+                    <div className="flex space-x-4 pt-1"><PrintableRadio label="I am (the member)" /><PrintableRadio label="An authorized representative" /></div>
+                </div>
+                 <div className="grid grid-cols-3 gap-4 border-t pt-6 mt-6">
+                    <div className="col-span-2"><PrintableField label="Signature (Full Name)" /></div>
+                    <div><PrintableField label="Date" /></div>
                 </div>
             </CardContent>
           </Card>
