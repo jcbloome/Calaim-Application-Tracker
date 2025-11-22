@@ -1,8 +1,8 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useMemo } from 'react';
 import Link from 'next/link';
-import { notFound, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import {
   Card,
   CardContent,
@@ -15,16 +15,16 @@ import { Progress } from '@/components/ui/progress';
 import {
   CheckCircle2,
   File,
-  FileQuestion,
-  FileUp,
   Info,
   Loader2,
   UploadCloud,
 } from 'lucide-react';
-import { applications } from '@/lib/data';
 import { Header } from '@/components/Header';
 import { cn } from '@/lib/utils';
-import type { Application, FormStatus } from '@/lib/definitions';
+import type { Application, FormStatus as FormStatusType } from '@/lib/definitions';
+import { useDoc, useUser, useFirestore } from '@/firebase';
+import { doc } from 'firebase/firestore';
+import AiAssistant from './components/AiAssistant';
 
 const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => {
   const commonRequirements = [
@@ -38,7 +38,7 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
   if (pathway === 'SNF Diversion') {
     return [
       ...commonRequirements,
-      { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility (SNF Diversion)', description: 'Required for SNF Diversion. Download the form, have it signed by a physician, and upload it here.', type: 'upload', icon: FileUp },
+      { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: 'Required for SNF Diversion. Download the form, have it signed by a physician, and upload it here.', type: 'upload', icon: UploadCloud },
     ];
   }
 
@@ -47,7 +47,7 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
 };
 
 
-function StatusIndicator({ status }: { status: FormStatus['status'] }) {
+function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
     const isCompleted = status === 'Completed';
     return (
       <div className={cn(
@@ -69,15 +69,39 @@ function StatusIndicator({ status }: { status: FormStatus['status'] }) {
 function PathwayPageContent() {
   const searchParams = useSearchParams();
   const applicationId = searchParams.get('applicationId');
+  const { user } = useUser();
+  const firestore = useFirestore();
 
-  // In a real app, this would be a data fetch.
-  const application = applications.find(app => app.id === applicationId);
+  const applicationDocRef = useMemo(() => {
+    if (user && firestore && applicationId) {
+      return doc(firestore, `users/${user.uid}/applications`, applicationId);
+    }
+    return null;
+  }, [user, firestore, applicationId]);
 
-  if (!application) {
-    // Show a loading state or a not found message
+  const { data: application, isLoading, error } = useDoc<Application>(applicationDocRef);
+
+  if (isLoading) {
     return (
         <div className="flex items-center justify-center h-screen">
-          {applicationId ? <p>Application not found.</p> : <p>No application ID provided.</p>}
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="ml-4">Loading Application...</p>
+        </div>
+    );
+  }
+
+  if (error) {
+     return (
+        <div className="flex items-center justify-center h-screen">
+            <p className="text-destructive">Error: {error.message}</p>
+        </div>
+     );
+  }
+  
+  if (!application) {
+    return (
+        <div className="flex items-center justify-center h-screen">
+          <p>{applicationId ? 'Application not found.' : 'No application ID provided.'}</p>
         </div>
     );
   }
@@ -85,11 +109,9 @@ function PathwayPageContent() {
   const pathwayRequirements = getPathwayRequirements(application.pathway);
   
   // Create a map for quick status lookup
-  const formStatusMap = new Map(application.forms.map(f => [f.name, f.status]));
+  const formStatusMap = new Map(application.forms?.map(f => [f.name, f.status]));
 
   const completedCount = pathwayRequirements.reduce((acc, req) => {
-    // A more robust check would be needed here. For now, let's use the mock data.
-    // Assuming 'CS Member Summary' and 'HIPAA Authorization' are completed for demo
     if (formStatusMap.get(req.title) === 'Completed') {
         return acc + 1;
     }
@@ -105,11 +127,10 @@ function PathwayPageContent() {
       <main className="flex-grow bg-slate-50/50 py-8 sm:py-12">
         <div className="container mx-auto max-w-5xl px-4 sm:px-6 space-y-8">
           
-          {/* Header Card */}
           <Card className="shadow-sm">
             <CardHeader>
               <CardTitle className="text-2xl sm:text-3xl font-bold text-primary">
-                {application.pathway} ({application.healthPlan || 'Health Net'})
+                {application.pathway} ({application.healthPlan || 'N/A'})
               </CardTitle>
               <CardDescription>
                 For members {application.pathway === 'SNF Diversion' ? 'living in the community who are at risk of institutionalization.' : 'currently in a Skilled Nursing Facility who want to move to a community setting.'}
@@ -117,7 +138,7 @@ function PathwayPageContent() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-2 text-sm">
-                <div><strong>Member:</strong> {application.memberName}</div>
+                <div><strong>Member:</strong> {application.memberFirstName} {application.memberLastName}</div>
                 <div className="truncate"><strong>Application ID:</strong> <span className="font-mono text-xs">{application.id}</span></div>
                 <div><strong>Status:</strong> <span className="font-semibold">{application.status}</span></div>
               </div>
@@ -131,10 +152,11 @@ function PathwayPageContent() {
             </CardContent>
           </Card>
 
-          {/* Requirements Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {application && <AiAssistant applicationData={application} />}
             {pathwayRequirements.map((req) => {
                 const status = formStatusMap.get(req.title) || 'Pending';
+                const isFormComplete = status === 'Completed';
                 return (
                     <Card key={req.id} className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
                         <CardHeader className="pb-4">
@@ -148,13 +170,18 @@ function PathwayPageContent() {
                             <StatusIndicator status={status} />
                              {req.type === 'online-form' && (
                                 <Button asChild variant="outline" className="bg-slate-50 hover:bg-slate-100">
-                                    <Link href="/forms/cs-summary-form">View/Edit Form &rarr;</Link>
+                                    <Link href={`/forms/cs-summary-form?applicationId=${applicationId}`}>{isFormComplete ? 'View/Edit Form' : 'Start Form'} &rarr;</Link>
                                 </Button>
                             )}
+                             {req.type === 'info' && (
+                                <Button asChild variant="outline" className="bg-slate-50 hover:bg-slate-100">
+                                    <Link href="/info">Review Information &rarr;</Link>
+                                </Button>
+                             )}
                             {req.type === 'upload' && (
                                 <div className="space-y-2">
                                     <Button variant="secondary" className="w-full">
-                                        <FileUp className="mr-2 h-4 w-4" /> Download Form
+                                        <File className="mr-2 h-4 w-4" /> Download Form
                                     </Button>
                                     <div className="relative">
                                         <div className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100">

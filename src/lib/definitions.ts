@@ -2,10 +2,12 @@ export type ApplicationStatus = 'In Progress' | 'Completed & Submitted' | 'Requi
 
 export type Application = {
   id: string;
-  memberName: string;
+  memberFirstName: string;
+  memberLastName: string;
   status: ApplicationStatus;
   lastUpdated: string; // or Date
   pathway: 'SNF Transition' | 'SNF Diversion';
+  healthPlan: 'Kaiser' | 'Health Net' | 'Other';
   forms: FormStatus[];
   progress: number;
 };
@@ -13,7 +15,7 @@ export type Application = {
 export type FormStatus = {
   name: string;
   status: 'Pending' | 'Completed';
-  type: 'Form' | 'Upload';
+  type: 'Form' | 'Upload' | 'Info' | 'online-form';
   href: string;
   downloadHref?: string;
 };
