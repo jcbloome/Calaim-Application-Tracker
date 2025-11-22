@@ -48,9 +48,8 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>First Name</FormLabel>
                   <FormControl>
-                    <Input {...field} />
+                    <Input {...field} placeholder="John" />
                   </FormControl>
-                  <FormDescription>John</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -62,9 +61,8 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Last Name</FormLabel>
                   <FormControl>
-                    <Input {...field} />
+                    <Input {...field} placeholder="Doe" />
                   </FormControl>
-                  <FormDescription>Doe</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -87,7 +85,7 @@ export default function Step1() {
                             !field.value && 'text-muted-foreground'
                           )}
                         >
-                          {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}
+                          {field.value ? format(field.value, 'PPP') : <span></span>}
                           <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                         </Button>
                       </FormControl>
@@ -97,6 +95,9 @@ export default function Step1() {
                         mode="single"
                         selected={field.value}
                         onSelect={field.onChange}
+                        captionLayout="dropdown-buttons"
+                        fromYear={1900}
+                        toYear={new Date().getFullYear()}
                         disabled={(date) => date > new Date() || date < new Date('1900-01-01')}
                         initialFocus
                       />
@@ -184,9 +185,8 @@ export default function Step1() {
               <FormItem>
                 <FormLabel>Preferred Language</FormLabel>
                 <FormControl>
-                  <Input {...field} />
+                  <Input {...field} placeholder="e.g., English, Spanish" />
                 </FormControl>
-                <FormDescription>e.g., English, Spanish</FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -207,9 +207,8 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>First Name</FormLabel>
                   <FormControl>
-                    <Input {...field} />
+                    <Input {...field} placeholder="Jane" />
                   </FormControl>
-                  <FormDescription>Jane</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -221,9 +220,8 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Last Name</FormLabel>
                   <FormControl>
-                    <Input {...field} />
+                    <Input {...field} placeholder="Smith" />
                   </FormControl>
-                  <FormDescription>Smith</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -237,9 +235,8 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input type="email" {...field} />
+                    <Input type="email" {...field} placeholder="jane.smith@example.com" />
                   </FormControl>
-                  <FormDescription>jane.smith@example.com</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -251,9 +248,8 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Phone</FormLabel>
                   <FormControl>
-                    <Input type="tel" {...field} />
+                    <Input type="tel" {...field} placeholder="(123) 456-7890" />
                   </FormControl>
-                  <FormDescription>(123) 456-7890</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -266,9 +262,8 @@ export default function Step1() {
               <FormItem>
                 <FormLabel>Relationship to Member</FormLabel>
                 <FormControl>
-                  <Input {...field} />
+                  <Input {...field} placeholder="e.g., Family Member, Social Worker" />
                 </FormControl>
-                <FormDescription>e.g., Family Member, Social Worker</FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -278,3 +273,5 @@ export default function Step1() {
     </div>
   );
 }
+
+    

@@ -7,6 +7,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import type { FormValues } from '../page';
+import { Label } from '@/components/ui/label';
 
 const snfTransitionCriteria = [
   { id: 'snf_criteria_1', label: 'Currently resides in an SNF' },
@@ -89,9 +90,9 @@ export default function Step4() {
                                             checked={field.value?.includes(item.id)}
                                             onCheckedChange={(checked) => {
                                                 return checked
-                                                ? field.onChange([...field.value, item.id])
+                                                ? field.onChange([...(field.value || []), item.id])
                                                 : field.onChange(
-                                                    field.value?.filter(
+                                                    (field.value || [])?.filter(
                                                     (value) => value !== item.id
                                                     )
                                                 )
@@ -151,3 +152,5 @@ export default function Step4() {
     </div>
   );
 }
+
+    
