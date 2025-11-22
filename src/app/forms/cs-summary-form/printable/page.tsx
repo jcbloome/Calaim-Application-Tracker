@@ -11,6 +11,13 @@ const Field = ({ label, className = '' }: { label: string; className?: string })
   </div>
 );
 
+const CheckboxField = ({ label }: { label: string }) => (
+    <div className="flex items-center mt-4">
+        <div className="h-5 w-5 border border-gray-400 rounded-sm"></div>
+        <label className="ml-3 text-sm text-gray-700">{label}</label>
+    </div>
+);
+
 const SectionTitle = ({ children }: { children: React.ReactNode }) => (
     <h2 className="text-xl font-semibold text-gray-800 border-b pb-2 mb-4 mt-8">{children}</h2>
 );
@@ -61,10 +68,9 @@ export default function PrintableCsSummaryForm() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
                   <Field label="First Name" />
                   <Field label="Last Name" />
-                  <Field label="Relationship to Member (e.g., Self, Social Worker)" />
-                  <Field label="Referral Source Name (e.g., Hospital Name)" />
                   <Field label="Your Phone" />
                   <Field label="Your Email" />
+                  <Field label="Relationship to Member (e.g., Family Member, Social Worker)" className="sm:col-span-2" />
                 </div>
               </div>
 
@@ -74,24 +80,103 @@ export default function PrintableCsSummaryForm() {
                   <Field label="Member Phone" />
                   <Field label="Member Email" />
                 </div>
-                <div className="mt-6 flex items-center">
-                    <div className="h-5 w-5 border border-gray-400 rounded-sm"></div>
-                    <label className="ml-3 text-sm text-gray-700">Member is the best contact person.</label>
-                </div>
+                <CheckboxField label="Member is the best contact person." />
+                <h3 className="text-lg font-medium text-gray-800 mt-6">Best Contact Person (if not member)</h3>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-2">
+                    <Field label="Name" />
+                    <Field label="Relationship to Member" />
+                    <Field label="Phone" />
+                    <Field label="Email" />
+                    <Field label="Preferred Language" />
+                 </div>
               </div>
 
               <div>
-                 <h3 className="text-lg font-medium text-gray-800 mt-6">Best Contact Person</h3>
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-2">
-                    <Field label="First Name" />
-                    <Field label="Last Name" />
-                    <Field label="Relationship to Member" />
-                    <div className="grid grid-cols-3 gap-x-4">
-                        <Field label="Phone" className="col-span-2" />
-                        <Field label="Ext." />
+                <SectionTitle>Legal Representative</SectionTitle>
+                 <div className="space-y-4">
+                    <p className="text-sm font-medium text-gray-700">Does member have capacity to make their own decisions?</p>
+                    <div className="flex gap-8">
+                        <CheckboxField label="Yes" />
+                        <CheckboxField label="No" />
+                        <CheckboxField label="Unknown" />
                     </div>
+                 </div>
+                 <div className="space-y-4 mt-6">
+                    <p className="text-sm font-medium text-gray-700">Does member have a legal representative? (e.g., power of attorney)</p>
+                    <div className="flex gap-8">
+                        <CheckboxField label="Yes" />
+                        <CheckboxField label="No" />
+                    </div>
+                 </div>
+                 <h3 className="text-lg font-medium text-gray-800 mt-6">Representative's Contact Info</h3>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-2">
+                    <Field label="Name" />
+                    <Field label="Relationship to Member" />
+                    <Field label="Phone" />
                     <Field label="Email" />
-                    <Field label="Best Contact's Preferred Language" />
+                    <Field label="Preferred Language" />
+                 </div>
+              </div>
+
+              <div>
+                <SectionTitle>Location & Health Plan</SectionTitle>
+                <Field label="Member's Current Location (SNF, Hospital, Home, etc.)" className="sm:col-span-2" />
+                <h3 className="text-lg font-medium text-gray-800 mt-6">Current Address</h3>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-2">
+                    <Field label="Street Address" className="sm:col-span-2"/>
+                    <Field label="City" />
+                    <Field label="State" />
+                    <Field label="ZIP Code" />
+                 </div>
+                <CheckboxField label="Customary residence is the same as current location." />
+                <h3 className="text-lg font-medium text-gray-800 mt-6">Customary Residence (if different)</h3>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-2">
+                    <Field label="Street Address" className="sm:col-span-2"/>
+                    <Field label="City" />
+                    <Field label="State" />
+                    <Field label="ZIP Code" />
+                 </div>
+                 <div className="space-y-4 mt-6">
+                    <p className="text-sm font-medium text-gray-700">Health Plan (Managed Care Plan)</p>
+                    <div className="flex gap-8">
+                        <CheckboxField label="Kaiser Permanente" />
+                        <CheckboxField label="Health Net" />
+                        <CheckboxField label="Other" />
+                    </div>
+                 </div>
+              </div>
+
+              <div>
+                <SectionTitle>Pathway & Eligibility</SectionTitle>
+                <p className="text-sm font-medium text-gray-700">Selected Pathway</p>
+                 <div className="flex gap-8">
+                    <CheckboxField label="SNF Transition" />
+                    <CheckboxField label="SNF Diversion" />
+                </div>
+                
+                <h3 className="text-lg font-medium text-gray-800 mt-6">Eligibility Screening Checklist</h3>
+                <p className="text-sm text-muted-foreground">Check all that apply.</p>
+                <div className="mt-2 space-y-2">
+                    <CheckboxField label="Currently resides in an SNF (for Transition)" />
+                    <CheckboxField label="Expresses a desire to move to the community (for Transition)" />
+                    <CheckboxField label="At risk of SNF admission (for Diversion)" />
+                    <CheckboxField label="Requires assistance with ADLs/IADLs" />
+                    <CheckboxField label="Community-based care is a viable alternative" />
+                </div>
+
+                <h3 className="text-lg font-medium text-gray-800 mt-6">ISP Contact (Individual Service Plan)</h3>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-2">
+                    <Field label="Contact Name" />
+                    <Field label="Agency" />
+                    <Field label="Phone" />
+                 </div>
+
+                <div className="space-y-4 mt-6">
+                    <p className="text-sm font-medium text-gray-700">Has a preferred assisted living facility (RCFE) been chosen?</p>
+                    <div className="flex gap-8">
+                        <CheckboxField label="Yes" />
+                        <CheckboxField label="No" />
+                    </div>
                  </div>
               </div>
             </div>
