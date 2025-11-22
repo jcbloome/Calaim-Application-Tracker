@@ -48,7 +48,7 @@ const formSchema = z.object({
   repRelationship: z.string().optional(),
   repPhone: z.string().optional(),
   repEmail: z.string().email().optional().or(z.literal('')),
-  repLanguage: z'string'().optional(),
+  repLanguage: z.string().optional(),
 
   // Step 3
   currentLocation: z.string().min(1, 'Current location is required'),
@@ -71,7 +71,13 @@ const formSchema = z.object({
   ispContactName: z.string().min(1, 'ISP contact name is required'),
   ispContactAgency: z.string().min(1, 'Agency is required'),
   ispContactPhone: z.string().min(1, 'Phone is required'),
+  ispContactEmail: z.string().email('Invalid email address').optional().or(z.literal('')),
   hasPrefRCFE: z.enum(['Yes', 'No']),
+  rcfeName: z.string().optional(),
+  rcfeAdminName: z.string().optional(),
+  rcfeAdminPhone: z.string().optional(),
+  rcfeAdminEmail: z.string().email().optional().or(z.literal('')),
+  rcfeAddress: z.string().optional(),
 })
 .refine(data => data.memberMediCalNum === data.confirmMemberMediCalNum, {
   message: "Medi-Cal numbers don't match",
@@ -80,7 +86,27 @@ const formSchema = z.object({
 .refine(data => data.memberMrn === data.confirmMemberMrn, {
     message: "MRNs don't match",
     path: ["confirmMemberMrn"],
-});
+})
+.superRefine((data, ctx) => {
+    if (data.hasPrefRCFE === 'Yes') {
+      if (!data.rcfeName) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Facility name is required", path: ["rcfeName"] });
+      }
+      if (!data.rcfeAdminName) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Administrator name is required", path: ["rcfeAdminName"] });
+      }
+      if (!data.rcfeAddress) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Facility address is required", path: ["rcfeAddress"] });
+      }
+      if (!data.rcfeAdminPhone) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Administrator phone is required", path: ["rcfeAdminPhone"] });
+      }
+       if (!data.rcfeAdminEmail) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Administrator email is required", path: ["rcfeAdminEmail"] });
+      }
+    }
+  });
+
 
 export type FormValues = z.infer<typeof formSchema>;
 
@@ -100,7 +126,8 @@ const stepFields: Record<number, FieldName<FormValues>[]> = {
     'copyAddress', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'healthPlan'
   ],
   4: [
-    'pathway', 'eligibilityCriteria', 'ispContactName', 'ispContactAgency', 'ispContactPhone', 'hasPrefRCFE'
+    'pathway', 'eligibilityCriteria', 'ispContactName', 'ispContactAgency', 'ispContactPhone', 'ispContactEmail', 'hasPrefRCFE',
+    'rcfeName', 'rcfeAdminName', 'rcfeAddress', 'rcfeAdminPhone', 'rcfeAdminEmail'
   ],
 };
 
@@ -157,6 +184,12 @@ export default function CsSummaryFormPage() {
       ispContactName: '',
       ispContactAgency: '',
       ispContactPhone: '',
+      ispContactEmail: '',
+      rcfeName: '',
+      rcfeAdminName: '',
+      rcfeAdminPhone: '',
+      rcfeAdminEmail: '',
+      rcfeAddress: '',
     }
   });
 

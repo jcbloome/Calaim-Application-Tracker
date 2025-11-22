@@ -24,6 +24,7 @@ const snfDiversionCriteria = [
 export default function Step4() {
   const { control } = useFormContext<FormValues>();
   const pathway = useWatch({ control, name: 'pathway' });
+  const hasPrefRCFE = useWatch({ control, name: 'hasPrefRCFE' });
 
   const eligibilityItems = pathway === 'SNF Transition' ? snfTransitionCriteria : snfDiversionCriteria;
 
@@ -115,7 +116,7 @@ export default function Step4() {
 
       <Card className="border-l-4 border-accent">
           <CardHeader><CardTitle>ISP Contact</CardTitle><CardDescription>Person coordinating the Individual Service Plan.</CardDescription></CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField control={control} name="ispContactName" render={({ field }) => (
                   <FormItem><FormLabel>Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
               )} />
@@ -125,12 +126,15 @@ export default function Step4() {
               <FormField control={control} name="ispContactPhone" render={({ field }) => (
                   <FormItem><FormLabel>Phone</FormLabel><FormControl><Input type="tel" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
               )} />
+               <FormField control={control} name="ispContactEmail" render={({ field }) => (
+                  <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+              )} />
           </CardContent>
       </Card>
       
       <Card className="border-l-4 border-accent">
         <CardHeader><CardTitle>RCFE Selection</CardTitle></CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <FormField
             control={control}
             name="hasPrefRCFE"
@@ -147,10 +151,31 @@ export default function Step4() {
               </FormItem>
             )}
           />
+
+          {hasPrefRCFE === 'Yes' && (
+            <div className="p-4 border rounded-md space-y-4">
+                <h3 className="font-medium">Preferred Facility Details</h3>
+                <FormField control={control} name="rcfeName" render={({ field }) => (
+                    <FormItem><FormLabel>Facility Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={control} name="rcfeAddress" render={({ field }) => (
+                    <FormItem><FormLabel>Facility Address</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+                 <FormField control={control} name="rcfeAdminName" render={({ field }) => (
+                    <FormItem><FormLabel>Administrator Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField control={control} name="rcfeAdminPhone" render={({ field }) => (
+                        <FormItem><FormLabel>Administrator Phone</FormLabel><FormControl><Input type="tel" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={control} name="rcfeAdminEmail" render={({ field }) => (
+                        <FormItem><FormLabel>Administrator Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
-
-    
