@@ -1,7 +1,8 @@
+
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, FormProvider, FieldName } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,11 +10,12 @@ import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
+import { useUser, useFirestore } from '@/firebase';
+import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 
 import Step1 from './components/Step1';
 import Step2 from './components/Step2';
 import Step3 from './components/Step3';
-import Step4 from './components/Step4';
 import { Header } from '@/components/Header';
 
 const formSchema = z.object({
@@ -32,8 +34,6 @@ const formSchema = z.object({
   referrerEmail: z.string().email(),
   referrerPhone: z.string().min(1, 'Phone number is required'),
   referrerRelationship: z.string().min(1, 'Relationship is required'),
-
-  // Step 2
   memberPhone: z.string().optional(),
   memberEmail: z.string().email().optional().or(z.literal('')),
   isBestContact: z.boolean().default(false),
@@ -50,7 +50,7 @@ const formSchema = z.object({
   repEmail: z.string().email().optional().or(z.literal('')),
   repLanguage: z.string().optional(),
 
-  // Step 3
+  // Step 2
   currentLocation: z.string().min(1, 'Current location is required'),
   currentAddress: z.string().min(1, 'Address is required'),
   currentCity: z.string().min(1, 'City is required'),
@@ -63,7 +63,7 @@ const formSchema = z.object({
   customaryZip: z.string().optional(),
   healthPlan: z.enum(['Kaiser', 'Health Net', 'Other']),
 
-  // Step 4
+  // Step 3
   pathway: z.enum(['SNF Transition', 'SNF Diversion'], { required_error: 'Please select a pathway.' }),
   eligibilityCriteria: z.array(z.string()).refine(value => value.some(item => item), {
     message: "You must select at least one eligibility criterion.",
@@ -86,27 +86,7 @@ const formSchema = z.object({
 .refine(data => data.memberMrn === data.confirmMemberMrn, {
     message: "MRNs don't match",
     path: ["confirmMemberMrn"],
-})
-.superRefine((data, ctx) => {
-    if (data.hasPrefRCFE === 'Yes') {
-      if (!data.rcfeName) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Facility name is required", path: ["rcfeName"] });
-      }
-      if (!data.rcfeAdminName) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Administrator name is required", path: ["rcfeAdminName"] });
-      }
-      if (!data.rcfeAddress) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Facility address is required", path: ["rcfeAddress"] });
-      }
-      if (!data.rcfeAdminPhone) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Administrator phone is required", path: ["rcfeAdminPhone"] });
-      }
-       if (!data.rcfeAdminEmail) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Administrator email is required", path: ["rcfeAdminEmail"] });
-      }
-    }
-  });
-
+});
 
 export type FormValues = z.infer<typeof formSchema>;
 
@@ -114,18 +94,15 @@ const stepFields: Record<number, FieldName<FormValues>[]> = {
   1: [
     'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'confirmMemberMediCalNum',
     'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'referrerFirstName', 'referrerLastName',
-    'referrerEmail', 'referrerPhone', 'referrerRelationship'
-  ],
-  2: [
-    'memberPhone', 'memberEmail', 'isBestContact', 'hasCapacity',
+    'referrerEmail', 'referrerPhone', 'referrerRelationship', 'memberPhone', 'memberEmail', 'isBestContact', 'hasCapacity',
     'bestContactName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
     'hasLegalRep', 'repName', 'repRelationship', 'repPhone', 'repEmail', 'repLanguage'
   ],
-  3: [
+  2: [
     'currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip',
     'copyAddress', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'healthPlan'
   ],
-  4: [
+  3: [
     'pathway', 'eligibilityCriteria', 'ispContactName', 'ispContactAgency', 'ispContactPhone', 'ispContactEmail', 'hasPrefRCFE',
     'rcfeName', 'rcfeAdminName', 'rcfeAddress', 'rcfeAdminPhone', 'rcfeAdminEmail'
   ],
@@ -133,65 +110,47 @@ const stepFields: Record<number, FieldName<FormValues>[]> = {
 
 
 const steps = [
-  { id: 1, name: 'Member & Referrer Info' },
-  { id: 2, name: 'Contact & Legal Info' },
-  { id: 3, name: 'Location & Health Plan' },
-  { id: 4, name: 'Pathway & Eligibility' },
+  { id: 1, name: 'Member, Contact & Legal Info' },
+  { id: 2, name: 'Location & Health Plan' },
+  { id: 3, name: 'Pathway & Eligibility' },
 ];
 
-export default function CsSummaryFormPage() {
+function CsSummaryFormComponent() {
   const [currentStep, setCurrentStep] = useState(1);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
+  const { user } = useUser();
+  const firestore = useFirestore();
+  const applicationId = searchParams.get('applicationId');
 
   const methods = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      memberFirstName: '',
-      memberLastName: '',
-      memberMediCalNum: '',
-      confirmMemberMediCalNum: '',
-      memberMrn: '',
-      confirmMemberMrn: '',
-      memberLanguage: '',
-      referrerFirstName: '',
-      referrerLastName: '',
-      referrerEmail: '',
-      referrerPhone: '',
-      referrerRelationship: '',
+      isBestContact: false,
+      copyAddress: false,
       eligibilityCriteria: [],
-      memberPhone: '',
-      memberEmail: '',
-      bestContactName: '',
-      bestContactRelationship: '',
-      bestContactPhone: '',
-      bestContactEmail: '',
-      bestContactLanguage: '',
-      repName: '',
-      repRelationship: '',
-      repPhone: '',
-      repEmail: '',
-      repLanguage: '',
-      currentLocation: '',
-      currentAddress: '',
-      currentCity: '',
-      currentState: '',
-      currentZip: '',
-      customaryAddress: '',
-      customaryCity: '',
-      customaryState: '',
-      customaryZip: '',
-      ispContactName: '',
-      ispContactAgency: '',
-      ispContactPhone: '',
-      ispContactEmail: '',
-      rcfeName: '',
-      rcfeAdminName: '',
-      rcfeAdminPhone: '',
-      rcfeAdminEmail: '',
-      rcfeAddress: '',
     }
   });
+
+  useEffect(() => {
+    const fetchApplicationData = async () => {
+      if (applicationId && user && firestore) {
+        const docRef = doc(firestore, `users/${user.uid}/applications`, applicationId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data() as any;
+          // Convert Firestore Timestamps to JS Dates
+          if (data.memberDob && data.memberDob.toDate) {
+            data.memberDob = data.memberDob.toDate();
+          }
+          methods.reset(data);
+        }
+      }
+    };
+    fetchApplicationData();
+  }, [applicationId, user, firestore, methods]);
+
 
   const { trigger, handleSubmit } = methods;
 
@@ -211,14 +170,43 @@ export default function CsSummaryFormPage() {
     }
   };
 
-  const onSubmit = (data: FormValues) => {
-    console.log(data);
-    toast({
-      title: 'Application Submitted!',
-      description: 'Your CS Member Summary has been received.',
-      className: 'bg-green-100 text-green-900 border-green-200',
-    });
-    router.push('/pathway?applicationId=new-app-123');
+  const onSubmit = async (data: FormValues) => {
+    if (!user || !firestore) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "You must be logged in to submit an application.",
+      });
+      return;
+    }
+  
+    const docId = applicationId || doc(collection(firestore, `users/${user.uid}/applications`)).id;
+    const docRef = doc(firestore, `users/${user.uid}/applications`, docId);
+  
+    const dataToSave = {
+      ...data,
+      id: docId,
+      userId: user.uid,
+      status: 'In Progress',
+      lastUpdated: serverTimestamp(),
+    };
+  
+    try {
+      await setDoc(docRef, dataToSave, { merge: true });
+      toast({
+        title: applicationId ? 'Application Updated!' : 'Application Saved!',
+        description: 'Your application has been saved successfully.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      router.push(`/pathway?applicationId=${docId}`);
+    } catch (error) {
+      console.error("Error saving document: ", error);
+      toast({
+        variant: "destructive",
+        title: "Uh oh! Something went wrong.",
+        description: "Could not save your application.",
+      });
+    }
   };
 
   const progress = (currentStep / steps.length) * 100;
@@ -244,7 +232,6 @@ export default function CsSummaryFormPage() {
                 {currentStep === 1 && <Step1 />}
                 {currentStep === 2 && <Step2 />}
                 {currentStep === 3 && <Step3 />}
-                {currentStep === 4 && <Step4 />}
               </div>
 
               <div className="mt-8 pt-5 border-t flex justify-between">
@@ -256,7 +243,7 @@ export default function CsSummaryFormPage() {
                     Next Step
                   </Button>
                 ) : (
-                  <Button type="submit">Submit Application</Button>
+                  <Button type="submit">Save and Continue</Button>
                 )}
               </div>
             </div>
@@ -264,5 +251,13 @@ export default function CsSummaryFormPage() {
         </form>
       </FormProvider>
     </>
+  );
+}
+
+export default function CsSummaryFormPage() {
+  return (
+    <React.Suspense fallback={<div>Loading form...</div>}>
+      <CsSummaryFormComponent />
+    </React.Suspense>
   );
 }
