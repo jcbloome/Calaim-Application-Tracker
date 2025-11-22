@@ -70,7 +70,7 @@ export default function Step1() {
               )}
             />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             <FormField
               control={control}
               name="memberDob"
@@ -118,7 +118,6 @@ export default function Step1() {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} type="number" readOnly className="bg-muted" />
                   </FormControl>
-                  <FormDescription>Auto-calculated</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
