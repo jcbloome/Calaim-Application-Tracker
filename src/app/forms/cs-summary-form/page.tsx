@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useForm, FormProvider, FieldName } from 'react-hook-form';
+import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ArrowLeft, Loader2 } from 'lucide-react';
@@ -103,30 +103,6 @@ const formSchema = z.object({
 
 export type FormValues = z.infer<typeof formSchema>;
 
-const stepFields: Record<number, FieldName<FormValues>[]> = {
-  1: [
-    'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'confirmMemberMediCalNum',
-    'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'referrerFirstName', 'referrerLastName',
-    'referrerEmail', 'referrerPhone', 'referrerRelationship', 'memberPhone', 'memberEmail', 'isBestContact',
-    'bestContactName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
-    'hasCapacity', 'hasLegalRep', 'repName', 'repRelationship', 'repPhone', 'repEmail', 'repLanguage'
-  ],
-  2: [
-    'currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip',
-    'copyAddress', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip'
-  ],
-  3: [
-    'healthPlan', 'pathway', 'meetsSnfTransitionCriteria', 'meetsSnfDiversionCriteria', 'snfDiversionReason'
-  ],
-  4: [
-    'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail',
-    'ispCopyCurrent', 'ispCopyCustomary', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty',
-    'onALWWaitlist', 'hasPrefRCFE',
-    'rcfeName', 'rcfeAdminName', 'rcfeAddress', 'rcfeAdminPhone', 'rcfeAdminEmail'
-  ],
-};
-
-
 const steps = [
   { id: 1, name: 'Member & Contact Info' },
   { id: 2, name: 'Location Information' },
@@ -159,7 +135,9 @@ function CsSummaryFormComponent() {
       copyAddress: false,
       ispCopyCurrent: false,
       ispCopyCustomary: false,
-    }
+      hasLegalRep: 'No',
+    },
+    mode: 'onChange',
   });
 
   useEffect(() => {
@@ -199,8 +177,7 @@ function CsSummaryFormComponent() {
   const { trigger, handleSubmit } = methods;
 
   const nextStep = async () => {
-    const fieldsToValidate = stepFields[currentStep];
-    const isValid = await trigger(fieldsToValidate);
+    const isValid = await trigger();
     if (isValid) {
       if (currentStep < steps.length) {
         setCurrentStep(currentStep + 1);
