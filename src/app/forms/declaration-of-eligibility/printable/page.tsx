@@ -13,6 +13,13 @@ const Field = ({ label, className = '' }: { label: string; className?: string })
   </div>
 );
 
+const LongField = ({ className = '' }: { className?: string }) => (
+  <div className={`pt-4 ${className}`}>
+    <div className="mt-1 h-6 border-b border-gray-400"></div>
+  </div>
+);
+
+
 const SectionTitle = ({ children }: { children: React.ReactNode }) => (
     <h2 className="text-xl font-semibold text-gray-800 border-b pb-2 mb-4 mt-8">{children}</h2>
 );
@@ -42,32 +49,39 @@ export default function PrintableDeclarationOfEligibilityPage() {
           </div>
           
            <div className="text-center mb-10">
-                <h1 className="text-3xl font-bold text-gray-800 tracking-tight">Declaration of Eligibility for Community Supports</h1>
-                <p className="mt-2 text-md text-gray-500 max-w-2xl mx-auto">This form is required for the SNF Diversion/Transition program.</p>
+                <h1 className="text-3xl font-bold text-gray-800 tracking-tight">Declaration of Eligibility</h1>
+                <p className="mt-2 text-md text-gray-500 max-w-2xl mx-auto">This form is for a Physician/AP to establish presumptive eligibility and must be signed by the member's Primary Care Provider (PCP) or a provider with an established relationship with the member.</p>
             </div>
 
           <form>
             <div className="space-y-8">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
-                  <Field label="Member Name" />
-                  <Field label="Medi-Cal Number" />
-                </div>
+                <div>
+                    <h3 className="text-lg font-semibold">To be completed by the Primary Care Provider (PCP) or other physician/practitioner (practitioner).</h3>
+                    <div className="prose prose-sm max-w-none text-gray-700 space-y-4 mt-4">
+                        <p>
+                            I, <span className="inline-block border-b border-gray-400 w-64"></span>, in the professional capacity as a <span className="inline-block border-b border-gray-400 w-64"></span>, affirm that Member <span className="inline-block border-b border-gray-400 w-64"></span> is currently receiving a medically necessary Skilled Nursing Facility Level of Care (SNF LOC) or meets the minimum criteria for receiving SNF LOC services and, in lieu of entering a facility, is choosing to remain in the community and continue receiving medically necessary SNF LOC services in an assisted living facility for the following reason(s):
+                        </p>
+                    </div>
+                    <Field label="Medical Record Number (MRN)" />
 
-                <div className="prose prose-sm max-w-none text-gray-700 space-y-4">
-                    <p>I declare under penalty of perjury under the laws of the State of California that the following is true and correct:</p>
-                    <p>I am an adult at risk for long-term care institutionalization who is choosing to reside in an approved Home and Community-Based setting as an alternative to a Skilled Nursing Facility (SNF).</p>
-                    <p>My current annual income is not sufficient to pay for my cost of care in a Residential Care Facility for the Elderly (RCFE) or Adult Residential Facility (ARF) without assistance from the state.</p>
-                    <p>My current assets do not exceed the asset limit for the Aged & Disabled Federal Poverty Level Program (A&DFPL), which is $130,000 for an individual or $195,000 for a couple.</p>
-                </div>
-              
-              <div>
-                <SectionTitle>Signature</SectionTitle>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-4">
-                    <Field label="Signature of Member or Legal Representative" />
-                    <Field label="Date" />
-                </div>
-              </div>
+                    <div className="mt-6">
+                        <label className="block text-sm font-medium text-gray-700">1. Please provide a short narrative on why you believe the member is at risk for premature institutionalization and his/her need for the CS:</label>
+                        <LongField />
+                        <LongField />
+                        <LongField />
+                        <LongField />
+                    </div>
 
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mt-6">
+                        <Field label="Provider's Title" />
+                        <Field label="Provider's NPI #" />
+                        <Field label="Provider's Phone" />
+                        <Field label="Provider's Email" />
+                    </div>
+                     <Field label="Provider's Organization" />
+                     <Field label="Provider's Signature (Full Name)" />
+                     <Field label="Signature Date" />
+                </div>
             </div>
           </form>
         </div>
