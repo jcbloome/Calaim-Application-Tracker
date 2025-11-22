@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { LogOut, User } from 'lucide-react';
+import { LogOut, User, Database } from 'lucide-react';
 import { Button } from './ui/button';
 import { useAuth, useUser } from '@/firebase';
 import {
@@ -58,7 +58,7 @@ export function Header() {
             <Link href="/forms/printable-package">Printable Forms</Link>
           </Button>
           <Button variant="ghost" asChild>
-            <Link href="#">FAQ</Link>
+            <Link href="/db-tool">DB Tool</Link>
           </Button>
            {isUserLoading ? (
             <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
