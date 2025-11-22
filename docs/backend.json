@@ -1,0 +1,634 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user of the CalAIM Pathfinder application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the User entity."
+        },
+        "firstName": {
+          "type": "string",
+          "description": "First name of the user."
+        },
+        "lastName": {
+          "type": "string",
+          "description": "Last name of the user."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the user.",
+          "format": "email"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Phone number of the user."
+        }
+      },
+      "required": [
+        "id",
+        "firstName",
+        "lastName",
+        "email"
+      ]
+    },
+    "Application": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Application",
+      "type": "object",
+      "description": "Represents a CalAIM application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Application entity."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to User. (Relationship: User 1:N Application). Represents the user who created the application."
+        },
+        "memberFirstName": {
+          "type": "string",
+          "description": "First name of the CalAIM member."
+        },
+        "memberLastName": {
+          "type": "string",
+          "description": "Last name of the CalAIM member."
+        },
+        "dateOfBirth": {
+          "type": "string",
+          "description": "Date of birth of the CalAIM member (MM/DD/YYYY).",
+          "format": "date-time"
+        },
+        "medicalRecordNumber": {
+          "type": "string",
+          "description": "Medical record number (MRN) of the CalAIM member."
+        },
+        "managedCarePlan": {
+          "type": "string",
+          "description": "The managed care plan (MCP) of the CalAIM member (e.g., Kaiser, Health Net)."
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the application (e.g., In Progress, Submitted, Approved)."
+        },
+        "pathway": {
+          "type": "string",
+          "description": "The selected CalAIM pathway (SNF Transition or SNF Diversion)."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "memberFirstName",
+        "memberLastName",
+        "dateOfBirth",
+        "medicalRecordNumber",
+        "managedCarePlan",
+        "status",
+        "pathway"
+      ]
+    },
+    "Contact": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Contact",
+      "type": "object",
+      "description": "Represents contact information for either the member or a related contact person.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Contact entity."
+        },
+        "applicationId": {
+          "type": "string",
+          "description": "Reference to Application. (Relationship: Application 1:N Contact). Represents the application this contact relates to."
+        },
+        "firstName": {
+          "type": "string",
+          "description": "First name of the contact person."
+        },
+        "lastName": {
+          "type": "string",
+          "description": "Last name of the contact person."
+        },
+        "relationshipToMember": {
+          "type": "string",
+          "description": "Relationship of the contact to the CalAIM member (e.g., Self, Social Worker, Family Member)."
+        },
+        "phone": {
+          "type": "string",
+          "description": "Phone number of the contact person."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the contact person.",
+          "format": "email"
+        },
+        "isPrimary": {
+          "type": "boolean",
+          "description": "Indicates whether this is the primary contact for the member."
+        }
+      },
+      "required": [
+        "id",
+        "applicationId",
+        "firstName",
+        "lastName",
+        "relationshipToMember",
+        "phone",
+        "isPrimary"
+      ]
+    },
+    "LegalRepresentative": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "LegalRepresentative",
+      "type": "object",
+      "description": "Represents a legal representative for a CalAIM member.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the LegalRepresentative entity."
+        },
+        "applicationId": {
+          "type": "string",
+          "description": "Reference to Application. (Relationship: Application 1:1 LegalRepresentative). Represents the application this legal representative relates to."
+        },
+        "firstName": {
+          "type": "string",
+          "description": "First name of the legal representative."
+        },
+        "lastName": {
+          "type": "string",
+          "description": "Last name of the legal representative."
+        },
+        "relationshipToMember": {
+          "type": "string",
+          "description": "Relationship of the legal representative to the CalAIM member."
+        },
+        "phone": {
+          "type": "string",
+          "description": "Phone number of the legal representative."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the legal representative.",
+          "format": "email"
+        }
+      },
+      "required": [
+        "id",
+        "applicationId",
+        "firstName",
+        "lastName",
+        "relationshipToMember"
+      ]
+    },
+    "Location": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Location",
+      "type": "object",
+      "description": "Represents a location (e.g., current location, customary residence).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Location entity."
+        },
+        "applicationId": {
+          "type": "string",
+          "description": "Reference to Application. (Relationship: Application 1:N Location). Represents the application this location relates to."
+        },
+        "locationType": {
+          "type": "string",
+          "description": "Type of location (SNF, Hospital, Home, etc.)."
+        },
+        "facilityName": {
+          "type": "string",
+          "description": "Name of the facility, if applicable."
+        },
+        "address": {
+          "type": "string",
+          "description": "Street address of the location."
+        },
+        "city": {
+          "type": "string",
+          "description": "City of the location."
+        },
+        "state": {
+          "type": "string",
+          "description": "State of the location."
+        },
+        "zipCode": {
+          "type": "string",
+          "description": "Zip code of the location."
+        },
+        "isCustomaryResidence": {
+          "type": "boolean",
+          "description": "Indicates if this location is the member's customary residence."
+        }
+      },
+      "required": [
+        "id",
+        "applicationId",
+        "locationType",
+        "address",
+        "city",
+        "state",
+        "zipCode"
+      ]
+    },
+    "ISPContact": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ISPContact",
+      "type": "object",
+      "description": "Represents the contact information for the Individual Service Plan (ISP) coordinator.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ISPContact entity."
+        },
+        "applicationId": {
+          "type": "string",
+          "description": "Reference to Application. (Relationship: Application 1:1 ISPContact). Represents the application this ISP contact relates to."
+        },
+        "firstName": {
+          "type": "string",
+          "description": "First name of the ISP contact."
+        },
+        "lastName": {
+          "type": "string",
+          "description": "Last name of the ISP contact."
+        },
+        "relationshipToMember": {
+          "type": "string",
+          "description": "Relationship of the ISP contact to the member."
+        },
+        "facilityName": {
+          "type": "string",
+          "description": "Facility name of the ISP contact."
+        },
+        "phone": {
+          "type": "string",
+          "description": "Phone number of the ISP contact."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the ISP contact.",
+          "format": "email"
+        }
+      },
+      "required": [
+        "id",
+        "applicationId",
+        "firstName",
+        "lastName",
+        "phone",
+        "email"
+      ]
+    },
+    "RCFESelection": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "RCFESelection",
+      "type": "object",
+      "description": "Represents the selected Residential Care Facility for the Elderly (RCFE) or Adult Residential Facility (ARF).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the RCFESelection entity."
+        },
+        "applicationId": {
+          "type": "string",
+          "description": "Reference to Application. (Relationship: Application 1:1 RCFESelection). Represents the application this RCFE selection relates to."
+        },
+        "hasPreferredFacility": {
+          "type": "boolean",
+          "description": "Indicates whether a preferred RCFE/ARF has already been selected."
+        },
+        "facilityName": {
+          "type": "string",
+          "description": "Name of the selected RCFE/ARF."
+        },
+        "administratorName": {
+          "type": "string",
+          "description": "Name of the RCFE/ARF administrator."
+        },
+        "administratorPhone": {
+          "type": "string",
+          "description": "Phone number of the RCFE/ARF administrator."
+        },
+        "administratorEmail": {
+          "type": "string",
+          "description": "Email address of the RCFE/ARF administrator.",
+          "format": "email"
+        },
+        "facilityAddress": {
+          "type": "string",
+          "description": "Address of the selected RCFE/ARF facility"
+        }
+      },
+      "required": [
+        "id",
+        "applicationId"
+      ]
+    },
+    "FormStatus": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "FormStatus",
+      "type": "object",
+      "description": "Represents the status of a specific form within an application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the FormStatus entity."
+        },
+        "applicationId": {
+          "type": "string",
+          "description": "Reference to Application. (Relationship: Application 1:N FormStatus). Represents the application this form status relates to."
+        },
+        "formName": {
+          "type": "string",
+          "description": "Name of the form (e.g., HIPAA Authorization, Liability Waiver)."
+        },
+        "status": {
+          "type": "string",
+          "description": "Status of the form (Pending, Completed, Requires Revision)."
+        },
+        "dateUpdated": {
+          "type": "string",
+          "description": "Last updated date of the form status.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "applicationId",
+        "formName",
+        "status"
+      ]
+    },
+    "EligibilityScreening": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "EligibilityScreening",
+      "type": "object",
+      "description": "Represents the eligibility screening criteria for SNF Transition or SNF Diversion pathways.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the EligibilityScreening entity."
+        },
+        "applicationId": {
+          "type": "string",
+          "description": "Reference to Application. (Relationship: Application 1:1 EligibilityScreening). Represents the application these eligibility criteria relate to."
+        },
+        "meetsSnfTransitionCriteria": {
+          "type": "boolean",
+          "description": "Indicates whether the member meets all criteria for SNF Transition."
+        },
+        "meetsSnfDiversionCriteria": {
+          "type": "boolean",
+          "description": "Indicates whether the member meets all criteria for SNF Diversion."
+        },
+        "reasonForSnfDiversion": {
+          "type": "string",
+          "description": "Reason for SNF Diversion (if applicable)."
+        }
+      },
+      "required": [
+        "id",
+        "applicationId"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profiles.  Authorization is based on matching {userId} to request.auth.uid.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/applications/{applicationId}",
+        "definition": {
+          "entityName": "Application",
+          "schema": {
+            "$ref": "#/backend/entities/Application"
+          },
+          "description": "Stores CalAIM applications. Includes denormalized 'userId' for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user who owns the application."
+            },
+            {
+              "name": "applicationId",
+              "description": "The unique identifier of the application."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/applications/{applicationId}/contacts/{contactId}",
+        "definition": {
+          "entityName": "Contact",
+          "schema": {
+            "$ref": "#/backend/entities/Contact"
+          },
+          "description": "Stores contact information related to an application. Includes denormalized 'userId' for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user who owns the application."
+            },
+            {
+              "name": "applicationId",
+              "description": "The unique identifier of the application."
+            },
+            {
+              "name": "contactId",
+              "description": "The unique identifier of the contact."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/applications/{applicationId}/legalRepresentatives/{legalRepresentativeId}",
+        "definition": {
+          "entityName": "LegalRepresentative",
+          "schema": {
+            "$ref": "#/backend/entities/LegalRepresentative"
+          },
+          "description": "Stores legal representative information related to an application. Includes denormalized 'userId' for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user who owns the application."
+            },
+            {
+              "name": "applicationId",
+              "description": "The unique identifier of the application."
+            },
+            {
+              "name": "legalRepresentativeId",
+              "description": "The unique identifier of the legal representative."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/applications/{applicationId}/locations/{locationId}",
+        "definition": {
+          "entityName": "Location",
+          "schema": {
+            "$ref": "#/backend/entities/Location"
+          },
+          "description": "Stores location information related to an application. Includes denormalized 'userId' for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user who owns the application."
+            },
+            {
+              "name": "applicationId",
+              "description": "The unique identifier of the application."
+            },
+            {
+              "name": "locationId",
+              "description": "The unique identifier of the location."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/applications/{applicationId}/ispContacts/{ispContactId}",
+        "definition": {
+          "entityName": "ISPContact",
+          "schema": {
+            "$ref": "#/backend/entities/ISPContact"
+          },
+          "description": "Stores ISP contact information related to an application. Includes denormalized 'userId' for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user who owns the application."
+            },
+            {
+              "name": "applicationId",
+              "description": "The unique identifier of the application."
+            },
+            {
+              "name": "ispContactId",
+              "description": "The unique identifier of the ISP contact."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/applications/{applicationId}/rcfeSelections/{rcfeSelectionId}",
+        "definition": {
+          "entityName": "RCFESelection",
+          "schema": {
+            "$ref": "#/backend/entities/RCFESelection"
+          },
+          "description": "Stores RCFE selection information related to an application. Includes denormalized 'userId' for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user who owns the application."
+            },
+            {
+              "name": "applicationId",
+              "description": "The unique identifier of the application."
+            },
+            {
+              "name": "rcfeSelectionId",
+              "description": "The unique identifier of the RCFE selection."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/applications/{applicationId}/formStatuses/{formStatusId}",
+        "definition": {
+          "entityName": "FormStatus",
+          "schema": {
+            "$ref": "#/backend/entities/FormStatus"
+          },
+          "description": "Stores the status of forms related to an application. Includes denormalized 'userId' for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user who owns the application."
+            },
+            {
+              "name": "applicationId",
+              "description": "The unique identifier of the application."
+            },
+            {
+              "name": "formStatusId",
+              "description": "The unique identifier of the form status."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/applications/{applicationId}/eligibilityScreenings/{eligibilityScreeningId}",
+        "definition": {
+          "entityName": "EligibilityScreening",
+          "schema": {
+            "$ref": "#/backend/entities/EligibilityScreening"
+          },
+          "description": "Stores eligibility screening information related to an application. Includes denormalized 'userId' for authorization independence.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user who owns the application."
+            },
+            {
+              "name": "applicationId",
+              "description": "The unique identifier of the application."
+            },
+            {
+              "name": "eligibilityScreeningId",
+              "description": "The unique identifier of the eligibility screening."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/roles_admin/{userId}",
+        "definition": {
+          "entityName": "adminRole",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Indicates that a user is an admin. Existence of document confers admin role.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed to ensure data isolation and efficient security rules, adhering to the principles of Authorization Independence, Clarity of Intent, and DBAC. User-owned data is nested under `/users/{userId}`, while collaborative data utilizes membership maps. All rules are based on `request.auth.uid`, avoiding custom claims.  The structure supports secure `list` operations by segregating data with different access requirements into separate collections (QAPs). Denormalization of authorization context is used to prevent the need for `get()` calls in rules, enabling atomic operations and improving performance. \n\nThe core data resides within the `/users/{userId}` collection hierarchy.  Each user's data, including applications and related subcollections, are stored under their respective user ID.  This structure enables straightforward, path-based security rules for user-owned data. Because users should only be able to access applications they own, there is a natural hierarchy.\n\n**Authorization Independence:** Each subcollection (applications, contacts, locations) includes the `userId` field, enabling rules to verify ownership without needing to read parent documents.\n\n**QAPs (Rules are not Filters):**\n*   The structure is designed to prevent rules from acting as filters. By storing all applications under the user's ID, listing applications is secure because only the authenticated user's applications are accessible.\n*   The design also includes `/roles_admin/{uid}` which prevents rules from becoming filters to determine the current users role.\n\nSpecifically, the structure directly addresses the requirement that users can only see their applications by structuring all application data under the `/users/{userId}` path. This ensures that listing applications is inherently secure, as rules only need to verify the requesting user's ID matches the `userId` on the application.\n"
+  }
+}

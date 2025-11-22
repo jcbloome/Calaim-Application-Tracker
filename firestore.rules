@@ -1,0 +1,209 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * Core Philosophy:
+     * This ruleset enforces a strict user-ownership model. All user-generated data,
+     * such as applications and their related documents, is stored in a hierarchical
+     * structure under the user's unique ID (`/users/{userId}`). This ensures that
+     * by default, users can only access their own data. An administrative role
+     * (`/roles_admin`) is defined to grant privileged read/write access across all
+     * user data for administrative purposes.
+     *
+     * Data Structure:
+     * The data is organized hierarchically starting from `/users/{userId}`. Each user
+     * document contains a subcollection for their `applications`. All other data
+     * points, like contacts, locations, and form statuses, are nested as subcollections
+     * under the specific application they relate to. This structure simplifies
+     * ownership-based security rules.
+     *
+     * Key Security Decisions:
+     * - Default Deny: All paths are closed by default. Access is granted explicitly.
+     * - User Data Isolation: All access controls for the `/users/{userId}` data tree
+     *   are based on the `userId` from the path, ensuring a user can only interact
+     *   with their own data branch.
+     * - No User Enumeration: Listing documents in the top-level `/users` and `/roles_admin`
+     *   collections is explicitly forbidden to prevent enumeration of all users or admins.
+     * - Admin Privileges: Users whose UID exists in the `/roles_admin` collection are
+     *   granted full read/write access to all user data for moderation and support.
+     * - Admin Role Management: The `/roles_admin` collection is read-only and unlistable
+     *   from the client. Roles must be managed manually via the Firebase Console or through
+     *   a trusted server-side environment for maximum security.
+     *
+     * Denormalization for Authorization:
+     * To ensure fast and secure authorization, documents contain fields that simplify
+     * rule logic. For example, an `Application` document contains a `userId` field,
+     * which is validated against the path on creation to ensure relational integrity.
+     * This avoids costly and slow `get()` calls in security rules. The admin role is
+     * managed through the existence of a document in `/roles_admin`, which is a
+     * simple and performant lookup.
+     *
+     * Structural Segregation:
+     * User data and administrative roles are stored in separate top-level collections
+     * (`/users` and `/roles_admin`). This clear separation ensures that security rules
+     * for application data do not get mixed with rules for administrative access control,
+     * leading to a more secure and maintainable ruleset.
+     */
+
+    // =================================
+    //         Helper Functions
+    // =================================
+
+    /**
+     * Checks if the user is authenticated.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * Checks if the currently authenticated user's UID matches the provided userId.
+     * This is the foundation of the user-ownership model.
+     * @param userId The UID to check against the authenticated user.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+
+    /**
+     * Checks if the user has an admin role.
+     * Admin status is conferred by the existence of a document for the user
+     * in the /roles_admin collection.
+     */
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+    }
+
+    /**
+     * Grants access if the user is the owner of the resource OR is an admin.
+     * @param userId The UID of the document's owner.
+     */
+    function isOwnerOrAdmin(userId) {
+      return isOwner(userId) || isAdmin();
+    }
+
+    /**
+     * Grants access for state-changing operations (update, delete) if the user
+     * is the owner or an admin, AND the document already exists.
+     * This prevents modifying or deleting non-existent data.
+     * @param userId The UID of the document's owner.
+     */
+    function isExistingOwnerOrAdmin(userId) {
+      return isOwnerOrAdmin(userId) && resource != null;
+    }
+
+    /**
+     * Validates required relational fields on User document creation.
+     * Ensures the document's internal ID matches the document ID in the path.
+     * @param userId The user's UID from the path.
+     */
+    function hasValidUserDataOnCreate(userId) {
+      return request.resource.data.id == userId;
+    }
+
+    /**
+     * Enforces immutability of the User's ID on update.
+     */
+    function hasValidUserDataOnUpdate() {
+      return request.resource.data.id == resource.data.id;
+    }
+
+    /**
+     * Validates required relational fields on Application document creation.
+     * Ensures the internal userId reference points to the correct owner.
+     * @param userId The user's UID from the path.
+     */
+    function hasValidApplicationDataOnCreate(userId) {
+      return request.resource.data.userId == userId;
+    }
+
+    /**
+     * Enforces immutability of the Application's owner ID on update.
+     */
+    function hasValidApplicationDataOnUpdate() {
+      return request.resource.data.userId == resource.data.userId;
+    }
+
+    /**
+     * Validates relational fields for any subcollection document under an application.
+     * Ensures the internal applicationId reference points to the correct parent application.
+     * @param applicationId The parent application's ID from the path.
+     */
+    function hasValidSubcollectionDataOnCreate(applicationId) {
+      return request.resource.data.applicationId == applicationId;
+    }
+
+    /**
+     * Enforces immutability of a subcollection document's parent application ID on update.
+     */
+    function hasValidSubcollectionDataOnUpdate() {
+      return request.resource.data.applicationId == resource.data.applicationId;
+    }
+
+    // =================================
+    //         Collection Rules
+    // =================================
+
+    /**
+     * @description Rules for a user's own profile document.
+     * @path /users/{userId}
+     * @allow (create) An authenticated user creating their own profile document.
+     * @deny (list) Any user attempting to list all user profiles.
+     * @principle Restricts access to a user's own data tree and allows self-creation of a profile.
+     */
+    match /users/{userId} {
+      allow get: if isOwnerOrAdmin(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && hasValidUserDataOnCreate(userId);
+      allow update: if isExistingOwnerOrAdmin(userId) && hasValidUserDataOnUpdate();
+      allow delete: if isExistingOwnerOrAdmin(userId);
+
+      /**
+       * @description Rules for a user's CalAIM applications.
+       * @path /users/{userId}/applications/{applicationId}
+       * @allow (create, read, write) An authenticated user managing their own application documents.
+       * @deny (read, write) A user attempting to access another user's applications.
+       * @principle Enforces document ownership for all operations within a user-specific subcollection.
+       */
+      match /applications/{applicationId} {
+        allow get, list: if isOwnerOrAdmin(userId);
+        allow create: if isOwnerOrAdmin(userId) && hasValidApplicationDataOnCreate(userId);
+        allow update: if isExistingOwnerOrAdmin(userId) && hasValidApplicationDataOnUpdate();
+        allow delete: if isExistingOwnerOrAdmin(userId);
+
+        // Wildcard match for all nested subcollections of an application
+        // (contacts, legalRepresentatives, locations, ispContacts, rcfeSelections, formStatuses, eligibilityScreenings)
+        /**
+         * @description Generic rules for all subcollections of an application.
+         * @path /users/{userId}/applications/{applicationId}/{subcollection}/{docId}
+         * @allow (create, read, write) The application owner or an admin managing related data.
+         * @deny (read, write) Any user who does not own the parent application.
+         * @principle Inherits ownership from the parent document path and validates relational integrity.
+         */
+        match /{subcollection}/{docId} {
+          allow get, list: if isOwnerOrAdmin(userId);
+          allow create: if isOwnerOrAdmin(userId) && hasValidSubcollectionDataOnCreate(applicationId);
+          allow update: if isExistingOwnerOrAdmin(userId) && hasValidSubcollectionDataOnUpdate();
+          allow delete: if isExistingOwnerOrAdmin(userId);
+        }
+      }
+    }
+
+    /**
+     * @description Defines admin roles. The existence of a document grants admin privileges.
+     * @path /roles_admin/{userId}
+     * @allow (none) This collection is not readable or writable by any client.
+     * @deny (all) All client-side requests to read, list, or write are denied.
+     * @principle Secures administrative role management by disallowing any client-side modifications. Roles must be assigned out-of-band (e.g., Firebase Console).
+     */
+    match /roles_admin/{userId} {
+      allow get: if false;
+      allow list: if false;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}
