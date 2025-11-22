@@ -227,8 +227,13 @@ function CsSummaryFormComponent() {
     const docId = applicationId || doc(collection(firestore, `users/${user.uid}/applications`)).id;
     const docRef = doc(firestore, `users/${user.uid}/applications`, docId);
   
+    // Sanitize data: convert undefined to null
+    const sanitizedData = Object.fromEntries(
+        Object.entries(data).map(([key, value]) => [key, value === undefined ? null : value])
+    );
+
     const dataToSave = {
-      ...data,
+      ...sanitizedData,
       id: docId,
       userId: user.uid,
       status: 'In Progress',
