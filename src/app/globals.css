@@ -88,3 +88,37 @@ body {
     background-repeat: no-repeat;
   }
 }
+
+@layer components {
+    .printable-form-section {
+        @apply mb-8;
+    }
+    .printable-form-title {
+        @apply text-lg font-semibold border-b pb-2 mb-4;
+    }
+    .printable-form-grid {
+        @apply grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-6;
+    }
+    .printable-field {
+        @apply pt-2;
+    }
+    .printable-field-label {
+        @apply block text-sm font-medium text-gray-700;
+    }
+    .printable-field-line {
+        @apply mt-1 block w-full border-b border-gray-400;
+    }
+}
+
+
+@media print {
+  body {
+    background-image: none;
+  }
+  .print\:hidden {
+    display: none;
+  }
+  .print\:shadow-none {
+    box-shadow: none;
+  }
+}
