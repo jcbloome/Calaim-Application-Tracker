@@ -48,7 +48,7 @@ const formSchema = z.object({
   repRelationship: z.string().optional(),
   repPhone: z.string().optional(),
   repEmail: z.string().email().optional().or(z.literal('')),
-  repLanguage: z.string().optional(),
+  repLanguage: z'string'().optional(),
 
   // Step 3
   currentLocation: z.string().min(1, 'Current location is required'),

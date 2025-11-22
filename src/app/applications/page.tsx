@@ -16,10 +16,20 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { Application, ApplicationStatus } from '@/lib/definitions';
+import type { ApplicationStatus } from '@/lib/definitions';
 import { Header } from '@/components/Header';
 import { useUser, useFirestore, useCollection } from '@/firebase';
-import { collection } from 'firebase/firestore';
+import { collection, doc, deleteDoc } from 'firebase/firestore';
+
+// Define a type for the application data coming from Firestore
+interface ApplicationData {
+  id: string;
+  memberFirstName: string;
+  memberLastName: string;
+  status: ApplicationStatus;
+  lastUpdated: string; // This might be a Timestamp from Firestore, convert to string
+  pathway: 'SNF Transition' | 'SNF Diversion';
+}
 
 const getBadgeVariant = (status: ApplicationStatus) => {
   switch (status) {
@@ -43,7 +53,7 @@ const ApplicationsTable = ({
   isLoading,
 }: {
   title: string;
-  applications: Application[];
+  applications: ApplicationData[];
   onSelectionChange?: (id: string, isSelected: boolean) => void;
   selection?: string[];
   isLoading: boolean;
@@ -79,11 +89,11 @@ const ApplicationsTable = ({
                       <Checkbox
                         checked={selection?.includes(app.id)}
                         onCheckedChange={checked => onSelectionChange(app.id, !!checked)}
-                        aria-label={`Select application for ${app.memberName}`}
+                        aria-label={`Select application for ${app.memberFirstName} ${app.memberLastName}`}
                       />
                     </TableCell>
                   )}
-                  <TableCell className="font-medium">{app.memberName}</TableCell>
+                  <TableCell className="font-medium">{`${app.memberFirstName} ${app.memberLastName}`}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={getBadgeVariant(app.status)}>
                       {app.status}
@@ -93,7 +103,7 @@ const ApplicationsTable = ({
                   <TableCell className="text-right">
                     {app.status === 'In Progress' || app.status === 'Requires Revision' ? (
                       <Button asChild variant="outline" size="sm">
-                        <Link href={`/pathway?applicationId=${app.id}`}>Continue</Link>
+                        <Link href={`/forms/cs-summary-form?applicationId=${app.id}`}>Continue</Link>
                       </Button>
                     ) : (
                       <Button asChild variant="outline" size="sm">
@@ -123,7 +133,7 @@ export default function MyApplicationsPage() {
   const router = useRouter();
 
   const applicationsQuery = user ? collection(firestore, `users/${user.uid}/applications`) : null;
-  const { data: applications = [], isLoading: isLoadingApplications } = useCollection<Application>(applicationsQuery);
+  const { data: applications = [], isLoading: isLoadingApplications } = useCollection<ApplicationData>(applicationsQuery);
 
   const [selected, setSelected] = useState<string[]>([]);
   
@@ -154,8 +164,13 @@ export default function MyApplicationsPage() {
     );
   };
   
-  const handleDelete = () => {
+  const handleDelete = async () => {
+    if (!user) return;
     // Logic to delete from Firebase would go here
+    for (const appId of selected) {
+        const docRef = doc(firestore, `users/${user.uid}/applications`, appId);
+        await deleteDoc(docRef);
+    }
     console.log('Deleting:', selected);
     setSelected([]);
   }
