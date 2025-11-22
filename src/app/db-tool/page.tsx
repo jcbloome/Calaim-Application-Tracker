@@ -10,27 +10,61 @@ import { doc, setDoc, serverTimestamp, collection } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Database, Loader2 } from 'lucide-react';
 
-// A sample application record to be used as a template
+// A more complete sample application record to be used as a template
 const fakeApplicationTemplate = {
+    // Step 1
     memberFirstName: 'Test',
     memberLastName: 'User',
-    status: 'In Progress' as const,
+    memberDob: new Date(1960, 5, 15),
+    memberAge: 64,
+    memberMediCalNum: '987654321',
+    confirmMemberMediCalNum: '987654321',
+    memberMrn: 'MRN-TEST-001',
+    confirmMemberMrn: 'MRN-TEST-001',
+    memberLanguage: 'English',
+    referrerFirstName: '', // Will be populated by user profile
+    referrerLastName: '', // Will be populated by user profile
+    referrerEmail: '', // Will be populated by user profile
+    referrerPhone: '(555) 123-4567',
+    referrerRelationship: 'Social Worker',
+    memberPhone: '(555) 987-6543',
+    memberEmail: 'test.user@example.com',
+    isBestContact: false,
+    hasCapacity: 'Yes' as const,
+    hasLegalRep: 'No' as const,
+
+    // Step 2
+    currentLocation: 'SNF',
+    currentAddress: '123 Skilled Nursing Way',
+    currentCity: 'Careville',
+    currentState: 'CA',
+    currentZip: '90211',
+    copyAddress: false,
+    customaryAddress: '456 Community Lane',
+    customaryCity: 'Homeville',
+    customaryState: 'CA',
+    customaryZip: '90212',
+
+    // Step 3
+    healthPlan: 'Health Net' as const,
     pathway: 'SNF Diversion' as const,
-    healthPlan: 'Health Net',
+    meetsSnfDiversionCriteria: true,
+
+    // Step 4
+    ispFirstName: 'ISP',
+    ispLastName: 'Contact',
+    ispPhone: '(555) 555-5555',
+    hasPrefRCFE: 'Yes' as const,
+    rcfeName: 'The Golden Years RCFE',
+    rcfeAddress: '789 Sunshine Ave, Happy Town, CA',
+
+    // Other app-level fields
+    status: 'In Progress' as const,
     progress: 25,
     forms: [
       { name: 'CS Member Summary', status: 'Completed', type: 'Form', href: '/forms/cs-summary-form' },
       { name: 'HIPAA Authorization', status: 'Pending', type: 'Form', href: '/forms/hipaa-authorization' },
     ],
-    // Add other fields from your FormValues schema with default/fake values
-    memberDob: new Date(1960, 5, 15),
-    memberMediCalNum: '987654321',
-    memberMrn: 'MRN-TEST-001',
-    currentLocation: 'Home',
-    currentAddress: '123 Test St',
-    currentCity: 'Testville',
-    currentState: 'CA',
-    currentZip: '90210',
 };
 
 
@@ -58,8 +92,12 @@ export default function DbToolPage() {
 
             const dataToSave = {
                 ...fakeApplicationTemplate,
+                // Overwrite with dynamic data
                 id: newAppId,
                 userId: user.uid,
+                referrerFirstName: user.displayName?.split(' ')[0] || 'User',
+                referrerLastName: user.displayName?.split(' ')[1] || 'Name',
+                referrerEmail: user.email || '',
                 lastUpdated: serverTimestamp(),
             };
 
@@ -100,7 +138,7 @@ export default function DbToolPage() {
                         <CardContent>
                             <div className="space-y-4">
                                 <p className="text-sm text-muted-foreground">
-                                    Clicking the button below will create a new "In Progress" application under your user account.
+                                    Clicking the button below will create a new "In Progress" application under your user account with pre-filled data.
                                     This is useful for testing the "My Applications" page and the "Pathway" page without having to fill out the form manually each time.
                                 </p>
                                 <Button onClick={handleLoadFakeData} disabled={isLoading || isUserLoading} className="w-full">

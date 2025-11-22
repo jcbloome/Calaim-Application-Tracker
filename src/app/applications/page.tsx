@@ -30,8 +30,9 @@ interface ApplicationData {
   memberFirstName: string;
   memberLastName: string;
   status: ApplicationStatus;
-  lastUpdated: Timestamp; // Correctly typed as a Firestore Timestamp
+  lastUpdated: Timestamp;
   pathway: 'SNF Transition' | 'SNF Diversion';
+  healthPlan: 'Kaiser' | 'Health Net' | 'Other';
 }
 
 const getBadgeVariant = (status: ApplicationStatus) => {
@@ -71,8 +72,10 @@ const ApplicationsTable = ({
           <TableHeader>
             <TableRow>
               {onSelectionChange && <TableHead className="w-[50px]"></TableHead>}
-              <TableHead>Member Name</TableHead>
+              <TableHead>Member / App ID</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Pathway</TableHead>
+              <TableHead>Health Plan</TableHead>
               <TableHead>Last Updated</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -80,7 +83,7 @@ const ApplicationsTable = ({
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={onSelectionChange ? 5 : 4} className="h-24 text-center">
+                <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
                   Loading applications...
                 </TableCell>
               </TableRow>
@@ -96,12 +99,17 @@ const ApplicationsTable = ({
                       />
                     </TableCell>
                   )}
-                  <TableCell className="font-medium">{`${app.memberFirstName} ${app.memberLastName}`}</TableCell>
+                  <TableCell className="font-medium">
+                    <div>{`${app.memberFirstName} ${app.memberLastName}`}</div>
+                    <div className="text-xs text-muted-foreground font-mono">{app.id}</div>
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={getBadgeVariant(app.status)}>
                       {app.status}
                     </Badge>
                   </TableCell>
+                   <TableCell>{app.pathway || 'N/A'}</TableCell>
+                   <TableCell>{app.healthPlan || 'N/A'}</TableCell>
                   <TableCell>{app.lastUpdated ? format(app.lastUpdated.toDate(), 'PPP') : 'N/A'}</TableCell>
                   <TableCell className="text-right">
                     {app.status === 'In Progress' || app.status === 'Requires Revision' ? (
@@ -118,7 +126,7 @@ const ApplicationsTable = ({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={onSelectionChange ? 5 : 4} className="h-24 text-center">
+                <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
                   No applications found.
                 </TableCell>
               </TableRow>
@@ -175,7 +183,6 @@ export default function MyApplicationsPage() {
   
   const handleDelete = async () => {
     if (!user || !firestore) return;
-    // Logic to delete from Firebase would go here
     for (const appId of selected) {
         const docRef = doc(firestore, `users/${user.uid}/applications`, appId);
         await deleteDoc(docRef);
@@ -188,21 +195,29 @@ export default function MyApplicationsPage() {
     <>
       <Header />
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-bold">My Applications</h1>
-          <div className="flex items-center gap-2">
-            {selected.length > 0 && (
-              <Button variant="destructive" onClick={handleDelete}>
-                <Trash2 className="mr-2 h-4 w-4" /> Delete ({selected.length})
-              </Button>
+        <div className="mb-6 space-y-2">
+            <div className="flex items-center justify-between">
+            <h1 className="text-3xl font-bold">My Applications</h1>
+            <div className="flex items-center gap-2">
+                {selected.length > 0 && (
+                <Button variant="destructive" onClick={handleDelete}>
+                    <Trash2 className="mr-2 h-4 w-4" /> Delete ({selected.length})
+                </Button>
+                )}
+                <Button asChild>
+                <Link href="/forms/cs-summary-form">
+                    <Plus className="mr-2 h-4 w-4" /> Start New Application
+                </Link>
+                </Button>
+            </div>
+            </div>
+             {user.displayName && (
+                <p className="text-muted-foreground">
+                    Welcome, <strong>{user.displayName}</strong>. Here are the applications you've created.
+                </p>
             )}
-            <Button asChild>
-              <Link href="/forms/cs-summary-form">
-                <Plus className="mr-2 h-4 w-4" /> Start New Application
-              </Link>
-            </Button>
-          </div>
         </div>
+
 
         <div className="space-y-8">
           <ApplicationsTable
