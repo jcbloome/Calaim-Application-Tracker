@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -25,8 +26,10 @@ export function Header() {
 
 
   const handleSignOut = async () => {
-    await auth.signOut();
-    router.push('/login');
+    if (auth) {
+        await auth.signOut();
+    }
+    router.push('/');
   };
 
   return (
