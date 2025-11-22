@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState } from 'react';
@@ -21,8 +22,8 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  const [firstName, setFirstName] = useState('jason');
+  const [lastName, setLastName] = useState('bloome');
 
   const [isSigningIn, setIsSigningIn] = useState(true);
   const [error, setError] = useState<string | null>(null);
