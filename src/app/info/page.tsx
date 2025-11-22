@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import {
   Info,
   HelpCircle,
@@ -9,11 +10,14 @@ import {
   HeartHandshake,
   KeyRound,
   Home,
+  ArrowLeft,
+  ArrowRight,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Header } from '@/components/Header';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { PrintableProgramInfo } from './components/PrintableProgramInfo';
+import { Button } from '@/components/ui/button';
 
 const infoSections = [
     {
@@ -34,12 +38,12 @@ const infoSections = [
     {
         icon: Building,
         title: "Managed Care Plans We Work With",
-        content: "You must be a member of one of these plans to utilize our services for the CalAIM Community Support for Assisted Living Transitions. <ul><li><strong>Health Net:</strong> Serving members in Sacramento and Los Ángeles counties.</li><li><strong>Kaiser Permanente:</strong> Serving members in various counties throughout California.</li></ul>"
+        content: "You must be a member of one of these plans to utilize our services for the CalAIM Community Support for Assisted Living Transitions. <ul class='list-disc pl-5 mt-2'><li><strong>Health Net:</strong> Serving members in Sacramento and Los Ángeles counties.</li><li><strong>Kaiser Permanente:</strong> Serving members in various counties throughout California.</li></ul>"
     },
     {
         icon: Home,
         title: "Types of Assisted Living (RCFEs/ARFs)",
-        content: "Assisted living facilities in California (also known as residential care facilities for the elderly - RCFEs) come in various sizes, each offering a different environment. Connections can help you find a setting that best suits your needs: <ul><li><strong>Small, Home-Like Settings:</strong> These are typically 4-6 bed homes that provide a high staff-to-resident ratio. This environment offers more personalized attention and a quieter, more intimate living experience.</li><li><strong>Large, Community Settings:</strong> These are often 100+ bed facilities that feature amenities like group dining rooms, a wide variety of planned activities, and social opportunities. Staff is available as needed to provide care and support.</li></ul>"
+        content: "Assisted living facilities in California (also known as residential care facilities for the elderly - RCFEs) come in various sizes, each offering a different environment. Connections can help you find a setting that best suits your needs: <ul class='list-disc pl-5 mt-2'><li><strong>Small, Home-Like Settings:</strong> These are typically 4-6 bed homes that provide a high staff-to-resident ratio. This environment offers more personalized attention and a quieter, more intimate living experience.</li><li><strong>Large, Community Settings:</strong> These are often 100+ bed facilities that feature amenities like group dining rooms, a wide variety of planned activities, and social opportunities. Staff is available as needed to provide care and support.</li></ul>"
     },
     {
         icon: KeyRound,
@@ -75,7 +79,7 @@ export default function ProgramInfoPage() {
                                 <section.icon className="h-6 w-6 text-primary" />
                             </div>
                             <div className="flex-1">
-                                <CardTitle className="text-lg">{section.title}</CardTitle>
+                                <CardTitle className="text-lg text-gray-900">{section.title}</CardTitle>
                             </div>
                         </CardHeader>
                         <CardContent>
@@ -84,6 +88,18 @@ export default function ProgramInfoPage() {
                     </Card>
                 ))}
              </div>
+             <div className="mt-8 pt-5 border-t flex justify-between">
+                <Button variant="outline" asChild>
+                    <Link href="/">
+                        <ArrowLeft className="mr-2 h-4 w-4" /> Previous
+                    </Link>
+                </Button>
+                <Button asChild>
+                    <Link href="/applications">
+                        Next <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                </Button>
+              </div>
           </div>
 
           {/* Content for print view */}
