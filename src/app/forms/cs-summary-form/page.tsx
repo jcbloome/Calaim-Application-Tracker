@@ -99,6 +99,18 @@ export default function CsSummaryFormPage() {
   const methods = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      memberFirstName: '',
+      memberLastName: '',
+      memberMediCalNum: '',
+      confirmMemberMediCalNum: '',
+      memberMrn: '',
+      confirmMemberMrn: '',
+      memberLanguage: '',
+      referrerFirstName: '',
+      referrerLastName: '',
+      referrerEmail: '',
+      referrerPhone: '',
+      referrerRelationship: '',
       eligibilityCriteria: [],
       memberPhone: '',
       memberEmail: '',
@@ -112,10 +124,18 @@ export default function CsSummaryFormPage() {
       repPhone: '',
       repEmail: '',
       repLanguage: '',
+      currentLocation: '',
+      currentAddress: '',
+      currentCity: '',
+      currentState: '',
+      currentZip: '',
       customaryAddress: '',
       customaryCity: '',
       customaryState: '',
       customaryZip: '',
+      ispContactName: '',
+      ispContactAgency: '',
+      ispContactPhone: '',
     }
   });
 

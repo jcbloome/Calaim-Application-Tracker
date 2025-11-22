@@ -2,7 +2,7 @@
 
 import { useFormContext } from 'react-hook-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,8 @@ export default function Step1() {
         age--;
       }
       setValue('memberAge', age, { shouldValidate: true });
+    } else {
+      setValue('memberAge', undefined, { shouldValidate: true });
     }
   }, [dob, setValue, watch]);
 
@@ -46,8 +48,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>First Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="John" {...field} />
+                    <Input {...field} />
                   </FormControl>
+                  <FormDescription>John</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -59,8 +62,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Last Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="Doe" {...field} />
+                    <Input {...field} />
                   </FormControl>
+                  <FormDescription>Doe</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -109,8 +113,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Age</FormLabel>
                   <FormControl>
-                    <Input placeholder="Auto-calculated" {...field} value={field.value ?? ""} type="number" readOnly className="bg-muted" />
+                    <Input {...field} value={field.value ?? ''} type="number" readOnly className="bg-muted" />
                   </FormControl>
+                  <FormDescription>Auto-calculated</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -179,8 +184,9 @@ export default function Step1() {
               <FormItem>
                 <FormLabel>Preferred Language</FormLabel>
                 <FormControl>
-                  <Input placeholder="e.g., English, Spanish" {...field} />
+                  <Input {...field} />
                 </FormControl>
+                <FormDescription>e.g., English, Spanish</FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -201,8 +207,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>First Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="Jane" {...field} />
+                    <Input {...field} />
                   </FormControl>
+                  <FormDescription>Jane</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -214,8 +221,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Last Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="Smith" {...field} />
+                    <Input {...field} />
                   </FormControl>
+                  <FormDescription>Smith</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -229,8 +237,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input placeholder="jane.smith@example.com" type="email" {...field} />
+                    <Input type="email" {...field} />
                   </FormControl>
+                  <FormDescription>jane.smith@example.com</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -242,8 +251,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Phone</FormLabel>
                   <FormControl>
-                    <Input placeholder="(123) 456-7890" type="tel" {...field} />
+                    <Input type="tel" {...field} />
                   </FormControl>
+                  <FormDescription>(123) 456-7890</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -256,8 +266,9 @@ export default function Step1() {
               <FormItem>
                 <FormLabel>Relationship to Member</FormLabel>
                 <FormControl>
-                  <Input placeholder="e.g., Family Member, Social Worker" {...field} />
+                  <Input {...field} />
                 </FormControl>
+                <FormDescription>e.g., Family Member, Social Worker</FormDescription>
                 <FormMessage />
               </FormItem>
             )}
