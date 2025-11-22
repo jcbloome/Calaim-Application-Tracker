@@ -15,12 +15,12 @@ import type { FormValues } from '../page';
 
 export default function Step1() {
   const { control, watch, setValue } = useFormContext<FormValues>();
-  const dob = watch('memberDob');
+  const memberDob = watch('memberDob');
 
   useEffect(() => {
-    if (dob) {
+    if (memberDob) {
       const today = new Date();
-      const birthDate = new Date(dob);
+      const birthDate = new Date(memberDob);
       let age = today.getFullYear() - birthDate.getFullYear();
       const m = today.getMonth() - birthDate.getMonth();
       if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
@@ -30,7 +30,7 @@ export default function Step1() {
     } else {
       setValue('memberAge', undefined, { shouldValidate: true });
     }
-  }, [dob, setValue]);
+  }, [memberDob, setValue]);
 
   return (
     <div className="space-y-6">
