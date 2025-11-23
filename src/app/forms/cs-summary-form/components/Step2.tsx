@@ -90,7 +90,7 @@ export default function Step2() {
           </div>
 
           <div>
-            <h3 className="font-medium mb-2">Customary Residence</h3>
+            <h3 className="font-medium mb-2">Customary Residence (where is the member's normal long term address)</h3>
             <div className="p-4 border rounded-md space-y-4">
                 <FormField
                     control={control}

@@ -125,7 +125,7 @@ function PrintableCsSummaryFormContent() {
                     <Field label="ZIP Code" />
                  </div>
                 <CheckboxField label="Customary residence is the same as current location." />
-                <h3 className="text-sm font-medium text-gray-800 mt-4">Customary Residence (if different)</h3>
+                <h3 className="text-sm font-medium text-gray-800 mt-4">Customary Residence (where is the member's normal long term address) (if different)</h3>
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Street Address" className="sm:col-span-2"/>
                     <Field label="City" />
