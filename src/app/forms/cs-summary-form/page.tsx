@@ -41,7 +41,6 @@ const formSchema = z.object({
   memberPhone: z.string().optional(),
   memberEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
 
-  isBestContact: z.boolean().optional(),
   bestContactName: requiredString,
   bestContactRelationship: requiredString,
   bestContactPhone: requiredString,
@@ -49,7 +48,7 @@ const formSchema = z.object({
   bestContactLanguage: requiredString,
 
   hasCapacity: z.enum(['Yes', 'No'], { required_error: 'This field is required.' }),
-  hasLegalRep: z.enum(['Yes', 'No'], { required_error: 'This field is required.' }),
+  hasLegalRep: z.enum(['Yes', 'No', 'Unknown']).optional(),
   repName: z.string().optional(),
   repRelationship: z.string().optional(),
   repPhone: z.string().optional(),
@@ -96,24 +95,6 @@ const formSchema = z.object({
   rcfeAdminPhone: z.string().optional(),
   rcfeAdminEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
   rcfeAddress: z.string().optional(),
-}).superRefine((data, ctx) => {
-    if (data.hasLegalRep === 'Yes') {
-        if (!data.repName) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ['repName'] });
-        }
-        if (!data.repRelationship) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ['repRelationship'] });
-        }
-        if (!data.repPhone) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ['repPhone'] });
-        }
-        if (!data.repEmail) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ['repEmail'] });
-        }
-        if (!data.repLanguage) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ['repLanguage'] });
-        }
-    }
 });
 
 
@@ -124,8 +105,7 @@ const steps = [
       'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'memberMrn', 'memberLanguage',
       'referrerPhone', 'referrerRelationship',
       'bestContactName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
-      'hasCapacity', 'hasLegalRep',
-      'repName', 'repRelationship', 'repPhone', 'repEmail', 'repLanguage'
+      'hasCapacity',
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip'] },
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway'] },
@@ -153,7 +133,6 @@ function CsSummaryFormComponent() {
   const methods = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      isBestContact: false,
       copyAddress: false,
       ispCopyCurrent: false,
       ispCopyCustomary: false,
