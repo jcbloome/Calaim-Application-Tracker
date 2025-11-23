@@ -42,19 +42,19 @@ const formSchema = z.object({
   memberEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
 
   isBestContact: z.boolean().optional(),
-  bestContactName: z.string().optional(),
-  bestContactRelationship: z.string().optional(),
-  bestContactPhone: z.string().optional(),
-  bestContactEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
-  bestContactLanguage: z.string().optional(),
+  bestContactName: requiredString,
+  bestContactRelationship: requiredString,
+  bestContactPhone: requiredString,
+  bestContactEmail: requiredString.email({ message: 'Invalid email format.' }),
+  bestContactLanguage: requiredString,
 
   hasCapacity: z.enum(['Yes', 'No'], { required_error: 'This field is required.' }),
   hasLegalRep: z.enum(['Yes', 'No'], { required_error: 'This field is required.' }),
-  repName: z.string().optional(),
-  repRelationship: z.string().optional(),
-  repPhone: z.string().optional(),
-  repEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
-  repLanguage: z.string().optional(),
+  repName: requiredString,
+  repRelationship: requiredString,
+  repPhone: requiredString,
+  repEmail: requiredString.email({ message: 'Invalid email format.' }),
+  repLanguage: requiredString,
 
   // Step 2
   currentLocation: requiredString,
@@ -96,23 +96,6 @@ const formSchema = z.object({
   rcfeAdminPhone: z.string().optional(),
   rcfeAdminEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
   rcfeAddress: z.string().optional(),
-}).superRefine((data, ctx) => {
-    // Best Contact validation
-    if (!data.isBestContact) {
-        if (!data.bestContactName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactName"] });
-        if (!data.bestContactRelationship) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactRelationship"] });
-        if (!data.bestContactPhone) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactPhone"] });
-        if (!data.bestContactEmail) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactEmail"] });
-        if (!data.bestContactLanguage) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactLanguage"] });
-    }
-    // Legal Rep validation
-    if (data.hasLegalRep === 'Yes') {
-        if (!data.repName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["repName"] });
-        if (!data.repRelationship) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["repRelationship"] });
-        if (!data.repPhone) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["repPhone"] });
-        if (!data.repEmail) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["repEmail"] });
-        if (!data.repLanguage) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["repLanguage"] });
-    }
 });
 
 
@@ -121,8 +104,8 @@ export type FormValues = z.infer<typeof formSchema>;
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
       'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'memberMrn', 'memberLanguage',
-      'referrerPhone', 'referrerRelationship', 'isBestContact', 'bestContactName', 
-      'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
+      'referrerPhone', 'referrerRelationship',
+      'bestContactName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
       'hasCapacity', 'hasLegalRep', 'repName', 'repRelationship', 'repPhone', 'repEmail', 'repLanguage'
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip'] },
@@ -196,7 +179,7 @@ function CsSummaryFormComponent() {
 
   const nextStep = async () => {
     const fieldsToValidate = steps[currentStep - 1].fields;
-    const isValid = await trigger(fieldsToValidate as (keyof FormValues)[]);
+    const isValid = await trigger(fieldsToValidate as (keyof FormValues)[], { shouldFocus: true });
 
     if (isValid) {
         if (currentStep < steps.length) {
