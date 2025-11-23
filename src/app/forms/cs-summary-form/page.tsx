@@ -82,7 +82,7 @@ const formSchema = z.object({
   ispLastName: z.string().optional(),
   ispRelationship: z.string().optional(),
   ispFacilityName: z.string().optional(),
-  ispPhone: z.string().optional(),
+  ispPhone: zstring().optional(),
   ispEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
   ispAddress: z.string().optional(),
   ispCity: z.string().optional(),
@@ -422,3 +422,5 @@ export default function CsSummaryFormPage() {
     </React.Suspense>
   );
 }
+
+    
