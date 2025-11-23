@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useUser, useFirestore, useDoc } from '@/firebase';
-import { doc, setDoc, getDoc, serverTimestamp, collection } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, collection, Timestamp } from 'firebase/firestore';
 
 import Step1 from './components/Step1';
 import Step2 from './components/Step2';
@@ -50,7 +50,7 @@ const formSchema = z.object({
     bestContactLanguage: requiredString,
 
     hasCapacity: z.enum(['Yes', 'No'], { required_error: 'This field is required.' }),
-    hasLegalRep: z.enum(['Yes', 'No', 'Unknown'], { required_error: 'This field is required.' }),
+    hasLegalRep: z.string().optional(),
     repName: z.string().optional(),
     repRelationship: z.string().optional(),
     repPhone: z.string().optional(),
@@ -90,7 +90,7 @@ const formSchema = z.object({
     ispZip: z.string().optional(),
     ispCounty: z.string().optional(),
     onALWWaitlist: z.enum(['Yes', 'No', 'Unknown']).optional(),
-    hasPrefRCFE: z.enum(['Yes', 'No']).optional(),
+    hasPrefRCFE: z.string().optional(),
     rcfeName: z.string().optional(),
     rcfeAdminName: z.string().optional(),
     rcfeAdminPhone: z.string().optional(),
@@ -107,7 +107,7 @@ const steps = [
       'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'memberMrn', 'memberLanguage',
       'referrerPhone', 'referrerRelationship',
       'bestContactName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
-      'hasCapacity', 'hasLegalRep',
+      'hasCapacity',
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip'] },
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'meetsPathwayCriteria'] },
@@ -142,7 +142,6 @@ function CsSummaryFormComponent() {
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
   
-  // Use a state for application ID to make it stable across renders
   const [applicationId, setApplicationId] = useState<string | null>(searchParams.get('applicationId'));
 
   const userProfileDocRef = useMemo(() => {
@@ -195,6 +194,7 @@ function CsSummaryFormComponent() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data() as any;
+          // CRITICAL FIX: Convert Firestore Timestamp back to JS Date for the form
           if (data.memberDob && data.memberDob.toDate) {
             data.memberDob = data.memberDob.toDate();
           }
@@ -214,12 +214,10 @@ function CsSummaryFormComponent() {
     const currentData = getValues();
     let docId = applicationId;
   
-    // Create new application ID if one doesn't exist
     if (!docId) {
       docId = doc(collection(firestore, `users/${user.uid}/applications`)).id;
       setApplicationId(docId);
        if (isNavigating) {
-        // Update URL without full page reload if a new ID is created
         router.replace(`/forms/cs-summary-form?applicationId=${docId}`, { scroll: false });
       }
     }
@@ -300,9 +298,9 @@ function CsSummaryFormComponent() {
       ...sanitizedData,
       id: docId,
       userId: user.uid,
-      status: 'In Progress', // The form is complete, but the application is just starting
+      status: 'In Progress',
       lastUpdated: serverTimestamp(),
-      forms: requiredForms, // Add the required forms array
+      forms: requiredForms,
     };
   
     try {
