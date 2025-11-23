@@ -1,11 +1,15 @@
+
+import { Timestamp } from 'firebase/firestore';
+
 export type ApplicationStatus = 'In Progress' | 'Completed & Submitted' | 'Requires Revision' | 'Approved';
 
 export type Application = {
   id: string;
   memberFirstName: string;
   memberLastName: string;
+  memberMrn: string;
   status: ApplicationStatus;
-  lastUpdated: string; // or Date
+  lastUpdated: string | Timestamp; 
   pathway: 'SNF Transition' | 'SNF Diversion';
   healthPlan: 'Kaiser' | 'Health Net' | 'Other';
   forms: FormStatus[];
@@ -18,6 +22,8 @@ export type FormStatus = {
   type: 'Form' | 'Upload' | 'Info' | 'online-form';
   href: string;
   downloadHref?: string;
+  dateCompleted?: Timestamp;
+  choice?: 'accept' | 'decline';
 };
 
 export type Acronym = {

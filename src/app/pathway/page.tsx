@@ -10,6 +10,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  CardFooter
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -19,6 +20,7 @@ import {
   Info,
   Loader2,
   UploadCloud,
+  Send
 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { cn } from '@/lib/utils';
@@ -28,22 +30,28 @@ import { doc } from 'firebase/firestore';
 
 const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => {
   const commonRequirements = [
-    { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', icon: File },
-    { id: 'program-info', title: 'Program Information', description: 'Review important details about the CalAIM program and our services.', type: 'info', icon: Info },
-    { id: 'hipaa-auth', title: 'HIPAA Authorization', description: 'Authorize the use or disclosure of Protected Health Information (PHI).', type: 'online-form', icon: File },
-    { id: 'liability-waiver', title: 'Liability Waiver', description: 'Review and sign the Participant Liability Waiver & Hold Harmless Agreement.', type: 'online-form', icon: File },
-    { id: 'freedom-of-choice', title: 'Freedom of Choice Waiver', description: 'Acknowledge your choice to accept or decline Community Supports services.', type: 'online-form', icon: File },
+    { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form', icon: File },
+    { id: 'program-info', title: 'Program Information', description: 'Review important details about the CalAIM program and our services.', type: 'info', href: '/info', icon: Info },
+    { id: 'hipaa-auth', title: 'HIPAA Authorization', description: 'Authorize the use or disclosure of Protected Health Information (PHI).', type: 'online-form', href: '/forms/hipaa-authorization', icon: File },
+    { id: 'liability-waiver', title: 'Liability Waiver', description: 'Review and sign the Participant Liability Waiver & Hold Harmless Agreement.', type: 'online-form', href: '/forms/liability-waiver', icon: File },
+    { id: 'freedom-of-choice', title: 'Freedom of Choice Waiver', description: 'Acknowledge your choice to accept or decline Community Supports services.', type: 'online-form', href: '/forms/freedom-of-choice', icon: File },
+    { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements showing Social Security income.", type: 'upload', icon: UploadCloud },
+    { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, have the physician complete, and upload the report.", type: 'upload', icon: UploadCloud },
+    { id: 'med-list', title: "Medicine List", description: "Upload a current list of all medications.", type: 'upload', icon: UploadCloud },
   ];
 
   if (pathway === 'SNF Diversion') {
     return [
       ...commonRequirements,
-      { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: 'Required for SNF Diversion. Download the form, have it signed by a physician, and upload it here.', type: 'upload', icon: UploadCloud },
+      { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: 'Required for SNF Diversion. Download the form, have it signed by a physician, and upload it here.', type: 'upload', href: '/forms/declaration-of-eligibility/printable', icon: UploadCloud },
     ];
   }
 
   // SNF Transition
-  return commonRequirements;
+  return [
+      ...commonRequirements,
+      { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the Skilled Nursing Facility facesheet.", type: 'upload', icon: UploadCloud },
+  ];
 };
 
 
@@ -112,6 +120,8 @@ function PathwayPageContent() {
   const formStatusMap = new Map(application.forms?.map(f => [f.name, f.status]));
 
   const completedCount = pathwayRequirements.reduce((acc, req) => {
+    // Manually mark info as complete for progress, as it has no status
+    if (req.type === 'info') return acc + 1;
     if (formStatusMap.get(req.title) === 'Completed') {
         return acc + 1;
     }
@@ -120,6 +130,44 @@ function PathwayPageContent() {
 
   const totalCount = pathwayRequirements.length;
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+  const allRequiredFormsComplete = completedCount === totalCount;
+
+
+  const getFormAction = (req: (typeof pathwayRequirements)[0], isCompleted: boolean) => {
+    const href = req.href ? `${req.href}?applicationId=${applicationId}` : '#';
+    switch (req.type) {
+        case 'online-form':
+            return (
+                <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
+                    <Link href={href}>{isCompleted ? 'View/Edit Form' : 'Start Form'} &rarr;</Link>
+                </Button>
+            );
+        case 'info':
+            return (
+                <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
+                    <Link href="/info">Review Information &rarr;</Link>
+                </Button>
+            );
+        case 'upload':
+             return (
+                <div className="space-y-2">
+                    {req.href && (
+                        <Button asChild variant="secondary" className="w-full">
+                            <Link href={req.href} target="_blank">
+                                <File className="mr-2 h-4 w-4" /> Download Blank Form
+                            </Link>
+                        </Button>
+                    )}
+                    <Button variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
+                         <UploadCloud className="mr-2 h-4 w-4" /> Upload Document
+                    </Button>
+                </div>
+            );
+        default:
+            return null;
+    }
+};
+
 
   return (
     <>
@@ -150,12 +198,21 @@ function PathwayPageContent() {
                 <Progress value={progress} className="h-2" />
               </div>
             </CardContent>
+            {application.status === 'In Progress' || application.status === 'Requires Revision' ? (
+                <CardFooter>
+                    <Button className="w-full" disabled={!allRequiredFormsComplete}>
+                        <Send className="mr-2 h-4 w-4" />
+                        Submit Application for Review
+                    </Button>
+                </CardFooter>
+            ) : null}
           </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {pathwayRequirements.map((req) => {
-                const status = formStatusMap.get(req.title) || 'Pending';
-                const isFormComplete = status === 'Completed';
+                const status = (req.type === 'info') ? 'Completed' : (formStatusMap.get(req.title) || 'Pending');
+                const isCompleted = status === 'Completed';
+                
                 return (
                     <Card key={req.id} className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
                         <CardHeader className="pb-4">
@@ -167,31 +224,7 @@ function PathwayPageContent() {
                         </CardHeader>
                         <CardContent className="flex flex-col flex-grow justify-end gap-4">
                             <StatusIndicator status={status} />
-                             {req.type === 'online-form' && (
-                                <Button asChild variant="outline" className="bg-slate-50 hover:bg-slate-100">
-                                    <Link href={`/forms/cs-summary-form?applicationId=${applicationId}`}>{isFormComplete ? 'View/Edit Form' : 'Start Form'} &rarr;</Link>
-                                </Button>
-                            )}
-                             {req.type === 'info' && (
-                                <Button asChild variant="outline" className="bg-slate-50 hover:bg-slate-100">
-                                    <Link href="/info">Review Information &rarr;</Link>
-                                </Button>
-                             )}
-                            {req.type === 'upload' && (
-                                <div className="space-y-2">
-                                    <Button variant="secondary" className="w-full">
-                                        <File className="mr-2 h-4 w-4" /> Download Form
-                                    </Button>
-                                    <div className="relative">
-                                        <div className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100">
-                                            <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center">
-                                                <UploadCloud className="w-8 h-8 mb-2 text-gray-400" />
-                                                <p className="text-xs text-gray-500">Click or drag to upload</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
+                            {getFormAction(req, isCompleted)}
                         </CardContent>
                     </Card>
                 )
