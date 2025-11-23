@@ -25,8 +25,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const requiredString = z.string().min(1, { message: 'This field is required.' });
 
-// This schema is now simplified. All fields are either universally required or fully optional.
-// The UI will instruct users to enter "N/A" for fields that are not applicable.
 const formSchema = z.object({
     // Step 1 - Member Info
     memberFirstName: requiredString,
@@ -43,25 +41,25 @@ const formSchema = z.object({
     referrerEmail: z.string().optional(),
     referrerPhone: requiredString,
     referrerRelationship: requiredString,
-    agency: z.string().optional(),
+    agency: z.string().optional().nullable(),
 
     // Step 1 - Member Contact
-    memberPhone: z.string().optional(),
-    memberEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
-    bestContactName: z.string().optional(),
-    bestContactRelationship: z.string().optional(),
-    bestContactPhone: z.string().optional(),
-    bestContactEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
-    bestContactLanguage: z.string().optional(),
+    memberPhone: z.string().optional().nullable(),
+    memberEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')).nullable(),
+    bestContactName: z.string().optional().nullable(),
+    bestContactRelationship: z.string().optional().nullable(),
+    bestContactPhone: z.string().optional().nullable(),
+    bestContactEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')).nullable(),
+    bestContactLanguage: z.string().optional().nullable(),
 
     // Step 1 - Legal Rep
     hasCapacity: z.enum(['Yes', 'No'], { required_error: 'This field is required.' }),
-    hasLegalRep: z.string().optional(), // Was enum, now string for flexibility
-    repName: z.string().optional(),
-    repRelationship: z.string().optional(),
-    repPhone: z.string().optional(),
-    repEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
-    repLanguage: z.string().optional(),
+    hasLegalRep: z.string().optional().nullable(),
+    repName: z.string().optional().nullable(),
+    repRelationship: z.string().optional().nullable(),
+    repPhone: z.string().optional().nullable(),
+    repEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')).nullable(),
+    repLanguage: z.string().optional().nullable(),
 
     // Step 2 - Location
     currentLocation: requiredString,
@@ -70,38 +68,38 @@ const formSchema = z.object({
     currentState: requiredString,
     currentZip: requiredString,
     copyAddress: z.boolean().optional(),
-    customaryAddress: z.string().optional(),
-    customaryCity: z.string().optional(),
-    customaryState: z.string().optional(),
-    customaryZip: z.string().optional(),
+    customaryAddress: z.string().optional().nullable(),
+    customaryCity: z.string().optional().nullable(),
+    customaryState: z.string().optional().nullable(),
+    customaryZip: z.string().optional().nullable(),
 
     // Step 3 - Health Plan & Pathway
     healthPlan: z.enum(['Kaiser', 'Health Net', 'Other'], { required_error: 'Please select a health plan.' }),
-    existingHealthPlan: z.string().optional(),
-    switchingHealthPlan: z.enum(['Yes', 'No']).optional(),
+    existingHealthPlan: z.string().optional().nullable(),
+    switchingHealthPlan: z.enum(['Yes', 'No']).optional().nullable(),
     pathway: z.enum(['SNF Transition', 'SNF Diversion'], { required_error: 'Please select a pathway.' }),
     meetsPathwayCriteria: z.boolean().refine(val => val === true, { message: "You must confirm the criteria are met." }),
-    snfDiversionReason: z.string().optional(),
+    snfDiversionReason: z.string().optional().nullable(),
 
     // Step 4 - ISP & RCFE
-    ispFirstName: z.string().optional(),
-    ispLastName: z.string().optional(),
-    ispRelationship: z.string().optional(),
-    ispFacilityName: z.string().optional(),
-    ispPhone: z.string().optional(),
-    ispEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
-    ispAddress: z.string().optional(),
-    ispCity: z.string().optional(),
-    ispState: z.string().optional(),
-    ispZip: z.string().optional(),
-    ispCounty: z.string().optional(),
-    onALWWaitlist: z.enum(['Yes', 'No', 'Unknown']).optional(),
-    hasPrefRCFE: z.string().optional(), // Was enum, now string
-    rcfeName: z.string().optional(),
-    rcfeAdminName: z.string().optional(),
-    rcfeAdminPhone: z.string().optional(),
-    rcfeAdminEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
-    rcfeAddress: z.string().optional(),
+    ispFirstName: z.string().optional().nullable(),
+    ispLastName: z.string().optional().nullable(),
+    ispRelationship: z.string().optional().nullable(),
+    ispFacilityName: z.string().optional().nullable(),
+    ispPhone: z.string().optional().nullable(),
+    ispEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')).nullable(),
+    ispAddress: z.string().optional().nullable(),
+    ispCity: z.string().optional().nullable(),
+    ispState: z.string().optional().nullable(),
+    ispZip: z.string().optional().nullable(),
+    ispCounty: z.string().optional().nullable(),
+    onALWWaitlist: z.enum(['Yes', 'No', 'Unknown']).optional().nullable(),
+    hasPrefRCFE: z.string().optional().nullable(),
+    rcfeName: z.string().optional().nullable(),
+    rcfeAdminName: z.string().optional().nullable(),
+    rcfeAdminPhone: z.string().optional().nullable(),
+    rcfeAdminEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')).nullable(),
+    rcfeAddress: z.string().optional().nullable(),
   });
 
 
