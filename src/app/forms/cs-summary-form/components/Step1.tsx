@@ -230,34 +230,36 @@ export default function Step1() {
               )}
             />
           </div>
-          <FormField
-            control={control}
-            name="referrerRelationship"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Relationship to Member <span className="text-destructive">*</span></FormLabel>
-                <FormControl>
-                  <Input {...field} value={field.value ?? ''} />
-                </FormControl>
-                <FormDescription>e.g., Family Member, Social Worker</FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-           <FormField
-            control={control}
-            name="agency"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Agency</FormLabel>
-                <FormControl>
-                  <Input {...field} value={field.value ?? ''} />
-                </FormControl>
-                <FormDescription>e.g., Bob's Referral Agency, Hospital Name, etc.</FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField
+              control={control}
+              name="referrerRelationship"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Relationship to Member <span className="text-destructive">*</span></FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ''} />
+                  </FormControl>
+                  <FormDescription>e.g., Family Member, Social Worker</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={control}
+              name="agency"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Agency</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ''} />
+                  </FormControl>
+                  <FormDescription>e.g., Bob's Referral Agency, Hospital Name, etc.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
         </CardContent>
       </Card>
       
