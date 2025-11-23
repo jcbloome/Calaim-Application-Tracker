@@ -1,7 +1,9 @@
 
 'use client';
 
+import { useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
+import type { FormValues } from '../page';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -15,7 +17,27 @@ import {
 } from '@/components/ui/select';
 
 export default function Step2() {
-  const { control } = useFormContext();
+  const { control, watch, setValue } = useFormContext<FormValues>();
+  const copyAddress = watch('copyAddress');
+  const currentAddress = watch('currentAddress');
+  const currentCity = watch('currentCity');
+  const currentState = watch('currentState');
+  const currentZip = watch('currentZip');
+
+  useEffect(() => {
+    if (copyAddress) {
+      setValue('customaryAddress', currentAddress, { shouldValidate: true });
+      setValue('customaryCity', currentCity, { shouldValidate: true });
+      setValue('customaryState', currentState, { shouldValidate: true });
+      setValue('customaryZip', currentZip, { shouldValidate: true });
+    } else {
+      setValue('customaryAddress', '', { shouldValidate: true });
+      setValue('customaryCity', '', { shouldValidate: true });
+      setValue('customaryState', '', { shouldValidate: true });
+      setValue('customaryZip', '', { shouldValidate: true });
+    }
+  }, [copyAddress, currentAddress, currentCity, currentState, currentZip, setValue]);
+
 
   return (
     <div className="space-y-6">
@@ -89,17 +111,17 @@ export default function Step2() {
                 />
                 <div className="space-y-4">
                     <FormField control={control} name="customaryAddress" render={({ field }) => (
-                        <FormItem><FormLabel>Street Address</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Street Address</FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={copyAddress} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <FormField control={control} name="customaryCity" render={({ field }) => (
-                            <FormItem><FormLabel>City</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                            <FormItem><FormLabel>City</FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={copyAddress} /></FormControl><FormMessage /></FormItem>
                         )} />
                         <FormField control={control} name="customaryState" render={({ field }) => (
-                            <FormItem><FormLabel>State</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                            <FormItem><FormLabel>State</FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={copyAddress} /></FormControl><FormMessage /></FormItem>
                         )} />
                         <FormField control={control} name="customaryZip" render={({ field }) => (
-                            <FormItem><FormLabel>ZIP Code</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                            <FormItem><FormLabel>ZIP Code</FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={copyAddress} /></FormControl><FormMessage /></FormItem>
                         )} />
                     </div>
                 </div>
@@ -110,5 +132,3 @@ export default function Step2() {
     </div>
   );
 }
-
-    
