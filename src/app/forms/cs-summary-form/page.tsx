@@ -19,6 +19,8 @@ import Step3 from './components/Step3';
 import Step4 from './components/Step4';
 import { Header } from '@/components/Header';
 import type { FormStatus as FormStatusType } from '@/lib/definitions';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 
 const requiredString = z.string().min(1, { message: 'This field is required.' });
@@ -109,7 +111,6 @@ const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
       'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'memberMrn', 'memberLanguage',
       'referrerPhone', 'referrerRelationship',
-      'bestContactName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
       'hasCapacity',
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip'] },
@@ -136,9 +137,28 @@ const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatus
   return commonForms;
 };
 
+// Simple on-screen logger
+const DebugLog = ({ logs }: { logs: string[] }) => (
+    <Card className="mt-8">
+      <CardHeader>
+        <CardTitle>Submission Debug Log</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ScrollArea className="h-40 w-full rounded-md border p-4">
+          {logs.map((log, index) => (
+            <p key={index} className="text-xs font-mono">
+              {log}
+            </p>
+          ))}
+        </ScrollArea>
+      </CardContent>
+    </Card>
+);
+
 
 function CsSummaryFormComponent() {
   const [currentStep, setCurrentStep] = useState(1);
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast, dismiss } = useToast();
@@ -147,6 +167,11 @@ function CsSummaryFormComponent() {
   const firestore = useFirestore();
   
   const [applicationId, setApplicationId] = useState<string | null>(searchParams.get('applicationId'));
+
+  const addLog = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setDebugLogs(prev => [`[${timestamp}] ${message}`, ...prev]);
+  };
 
   const userProfileDocRef = useMemo(() => {
     if (user && firestore) {
@@ -168,23 +193,19 @@ function CsSummaryFormComponent() {
   const { formState: { errors, isValid }, trigger, getValues, handleSubmit } = methods;
 
   useEffect(() => {
-    const subscription = methods.watch((value, { name, type }) => {
-        console.log('Form state changed:', { name, type, value });
-        if (Object.keys(errors).length > 0) {
-            console.log('Current validation errors:', errors);
-        }
-    });
-    return () => subscription.unsubscribe();
-  }, [methods, errors]);
+    addLog("Form component mounted.");
+  }, []);
 
   useEffect(() => {
     if (!isUserLoading && !user) {
+      addLog("User not found, redirecting to /login.");
       router.push('/login');
     }
   }, [user, isUserLoading, router]);
 
   useEffect(() => {
     if (userProfile && !applicationId) { 
+      addLog("New application, populating referrer info from user profile.");
       methods.setValue('referrerFirstName', userProfile.firstName, { shouldValidate: true });
       methods.setValue('referrerLastName', userProfile.lastName, { shouldValidate: true });
       methods.setValue('referrerEmail', userProfile.email, { shouldValidate: true });
@@ -194,22 +215,22 @@ function CsSummaryFormComponent() {
   useEffect(() => {
     const fetchApplicationData = async () => {
       if (applicationId && user && firestore) {
-        console.log(`Fetching application data for ID: ${applicationId}`);
+        addLog(`Existing application ID found: ${applicationId}. Fetching data...`);
         const docRef = doc(firestore, `users/${user.uid}/applications`, applicationId);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
-          console.log("Loaded data from Firestore:", data);
+          addLog("Application data found in Firestore.");
           
           if (data.memberDob && typeof data.memberDob.toDate === 'function') {
-            console.log("Converting 'memberDob' from Firestore Timestamp to Date.");
+            addLog("Converting 'memberDob' from Firestore Timestamp to Date.");
             data.memberDob = data.memberDob.toDate();
           }
           
           methods.reset(data);
-          console.log("Form reset with loaded data.");
+          addLog("Form reset with loaded data.");
         } else {
-            console.warn("Application ID provided but document not found.");
+            addLog("Warning: Application ID provided but document not found. Starting a new application.");
             setApplicationId(null); // Reset if not found
         }
       }
@@ -218,9 +239,9 @@ function CsSummaryFormComponent() {
   }, [applicationId, user, firestore, methods]);
 
   const saveProgress = async (isNavigating: boolean = false) => {
-    console.log("Attempting to save progress...");
+    addLog("Attempting to save progress...");
     if (!user || !firestore) {
-        console.error("Save failed: User or Firestore not available.");
+        addLog("Save failed: User or Firestore not available.");
         return;
     }
   
@@ -230,7 +251,7 @@ function CsSummaryFormComponent() {
     if (!docId) {
       docId = doc(collection(firestore, `users/${user.uid}/applications`)).id;
       setApplicationId(docId);
-      console.log(`Generated new application ID: ${docId}`);
+      addLog(`Generated new application ID: ${docId}`);
        if (isNavigating) {
         router.replace(`/forms/cs-summary-form?applicationId=${docId}`, { scroll: false });
       }
@@ -255,9 +276,9 @@ function CsSummaryFormComponent() {
        if (!isNavigating) {
          toast({ title: 'Progress Saved', description: 'Your changes have been saved.' });
        }
-       console.log(`Progress saved successfully for application ID: ${docId}`);
+       addLog(`Progress saved successfully for application ID: ${docId}`);
     } catch (error) {
-      console.error("Error saving progress: ", error);
+      addLog(`Error saving progress: ${error}`);
       if (!isNavigating) {
         toast({ variant: "destructive", title: "Save Error", description: "Could not save your progress." });
       }
@@ -267,21 +288,21 @@ function CsSummaryFormComponent() {
 
 
   const nextStep = async () => {
-    console.log(`Attempting to go to next step from step ${currentStep}`);
+    addLog(`Attempting to go to next step from step ${currentStep}`);
     const fieldsToValidate = steps[currentStep - 1].fields;
-    console.log("Fields to validate for this step:", fieldsToValidate);
+    addLog(`Fields to validate: ${fieldsToValidate.join(', ')}`);
     const isValidStep = await trigger(fieldsToValidate as (keyof FormValues)[]);
-    console.log(`Step validation result: ${isValidStep}`);
+    addLog(`Step validation result: ${isValidStep}`);
 
     if (isValidStep) {
         await saveProgress(true);
         if (currentStep < steps.length) {
             setCurrentStep(currentStep + 1);
             window.scrollTo(0, 0);
-            console.log(`Successfully moved to step ${currentStep + 1}`);
+            addLog(`Successfully moved to step ${currentStep + 1}`);
         }
     } else {
-        console.log("Step is invalid. Showing toast.");
+        addLog(`Step is invalid. Errors: ${JSON.stringify(methods.formState.errors)}`);
         if (activeToastId.current) dismiss(activeToastId.current);
         const { id } = toast({
             variant: "destructive",
@@ -289,13 +310,11 @@ function CsSummaryFormComponent() {
             description: "Please fill out all required fields before continuing.",
         });
         activeToastId.current = id;
-        // Log the specific errors
-        console.log('Validation errors:', methods.formState.errors);
     }
   };
 
   const prevStep = async () => {
-    console.log(`Going to previous step from ${currentStep}`);
+    addLog(`Going to previous step from ${currentStep}`);
     await saveProgress(true);
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
@@ -304,7 +323,7 @@ function CsSummaryFormComponent() {
   };
 
   const onInvalid = (errors: any) => {
-    console.error('Form submission failed due to validation errors:', errors);
+    addLog(`Form submission failed due to validation errors: ${JSON.stringify(errors)}`);
     toast({
       variant: 'destructive',
       title: 'Submission Failed',
@@ -313,44 +332,46 @@ function CsSummaryFormComponent() {
   };
 
   const onSubmit = async (data: FormValues) => {
-    console.log('onSubmit triggered. Form data is valid.');
+    addLog('onSubmit triggered. Form data is valid. Starting final submission...');
     if (!user || !firestore) {
-      console.error("Submission failed: User or Firestore not available.");
+      addLog("Submission failed: User or Firestore not available.");
       toast({ variant: "destructive", title: "Error", description: "You must be logged in." });
       return;
     }
   
-    console.log("Calling saveProgress before final submission...");
+    addLog("Calling saveProgress before final submission...");
     const finalAppId = await saveProgress(true);
 
     if (!finalAppId) {
-         console.error("Submission failed: Could not get an application ID.");
+         addLog("Submission failed: Could not get an application ID.");
          toast({ variant: "destructive", title: "Error", description: "Could not get an application ID to finalize submission." });
          return;
     }
   
-    console.log(`Finalizing submission for application ID: ${finalAppId}`);
+    addLog(`Finalizing submission for application ID: ${finalAppId}`);
     const docRef = doc(firestore, `users/${user.uid}/applications`, finalAppId);
     
     const requiredForms = getRequiredFormsForPathway(data.pathway);
-    console.log("Generated required forms based on pathway:", requiredForms);
+    addLog(`Generated required forms for pathway '${data.pathway}': ${JSON.stringify(requiredForms.map(f => f.name))}`);
     
     const finalData = {
+      ...data, // Include all form data
       forms: requiredForms,
+      status: 'Completed & Submitted' // Change status on successful submission
     };
   
     try {
       await setDoc(docRef, finalData, { merge: true });
-      console.log("Final data merged successfully.");
+      addLog("Final data merged successfully into Firestore.");
       toast({
         title: 'Application Started!',
         description: 'Your member summary is complete. Continue to the next steps.',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
-      console.log(`Navigating to /pathway?applicationId=${finalAppId}`);
+      addLog(`Navigating to /pathway?applicationId=${finalAppId}`);
       router.push(`/pathway?applicationId=${finalAppId}`);
     } catch (error) {
-      console.error("Error during final submission: ", error);
+      addLog(`Error during final submission: ${error}`);
       toast({
         variant: "destructive",
         title: "Submission Error",
@@ -409,6 +430,8 @@ function CsSummaryFormComponent() {
                   <Button type="submit">Save and Continue</Button>
                 )}
               </div>
+              
+              <DebugLog logs={debugLogs} />
             </div>
           </div>
         </form>
@@ -424,3 +447,5 @@ export default function CsSummaryFormPage() {
     </React.Suspense>
   );
 }
+
+    
