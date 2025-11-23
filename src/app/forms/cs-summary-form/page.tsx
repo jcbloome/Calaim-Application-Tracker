@@ -83,7 +83,11 @@ const formSchema = z.object({
   ispFacilityName: z.string().optional(),
   ispPhone: z.string().optional(),
   ispEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
-  ispAssessmentLocation: z.string().optional(),
+  ispAddress: z.string().optional(),
+  ispCity: z.string().optional(),
+  ispState: z.string().optional(),
+  ispZip: z.string().optional(),
+  ispCounty: z.string().optional(),
   onALWWaitlist: z.enum(['Yes', 'No', 'Unknown']).optional(),
   hasPrefRCFE: z.enum(['Yes', 'No']).optional(),
   rcfeName: z.string().optional(),
@@ -103,12 +107,25 @@ const formSchema = z.object({
         if (!data.existingHealthPlan) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['existingHealthPlan'] });
         if (!data.switchingHealthPlan) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['switchingHealthPlan'] });
     }
+    if (data.pathway === 'SNF Diversion' && !data.snfDiversionReason) {
+        // No longer required by default, but we might check this on final submission if needed.
+    }
     if (data.hasPrefRCFE === 'Yes') {
         if (!data.rcfeName) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['rcfeName'] });
         if (!data.rcfeAddress) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['rcfeAddress'] });
         if (!data.rcfeAdminName) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['rcfeAdminName'] });
         if (!data.rcfeAdminPhone) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['rcfeAdminPhone'] });
         if (!data.rcfeAdminEmail) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['rcfeAdminEmail'] });
+    }
+    if (data.healthPlan === 'Kaiser') {
+        if (!data.ispFirstName) ctx.addIssue({ code: 'custom', message: 'This field is required for Kaiser.', path: ['ispFirstName'] });
+        if (!data.ispLastName) ctx.addIssue({ code: 'custom', message: 'This field is required for Kaiser.', path: ['ispLastName'] });
+        if (!data.ispRelationship) ctx.addIssue({ code: 'custom', message: 'This field is required for Kaiser.', path: ['ispRelationship'] });
+        if (!data.ispAddress) ctx.addIssue({ code: 'custom', message: 'This field is required for Kaiser.', path: ['ispAddress'] });
+        if (!data.ispCity) ctx.addIssue({ code: 'custom', message: 'This field is required for Kaiser.', path: ['ispCity'] });
+        if (!data.ispState) ctx.addIssue({ code: 'custom', message: 'This field is required for Kaiser.', path: ['ispState'] });
+        if (!data.ispZip) ctx.addIssue({ code: 'custom', message: 'This field is required for Kaiser.', path: ['ispZip'] });
+        if (!data.ispCounty) ctx.addIssue({ code: 'custom', message: 'This field is required for Kaiser.', path: ['ispCounty'] });
     }
 });
 
@@ -124,7 +141,10 @@ const steps = [
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip'] },
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'existingHealthPlan', 'switchingHealthPlan', 'meetsPathwayCriteria'] },
-  { id: 4, name: 'ISP & Facility Selection', fields: ['hasPrefRCFE', 'rcfeName', 'rcfeAddress', 'rcfeAdminName', 'rcfeAdminPhone', 'rcfeAdminEmail'] },
+  { id: 4, name: 'ISP & Facility Selection', fields: [
+      'hasPrefRCFE', 'rcfeName', 'rcfeAddress', 'rcfeAdminName', 'rcfeAdminPhone', 'rcfeAdminEmail',
+      'ispFirstName', 'ispLastName', 'ispRelationship', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty'
+  ]},
 ];
 
 function CsSummaryFormComponent() {
@@ -159,11 +179,14 @@ function CsSummaryFormComponent() {
   const { formState: { isValid }, trigger, getValues, handleSubmit } = methods;
 
   useEffect(() => {
-    if (isValid && activeToastId.current) {
-        dismiss(activeToastId.current);
-        activeToastId.current = null;
-    }
-  }, [isValid, dismiss]);
+    const subscription = methods.watch(() => {
+        if (isValid && activeToastId.current) {
+            dismiss(activeToastId.current);
+            activeToastId.current = null;
+        }
+    });
+    return () => subscription.unsubscribe();
+  }, [methods, isValid, dismiss]);
 
   useEffect(() => {
     if (!isUserLoading && !user) {

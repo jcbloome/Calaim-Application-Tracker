@@ -3,7 +3,7 @@
 
 import { useFormContext } from 'react-hook-form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Input } from '@/components/ui/input';
 import type { FormValues } from '../page';
@@ -11,6 +11,8 @@ import type { FormValues } from '../page';
 export default function Step4() {
   const { control, watch } = useFormContext<FormValues>();
   const hasPrefRCFE = watch('hasPrefRCFE');
+  const healthPlan = watch('healthPlan');
+  const isKaiser = healthPlan === 'Kaiser';
   
   return (
     <div className="space-y-6">
@@ -18,7 +20,7 @@ export default function Step4() {
           <CardHeader>
             <CardTitle>Individual Service Plan (ISP) Contact</CardTitle>
             <CardDescription>
-                All applications are required to have ISP (which eventually determines the tiered level of care and the amount paid for &quot;assisted living&quot; to the RCFE/ARF) conducted in-person (Kaiser) or virtually (Health Net) by RN or MSW (with sign-off by RN). The ISP contact is usually the SNF or hospital RN, social worker or case manager, or, if the member is in the community with the family member or caregiver). Once finalized the ISP requires signatures by the ISP contact.
+                All applications are required to have ISP (which eventually determines the tiered level of care and the amount paid for &quot;assisted living&quot; to the RCFE/ARF) conducted in-person (Kaiser) or virtually (Health Net) by RN or MSW (with sign-off by RN). The ISP contact is usually the SNF or hospital RN, social worker or case manager, or, if the member is in the community with the family member or caregiver. Once finalized the ISP requires signatures by the ISP contact.
                 <br/><br/>
                 Who is the person we should contact for the ISP?
             </CardDescription>
@@ -26,15 +28,20 @@ export default function Step4() {
           <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={control} name="ispFirstName" render={({ field }) => (
-                    <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>First Name {isKaiser && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                 )} />
                  <FormField control={control} name="ispLastName" render={({ field }) => (
-                    <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Last Name {isKaiser && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={control} name="ispRelationship" render={({ field }) => (
-                    <FormItem><FormLabel>Relationship to Member</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    <FormItem>
+                        <FormLabel>Relationship to Member {isKaiser && <span className="text-destructive">*</span>}</FormLabel>
+                        <FormControl><Input {...field} value={field.value ?? ''} /></FormControl>
+                        <FormDescription>e.g., social worker, RN, family member, etc.</FormDescription>
+                        <FormMessage />
+                    </FormItem>
                 )} />
                 <FormField control={control} name="ispFacilityName" render={({ field }) => (
                     <FormItem><FormLabel>Facility Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
@@ -48,23 +55,29 @@ export default function Step4() {
                     <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
+
+               <div className="space-y-4 p-4 border rounded-md mt-4">
+                 <h3 className="font-medium text-base">ISP Assessment Location {isKaiser && <span className="text-destructive font-normal text-sm">(Required for Kaiser)</span>}</h3>
+                 <FormField control={control} name="ispAddress" render={({ field }) => (
+                    <FormItem><FormLabel>Street Address</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <FormField control={control} name="ispCity" render={({ field }) => (
+                        <FormItem><FormLabel>City</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={control} name="ispState" render={({ field }) => (
+                        <FormItem><FormLabel>State</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={control} name="ispZip" render={({ field }) => (
+                        <FormItem><FormLabel>ZIP Code</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                </div>
+                 <FormField control={control} name="ispCounty" render={({ field }) => (
+                    <FormItem><FormLabel>County</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+            </div>
           </CardContent>
       </Card>
-       <Card className="border-l-4 border-accent">
-          <CardHeader>
-            <CardTitle>ISP Assessment Location</CardTitle>
-            <CardDescription>Where the ISP assessment will take place.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <FormField control={control} name="ispAssessmentLocation" render={({ field }) => (
-                <FormItem>
-                    <FormLabel>Name of ISP Assessment Location</FormLabel>
-                    <FormControl><Input {...field} value={field.value ?? ''} placeholder="e.g., Bob's Nursing Home, at home, Nano's Hospital, etc." /></FormControl>
-                    <FormMessage />
-                </FormItem>
-            )} />
-          </CardContent>
-       </Card>
 
         <Card className="border-l-4 border-accent">
             <CardHeader>
