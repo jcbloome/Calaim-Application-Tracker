@@ -116,7 +116,7 @@ export default function Step3() {
                         <li>Is willing to live in RCFE as an alternative to a SNF; and</li>
                         <li>Is able to safely reside in RCFE with appropriate and cost-effective supports and services.</li>
                     </ul>
-                    <p className="text-sm text-muted-foreground mt-2">(Members recently discharged from SNFs should also be considered as SNF Transition)</p>
+                    <p className="text-sm text-muted-foreground mt-2">(Members recently discharged from SNFs, with the 60-day consecutive stay requirement, should also be considered as SNF transition)</p>
                 </div>
                 <div className="p-4 border rounded-md">
                     <h3 className="font-semibold text-lg">SNF Diversion Eligibility Requirements</h3>
