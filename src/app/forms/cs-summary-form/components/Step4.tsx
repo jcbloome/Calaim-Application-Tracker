@@ -18,9 +18,9 @@ export default function Step4() {
           <CardHeader>
             <CardTitle>Individual Service Plan (ISP) Contact</CardTitle>
             <CardDescription>
-                All applications are required to have ISP (which eventually determines the tiered level of care and the amount paid for "assisted living" to the RCFE/ARF) conducted in-person (Kaiser) or virtually (Health Net) by RN or MSW (with sign-off by RN). The ISP contact is usually the SNF or hospital RN, social worker or case manager, or, if the member is in the community with the family member or caregiver). Once finalized the ISP requires signatures by the ISP contact.
+                All applications are required to have ISP (which eventually determines the tiered level of care and the amount paid for &quot;assisted living&quot; to the RCFE/ARF) conducted in-person (Kaiser) or virtually (Health Net) by RN or MSW (with sign-off by RN). The ISP contact is usually the SNF or hospital RN, social worker or case manager, or, if the member is in the community with the family member or caregiver). Once finalized the ISP requires signatures by the ISP contact.
                 <br/><br/>
-                Who is the most convenient person to contact for the ISP to be signed by the member if he/she has capacity? For example, if the member is in a SNF but does not have email, the SNF social worker is usually the best contact person.
+                Who is the person we should contact for the ISP?
                 <br/><br/>
                 <strong>Kaiser requires in-person visits by RN or MSW (with sign-off by RN) and Health Net allows for virtual assessments by RN.</strong>
             </CardDescription>
