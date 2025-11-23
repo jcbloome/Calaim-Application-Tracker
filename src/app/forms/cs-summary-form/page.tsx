@@ -156,7 +156,6 @@ function CsSummaryFormComponent() {
       ispCopyCurrent: false,
       ispCopyCustomary: false,
     },
-    mode: 'onBlur', // Validate on blur
   });
 
   useEffect(() => {
@@ -199,9 +198,11 @@ function CsSummaryFormComponent() {
     const fieldsToValidate = steps[currentStep - 1].fields;
     const isValid = await trigger(fieldsToValidate as any);
 
-    if (isValid && currentStep < steps.length) {
-      setCurrentStep(currentStep + 1);
-      window.scrollTo(0, 0);
+    if (isValid) {
+        if (currentStep < steps.length) {
+            setCurrentStep(currentStep + 1);
+            window.scrollTo(0, 0);
+        }
     } else {
         toast({
             variant: "destructive",
@@ -302,11 +303,11 @@ function CsSummaryFormComponent() {
 
               <div className="mt-8 pt-5 border-t flex justify-between">
                 <Button type="button" variant="outline" onClick={prevStep} disabled={currentStep === 1}>
-                  <ArrowLeft className="mr-2 h-4 w-4" /> Previous Step
+                  <ArrowLeft className="mr-2 h-4 w-4" /> Previous
                 </Button>
                 {currentStep < steps.length ? (
                   <Button type="button" onClick={nextStep}>
-                    Next Step
+                    Next
                   </Button>
                 ) : (
                   <Button type="submit">Save and Continue</Button>
