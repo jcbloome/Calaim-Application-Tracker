@@ -46,11 +46,11 @@ const formSchema = z.object({
     // Step 1 - Member Contact
     memberPhone: z.string().optional(),
     memberEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
-    bestContactName: requiredString,
-    bestContactRelationship: requiredString,
-    bestContactPhone: requiredString,
-    bestContactEmail: requiredString.email({ message: 'Invalid email format.' }),
-    bestContactLanguage: requiredString,
+    bestContactName: z.string().optional(),
+    bestContactRelationship: z.string().optional(),
+    bestContactPhone: z.string().optional(),
+    bestContactEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
+    bestContactLanguage: z.string().optional(),
 
     // Step 1 - Legal Rep
     hasCapacity: z.enum(['Yes', 'No'], { required_error: 'This field is required.' }),
@@ -162,20 +162,20 @@ function CsSummaryFormComponent() {
     defaultValues: {
       copyAddress: false,
     },
-    mode: 'onBlur', // Changed to onBlur to reduce noisy validation
+    mode: 'onBlur',
   });
 
-  const { formState: { isValid }, trigger, getValues, handleSubmit } = methods;
+  const { formState: { errors, isValid }, trigger, getValues, handleSubmit } = methods;
 
   useEffect(() => {
-    const subscription = methods.watch(() => {
-        if (isValid && activeToastId.current) {
-            dismiss(activeToastId.current);
-            activeToastId.current = null;
+    const subscription = methods.watch((value, { name, type }) => {
+        console.log('Form state changed:', { name, type, value });
+        if (Object.keys(errors).length > 0) {
+            console.log('Current validation errors:', errors);
         }
     });
     return () => subscription.unsubscribe();
-  }, [methods, isValid, dismiss]);
+  }, [methods, errors]);
 
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -194,17 +194,20 @@ function CsSummaryFormComponent() {
   useEffect(() => {
     const fetchApplicationData = async () => {
       if (applicationId && user && firestore) {
+        console.log(`Fetching application data for ID: ${applicationId}`);
         const docRef = doc(firestore, `users/${user.uid}/applications`, applicationId);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
+          console.log("Loaded data from Firestore:", data);
           
-          // *** CRITICAL FIX: Convert Firestore Timestamp back to JS Date ***
           if (data.memberDob && typeof data.memberDob.toDate === 'function') {
+            console.log("Converting 'memberDob' from Firestore Timestamp to Date.");
             data.memberDob = data.memberDob.toDate();
           }
           
           methods.reset(data);
+          console.log("Form reset with loaded data.");
         } else {
             console.warn("Application ID provided but document not found.");
             setApplicationId(null); // Reset if not found
@@ -215,7 +218,11 @@ function CsSummaryFormComponent() {
   }, [applicationId, user, firestore, methods]);
 
   const saveProgress = async (isNavigating: boolean = false) => {
-    if (!user || !firestore) return;
+    console.log("Attempting to save progress...");
+    if (!user || !firestore) {
+        console.error("Save failed: User or Firestore not available.");
+        return;
+    }
   
     const currentData = getValues();
     let docId = applicationId;
@@ -223,15 +230,14 @@ function CsSummaryFormComponent() {
     if (!docId) {
       docId = doc(collection(firestore, `users/${user.uid}/applications`)).id;
       setApplicationId(docId);
+      console.log(`Generated new application ID: ${docId}`);
        if (isNavigating) {
-        // Update URL without a full page reload to persist the ID
         router.replace(`/forms/cs-summary-form?applicationId=${docId}`, { scroll: false });
       }
     }
   
     const docRef = doc(firestore, `users/${user.uid}/applications`, docId);
   
-    // Convert undefined to null for Firestore
     const sanitizedData = Object.fromEntries(
       Object.entries(currentData).map(([key, value]) => [key, value === undefined ? null : value])
     );
@@ -240,7 +246,7 @@ function CsSummaryFormComponent() {
       ...sanitizedData,
       id: docId,
       userId: user.uid,
-      status: 'In Progress' as const, // Explicitly type the status
+      status: 'In Progress' as const,
       lastUpdated: serverTimestamp(),
     };
   
@@ -249,27 +255,33 @@ function CsSummaryFormComponent() {
        if (!isNavigating) {
          toast({ title: 'Progress Saved', description: 'Your changes have been saved.' });
        }
+       console.log(`Progress saved successfully for application ID: ${docId}`);
     } catch (error) {
       console.error("Error saving progress: ", error);
       if (!isNavigating) {
         toast({ variant: "destructive", title: "Save Error", description: "Could not save your progress." });
       }
     }
-    return docId; // Return the ID for use in navigation
+    return docId;
   };
 
 
   const nextStep = async () => {
+    console.log(`Attempting to go to next step from step ${currentStep}`);
     const fieldsToValidate = steps[currentStep - 1].fields;
+    console.log("Fields to validate for this step:", fieldsToValidate);
     const isValidStep = await trigger(fieldsToValidate as (keyof FormValues)[]);
+    console.log(`Step validation result: ${isValidStep}`);
 
     if (isValidStep) {
         await saveProgress(true);
         if (currentStep < steps.length) {
             setCurrentStep(currentStep + 1);
             window.scrollTo(0, 0);
+            console.log(`Successfully moved to step ${currentStep + 1}`);
         }
     } else {
+        console.log("Step is invalid. Showing toast.");
         if (activeToastId.current) dismiss(activeToastId.current);
         const { id } = toast({
             variant: "destructive",
@@ -277,10 +289,13 @@ function CsSummaryFormComponent() {
             description: "Please fill out all required fields before continuing.",
         });
         activeToastId.current = id;
+        // Log the specific errors
+        console.log('Validation errors:', methods.formState.errors);
     }
   };
 
   const prevStep = async () => {
+    console.log(`Going to previous step from ${currentStep}`);
     await saveProgress(true);
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
@@ -288,39 +303,54 @@ function CsSummaryFormComponent() {
     }
   };
 
+  const onInvalid = (errors: any) => {
+    console.error('Form submission failed due to validation errors:', errors);
+    toast({
+      variant: 'destructive',
+      title: 'Submission Failed',
+      description: 'Please check the form for errors and try again.',
+    });
+  };
+
   const onSubmit = async (data: FormValues) => {
+    console.log('onSubmit triggered. Form data is valid.');
     if (!user || !firestore) {
+      console.error("Submission failed: User or Firestore not available.");
       toast({ variant: "destructive", title: "Error", description: "You must be logged in." });
       return;
     }
   
-    // Final save before navigating
+    console.log("Calling saveProgress before final submission...");
     const finalAppId = await saveProgress(true);
 
     if (!finalAppId) {
+         console.error("Submission failed: Could not get an application ID.");
          toast({ variant: "destructive", title: "Error", description: "Could not get an application ID to finalize submission." });
          return;
     }
   
+    console.log(`Finalizing submission for application ID: ${finalAppId}`);
     const docRef = doc(firestore, `users/${user.uid}/applications`, finalAppId);
     
-    // Generate the required forms based on the final pathway selection
     const requiredForms = getRequiredFormsForPathway(data.pathway);
+    console.log("Generated required forms based on pathway:", requiredForms);
     
     const finalData = {
-      forms: requiredForms, // Add the forms list to the document
+      forms: requiredForms,
     };
   
     try {
-      await setDoc(docRef, finalData, { merge: true }); // Merge with existing data
+      await setDoc(docRef, finalData, { merge: true });
+      console.log("Final data merged successfully.");
       toast({
         title: 'Application Started!',
         description: 'Your member summary is complete. Continue to the next steps.',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
+      console.log(`Navigating to /pathway?applicationId=${finalAppId}`);
       router.push(`/pathway?applicationId=${finalAppId}`);
     } catch (error) {
-      console.error("Error submitting document: ", error);
+      console.error("Error during final submission: ", error);
       toast({
         variant: "destructive",
         title: "Submission Error",
@@ -347,7 +377,7 @@ function CsSummaryFormComponent() {
     <>
       <Header />
       <FormProvider {...methods}>
-        <form onSubmit={handleSubmit(onSubmit)} className="flex-grow">
+        <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="flex-grow">
           <div className="container mx-auto px-4 py-8 sm:px-6">
             <div className="max-w-4xl mx-auto">
               <div className="mb-8">
@@ -394,5 +424,3 @@ export default function CsSummaryFormPage() {
     </React.Suspense>
   );
 }
-
-    
