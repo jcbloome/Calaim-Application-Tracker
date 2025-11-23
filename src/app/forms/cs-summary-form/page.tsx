@@ -138,7 +138,7 @@ export type FormValues = z.infer<typeof formSchema>;
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
       'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'memberMrn', 'memberLanguage',
-      'referrerPhone', 'referrerRelationship', 'agency',
+      'referrerPhone', 'referrerRelationship',
       'bestContactName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
       'hasCapacity', 'hasLegalRep', 'repName', 'repRelationship', 'repPhone', 'repEmail', 'repLanguage',
   ]},
