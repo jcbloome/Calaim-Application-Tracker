@@ -77,7 +77,7 @@ const formSchema = z.object({
 
   // Step 4
   ispFirstName: z.string().optional(),
-  ispLastName: z_string().optional(),
+  ispLastName: z.string().optional(),
   ispRelationship: z.string().optional(),
   ispFacilityName: z.string().optional(),
   ispPhone: z.string().optional(),
