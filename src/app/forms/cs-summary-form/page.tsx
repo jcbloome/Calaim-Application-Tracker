@@ -123,6 +123,13 @@ const formSchema = z.object({
             ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['switchingHealthPlan'] });
         }
     }
+    if (data.pathway === 'SNF Diversion' && !data.snfDiversionReason) {
+        ctx.addIssue({
+            code: 'custom',
+            message: 'This field is required for the SNF Diversion pathway.',
+            path: ['snfDiversionReason'],
+        });
+    }
 });
 
 
@@ -136,7 +143,7 @@ const steps = [
       'hasCapacity', 'hasLegalRep', 'repName', 'repRelationship', 'repPhone', 'repEmail', 'repLanguage',
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip'] },
-  { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'existingHealthPlan', 'switchingHealthPlan', 'meetsPathwayCriteria'] },
+  { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'existingHealthPlan', 'switchingHealthPlan', 'meetsPathwayCriteria', 'snfDiversionReason'] },
   { id: 4, name: 'ISP & Facility Selection', fields: [] },
 ];
 

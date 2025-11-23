@@ -104,18 +104,31 @@ export default function Step3() {
             )}
           />
 
-            <div className="space-y-4 p-4 border rounded-md">
-                <h3 className="font-semibold text-lg">Pathway Eligibility Requirements</h3>
-                <p className="text-sm text-muted-foreground">The selected pathway must meet the criteria below. Other criteria also apply.</p>
-                <ul className="list-disc pl-5 space-y-2 text-sm">
-                    <li><strong>For SNF Transition:</strong> Has resided in a SNF for at least 60 consecutive days.</li>
-                    <li><strong>For SNF Diversion:</strong> Must be currently at a medically necessary SNF level of care (e.g., requires substantial help with ADLs).</li>
-                </ul>
+            <div className="space-y-6">
+                <div className="p-4 border rounded-md">
+                    <h3 className="font-semibold text-lg">SNF Transition Eligibility Requirements</h3>
+                    <p className="text-sm text-muted-foreground mt-1">Enables a current SNF resident to transfer to a RCFE or ARF.</p>
+                    <ul className="list-disc pl-5 mt-2 space-y-1 text-sm">
+                        <li>Has resided in a SNF for at least 60 consecutive days (which can include a combination of Medicare and Medi-Cal days and back and forth from SNF-hospital-SNF); and</li>
+                        <li>Is willing to live in RCFE as an alternative to a SNF; and</li>
+                        <li>Is able to safely reside in RCFE with appropriate and cost-effective supports and services.</li>
+                    </ul>
+                </div>
+                <div className="p-4 border rounded-md">
+                    <h3 className="font-semibold text-lg">SNF Diversion Eligibility Requirements</h3>
+                    <p className="text-sm text-muted-foreground mt-1">Transition a member who, without this support, would need to reside in a SNF and instead transitions him/her to RCFE or ARF.</p>
+                    <ul className="list-disc pl-5 mt-2 space-y-1 text-sm">
+                        <li>Interested in remaining in the community; and</li>
+                        <li>Is able to safely reside in RCFE with appropriate and cost-effective supports and services; and</li>
+                        <li>Must be currently at medically necessary SNF level of care: e.g., require substantial help with activities of daily living (help with dressing, bathing, incontinence, etc.) or at risk of premature institutionalization; and meet the criteria to receive those services in RCFE or ARF.</li>
+                    </ul>
+                </div>
+
                 <FormField
                     control={control}
                     name="meetsPathwayCriteria"
                     render={({ field }) => (
-                        <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 mt-4">
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                             <FormControl>
                                 <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                             </FormControl>
@@ -134,8 +147,8 @@ export default function Step3() {
                         control={control}
                         name="snfDiversionReason"
                         render={({ field }) => (
-                            <FormItem className="mt-4">
-                            <FormLabel>Reason for SNF Diversion</FormLabel>
+                            <FormItem>
+                            <FormLabel>Reason for SNF Diversion <span className="text-destructive">*</span></FormLabel>
                             <FormControl>
                                 <Textarea {...field} value={field.value ?? ''} placeholder="Provide a brief explanation for why the member is at risk for institutionalization..." />
                             </FormControl>
