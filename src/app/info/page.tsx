@@ -107,7 +107,7 @@ const page2Sections = [
 const page3Sections = [
     {
         icon: FileCheck2,
-        title: "Final Steps & What to Expect",
+        title: "Next Steps: Starting the Application",
         content: "<p>Once you have reviewed all the program information, the next step is to begin the application process. You can start a new application or continue an existing one from your dashboard.</p><p class='mt-2'>Our portal will guide you through each required form and document upload. If you have any questions along the way, please don't hesitate to contact us. We are here to help you navigate the process and find the best care setting for your needs.</p>"
     }
 ];
