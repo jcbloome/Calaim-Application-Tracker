@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, FormProvider } from 'react-hook-form';
 import { z } from 'zod';
@@ -138,7 +138,7 @@ export type FormValues = z.infer<typeof formSchema>;
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
       'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'memberMrn', 'memberLanguage',
-      'referrerPhone', 'referrerRelationship',
+      'referrerPhone', 'referrerRelationship', 'agency',
       'bestContactName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
       'hasCapacity', 'hasLegalRep', 'repName', 'repRelationship', 'repPhone', 'repEmail', 'repLanguage',
   ]},
@@ -151,7 +151,8 @@ function CsSummaryFormComponent() {
   const [currentStep, setCurrentStep] = useState(1);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
+  const activeToastId = useRef<string | null>(null);
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
   const applicationId = searchParams.get('applicationId');
@@ -172,7 +173,17 @@ function CsSummaryFormComponent() {
       ispCopyCurrent: false,
       ispCopyCustomary: false,
     },
+    mode: 'onChange', // Important for instant validation feedback
   });
+
+  const { formState: { isValid } } = methods;
+
+  useEffect(() => {
+    if (isValid && activeToastId.current) {
+        dismiss(activeToastId.current);
+        activeToastId.current = null;
+    }
+  }, [isValid, dismiss]);
 
   useEffect(() => {
     if (!isUserLoading && !user) {
@@ -220,11 +231,15 @@ function CsSummaryFormComponent() {
             window.scrollTo(0, 0);
         }
     } else {
-        toast({
+        if (activeToastId.current) {
+            dismiss(activeToastId.current);
+        }
+        const { id } = toast({
             variant: "destructive",
             title: "Validation Error",
-            description: "Please fill out all required fields before continuing.",
+            description: "Please see required fields before continuing.",
         });
+        activeToastId.current = id;
     }
   };
 
