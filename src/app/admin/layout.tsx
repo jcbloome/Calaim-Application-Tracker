@@ -35,13 +35,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
 
   useEffect(() => {
-    if (isUserLoading) return; // Wait until user status is resolved
+    if (isUserLoading || !auth) return; // Wait until user status and auth service are resolved
 
-    // If not logged in and not on the login page, redirect to admin login
-    if (!user && pathname !== '/admin/login') {
-      router.push('/admin/login');
+    // If on the login page, do nothing.
+    if (pathname === '/admin/login') {
+      return;
     }
-  }, [user, isUserLoading, pathname, router]);
+
+    // If not logged in, redirect to admin login
+    if (!user) {
+      router.push('/admin/login');
+      return;
+    }
+
+    // If logged in but not as the admin, sign out and redirect
+    if (user.email !== ADMIN_EMAIL) {
+      auth.signOut().then(() => {
+        router.push('/admin/login');
+      });
+    }
+  }, [user, isUserLoading, pathname, router, auth]);
 
   if (isUserLoading) {
     return (
@@ -56,47 +69,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return <>{children}</>;
   }
 
-  // If there's no user at this point (and we're not on the login page),
-  // it means we're about to redirect, so we can render a loader to avoid flicker.
-  if (!user) {
+  // If there's no user or the user is not the admin, we render a loader
+  // while the useEffect handles the redirection. This avoids content flashing.
+  if (!user || user.email !== ADMIN_EMAIL) {
      return (
       <div className="flex items-center justify-center h-screen">
-        <p>Redirecting...</p>
+        <p>Redirecting to login...</p>
       </div>
     );
   }
-
-  const isAuthorized = user?.email === ADMIN_EMAIL;
-
-  if (!isAuthorized) {
-    const handleSignOut = async () => {
+  
+  const handleSignOut = async () => {
       if (auth) await auth.signOut();
       router.push('/admin/login');
-    }
-    return (
-      <div className="flex items-center justify-center h-screen bg-muted/40">
-        <Card className="w-full max-w-md text-center">
-            <CardHeader>
-                <CardTitle className="flex items-center justify-center gap-2">
-                    <ShieldAlert className="h-6 w-6 text-destructive" />
-                    Access Denied
-                </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                <p>You are not authorized to view this page.</p>
-                <div className="flex items-center justify-center gap-4">
-                  <Button asChild>
-                      <Link href="/applications">Go to My Applications</Link>
-                  </Button>
-                   <Button variant="outline" onClick={handleSignOut}>
-                      <LogOut className="mr-2 h-4 w-4" /> Log Out
-                  </Button>
-                </div>
-            </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  };
 
   return (
     <SidebarProvider>
@@ -121,13 +107,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             ))}
           </SidebarMenu>
         </SidebarContent>
+        <SidebarFooter>
+          <div className="border-t p-2">
+            <Button variant="ghost" className="w-full justify-start" onClick={handleSignOut}>
+                <LogOut className="mr-2 h-4 w-4"/>
+                Logout
+            </Button>
+          </div>
+        </SidebarFooter>
       </Sidebar>
-      <main className="flex-1">
-        <div className="border-b p-4">
-            {/* Can be a header bar for mobile or other controls */}
-        </div>
-        <div className="p-4 sm:p-6">{children}</div>
-      </main>
+      <main className="flex-1 p-4 sm:p-6">{children}</main>
     </SidebarProvider>
   );
 }

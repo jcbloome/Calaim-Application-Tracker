@@ -16,7 +16,10 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useRouter } from 'next/navigation';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
+import { useEffect } from 'react';
 
+// The designated admin email to check against.
+const ADMIN_EMAIL = 'jason@carehomefinders.com';
 
 export function Header() {
   const { user, isUserLoading } = useUser();
@@ -24,6 +27,12 @@ export function Header() {
   const router = useRouter();
   const logo = PlaceHolderImages.find(p => p.id === 'calaim-logo');
 
+  useEffect(() => {
+    // If the user is loaded and they are an admin, log them out of the main site.
+    if (!isUserLoading && auth && user && user.email === ADMIN_EMAIL) {
+      auth.signOut();
+    }
+  }, [user, isUserLoading, auth]);
 
   const handleSignOut = async () => {
     if (auth) {
