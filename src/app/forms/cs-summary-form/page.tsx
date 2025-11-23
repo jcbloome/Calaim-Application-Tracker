@@ -23,8 +23,10 @@ import type { FormStatus as FormStatusType } from '@/lib/definitions';
 
 const requiredString = z.string().min(1, { message: 'This field is required.' });
 
+// This schema is now simplified. All fields are either universally required or fully optional.
+// The UI will instruct users to enter "N/A" for fields that are not applicable.
 const formSchema = z.object({
-    // Step 1
+    // Step 1 - Member Info
     memberFirstName: requiredString,
     memberLastName: requiredString,
     memberDob: z.date({ required_error: 'Date of birth is required.' }),
@@ -33,6 +35,7 @@ const formSchema = z.object({
     memberMrn: requiredString,
     memberLanguage: requiredString,
     
+    // Step 1 - Referrer Info
     referrerFirstName: z.string().optional(),
     referrerLastName: z.string().optional(),
     referrerEmail: z.string().optional(),
@@ -40,24 +43,25 @@ const formSchema = z.object({
     referrerRelationship: requiredString,
     agency: z.string().optional(),
 
+    // Step 1 - Member Contact
     memberPhone: z.string().optional(),
     memberEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
-
     bestContactName: requiredString,
     bestContactRelationship: requiredString,
     bestContactPhone: requiredString,
     bestContactEmail: requiredString.email({ message: 'Invalid email format.' }),
     bestContactLanguage: requiredString,
 
+    // Step 1 - Legal Rep
     hasCapacity: z.enum(['Yes', 'No'], { required_error: 'This field is required.' }),
-    hasLegalRep: z.string().optional(),
+    hasLegalRep: z.string().optional(), // Was enum, now string for flexibility
     repName: z.string().optional(),
     repRelationship: z.string().optional(),
     repPhone: z.string().optional(),
     repEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
     repLanguage: z.string().optional(),
 
-    // Step 2
+    // Step 2 - Location
     currentLocation: requiredString,
     currentAddress: requiredString,
     currentCity: requiredString,
@@ -69,7 +73,7 @@ const formSchema = z.object({
     customaryState: z.string().optional(),
     customaryZip: z.string().optional(),
 
-    // Step 3
+    // Step 3 - Health Plan & Pathway
     healthPlan: z.enum(['Kaiser', 'Health Net', 'Other'], { required_error: 'Please select a health plan.' }),
     existingHealthPlan: z.string().optional(),
     switchingHealthPlan: z.enum(['Yes', 'No']).optional(),
@@ -77,7 +81,7 @@ const formSchema = z.object({
     meetsPathwayCriteria: z.boolean().refine(val => val === true, { message: "You must confirm the criteria are met." }),
     snfDiversionReason: z.string().optional(),
 
-    // Step 4
+    // Step 4 - ISP & RCFE
     ispFirstName: z.string().optional(),
     ispLastName: z.string().optional(),
     ispRelationship: z.string().optional(),
@@ -90,14 +94,13 @@ const formSchema = z.object({
     ispZip: z.string().optional(),
     ispCounty: z.string().optional(),
     onALWWaitlist: z.enum(['Yes', 'No', 'Unknown']).optional(),
-    hasPrefRCFE: z.string().optional(),
+    hasPrefRCFE: z.string().optional(), // Was enum, now string
     rcfeName: z.string().optional(),
     rcfeAdminName: z.string().optional(),
     rcfeAdminPhone: z.string().optional(),
     rcfeAdminEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
     rcfeAddress: z.string().optional(),
   });
-
 
 
 export type FormValues = z.infer<typeof formSchema>;
@@ -114,7 +117,7 @@ const steps = [
   { id: 4, name: 'ISP & Facility Selection', fields: []},
 ];
 
-const getRequiredFormsForPathway = (pathway: FormValues['pathway']): FormStatusType[] => {
+const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatusType[] => {
   const commonForms: FormStatusType[] = [
     { name: 'CS Member Summary', status: 'Completed', type: 'online-form', href: '/forms/cs-summary-form' },
     { name: 'Program Information', status: 'Pending', type: 'info', href: '/info' },
@@ -129,6 +132,7 @@ const getRequiredFormsForPathway = (pathway: FormValues['pathway']): FormStatusT
       { name: 'Declaration of Eligibility', status: 'Pending', type: 'upload', href: '/forms/declaration-of-eligibility/printable' },
     ];
   }
+  // Default to SNF Transition forms if pathway is not specified or is SNF Transition
   return commonForms;
 };
 
@@ -158,7 +162,7 @@ function CsSummaryFormComponent() {
     defaultValues: {
       copyAddress: false,
     },
-    mode: 'onChange',
+    mode: 'onBlur', // Changed to onBlur to reduce noisy validation
   });
 
   const { formState: { isValid }, trigger, getValues, handleSubmit } = methods;
@@ -193,11 +197,13 @@ function CsSummaryFormComponent() {
         const docRef = doc(firestore, `users/${user.uid}/applications`, applicationId);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
-          const data = docSnap.data() as any;
-          // CRITICAL FIX: Convert Firestore Timestamp back to JS Date for the form
-          if (data.memberDob && data.memberDob.toDate) {
+          const data = docSnap.data();
+          
+          // *** CRITICAL FIX: Convert Firestore Timestamp back to JS Date ***
+          if (data.memberDob && typeof data.memberDob.toDate === 'function') {
             data.memberDob = data.memberDob.toDate();
           }
+          
           methods.reset(data);
         } else {
             console.warn("Application ID provided but document not found.");
@@ -218,12 +224,14 @@ function CsSummaryFormComponent() {
       docId = doc(collection(firestore, `users/${user.uid}/applications`)).id;
       setApplicationId(docId);
        if (isNavigating) {
+        // Update URL without a full page reload to persist the ID
         router.replace(`/forms/cs-summary-form?applicationId=${docId}`, { scroll: false });
       }
     }
   
     const docRef = doc(firestore, `users/${user.uid}/applications`, docId);
   
+    // Convert undefined to null for Firestore
     const sanitizedData = Object.fromEntries(
       Object.entries(currentData).map(([key, value]) => [key, value === undefined ? null : value])
     );
@@ -232,7 +240,7 @@ function CsSummaryFormComponent() {
       ...sanitizedData,
       id: docId,
       userId: user.uid,
-      status: 'In Progress',
+      status: 'In Progress' as const, // Explicitly type the status
       lastUpdated: serverTimestamp(),
     };
   
@@ -247,6 +255,7 @@ function CsSummaryFormComponent() {
         toast({ variant: "destructive", title: "Save Error", description: "Could not save your progress." });
       }
     }
+    return docId; // Return the ID for use in navigation
   };
 
 
@@ -265,7 +274,7 @@ function CsSummaryFormComponent() {
         const { id } = toast({
             variant: "destructive",
             title: "Validation Error",
-            description: "Please see required fields before continuing.",
+            description: "Please fill out all required fields before continuing.",
         });
         activeToastId.current = id;
     }
@@ -285,32 +294,31 @@ function CsSummaryFormComponent() {
       return;
     }
   
-    const docId = applicationId || doc(collection(firestore, `users/${user.uid}/applications`)).id;
-    const docRef = doc(firestore, `users/${user.uid}/applications`, docId);
-  
-    const sanitizedData = Object.fromEntries(
-        Object.entries(data).map(([key, value]) => [key, value === undefined ? null : value])
-    );
+    // Final save before navigating
+    const finalAppId = await saveProgress(true);
 
+    if (!finalAppId) {
+         toast({ variant: "destructive", title: "Error", description: "Could not get an application ID to finalize submission." });
+         return;
+    }
+  
+    const docRef = doc(firestore, `users/${user.uid}/applications`, finalAppId);
+    
+    // Generate the required forms based on the final pathway selection
     const requiredForms = getRequiredFormsForPathway(data.pathway);
     
-    const dataToSave = {
-      ...sanitizedData,
-      id: docId,
-      userId: user.uid,
-      status: 'In Progress',
-      lastUpdated: serverTimestamp(),
-      forms: requiredForms,
+    const finalData = {
+      forms: requiredForms, // Add the forms list to the document
     };
   
     try {
-      await setDoc(docRef, dataToSave, { merge: true });
+      await setDoc(docRef, finalData, { merge: true }); // Merge with existing data
       toast({
         title: 'Application Started!',
         description: 'Your member summary is complete. Continue to the next steps.',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
-      router.push(`/pathway?applicationId=${docId}`);
+      router.push(`/pathway?applicationId=${finalAppId}`);
     } catch (error) {
       console.error("Error submitting document: ", error);
       toast({
@@ -381,8 +389,10 @@ function CsSummaryFormComponent() {
 
 export default function CsSummaryFormPage() {
   return (
-    <React.Suspense fallback={<div>Loading form...</div>}>
+    <React.Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin"/></div>}>
       <CsSummaryFormComponent />
     </React.Suspense>
   );
 }
+
+    

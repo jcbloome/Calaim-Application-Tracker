@@ -21,14 +21,22 @@ export default function Step1() {
 
   useEffect(() => {
     if (memberDob) {
-      const today = new Date();
-      const birthDate = new Date(memberDob);
-      let age = today.getFullYear() - birthDate.getFullYear();
-      const m = today.getMonth() - birthDate.getMonth();
-      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-        age--;
+      try {
+        const birthDate = new Date(memberDob);
+        if (!isNaN(birthDate.getTime())) {
+          const today = new Date();
+          let age = today.getFullYear() - birthDate.getFullYear();
+          const m = today.getMonth() - birthDate.getMonth();
+          if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
+          }
+          setValue('memberAge', age, { shouldValidate: true });
+        } else {
+          setValue('memberAge', undefined, { shouldValidate: true });
+        }
+      } catch (e) {
+        setValue('memberAge', undefined, { shouldValidate: true });
       }
-      setValue('memberAge', age, { shouldValidate: true });
     } else {
       setValue('memberAge', undefined, { shouldValidate: true });
     }
@@ -254,7 +262,7 @@ export default function Step1() {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
-                  <FormDescription>e.g., Bob's Referral Agency, Hospital Name, etc.</FormDescription>
+                  <FormDescription>If not applicable, enter N/A. (e.g., Bob's Referral Agency, Hospital Name, etc.)</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -349,7 +357,7 @@ export default function Step1() {
                 name="hasLegalRep"
                 render={({ field }) => (
                     <FormItem className="space-y-3 p-4 border rounded-md">
-                    <FormLabel>Does member have a legal representative? <span className="text-destructive">*</span></FormLabel>
+                    <FormLabel>Does member have a legal representative? (e.g., power of attorney)</FormLabel>
                     <FormControl>
                         <RadioGroup onValueChange={field.onChange} value={field.value} className="flex items-center space-x-4">
                             <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Yes" /></FormControl><FormLabel className="font-normal">Yes</FormLabel></FormItem>
@@ -390,3 +398,5 @@ export default function Step1() {
     </div>
   );
 }
+
+    
