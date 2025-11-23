@@ -93,7 +93,7 @@ const formSchema = z.object({
   hasPrefRCFE: z.enum(['Yes', 'No']).optional(),
   rcfeName: z.string().optional(),
   rcfeAdminName: z.string().optional(),
-  rcfeAdminPhone: zstring().optional(),
+  rcfeAdminPhone: z.string().optional(),
   rcfeAdminEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
   rcfeAddress: z.string().optional(),
 }).superRefine((data, ctx) => {
