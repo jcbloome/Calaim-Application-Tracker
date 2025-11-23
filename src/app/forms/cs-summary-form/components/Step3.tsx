@@ -22,6 +22,9 @@ export default function Step3() {
         <CardHeader>
           <CardTitle>Health Plan</CardTitle>
           <CardDescription>Select the member's Managed Care Plan (MCP).</CardDescription>
+          <p className="text-sm text-muted-foreground pt-2">
+            Connections is contracted with the managed care plans (MCPs), Health Net and Kaiser, and member must be enrolled with either health plan or plan to switch to those plans to continue this application.
+          </p>
         </CardHeader>
         <CardContent>
           <FormField
