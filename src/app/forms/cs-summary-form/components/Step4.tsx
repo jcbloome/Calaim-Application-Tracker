@@ -6,9 +6,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Input } from '@/components/ui/input';
+import type { FormValues } from '../page';
 
 export default function Step4() {
-  const { control } = useFormContext();
+  const { control, watch } = useFormContext<FormValues>();
+  const hasPrefRCFE = watch('hasPrefRCFE');
   
   return (
     <div className="space-y-6">
@@ -102,7 +104,7 @@ export default function Step4() {
               <FormItem className="space-y-3">
                 <FormLabel>Has a preferred assisted living facility (RCFE) been chosen?</FormLabel>
                 <FormControl>
-                  <RadioGroup onValueChange={field.onChange} defaultValue={field.value ?? undefined} className="flex items-center space-x-4">
+                  <RadioGroup onValueChange={field.onChange} value={field.value} className="flex items-center space-x-4">
                     <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Yes" /></FormControl><FormLabel className="font-normal">Yes</FormLabel></FormItem>
                     <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="No" /></FormControl><FormLabel className="font-normal">No</FormLabel></FormItem>
                   </RadioGroup>
@@ -112,26 +114,28 @@ export default function Step4() {
             )}
           />
 
-          <div className="p-4 border rounded-md space-y-4">
-              <h3 className="font-medium">Preferred Facility Details</h3>
-              <FormField control={control} name="rcfeName" render={({ field }) => (
-                  <FormItem><FormLabel>Facility Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={control} name="rcfeAddress" render={({ field }) => (
-                  <FormItem><FormLabel>Facility Address</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-              )} />
-               <FormField control={control} name="rcfeAdminName" render={({ field }) => (
-                  <FormItem><FormLabel>Administrator Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-              )} />
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField control={control} name="rcfeAdminPhone" render={({ field }) => (
-                      <FormItem><FormLabel>Administrator Phone</FormLabel><FormControl><Input type="tel" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                  <FormField control={control} name="rcfeAdminEmail" render={({ field }) => (
-                      <FormItem><FormLabel>Administrator Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-                  )} />
-              </div>
-          </div>
+          {hasPrefRCFE === 'Yes' && (
+            <div className="p-4 border rounded-md space-y-4">
+                <h3 className="font-medium">Preferred Facility Details</h3>
+                <FormField control={control} name="rcfeName" render={({ field }) => (
+                    <FormItem><FormLabel>Facility Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={control} name="rcfeAddress" render={({ field }) => (
+                    <FormItem><FormLabel>Facility Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={control} name="rcfeAdminName" render={({ field }) => (
+                    <FormItem><FormLabel>Administrator Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField control={control} name="rcfeAdminPhone" render={({ field }) => (
+                        <FormItem><FormLabel>Administrator Phone <span className="text-destructive">*</span></FormLabel><FormControl><Input type="tel" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={control} name="rcfeAdminEmail" render={({ field }) => (
+                        <FormItem><FormLabel>Administrator Email <span className="text-destructive">*</span></FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

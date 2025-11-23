@@ -93,29 +93,22 @@ const formSchema = z.object({
   rcfeAddress: z.string().optional(),
 }).superRefine((data, ctx) => {
     if (data.hasLegalRep === 'Yes') {
-        if (!data.repName) {
-            ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['repName'] });
-        }
-        if (!data.repRelationship) {
-            ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['repRelationship'] });
-        }
-        if (!data.repPhone) {
-            ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['repPhone'] });
-        }
-        if (!data.repEmail) {
-            ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['repEmail'] });
-        }
-        if (!data.repLanguage) {
-            ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['repLanguage'] });
-        }
+        if (!data.repName) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['repName'] });
+        if (!data.repRelationship) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['repRelationship'] });
+        if (!data.repPhone) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['repPhone'] });
+        if (!data.repEmail) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['repEmail'] });
+        if (!data.repLanguage) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['repLanguage'] });
     }
     if (data.healthPlan === 'Other') {
-        if (!data.existingHealthPlan) {
-            ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['existingHealthPlan'] });
-        }
-        if (!data.switchingHealthPlan) {
-            ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['switchingHealthPlan'] });
-        }
+        if (!data.existingHealthPlan) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['existingHealthPlan'] });
+        if (!data.switchingHealthPlan) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['switchingHealthPlan'] });
+    }
+    if (data.hasPrefRCFE === 'Yes') {
+        if (!data.rcfeName) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['rcfeName'] });
+        if (!data.rcfeAddress) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['rcfeAddress'] });
+        if (!data.rcfeAdminName) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['rcfeAdminName'] });
+        if (!data.rcfeAdminPhone) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['rcfeAdminPhone'] });
+        if (!data.rcfeAdminEmail) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['rcfeAdminEmail'] });
     }
 });
 
@@ -131,7 +124,7 @@ const steps = [
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip'] },
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'existingHealthPlan', 'switchingHealthPlan', 'meetsPathwayCriteria'] },
-  { id: 4, name: 'ISP & Facility Selection', fields: [] },
+  { id: 4, name: 'ISP & Facility Selection', fields: ['hasPrefRCFE', 'rcfeName', 'rcfeAddress', 'rcfeAdminName', 'rcfeAdminPhone', 'rcfeAdminEmail'] },
 ];
 
 function CsSummaryFormComponent() {
@@ -142,7 +135,9 @@ function CsSummaryFormComponent() {
   const activeToastId = useRef<string | null>(null);
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
-  const applicationId = searchParams.get('applicationId');
+  
+  // Use a state for application ID to make it stable across renders
+  const [applicationId, setApplicationId] = useState<string | null>(searchParams.get('applicationId'));
 
   const userProfileDocRef = useMemo(() => {
     if (user && firestore) {
@@ -158,10 +153,10 @@ function CsSummaryFormComponent() {
     defaultValues: {
       copyAddress: false,
     },
-    mode: 'onChange', // Important for instant validation feedback
+    mode: 'onChange',
   });
 
-  const { formState: { isValid } } = methods;
+  const { formState: { isValid }, trigger, getValues, handleSubmit } = methods;
 
   useEffect(() => {
     if (isValid && activeToastId.current) {
@@ -177,8 +172,7 @@ function CsSummaryFormComponent() {
   }, [user, isUserLoading, router]);
 
   useEffect(() => {
-    // Pre-fill referrer info from user profile when it loads
-    if (userProfile && !applicationId) { // Only pre-fill for new applications
+    if (userProfile && !applicationId) { 
       methods.setValue('referrerFirstName', userProfile.firstName, { shouldValidate: true });
       methods.setValue('referrerLastName', userProfile.lastName, { shouldValidate: true });
       methods.setValue('referrerEmail', userProfile.email, { shouldValidate: true });
@@ -192,67 +186,41 @@ function CsSummaryFormComponent() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data() as any;
-          // Convert Firestore Timestamps to JS Dates
           if (data.memberDob && data.memberDob.toDate) {
             data.memberDob = data.memberDob.toDate();
           }
           methods.reset(data);
+        } else {
+            console.warn("Application ID provided but document not found.");
+            setApplicationId(null); // Reset if not found
         }
       }
     };
     fetchApplicationData();
   }, [applicationId, user, firestore, methods]);
 
-
-  const { handleSubmit, trigger } = methods;
-
-  const nextStep = async () => {
-    const fieldsToValidate = steps[currentStep - 1].fields;
-    const isValid = await trigger(fieldsToValidate as (keyof FormValues)[], { shouldFocus: true });
-
-    if (isValid) {
-        if (currentStep < steps.length) {
-            setCurrentStep(currentStep + 1);
-            window.scrollTo(0, 0);
-        }
-    } else {
-        if (activeToastId.current) {
-            dismiss(activeToastId.current);
-        }
-        const { id } = toast({
-            variant: "destructive",
-            title: "Validation Error",
-            description: "Please see required fields before continuing.",
-        });
-        activeToastId.current = id;
-    }
-  };
-
-  const prevStep = () => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
-      window.scrollTo(0, 0);
-    }
-  };
-
-  const onSubmit = async (data: FormValues) => {
-    if (!user || !firestore) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "You must be logged in to submit an application.",
-      });
-      return;
+  const saveProgress = async (isNavigating: boolean = false) => {
+    if (!user || !firestore) return;
+  
+    const currentData = getValues();
+    let docId = applicationId;
+  
+    // Create new application ID if one doesn't exist
+    if (!docId) {
+      docId = doc(collection(firestore, `users/${user.uid}/applications`)).id;
+      setApplicationId(docId);
+       if (isNavigating) {
+        // Update URL without full page reload if a new ID is created
+        router.replace(`/forms/cs-summary-form?applicationId=${docId}`, { scroll: false });
+      }
     }
   
-    const docId = applicationId || doc(collection(firestore, `users/${user.uid}/applications`)).id;
     const docRef = doc(firestore, `users/${user.uid}/applications`, docId);
   
-    // Sanitize data: convert undefined to null
     const sanitizedData = Object.fromEntries(
-        Object.entries(data).map(([key, value]) => [key, value === undefined ? null : value])
+      Object.entries(currentData).map(([key, value]) => [key, value === undefined ? null : value])
     );
-
+  
     const dataToSave = {
       ...sanitizedData,
       id: docId,
@@ -263,18 +231,82 @@ function CsSummaryFormComponent() {
   
     try {
       await setDoc(docRef, dataToSave, { merge: true });
+       if (!isNavigating) {
+         toast({ title: 'Progress Saved', description: 'Your changes have been saved.' });
+       }
+    } catch (error) {
+      console.error("Error saving progress: ", error);
+      if (!isNavigating) {
+        toast({ variant: "destructive", title: "Save Error", description: "Could not save your progress." });
+      }
+    }
+  };
+
+
+  const nextStep = async () => {
+    const fieldsToValidate = steps[currentStep - 1].fields;
+    const isValidStep = await trigger(fieldsToValidate as (keyof FormValues)[]);
+
+    if (isValidStep) {
+        await saveProgress(true);
+        if (currentStep < steps.length) {
+            setCurrentStep(currentStep + 1);
+            window.scrollTo(0, 0);
+        }
+    } else {
+        if (activeToastId.current) dismiss(activeToastId.current);
+        const { id } = toast({
+            variant: "destructive",
+            title: "Validation Error",
+            description: "Please see required fields before continuing.",
+        });
+        activeToastId.current = id;
+    }
+  };
+
+  const prevStep = async () => {
+    await saveProgress(true);
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
+      window.scrollTo(0, 0);
+    }
+  };
+
+  const onSubmit = async (data: FormValues) => {
+    if (!user || !firestore) {
+      toast({ variant: "destructive", title: "Error", description: "You must be logged in." });
+      return;
+    }
+  
+    const docId = applicationId || doc(collection(firestore, `users/${user.uid}/applications`)).id;
+    const docRef = doc(firestore, `users/${user.uid}/applications`, docId);
+  
+    const sanitizedData = Object.fromEntries(
+        Object.entries(data).map(([key, value]) => [key, value === undefined ? null : value])
+    );
+
+    const dataToSave = {
+      ...sanitizedData,
+      id: docId,
+      userId: user.uid,
+      status: 'In Progress', // This could be updated to 'Submitted' if this is the final step
+      lastUpdated: serverTimestamp(),
+    };
+  
+    try {
+      await setDoc(docRef, dataToSave, { merge: true });
       toast({
-        title: applicationId ? 'Application Updated!' : 'Application Saved!',
-        description: 'Your application has been saved successfully.',
+        title: 'Application Submitted!',
+        description: 'Your application has been successfully submitted.',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
       router.push(`/pathway?applicationId=${docId}`);
     } catch (error) {
-      console.error("Error saving document: ", error);
+      console.error("Error submitting document: ", error);
       toast({
         variant: "destructive",
-        title: "Uh oh! Something went wrong.",
-        description: "Could not save your application.",
+        title: "Submission Error",
+        description: "Could not submit your application.",
       });
     }
   };
