@@ -95,7 +95,7 @@ const formSchema = z.object({
   rcfeAdminName: z.string().optional(),
   rcfeAdminPhone: z.string().optional(),
   rcfeAdminEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')),
-  rcfeAddress: zstring().optional(),
+  rcfeAddress: z.string().optional(),
 }).superRefine((data, ctx) => {
     if (data.hasLegalRep === 'Yes') {
         if (!data.repName) {
@@ -122,9 +122,9 @@ export type FormValues = z.infer<typeof formSchema>;
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
       'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'memberMrn', 'memberLanguage',
-      'referrerPhone', 'referrerRelationship', 'isBestContact',
+      'referrerPhone', 'referrerRelationship',
       'bestContactName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
-      'hasCapacity', 'hasLegalRep', 
+      'hasCapacity', 'hasLegalRep',
       'repName', 'repRelationship', 'repPhone', 'repEmail', 'repLanguage'
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip'] },
