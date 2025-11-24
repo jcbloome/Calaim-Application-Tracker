@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Input } from '@/components/ui/input';
-import type { FormValues } from '../page';
+import { type FormValues } from '../schema';
 import { PhoneInput } from '@/components/ui/phone-input';
 
 export default function Step4() {
