@@ -1,7 +1,7 @@
 
 import { Application, Acronym, Activity } from './definitions';
 
-export const applications: (Application & { healthPlan?: string; referrerName?: string; ispContactName?: string; })[] = [
+export const applications: (Application & { healthPlan?: string; referrerName?: string; ispContactName?: string; agency?: string; })[] = [
   {
     id: 'app-001',
     memberName: 'John Doe',
@@ -19,6 +19,7 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
     ],
     referrerName: 'Jason Bloome',
     ispContactName: 'Dr. Emily Carter',
+    agency: 'Care Home Finders',
   },
   {
     id: 'app-002',
@@ -38,6 +39,7 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
     ],
     referrerName: 'Social Worker Agency',
     ispContactName: 'Dr. Michael Ramirez',
+    agency: 'Social Worker Agency',
   },
   {
     id: 'd311d971-e3af-43ab-9fc2-89065ee78e8a',
@@ -57,6 +59,7 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
     ],
      referrerName: 'Jason Bloome',
     ispContactName: 'Dr. Emily Carter',
+    agency: 'Care Home Finders',
   },
   {
     id: 'app-003',
@@ -69,6 +72,7 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
     forms: [],
     referrerName: 'Hospital Discharge Planner',
     ispContactName: 'Dr. Sarah Connor',
+    agency: 'Community Hospital',
   },
   {
     id: 'app-004',
@@ -81,6 +85,7 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
     forms: [],
      referrerName: 'Jason Bloome',
     ispContactName: 'Dr. Michael Ramirez',
+    agency: 'Care Home Finders',
   },
     {
     id: 'app-005',
@@ -93,6 +98,7 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
     forms: [],
     referrerName: 'Family Member',
     ispContactName: 'Dr. Emily Carter',
+    agency: 'N/A',
   },
 ];
 
@@ -117,8 +123,8 @@ export const activities: Activity[] = [
 
 const getTopCounts = (data: typeof applications, key: keyof typeof applications[0]) => {
   const counts = data.reduce((acc, app) => {
-    const item = app[key as keyof Application] as string | undefined;
-    if (item) {
+    const item = app[key] as string | undefined;
+    if (item && item !== 'N/A') {
       acc[item] = (acc[item] || 0) + 1;
     }
     return acc;
@@ -131,9 +137,9 @@ const getTopCounts = (data: typeof applications, key: keyof typeof applications[
 
 export const statsData = {
   byMcp: [
-    { name: 'Kaiser Permanente', value: 120, fill: "var(--color-chart-1)" },
-    { name: 'Health Net', value: 230, fill: "var(--color-chart-2)" },
-    { name: 'Other', value: 45, fill: "var(--color-chart-3)" },
+    { name: 'Kaiser Permanente', value: 120 },
+    { name: 'Health Net', value: 230 },
+    { name: 'Other', value: 45 },
   ],
   byCounty: [
     { name: 'Los Angeles', value: 150 },
@@ -155,5 +161,5 @@ export const statsData = {
     { month: 'Jun', total: 70 },
   ],
   topIspContacts: getTopCounts(applications, 'ispContactName'),
-  topReferrers: getTopCounts(applications, 'referrerName'),
+  topReferrers: getTopCounts(applications, 'agency'),
 };
