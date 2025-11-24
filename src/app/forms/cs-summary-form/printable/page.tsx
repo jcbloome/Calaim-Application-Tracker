@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import React from 'react';
@@ -215,6 +214,19 @@ function PrintableCsSummaryFormContent() {
                  </div>
                  
                  <h3 className="text-sm font-medium text-gray-800 mt-4">ISP Assessment Location</h3>
+                 <div className="space-y-2 mt-2">
+                    <p className="text-xs font-medium text-gray-700">Type of Location</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        <CheckboxField label="Skilled Nursing Facility" />
+                        <CheckboxField label="Home" />
+                        <CheckboxField label="Hospital" />
+                        <CheckboxField label="Sub-Acute" />
+                        <CheckboxField label="Recuperative Care" />
+                        <CheckboxField label="Unhoused" />
+                        <CheckboxField label="RCFE/ARF" />
+                        <CheckboxField label="Other" />
+                    </div>
+                </div>
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Street Address" className="sm:col-span-2"/>
                     <Field label="City" />

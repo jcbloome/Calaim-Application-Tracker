@@ -10,6 +10,7 @@ import { type FormValues } from '../schema';
 import { PhoneInput } from '@/components/ui/phone-input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useEffect } from 'react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function Step4() {
   const { control, watch, setValue } = useFormContext<FormValues>();
@@ -76,6 +77,31 @@ export default function Step4() {
 
                <div className="space-y-4 p-4 border rounded-md mt-4">
                  <h3 className="font-medium text-base">ISP Assessment Location</h3>
+                 <FormField
+                    control={control}
+                    name="ispLocationType"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>Type of Location <span className="text-destructive">*</span></FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                            <SelectTrigger><SelectValue placeholder="Select a location type" /></SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                                <SelectItem value="SNF">Skilled Nursing Facility</SelectItem>
+                                <SelectItem value="Home">Home</SelectItem>
+                                <SelectItem value="Hospital">Hospital</SelectItem>
+                                <SelectItem value="Sub-Acute">Sub-Acute</SelectItem>
+                                <SelectItem value="Recuperative Care">Recuperative Care</SelectItem>
+                                <SelectItem value="Unhoused">Unhoused</SelectItem>
+                                <SelectItem value="RCFE/ARF">RCFE/ARF</SelectItem>
+                                <SelectItem value="Other">Other</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                    />
                  <FormField
                     control={control}
                     name="ispCopyCurrent"
