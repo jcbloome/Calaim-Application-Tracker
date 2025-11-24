@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { CheckCircle2, FileWarning, PenSquare, ArrowLeft, Trash2, Send, Loader2 } from 'lucide-react';
 import { useUser, useFirestore } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { useMemo, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import type { Application, FormStatus } from '@/lib/definitions';
@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { FormViewer } from './FormViewer';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { sendRevisionRequestEmail } from '@/app/actions/send-email';
 
 
 // This is a temporary solution for the demo to find the mock application data
@@ -41,6 +42,7 @@ const getMockApplicationById = (id: string): (Application & { [key: string]: any
         referrerFirstName: 'Jason',
         referrerLastName: 'Bloome',
         referrerEmail: 'jason@carehomefinders.com',
+        userEmail: 'user@example.com', // Added for email notifications
         referrerPhone: '(555) 123-4567',
         referrerRelationship: 'Social Worker',
         agency: 'Care Home Finders',
@@ -73,6 +75,7 @@ export default function AdminApplicationDetailPage() {
   const [selectedForm, setSelectedForm] = useState<string | null>(null);
   const [revisionDetails, setRevisionDetails] = useState('');
   const [isRevisionDialogOpen, setRevisionDialogOpen] = useState(false);
+  const [targetFormForRevision, setTargetFormForRevision] = useState('');
 
 
   // In a real app, you'd likely fetch the application from a root collection
@@ -127,8 +130,8 @@ export default function AdminApplicationDetailPage() {
     }
   };
 
-  const handleRequestRevision = () => {
-    if (!application) return;
+  const handleRequestRevision = async () => {
+    if (!application || !revisionDetails || !targetFormForRevision) return;
 
     // In a real app, you would also update Firestore here
     // e.g., updateDoc(doc(firestore, ...), { status: 'Requires Revision', revisionNotes: revisionDetails });
@@ -137,12 +140,32 @@ export default function AdminApplicationDetailPage() {
         mockApplications[appIndex].status = 'Requires Revision';
     }
 
-    toast({
-        title: 'Revision Request Sent',
-        description: 'An email has been sent to the user with the required changes.',
-    });
+    try {
+        await sendRevisionRequestEmail({
+            to: application.userEmail,
+            subject: `Revision Required for Your CalAIM Application: ${application.memberName}`,
+            memberName: application.memberName,
+            formName: targetFormForRevision,
+            revisionNotes: revisionDetails
+        });
+
+        toast({
+            title: 'Revision Request Sent',
+            description: `An email has been sent to the user regarding the ${targetFormForRevision}.`,
+            className: 'bg-green-100 text-green-900 border-green-200',
+        });
+    } catch (error) {
+        console.error("Failed to send email:", error);
+        toast({
+            variant: 'destructive',
+            title: 'Email Failed',
+            description: 'Could not send the revision request email. Please try again.',
+        });
+    }
+
     setRevisionDialogOpen(false);
     setRevisionDetails('');
+    setTargetFormForRevision('');
   };
 
 
@@ -231,38 +254,13 @@ export default function AdminApplicationDetailPage() {
                               View
                           </Button>
                       </DialogTrigger>
-                       <Dialog open={isRevisionDialogOpen} onOpenChange={setRevisionDialogOpen}>
-                          <DialogTrigger asChild>
-                              <Button variant="secondary" size="sm">
-                                  <FileWarning className="mr-2 h-4 w-4" />
-                                  Request Revision
-                              </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                              <DialogHeader>
-                                  <DialogTitle>Request Revision</DialogTitle>
-                                  <DialogDescription>
-                                    Write a message to the user explaining what needs to be corrected for '{form.name}'. This will be sent to them via email.
-                                  </DialogDescription>
-                              </DialogHeader>
-                              <div className="grid gap-4 py-4">
-                                  <div className="grid gap-2">
-                                      <Label htmlFor="revision-details">Revision Details</Label>
-                                      <Textarea 
-                                        id="revision-details" 
-                                        placeholder="e.g., Please provide a clearer copy of the Proof of Income document." 
-                                        rows={5}
-                                        value={revisionDetails}
-                                        onChange={(e) => setRevisionDetails(e.target.value)}
-                                       />
-                                  </div>
-                              </div>
-                              <DialogFooter>
-                                  <Button variant="outline" onClick={() => setRevisionDialogOpen(false)}>Cancel</Button>
-                                  <Button onClick={handleRequestRevision} disabled={!revisionDetails}>Send Request</Button>
-                              </DialogFooter>
-                          </DialogContent>
-                      </Dialog>
+                        <Button variant="secondary" size="sm" onClick={() => {
+                            setTargetFormForRevision(form.name);
+                            setRevisionDialogOpen(true);
+                        }}>
+                            <FileWarning className="mr-2 h-4 w-4" />
+                            Request Revision
+                        </Button>
                   </div>
                 </div>
               ))}
@@ -272,7 +270,36 @@ export default function AdminApplicationDetailPage() {
             </div>
           </CardContent>
         </Card>
+        
+        {/* Revision Request Dialog */}
+        <Dialog open={isRevisionDialogOpen} onOpenChange={setRevisionDialogOpen}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Request Revision</DialogTitle>
+                    <DialogDescription>
+                      Write a message to the user explaining what needs to be corrected for '{targetFormForRevision}'. This will be sent to them via email.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                        <Label htmlFor="revision-details">Revision Details</Label>
+                        <Textarea 
+                          id="revision-details" 
+                          placeholder="e.g., Please provide a clearer copy of the Proof of Income document." 
+                          rows={5}
+                          value={revisionDetails}
+                          onChange={(e) => setRevisionDetails(e.target.value)}
+                         />
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => setRevisionDialogOpen(false)}>Cancel</Button>
+                    <Button onClick={handleRequestRevision} disabled={!revisionDetails}>Send Request</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
 
+        {/* Form Viewer Dialog */}
          <DialogContent className="max-w-4xl">
               <DialogHeader>
                   <DialogTitle>{selectedForm || 'Form View'}: Read-Only</DialogTitle>
