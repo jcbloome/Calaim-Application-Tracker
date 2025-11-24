@@ -39,7 +39,7 @@ function PrintableCsSummaryFormContent() {
                   <Field label="Age" />
                    <Field 
                     label="Medi-Cal Number" 
-                    description="Format: 9 followed by 7 digits and a letter (e.g. 91234567A)."
+                    description="Format: 9XXXXXXXA (10 characters)."
                   />
                    <Field label="Confirm Medi-Cal Number" />
                   <Field 

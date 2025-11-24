@@ -157,7 +157,7 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Medi-Cal Number <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
+                    <Input {...field} value={field.value ?? ''} maxLength={10} />
                   </FormControl>
                    <FormDescription>Format: 9 followed by 7 digits and a letter (e.g. 91234567A).</FormDescription>
                   <FormMessage />
@@ -171,7 +171,7 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Confirm Medi-Cal Number <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
+                    <Input {...field} value={field.value ?? ''} maxLength={10} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -276,8 +276,9 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Phone <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input type="tel" {...field} placeholder="(xxx) xxx-xxxx" value={field.value ?? ''} />
+                    <Input type="tel" {...field} value={field.value ?? ''} />
                   </FormControl>
+                  <FormDescription>Format: (xxx) xxx-xxxx</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -353,7 +354,7 @@ export default function Step1() {
               )} />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={control} name="bestContactPhone" render={({ field }) => (
-                      <FormItem><FormLabel>Phone</FormLabel><FormControl><Input type="tel" {...field} placeholder="(xxx) xxx-xxxx" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>Phone</FormLabel><FormControl><Input type="tel" {...field} value={field.value ?? ''} /></FormControl><FormDescription>Format: (xxx) xxx-xxxx</FormDescription><FormMessage /></FormItem>
                   )} />
                   <FormField control={control} name="bestContactEmail" render={({ field }) => (
                       <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
@@ -387,7 +388,7 @@ export default function Step1() {
                     )} />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormField control={control} name="secondaryContactPhone" render={({ field }) => (
-                            <FormItem><FormLabel>Phone</FormLabel><FormControl><Input type="tel" {...field} placeholder="(xxx) xxx-xxxx" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                            <FormItem><FormLabel>Phone</FormLabel><FormControl><Input type="tel" {...field} value={field.value ?? ''} /></FormControl><FormDescription>Format: (xxx) xxx-xxxx</FormDescription><FormMessage /></FormItem>
                         )} />
                         <FormField control={control} name="secondaryContactEmail" render={({ field }) => (
                             <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
@@ -456,7 +457,7 @@ export default function Step1() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repPhone" render={({ field }) => (
-                        <FormItem><FormLabel>Phone</FormLabel><FormControl><Input type="tel" {...field} placeholder="(xxx) xxx-xxxx" value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Phone</FormLabel><FormControl><Input type="tel" {...field} value={field.value ?? ''} /></FormControl><FormDescription>Format: (xxx) xxx-xxxx</FormDescription><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="repEmail" render={({ field }) => (
                         <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>

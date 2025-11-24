@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useForm, FormProvider } from 'react-hook-form';
@@ -34,8 +34,8 @@ const formSchema = z.object({
     memberLastName: requiredString,
     memberDob: z.date({ required_error: 'Date of birth is required.' }),
     memberAge: z.number().optional(),
-    memberMediCalNum: z.string().regex(/^9[0-9]{7}[a-zA-Z]$/, { message: 'Invalid Medi-Cal number format. Must be 9, 7 digits, 1 letter.'}),
-    confirmMemberMediCalNum: z.string(),
+    memberMediCalNum: z.string().regex(/^9[0-9]{7}[a-zA-Z]$/, { message: 'Invalid Medi-Cal number format. Must be 9, 7 digits, 1 letter.'}).max(10, "Medi-Cal number cannot exceed 10 characters."),
+    confirmMemberMediCalNum: z.string().max(10, "Medi-Cal number cannot exceed 10 characters."),
     memberMrn: requiredString,
     confirmMemberMrn: requiredString,
     memberLanguage: requiredString,
@@ -438,17 +438,9 @@ function CsSummaryFormComponent() {
               </div>
 
               <div className="mt-8 pt-5 border-t flex justify-between">
-                 {applicationId ? (
-                    <Button type="button" variant="outline" asChild>
-                        <Link href={`/pathway?applicationId=${applicationId}`}>
-                            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Pathway
-                        </Link>
-                    </Button>
-                 ) : (
-                    <Button type="button" variant="outline" onClick={prevStep} disabled={currentStep === 1}>
-                        <ArrowLeft className="mr-2 h-4 w-4" /> Previous
-                    </Button>
-                 )}
+                <Button type="button" variant="outline" onClick={prevStep} disabled={currentStep === 1}>
+                    <ArrowLeft className="mr-2 h-4 w-4" /> Previous
+                </Button>
 
                 {currentStep < steps.length ? (
                   <Button type="button" onClick={nextStep}>
@@ -475,5 +467,3 @@ export default function CsSummaryFormPage() {
     </React.Suspense>
   );
 }
-
-    
