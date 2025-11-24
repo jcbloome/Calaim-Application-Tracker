@@ -47,14 +47,14 @@ const formSchema = z.object({
     referrerRelationship: requiredString,
     agency: optionalString,
 
-    // Step 1 - Member Contact
+    // Step 1 - Best Contact Person
     bestContactType: z.enum(['member', 'other'], { required_error: 'Please select a best contact type.'}),
-    bestContactFirstName: optionalString,
-    bestContactLastName: optionalString,
-    bestContactRelationship: optionalString,
-    bestContactPhone: optionalString,
+    bestContactFirstName: optionalString.nullable(),
+    bestContactLastName: optionalString.nullable(),
+    bestContactRelationship: optionalString.nullable(),
+    bestContactPhone: optionalString.nullable(),
     bestContactEmail: optionalEmail,
-    bestContactLanguage: optionalString,
+    bestContactLanguage: optionalString.nullable(),
 
     // Secondary Contact
     secondaryContactFirstName: optionalString,
@@ -251,12 +251,22 @@ function CsSummaryFormComponent() {
             setApplicationId(null);
             reset({
               copyAddress: false,
+              referrerFirstName: userProfile?.firstName || '',
+              referrerLastName: userProfile?.lastName || '',
+              referrerEmail: userProfile?.email || '',
             });
         }
+      } else if (userProfile) { // Handles case where it's a new form from the start
+          reset({
+              copyAddress: false,
+              referrerFirstName: userProfile.firstName || '',
+              referrerLastName: userProfile.lastName || '',
+              referrerEmail: userProfile.email || '',
+          });
       }
     };
     fetchApplicationData();
-  }, [applicationId, user, firestore, reset]);
+  }, [applicationId, user, firestore, reset, userProfile]);
 
   const saveProgress = async (isNavigating: boolean = false) => {
     addLog("Attempting to save progress...");
