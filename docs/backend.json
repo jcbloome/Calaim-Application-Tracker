@@ -1,3 +1,4 @@
+
 {
   "entities": {
     "User": {
@@ -77,6 +78,10 @@
         "pathway": {
           "type": "string",
           "description": "The selected CalAIM pathway (SNF Transition or SNF Diversion)."
+        },
+        "memberCounty": {
+          "type": "string",
+          "description": "The county of residence for the CalAIM member."
         }
       },
       "required": [
@@ -88,7 +93,8 @@
         "medicalRecordNumber",
         "managedCarePlan",
         "status",
-        "pathway"
+        "pathway",
+        "memberCounty"
       ]
     },
     "Contact": {

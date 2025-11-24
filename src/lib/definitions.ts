@@ -8,6 +8,7 @@ export type Application = {
   userId: string;
   memberFirstName: string;
   memberLastName: string;
+  memberCounty: string;
   memberMrn: string;
   status: ApplicationStatus;
   lastUpdated: string | Timestamp; 

@@ -2,8 +2,8 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, FormProvider } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -39,6 +39,7 @@ const formSchema = z.object({
     memberMrn: requiredString,
     confirmMemberMrn: requiredString,
     memberLanguage: requiredString,
+    memberCounty: requiredString,
     
     // Step 1 - Referrer Info
     referrerFirstName: optionalString,
@@ -127,7 +128,7 @@ export type FormValues = z.infer<typeof formSchema>;
 
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
-      'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'confirmMemberMediCalNum', 'memberMrn', 'confirmMemberMrn', 'memberLanguage',
+      'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'confirmMemberMediCalNum', 'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'memberCounty',
       'referrerPhone', 'referrerRelationship', 'bestContactType',
       'hasCapacity',
   ]},
@@ -421,8 +422,13 @@ function CsSummaryFormComponent() {
           <div className="container mx-auto px-4 py-8 sm:px-6">
             <div className="max-w-4xl mx-auto">
               <div className="mb-8">
-                <div className="flex items-center justify-between mb-2">
-                    <h1 className="text-2xl font-bold">CS Member Summary</h1>
+                <div className="flex items-center justify-between mb-4">
+                     <div className="flex items-center gap-4">
+                         <Button type="button" variant="outline" onClick={prevStep} disabled={currentStep === 1}>
+                             <ArrowLeft className="mr-2 h-4 w-4" /> Previous
+                         </Button>
+                          <h1 className="text-2xl font-bold hidden sm:block">CS Member Summary</h1>
+                     </div>
                     <span className="text-sm font-medium text-muted-foreground">
                         Step {currentStep} of {steps.length}: {steps[currentStep - 1].name}
                     </span>

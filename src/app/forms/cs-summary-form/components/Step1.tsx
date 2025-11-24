@@ -207,20 +207,36 @@ export default function Step1() {
               )}
             />
           </div>
-          <FormField
-            control={control}
-            name="memberLanguage"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Preferred Language <span className="text-destructive">*</span></FormLabel>
-                <FormControl>
-                  <Input {...field} value={field.value ?? ''} />
-                </FormControl>
-                <FormDescription>e.g., English, Spanish</FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField
+                control={control}
+                name="memberLanguage"
+                render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Preferred Language <span className="text-destructive">*</span></FormLabel>
+                    <FormControl>
+                    <Input {...field} value={field.value ?? ''} />
+                    </FormControl>
+                    <FormDescription>e.g., English, Spanish</FormDescription>
+                    <FormMessage />
+                </FormItem>
+                )}
+            />
+             <FormField
+                control={control}
+                name="memberCounty"
+                render={({ field }) => (
+                <FormItem>
+                    <FormLabel>County <span className="text-destructive">*</span></FormLabel>
+                    <FormControl>
+                    <Input {...field} value={field.value ?? ''} />
+                    </FormControl>
+                    <FormDescription>e.g., Los Angeles</FormDescription>
+                    <FormMessage />
+                </FormItem>
+                )}
+            />
+          </div>
         </CardContent>
       </Card>
       

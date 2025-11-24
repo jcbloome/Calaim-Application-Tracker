@@ -48,6 +48,7 @@ function PrintableCsSummaryFormContent() {
                   />
                   <Field label="Confirm Medical Record Number (MRN)" />
                   <Field label="Preferred Language" description="e.g., English, Spanish"/>
+                  <Field label="County" description="e.g., Los Angeles"/>
                 </div>
               </div>
 
