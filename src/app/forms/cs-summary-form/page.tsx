@@ -33,8 +33,8 @@ const formSchema = z.object({
     memberLastName: requiredString,
     memberDob: z.date({ required_error: 'Date of birth is required.' }),
     memberAge: z.number().optional(),
-    memberMediCalNum: requiredString,
-    confirmMemberMediCalNum: requiredString,
+    memberMediCalNum: z.string().regex(/^9[0-9]{7}[a-zA-Z]$/, { message: 'Invalid Medi-Cal number format. Must be 9, 7 digits, 1 letter.'}),
+    confirmMemberMediCalNum: z.string(),
     memberMrn: requiredString,
     confirmMemberMrn: requiredString,
     memberLanguage: requiredString,
@@ -477,3 +477,4 @@ export default function CsSummaryFormPage() {
   );
 }
 
+    

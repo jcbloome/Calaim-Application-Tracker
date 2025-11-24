@@ -39,7 +39,7 @@ function PrintableCsSummaryFormContent() {
                   <Field label="Age" />
                    <Field 
                     label="Medi-Cal Number" 
-                    description="Medi-Cal Number for Health Net (begins with 9)."
+                    description="Format: 9 followed by 7 digits and a letter (e.g. 91234567A)."
                   />
                    <Field label="Confirm Medi-Cal Number" />
                   <Field 
@@ -282,3 +282,5 @@ export default function PrintableCsSummaryForm() {
     </div>
   );
 }
+
+    

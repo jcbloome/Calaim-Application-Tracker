@@ -159,7 +159,7 @@ export default function Step1() {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
-                   <FormDescription>Medi-Cal Number for Health Net (begins with 9).</FormDescription>
+                   <FormDescription>Format: 9 followed by 7 digits and a letter (e.g. 91234567A).</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -470,3 +470,4 @@ export default function Step1() {
   );
 }
 
+    
