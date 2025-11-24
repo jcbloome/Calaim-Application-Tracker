@@ -222,20 +222,6 @@ export default function Step1() {
                 </FormItem>
                 )}
             />
-             <FormField
-                control={control}
-                name="memberCounty"
-                render={({ field }) => (
-                <FormItem>
-                    <FormLabel>County <span className="text-destructive">*</span></FormLabel>
-                    <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
-                    </FormControl>
-                    <FormDescription>e.g., Los Angeles</FormDescription>
-                    <FormMessage />
-                </FormItem>
-                )}
-            />
           </div>
         </CardContent>
       </Card>

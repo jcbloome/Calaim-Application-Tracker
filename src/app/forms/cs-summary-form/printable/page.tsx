@@ -48,7 +48,6 @@ function PrintableCsSummaryFormContent() {
                   />
                   <Field label="Confirm Medical Record Number (MRN)" />
                   <Field label="Preferred Language" description="e.g., English, Spanish"/>
-                  <Field label="County" description="e.g., Los Angeles"/>
                 </div>
               </div>
 
@@ -139,6 +138,7 @@ function PrintableCsSummaryFormContent() {
                     <Field label="City" />
                     <Field label="State" />
                     <Field label="ZIP Code" />
+                    <Field label="County" />
                  </div>
                 <h3 className="text-sm font-medium text-gray-800 mt-4">Customary Residence (where is the member's normal long term address)</h3>
                  <CheckboxField label="Same as current location" />
@@ -147,6 +147,7 @@ function PrintableCsSummaryFormContent() {
                     <Field label="City" />
                     <Field label="State" />
                     <Field label="ZIP Code" />
+                     <Field label="County" />
                  </div>
               </div>
 

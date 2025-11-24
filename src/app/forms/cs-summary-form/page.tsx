@@ -39,7 +39,6 @@ const formSchema = z.object({
     memberMrn: requiredString,
     confirmMemberMrn: requiredString,
     memberLanguage: requiredString,
-    memberCounty: requiredString,
     
     // Step 1 - Referrer Info
     referrerFirstName: optionalString,
@@ -80,11 +79,13 @@ const formSchema = z.object({
     currentCity: requiredString,
     currentState: requiredString,
     currentZip: requiredString,
+    currentCounty: requiredString,
     copyAddress: z.boolean().optional(),
     customaryAddress: optionalString,
     customaryCity: optionalString,
     customaryState: optionalString,
     customaryZip: optionalString,
+    customaryCounty: optionalString,
 
     // Step 3 - Health Plan & Pathway
     healthPlan: z.enum(['Kaiser', 'Health Net', 'Other'], { required_error: 'Please select a health plan.' }),
@@ -128,11 +129,11 @@ export type FormValues = z.infer<typeof formSchema>;
 
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
-      'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'confirmMemberMediCalNum', 'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'memberCounty',
+      'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'confirmMemberMediCalNum', 'memberMrn', 'confirmMemberMrn', 'memberLanguage',
       'referrerPhone', 'referrerRelationship', 'bestContactType',
       'hasCapacity',
   ]},
-  { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip'] },
+  { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty'] },
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'meetsPathwayCriteria'] },
   { id: 4, name: 'ISP & Facility Selection', fields: []},
 ];
