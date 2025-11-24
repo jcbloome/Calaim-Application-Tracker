@@ -39,8 +39,12 @@ const faqItems = [
     answer: "An Adult Residential Facility (ARF) is licensed for adults aged 18 to 59. A Residential Care Facility for the Elderly (RCFE) is licensed to care for individuals aged 60 and older. Both provide non-medical care and supervision in a community setting."
   },
   {
-    question: "What is a Share of Cost (SOC) and how must it be eliminated to join a Medi-Cal managed care plan for CalAIM?",
-    answer: "A Share of Cost (SOC) is like a monthly deductible for Medi-Cal when your income is over a certain limit. Members participating in the CalAIM Community Supports program are not permitted to have a SOC. It must be eliminated before the application can be approved, often by purchasing supplemental health, dental, or vision insurance to lower countable income."
+    question: "What is a Share of Cost (SOC)?",
+    answer: "A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay. This happens when your income is above the limit for free Medi-Cal but you still qualify for the program."
+  },
+  {
+    question: "How must a Share of Cost (SOC) be eliminated for the CalAIM program?",
+    answer: "Members participating in the CalAIM Community Supports program are not permitted to have a SOC. It must be eliminated before the application can be approved. A common way to do this is by purchasing supplemental health, dental, or vision insurance, which can lower your 'countable' income and remove the SOC."
   },
   {
       question: "What is an Individual Service Plan (ISP) and why is it important?",
