@@ -157,7 +157,7 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Medi-Cal Number <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} maxLength={10} />
+                    <Input {...field} value={field.value ?? ''} maxLength={9} />
                   </FormControl>
                    <FormDescription>Format: 9 followed by 7 digits and a letter (e.g. 91234567A).</FormDescription>
                   <FormMessage />
@@ -171,7 +171,7 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Confirm Medi-Cal Number <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} maxLength={10} />
+                    <Input {...field} value={field.value ?? ''} maxLength={9} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -469,5 +469,3 @@ export default function Step1() {
     </div>
   );
 }
-
-    

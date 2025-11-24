@@ -60,7 +60,7 @@ export default function PrintableFreedomOfChoiceWaiverPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                   <Field label="Member Name" />
                   <Field 
-                    label="Medi-Cal Number or Medical Record Number" 
+                    label="Medi-Cal Number (9 characters) or Medical Record Number" 
                     description="Medi-Cal Number for Health Net, Medical Record Number for Kaiser."
                   />
                 </div>
@@ -93,5 +93,3 @@ export default function PrintableFreedomOfChoiceWaiverPage() {
     </div>
   );
 }
-
-    

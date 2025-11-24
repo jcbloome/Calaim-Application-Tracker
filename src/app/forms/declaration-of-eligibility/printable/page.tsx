@@ -58,7 +58,7 @@ export default function PrintableDeclarationOfEligibilityPage() {
                         </p>
                     </div>
                     <Field 
-                        label="Medi-Cal Number or Medical Record Number" 
+                        label="Medi-Cal Number (9 characters) or Medical Record Number" 
                         description="Medi-Cal Number for Health Net, Medical Record Number for Kaiser."
                     />
 
@@ -87,5 +87,3 @@ export default function PrintableDeclarationOfEligibilityPage() {
     </div>
   );
 }
-
-    
