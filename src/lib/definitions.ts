@@ -5,6 +5,7 @@ export type ApplicationStatus = 'In Progress' | 'Completed & Submitted' | 'Requi
 
 export type Application = {
   id: string;
+  userId: string;
   memberFirstName: string;
   memberLastName: string;
   memberMrn: string;

@@ -45,16 +45,16 @@ const formSchema = z.object({
     referrerEmail: optionalString,
     referrerPhone: requiredString,
     referrerRelationship: requiredString,
-    agency: optionalString,
+    agency: optionalString.nullable(),
 
     // Step 1 - Best Contact Person
     bestContactType: z.enum(['member', 'other'], { required_error: 'Please select a best contact type.'}),
-    bestContactFirstName: optionalString.nullable(),
-    bestContactLastName: optionalString.nullable(),
-    bestContactRelationship: optionalString.nullable(),
-    bestContactPhone: optionalString.nullable(),
+    bestContactFirstName: optionalString,
+    bestContactLastName: optionalString,
+    bestContactRelationship: optionalString,
+    bestContactPhone: optionalString,
     bestContactEmail: optionalEmail,
-    bestContactLanguage: optionalString.nullable(),
+    bestContactLanguage: optionalString,
 
     // Secondary Contact
     secondaryContactFirstName: optionalString,
@@ -188,16 +188,7 @@ function CsSummaryFormComponent() {
   const addLog = (message: string) => {
     setDebugLogs(prev => [message, ...prev]);
   };
-
-  const userProfileDocRef = useMemo(() => {
-    if (user && firestore) {
-      return doc(firestore, `users/${user.uid}`);
-    }
-    return null;
-  }, [user, firestore]);
   
-  const { data: userProfile } = useDoc(userProfileDocRef);
-
   const methods = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -210,23 +201,11 @@ function CsSummaryFormComponent() {
 
   useEffect(() => {
     addLog("Form component mounted.");
-  }, []);
-
-  useEffect(() => {
     if (!isUserLoading && !user) {
       addLog("User not found, redirecting to /login.");
       router.push('/login');
     }
   }, [user, isUserLoading, router]);
-
-  useEffect(() => {
-    if (userProfile && !applicationId) { 
-      addLog("New application, populating referrer info from user profile.");
-      methods.setValue('referrerFirstName', userProfile.firstName || '');
-      methods.setValue('referrerLastName', userProfile.lastName || '');
-      methods.setValue('referrerEmail', userProfile.email || '');
-    }
-  }, [userProfile, methods, applicationId]);
 
   useEffect(() => {
     const fetchApplicationData = async () => {
@@ -238,7 +217,6 @@ function CsSummaryFormComponent() {
           const data = docSnap.data();
           addLog("Application data found in Firestore.");
           
-          // Firestore Timestamps need to be converted to JS Date objects for the form
           if (data.memberDob && typeof data.memberDob.toDate === 'function') {
             data.memberDob = data.memberDob.toDate();
             addLog("Converted 'memberDob' from Firestore Timestamp to Date.");
@@ -251,22 +229,23 @@ function CsSummaryFormComponent() {
             setApplicationId(null);
             reset({
               copyAddress: false,
-              referrerFirstName: userProfile?.firstName || '',
-              referrerLastName: userProfile?.lastName || '',
-              referrerEmail: userProfile?.email || '',
+              referrerFirstName: user?.displayName?.split(' ')[0] || '',
+              referrerLastName: user?.displayName?.split(' ')[1] || '',
+              referrerEmail: user?.email || '',
             });
         }
-      } else if (userProfile) { // Handles case where it's a new form from the start
+      } else if (user && !applicationId) { // Handles case where it's a new form from the start
           reset({
               copyAddress: false,
-              referrerFirstName: userProfile.firstName || '',
-              referrerLastName: userProfile.lastName || '',
-              referrerEmail: userProfile.email || '',
+              referrerFirstName: user?.displayName?.split(' ')[0] || '',
+              referrerLastName: user?.displayName?.split(' ')[1] || '',
+              referrerEmail: user?.email || '',
           });
+          addLog("New form, pre-populating with user data.");
       }
     };
     fetchApplicationData();
-  }, [applicationId, user, firestore, reset, userProfile]);
+  }, [applicationId, user, firestore, reset]);
 
   const saveProgress = async (isNavigating: boolean = false) => {
     addLog("Attempting to save progress...");
@@ -458,9 +437,18 @@ function CsSummaryFormComponent() {
               </div>
 
               <div className="mt-8 pt-5 border-t flex justify-between">
-                <Button type="button" variant="outline" onClick={prevStep} disabled={currentStep === 1}>
-                  <ArrowLeft className="mr-2 h-4 w-4" /> Previous
-                </Button>
+                 {applicationId ? (
+                    <Button type="button" variant="outline" asChild>
+                        <Link href={`/pathway?applicationId=${applicationId}`}>
+                            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Pathway
+                        </Link>
+                    </Button>
+                 ) : (
+                    <Button type="button" variant="outline" onClick={prevStep} disabled={currentStep === 1}>
+                        <ArrowLeft className="mr-2 h-4 w-4" /> Previous
+                    </Button>
+                 )}
+
                 {currentStep < steps.length ? (
                   <Button type="button" onClick={nextStep}>
                     Next
@@ -486,5 +474,3 @@ export default function CsSummaryFormPage() {
     </React.Suspense>
   );
 }
-
-    
