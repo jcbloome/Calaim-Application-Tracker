@@ -7,19 +7,20 @@ import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessa
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { CalendarIcon } from 'lucide-react';
+import { CalendarIcon, UserPlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormValues } from '../page';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+
 
 export default function Step1() {
-  const { control, watch, setValue, getValues } = useFormContext<FormValues>();
+  const { control, watch, setValue } = useFormContext<FormValues>();
   const memberDob = watch('memberDob');
-  const isBestContactMember = watch('isBestContactMember');
+  const bestContactType = watch('bestContactType');
   const memberFirstName = watch('memberFirstName');
   const memberLastName = watch('memberLastName');
 
@@ -45,16 +46,18 @@ export default function Step1() {
       setValue('memberAge', undefined, { shouldValidate: true });
     }
   }, [memberDob, setValue]);
-
+  
   useEffect(() => {
-    if (isBestContactMember) {
+    if (bestContactType === 'member') {
         setValue('bestContactFirstName', memberFirstName, { shouldValidate: true });
         setValue('bestContactLastName', memberLastName, { shouldValidate: true });
-    } else {
+        setValue('bestContactRelationship', 'Self', { shouldValidate: true });
+    } else if (bestContactType === 'other') {
         setValue('bestContactFirstName', '', { shouldValidate: true });
         setValue('bestContactLastName', '', { shouldValidate: true });
+        setValue('bestContactRelationship', '', { shouldValidate: true });
     }
-  }, [isBestContactMember, memberFirstName, memberLastName, setValue]);
+  }, [bestContactType, memberFirstName, memberLastName, setValue]);
 
   return (
     <div className="space-y-6">
@@ -317,64 +320,37 @@ export default function Step1() {
       <Card className="border-l-4 border-accent">
         <CardHeader>
           <CardTitle>Member Contact</CardTitle>
+          <CardDescription>Provide contact details for the member or their designated best contact person.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-              control={control}
-              name="memberPhone"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Phone</FormLabel>
-                  <FormControl>
-                    <Input type="tel" {...field} placeholder="(xxx) xxx-xxxx" value={field.value ?? ''} />
-                  </FormControl>
-                  <FormDescription>Format: (xxx) xxx-xxxx</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={control}
-              name="memberEmail"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
-                  <FormControl>
-                    <Input type="email" {...field} value={field.value ?? ''} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
           <div className="p-4 border rounded-md space-y-4">
-              <h3 className="font-medium">Best Contact Person</h3>
               <FormField
                 control={control}
-                name="isBestContactMember"
+                name="bestContactType"
                 render={({ field }) => (
-                  <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                    <FormItem className="space-y-3">
+                    <FormLabel>Who is the best contact person? <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
+                        <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-4">
+                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="member" /></FormControl><FormLabel className="font-normal">The Member</FormLabel></FormItem>
+                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="other" /></FormControl><FormLabel className="font-normal">Another Contact Person</FormLabel></FormItem>
+                        </RadioGroup>
                     </FormControl>
-                    <FormLabel className="font-normal">Best contact person is the member</FormLabel>
-                  </FormItem>
+                    <FormMessage />
+                    </FormItem>
                 )}
-              />
+               />
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={control} name="bestContactFirstName" render={({ field }) => (
-                      <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={isBestContactMember} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={bestContactType === 'member'} /></FormControl><FormMessage /></FormItem>
                   )} />
                   <FormField control={control} name="bestContactLastName" render={({ field }) => (
-                      <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={isBestContactMember} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={bestContactType === 'member'} /></FormControl><FormMessage /></FormItem>
                   )} />
               </div>
               <FormField control={control} name="bestContactRelationship" render={({ field }) => (
-                  <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={bestContactType === 'member'} /></FormControl><FormMessage /></FormItem>
               )} />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={control} name="bestContactPhone" render={({ field }) => (
@@ -388,6 +364,42 @@ export default function Step1() {
                   <FormItem><FormLabel>Language</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
               )} />
           </div>
+
+          <Collapsible>
+            <CollapsibleTrigger asChild>
+                <Button variant="link" className="p-0 text-accent">
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Add a Secondary Contact (Optional)
+                </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+                <div className="p-4 border rounded-md space-y-4 mt-2">
+                    <h3 className="font-medium">Secondary Contact Person</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField control={control} name="secondaryContactFirstName" render={({ field }) => (
+                            <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        )} />
+                        <FormField control={control} name="secondaryContactLastName" render={({ field }) => (
+                            <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        )} />
+                    </div>
+                    <FormField control={control} name="secondaryContactRelationship" render={({ field }) => (
+                        <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField control={control} name="secondaryContactPhone" render={({ field }) => (
+                            <FormItem><FormLabel>Phone</FormLabel><FormControl><Input type="tel" {...field} placeholder="(xxx) xxx-xxxx" value={field.value ?? ''} /></FormControl><FormDescription>Format: (xxx) xxx-xxxx</FormDescription><FormMessage /></FormItem>
+                        )} />
+                        <FormField control={control} name="secondaryContactEmail" render={({ field }) => (
+                            <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        )} />
+                    </div>
+                    <FormField control={control} name="secondaryContactLanguage" render={({ field }) => (
+                        <FormItem><FormLabel>Language</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                </div>
+            </CollapsibleContent>
+          </Collapsible>
         </CardContent>
       </Card>
       

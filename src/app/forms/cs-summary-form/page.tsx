@@ -24,6 +24,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 
 const requiredString = z.string().min(1, { message: 'This field is required.' });
+const optionalString = z.string().optional().nullable();
+const optionalEmail = z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')).nullable();
 
 const formSchema = z.object({
     // Step 1 - Member Info
@@ -38,32 +40,38 @@ const formSchema = z.object({
     memberLanguage: requiredString,
     
     // Step 1 - Referrer Info
-    referrerFirstName: z.string().optional(),
-    referrerLastName: z.string().optional(),
-    referrerEmail: z.string().optional(),
+    referrerFirstName: optionalString,
+    referrerLastName: optionalString,
+    referrerEmail: optionalString,
     referrerPhone: requiredString,
     referrerRelationship: requiredString,
-    agency: z.string().optional().nullable(),
+    agency: optionalString,
 
     // Step 1 - Member Contact
-    memberPhone: z.string().optional().nullable(),
-    memberEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')).nullable(),
-    isBestContactMember: z.boolean().optional(),
-    bestContactFirstName: z.string().optional().nullable(),
-    bestContactLastName: z.string().optional().nullable(),
-    bestContactRelationship: z.string().optional().nullable(),
-    bestContactPhone: z.string().optional().nullable(),
-    bestContactEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')).nullable(),
-    bestContactLanguage: z.string().optional().nullable(),
+    bestContactType: z.enum(['member', 'other'], { required_error: 'Please select a best contact type.'}),
+    bestContactFirstName: optionalString,
+    bestContactLastName: optionalString,
+    bestContactRelationship: optionalString,
+    bestContactPhone: optionalString,
+    bestContactEmail: optionalEmail,
+    bestContactLanguage: optionalString,
+
+    // Secondary Contact
+    secondaryContactFirstName: optionalString,
+    secondaryContactLastName: optionalString,
+    secondaryContactRelationship: optionalString,
+    secondaryContactPhone: optionalString,
+    secondaryContactEmail: optionalEmail,
+    secondaryContactLanguage: optionalString,
 
     // Step 1 - Legal Rep
     hasCapacity: z.enum(['Yes', 'No'], { required_error: 'This field is required.' }),
-    hasLegalRep: z.string().optional().nullable(),
-    repName: z.string().optional().nullable(),
-    repRelationship: z.string().optional().nullable(),
-    repPhone: z.string().optional().nullable(),
-    repEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')).nullable(),
-    repLanguage: z.string().optional().nullable(),
+    hasLegalRep: optionalString,
+    repName: optionalString,
+    repRelationship: optionalString,
+    repPhone: optionalString,
+    repEmail: optionalEmail,
+    repLanguage: optionalString,
 
     // Step 2 - Location
     currentLocation: requiredString,
@@ -72,38 +80,38 @@ const formSchema = z.object({
     currentState: requiredString,
     currentZip: requiredString,
     copyAddress: z.boolean().optional(),
-    customaryAddress: z.string().optional().nullable(),
-    customaryCity: z.string().optional().nullable(),
-    customaryState: z.string().optional().nullable(),
-    customaryZip: z.string().optional().nullable(),
+    customaryAddress: optionalString,
+    customaryCity: optionalString,
+    customaryState: optionalString,
+    customaryZip: optionalString,
 
     // Step 3 - Health Plan & Pathway
     healthPlan: z.enum(['Kaiser', 'Health Net', 'Other'], { required_error: 'Please select a health plan.' }),
-    existingHealthPlan: z.string().optional().nullable(),
+    existingHealthPlan: optionalString,
     switchingHealthPlan: z.enum(['Yes', 'No']).optional().nullable(),
     pathway: z.enum(['SNF Transition', 'SNF Diversion'], { required_error: 'Please select a pathway.' }),
     meetsPathwayCriteria: z.boolean().refine(val => val === true, { message: "You must confirm the criteria are met." }),
-    snfDiversionReason: z.string().optional().nullable(),
+    snfDiversionReason: optionalString,
 
     // Step 4 - ISP & RCFE
-    ispFirstName: z.string().optional().nullable(),
-    ispLastName: z.string().optional().nullable(),
-    ispRelationship: z.string().optional().nullable(),
-    ispFacilityName: z.string().optional().nullable(),
-    ispPhone: z.string().optional().nullable(),
-    ispEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')).nullable(),
-    ispAddress: z.string().optional().nullable(),
-    ispCity: z.string().optional().nullable(),
-    ispState: z.string().optional().nullable(),
-    ispZip: z.string().optional().nullable(),
-    ispCounty: z.string().optional().nullable(),
+    ispFirstName: optionalString,
+    ispLastName: optionalString,
+    ispRelationship: optionalString,
+    ispFacilityName: optionalString,
+    ispPhone: optionalString,
+    ispEmail: optionalEmail,
+    ispAddress: optionalString,
+    ispCity: optionalString,
+    ispState: optionalString,
+    ispZip: optionalString,
+    ispCounty: optionalString,
     onALWWaitlist: z.enum(['Yes', 'No', 'Unknown']).optional().nullable(),
-    hasPrefRCFE: z.string().optional().nullable(),
-    rcfeName: z.string().optional().nullable(),
-    rcfeAdminName: z.string().optional().nullable(),
-    rcfeAdminPhone: z.string().optional().nullable(),
-    rcfeAdminEmail: z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')).nullable(),
-    rcfeAddress: z.string().optional().nullable(),
+    hasPrefRCFE: optionalString,
+    rcfeName: optionalString,
+    rcfeAdminName: optionalString,
+    rcfeAdminPhone: optionalString,
+    rcfeAdminEmail: optionalEmail,
+    rcfeAddress: optionalString,
   })
   .refine(data => data.memberMediCalNum === data.confirmMemberMediCalNum, {
     message: "Medi-Cal numbers don't match",
@@ -120,7 +128,7 @@ export type FormValues = z.infer<typeof formSchema>;
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
       'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'confirmMemberMediCalNum', 'memberMrn', 'confirmMemberMrn', 'memberLanguage',
-      'referrerPhone', 'referrerRelationship',
+      'referrerPhone', 'referrerRelationship', 'bestContactType',
       'hasCapacity',
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip'] },
@@ -157,7 +165,7 @@ const DebugLog = ({ logs }: { logs: string[] }) => (
         <ScrollArea className="h-40 w-full rounded-md border p-4">
           {logs.map((log, index) => (
             <p key={index} className="text-xs font-mono">
-              {log}
+              {`[${new Date().toLocaleTimeString()}] ${log}`}
             </p>
           ))}
         </ScrollArea>
@@ -179,8 +187,7 @@ function CsSummaryFormComponent() {
   const [applicationId, setApplicationId] = useState<string | null>(searchParams.get('applicationId'));
 
   const addLog = (message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setDebugLogs(prev => [`[${timestamp}] ${message}`, ...prev]);
+    setDebugLogs(prev => [message, ...prev]);
   };
 
   const userProfileDocRef = useMemo(() => {
@@ -196,12 +203,11 @@ function CsSummaryFormComponent() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       copyAddress: false,
-      isBestContactMember: false,
     },
     mode: 'onBlur',
   });
 
-  const { formState: { errors, isValid }, trigger, getValues, handleSubmit } = methods;
+  const { formState: { errors }, trigger, getValues, handleSubmit, reset } = methods;
 
   useEffect(() => {
     addLog("Form component mounted.");
@@ -217,9 +223,9 @@ function CsSummaryFormComponent() {
   useEffect(() => {
     if (userProfile && !applicationId) { 
       addLog("New application, populating referrer info from user profile.");
-      methods.setValue('referrerFirstName', userProfile.firstName, { shouldValidate: true });
-      methods.setValue('referrerLastName', userProfile.lastName, { shouldValidate: true });
-      methods.setValue('referrerEmail', userProfile.email, { shouldValidate: true });
+      methods.setValue('referrerFirstName', userProfile.firstName || '');
+      methods.setValue('referrerLastName', userProfile.lastName || '');
+      methods.setValue('referrerEmail', userProfile.email || '');
     }
   }, [userProfile, methods, applicationId]);
 
@@ -238,22 +244,25 @@ function CsSummaryFormComponent() {
             data.memberDob = data.memberDob.toDate();
           }
           
-          methods.reset(data);
+          reset(data);
           addLog("Form reset with loaded data.");
         } else {
-            addLog("Warning: Application ID provided but document not found. Starting a new application.");
-            setApplicationId(null); // Reset if not found
+            addLog(`Warning: Application ID ${applicationId} not found. Starting a new application.`);
+            setApplicationId(null);
+            reset({
+              copyAddress: false,
+            });
         }
       }
     };
     fetchApplicationData();
-  }, [applicationId, user, firestore, methods]);
+  }, [applicationId, user, firestore, reset]);
 
   const saveProgress = async (isNavigating: boolean = false) => {
     addLog("Attempting to save progress...");
     if (!user || !firestore) {
         addLog("Save failed: User or Firestore not available.");
-        return;
+        return null;
     }
   
     const currentData = getValues();
@@ -288,13 +297,14 @@ function CsSummaryFormComponent() {
          toast({ title: 'Progress Saved', description: 'Your changes have been saved.' });
        }
        addLog(`Progress saved successfully for application ID: ${docId}`);
+       return docId;
     } catch (error: any) {
       addLog(`Error saving progress: ${error.message}`);
       if (!isNavigating) {
         toast({ variant: "destructive", title: "Save Error", description: `Could not save your progress: ${error.message}` });
       }
     }
-    return docId;
+    return null;
   };
 
 
@@ -313,7 +323,8 @@ function CsSummaryFormComponent() {
             addLog(`Successfully moved to step ${currentStep + 1}`);
         }
     } else {
-        addLog(`Step is invalid. Errors: ${JSON.stringify(methods.formState.errors)}`);
+        const errorList = JSON.stringify(errors, null, 2);
+        addLog(`Step is invalid. Errors: ${errorList}`);
         if (activeToastId.current) dismiss(activeToastId.current);
         const { id } = toast({
             variant: "destructive",
@@ -334,7 +345,8 @@ function CsSummaryFormComponent() {
   };
 
   const onInvalid = (errors: any) => {
-    addLog(`Form submission failed due to validation errors: ${JSON.stringify(errors)}`);
+    const errorString = JSON.stringify(errors, null, 2);
+    addLog(`Form submission failed due to validation errors: ${errorString}`);
     toast({
       variant: 'destructive',
       title: 'Submission Failed',
@@ -365,10 +377,15 @@ function CsSummaryFormComponent() {
     const requiredForms = getRequiredFormsForPathway(data.pathway);
     addLog(`Generated required forms for pathway '${data.pathway}': ${JSON.stringify(requiredForms.map(f => f.name))}`);
     
+    // Sanitize data one last time before final save
+    const sanitizedData = Object.fromEntries(
+      Object.entries(data).map(([key, value]) => [key, value === undefined ? null : value])
+    );
+    
     const finalData = {
-      ...data, // Include all form data
+      ...sanitizedData,
       forms: requiredForms,
-      status: 'Completed & Submitted' as const, // Change status on successful submission
+      status: 'Completed & Submitted' as const,
       lastUpdated: serverTimestamp(),
     };
   
@@ -382,12 +399,12 @@ function CsSummaryFormComponent() {
       });
       addLog(`Navigating to /pathway?applicationId=${finalAppId}`);
       router.push(`/pathway?applicationId=${finalAppId}`);
-    } catch (error) {
-      addLog(`Error during final submission: ${error}`);
+    } catch (error: any) {
+      addLog(`Error during final submission: ${error.message}`);
       toast({
         variant: "destructive",
         title: "Submission Error",
-        description: "Could not submit your application.",
+        description: `Could not submit your application: ${error.message}`,
       });
     }
   };
@@ -459,3 +476,5 @@ export default function CsSummaryFormPage() {
     </React.Suspense>
   );
 }
+
+    
