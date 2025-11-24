@@ -12,16 +12,15 @@ import Step3 from '@/app/forms/cs-summary-form/components/Step3';
 import Step4 from '@/app/forms/cs-summary-form/components/Step4';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import * as Schema from '@/app/forms/cs-summary-form/schema';
+import { formSchema, type FormValues } from '@/app/forms/cs-summary-form/schema';
 import type { Application } from '@/lib/definitions';
 
-const { formSchema, FormValues } = Schema;
 
 // A "tolerant" schema for viewing that makes most fields optional
 const viewSchema = formSchema.partial();
 
 export function CsSummaryView({ application }: { application: Partial<Application> }) {
-  const methods = useForm<Schema.FormValues>({
+  const methods = useForm<FormValues>({
     resolver: zodResolver(viewSchema),
     defaultValues: application,
     mode: 'onBlur',

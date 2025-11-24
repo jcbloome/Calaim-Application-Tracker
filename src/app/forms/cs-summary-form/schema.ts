@@ -1,6 +1,4 @@
 
-'use client';
-
 import { z } from 'zod';
 
 const requiredString = z.string().min(1, { message: 'This field is required.' });
