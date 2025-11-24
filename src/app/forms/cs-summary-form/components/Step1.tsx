@@ -463,9 +463,6 @@ export default function Step1() {
                         <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
-                <FormField control={control} name="repLanguage" render={({ field }) => (
-                    <FormItem><FormLabel>Language</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-                )} />
             </div>
         </CardContent>
       </Card>
@@ -473,4 +470,3 @@ export default function Step1() {
   );
 }
 
-    

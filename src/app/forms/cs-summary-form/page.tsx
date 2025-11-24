@@ -71,7 +71,6 @@ const formSchema = z.object({
     repRelationship: optionalString,
     repPhone: optionalString,
     repEmail: optionalEmail,
-    repLanguage: optionalString,
 
     // Step 2 - Location
     currentLocation: requiredString,
@@ -239,9 +238,10 @@ function CsSummaryFormComponent() {
           const data = docSnap.data();
           addLog("Application data found in Firestore.");
           
+          // Firestore Timestamps need to be converted to JS Date objects for the form
           if (data.memberDob && typeof data.memberDob.toDate === 'function') {
-            addLog("Converting 'memberDob' from Firestore Timestamp to Date.");
             data.memberDob = data.memberDob.toDate();
+            addLog("Converted 'memberDob' from Firestore Timestamp to Date.");
           }
           
           reset(data);
@@ -477,4 +477,3 @@ export default function CsSummaryFormPage() {
   );
 }
 
-    

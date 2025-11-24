@@ -37,15 +37,17 @@ function PrintableCsSummaryFormContent() {
                   <Field label="Last Name" />
                   <Field label="Date of Birth (MM/DD/YYYY)" />
                   <Field label="Age" />
-                  <Field 
+                   <Field 
                     label="Medi-Cal Number" 
-                    description="Medi-Cal Number for Health Net."
+                    description="Medi-Cal Number for Health Net (begins with 9)."
                   />
+                   <Field label="Confirm Medi-Cal Number" />
                   <Field 
                     label="Medical Record Number (MRN)"
                     description="Medical Record Number for Kaiser. If Health Net, repeat Medi-Cal Number."
                   />
-                  <Field label="Preferred Language" />
+                  <Field label="Confirm Medical Record Number (MRN)" />
+                  <Field label="Preferred Language" description="e.g., English, Spanish"/>
                 </div>
               </div>
 
@@ -54,24 +56,35 @@ function PrintableCsSummaryFormContent() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                   <Field label="First Name" />
                   <Field label="Last Name" />
-                  <Field label="Your Phone" />
+                  <Field label="Your Phone" description="Format: (xxx) xxx-xxxx" />
                   <Field label="Your Email" />
                   <Field label="Relationship to Member (e.g., Family Member, Social Worker)" />
-                  <Field label="Agency (e.g., Bob's Referral Agency, Hospital Name, etc.)" />
+                  <Field label="Agency (e.g., Bob's Referral Agency, Hospital Name, etc.)" description="If not applicable, enter N/A"/>
                 </div>
               </div>
 
               <div>
                 <SectionTitle>Member Contact Information</SectionTitle>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
-                  <Field label="Member Phone" />
-                  <Field label="Member Email" />
+                <p className="text-xs font-medium text-gray-700 mt-2">Who is the best contact person?</p>
+                 <div className="flex gap-6">
+                    <CheckboxField label="The Member" />
+                    <CheckboxField label="Another Contact Person" />
                 </div>
-                <h3 className="text-sm font-medium text-gray-800 mt-4">Best Contact Person (if not member)</h3>
+                <h3 className="text-sm font-medium text-gray-800 mt-4">Best Contact Person</h3>
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
-                    <Field label="Name" />
+                    <Field label="First Name" />
+                    <Field label="Last Name" />
                     <Field label="Relationship to Member" />
-                    <Field label="Phone" />
+                    <Field label="Phone" description="Format: (xxx) xxx-xxxx" />
+                    <Field label="Email" />
+                    <Field label="Preferred Language" />
+                 </div>
+                 <h3 className="text-sm font-medium text-gray-800 mt-4">Secondary Contact Person (Optional)</h3>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
+                    <Field label="First Name" />
+                    <Field label="Last Name" />
+                    <Field label="Relationship to Member" />
+                    <Field label="Phone" description="Format: (xxx) xxx-xxxx" />
                     <Field label="Email" />
                     <Field label="Preferred Language" />
                  </div>
@@ -95,12 +108,12 @@ function PrintableCsSummaryFormContent() {
                     </div>
                  </div>
                  <h3 className="text-sm font-medium text-gray-800 mt-4">Representative's Contact Info</h3>
+                  <p className="text-xs text-gray-500 pt-1">If the member does not have a legal representative, please enter N/A in the following fields.</p>
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Name" />
                     <Field label="Relationship to Member" />
-                    <Field label="Phone" />
+                    <Field label="Phone" description="Format: (xxx) xxx-xxxx" />
                     <Field label="Email" />
-                    <Field label="Preferred Language" />
                  </div>
               </div>
 
@@ -190,13 +203,18 @@ function PrintableCsSummaryFormContent() {
                     <Field label="Last Name" />
                     <Field label="Relationship to Member" />
                     <Field label="Facility Name" />
-                    <Field label="Phone" />
+                    <Field label="Phone" description="Format: (xxx) xxx-xxxx"/>
                     <Field label="Email" />
                  </div>
                  
                  <h3 className="text-sm font-medium text-gray-800 mt-4">ISP Assessment Location</h3>
+                 <p className="text-xs text-gray-500 pt-1">For Kaiser pathways, all fields are required. For other pathways, enter N/A if not applicable.</p>
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
-                    <Field label="Name of ISP Assessment Location (e.g., Bob's Nursing Home, at home, etc.)" className="sm:col-span-2"/>
+                    <Field label="Street Address" className="sm:col-span-2"/>
+                    <Field label="City" />
+                    <Field label="State" />
+                    <Field label="ZIP Code" />
+                    <Field label="County" />
                  </div>
 
                 <h3 className="text-sm font-medium text-gray-800 mt-4">Assisted Living Waiver (ALW) Status</h3>
@@ -216,11 +234,12 @@ function PrintableCsSummaryFormContent() {
                     </div>
                 </div>
                 <h4 className="text-xs font-medium text-gray-800 mt-4">Preferred Facility Details</h4>
+                <p className="text-xs text-gray-500 pt-1">If a facility has not been chosen, please enter N/A in the following fields.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Facility Name" className="sm:col-span-2"/>
                     <Field label="Facility Address" className="sm:col-span-2"/>
                     <Field label="Administrator Name" />
-                    <Field label="Administrator Phone" />
+                    <Field label="Administrator Phone" description="Format: (xxx) xxx-xxxx" />
                     <Field label="Administrator Email" />
                 </div>
               </div>
