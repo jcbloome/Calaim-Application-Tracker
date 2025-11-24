@@ -106,6 +106,15 @@ export const formSchema = z.object({
   .refine(data => data.memberMrn === data.confirmMemberMrn, {
       message: "Medical Record Numbers don't match",
       path: ["confirmMemberMrn"],
+  })
+  .refine(data => {
+    if (data.hasCapacity === 'No') {
+      return data.hasLegalRep === 'Yes';
+    }
+    return true;
+  }, {
+    message: "If member does not have capacity, a legal representative must be designated.",
+    path: ["hasLegalRep"],
   });
 
 
