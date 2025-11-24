@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
@@ -26,6 +27,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const requiredString = z.string().min(1, { message: 'This field is required.' });
 const optionalString = z.string().optional().nullable();
+const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+const optionalPhone = z.string().refine(val => val === '' || !val || phoneRegex.test(val), {
+    message: 'Invalid phone number format. Expected (xxx) xxx-xxxx.',
+}).optional().nullable();
+const requiredPhone = z.string().regex(phoneRegex, { message: 'Phone number must be in (xxx) xxx-xxxx format.' });
 const optionalEmail = z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal('')).nullable();
 
 const formSchema = z.object({
@@ -39,21 +45,22 @@ const formSchema = z.object({
     memberMrn: requiredString,
     confirmMemberMrn: requiredString,
     memberLanguage: requiredString,
+    memberCounty: requiredString,
     
     // Step 1 - Referrer Info
     referrerFirstName: optionalString,
     referrerLastName: optionalString,
     referrerEmail: optionalString,
-    referrerPhone: requiredString,
+    referrerPhone: requiredPhone,
     referrerRelationship: requiredString,
     agency: optionalString.nullable(),
 
-    // Step 1 - Best Contact Person
-    bestContactType: z.enum(['member', 'other'], { required_error: 'Please select a best contact type.'}),
+    // Step 1 - Primary Contact Person
+    bestContactType: z.enum(['member', 'other'], { required_error: 'Please select a primary contact type.'}),
     bestContactFirstName: optionalString,
     bestContactLastName: optionalString,
     bestContactRelationship: optionalString,
-    bestContactPhone: optionalString,
+    bestContactPhone: optionalPhone,
     bestContactEmail: optionalEmail,
     bestContactLanguage: optionalString,
 
@@ -61,7 +68,7 @@ const formSchema = z.object({
     secondaryContactFirstName: optionalString,
     secondaryContactLastName: optionalString,
     secondaryContactRelationship: optionalString,
-    secondaryContactPhone: optionalString,
+    secondaryContactPhone: optionalPhone,
     secondaryContactEmail: optionalEmail,
     secondaryContactLanguage: optionalString,
 
@@ -70,7 +77,7 @@ const formSchema = z.object({
     hasLegalRep: optionalString,
     repName: optionalString,
     repRelationship: optionalString,
-    repPhone: optionalString,
+    repPhone: optionalPhone,
     repEmail: optionalEmail,
     isRepPrimaryContact: z.boolean().optional(),
 
@@ -101,7 +108,7 @@ const formSchema = z.object({
     ispLastName: optionalString,
     ispRelationship: optionalString,
     ispFacilityName: optionalString,
-    ispPhone: optionalString,
+    ispPhone: optionalPhone,
     ispEmail: optionalEmail,
     ispAddress: optionalString,
     ispCity: optionalString,
@@ -112,8 +119,8 @@ const formSchema = z.object({
     hasPrefRCFE: optionalString,
     rcfeName: optionalString,
     rcfeAdminName: optionalString,
-    rcfeAdminPhone: optionalString,
-rcfeAdminEmail: optionalEmail,
+    rcfeAdminPhone: optionalPhone,
+    rcfeAdminEmail: optionalEmail,
     rcfeAddress: optionalString,
   })
   .refine(data => data.memberMediCalNum === data.confirmMemberMediCalNum, {
@@ -130,7 +137,7 @@ export type FormValues = z.infer<typeof formSchema>;
 
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
-      'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'confirmMemberMediCalNum', 'memberMrn', 'confirmMemberMrn', 'memberLanguage',
+      'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'confirmMemberMediCalNum', 'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'memberCounty',
       'referrerPhone', 'referrerRelationship', 'bestContactType',
       'hasCapacity',
   ]},

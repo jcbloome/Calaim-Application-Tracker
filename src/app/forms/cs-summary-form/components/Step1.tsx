@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useFormContext } from 'react-hook-form';
@@ -15,6 +16,7 @@ import { useEffect, useState } from 'react';
 import type { FormValues } from '../page';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
+import { PhoneInput } from '@/components/ui/phone-input';
 
 
 export default function Step1() {
@@ -182,7 +184,7 @@ export default function Step1() {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} maxLength={9} />
                   </FormControl>
-                   <FormDescription>Format: 9 followed by 7 digits and a letter (e.g. 91234567A).</FormDescription>
+                   <FormDescription>Format: 9 digits and a letter (e.g. 91234567A).</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -245,6 +247,20 @@ export default function Step1() {
                 </FormItem>
                 )}
             />
+            <FormField
+                control={control}
+                name="memberCounty"
+                render={({ field }) => (
+                <FormItem>
+                    <FormLabel>County <span className="text-destructive">*</span></FormLabel>
+                    <FormControl>
+                    <Input {...field} value={field.value ?? ''} />
+                    </FormControl>
+                    <FormDescription>e.g., Los Angeles</FormDescription>
+                    <FormMessage />
+                </FormItem>
+                )}
+            />
           </div>
         </CardContent>
       </Card>
@@ -301,7 +317,7 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Phone <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input type="tel" {...field} value={field.value ?? ''} />
+                    <PhoneInput {...field} value={field.value ?? ''} />
                   </FormControl>
                   <FormDescription>(xxx) xxx-xxxx</FormDescription>
                   <FormMessage />
@@ -381,7 +397,7 @@ export default function Step1() {
                   <FormField control={control} name="bestContactPhone" render={({ field }) => (
                       <FormItem>
                         <FormLabel>Phone</FormLabel>
-                        <FormControl><Input type="tel" {...field} value={field.value ?? ''} /></FormControl>
+                        <FormControl><PhoneInput {...field} value={field.value ?? ''} /></FormControl>
                         <FormDescription>(xxx) xxx-xxxx</FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -419,7 +435,7 @@ export default function Step1() {
                     <FormField control={control} name="secondaryContactPhone" render={({ field }) => (
                         <FormItem>
                             <FormLabel>Phone</FormLabel>
-                            <FormControl><Input type="tel" {...field} value={field.value ?? ''} /></FormControl>
+                            <FormControl><PhoneInput {...field} value={field.value ?? ''} /></FormControl>
                             <FormDescription>(xxx) xxx-xxxx</FormDescription>
                             <FormMessage />
                         </FormItem>
@@ -493,7 +509,7 @@ export default function Step1() {
                     <FormField control={control} name="repPhone" render={({ field }) => (
                         <FormItem>
                             <FormLabel>Phone</FormLabel>
-                            <FormControl><Input type="tel" {...field} value={field.value ?? ''} /></FormControl>
+                            <FormControl><PhoneInput {...field} value={field.value ?? ''} /></FormControl>
                             <FormDescription>(xxx) xxx-xxxx</FormDescription>
                             <FormMessage />
                         </FormItem>
