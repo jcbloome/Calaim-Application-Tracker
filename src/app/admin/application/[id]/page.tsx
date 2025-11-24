@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { notFound, useParams } from 'next/navigation';
@@ -71,7 +70,10 @@ export default function AdminApplicationDetailPage() {
 
   // In a real app, you'd likely fetch the application from a root collection
   // or have a more robust way to get the userId. For this demo, we find it from mock data.
-  const application = useMemo(() => getMockApplicationById(id), [id]);
+  const application = useMemo(() => {
+    if (!id) return undefined;
+    return getMockApplicationById(id);
+  }, [id]);
 
   const handleSendToCaspio = async () => {
     const webhookUrl = 'https://hook.us2.make.com/mqif1rouo1wh762k2eze1y7568gwq6kx';
@@ -119,8 +121,15 @@ export default function AdminApplicationDetailPage() {
   };
 
   if (!application) {
-    notFound();
+    // If the ID was present but no application was found, show not found.
+    if (id) {
+      notFound();
+    }
+    // If there's no ID yet (e.g. during initial render), show a loader or nothing
+    return <div>Loading...</div>;
   }
+
+  console.log('Application data being passed to summary view:', application);
 
   const completedForms = application.forms.filter(f => f.status === 'Completed').length;
   const totalForms = application.forms.length;
@@ -192,23 +201,17 @@ export default function AdminApplicationDetailPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    {form.name === 'CS Member Summary' ? (
-                       <Dialog>
-                            <DialogTrigger asChild>
-                                <Button variant="outline" size="sm">View</Button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-4xl">
-                                <DialogHeader>
-                                    <DialogTitle>CS Member Summary: Read-Only</DialogTitle>
-                                </DialogHeader>
-                               <CsSummaryView application={application} />
-                            </DialogContent>
-                        </Dialog>
-                    ) : (
-                        <Button variant="outline" size="sm" asChild>
-                            <Link href={`${form.href}?applicationId=${application.id}`}>View</Link>
-                        </Button>
-                    )}
+                    <Dialog>
+                        <DialogTrigger asChild>
+                            <Button variant="outline" size="sm">View</Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-4xl">
+                            <DialogHeader>
+                                <DialogTitle>CS Member Summary: Read-Only</DialogTitle>
+                            </DialogHeader>
+                            <CsSummaryView application={application} />
+                        </DialogContent>
+                    </Dialog>
                     <Button variant="secondary" size="sm">
                         <FileWarning className="mr-2 h-4 w-4" />
                         Request Revision
