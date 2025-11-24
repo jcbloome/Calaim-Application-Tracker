@@ -1,4 +1,6 @@
 
+'use client';
+
 import {
   Table,
   TableBody,
@@ -9,21 +11,70 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { applications } from '@/lib/data';
-import { CheckCircle2, XCircle } from 'lucide-react';
+import { CheckCircle2, XCircle, BookOpen } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip"
+} from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 
 const allForms = [
-    'CS Member Summary',
-    'HIPAA Authorization',
-    'Liability Waiver',
-    'Proof of Income',
-    'Physician\'s Report'
+    { name: 'CS Member Summary', initial: 'CS' },
+    { name: 'Program Information', initial: 'PI' },
+    { name: 'HIPAA Authorization', initial: 'HP' },
+    { name: 'Liability Waiver', initial: 'LW' },
+    { name: 'Freedom of Choice Waiver', initial: 'FC' },
+    { name: 'Proof of Income', initial: 'PoI' },
+    { name: 'Physician\'s Report', initial: 'PR' },
+    { name: 'Declaration of Eligibility', initial: 'DE' },
+    { name: 'SNF Facesheet', initial: 'SF' },
+    { name: 'Medicine List', initial: 'ML' },
 ];
+
+function LegendDialog() {
+    return (
+        <Dialog>
+            <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                    <BookOpen className="mr-2 h-4 w-4" />
+                    View Legend
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Form Legend</DialogTitle>
+                </DialogHeader>
+                <ScrollArea className="h-72">
+                    <div className="p-4">
+                        <dl>
+                            {allForms.map((item, index) => (
+                                <div key={item.name}>
+                                    <div className="flex items-baseline gap-4 py-2">
+                                        <dt className="w-8 text-center font-bold text-primary">{item.initial}</dt>
+                                        <dd className="text-muted-foreground">{item.name}</dd>
+                                    </div>
+                                    {index < allForms.length - 1 && <Separator />}
+                                </div>
+                            ))}
+                        </dl>
+                    </div>
+                </ScrollArea>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 
 export default function TrackerPage() {
   return (
@@ -34,18 +85,30 @@ export default function TrackerPage() {
       </div>
 
       <Card>
-        <CardHeader>
-            <CardTitle>Completion Grid</CardTitle>
-            <CardDescription>Quickly identify bottlenecks in the application process.</CardDescription>
+        <CardHeader className="flex flex-row justify-between items-center">
+            <div>
+                <CardTitle>Completion Grid</CardTitle>
+                <CardDescription>Quickly identify bottlenecks in the application process.</CardDescription>
+            </div>
+            <LegendDialog />
         </CardHeader>
         <CardContent>
           <TooltipProvider>
             <Table>
                 <TableHeader>
                     <TableRow>
-                    <TableHead>Member Name</TableHead>
-                    {allForms.map(formName => (
-                        <TableHead key={formName} className="text-center">{formName}</TableHead>
+                    <TableHead className="w-[150px]">Member Name</TableHead>
+                    {allForms.map(form => (
+                        <TableHead key={form.name} className="text-center w-[60px]">
+                             <Tooltip>
+                                <TooltipTrigger>
+                                    <span className="font-bold">{form.initial}</span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>{form.name}</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TableHead>
                     ))}
                     </TableRow>
                 </TableHeader>
@@ -53,12 +116,12 @@ export default function TrackerPage() {
                     {applications.map(app => (
                         <TableRow key={app.id}>
                             <TableCell className="font-medium">{app.memberName}</TableCell>
-                            {allForms.map(formName => {
-                                const formStatus = app.forms.find(f => f.name === formName)?.status;
+                            {allForms.map(form => {
+                                const formStatus = app.forms.find(f => f.name === form.name)?.status;
                                 const isCompleted = formStatus === 'Completed';
 
                                 return (
-                                    <TableCell key={formName} className="text-center">
+                                    <TableCell key={form.name} className="text-center">
                                          <Tooltip>
                                             <TooltipTrigger>
                                                 {isCompleted ? (
