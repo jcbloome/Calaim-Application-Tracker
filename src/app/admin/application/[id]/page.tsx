@@ -20,10 +20,42 @@ import { CsSummaryView } from './CsSummaryView';
 
 // This is a temporary solution for the demo to find the mock application data
 // In a real app, you would fetch this from a central 'applications' collection or use a backend search function.
-const getMockApplicationById = (id: string): (Application & { memberName?: string }) | undefined => {
+const getMockApplicationById = (id: string): (Application & { [key: string]: any }) | undefined => {
   const app = mockApplications.find(app => app.id === id);
   if (app) {
-      return { ...app, memberName: app.memberName };
+      // For the demo, let's just create a more complete object.
+      // In a real app this data would come from firestore.
+      return { 
+        ...app, 
+        memberName: app.memberName,
+        memberFirstName: app.memberName?.split(' ')[0] || '',
+        memberLastName: app.memberName?.split(' ')[1] || '',
+        memberDob: new Date(1980, 1, 1),
+        memberAge: 44,
+        memberMediCalNum: '91234567A',
+        memberMrn: 'MRN12345',
+        memberLanguage: 'English',
+        memberCounty: 'Los Angeles',
+        referrerFirstName: 'Jason',
+        referrerLastName: 'Bloome',
+        referrerEmail: 'jason@carehomefinders.com',
+        referrerPhone: '(555) 123-4567',
+        referrerRelationship: 'Social Worker',
+        agency: 'Care Home Finders',
+        bestContactType: 'other',
+        bestContactFirstName: 'Contact',
+        bestContactLastName: 'Person',
+        bestContactRelationship: 'Family Member',
+        bestContactPhone: '(555) 555-5555',
+        bestContactEmail: 'contact@example.com',
+        bestContactLanguage: 'English',
+        currentLocation: 'SNF',
+        currentAddress: '123 Nursing Way',
+        currentCity: 'Healthville',
+        currentState: 'CA',
+        currentZip: '90210',
+        currentCounty: 'Los Angeles',
+      };
   }
   return undefined;
 };
