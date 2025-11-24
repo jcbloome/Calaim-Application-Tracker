@@ -1,4 +1,5 @@
 
+
 import { Timestamp } from 'firebase/firestore';
 
 export type ApplicationStatus = 'In Progress' | 'Completed & Submitted' | 'Requires Revision' | 'Approved';
@@ -16,6 +17,8 @@ export type Application = {
   healthPlan: 'Kaiser' | 'Health Net' | 'Other' | 'Kaiser Permanente';
   forms: FormStatus[];
   progress: number;
+  referrerName?: string;
+  ispContactName?: string;
 };
 
 export type FormStatus = {

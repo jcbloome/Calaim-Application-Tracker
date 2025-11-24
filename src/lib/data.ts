@@ -1,6 +1,7 @@
+
 import { Application, Acronym, Activity } from './definitions';
 
-export const applications: (Application & { healthPlan?: string })[] = [
+export const applications: (Application & { healthPlan?: string; referrerName?: string; ispContactName?: string; })[] = [
   {
     id: 'app-001',
     memberName: 'John Doe',
@@ -16,6 +17,8 @@ export const applications: (Application & { healthPlan?: string })[] = [
       { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#', downloadHref: '#' },
       { name: 'Physician\'s Report', status: 'Pending', type: 'Upload', href: '#', downloadHref: '#' },
     ],
+    referrerName: 'Jason Bloome',
+    ispContactName: 'Dr. Emily Carter',
   },
   {
     id: 'app-002',
@@ -33,6 +36,8 @@ export const applications: (Application & { healthPlan?: string })[] = [
       { name: 'Declaration of Eligibility (SNF Diversion)', status: 'Pending', type: 'Upload', href: '#', downloadHref: '#' },
       { name: 'Program Information', status: 'Pending', type: 'Info', href: '/info' },
     ],
+    referrerName: 'Social Worker Agency',
+    ispContactName: 'Dr. Michael Ramirez',
   },
   {
     id: 'd311d971-e3af-43ab-9fc2-89065ee78e8a',
@@ -50,6 +55,8 @@ export const applications: (Application & { healthPlan?: string })[] = [
       { name: 'Declaration of Eligibility (SNF Diversion)', status: 'Pending', type: 'upload', href: '#' },
        { name: 'Program Information', status: 'Pending', type: 'info', href: '/info' },
     ],
+     referrerName: 'Jason Bloome',
+    ispContactName: 'Dr. Emily Carter',
   },
   {
     id: 'app-003',
@@ -60,6 +67,8 @@ export const applications: (Application & { healthPlan?: string })[] = [
     pathway: 'SNF Transition',
     progress: 100,
     forms: [],
+    referrerName: 'Hospital Discharge Planner',
+    ispContactName: 'Dr. Sarah Connor',
   },
   {
     id: 'app-004',
@@ -70,6 +79,8 @@ export const applications: (Application & { healthPlan?: string })[] = [
     pathway: 'SNF Diversion',
     progress: 100,
     forms: [],
+     referrerName: 'Jason Bloome',
+    ispContactName: 'Dr. Michael Ramirez',
   },
     {
     id: 'app-005',
@@ -80,6 +91,8 @@ export const applications: (Application & { healthPlan?: string })[] = [
     pathway: 'SNF Diversion',
     progress: 15,
     forms: [],
+    referrerName: 'Family Member',
+    ispContactName: 'Dr. Emily Carter',
   },
 ];
 
@@ -102,9 +115,23 @@ export const activities: Activity[] = [
   { id: 'act-5', user: 'Admin', action: 'Application Approved', timestamp: '2023-10-25 11:00 AM', details: 'Application #app-004 was approved.' },
 ];
 
+const getTopCounts = (data: typeof applications, key: keyof typeof applications[0]) => {
+  const counts = data.reduce((acc, app) => {
+    const item = app[key as keyof Application] as string | undefined;
+    if (item) {
+      acc[item] = (acc[item] || 0) + 1;
+    }
+    return acc;
+  }, {} as Record<string, number>);
+
+  return Object.entries(counts)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+};
+
 export const statsData = {
   byMcp: [
-    { name: 'Kaiser', value: 120, fill: "var(--color-chart-1)" },
+    { name: 'Kaiser Permanente', value: 120, fill: "var(--color-chart-1)" },
     { name: 'Health Net', value: 230, fill: "var(--color-chart-2)" },
     { name: 'Other', value: 45, fill: "var(--color-chart-3)" },
   ],
@@ -126,5 +153,7 @@ export const statsData = {
     { month: 'Apr', total: 55 },
     { month: 'May', total: 62 },
     { month: 'Jun', total: 70 },
-  ]
+  ],
+  topIspContacts: getTopCounts(applications, 'ispContactName'),
+  topReferrers: getTopCounts(applications, 'referrerName'),
 };
