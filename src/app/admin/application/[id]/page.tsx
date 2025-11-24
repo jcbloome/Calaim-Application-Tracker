@@ -2,7 +2,7 @@
 
 'use client';
 
-import { notFound, useSearchParams } from 'next/navigation';
+import { notFound, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,9 @@ const getMockApplicationById = (id: string): (Application & { memberName?: strin
 };
 
 
-export default function AdminApplicationDetailPage({ params }: { params: { id: string } }) {
+export default function AdminApplicationDetailPage() {
+  const params = useParams();
+  const { id } = params as { id: string };
   const { user } = useUser();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -37,7 +39,7 @@ export default function AdminApplicationDetailPage({ params }: { params: { id: s
 
   // In a real app, you'd likely fetch the application from a root collection
   // or have a more robust way to get the userId. For this demo, we find it from mock data.
-  const application = useMemo(() => getMockApplicationById(params.id), [params.id]);
+  const application = useMemo(() => getMockApplicationById(id), [id]);
 
   const handleSendToCaspio = async () => {
     const webhookUrl = 'https://hook.us2.make.com/mqif1rouo1wh762k2eze1y7568gwq6kx';
