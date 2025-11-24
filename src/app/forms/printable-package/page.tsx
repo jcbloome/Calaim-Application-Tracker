@@ -4,11 +4,12 @@
 import { Header } from '@/components/Header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, Printer, ArrowRight, ExternalLink, UploadCloud, Send } from 'lucide-react';
+import { FileText, Printer, ArrowRight, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useRouter } from 'next/navigation';
 
 const forms = [
     { name: 'CS Member Summary', icon: FileText, href: '/forms/cs-summary-form/printable' },
@@ -22,11 +23,10 @@ const forms = [
 
 
 export default function ApplicationSubmissionPage() {
+  const router = useRouter();
 
-  const handlePrint = () => {
-    // This would ideally print a curated package of all forms.
-    // For now, it can just print this page or a specific component.
-    window.print();
+  const handlePrintPackage = () => {
+    router.push('/forms/printable-package/full-package');
   };
 
   return (
@@ -80,7 +80,7 @@ export default function ApplicationSubmissionPage() {
                                     </Button>
                                 ))}
                                 <div className="pt-4">
-                                     <Button className="w-full" onClick={handlePrint}>
+                                     <Button className="w-full" onClick={handlePrintPackage}>
                                         <Printer className="mr-2 h-4 w-4" />
                                         Print Full Blank Application Package
                                     </Button>
@@ -186,5 +186,3 @@ export default function ApplicationSubmissionPage() {
     </>
   );
 }
-
-    

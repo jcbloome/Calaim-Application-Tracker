@@ -20,35 +20,13 @@ const LongField = ({ className = '' }: { className?: string }) => (
   </div>
 );
 
-export default function PrintableDeclarationOfEligibilityPage() {
-
-  const handlePrint = () => {
-    window.print();
-  };
-  
-  return (
-    <div className="bg-gray-50 min-h-screen print:bg-white">
-      <div className="container mx-auto py-8 px-4 print:p-0">
-        <div className="bg-white p-4 sm:p-8 shadow-lg rounded-lg print:shadow-none print:p-4">
-          <div className="flex justify-between items-start mb-8 print:hidden">
-            <Button variant="outline" asChild>
-                <Link href="/forms/printable-package">
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Return to Printable Forms
-                </Link>
-            </Button>
-            <Button onClick={handlePrint}>
-              <Printer className="mr-2 h-4 w-4" />
-              Print Form
-            </Button>
-          </div>
-          
-           <div className="text-center mb-6">
+export function PrintableDeclarationOfEligibilityContent() {
+    return (
+        <form className="page-break-after">
+            <div className="text-center mb-6">
                 <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Declaration of Eligibility</h1>
                 <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This form is for a Physician/AP to establish presumptive eligibility and must be signed by the member's Primary Care Provider (PCP) or a provider with an established relationship with the member.</p>
             </div>
-
-          <form>
             <div className="space-y-6 text-sm">
                 <div>
                     <h3 className="text-base font-semibold">To be completed by the Primary Care Provider (PCP) or other physician/practitioner (practitioner).</h3>
@@ -82,6 +60,33 @@ export default function PrintableDeclarationOfEligibilityPage() {
                 </div>
             </div>
           </form>
+    )
+}
+
+export default function PrintableDeclarationOfEligibilityPage() {
+
+  const handlePrint = () => {
+    window.print();
+  };
+  
+  return (
+    <div className="bg-gray-50 min-h-screen print:bg-white">
+      <div className="container mx-auto py-8 px-4 print:p-0">
+        <div className="bg-white p-4 sm:p-8 shadow-lg rounded-lg print:shadow-none print:p-4">
+          <div className="flex justify-between items-start mb-8 print:hidden">
+            <Button variant="outline" asChild>
+                <Link href="/forms/printable-package">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Return to Printable Forms
+                </Link>
+            </Button>
+            <Button onClick={handlePrint}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print Form
+            </Button>
+          </div>
+          
+          <PrintableDeclarationOfEligibilityContent />
         </div>
       </div>
     </div>

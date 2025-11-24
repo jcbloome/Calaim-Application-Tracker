@@ -25,35 +25,13 @@ const CheckboxField = ({ label }: { label: string }) => (
     </div>
 );
 
-export default function PrintableHipaaForm() {
-
-  const handlePrint = () => {
-    window.print();
-  };
-  
-  return (
-    <div className="bg-gray-50 min-h-screen print:bg-white">
-      <div className="container mx-auto py-8 px-4 print:p-0">
-        <div className="bg-white p-4 sm:p-8 shadow-lg rounded-lg print:shadow-none print:p-4">
-          <div className="flex justify-between items-start mb-8 print:hidden">
-            <Button variant="outline" asChild>
-                <Link href="/forms/printable-package">
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Return to Printable Forms
-                </Link>
-            </Button>
-            <Button onClick={handlePrint}>
-              <Printer className="mr-2 h-4 w-4" />
-              Print Form
-            </Button>
-          </div>
-          
-           <div className="text-center mb-6">
+export function PrintableHipaaFormContent() {
+    return (
+        <form className="page-break-after">
+            <div className="text-center mb-6">
                 <h1 className="text-2xl font-bold text-gray-800 tracking-tight">HIPAA Authorization Form</h1>
                 <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">Authorization for Use or Disclosure of Protected Health Information (PHI).</p>
             </div>
-
-          <form>
             <div className="space-y-4">
               <div>
                 <SectionTitle>Patient Information</SectionTitle>
@@ -123,6 +101,33 @@ export default function PrintableHipaaForm() {
 
             </div>
           </form>
+    )
+}
+
+export default function PrintableHipaaForm() {
+
+  const handlePrint = () => {
+    window.print();
+  };
+  
+  return (
+    <div className="bg-gray-50 min-h-screen print:bg-white">
+      <div className="container mx-auto py-8 px-4 print:p-0">
+        <div className="bg-white p-4 sm:p-8 shadow-lg rounded-lg print:shadow-none print:p-4">
+          <div className="flex justify-between items-start mb-8 print:hidden">
+            <Button variant="outline" asChild>
+                <Link href="/forms/printable-package">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Return to Printable Forms
+                </Link>
+            </Button>
+            <Button onClick={handlePrint}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print Form
+            </Button>
+          </div>
+          
+          <PrintableHipaaFormContent />
         </div>
       </div>
     </div>
