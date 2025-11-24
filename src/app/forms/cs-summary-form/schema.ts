@@ -86,6 +86,7 @@ export const formSchema = z.object({
     ispFacilityName: optionalString,
     ispPhone: optionalPhone,
     ispEmail: optionalEmail,
+    ispCopyCurrent: z.boolean().optional(),
     ispAddress: requiredString,
     ispCity: requiredString,
     ispState: requiredString,

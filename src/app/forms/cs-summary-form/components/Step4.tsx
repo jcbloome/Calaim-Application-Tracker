@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useFormContext } from 'react-hook-form';
@@ -9,18 +8,43 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Input } from '@/components/ui/input';
 import { type FormValues } from '../schema';
 import { PhoneInput } from '@/components/ui/phone-input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useEffect } from 'react';
 
 export default function Step4() {
-  const { control } = useFormContext<FormValues>();
+  const { control, watch, setValue } = useFormContext<FormValues>();
   
+  const ispCopyCurrent = watch('ispCopyCurrent');
+  const currentAddress = watch('currentAddress');
+  const currentCity = watch('currentCity');
+  const currentState = watch('currentState');
+  const currentZip = watch('currentZip');
+  const currentCounty = watch('currentCounty');
+
+  useEffect(() => {
+    if (ispCopyCurrent) {
+      setValue('ispAddress', currentAddress, { shouldValidate: true });
+      setValue('ispCity', currentCity, { shouldValidate: true });
+      setValue('ispState', currentState, { shouldValidate: true });
+      setValue('ispZip', currentZip, { shouldValidate: true });
+      setValue('ispCounty', currentCounty, { shouldValidate: true });
+    } else {
+        // Optionally clear fields if the user unchecks
+        setValue('ispAddress', '', { shouldValidate: true });
+        setValue('ispCity', '', { shouldValidate: true });
+        setValue('ispState', '', { shouldValidate: true });
+        setValue('ispZip', '', { shouldValidate: true });
+        setValue('ispCounty', '', { shouldValidate: true });
+    }
+  }, [ispCopyCurrent, currentAddress, currentCity, currentState, currentZip, currentCounty, setValue]);
+
+
   return (
     <div className="space-y-6">
       <Card className="border-l-4 border-accent">
           <CardHeader>
             <CardTitle>Individual Service Plan (ISP) Contact</CardTitle>
             <CardDescription>
-                All applications are required to have ISP (which eventually determines the tiered level of care and the amount paid for "assisted living" to the RCFE/ARF) conducted in-person (Kaiser) or virtually (Health Net) by RN or MSW (with sign-off by RN). The ISP contact is usually the SNF or hospital RN, social worker or case manager, or, if the member is in the community with the family member or caregiver. Once finalized the ISP requires signatures by the ISP contact.
-                <br/><br/>
                 Who is the person we should contact for the ISP?
             </CardDescription>
           </CardHeader>
@@ -42,37 +66,49 @@ export default function Step4() {
                         <FormMessage />
                     </FormItem>
                 )} />
-                <FormField control={control} name="ispFacilityName" render={({ field }) => (
-                    <FormItem><FormLabel>Facility Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-                )} />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField control={control} name="ispPhone" render={({ field }) => (
+                 <FormField control={control} name="ispPhone" render={({ field }) => (
                     <FormItem><FormLabel>Phone</FormLabel><FormControl><PhoneInput {...field} placeholder="(xxx) xxx-xxxx" value={field.value ?? ''} /></FormControl><FormDescription>Format: (xxx) xxx-xxxx</FormDescription><FormMessage /></FormItem>
                 )} />
-                <FormField control={control} name="ispEmail" render={({ field }) => (
-                    <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-                )} />
               </div>
+              <FormField control={control} name="ispEmail" render={({ field }) => (
+                <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+              )} />
 
                <div className="space-y-4 p-4 border rounded-md mt-4">
                  <h3 className="font-medium text-base">ISP Assessment Location</h3>
+                 <FormField
+                    control={control}
+                    name="ispCopyCurrent"
+                    render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                        <FormControl>
+                        <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                        <div className="space-y-1 leading-none">
+                        <FormLabel>Same as member's current location</FormLabel>
+                        </div>
+                    </FormItem>
+                    )}
+                />
+                 <FormField control={control} name="ispFacilityName" render={({ field }) => (
+                    <FormItem><FormLabel>Facility Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
                  <FormField control={control} name="ispAddress" render={({ field }) => (
-                    <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={ispCopyCurrent} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <FormField control={control} name="ispCity" render={({ field }) => (
-                        <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={ispCopyCurrent} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="ispState" render={({ field }) => (
-                        <FormItem><FormLabel>State <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>State <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={ispCopyCurrent} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="ispZip" render={({ field }) => (
-                        <FormItem><FormLabel>ZIP Code <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>ZIP Code <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={ispCopyCurrent} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
                  <FormField control={control} name="ispCounty" render={({ field }) => (
-                    <FormItem><FormLabel>County <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>County <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={ispCopyCurrent} /></FormControl><FormMessage /></FormItem>
                 )} />
             </div>
           </CardContent>
