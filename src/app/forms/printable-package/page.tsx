@@ -4,7 +4,7 @@
 import { Header } from '@/components/Header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, Printer, ArrowRight, ExternalLink, Download, FileUp } from 'lucide-react';
+import { FileText, Printer, ArrowRight, ExternalLink, Download, FileUp, Send } from 'lucide-react';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -61,7 +61,7 @@ export default function ApplicationSubmissionPage() {
                         This is the fastest and most direct way to submit your application. The CS Member Summary form can be downloaded, filled out and uploaded but since the data does need to be inputted through the online portal (by the Connections staff) consider using the online form for the quickest processing for the application.
                     </p>
                     <Button asChild>
-                        <Link href="/forms/cs-summary-form">
+                        <Link href="/applications">
                             Start Online Application <ArrowRight className="ml-2 h-4 w-4" />
                         </Link>
                     </Button>
@@ -74,7 +74,7 @@ export default function ApplicationSubmissionPage() {
                 </CardHeader>
                 <CardContent>
                     <p className="text-muted-foreground mb-6">
-                        If you prefer to work offline, you can download the blank forms below, complete and sign them, and then upload them all through the secure portal at the bottom of this section. For security and HIPAA compliance do not email completed forms, instead use our secure upload portal below. If you have questions, you may email us at calaim@carehomefinders.com.
+                        If you prefer to work offline, you can download the blank forms below, complete and sign them, and then upload them all through the secure portal at the bottom of this section. For security and HIPAA compliance do not email completed forms, instead use our secure upload portal below.
                     </p>
 
                     <Card className="bg-muted/30">
@@ -178,7 +178,7 @@ export default function ApplicationSubmissionPage() {
                         </div>
 
                          <Button type="submit" className="w-full">
-                            <FileUp className="mr-2 h-4 w-4" />
+                            <Send className="mr-2 h-4 w-4" />
                             Submit Documents
                         </Button>
                     </form>

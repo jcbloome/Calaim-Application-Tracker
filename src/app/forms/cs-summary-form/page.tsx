@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
@@ -12,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useUser, useFirestore, useDoc } from '@/firebase';
-import { doc, setDoc, getDoc, serverTimestamp, collection, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, collection, Timestamp, query, where, getDocs } from 'firebase/firestore';
 
 import Step1 from './components/Step1';
 import Step2 from './components/Step2';
@@ -33,7 +32,7 @@ const steps = [
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty'] },
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'meetsPathwayCriteria'] },
-  { id: 4, name: 'ISP & Facility Selection', fields: []},
+  { id: 4, name: 'ISP & Facility Selection', fields: ['ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty']},
 ];
 
 const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatusType[] => {
@@ -244,11 +243,49 @@ function CsSummaryFormComponent() {
     });
   };
 
+  const checkForDuplicates = async (data: FormValues): Promise<boolean> => {
+    if (!user || !firestore) return false;
+
+    const appsRef = collection(firestore, `users/${user.uid}/applications`);
+    
+    // Query for same Medi-Cal number
+    const mediCalQuery = query(appsRef, where("memberMediCalNum", "==", data.memberMediCalNum));
+    const mediCalSnap = await getDocs(mediCalQuery);
+    if (!mediCalSnap.empty && mediCalSnap.docs.some(doc => doc.id !== applicationId)) {
+      toast({
+        variant: 'destructive',
+        title: 'Duplicate Application Found',
+        description: `An application with Medi-Cal number ${data.memberMediCalNum} already exists.`,
+      });
+      return true;
+    }
+    
+    // Query for same MRN
+    const mrnQuery = query(appsRef, where("memberMrn", "==", data.memberMrn));
+    const mrnSnap = await getDocs(mrnQuery);
+    if (!mrnSnap.empty && mrnSnap.docs.some(doc => doc.id !== applicationId)) {
+       toast({
+        variant: 'destructive',
+        title: 'Duplicate Application Found',
+        description: `An application with MRN ${data.memberMrn} already exists.`,
+      });
+      return true;
+    }
+
+    return false;
+  };
+
   const onSubmit = async (data: FormValues) => {
     addLog('onSubmit triggered. Form data is valid. Starting final submission...');
     if (!user || !firestore) {
       addLog("Submission failed: User or Firestore not available.");
       toast({ variant: "destructive", title: "Error", description: "You must be logged in." });
+      return;
+    }
+
+    const hasDuplicate = await checkForDuplicates(data);
+    if (hasDuplicate) {
+      addLog("Submission aborted due to duplicate application.");
       return;
     }
   
@@ -372,5 +409,3 @@ export default function CsSummaryFormPage() {
     </React.Suspense>
   );
 }
-
-    

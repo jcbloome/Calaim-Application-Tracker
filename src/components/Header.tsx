@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { LogOut, User, Database } from 'lucide-react';
+import { LogOut, User, Database, HelpCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import { useAuth, useUser } from '@/firebase';
 import {
@@ -59,6 +59,9 @@ export function Header() {
         <nav className="hidden md:flex items-center gap-2">
           <Button variant="ghost" asChild>
             <Link href="/info">Program Information</Link>
+          </Button>
+           <Button variant="ghost" asChild>
+            <Link href="/faq">FAQ & Glossary</Link>
           </Button>
           <Button variant="ghost" asChild>
             <Link href="/applications">My Applications</Link>
