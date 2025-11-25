@@ -7,13 +7,13 @@ import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { CheckCircle2, FileWarning, PenSquare, ArrowLeft, Trash2, Send, Loader2 } from 'lucide-react';
+import { CheckCircle2, FileWarning, PenSquare, ArrowLeft, Trash2, Send, Loader2, User, Clock } from 'lucide-react';
 import { useUser, useFirestore } from '@/firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { useMemo, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import type { Application, FormStatus } from '@/lib/definitions';
-import { applications as mockApplications } from '@/lib/data';
+import type { Application, FormStatus, Activity } from '@/lib/definitions';
+import { applications as mockApplications, activities as mockActivities } from '@/lib/data';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { FormViewer } from './FormViewer';
 import { Textarea } from '@/components/ui/textarea';
@@ -66,6 +66,38 @@ const getMockApplicationById = (id: string): (Application & { [key: string]: any
 };
 
 
+const ApplicationActivityLog = ({ activities }: { activities: Activity[] }) => {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Activity Log</CardTitle>
+        <CardDescription>A timeline of events for this application.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-6">
+          {activities.length > 0 ? activities.map((activity) => (
+            <div key={activity.id} className="flex items-start gap-4">
+               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+                 <User className="h-4 w-4" />
+               </div>
+              <div className="grid gap-1 text-sm">
+                <p className="font-medium leading-none">
+                  <span className="font-semibold">{activity.user}</span> performed action <span className="font-semibold text-primary">{activity.action}</span>
+                </p>
+                <p className="text-muted-foreground">{activity.details}</p>
+                <p className="text-xs text-muted-foreground/80 flex items-center gap-1.5"><Clock className="h-3 w-3" /> {activity.timestamp}</p>
+              </div>
+            </div>
+          )) : (
+            <div className="text-center text-muted-foreground py-8">No activities recorded yet.</div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+
 export default function AdminApplicationDetailPage() {
   const params = useParams();
   const { id } = params as { id: string };
@@ -84,6 +116,10 @@ export default function AdminApplicationDetailPage() {
   const application = useMemo(() => {
     if (!id) return undefined;
     return getMockApplicationById(id);
+  }, [id]);
+
+  const applicationActivities = useMemo(() => {
+    return mockActivities.filter(activity => activity.applicationId === id);
   }, [id]);
 
   const handleSendToCaspio = async () => {
@@ -229,48 +265,52 @@ export default function AdminApplicationDetailPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Forms & Documents</CardTitle>
-            <CardDescription>Review submitted materials and request revisions if needed.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {application.forms.map(form => (
-                <div key={form.name} className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="flex items-center gap-4">
-                    {form.status === 'Completed' ? (
-                      <CheckCircle2 className="h-6 w-6 text-green-500" />
-                    ) : (
-                      <PenSquare className="h-6 w-6 text-yellow-500" />
-                    )}
-                    <div>
-                      <p className="font-medium">{form.name}</p>
-                      <p className="text-sm text-muted-foreground">Type: {form.type}</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            <Card>
+            <CardHeader>
+                <CardTitle>Forms & Documents</CardTitle>
+                <CardDescription>Review submitted materials and request revisions if needed.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="space-y-4">
+                {application.forms.map(form => (
+                    <div key={form.name} className="flex items-center justify-between rounded-lg border p-4">
+                    <div className="flex items-center gap-4">
+                        {form.status === 'Completed' ? (
+                        <CheckCircle2 className="h-6 w-6 text-green-500" />
+                        ) : (
+                        <PenSquare className="h-6 w-6 text-yellow-500" />
+                        )}
+                        <div>
+                        <p className="font-medium">{form.name}</p>
+                        <p className="text-sm text-muted-foreground">Type: {form.type}</p>
+                        </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                      <DialogTrigger asChild>
-                          <Button variant="outline" size="sm" onClick={() => setSelectedForm(form.name)}>
-                              View
-                          </Button>
-                      </DialogTrigger>
-                        <Button variant="secondary" size="sm" onClick={() => {
-                            setTargetFormForRevision(form.name);
-                            setRevisionDialogOpen(true);
-                        }}>
-                            <FileWarning className="mr-2 h-4 w-4" />
-                            Request Revision
-                        </Button>
-                  </div>
+                    <div className="flex items-center gap-2">
+                        <DialogTrigger asChild>
+                            <Button variant="outline" size="sm" onClick={() => setSelectedForm(form.name)}>
+                                View
+                            </Button>
+                        </DialogTrigger>
+                            <Button variant="secondary" size="sm" onClick={() => {
+                                setTargetFormForRevision(form.name);
+                                setRevisionDialogOpen(true);
+                            }}>
+                                <FileWarning className="mr-2 h-4 w-4" />
+                                Request Revision
+                            </Button>
+                    </div>
+                    </div>
+                ))}
+                {application.forms.length === 0 && (
+                    <div className="text-center p-8 text-muted-foreground">No forms required for this pathway yet.</div>
+                )}
                 </div>
-              ))}
-              {application.forms.length === 0 && (
-                  <div className="text-center p-8 text-muted-foreground">No forms required for this pathway yet.</div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+            </Card>
+
+            <ApplicationActivityLog activities={applicationActivities} />
+        </div>
         
         {/* Revision Request Dialog */}
         <Dialog open={isRevisionDialogOpen} onOpenChange={setRevisionDialogOpen}>

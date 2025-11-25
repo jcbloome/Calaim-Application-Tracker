@@ -42,4 +42,5 @@ export type Activity = {
   action: string;
   timestamp: string;
   details: string;
+  applicationId?: string;
 };
