@@ -159,7 +159,7 @@ export default function FormTrackerPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
             <div>
               <CardTitle>All Application Form Status</CardTitle>
               <CardDescription>
@@ -190,9 +190,9 @@ export default function FormTrackerPage() {
           </div>
         </CardHeader>
         <CardContent>
-            <div className="flex flex-wrap gap-4 mb-6 p-4 border rounded-lg">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6 p-4 border rounded-lg">
                 <Select value={filters.status} onValueChange={(v) => handleFilterChange('status', v)}>
-                    <SelectTrigger className="w-full sm:w-auto"><SelectValue placeholder="Filter by Status" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Filter by Status" /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value="all">All Statuses</SelectItem>
                         <SelectItem value="In Progress">In Progress</SelectItem>
@@ -202,7 +202,7 @@ export default function FormTrackerPage() {
                     </SelectContent>
                 </Select>
                  <Select value={filters.healthPlan} onValueChange={(v) => handleFilterChange('healthPlan', v)}>
-                    <SelectTrigger className="w-full sm:w-auto"><SelectValue placeholder="Filter by Health Plan" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Filter by Health Plan" /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value="all">All Health Plans</SelectItem>
                         <SelectItem value="Kaiser Permanente">Kaiser Permanente</SelectItem>
@@ -210,23 +210,23 @@ export default function FormTrackerPage() {
                     </SelectContent>
                 </Select>
                 <Select value={filters.pathway} onValueChange={(v) => handleFilterChange('pathway', v)}>
-                    <SelectTrigger className="w-full sm:w-auto"><SelectValue placeholder="Filter by Pathway" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Filter by Pathway" /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value="all">All Pathways</SelectItem>
                         <SelectItem value="SNF Transition">SNF Transition</SelectItem>
                         <SelectItem value="SNF Diversion">SNF Diversion</SelectItem>
                     </SelectContent>
                 </Select>
-                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto md:col-span-1 lg:col-span-1">
                     <Select value={filters.formName} onValueChange={(v) => handleFilterChange('formName', v)}>
-                        <SelectTrigger className="w-full sm:w-[220px]"><SelectValue placeholder="Filter by Form" /></SelectTrigger>
+                        <SelectTrigger className="w-full"><SelectValue placeholder="Filter by Form" /></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Any Form</SelectItem>
                             {allFormNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
                         </SelectContent>
                     </Select>
                     <Select value={filters.formStatus} onValueChange={(v) => handleFilterChange('formStatus', v)} disabled={filters.formName === 'all'}>
-                        <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="Form Status" /></SelectTrigger>
+                        <SelectTrigger className="w-full"><SelectValue placeholder="Form Status" /></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Any Status</SelectItem>
                             <SelectItem value="Pending">Pending</SelectItem>
@@ -237,54 +237,56 @@ export default function FormTrackerPage() {
             </div>
 
           <TooltipProvider>
-            <Table className="table-fixed">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[250px] font-bold">Member / App ID</TableHead>
-                  {legendItems.map(item => (
-                     <TableHead key={item.initial} className="text-center w-[50px] p-0">
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleSort(item.fullName)} className="font-bold w-full">
-                                    {item.initial}
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent><p>{item.fullName}</p></TooltipContent>
-                        </Tooltip>
-                     </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredApplications.map(app => {
-                  const formStatusMap = new Map(app.forms.map(form => [form.name, form.status]));
-                  const requiredForms = getRequiredFormsForPathway(app.pathway);
-                  return (
-                    <TableRow key={app.id}>
-                      <TableCell>
-                        <Link href={`/admin/application/${app.id}`} className="font-medium hover:underline text-primary">
-                          {app.memberName}
-                        </Link>
-                        <div className="text-xs text-muted-foreground font-mono">{app.id}</div>
-                        <div className="text-xs text-muted-foreground">{app.healthPlan} – {app.pathway}</div>
-                      </TableCell>
-                       {legendItems.map(item => {
-                            const isRequired = requiredForms.includes(item.fullName);
-                            return (
-                                <TableCell key={item.initial} className="text-center p-2">
-                                    {isRequired ? (
-                                        <FormStatusIcon status={formStatusMap.get(item.fullName)} />
-                                    ) : (
-                                        <span aria-hidden="true"></span>
-                                    )}
-                                </TableCell>
-                            );
-                        })}
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <div className="w-full overflow-x-auto">
+              <Table className="table-fixed min-w-[800px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[250px] font-bold">Member / App ID</TableHead>
+                    {legendItems.map(item => (
+                       <TableHead key={item.initial} className="text-center w-[50px] p-0">
+                          <Tooltip>
+                              <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="sm" onClick={() => handleSort(item.fullName)} className="font-bold w-full">
+                                      {item.initial}
+                                  </Button>
+                              </TooltipTrigger>
+                              <TooltipContent><p>{item.fullName}</p></TooltipContent>
+                          </Tooltip>
+                       </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredApplications.map(app => {
+                    const formStatusMap = new Map(app.forms.map(form => [form.name, form.status]));
+                    const requiredForms = getRequiredFormsForPathway(app.pathway);
+                    return (
+                      <TableRow key={app.id}>
+                        <TableCell>
+                          <Link href={`/admin/application/${app.id}`} className="font-medium hover:underline text-primary">
+                            {app.memberName}
+                          </Link>
+                          <div className="text-xs text-muted-foreground font-mono truncate">{app.id}</div>
+                          <div className="text-xs text-muted-foreground">{app.healthPlan} – {app.pathway}</div>
+                        </TableCell>
+                         {legendItems.map(item => {
+                              const isRequired = requiredForms.includes(item.fullName);
+                              return (
+                                  <TableCell key={item.initial} className="text-center p-2">
+                                      {isRequired ? (
+                                          <FormStatusIcon status={formStatusMap.get(item.fullName)} />
+                                      ) : (
+                                          <span aria-hidden="true"></span>
+                                      )}
+                                  </TableCell>
+                              );
+                          })}
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           </TooltipProvider>
         </CardContent>
       </Card>

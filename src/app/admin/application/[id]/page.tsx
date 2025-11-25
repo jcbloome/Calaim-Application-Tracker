@@ -410,11 +410,14 @@ export default function AdminApplicationDetailPage() {
             <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
               <div>
                 <CardTitle className="text-2xl">Application: {localApplication.id}</CardTitle>
-                <CardDescription>
-                  Member: <strong>{localApplication.MemberFullName}</strong> | Health Plan: <strong>{localApplication.HealthPlan}</strong> | Pathway: <strong>{localApplication.Pathway}</strong> | Status: <strong>{localApplication.status}</strong>
+                <CardDescription className="flex flex-col sm:flex-row sm:gap-x-2">
+                  <span>Member: <strong>{localApplication.MemberFullName}</strong> | </span>
+                  <span>Health Plan: <strong>{localApplication.HealthPlan}</strong> | </span>
+                  <span>Pathway: <strong>{localApplication.Pathway}</strong> | </span>
+                  <span>Status: <strong>{localApplication.status}</strong></span>
                 </CardDescription>
               </div>
-              <div className="text-right shrink-0">
+              <div className="text-left sm:text-right shrink-0">
                 <p className="text-sm font-medium text-muted-foreground">Completion</p>
                 <p className="text-2xl font-bold">{Math.round(progress)}%</p>
               </div>
@@ -458,7 +461,7 @@ export default function AdminApplicationDetailPage() {
                                     setRevisionDialogOpen(true);
                                 }}>
                                     <FileWarning className="mr-2 h-4 w-4" />
-                                    Request Revision
+                                    Revise
                                 </Button>
                         </div>
                         </div>

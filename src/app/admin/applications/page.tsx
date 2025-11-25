@@ -43,7 +43,7 @@ export default function AdminApplicationsPage() {
         <CardHeader>
           <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
             <CardTitle>Application Records</CardTitle>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
                 <div className="relative w-full sm:w-auto">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input placeholder="Search by name or ID..." className="pl-8 w-full sm:w-[250px]" />
@@ -67,10 +67,10 @@ export default function AdminApplicationsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Member / Application ID</TableHead>
+                <TableHead>Member / App ID</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Pathway</TableHead>
-                <TableHead>Last Updated</TableHead>
+                <TableHead className="hidden md:table-cell">Pathway</TableHead>
+                <TableHead className="hidden sm:table-cell">Last Updated</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -79,15 +79,15 @@ export default function AdminApplicationsPage() {
                 <TableRow key={app.id}>
                   <TableCell>
                     <div className="font-medium">{app.memberName}</div>
-                    <div className="text-xs text-muted-foreground font-mono">{app.id}</div>
+                    <div className="text-xs text-muted-foreground font-mono truncate">{app.id}</div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={getBadgeVariant(app.status)}>
                       {app.status}
                     </Badge>
                   </TableCell>
-                  <TableCell>{app.pathway}</TableCell>
-                  <TableCell>{app.lastUpdated}</TableCell>
+                  <TableCell className="hidden md:table-cell">{app.pathway}</TableCell>
+                  <TableCell className="hidden sm:table-cell">{app.lastUpdated}</TableCell>
                   <TableCell className="text-right">
                     <Button asChild variant="outline" size="sm">
                       <Link href={`/admin/application/${app.id}`}>View Details</Link>

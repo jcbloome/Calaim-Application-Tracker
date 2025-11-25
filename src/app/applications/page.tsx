@@ -74,9 +74,9 @@ const ApplicationsTable = ({
               {onSelectionChange && <TableHead className="w-[50px]"></TableHead>}
               <TableHead>Member / App ID</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Pathway</TableHead>
-              <TableHead>Health Plan</TableHead>
-              <TableHead>Last Updated</TableHead>
+              <TableHead className="hidden md:table-cell">Pathway</TableHead>
+              <TableHead className="hidden md:table-cell">Health Plan</TableHead>
+              <TableHead className="hidden sm:table-cell">Last Updated</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -101,16 +101,16 @@ const ApplicationsTable = ({
                   )}
                   <TableCell className="font-medium">
                     <div>{`${app.memberFirstName} ${app.memberLastName}`}</div>
-                    <div className="text-xs text-muted-foreground font-mono">{app.id}</div>
+                    <div className="text-xs text-muted-foreground font-mono truncate">{app.id}</div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={getBadgeVariant(app.status)}>
                       {app.status}
                     </Badge>
                   </TableCell>
-                   <TableCell>{app.pathway || 'N/A'}</TableCell>
-                   <TableCell>{app.healthPlan || 'N/A'}</TableCell>
-                  <TableCell>{app.lastUpdated ? format(app.lastUpdated.toDate(), 'PPP') : 'N/A'}</TableCell>
+                   <TableCell className="hidden md:table-cell">{app.pathway || 'N/A'}</TableCell>
+                   <TableCell className="hidden md:table-cell">{app.healthPlan || 'N/A'}</TableCell>
+                  <TableCell className="hidden sm:table-cell">{app.lastUpdated ? format(app.lastUpdated.toDate(), 'PPP') : 'N/A'}</TableCell>
                   <TableCell className="text-right">
                     {app.status === 'In Progress' || app.status === 'Requires Revision' ? (
                       <Button asChild variant="outline" size="sm">
@@ -195,27 +195,29 @@ export default function MyApplicationsPage() {
     <>
       <Header />
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
-        <div className="mb-6 space-y-2">
-            <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold">My Applications</h1>
-            <div className="flex items-center gap-2">
-                {selected.length > 0 && (
-                <Button variant="destructive" onClick={handleDelete}>
-                    <Trash2 className="mr-2 h-4 w-4" /> Delete ({selected.length})
-                </Button>
-                )}
-                <Button asChild>
-                <Link href="/forms/cs-summary-form">
-                    <Plus className="mr-2 h-4 w-4" /> Start New Application
-                </Link>
-                </Button>
+        <div className="mb-6 space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex-1">
+                    <h1 className="text-3xl font-bold">My Applications</h1>
+                    {user.displayName && (
+                        <p className="text-muted-foreground mt-1">
+                            Welcome, <strong>{user.displayName}</strong>. Here are the applications you've created.
+                        </p>
+                    )}
+                </div>
+                <div className="flex items-center gap-2 self-start sm:self-center">
+                    {selected.length > 0 && (
+                    <Button variant="destructive" onClick={handleDelete}>
+                        <Trash2 className="mr-2 h-4 w-4" /> Delete ({selected.length})
+                    </Button>
+                    )}
+                    <Button asChild>
+                    <Link href="/forms/cs-summary-form">
+                        <Plus className="mr-2 h-4 w-4" /> New App
+                    </Link>
+                    </Button>
+                </div>
             </div>
-            </div>
-             {user.displayName && (
-                <p className="text-muted-foreground">
-                    Welcome, <strong>{user.displayName}</strong>. Here are the applications you've created.
-                </p>
-            )}
         </div>
 
 
