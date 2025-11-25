@@ -50,7 +50,8 @@ const formInitialsMap: Record<string, string> = {
 const legendItems = allFormNames.map(name => ({
     initial: formInitialsMap[name] || name.substring(0, 2).toUpperCase(),
     fullName: name
-}));
+})).sort((a, b) => a.initial.localeCompare(b.initial));
+
 
 const getRequiredFormsForPathway = (pathway: Application['pathway']): string[] => {
   const baseForms = [
@@ -239,9 +240,9 @@ export default function FormTrackerPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[200px] font-bold">Member / App ID</TableHead>
+                  <TableHead className="w-[250px] font-bold">Member / App ID</TableHead>
                   {legendItems.map(item => (
-                     <TableHead key={item.initial} className="text-center">
+                     <TableHead key={item.initial} className="text-center w-[50px] p-2">
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button variant="ghost" size="sm" onClick={() => handleSort(item.fullName)} className="font-bold">
@@ -265,13 +266,14 @@ export default function FormTrackerPage() {
                           {app.memberName}
                         </Link>
                         <div className="text-xs text-muted-foreground font-mono">{app.id}</div>
+                        <div className="text-xs text-muted-foreground">{app.healthPlan} &ndash; {app.pathway}</div>
                       </TableCell>
                        {legendItems.map(item => {
                             if (!requiredForms.includes(item.fullName)) {
-                                return <TableCell key={item.initial} className="text-center"></TableCell>;
+                                return <TableCell key={item.initial} className="text-center p-2"></TableCell>;
                             }
                             return (
-                                <TableCell key={item.initial} className="text-center">
+                                <TableCell key={item.initial} className="text-center p-2">
                                     <FormStatusIcon status={formStatusMap.get(item.fullName)} />
                                 </TableCell>
                             )
