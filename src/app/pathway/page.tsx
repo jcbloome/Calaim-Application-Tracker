@@ -1,9 +1,9 @@
 
 'use client';
 
-import { Suspense, useMemo } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Card,
   CardContent,
@@ -27,7 +27,9 @@ import { Header } from '@/components/Header';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
+
 
 const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => {
   const commonRequirements = [
@@ -77,9 +79,12 @@ function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
 
 function PathwayPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const { toast } = useToast();
   const applicationId = searchParams.get('applicationId');
   const { user } = useUser();
   const firestore = useFirestore();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const applicationDocRef = useMemo(() => {
     if (user && firestore && applicationId) {
@@ -89,6 +94,29 @@ function PathwayPageContent() {
   }, [user, firestore, applicationId]);
 
   const { data: application, isLoading, error } = useDoc<Application>(applicationDocRef);
+  
+  const handleSubmitApplication = async () => {
+    if (!applicationDocRef) return;
+    setIsSubmitting(true);
+    try {
+        await setDoc(applicationDocRef, {
+            status: 'Completed & Submitted',
+            lastUpdated: serverTimestamp(),
+        }, { merge: true });
+
+        router.push('/applications/completed');
+    } catch (e: any) {
+        toast({
+            variant: 'destructive',
+            title: 'Submission Error',
+            description: 'There was a problem submitting your application. Please try again.'
+        });
+        console.error(e);
+    } finally {
+        setIsSubmitting(false);
+    }
+  };
+
 
   if (isLoading) {
     return (
@@ -212,14 +240,21 @@ function PathwayPageContent() {
                 <Progress value={progress} className="h-2" />
               </div>
             </CardContent>
-            {application.status === 'In Progress' || application.status === 'Requires Revision' ? (
+            {(application.status === 'In Progress' || application.status === 'Requires Revision') && (
                 <CardFooter>
-                    <Button className="w-full" disabled={!allRequiredFormsComplete}>
-                        <Send className="mr-2 h-4 w-4" />
-                        Submit Application for Review
+                    <Button 
+                        className="w-full" 
+                        disabled={!allRequiredFormsComplete || isSubmitting}
+                        onClick={handleSubmitApplication}
+                    >
+                         {isSubmitting ? (
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
+                        ) : (
+                            <><Send className="mr-2 h-4 w-4" /> Submit Application for Review</>
+                        )}
                     </Button>
                 </CardFooter>
-            ) : null}
+            )}
           </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
