@@ -150,18 +150,17 @@ const ApplicationStatusTracker = ({ application, onStatusChange }: { application
                                 onClick={() => onStatusChange(step.name)}
                                 className={cn(
                                     "w-full flex items-center gap-4 p-3 rounded-lg text-left transition-colors",
-                                    isCompleted ? "bg-green-50 text-green-900" : "bg-muted/60",
                                     isCurrent && "ring-2 ring-primary",
                                     "hover:bg-muted"
                                 )}
                             >
                                 <div className={cn(
                                     "h-6 w-6 rounded-full flex items-center justify-center shrink-0",
-                                    isCompleted ? "bg-green-500 text-white" : isCurrent ? "bg-primary text-white" : "bg-gray-300"
+                                    isCompleted ? "bg-green-500 text-white" : isCurrent ? "bg-primary text-white" : "bg-gray-200"
                                 )}>
-                                    {isCompleted ? <Check className="h-4 w-4" /> : <Circle className={cn("h-3 w-3", isCurrent ? "fill-white" : "fill-gray-500")} />}
+                                    {isCompleted ? <Check className="h-4 w-4" /> : <Circle className={cn("h-3 w-3", isCurrent ? "fill-white" : "fill-gray-400")} />}
                                 </div>
-                                <span className={cn("font-medium", isCompleted && "font-semibold")}>{step.name}</span>
+                                <span className={cn("font-medium", isCompleted ? "text-muted-foreground line-through" : isCurrent && "font-semibold")}>{step.name}</span>
                             </button>
                         )
                     })}
