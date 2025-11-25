@@ -23,15 +23,19 @@ export default function SuperAdminPage() {
 
     const handleAddStaff = () => {
         if (newStaffEmail && !staff.find(s => s.email === newStaffEmail)) {
-            // In a real app, this would trigger a server action to invite the user
-            // and add them to a 'staff' collection in Firestore.
-            console.log(`Inviting staff with email: ${newStaffEmail}`);
+            const newStaffMember = {
+                id: `staff-${Date.now()}`,
+                name: newStaffEmail.split('@')[0] || 'New Staff', // simple name from email
+                email: newStaffEmail,
+                role: 'Admin',
+                avatar: `/avatars/0${(staff.length % 5) + 1}.png` // Cycle through placeholder avatars
+            };
+            setStaff([...staff, newStaffMember]);
             setNewStaffEmail('');
         }
     };
     
     const handleRemoveStaff = (id: string) => {
-         // In a real app, this would trigger a server action to remove the user role.
         setStaff(staff.filter(s => s.id !== id));
     };
 
