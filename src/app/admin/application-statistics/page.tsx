@@ -17,11 +17,12 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Building, Users, Route } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const COLORS = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
 
-const StatCard = ({ title, value, icon: Icon, data, description }: { title: string, value: string | number, icon: React.ElementType, data?: { name: string, value: number }[], description?: string }) => (
-    <Card>
+const StatCard = ({ title, value, icon: Icon, data, description, borderColor }: { title: string, value: string | number, icon: React.ElementType, data?: { name: string, value: number }[], description?: string, borderColor?: string }) => (
+    <Card className={cn(borderColor)}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{title}</CardTitle>
             <Icon className="h-4 w-4 text-muted-foreground" />
@@ -109,6 +110,7 @@ export default function ApplicationStatisticsPage() {
             icon={Building}
             data={statsData.byMcp}
             description="Total applications across all plans"
+            borderColor="border-t-4 border-blue-500"
         />
         <StatCard 
             title="Applications by Pathway"
@@ -116,9 +118,10 @@ export default function ApplicationStatisticsPage() {
             icon={Route}
             data={statsData.byPathway}
             description="Total applications across all pathways"
+            borderColor="border-t-4 border-green-500"
         />
 
-         <Card className="lg:col-span-1">
+         <Card className="lg:col-span-1 border-t-4 border-purple-500">
             <CardHeader>
                 <CardTitle className="text-base">Monthly Totals</CardTitle>
                 <CardDescription>Total applications submitted per month.</CardDescription>
@@ -128,7 +131,7 @@ export default function ApplicationStatisticsPage() {
                     {statsData.monthly.map(item => (
                         <div key={item.month} className="flex justify-between">
                             <span>{new Date().getFullYear()} {item.month}</span>
-                            <span className="font-medium">{item.total} applications</span>
+                            <span className="font-medium">{item.total}</span>
                         </div>
                     ))}
                 </div>
