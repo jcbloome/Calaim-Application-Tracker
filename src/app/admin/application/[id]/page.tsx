@@ -100,6 +100,7 @@ const ApplicationActivityLog = ({ activities }: { activities: Activity[] }) => {
 };
 
 const kaiserSteps = [
+    { id: 'kaiser-0', name: 'Application Under Review' },
     { id: 'kaiser-1', name: 'Authorization Received' },
     { id: 'kaiser-2', name: 'MSW/RN Visit & Tier Assessment' },
     { id: 'kaiser-3', name: 'ISP Tool Submitted to ILS/Kaiser' },
@@ -112,6 +113,7 @@ const kaiserSteps = [
 ];
 
 const healthNetSteps = [
+    { id: 'healthnet-0', name: 'Application Under Review' },
     { id: 'healthnet-1', name: 'Documents Compiled' },
     { id: 'healthnet-2', name: 'RN Virtual Assessment & Tier Score' },
     { id: 'healthnet-3', name: 'RCFE Recommended' },
