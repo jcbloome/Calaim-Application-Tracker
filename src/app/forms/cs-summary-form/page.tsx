@@ -54,28 +54,9 @@ const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatus
   return commonForms;
 };
 
-// Simple on-screen logger
-const DebugLog = ({ logs }: { logs: string[] }) => (
-    <Card className="mt-8">
-      <CardHeader>
-        <CardTitle>Submission Debug Log</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ScrollArea className="h-40 w-full rounded-md border p-4">
-          {logs.map((log, index) => (
-            <p key={index} className="text-xs font-mono">
-              {`[${new Date().toLocaleTimeString()}] ${log}`}
-            </p>
-          ))}
-        </ScrollArea>
-      </CardContent>
-    </Card>
-);
-
 
 function CsSummaryFormComponent() {
   const [currentStep, setCurrentStep] = useState(1);
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast, dismiss } = useToast();
@@ -85,10 +66,6 @@ function CsSummaryFormComponent() {
   
   const [applicationId, setApplicationId] = useState<string | null>(searchParams.get('applicationId'));
 
-  const addLog = (message: string) => {
-    setDebugLogs(prev => [message, ...prev]);
-  };
-  
   const methods = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -100,9 +77,7 @@ function CsSummaryFormComponent() {
   const { formState: { errors }, trigger, getValues, handleSubmit, reset } = methods;
 
   useEffect(() => {
-    addLog("Form component mounted.");
     if (!isUserLoading && !user) {
-      addLog("User not found, redirecting to /login.");
       router.push('/login');
     }
   }, [user, isUserLoading, router]);
@@ -110,22 +85,17 @@ function CsSummaryFormComponent() {
   useEffect(() => {
     const fetchApplicationData = async () => {
       if (applicationId && user && firestore) {
-        addLog(`Existing application ID found: ${applicationId}. Fetching data...`);
         const docRef = doc(firestore, `users/${user.uid}/applications`, applicationId);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
-          addLog("Application data found in Firestore.");
           
           if (data.memberDob && typeof data.memberDob.toDate === 'function') {
             data.memberDob = data.memberDob.toDate();
-            addLog("Converted 'memberDob' from Firestore Timestamp to Date.");
           }
           
           reset(data);
-          addLog("Form reset with loaded data.");
         } else {
-            addLog(`Warning: Application ID ${applicationId} not found. Starting a new application.`);
             setApplicationId(null);
             reset({
               copyAddress: false,
@@ -141,16 +111,13 @@ function CsSummaryFormComponent() {
               referrerLastName: user?.displayName?.split(' ')[1] || '',
               referrerEmail: user?.email || '',
           });
-          addLog("New form, pre-populating with user data.");
       }
     };
     fetchApplicationData();
   }, [applicationId, user, firestore, reset]);
 
   const saveProgress = async (isNavigating: boolean = false) => {
-    addLog("Attempting to save progress...");
     if (!user || !firestore) {
-        addLog("Save failed: User or Firestore not available.");
         return null;
     }
   
@@ -160,7 +127,6 @@ function CsSummaryFormComponent() {
     if (!docId) {
       docId = doc(collection(firestore, `users/${user.uid}/applications`)).id;
       setApplicationId(docId);
-      addLog(`Generated new application ID: ${docId}`);
        if (isNavigating) {
         router.replace(`/forms/cs-summary-form?applicationId=${docId}`, { scroll: false });
       }
@@ -185,10 +151,8 @@ function CsSummaryFormComponent() {
        if (!isNavigating) {
          toast({ title: 'Progress Saved', description: 'Your changes have been saved.' });
        }
-       addLog(`Progress saved successfully for application ID: ${docId}`);
        return docId;
     } catch (error: any) {
-      addLog(`Error saving progress: ${error.message}`);
       if (!isNavigating) {
         toast({ variant: "destructive", title: "Save Error", description: `Could not save your progress: ${error.message}` });
       }
@@ -198,22 +162,16 @@ function CsSummaryFormComponent() {
 
 
   const nextStep = async () => {
-    addLog(`Attempting to go to next step from step ${currentStep}`);
     const fieldsToValidate = steps[currentStep - 1].fields;
-    addLog(`Fields to validate: ${fieldsToValidate.join(', ')}`);
     const isValidStep = await trigger(fieldsToValidate as (keyof FormValues)[]);
-    addLog(`Step validation result: ${isValidStep}`);
 
     if (isValidStep) {
         await saveProgress(true);
         if (currentStep < steps.length) {
             setCurrentStep(currentStep + 1);
             window.scrollTo(0, 0);
-            addLog(`Successfully moved to step ${currentStep + 1}`);
         }
     } else {
-        const errorList = JSON.stringify(errors, null, 2);
-        addLog(`Step is invalid. Errors: ${errorList}`);
         if (activeToastId.current) dismiss(activeToastId.current);
         const { id } = toast({
             variant: "destructive",
@@ -225,7 +183,6 @@ function CsSummaryFormComponent() {
   };
 
   const prevStep = async () => {
-    addLog(`Going to previous step from ${currentStep}`);
     await saveProgress(true);
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
@@ -234,8 +191,6 @@ function CsSummaryFormComponent() {
   };
 
   const onInvalid = (errors: any) => {
-    const errorString = JSON.stringify(errors, null, 2);
-    addLog(`Form submission failed due to validation errors: ${errorString}`);
     toast({
       variant: 'destructive',
       title: 'Submission Failed',
@@ -248,9 +203,9 @@ function CsSummaryFormComponent() {
 
     const appsRef = collection(firestore, `users/${user.uid}/applications`);
     
-    // Query for same Medi-Cal number
     const mediCalQuery = query(appsRef, where("memberMediCalNum", "==", data.memberMediCalNum));
     const mediCalSnap = await getDocs(mediCalQuery);
+
     if (!mediCalSnap.empty && mediCalSnap.docs.some(doc => doc.id !== applicationId)) {
       toast({
         variant: 'destructive',
@@ -260,49 +215,30 @@ function CsSummaryFormComponent() {
       return true;
     }
     
-    // Query for same MRN
-    const mrnQuery = query(appsRef, where("memberMrn", "==", data.memberMrn));
-    const mrnSnap = await getDocs(mrnQuery);
-    if (!mrnSnap.empty && mrnSnap.docs.some(doc => doc.id !== applicationId)) {
-       toast({
-        variant: 'destructive',
-        title: 'Duplicate Application Found',
-        description: `An application with MRN ${data.memberMrn} already exists.`,
-      });
-      return true;
-    }
-
     return false;
   };
 
   const onSubmit = async (data: FormValues) => {
-    addLog('onSubmit triggered. Form data is valid. Starting final submission...');
     if (!user || !firestore) {
-      addLog("Submission failed: User or Firestore not available.");
       toast({ variant: "destructive", title: "Error", description: "You must be logged in." });
       return;
     }
 
     const hasDuplicate = await checkForDuplicates(data);
     if (hasDuplicate) {
-      addLog("Submission aborted due to duplicate application.");
       return;
     }
   
-    addLog("Calling saveProgress before final submission...");
     const finalAppId = await saveProgress(true);
 
     if (!finalAppId) {
-         addLog("Submission failed: Could not get an application ID.");
          toast({ variant: "destructive", title: "Error", description: "Could not get an application ID to finalize submission." });
          return;
     }
   
-    addLog(`Finalizing submission for application ID: ${finalAppId}`);
     const docRef = doc(firestore, `users/${user.uid}/applications`, finalAppId);
     
     const requiredForms = getRequiredFormsForPathway(data.pathway);
-    addLog(`Generated required forms for pathway '${data.pathway}': ${JSON.stringify(requiredForms.map(f => f.name))}`);
     
     // Sanitize data one last time before final save
     const sanitizedData = Object.fromEntries(
@@ -318,16 +254,13 @@ function CsSummaryFormComponent() {
   
     try {
       await setDoc(docRef, finalData, { merge: true });
-      addLog("Final data merged successfully into Firestore.");
       toast({
         title: 'Application Started!',
         description: 'Your member summary is complete. Continue to the next steps.',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
-      addLog(`Navigating to /pathway?applicationId=${finalAppId}`);
       router.push(`/pathway?applicationId=${finalAppId}`);
     } catch (error: any) {
-      addLog(`Error during final submission: ${error.message}`);
       toast({
         variant: "destructive",
         title: "Submission Error",
@@ -393,7 +326,6 @@ function CsSummaryFormComponent() {
                 )}
               </div>
               
-              <DebugLog logs={debugLogs} />
             </div>
           </div>
         </form>
