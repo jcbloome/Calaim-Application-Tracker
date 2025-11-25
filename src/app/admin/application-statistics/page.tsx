@@ -119,21 +119,20 @@ export default function ApplicationStatisticsPage() {
         />
 
          <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle className="text-base">Monthly Totals</CardTitle>
-             <CardDescription>Total applications submitted per month.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer config={{}} className="h-[200px] w-full">
-              <BarChart data={statsData.monthly} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                <YAxis tickLine={false} axisLine={false} fontSize={12} />
-                <Tooltip cursor={false} content={<ChartTooltipContent />} />
-                <Bar dataKey="total" radius={4} fill="hsl(var(--primary))" />
-              </BarChart>
-            </ChartContainer>
-          </CardContent>
+            <CardHeader>
+                <CardTitle className="text-base">Monthly Totals</CardTitle>
+                <CardDescription>Total applications submitted per month.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="space-y-2 text-sm">
+                    {statsData.monthly.map(item => (
+                        <div key={item.month} className="flex justify-between">
+                            <span>{new Date().getFullYear()} {item.month}</span>
+                            <span className="font-medium">{item.total} applications</span>
+                        </div>
+                    ))}
+                </div>
+            </CardContent>
         </Card>
       </div>
 
