@@ -1,3 +1,4 @@
+
 'use client';
 
 import { notFound, useParams, useRouter } from 'next/navigation';
@@ -524,3 +525,5 @@ export default function AdminApplicationDetailPage() {
     </Dialog>
   );
 }
+
+    
