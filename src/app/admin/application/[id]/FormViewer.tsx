@@ -15,11 +15,11 @@ const FormHeader = ({ application }: { application: Partial<Application> & { [ke
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
                 <h3 className="text-sm font-medium text-muted-foreground">Member Name</h3>
-                <p className="font-semibold">{application.memberFirstName} {application.memberLastName}</p>
+                <p className="font-semibold">{application.MemberFirstName} {application.MemberLastName}</p>
             </div>
             <div>
                 <h3 className="text-sm font-medium text-muted-foreground">Medical Record Number</h3>
-                <p className="font-semibold font-mono text-sm">{application.memberMrn}</p>
+                <p className="font-semibold font-mono text-sm">{application.MemberMedicalRecordNumber}</p>
             </div>
         </div>
     </div>
@@ -32,7 +32,7 @@ const SignatureSection = ({ application }: { application: Partial<Application> &
         <div className="grid grid-cols-2 gap-x-8 gap-y-4 mt-4 text-sm">
             <div>
                 <p className="text-gray-500">Signed by (Full Name)</p>
-                <p className="font-semibold">{application.memberFirstName} {application.memberLastName}</p>
+                <p className="font-semibold">{application.MemberFirstName} {application.MemberLastName}</p>
             </div>
             <div>
                 <p className="text-gray-500">Date Signed</p>

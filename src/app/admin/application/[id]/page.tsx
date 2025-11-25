@@ -33,35 +33,74 @@ const getMockApplicationById = (id: string): (Application & { [key: string]: any
       // In a real app this data would come from firestore.
       return { 
         ...app, 
-        memberName: app.memberName,
-        memberFirstName: app.memberName?.split(' ')[0] || '',
-        memberLastName: app.memberName?.split(' ')[1] || '',
-        memberDob: new Date(1980, 1, 1),
-        memberAge: 44,
-        memberMediCalNum: '91234567A',
-        memberMrn: 'MRN12345',
-        memberLanguage: 'English',
-        memberCounty: 'Los Angeles',
-        referrerFirstName: 'Jason',
-        referrerLastName: 'Bloome',
-        referrerEmail: 'jason@carehomefinders.com',
-        userEmail: 'user@example.com', // Added for email notifications
-        referrerPhone: '(555) 123-4567',
-        referrerRelationship: 'Social Worker',
-        agency: 'Care Home Finders',
-        bestContactType: 'other',
-        bestContactFirstName: 'Contact',
-        bestContactLastName: 'Person',
-        bestContactRelationship: 'Family Member',
-        bestContactPhone: '(555) 555-5555',
-        bestContactEmail: 'contact@example.com',
-        bestContactLanguage: 'English',
-        currentLocation: 'SNF',
-        currentAddress: '123 Nursing Way',
-        currentCity: 'Healthville',
-        currentState: 'CA',
-        currentZip: '90210',
-        currentCounty: 'Los Angeles',
+        ApplicationID: app.id,
+        MemberFullName: app.memberName,
+        MemberFirstName: app.memberName?.split(' ')[0] || '',
+        MemberLastName: app.memberName?.split(' ')[1] || '',
+        MemberDateOfBirth: new Date(1980, 1, 1),
+        MemberAge: 44,
+        MemberMediCalNumber: '91234567A',
+        MemberMedicalRecordNumber: 'MRN12345',
+        MemberPreferredLanguage: 'English',
+        MemberCounty: 'Los Angeles',
+        ReferrerFirstName: 'Jason',
+        ReferrerLastName: 'Bloome',
+        ReferrerEmail: 'jason@carehomefinders.com',
+        UserEmail: 'user@example.com', // Added for email notifications
+        ReferrerPhone: '(555) 123-4567',
+        ReferrerRelationship: 'Social Worker',
+        Agency: 'Care Home Finders',
+        PrimaryContactType: 'other',
+        PrimaryContactFirstName: 'Contact',
+        PrimaryContactLastName: 'Person',
+        PrimaryContactRelationship: 'Family Member',
+        PrimaryContactPhone: '(555) 555-5555',
+        PrimaryContactEmail: 'contact@example.com',
+        PrimaryContactLanguage: 'English',
+        SecondaryContactFirstName: 'Secondary',
+        SecondaryContactLastName: 'Person',
+        SecondaryContactRelationship: 'Friend',
+        SecondaryContactPhone: '(555) 111-2222',
+        SecondaryContactEmail: 'secondary@example.com',
+        SecondaryContactLanguage: 'Spanish',
+        MemberHasCapacity: 'Yes',
+        HasLegalRepresentative: 'Yes',
+        LegalRepresentativeName: 'Legal Eagle',
+        LegalRepresentativeRelationship: 'Lawyer',
+        LegalRepresentativePhone: '(555) 333-4444',
+        LegalRepresentativeEmail: 'legal@rep.com',
+        CurrentLocationType: 'SNF',
+        CurrentAddress: '123 Nursing Way',
+        CurrentCity: 'Healthville',
+        CurrentState: 'CA',
+        CurrentZipCode: '90210',
+        CurrentCounty: 'Los Angeles',
+        IsCustomaryAddressSameAsCurrent: false,
+        CustomaryAddress: '456 Home Street',
+        CustomaryCity: 'Hometown',
+        CustomaryState: 'CA',
+        CustomaryZipCode: '90211',
+        CustomaryCounty: 'Los Angeles',
+        HealthPlan: app.healthPlan || 'Kaiser Permanente',
+        IsSwitchingHealthPlan: 'No',
+        Pathway: app.pathway || 'SNF Transition',
+        MeetsPathwayCriteria: 'Yes',
+        SNFDiversionReason: 'N/A',
+        ISPContactFirstName: 'ISP',
+        ISPContactLastName: 'Coordinator',
+        ISPContactRelationship: 'Coordinator',
+        ISPContactFacilityName: 'Community Services Center',
+        ISPContactPhone: '(555) 555-5555',
+        ISPContactEmail: 'isp@example.com',
+        ISPAddress: '789 Assessment Dr, Planville, CA 90213',
+        ISPCounty: 'Los Angeles',
+        IsOnALWWaitlist: 'No',
+        HasPreferredRCFE: 'Yes',
+        RCFEName: 'The Golden Years RCFE',
+        RCFEAddress: '789 Sunshine Ave, Happy Town, CA',
+        RCFEAdministratorName: 'Admin Person',
+        RCFEAdministratorPhone: '(555) 111-2222',
+        RCFEAdministratorEmail: 'rcfe-admin@example.com',
       };
   }
   return undefined;
@@ -237,9 +276,9 @@ export default function AdminApplicationDetailPage() {
 
     try {
         await sendRevisionRequestEmail({
-            to: localApplication.userEmail,
-            subject: `Revision Required for Your CalAIM Application: ${localApplication.memberName}`,
-            memberName: localApplication.memberName,
+            to: localApplication.UserEmail,
+            subject: `Revision Required for Your CalAIM Application: ${localApplication.MemberFullName}`,
+            memberName: localApplication.MemberFullName,
             formName: targetFormForRevision,
             revisionNotes: revisionDetails
         });
@@ -269,9 +308,9 @@ export default function AdminApplicationDetailPage() {
     if (deleteMessage) {
         try {
             await sendApplicationStatusEmail({
-                to: localApplication.userEmail,
-                subject: `CalAIM Application Status Update for ${localApplication.memberName}`,
-                memberName: localApplication.memberName,
+                to: localApplication.UserEmail,
+                subject: `CalAIM Application Status Update for ${localApplication.MemberFullName}`,
+                memberName: localApplication.MemberFullName,
                 staffName: user.displayName || 'The Admin Team',
                 message: deleteMessage,
                 status: 'Deleted'
@@ -297,12 +336,12 @@ export default function AdminApplicationDetailPage() {
         user: user.displayName || 'Admin',
         action: 'Application Deletion',
         timestamp: new Date().toLocaleString(),
-        details: `Deleted application for ${localApplication.memberName}. ${deleteMessage ? 'User was notified.' : 'User was not notified.'}`
+        details: `Deleted application for ${localApplication.MemberFullName}. ${deleteMessage ? 'User was notified.' : 'User was not notified.'}`
     });
 
     toast({
         title: 'Application Deleted',
-        description: `The application for ${localApplication.memberName} has been removed.`,
+        description: `The application for ${localApplication.MemberFullName} has been removed.`,
     });
     setDeleteDialogOpen(false);
     router.push('/admin/applications');
@@ -314,7 +353,7 @@ export default function AdminApplicationDetailPage() {
     
     toast({
         title: "Status Updated",
-        description: `Application for ${localApplication.memberName} is now: ${newStatus}`,
+        description: `Application for ${localApplication.MemberFullName} is now: ${newStatus}`,
     });
   }
 
@@ -357,7 +396,7 @@ export default function AdminApplicationDetailPage() {
                   <DialogHeader>
                     <DialogTitle>Are you absolutely sure?</DialogTitle>
                     <DialogDescription>
-                      This action cannot be undone. This will permanently delete the application for <strong>{localApplication.memberName}</strong>.
+                      This action cannot be undone. This will permanently delete the application for <strong>{localApplication.MemberFullName}</strong>.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-2">
@@ -384,7 +423,7 @@ export default function AdminApplicationDetailPage() {
               <div>
                 <CardTitle className="text-2xl">Application: {localApplication.id}</CardTitle>
                 <CardDescription>
-                  Member: <strong>{localApplication.memberName}</strong> | Health Plan: <strong>{localApplication.healthPlan}</strong> | Pathway: <strong>{localApplication.pathway}</strong> | Status: <strong>{localApplication.status}</strong>
+                  Member: <strong>{localApplication.MemberFullName}</strong> | Health Plan: <strong>{localApplication.HealthPlan}</strong> | Pathway: <strong>{localApplication.Pathway}</strong> | Status: <strong>{localApplication.status}</strong>
                 </CardDescription>
               </div>
               <div className="text-right shrink-0">
@@ -463,11 +502,11 @@ export default function AdminApplicationDetailPage() {
                 <div className="grid gap-4 py-4">
                     <div className="space-y-2">
                         <Label htmlFor="memberName">Member Name</Label>
-                        <Input id="memberName" value={localApplication.memberName} readOnly />
+                        <Input id="memberName" value={localApplication.MemberFullName} readOnly />
                     </div>
                      <div className="space-y-2">
                         <Label htmlFor="userEmail">Recipient Email</Label>
-                        <Input id="userEmail" value={localApplication.userEmail} readOnly />
+                        <Input id="userEmail" value={localApplication.UserEmail} readOnly />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="revision-details">Revision Details</Label>

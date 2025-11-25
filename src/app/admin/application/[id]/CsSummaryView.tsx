@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { Application } from '@/lib/definitions';
@@ -60,12 +61,12 @@ const CaspioSender = ({ application }: { application: Partial<Application> & { [
         // We'll pretend 'app-002' has a Medi-Cal number that was already sent.
         const duplicate = mockApplications.find(app => 
             app.id !== application.id && 
-            (app as any).memberMediCalNum === application.memberMediCalNum &&
+            (app as any).MemberMediCalNumber === application.MemberMediCalNumber &&
             (app as any).caspioSent // a hypothetical flag
         );
         
         if (duplicate) {
-            return { isUnique: false, reason: `An application with Medi-Cal # ${application.memberMediCalNum} has already been sent to Caspio.` };
+            return { isUnique: false, reason: `An application with Medi-Cal # ${application.MemberMediCalNumber} has already been sent to Caspio.` };
         }
         return { isUnique: true, reason: '' };
     };
@@ -152,7 +153,7 @@ export function CsSummaryView({ application }: { application: Partial<Applicatio
   }
   
   const data = application;
-  const dobFormatted = formatDate(data.memberDob);
+  const dobFormatted = formatDate(data.MemberDateOfBirth);
 
   return (
     <ScrollArea className="h-[75vh] pr-6">
@@ -160,88 +161,88 @@ export function CsSummaryView({ application }: { application: Partial<Applicatio
             <CaspioSender application={application} />
 
             <Section title="Member Information">
-                <Field label="First Name" value={data.memberFirstName} />
-                <Field label="Last Name" value={data.memberLastName} />
-                <Field label="Date of Birth" value={dobFormatted} />
-                <Field label="Age" value={data.memberAge} />
-                <Field label="Medi-Cal Number" value={data.memberMediCalNum} />
-                <Field label="Medical Record Number (MRN)" value={data.memberMrn} />
-                <Field label="Preferred Language" value={data.memberLanguage} />
-                <Field label="County" value={data.memberCounty} />
+                <Field label="Member First Name" value={data.MemberFirstName} />
+                <Field label="Member Last Name" value={data.MemberLastName} />
+                <Field label="Member Date of Birth" value={dobFormatted} />
+                <Field label="Member Age" value={data.MemberAge} />
+                <Field label="Member Medi-Cal Number" value={data.MemberMediCalNumber} />
+                <Field label="Member Medical Record Number" value={data.MemberMedicalRecordNumber} />
+                <Field label="Member Preferred Language" value={data.MemberPreferredLanguage} />
+                <Field label="Member County" value={data.MemberCounty} />
             </Section>
 
             <Section title="Referrer Information">
-                <Field label="First Name" value={data.referrerFirstName} />
-                <Field label="Last Name" value={data.referrerLastName} />
-                <Field label="Email" value={data.referrerEmail} />
-                <Field label="Phone" value={data.referrerPhone} />
-                <Field label="Relationship to Member" value={data.referrerRelationship} />
-                <Field label="Agency" value={data.agency} />
+                <Field label="Referrer First Name" value={data.ReferrerFirstName} />
+                <Field label="Referrer Last Name" value={data.ReferrerLastName} />
+                <Field label="Referrer Email" value={data.ReferrerEmail} />
+                <Field label="Referrer Phone" value={data.ReferrerPhone} />
+                <Field label="Referrer Relationship to Member" value={data.ReferrerRelationship} />
+                <Field label="Agency" value={data.Agency} />
             </Section>
             
             <Section title="Primary Contact">
-                <Field label="Contact Type" value={data.bestContactType} />
-                <Field label="First Name" value={data.bestContactFirstName} />
-                <Field label="Last Name" value={data.bestContactLastName} />
-                <Field label="Relationship" value={data.bestContactRelationship} />
-                <Field label="Phone" value={data.bestContactPhone} />
-                <Field label="Email" value={data.bestContactEmail} />
-                <Field label="Language" value={data.bestContactLanguage} />
+                <Field label="Primary Contact Type" value={data.PrimaryContactType} />
+                <Field label="Primary Contact First Name" value={data.PrimaryContactFirstName} />
+                <Field label="Primary Contact Last Name" value={data.PrimaryContactLastName} />
+                <Field label="Primary Contact Relationship" value={data.PrimaryContactRelationship} />
+                <Field label="Primary Contact Phone" value={data.PrimaryContactPhone} />
+                <Field label="Primary Contact Email" value={data.PrimaryContactEmail} />
+                <Field label="Primary Contact Language" value={data.PrimaryContactLanguage} />
             </Section>
             
             <Section title="Secondary Contact">
-                <Field label="First Name" value={data.secondaryContactFirstName} />
-                <Field label="Last Name" value={data.secondaryContactLastName} />
-                <Field label="Relationship" value={data.secondaryContactRelationship} />
-                <Field label="Phone" value={data.secondaryContactPhone} />
-                <Field label="Email" value={data.secondaryContactEmail} />
-                <Field label="Language" value={data.secondaryContactLanguage} />
+                <Field label="Secondary Contact First Name" value={data.SecondaryContactFirstName} />
+                <Field label="Secondary Contact Last Name" value={data.SecondaryContactLastName} />
+                <Field label="Secondary Contact Relationship" value={data.SecondaryContactRelationship} />
+                <Field label="Secondary Contact Phone" value={data.SecondaryContactPhone} />
+                <Field label="Secondary Contact Email" value={data.SecondaryContactEmail} />
+                <Field label="Secondary Contact Language" value={data.SecondaryContactLanguage} />
             </Section>
 
             <Section title="Legal Representative">
-                <Field label="Has Capacity" value={data.hasCapacity} />
-                <Field label="Has Legal Rep" value={data.hasLegalRep} />
-                <Field label="Name" value={data.repName} />
-                <Field label="Relationship" value={data.repRelationship} />
-                <Field label="Phone" value={data.repPhone} />
-                <Field label="Email" value={data.repEmail} />
+                <Field label="Member Has Capacity" value={data.MemberHasCapacity} />
+                <Field label="Has Legal Representative" value={data.HasLegalRepresentative} />
+                <Field label="Legal Representative Name" value={data.LegalRepresentativeName} />
+                <Field label="Legal Representative Relationship" value={data.LegalRepresentativeRelationship} />
+                <Field label="Legal Representative Phone" value={data.LegalRepresentativePhone} />
+                <Field label="Legal Representative Email" value={data.LegalRepresentativeEmail} />
             </Section>
 
             <Section title="Location Information">
-                <Field label="Current Location" value={data.currentLocation} />
-                <Field label="Current Address" value={`${data.currentAddress || ''}, ${data.currentCity || ''}, ${data.currentState || ''} ${data.currentZip || ''}`.replace(/, , /g, ', ').replace(/^, |, $/g, '')} />
-                <Field label="Current County" value={data.currentCounty} />
-                <Field label="Customary Address" value={data.copyAddress ? 'Same as current' : `${data.customaryAddress || ''}, ${data.customaryCity || ''}, ${data.customaryState || ''} ${data.customaryZip || ''}`.replace(/, , /g, ', ').replace(/^, |, $/g, '')} />
-                 <Field label="Customary County" value={data.customaryCounty} />
+                <Field label="Current Location Type" value={data.CurrentLocationType} />
+                <Field label="Current Address" value={`${data.CurrentAddress || ''}, ${data.CurrentCity || ''}, ${data.CurrentState || ''} ${data.CurrentZipCode || ''}`.replace(/, , /g, ', ').replace(/^, |, $/g, '')} />
+                <Field label="Current County" value={data.CurrentCounty} />
+                <Field label="Customary Address" value={data.IsCustomaryAddressSameAsCurrent ? 'Same as current' : `${data.CustomaryAddress || ''}, ${data.CustomaryCity || ''}, ${data.CustomaryState || ''} ${data.CustomaryZipCode || ''}`.replace(/, , /g, ', ').replace(/^, |, $/g, '')} />
+                <Field label="Customary County" value={data.CustomaryCounty} />
             </Section>
 
             <Section title="Health Plan & Pathway">
-                <Field label="Health Plan" value={data.healthPlan} />
-                <Field label="Switching Health Plan?" value={data.switchingHealthPlan} />
-                <Field label="Pathway" value={data.pathway} />
-                <Field label="Meets Criteria" value={data.meetsPathwayCriteria ? 'Yes' : 'No'} />
-                <Field label="SNF Diversion Reason" value={data.snfDiversionReason} />
+                <Field label="Health Plan" value={data.HealthPlan} />
+                <Field label="Is Switching Health Plan?" value={data.IsSwitchingHealthPlan} />
+                <Field label="Pathway" value={data.Pathway} />
+                <Field label="Meets Pathway Criteria" value={data.MeetsPathwayCriteria} />
+                <Field label="SNF Diversion Reason" value={data.SNFDiversionReason} />
             </Section>
 
             <Section title="ISP Contact">
-                <Field label="First Name" value={data.ispFirstName} />
-                <Field label="Last Name" value={data.ispLastName} />
-                <Field label="Relationship" value={data.ispRelationship} />
-                <Field label="Facility" value={data.ispFacilityName} />
-                <Field label="Phone" value={data.ispPhone} />
-                <Field label="Email" value={data.ispEmail} />
-                <Field label="ISP Address" value={`${data.ispAddress || ''}, ${data.ispCity || ''}, ${data.ispState || ''} ${data.ispZip || ''}`.replace(/, , /g, ', ').replace(/^, |, $/g, '')} />
-                <Field label="ISP County" value={data.ispCounty} />
+                <Field label="ISP Contact First Name" value={data.ISPContactFirstName} />
+                <Field label="ISP Contact Last Name" value={data.ISPContactLastName} />
+                <Field label="ISP Contact Relationship" value={data.ISPContactRelationship} />
+                <Field label="ISP Contact Facility Name" value={data.ISPContactFacilityName} />
+                <Field label="ISP Contact Phone" value={data.ISPContactPhone} />
+                <Field label="ISP Contact Email" value={data.ISPContactEmail} />
+                <Field label="ISP Address" value={data.ISPAddress} />
+                <Field label="ISP County" value={data.ISPCounty} />
             </Section>
 
              <Section title="RCFE & ALW">
-                <Field label="On ALW Waitlist" value={data.onALWWaitlist} />
-                <Field label="Has Preferred RCFE" value={data.hasPrefRCFE} />
-                <Field label="Facility Name" value={data.rcfeName} />
-                <Field label="Facility Address" value={data.rcfeAddress} />
-                <Field label="Admin Name" value={data.rcfeAdminName} />
-                <Field label="Admin Phone" value={data.rcfeAdminPhone} />
-                <Field label="Admin Email" value={data.rcfeAdminEmail} />
+                <Field label="Is on ALW Waitlist" value={data.IsOnALWWaitlist} />
+                <Field label="Has Preferred RCFE" value={data.HasPreferredRCFE} />
+                <Field label="RCFE Name" value={data.RCFEName} />
+                <Field label="RCFE Address" value={data.RCFEAddress} />
+                <Field label="RCFE Administrator Name" value={data.RCFEAdministratorName} />
+                <Field label="RCFE Administrator Phone" value={data.RCFEAdministratorPhone} />
+                <Field label="RCFE Administrator Email" value={data.RCFEAdministratorEmail} />
             </Section>
         </div>
     </ScrollArea>
