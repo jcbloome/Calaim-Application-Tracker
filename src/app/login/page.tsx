@@ -15,25 +15,6 @@ import { useToast } from '@/hooks/use-toast';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Eye, EyeOff } from 'lucide-react';
 import { Header } from '@/components/Header';
-import { ScrollArea } from '@/components/ui/scroll-area';
-
-// Simple on-screen logger for debugging
-const DebugLog = ({ logs }: { logs: string[] }) => (
-    <Card className="mt-8">
-      <CardHeader>
-        <CardTitle>Login Debug Log</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ScrollArea className="h-40 w-full rounded-md border p-4">
-          {logs.map((log, index) => (
-            <p key={index} className="text-xs font-mono">
-              {`[${new Date().toLocaleTimeString()}] ${log}`}
-            </p>
-          ))}
-        </ScrollArea>
-      </CardContent>
-    </Card>
-);
 
 export default function LoginPage() {
   const { auth, firestore } = useFirebase();
@@ -49,31 +30,16 @@ export default function LoginPage() {
   const [isSigningIn, setIsSigningIn] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  const [logs, setLogs] = useState<string[]>([]);
-  const addLog = (message: string) => {
-    setLogs(prev => [message, ...prev.slice(0, 19)]); // Keep last 20 logs
-  };
 
   const logo = PlaceHolderImages.find(p => p.id === 'calaim-logo');
-  
-  useEffect(() => {
-    addLog("Login page mounted.");
-  }, []);
-
-  useEffect(() => {
-    addLog(`Firebase services check: auth is ${auth ? 'available' : 'null'}, firestore is ${firestore ? 'available' : 'null'}`);
-  }, [auth, firestore]);
 
   const handleAuthAction = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    addLog("Auth action initiated.");
     setError(null);
     
     if (!auth || !firestore) {
       const errorMsg = "Firebase services are not available. Please wait and try again.";
-      addLog(`ERROR: ${errorMsg}`);
       setError(errorMsg);
       toast({
         variant: 'destructive',
@@ -84,25 +50,17 @@ export default function LoginPage() {
       return;
     }
 
-    addLog(`Attempting to ${isSigningIn ? 'sign in' : 'sign up'} with email: ${email}`);
-
     try {
       if (isSigningIn) {
         await signInWithEmailAndPassword(auth, email, password);
-        addLog("Sign in successful.");
       } else {
-        addLog("Creating new user...");
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
-        addLog(`User created with UID: ${user.uid}`);
         
-        addLog("Updating profile...");
         await updateProfile(user, {
           displayName: `${firstName} ${lastName}`
         });
-        addLog("Profile updated.");
 
-        addLog("Creating user document in Firestore...");
         const userDocRef = doc(firestore, 'users', user.uid);
         await setDoc(userDocRef, {
           id: user.uid,
@@ -110,15 +68,12 @@ export default function LoginPage() {
           lastName: lastName,
           email: user.email,
         });
-        addLog("Firestore document created.");
       }
       toast({
         title: `Successfully ${isSigningIn ? 'signed in' : 'signed up'}!`,
       });
-      addLog("Redirecting to /applications...");
       router.push('/applications');
     } catch (err: any) {
-      addLog(`Auth ERROR: ${err.code} - ${err.message}`);
       setError(err.message);
       toast({
         variant: 'destructive',
@@ -226,7 +181,6 @@ export default function LoginPage() {
                 </div>
             </CardContent>
             </Card>
-            <DebugLog logs={logs} />
         </div>
       </main>
     </>
