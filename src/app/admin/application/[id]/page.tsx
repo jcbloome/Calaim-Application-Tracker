@@ -107,7 +107,6 @@ const kaiserSteps = [
     { id: 'kaiser-4', name: 'Tiered Rate Received' },
     { id: 'kaiser-5', name: 'RCFE Recommended' },
     { id: 'kaiser-6', name: 'RCFE Selected & Contracting Started' },
-    { id: 'kaiser-7', name: 'Authorization Start Date & Payment Instructions Received' },
     { id: 'kaiser-8', name: 'Member Moved In' },
     { id: 'kaiser-9', name: 'Social Worker Visits Started' },
 ];
