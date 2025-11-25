@@ -1,5 +1,3 @@
-
-
 'use client';
 
 import { notFound, useParams, useRouter } from 'next/navigation';
@@ -32,7 +30,7 @@ const getMockApplicationById = (id: string): (Application & { [key: string]: any
       // For the demo, let's just create a more complete object.
       // In a real app this data would come from firestore.
       return { 
-        ...app, // This now correctly includes the 'forms' array from the mock data
+        ...app,
         ApplicationID: app.id,
         MemberFullName: app.memberName,
         MemberFirstName: app.memberName?.split(' ')[0] || '',
@@ -430,7 +428,7 @@ export default function AdminApplicationDetailPage() {
             <div className="lg:col-span-2 space-y-6">
                 <Card>
                 <CardHeader>
-                    <CardTitle>Forms & Documents</CardTitle>
+                    <CardTitle>Forms &amp; Documents</CardTitle>
                     <CardDescription>Review submitted materials and request revisions if needed.</CardDescription>
                 </CardHeader>
                 <CardContent>
