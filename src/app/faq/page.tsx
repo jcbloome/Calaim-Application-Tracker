@@ -10,8 +10,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { acronyms } from '@/lib/data';
-import { Separator } from '@/components/ui/separator';
+import { GlossaryDialog } from '@/components/GlossaryDialog';
 
 const faqItems = [
   {
@@ -82,9 +81,12 @@ export default function FaqPage() {
       <Header />
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
         <div className="max-w-4xl mx-auto space-y-8">
-            <div>
-                <h1 className="text-3xl font-bold">Frequently Asked Questions & Glossary</h1>
-                <p className="text-muted-foreground mt-1">Answers to common questions about the CalAIM application process.</p>
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold">Frequently Asked Questions</h1>
+                    <p className="text-muted-foreground mt-1">Answers to common questions about the CalAIM application process.</p>
+                </div>
+                <GlossaryDialog />
             </div>
 
             <Card>
@@ -101,22 +103,6 @@ export default function FaqPage() {
                                 </AccordionContent>
                             </AccordionItem>
                         ))}
-                         <AccordionItem value="glossary">
-                            <AccordionTrigger>What do all these acronyms mean?</AccordionTrigger>
-                            <AccordionContent>
-                                <dl>
-                                    {acronyms.map((item, index) => (
-                                        <div key={item.term}>
-                                            <div className="flex items-baseline gap-4 py-3">
-                                            <dt className="w-20 text-right font-bold text-primary shrink-0">{item.term}</dt>
-                                            <dd className="text-muted-foreground">{item.definition}</dd>
-                                            </div>
-                                            {index < acronyms.length - 1 && <Separator />}
-                                        </div>
-                                    ))}
-                                </dl>
-                            </AccordionContent>
-                        </AccordionItem>
                     </Accordion>
                 </CardContent>
             </Card>

@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -17,7 +18,7 @@ export function GlossaryDialog() {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="link" className="p-0 h-auto">
+        <Button variant="outline">
             <BookOpen className="mr-2 h-4 w-4" />
             View Acronym Glossary
         </Button>
@@ -27,17 +28,17 @@ export function GlossaryDialog() {
           <DialogTitle>Acronym Glossary</DialogTitle>
         </DialogHeader>
         <ScrollArea className="h-72">
-          <div className="p-4">
+          <dl className="p-4">
             {acronyms.map((item, index) => (
               <div key={item.term}>
-                <div className="flex items-baseline gap-4 py-2">
-                  <dt className="font-bold text-primary">{item.term}</dt>
+                <div className="flex items-baseline gap-4 py-3">
+                  <dt className="w-20 text-right font-bold text-primary shrink-0">{item.term}</dt>
                   <dd className="text-muted-foreground">{item.definition}</dd>
                 </div>
                 {index < acronyms.length - 1 && <Separator />}
               </div>
             ))}
-          </div>
+          </dl>
         </ScrollArea>
       </DialogContent>
     </Dialog>

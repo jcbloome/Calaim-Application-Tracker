@@ -7,6 +7,7 @@ import { FirebaseClientProvider } from '@/firebase/client-provider';
 export const metadata: Metadata = {
   title: 'CalAIM Pathfinder',
   description: 'A portal for the CalAIM Community Support for Assisted Transitions for Health Net and Kaiser.',
+  viewport: 'width=device-width, initial-scale=1.0',
 };
 
 export default function RootLayout({
