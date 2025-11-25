@@ -100,7 +100,6 @@ const ApplicationActivityLog = ({ activities }: { activities: Activity[] }) => {
 };
 
 const kaiserSteps = [
-    { id: 'kaiser-0', name: 'Application Under Review' },
     { id: 'kaiser-1', name: 'Authorization Received' },
     { id: 'kaiser-2', name: 'MSW/RN Visit & Tier Assessment' },
     { id: 'kaiser-3', name: 'ISP Tool Submitted to ILS/Kaiser' },
@@ -113,7 +112,6 @@ const kaiserSteps = [
 ];
 
 const healthNetSteps = [
-    { id: 'healthnet-0', name: 'Application Under Review' },
     { id: 'healthnet-1', name: 'Documents Compiled' },
     { id: 'healthnet-2', name: 'RN Virtual Assessment & Tier Score' },
     { id: 'healthnet-3', name: 'RCFE Recommended' },
@@ -124,8 +122,22 @@ const healthNetSteps = [
     { id: 'healthnet-8', name: 'Social Worker Visits Started' },
 ];
 
+const allSteps = [
+  { id: 'in-progress', name: 'In Progress' },
+  { id: 'submitted', name: 'Completed & Submitted'},
+  ...kaiserSteps,
+  ...healthNetSteps,
+];
+
+
 const ApplicationStatusTracker = ({ application, onStatusChange }: { application: Partial<Application> & { [key: string]: any }, onStatusChange: (status: string) => void }) => {
-    const steps = application.healthPlan?.includes('Kaiser') ? kaiserSteps : healthNetSteps;
+    let steps;
+    if (application.status === 'In Progress' || application.status === 'Requires Revision') {
+      steps = [{name: application.status}];
+    } else {
+      steps = application.healthPlan?.includes('Kaiser') ? kaiserSteps : healthNetSteps;
+    }
+    
     const currentStatus = application.status || '';
     const currentIndex = steps.findIndex(step => step.name === currentStatus);
 
@@ -147,7 +159,7 @@ const ApplicationStatusTracker = ({ application, onStatusChange }: { application
 
                         return (
                             <button
-                                key={step.id}
+                                key={step.id || step.name}
                                 onClick={() => onStatusChange(step.name)}
                                 className={cn(
                                     "w-full flex items-center gap-4 p-3 rounded-lg text-left transition-colors",
@@ -192,7 +204,11 @@ export default function AdminApplicationDetailPage() {
   useEffect(() => {
     if (id) {
         const appData = getMockApplicationById(id);
-        setLocalApplication(appData);
+        if (appData) {
+            setLocalApplication(appData);
+        } else {
+            setLocalApplication(null); // Explicitly set to null if not found
+        }
     }
   }, [id]);
 
@@ -469,3 +485,5 @@ export default function AdminApplicationDetailPage() {
     </Dialog>
   );
 }
+
+    
