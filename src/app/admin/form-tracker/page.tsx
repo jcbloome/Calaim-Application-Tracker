@@ -269,14 +269,14 @@ export default function FormTrackerPage() {
                         <div className="text-xs text-muted-foreground">{app.healthPlan} &ndash; {app.pathway}</div>
                       </TableCell>
                        {legendItems.map(item => {
-                            if (!requiredForms.includes(item.fullName)) {
-                                return <TableCell key={item.initial} className="text-center p-2"></TableCell>;
-                            }
+                            const isRequired = requiredForms.includes(item.fullName);
                             return (
                                 <TableCell key={item.initial} className="text-center p-2">
-                                    <FormStatusIcon status={formStatusMap.get(item.fullName)} />
+                                    {isRequired ? (
+                                        <FormStatusIcon status={formStatusMap.get(item.fullName)} />
+                                    ) : null}
                                 </TableCell>
-                            )
+                            );
                         })}
                     </TableRow>
                   );
