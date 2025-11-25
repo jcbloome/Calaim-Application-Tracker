@@ -100,6 +100,7 @@ const ApplicationActivityLog = ({ activities }: { activities: Activity[] }) => {
 };
 
 const kaiserSteps = [
+    { id: 'submitted', name: 'Application Under Review' },
     { id: 'kaiser-1', name: 'Authorization Received' },
     { id: 'kaiser-2', name: 'MSW/RN Visit & Tier Assessment' },
     { id: 'kaiser-3', name: 'ISP Tool Submitted to ILS/Kaiser' },
@@ -112,6 +113,7 @@ const kaiserSteps = [
 ];
 
 const healthNetSteps = [
+    { id: 'submitted', name: 'Application Under Review' },
     { id: 'healthnet-1', name: 'Documents Compiled' },
     { id: 'healthnet-2', name: 'RN Virtual Assessment & Tier Score' },
     { id: 'healthnet-3', name: 'RCFE Recommended' },
@@ -133,7 +135,7 @@ const allSteps = [
 const ApplicationStatusTracker = ({ application, onStatusChange }: { application: Partial<Application> & { [key: string]: any }, onStatusChange: (status: string) => void }) => {
     let steps;
     if (application.status === 'In Progress' || application.status === 'Requires Revision') {
-      steps = [{name: application.status}];
+      steps = [{id: application.status, name: application.status}];
     } else {
       steps = application.healthPlan?.includes('Kaiser') ? kaiserSteps : healthNetSteps;
     }
@@ -204,11 +206,7 @@ export default function AdminApplicationDetailPage() {
   useEffect(() => {
     if (id) {
         const appData = getMockApplicationById(id);
-        if (appData) {
-            setLocalApplication(appData);
-        } else {
-            setLocalApplication(null); // Explicitly set to null if not found
-        }
+        setLocalApplication(appData ? appData : null);
     }
   }, [id]);
 
@@ -485,5 +483,3 @@ export default function AdminApplicationDetailPage() {
     </Dialog>
   );
 }
-
-    
