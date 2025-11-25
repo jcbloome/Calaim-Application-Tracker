@@ -39,7 +39,7 @@ const formInitialsMap: Record<string, string> = {
     'HIPAA Authorization': 'HP',
     'Liability Waiver': 'LW',
     'Freedom of Choice Waiver': 'FC',
-    'Declaration of Eligibility': 'DE',
+    'Declaration of Eligibility': 'DoE',
     'Proof of Income': 'POI',
     "LIC 602A - Physician's Report": 'PR',
     "Medicine List": 'ML',
