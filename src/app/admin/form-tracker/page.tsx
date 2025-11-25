@@ -26,7 +26,7 @@ import { Separator } from '@/components/ui/separator';
 const allFormNames = Array.from(new Set(mockApplications.flatMap(app => app.forms.map(form => form.name))));
 
 // Add any other forms that might not be in the initial mock data but should have a column
-const additionalForms = ['SNF Facesheet', 'Proof of Income', "LIC 602A - Physician's Report", "Medicine List", 'Declaration of Eligibility'];
+const additionalForms = ['SNF Facesheet', 'Proof of Income', "LIC 602A - Physician's Report", "Medicine List", 'Declaration of Eligibility', 'Program Information'];
 additionalForms.forEach(formName => {
     if (!allFormNames.includes(formName)) {
         allFormNames.push(formName);
@@ -77,12 +77,12 @@ const getRequiredFormsForPathway = (pathway: Application['pathway']): string[] =
 
 const FormStatusIcon = ({ status }: { status: FormStatus['status'] | undefined }) => {
   if (status === 'Completed') {
-    return <CheckCircle2 className="h-5 w-5 text-green-500" />;
+    return <CheckCircle2 className="h-5 w-5 text-green-500 mx-auto" />;
   }
   if (status === 'Pending') {
-    return <Circle className="h-5 w-5 text-yellow-500" />;
+    return <Circle className="h-5 w-5 text-yellow-500 mx-auto" />;
   }
-  return <FileQuestion className="h-5 w-5 text-gray-400" />;
+  return <FileQuestion className="h-5 w-5 text-gray-400 mx-auto" />;
 };
 
 
@@ -237,15 +237,15 @@ export default function FormTrackerPage() {
             </div>
 
           <TooltipProvider>
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[250px] font-bold">Member / App ID</TableHead>
                   {legendItems.map(item => (
-                     <TableHead key={item.initial} className="text-center w-[50px] p-2">
+                     <TableHead key={item.initial} className="text-center w-[50px] p-0">
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleSort(item.fullName)} className="font-bold">
+                                <Button variant="ghost" size="sm" onClick={() => handleSort(item.fullName)} className="font-bold w-full">
                                     {item.initial}
                                 </Button>
                             </TooltipTrigger>
@@ -274,7 +274,9 @@ export default function FormTrackerPage() {
                                 <TableCell key={item.initial} className="text-center p-2">
                                     {isRequired ? (
                                         <FormStatusIcon status={formStatusMap.get(item.fullName)} />
-                                    ) : null}
+                                    ) : (
+                                        <span aria-hidden="true"></span>
+                                    )}
                                 </TableCell>
                             );
                         })}
@@ -289,3 +291,5 @@ export default function FormTrackerPage() {
     </div>
   );
 }
+
+    
