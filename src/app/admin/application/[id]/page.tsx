@@ -381,14 +381,14 @@ export default function AdminApplicationDetailPage() {
 
         <Card>
           <CardHeader>
-            <div className="flex justify-between items-start">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
               <div>
                 <CardTitle className="text-2xl">Application: {localApplication.id}</CardTitle>
                 <CardDescription>
-                  Member: <strong>{localApplication.memberName}</strong> | Pathway: <strong>{localApplication.pathway}</strong> | Status: <strong>{localApplication.status}</strong>
+                  Member: <strong>{localApplication.memberName}</strong> | Health Plan: <strong>{localApplication.healthPlan}</strong> | Pathway: <strong>{localApplication.pathway}</strong> | Status: <strong>{localApplication.status}</strong>
                 </CardDescription>
               </div>
-              <div className="text-right">
+              <div className="text-right shrink-0">
                 <p className="text-sm font-medium text-muted-foreground">Completion</p>
                 <p className="text-2xl font-bold">{Math.round(progress)}%</p>
               </div>
@@ -409,7 +409,7 @@ export default function AdminApplicationDetailPage() {
                 <CardContent>
                     <div className="space-y-4">
                     {localApplication.forms.map(form => (
-                        <div key={form.name} className="flex items-center justify-between rounded-lg border p-4">
+                        <div key={form.name} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-lg border p-4">
                         <div className="flex items-center gap-4">
                             {form.status === 'Completed' ? (
                             <CheckCircle2 className="h-6 w-6 text-green-500" />
@@ -421,7 +421,7 @@ export default function AdminApplicationDetailPage() {
                             <p className="text-sm text-muted-foreground">Type: {form.type}</p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 self-end sm:self-center">
                             <DialogTrigger asChild>
                                 <Button variant="outline" size="sm" onClick={() => setSelectedForm(form.name)}>
                                     View
@@ -499,5 +499,3 @@ export default function AdminApplicationDetailPage() {
     </Dialog>
   );
 }
-
-    
