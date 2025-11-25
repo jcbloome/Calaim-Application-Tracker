@@ -47,6 +47,7 @@ export default function LoginPage() {
   const [lastName, setLastName] = useState('');
 
   const [isSigningIn, setIsSigningIn] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   const [logs, setLogs] = useState<string[]>([]);
@@ -66,11 +67,12 @@ export default function LoginPage() {
 
   const handleAuthAction = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
     addLog("Auth action initiated.");
     setError(null);
     
     if (!auth || !firestore) {
-      const errorMsg = "Firebase services are not available.";
+      const errorMsg = "Firebase services are not available. Please wait and try again.";
       addLog(`ERROR: ${errorMsg}`);
       setError(errorMsg);
       toast({
@@ -78,6 +80,7 @@ export default function LoginPage() {
         title: 'Error',
         description: 'Could not connect to Firebase. Please try again later.',
       });
+      setIsLoading(false);
       return;
     }
 
@@ -122,6 +125,8 @@ export default function LoginPage() {
         title: 'Authentication Failed',
         description: err.message,
       });
+    } finally {
+        setIsLoading(false);
     }
   };
 
@@ -209,8 +214,8 @@ export default function LoginPage() {
                     </Button>
                 </div>
                 {error && <p className="text-sm text-destructive">{error}</p>}
-                <Button type="submit" className="w-full">
-                    {isSigningIn ? 'Sign In' : 'Sign Up'}
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                    {isLoading ? 'Processing...' : (isSigningIn ? 'Sign In' : 'Sign Up')}
                 </Button>
                 </form>
                 <div className="mt-4 text-center text-sm">
