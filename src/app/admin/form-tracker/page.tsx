@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useState, useMemo } from 'react';
 import {
   Table,
   TableBody,
@@ -11,10 +12,13 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { applications as mockApplications } from '@/lib/data';
-import type { FormStatus } from '@/lib/definitions';
+import type { FormStatus, ApplicationStatus } from '@/lib/definitions';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { CheckCircle2, Circle, FileQuestion } from 'lucide-react';
+import { CheckCircle2, Circle, FileQuestion, ArrowUpDown } from 'lucide-react';
 import Link from 'next/link';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import type { Application } from '@/lib/definitions';
 
 // Get a list of all unique form names across all applications
 const allFormNames = Array.from(new Set(mockApplications.flatMap(app => app.forms.map(form => form.name))));
@@ -26,7 +30,6 @@ additionalForms.forEach(formName => {
         allFormNames.push(formName);
     }
 });
-
 
 const formInitialsMap: Record<string, string> = {
     'CS Member Summary': 'CS',
@@ -60,6 +63,69 @@ const FormStatusIcon = ({ status }: { status: FormStatus['status'] | undefined }
 
 
 export default function FormTrackerPage() {
+    const [filters, setFilters] = useState({
+        status: 'all',
+        healthPlan: 'all',
+        pathway: 'all',
+        formName: 'all',
+        formStatus: 'all'
+    });
+    
+    const [sortBy, setSortBy] = useState<string | null>(null);
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+    const handleFilterChange = (filterName: keyof typeof filters, value: string) => {
+        setFilters(prev => ({ ...prev, [filterName]: value }));
+    };
+
+    const handleSort = (columnName: string) => {
+        if (sortBy === columnName) {
+            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortBy(columnName);
+            setSortDirection('asc');
+        }
+    };
+    
+    const filteredApplications = useMemo(() => {
+        let filtered = [...mockApplications];
+
+        if (filters.status !== 'all') {
+            filtered = filtered.filter(app => app.status === filters.status);
+        }
+        if (filters.healthPlan !== 'all') {
+            filtered = filtered.filter(app => app.healthPlan === filters.healthPlan);
+        }
+        if (filters.pathway !== 'all') {
+            filtered = filtered.filter(app => app.pathway === filters.pathway);
+        }
+        if (filters.formName !== 'all' && filters.formStatus !== 'all') {
+            filtered = filtered.filter(app => {
+                const form = app.forms.find(f => f.name === filters.formName);
+                if (filters.formStatus === 'Completed') return form?.status === 'Completed';
+                if (filters.formStatus === 'Pending') return !form || form.status === 'Pending';
+                return false;
+            });
+        }
+        
+        if (sortBy) {
+            filtered.sort((a, b) => {
+                const formStatusA = a.forms.find(f => f.name === sortBy)?.status || 'Pending';
+                const formStatusB = b.forms.find(f => f.name === sortBy)?.status || 'Pending';
+
+                const valueA = formStatusA === 'Completed' ? 1 : 0;
+                const valueB = formStatusB === 'Completed' ? 1 : 0;
+
+                if (valueA < valueB) return sortDirection === 'asc' ? -1 : 1;
+                if (valueA > valueB) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+
+        return filtered;
+    }, [filters, sortBy, sortDirection]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -71,7 +137,7 @@ export default function FormTrackerPage() {
         <CardHeader>
           <CardTitle>All Application Form Status</CardTitle>
           <CardDescription>
-            A compact view of form statuses. Green means completed, yellow means pending.
+            A compact view of form statuses. Green means completed, yellow means pending. Click column headers to sort.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -83,6 +149,53 @@ export default function FormTrackerPage() {
                     ))}
                 </div>
             </div>
+
+            <div className="flex flex-wrap gap-4 mb-6 p-4 border rounded-lg">
+                <Select value={filters.status} onValueChange={(v) => handleFilterChange('status', v)}>
+                    <SelectTrigger className="w-full sm:w-auto"><SelectValue placeholder="Filter by Status" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Statuses</SelectItem>
+                        <SelectItem value="In Progress">In Progress</SelectItem>
+                        <SelectItem value="Requires Revision">Requires Revision</SelectItem>
+                        <SelectItem value="Completed & Submitted">Submitted</SelectItem>
+                        <SelectItem value="Approved">Approved</SelectItem>
+                    </SelectContent>
+                </Select>
+                 <Select value={filters.healthPlan} onValueChange={(v) => handleFilterChange('healthPlan', v)}>
+                    <SelectTrigger className="w-full sm:w-auto"><SelectValue placeholder="Filter by Health Plan" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Health Plans</SelectItem>
+                        <SelectItem value="Kaiser Permanente">Kaiser Permanente</SelectItem>
+                        <SelectItem value="Health Net">Health Net</SelectItem>
+                    </SelectContent>
+                </Select>
+                <Select value={filters.pathway} onValueChange={(v) => handleFilterChange('pathway', v)}>
+                    <SelectTrigger className="w-full sm:w-auto"><SelectValue placeholder="Filter by Pathway" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Pathways</SelectItem>
+                        <SelectItem value="SNF Transition">SNF Transition</SelectItem>
+                        <SelectItem value="SNF Diversion">SNF Diversion</SelectItem>
+                    </SelectContent>
+                </Select>
+                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <Select value={filters.formName} onValueChange={(v) => handleFilterChange('formName', v)}>
+                        <SelectTrigger className="w-full sm:w-[220px]"><SelectValue placeholder="Filter by Form" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Any Form</SelectItem>
+                            {allFormNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                    <Select value={filters.formStatus} onValueChange={(v) => handleFilterChange('formStatus', v)} disabled={filters.formName === 'all'}>
+                        <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="Form Status" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Any Status</SelectItem>
+                            <SelectItem value="Pending">Pending</SelectItem>
+                            <SelectItem value="Completed">Completed</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+            </div>
+
           <TooltipProvider>
             <Table>
               <TableHeader>
@@ -91,7 +204,12 @@ export default function FormTrackerPage() {
                   {legendItems.map(item => (
                      <TableHead key={item.initial} className="text-center">
                         <Tooltip>
-                            <TooltipTrigger>{item.initial}</TooltipTrigger>
+                            <TooltipTrigger asChild>
+                                <Button variant="ghost" size="sm" onClick={() => handleSort(item.fullName)}>
+                                    {item.initial}
+                                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                                </Button>
+                            </TooltipTrigger>
                             <TooltipContent><p>{item.fullName}</p></TooltipContent>
                         </Tooltip>
                      </TableHead>
@@ -99,7 +217,7 @@ export default function FormTrackerPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {mockApplications.map(app => {
+                {filteredApplications.map(app => {
                   const formStatusMap = new Map(app.forms.map(form => [form.name, form.status]));
                   return (
                     <TableRow key={app.id}>
