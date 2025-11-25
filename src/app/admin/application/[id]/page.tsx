@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { CheckCircle2, FileWarning, PenSquare, ArrowLeft, Trash2, Loader2, User, Clock, Check, Circle } from 'lucide-react';
+import { CheckCircle2, FileWarning, PenSquare, ArrowLeft, Trash2, Loader2, User, Clock, Check, Circle, Lock } from 'lucide-react';
 import { useUser, useFirestore } from '@/firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
@@ -101,6 +101,7 @@ const getMockApplicationById = (id: string): (Application & { [key: string]: any
         RCFEAdministratorName: 'Admin Person',
         RCFEAdministratorPhone: '(555) 111-2222',
         RCFEAdministratorEmail: 'rcfe-admin@example.com',
+        forms: app.forms, // Explicitly carry over the forms array
       };
   }
   return undefined;
@@ -165,22 +166,21 @@ const healthNetSteps = [
 
 const ApplicationStatusTracker = ({ application, onStatusChange }: { application: Partial<Application> & { [key: string]: any }, onStatusChange: (status: string) => void }) => {
     let steps;
-    // Determine the correct pathway steps, including 'In Progress' for manual selection.
+    const baseSteps = [{ id: 'in-progress', name: 'In Progress' }];
+    
     if (application.healthPlan?.includes('Kaiser')) {
-        steps = [{ id: 'in-progress', name: 'In Progress' }, ...kaiserSteps];
+        steps = [...baseSteps, ...kaiserSteps];
     } else if (application.healthPlan?.includes('Health Net')) {
-        steps = [{ id: 'in-progress', name: 'In Progress' }, ...healthNetSteps];
+        steps = [...baseSteps, ...healthNetSteps];
     } else {
-        // A default or generic set of steps if the health plan isn't set or recognized
         steps = [
-            { id: 'in-progress', name: 'In Progress' },
+            ...baseSteps,
             { id: 'submitted', name: 'Application Under Review' }
         ];
     }
-    
-    // For 'Requires Revision', we show it as a standalone status.
-    if (application.status === 'Requires Revision') {
-      steps = [{id: application.status, name: application.status}];
+
+    if (application.status === 'Requires Revision' && !steps.find(s => s.name === 'Requires Revision')) {
+      steps = [{id: application.status, name: application.status}, ...steps];
     }
     
     const currentStatus = application.status || '';
@@ -526,5 +526,3 @@ export default function AdminApplicationDetailPage() {
     </Dialog>
   );
 }
-
-    
