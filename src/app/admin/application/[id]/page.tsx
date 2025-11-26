@@ -21,6 +21,7 @@ import { sendRevisionRequestEmail } from '@/app/actions/send-email';
 import { Input } from '@/components/ui/input';
 import { sendApplicationStatusEmail } from '@/app/actions/send-email';
 import { cn } from '@/lib/utils';
+import { Timestamp } from 'firebase/firestore';
 
 
 // This is a temporary solution for the demo to find the mock application data
@@ -28,79 +29,101 @@ import { cn } from '@/lib/utils';
 const getMockApplicationById = (id: string): (Application & { [key: string]: any }) | undefined => {
   const app = mockApplications.find(app => app.id === id);
   if (app) {
-      // For the demo, let's just create a more complete object.
-      // In a real app this data would come from firestore.
-      return { 
+      // This function now creates a detailed mock object using the exact field names
+      // from the `cs-summary-form/schema.ts` file to ensure webhook consistency.
+      return {
         ...app,
-        ApplicationID: app.id,
-        MemberFullName: app.memberName,
-        MemberFirstName: app.memberName?.split(' ')[0] || '',
-        MemberLastName: app.memberName?.split(' ')[1] || '',
-        MemberDateOfBirth: new Date(1980, 1, 1),
-        MemberAge: 44,
-        MemberMediCalNumber: '91234567A',
-        MemberMedicalRecordNumber: 'MRN12345',
-        MemberPreferredLanguage: 'English',
-        MemberCounty: 'Los Angeles',
-        ReferrerFirstName: 'Jason',
-        ReferrerLastName: 'Bloome',
-        ReferrerEmail: 'jason@carehomefinders.com',
-        UserEmail: 'user@example.com', // Added for email notifications
-        ReferrerPhone: '(555) 123-4567',
-        ReferrerRelationship: 'Social Worker',
-        Agency: 'Care Home Finders',
-        PrimaryContactType: 'other',
-        PrimaryContactFirstName: 'Contact',
-        PrimaryContactLastName: 'Person',
-        PrimaryContactRelationship: 'Family Member',
-        PrimaryContactPhone: '(555) 555-5555',
-        PrimaryContactEmail: 'contact@example.com',
-        PrimaryContactLanguage: 'English',
-        SecondaryContactFirstName: 'Secondary',
-        SecondaryContactLastName: 'Person',
-        SecondaryContactRelationship: 'Friend',
-        SecondaryContactPhone: '(555) 111-2222',
-        SecondaryContactEmail: 'secondary@example.com',
-        SecondaryContactLanguage: 'Spanish',
-        MemberHasCapacity: 'Yes',
-        HasLegalRepresentative: 'Yes',
-        LegalRepresentativeName: 'Legal Eagle',
-        LegalRepresentativeRelationship: 'Lawyer',
-        LegalRepresentativePhone: '(555) 333-4444',
-        LegalRepresentativeEmail: 'legal@rep.com',
-        CurrentLocationType: 'SNF',
-        CurrentAddress: '123 Nursing Way',
-        CurrentCity: 'Healthville',
-        CurrentState: 'CA',
-        CurrentZipCode: '90210',
-        CurrentCounty: 'Los Angeles',
-        IsCustomaryAddressSameAsCurrent: false,
-        CustomaryAddress: '456 Home Street',
-        CustomaryCity: 'Hometown',
-        CustomaryState: 'CA',
-        CustomaryZipCode: '90211',
-        CustomaryCounty: 'Los Angeles',
-        HealthPlan: app.healthPlan || 'Kaiser Permanente',
-        IsSwitchingHealthPlan: 'No',
-        Pathway: app.pathway || 'SNF Transition',
-        MeetsPathwayCriteria: 'Yes',
-        SNFDiversionReason: 'N/A',
-        ISPContactFirstName: 'ISP',
-        ISPContactLastName: 'Coordinator',
-        ISPContactRelationship: 'Coordinator',
-        ISPContactFacilityName: 'Community Services Center',
-        ISPContactPhone: '(555) 555-5555',
-        ISPContactEmail: 'isp@example.com',
-        ISPAddress: '789 Assessment Dr, Planville, CA 90213',
-        ISPCounty: 'Los Angeles',
-        IsOnALWWaitlist: 'No',
-        HasPreferredRCFE: 'Yes',
-        RCFEName: 'The Golden Years RCFE',
-        RCFEAddress: '789 Sunshine Ave, Happy Town, CA',
-        RCFEAdministratorName: 'Admin Person',
-        RCFEAdministratorPhone: '(555) 111-2222',
-        RCFEAdministratorEmail: 'rcfe-admin@example.com',
+        // Step 1: Member Info
+        memberFirstName: app.memberName?.split(' ')[0] || 'Test',
+        memberLastName: app.memberName?.split(' ')[1] || 'User',
+        memberDob: Timestamp.fromDate(new Date(1960, 5, 15)),
+        memberAge: 64,
+        memberMediCalNum: '91234567A',
+        confirmMemberMediCalNum: '91234567A',
+        memberMrn: 'MRN12345',
+        confirmMemberMrn: 'MRN12345',
+        memberLanguage: 'English',
+        memberCounty: 'Los Angeles',
+
+        // Step 1: Referrer Info (assuming 'user' is the referrer)
+        referrerFirstName: 'Jason',
+        referrerLastName: 'Bloome',
+        referrerEmail: 'user@example.com', // Added for email notifications
+        referrerPhone: '(555) 123-4567',
+        referrerRelationship: 'Social Worker',
+        agency: 'Care Home Finders',
+
+        // Step 1: Primary/Secondary Contact Info
+        bestContactType: 'other',
+        bestContactFirstName: 'Contact',
+        bestContactLastName: 'Person',
+        bestContactRelationship: 'Family Member',
+        bestContactPhone: '(555) 555-5555',
+        bestContactEmail: 'contact@example.com',
+        bestContactLanguage: 'English',
+        secondaryContactFirstName: 'Secondary',
+        secondaryContactLastName: 'Person',
+        secondaryContactRelationship: 'Friend',
+        secondaryContactPhone: '(555) 111-2222',
+        secondaryContactEmail: 'secondary@example.com',
+        secondaryContactLanguage: 'Spanish',
+
+        // Step 1: Legal Rep
+        hasCapacity: 'Yes',
+        hasLegalRep: 'Yes',
+        repName: 'Legal Eagle',
+        repRelationship: 'Lawyer',
+        repPhone: '(555) 333-4444',
+        repEmail: 'legal@rep.com',
+        isRepPrimaryContact: false,
+
+        // Step 2: Location
+        currentLocation: 'SNF',
+        currentAddress: '123 Nursing Way',
+        currentCity: 'Healthville',
+        currentState: 'CA',
+        currentZip: '90210',
+        currentCounty: 'Los Angeles',
+        copyAddress: false,
+        customaryAddress: '456 Home Street',
+        customaryCity: 'Hometown',
+        customaryState: 'CA',
+        customaryZip: '90211',
+        customaryCounty: 'Los Angeles',
+
+        // Step 3: Health Plan & Pathway
+        healthPlan: app.healthPlan || 'Kaiser Permanente',
+        switchingHealthPlan: 'No',
+        pathway: app.pathway || 'SNF Transition',
+        meetsPathwayCriteria: true,
+        snfDiversionReason: 'N/A',
+
+        // Step 4: ISP & RCFE
+        ispFirstName: 'ISP',
+        ispLastName: 'Coordinator',
+        ispRelationship: 'Coordinator',
+        ispFacilityName: 'Community Services Center',
+        ispPhone: '(555) 555-5555',
+        ispEmail: 'isp@example.com',
+        ispCopyCurrent: false,
+        ispLocationType: 'SNF',
+        ispAddress: '789 Assessment Dr',
+        ispCity: 'Planville',
+        ispState: 'CA',
+        ispZip: '90213',
+        ispCounty: 'Los Angeles',
+        onALWWaitlist: 'No',
+        hasPrefRCFE: 'Yes',
+        rcfeName: 'The Golden Years RCFE',
+        rcfeAddress: '789 Sunshine Ave, Happy Town, CA',
+        rcfeAdminName: 'Admin Person',
+        rcfeAdminPhone: '(555) 111-2222',
+        rcfeAdminEmail: 'rcfe-admin@example.com',
+        
+        // Other top-level fields from the original mock structure
         forms: app.forms, // Explicitly carry over the forms array
+        UserEmail: 'user@example.com', // Keep for notifications if used elsewhere
+        MemberFullName: app.memberName, // Keep for display if needed
       };
   }
   return undefined;
@@ -412,8 +435,8 @@ export default function AdminApplicationDetailPage() {
                 <CardTitle className="text-2xl">Application: {localApplication.id}</CardTitle>
                 <CardDescription className="flex flex-col sm:flex-row sm:gap-x-2">
                   <span>Member: <strong>{localApplication.MemberFullName}</strong> | </span>
-                  <span>Health Plan: <strong>{localApplication.HealthPlan}</strong> | </span>
-                  <span>Pathway: <strong>{localApplication.Pathway}</strong> | </span>
+                  <span>Health Plan: <strong>{localApplication.healthPlan}</strong> | </span>
+                  <span>Pathway: <strong>{localApplication.pathway}</strong> | </span>
                   <span>Status: <strong>{localApplication.status}</strong></span>
                 </CardDescription>
               </div>
@@ -528,3 +551,5 @@ export default function AdminApplicationDetailPage() {
     </Dialog>
   );
 }
+
+    
