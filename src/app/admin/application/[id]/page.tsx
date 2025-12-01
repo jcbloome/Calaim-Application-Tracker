@@ -38,8 +38,6 @@ const getMockApplicationById = (id: string): (Application & { [key: string]: any
         memberLastName: app.memberName?.split(' ')[1] || 'User',
         memberDob: Timestamp.fromDate(new Date(1960, 5, 15)),
         memberAge: 64,
-        memberMediCalNum: '91234567A',
-        confirmMemberMediCalNum: '91234567A',
         memberMrn: 'MRN12345',
         confirmMemberMrn: 'MRN12345',
         memberLanguage: 'English',
@@ -551,5 +549,3 @@ export default function AdminApplicationDetailPage() {
     </Dialog>
   );
 }
-
-    

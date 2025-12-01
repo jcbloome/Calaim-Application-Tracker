@@ -36,8 +36,8 @@ export function PrintableDeclarationOfEligibilityContent() {
                         </p>
                     </div>
                     <Field 
-                        label="Medi-Cal Number (9 characters) or Medical Record Number" 
-                        description="Medi-Cal Number for Health Net, Medical Record Number for Kaiser."
+                        label="Medical Record Number (MRN)" 
+                        description="For Health Net use the Medi-Cal number (starts with 9). For Kaiser use their specific MRN."
                     />
 
                     <div className="mt-4">

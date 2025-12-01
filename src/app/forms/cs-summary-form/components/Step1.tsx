@@ -174,35 +174,6 @@ export default function Step1() {
               )}
             />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-              control={control}
-              name="memberMediCalNum"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Medi-Cal Number <span className="text-destructive">*</span></FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} maxLength={9} />
-                  </FormControl>
-                   <FormDescription>Format: 9 digits and a letter (e.g. 91234567A).</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-             <FormField
-              control={control}
-              name="confirmMemberMediCalNum"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Confirm Medi-Cal Number <span className="text-destructive">*</span></FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} maxLength={9} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={control}
@@ -213,7 +184,7 @@ export default function Step1() {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
-                  <FormDescription>Medical Record Number for Kaiser. If Health Net, repeat Medi-Cal Number.</FormDescription>
+                  <FormDescription>For Health Net use the Medi-Cal number (starts with 9). For Kaiser use their specific MRN.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -541,5 +512,3 @@ export default function Step1() {
     </div>
   );
 }
-
-    

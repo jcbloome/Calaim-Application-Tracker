@@ -57,12 +57,12 @@ const CaspioSender = ({ application }: { application: Partial<Application> & { [
     const checkUniqueness = async (): Promise<{ isUnique: boolean, reason: string }> => {
         const duplicate = mockApplications.find(app => 
             app.id !== application.id && 
-            (app as any).memberMediCalNum === application.memberMediCalNum &&
+            (app as any).memberMrn === application.memberMrn &&
             (app as any).caspioSent
         );
         
         if (duplicate) {
-            return { isUnique: false, reason: `An application with Medi-Cal # ${application.memberMediCalNum} has already been sent to Caspio.` };
+            return { isUnique: false, reason: `An application with MRN # ${application.memberMrn} has already been sent to Caspio.` };
         }
         return { isUnique: true, reason: '' };
     };
@@ -171,7 +171,6 @@ export function CsSummaryView({ application }: { application: Partial<Applicatio
                 <Field label="Member Last Name" value={data.memberLastName} />
                 <Field label="Member Date of Birth" value={dobFormatted} />
                 <Field label="Member Age" value={data.memberAge} />
-                <Field label="Member Medi-Cal Number" value={data.memberMediCalNum} />
                 <Field label="Member Medical Record Number" value={data.memberMrn} />
                 <Field label="Member Preferred Language" value={data.memberLanguage} />
                 <Field label="Member County" value={data.memberCounty} />
@@ -254,5 +253,3 @@ export function CsSummaryView({ application }: { application: Partial<Applicatio
     </ScrollArea>
   );
 }
-
-    

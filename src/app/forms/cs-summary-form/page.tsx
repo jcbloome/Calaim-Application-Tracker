@@ -26,7 +26,7 @@ import { formSchema, type FormValues } from './schema';
 
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
-      'memberFirstName', 'memberLastName', 'memberDob', 'memberMediCalNum', 'confirmMemberMediCalNum', 'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'memberCounty',
+      'memberFirstName', 'memberLastName', 'memberDob', 'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'memberCounty',
       'referrerPhone', 'referrerRelationship', 'bestContactType',
       'hasCapacity',
   ]},
@@ -203,14 +203,14 @@ function CsSummaryFormComponent() {
 
     const appsRef = collection(firestore, `users/${user.uid}/applications`);
     
-    const mediCalQuery = query(appsRef, where("memberMediCalNum", "==", data.memberMediCalNum));
-    const mediCalSnap = await getDocs(mediCalQuery);
+    const mrnQuery = query(appsRef, where("memberMrn", "==", data.memberMrn));
+    const mrnSnap = await getDocs(mrnQuery);
 
-    if (!mediCalSnap.empty && mediCalSnap.docs.some(doc => doc.id !== applicationId)) {
+    if (!mrnSnap.empty && mrnSnap.docs.some(doc => doc.id !== applicationId)) {
       toast({
         variant: 'destructive',
         title: 'Duplicate Application Found',
-        description: `An application with Medi-Cal number ${data.memberMediCalNum} already exists.`,
+        description: `An application with MRN ${data.memberMrn} already exists.`,
       });
       return true;
     }

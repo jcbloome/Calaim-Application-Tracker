@@ -38,8 +38,8 @@ export function PrintableHipaaFormContent() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                   <Field label="Patient Name" />
                   <Field 
-                    label="Medi-Cal Number (9 characters) or Medical Record Number" 
-                    description="Medi-Cal Number for Health Net, Medical Record Number for Kaiser."
+                    label="Medical Record Number (MRN)" 
+                    description="For Health Net use the Medi-Cal number (starts with 9). For Kaiser use their specific MRN."
                   />
                 </div>
               </div>

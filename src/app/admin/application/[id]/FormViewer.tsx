@@ -19,7 +19,7 @@ const FormHeader = ({ application }: { application: Partial<Application> & { [ke
             </div>
             <div>
                 <h3 className="text-sm font-medium text-muted-foreground">Medical Record Number</h3>
-                <p className="font-semibold font-mono text-sm">{application.MemberMedicalRecordNumber}</p>
+                <p className="font-semibold font-mono text-sm">{application.memberMrn}</p>
             </div>
         </div>
     </div>
@@ -150,5 +150,3 @@ export function FormViewer({ formName, application }: { formName: string, applic
         </ScrollArea>
     );
 }
-
-    

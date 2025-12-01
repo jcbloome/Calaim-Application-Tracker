@@ -16,8 +16,6 @@ export const formSchema = z.object({
     memberLastName: requiredString,
     memberDob: z.date({ required_error: 'Date of birth is required.' }),
     memberAge: z.number().optional(),
-    memberMediCalNum: z.string().regex(/^9[0-9]{7}[a-zA-Z]$/, { message: 'Invalid Medi-Cal number format. Must be 9, followed by 7 digits, then a letter.'}).max(9, "Medi-Cal number cannot exceed 9 characters."),
-    confirmMemberMediCalNum: z.string().max(9, "Medi-Cal number cannot exceed 9 characters."),
     memberMrn: requiredString,
     confirmMemberMrn: requiredString,
     memberLanguage: requiredString,
@@ -100,10 +98,6 @@ export const formSchema = z.object({
     rcfeAdminPhone: optionalPhone,
     rcfeAdminEmail: optionalEmail,
     rcfeAddress: optionalString,
-  })
-  .refine(data => data.memberMediCalNum === data.confirmMemberMediCalNum, {
-    message: "Medi-Cal numbers don't match",
-    path: ["confirmMemberMediCalNum"],
   })
   .refine(data => data.memberMrn === data.confirmMemberMrn, {
       message: "Medical Record Numbers don't match",

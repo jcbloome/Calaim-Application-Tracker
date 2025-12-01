@@ -63,7 +63,7 @@
           "description": "Date of birth of the CalAIM member (MM/DD/YYYY).",
           "format": "date-time"
         },
-        "medicalRecordNumber": {
+        "memberMrn": {
           "type": "string",
           "description": "Medical record number (MRN) of the CalAIM member."
         },
@@ -90,7 +90,7 @@
         "memberFirstName",
         "memberLastName",
         "dateOfBirth",
-        "medicalRecordNumber",
+        "memberMrn",
         "managedCarePlan",
         "status",
         "pathway",

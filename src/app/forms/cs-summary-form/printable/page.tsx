@@ -41,14 +41,9 @@ export function PrintableCsSummaryFormContent() {
             <Field label="Last Name" />
             <Field label="Date of Birth (MM/DD/YYYY)" />
             <Field label="Age" />
-              <Field 
-              label="Medi-Cal Number" 
-              description="Format: 9 digits and a letter (e.g. 91234567A)."
-            />
-              <Field label="Confirm Medi-Cal Number" />
             <Field 
               label="Medical Record Number (MRN)"
-              description="Medical Record Number for Kaiser. If Health Net, repeat Medi-Cal Number."
+              description="For Health Net use the Medi-Cal number (starts with 9). For Kaiser use their specific MRN."
             />
             <Field label="Confirm Medical Record Number (MRN)" />
             <Field label="Preferred Language" description="e.g., English, Spanish"/>

@@ -34,8 +34,6 @@ const WebhookPreparer = () => {
             memberLastName: 'Doe',
             memberDob: Timestamp.fromDate(new Date('1965-01-15')).toDate(),
             memberAge: 59,
-            memberMediCalNum: '91234567A',
-            confirmMemberMediCalNum: '91234567A',
             memberMrn: 'MRN123456789',
             confirmMemberMrn: 'MRN123456789',
             memberLanguage: 'English',
@@ -272,4 +270,3 @@ export default function SuperAdminPage() {
     </div>
   );
 }
-
