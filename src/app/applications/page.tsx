@@ -112,13 +112,13 @@ const ApplicationsTable = ({
                    <TableCell className="hidden md:table-cell">{app.healthPlan || 'N/A'}</TableCell>
                   <TableCell className="hidden sm:table-cell">{app.lastUpdated ? format(app.lastUpdated.toDate(), 'PPP') : 'N/A'}</TableCell>
                   <TableCell className="text-right">
-                    {app.status === 'In Progress' || app.status === 'Requires Revision' ? (
+                    {(app.status === 'In Progress' || app.status === 'Requires Revision') ? (
                       <Button asChild variant="outline" size="sm">
-                        <Link href={`/forms/cs-summary-form?applicationId=${app.id}`}>Continue</Link>
+                        <Link href={`/applications/${app.id}`}>Continue</Link>
                       </Button>
                     ) : (
                       <Button asChild variant="outline" size="sm">
-                        <Link href={`/pathway?applicationId=${app.id}`}>View</Link>
+                        <Link href={`/applications/${app.id}`}>View</Link>
                       </Button>
                     )}
                   </TableCell>
