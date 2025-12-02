@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
@@ -27,6 +28,7 @@ import { formSchema, type FormValues } from './schema';
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
       'memberFirstName', 'memberLastName', 'memberDob', 'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'memberCounty',
+      'memberMediCalNum', 'confirmMemberMediCalNum',
       'referrerPhone', 'referrerRelationship', 'bestContactType',
       'hasCapacity',
   ]},
@@ -341,3 +343,5 @@ export default function CsSummaryFormPage() {
     </React.Suspense>
   );
 }
+
+    

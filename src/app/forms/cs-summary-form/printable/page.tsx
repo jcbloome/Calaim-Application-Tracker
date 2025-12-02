@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React from 'react';
@@ -42,8 +43,13 @@ export function PrintableCsSummaryFormContent() {
             <Field label="Date of Birth (MM/DD/YYYY)" />
             <Field label="Age" />
             <Field 
+              label="Medi-Cal Number"
+              description="For Health Net, this is the 9-digit number starting with 9."
+            />
+            <Field label="Confirm Medi-Cal Number" />
+            <Field 
               label="Medical Record Number (MRN)"
-              description="For Health Net use the Medi-Cal number (starts with 9). For Kaiser use their specific MRN."
+              description="For Kaiser, use their specific MRN (often starting with 3-4 zeros)."
             />
             <Field label="Confirm Medical Record Number (MRN)" />
             <Field label="Preferred Language" description="e.g., English, Spanish"/>
@@ -294,3 +300,5 @@ export default function PrintableCsSummaryForm() {
     </div>
   );
 }
+
+    

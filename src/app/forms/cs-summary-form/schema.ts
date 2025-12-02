@@ -1,4 +1,5 @@
 
+
 import { z } from 'zod';
 
 const requiredString = z.string().min(1, { message: 'This field is required.' });
@@ -16,6 +17,8 @@ export const formSchema = z.object({
     memberLastName: requiredString,
     memberDob: z.date({ required_error: 'Date of birth is required.' }),
     memberAge: z.number().optional(),
+    memberMediCalNum: z.string().regex(/^9\d{8}$/, { message: 'Medi-Cal number must be 9 digits and start with 9.' }),
+    confirmMemberMediCalNum: requiredString,
     memberMrn: requiredString,
     confirmMemberMrn: requiredString,
     memberLanguage: requiredString,
@@ -103,6 +106,10 @@ export const formSchema = z.object({
       message: "Medical Record Numbers don't match",
       path: ["confirmMemberMrn"],
   })
+  .refine(data => data.memberMediCalNum === data.confirmMemberMediCalNum, {
+      message: "Medi-Cal Numbers don't match",
+      path: ["confirmMemberMediCalNum"],
+  })
   .refine(data => {
     if (data.hasCapacity === 'No') {
       return data.hasLegalRep === 'Yes';
@@ -124,3 +131,5 @@ export const formSchema = z.object({
 
 
 export type FormValues = z.infer<typeof formSchema>;
+
+    

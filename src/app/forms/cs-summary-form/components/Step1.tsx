@@ -173,6 +173,35 @@ export default function Step1() {
               )}
             />
           </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                    control={control}
+                    name="memberMediCalNum"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>Medi-Cal Number <span className="text-destructive">*</span></FormLabel>
+                        <FormControl>
+                            <Input {...field} value={field.value ?? ''} />
+                        </FormControl>
+                        <FormDescription>For Health Net, this is the 9-digit number starting with 9.</FormDescription>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={control}
+                    name="confirmMemberMediCalNum"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>Confirm Medi-Cal Number <span className="text-destructive">*</span></FormLabel>
+                        <FormControl>
+                            <Input {...field} value={field.value ?? ''} />
+                        </FormControl>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
+            </div>
            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={control}
@@ -183,7 +212,7 @@ export default function Step1() {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
-                  <FormDescription>For Health Net use the Medi-Cal number (starts with 9). For Kaiser use their specific MRN.</FormDescription>
+                  <FormDescription>For Kaiser, use their specific MRN (often starting with 3-4 zeros).</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -511,3 +540,5 @@ export default function Step1() {
     </div>
   );
 }
+
+    
