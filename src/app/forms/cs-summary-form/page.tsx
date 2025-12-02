@@ -32,7 +32,7 @@ const steps = [
       'referrerPhone', 'referrerRelationship', 'bestContactType',
       'hasCapacity',
   ]},
-  { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty'] },
+  { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty'] },
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'meetsPathwayCriteria', 'switchingHealthPlan'] },
   { id: 4, name: 'ISP & Facility Selection', fields: ['ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty']},
 ];
@@ -193,22 +193,29 @@ function CsSummaryFormComponent() {
       window.scrollTo(0, 0);
     }
   };
-
-  const onInvalid = (errors: any) => {
-    // Find the first step with an error
+  
+  const findFirstErrorStep = (errors: any) => {
     for (const step of steps) {
         const hasError = step.fields.some(field => errors[field]);
         if (hasError) {
-            setCurrentStep(step.id);
-            toast({
-                variant: 'destructive',
-                title: 'Validation Error',
-                description: `Please correct the errors on Step ${step.id}: ${step.name}.`,
-            });
-            return;
+            return step.id;
         }
     }
-    // Fallback toast if step isn't found (shouldn't happen)
+    return null;
+  }
+
+  const onInvalid = (errors: any) => {
+    const firstErrorStep = findFirstErrorStep(errors);
+    if (firstErrorStep) {
+        setCurrentStep(firstErrorStep);
+        toast({
+            variant: 'destructive',
+            title: 'Validation Error',
+            description: `Please correct the errors on Step ${firstErrorStep}: ${steps[firstErrorStep - 1].name}.`,
+        });
+        return;
+    }
+
     toast({
       variant: 'destructive',
       title: 'Submission Failed',
@@ -267,7 +274,7 @@ function CsSummaryFormComponent() {
     const finalData = {
       ...sanitizedData,
       forms: requiredForms,
-      status: 'In Progress' as const,
+      status: 'In Progress' as const, // The user should now be sent to the review page
       lastUpdated: serverTimestamp(),
     };
   
@@ -275,7 +282,7 @@ function CsSummaryFormComponent() {
       await setDoc(docRef, finalData, { merge: true });
       toast({
         title: 'Summary Complete!',
-        description: 'You can now proceed to the next steps.',
+        description: 'You will now be taken to the pathway to complete the rest of the forms.',
       });
       router.push(`/pathway?applicationId=${finalAppId}`);
     } catch (error: any) {
