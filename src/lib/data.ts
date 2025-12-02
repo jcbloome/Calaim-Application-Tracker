@@ -7,7 +7,7 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
   {
     id: 'app-001',
     memberName: 'John Doe',
-    memberMrn: 'mrn-test-001',
+    memberMrn: 'mrn-test-999',
     status: 'In Progress',
     healthPlan: 'Kaiser Permanente',
     lastUpdated: '2023-10-26',
@@ -29,7 +29,7 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
   {
     id: 'app-002',
     memberName: 'Jane Smith',
-    memberMrn: 'MRN-TEST-002',
+    memberMrn: 'MRN-TEST-007',
     status: 'Requires Revision',
     healthPlan: 'Health Net',
     lastUpdated: '2023-10-25',
@@ -50,7 +50,7 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
   {
     id: 'd311d971-e3af-43ab-9fc2-89065ee78e8a',
     memberName: 'Jane Smith (Test)',
-    memberMrn: 'mrn-test-003',
+    memberMrn: 'mrn-test-008',
     status: 'In Progress',
     healthPlan: 'Health Net',
     lastUpdated: '2023-09-28',
