@@ -169,14 +169,12 @@ function CsSummaryFormComponent() {
 
 
   const nextStep = async () => {
-    const fieldsToValidate = steps[currentStep - 1].fields;
-    const isValidStep = await trigger(fieldsToValidate as (keyof FormValues)[]);
-    
     // Manual validation for Step 2's customary address
     if (currentStep === 2) {
         const { copyAddress, customaryAddress, customaryCity, customaryState, customaryZip, customaryCounty } = getValues();
         if (!copyAddress && (!customaryAddress || !customaryCity || !customaryState || !customaryZip || !customaryCounty)) {
              toast({
+                id: 'customary-address-error',
                 variant: "destructive",
                 title: "Validation Error",
                 description: "Customary address is required. Please fill out all address fields or check 'Same as current location'.",
@@ -184,6 +182,9 @@ function CsSummaryFormComponent() {
             return; // Stop advancement
         }
     }
+    
+    const fieldsToValidate = steps[currentStep - 1].fields;
+    const isValidStep = await trigger(fieldsToValidate as (keyof FormValues)[]);
 
     if (isValidStep) {
         await saveProgress(true);

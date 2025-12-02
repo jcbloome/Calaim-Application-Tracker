@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -112,7 +113,9 @@ const ToastDescription = React.forwardRef<
 ))
 ToastDescription.displayName = ToastPrimitives.Description.displayName
 
-type ToastProps = React.ComponentPropsWithoutRef<typeof Toast>
+type ToastProps = React.ComponentPropsWithoutRef<typeof Toast> & {
+    duration?: number;
+}
 
 type ToastActionElement = React.ReactElement<typeof ToastAction>
 
