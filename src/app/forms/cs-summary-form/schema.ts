@@ -1,5 +1,4 @@
 
-
 import { z } from 'zod';
 
 const requiredString = z.string().min(1, { message: 'This field is required.' });
@@ -17,7 +16,7 @@ export const formSchema = z.object({
     memberLastName: requiredString,
     memberDob: z.date({ required_error: 'Date of birth is required.' }),
     memberAge: z.number().optional(),
-    memberMediCalNum: z.string().regex(/^9\d{8}$/, { message: 'Medi-Cal number must be 9 digits and start with 9.' }),
+    memberMediCalNum: z.string().regex(/^9\d{7}[a-zA-Z]$/, { message: 'Medi-Cal number must be 9 characters: a 9, then 7 digits, then a letter.' }),
     confirmMemberMediCalNum: requiredString,
     memberMrn: requiredString,
     confirmMemberMrn: requiredString,
@@ -131,5 +130,3 @@ export const formSchema = z.object({
 
 
 export type FormValues = z.infer<typeof formSchema>;
-
-    
