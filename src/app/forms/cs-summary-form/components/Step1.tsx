@@ -181,7 +181,7 @@ export default function Step1() {
                         <FormItem>
                         <FormLabel>Medi-Cal Number <span className="text-destructive">*</span></FormLabel>
                         <FormControl>
-                            <Input {...field} value={field.value ?? ''} />
+                            <Input {...field} value={field.value ?? ''} maxLength={9} />
                         </FormControl>
                         <FormDescription>This is a 9 digit number starting with 9.</FormDescription>
                         <FormMessage />
@@ -195,7 +195,7 @@ export default function Step1() {
                         <FormItem>
                         <FormLabel>Confirm Medi-Cal Number <span className="text-destructive">*</span></FormLabel>
                         <FormControl>
-                            <Input {...field} value={field.value ?? ''} />
+                            <Input {...field} value={field.value ?? ''} maxLength={9} />
                         </FormControl>
                         <FormMessage />
                         </FormItem>
