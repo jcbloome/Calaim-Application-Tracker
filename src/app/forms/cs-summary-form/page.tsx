@@ -72,7 +72,7 @@ function CsSummaryFormComponent() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       copyAddress: false,
-      hasLegalRep: undefined, // Explicitly set to undefined
+      hasLegalRep: undefined,
     },
     mode: 'onBlur',
   });
@@ -171,6 +171,19 @@ function CsSummaryFormComponent() {
   const nextStep = async () => {
     const fieldsToValidate = steps[currentStep - 1].fields;
     const isValidStep = await trigger(fieldsToValidate as (keyof FormValues)[]);
+    
+    // Manual validation for Step 2's customary address
+    if (currentStep === 2) {
+        const { copyAddress, customaryAddress, customaryCity, customaryState, customaryZip, customaryCounty } = getValues();
+        if (!copyAddress && (!customaryAddress || !customaryCity || !customaryState || !customaryZip || !customaryCounty)) {
+             toast({
+                variant: "destructive",
+                title: "Validation Error",
+                description: "Customary address is required. Please fill out all address fields or check 'Same as current location'.",
+            });
+            return; // Stop advancement
+        }
+    }
 
     if (isValidStep) {
         await saveProgress(true);
@@ -183,7 +196,7 @@ function CsSummaryFormComponent() {
         const { id } = toast({
             variant: "destructive",
             title: "Validation Error",
-            description: "Please fill out all required fields before continuing.",
+            description: "Please fill out all required fields marked with an asterisk before continuing.",
         });
         activeToastId.current = id;
     }

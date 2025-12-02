@@ -117,17 +117,6 @@ export const formSchema = z.object({
   }, {
       message: "You must select whether the member is switching health plans.",
       path: ["switchingHealthPlan"],
-  })
-  .refine(data => {
-      if (data.copyAddress === false) {
-          return !!data.customaryAddress && !!data.customaryCity && !!data.customaryState && !!data.customaryZip && !!data.customaryCounty;
-      }
-      return true;
-  }, {
-      message: 'Customary address fields are required when not the same as current location.',
-      // This path is not directly used for highlighting but is good practice.
-      // The individual field messages will be handled by re-validating them.
-      path: ['customaryAddress']
   });
 
 
