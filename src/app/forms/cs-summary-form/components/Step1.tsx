@@ -24,7 +24,6 @@ export default function Step1() {
   const bestContactType = watch('bestContactType');
   const memberFirstName = watch('memberFirstName');
   const memberLastName = watch('memberLastName');
-  const hasCapacity = watch('hasCapacity');
 
   const isRepPrimaryContact = watch('isRepPrimaryContact');
   
@@ -482,7 +481,6 @@ export default function Step1() {
                     <FormItem className="space-y-3 p-4 border rounded-md">
                     <FormLabel>
                         Does member have a legal representative? (e.g., power of attorney)
-                        {hasCapacity === 'No' && <span className="text-destructive">*</span>}
                     </FormLabel>
                     <FormControl>
                         <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex items-center space-x-4">
@@ -491,6 +489,7 @@ export default function Step1() {
                             <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Unknown" /></FormControl><FormLabel className="font-normal">Unknown</FormLabel></FormItem>
                         </RadioGroup>
                     </FormControl>
+                     <FormDescription>If member does not have capacity, this will be flagged for staff to follow up.</FormDescription>
                     <FormMessage />
                     </FormItem>
                 )}

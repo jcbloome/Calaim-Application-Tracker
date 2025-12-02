@@ -30,14 +30,16 @@ export default function Step4() {
       setValue('ispZip', currentZip, { shouldValidate: true });
       setValue('ispCounty', currentCounty, { shouldValidate: true });
     } else {
-        // Optionally clear fields if the user unchecks
-        setValue('ispAddress', '', { shouldValidate: true });
-        setValue('ispCity', '', { shouldValidate: true });
-        setValue('ispState', '', { shouldValidate: true });
-        setValue('ispZip', '', { shouldValidate: true });
-        setValue('ispCounty', '', { shouldValidate: true });
+        // Clear fields if the user unchecks, unless they've manually entered data
+        if (watch('ispAddress') === currentAddress) {
+          setValue('ispAddress', '', { shouldValidate: true });
+          setValue('ispCity', '', { shouldValidate: true });
+          setValue('ispState', '', { shouldValidate: true });
+          setValue('ispZip', '', { shouldValidate: true });
+          setValue('ispCounty', '', { shouldValidate: true });
+        }
     }
-  }, [ispCopyCurrent, currentAddress, currentCity, currentState, currentZip, currentCounty, setValue]);
+  }, [ispCopyCurrent, currentAddress, currentCity, currentState, currentZip, currentCounty, setValue, watch]);
 
 
   return (

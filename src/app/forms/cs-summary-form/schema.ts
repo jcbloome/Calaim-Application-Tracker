@@ -110,15 +110,6 @@ export const formSchema = z.object({
       path: ["confirmMemberMediCalNum"],
   })
   .refine(data => {
-    if (data.hasCapacity === 'No') {
-      return data.hasLegalRep === 'Yes';
-    }
-    return true;
-  }, {
-    message: "If member does not have capacity, a legal representative must be designated.",
-    path: ["hasLegalRep"],
-  })
-  .refine(data => {
     if (data.healthPlan === 'Other') {
         return !!data.switchingHealthPlan;
     }

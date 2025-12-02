@@ -17,10 +17,10 @@ const fakeApplicationTemplate = {
     memberLastName: 'User',
     memberDob: Timestamp.fromDate(new Date(1960, 5, 15)),
     memberAge: 64,
-    memberMediCalNum: '987654321',
-    confirmMemberMediCalNum: '987654321',
-    memberMrn: 'MRN-TEST-001',
-    confirmMemberMrn: 'MRN-TEST-001',
+    memberMediCalNum: '98765432A',
+    confirmMemberMediCalNum: '98765432A',
+    memberMrn: 'mrn-test-005',
+    confirmMemberMrn: 'mrn-test-005',
     memberLanguage: 'English',
     referrerFirstName: 'Jason', // Populated by user profile
     referrerLastName: 'Bloome', // Populated by user profile
@@ -49,11 +49,13 @@ const fakeApplicationTemplate = {
     currentCity: 'Careville',
     currentState: 'CA',
     currentZip: '90211',
+    currentCounty: 'Los Angeles',
     copyAddress: false,
     customaryAddress: '456 Community Lane',
     customaryCity: 'Homeville',
     customaryState: 'CA',
     customaryZip: '90212',
+    customaryCounty: 'Los Angeles',
 
     // Step 3: Health Plan & Pathway
     healthPlan: 'Health Net' as const,
@@ -71,6 +73,7 @@ const fakeApplicationTemplate = {
     ispEmail: 'isp@example.com',
     ispCopyCurrent: false,
     ispCopyCustomary: false,
+    ispLocationType: 'Other',
     ispAddress: '789 Assessment Dr',
     ispCity: 'Planville',
     ispState: 'CA',
