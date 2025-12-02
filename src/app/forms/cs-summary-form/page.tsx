@@ -193,6 +193,20 @@ function CsSummaryFormComponent() {
   };
 
   const onInvalid = (errors: any) => {
+    // Find the first step with an error
+    for (const step of steps) {
+        const hasError = step.fields.some(field => errors[field]);
+        if (hasError) {
+            setCurrentStep(step.id);
+            toast({
+                variant: 'destructive',
+                title: 'Validation Error',
+                description: `Please correct the errors on Step ${step.id}: ${step.name}.`,
+            });
+            return;
+        }
+    }
+    // Fallback toast if step isn't found (shouldn't happen)
     toast({
       variant: 'destructive',
       title: 'Submission Failed',

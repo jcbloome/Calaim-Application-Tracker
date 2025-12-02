@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { notFound, useParams, useRouter } from 'next/navigation';
@@ -38,8 +39,8 @@ const getMockApplicationById = (id: string): (Application & { [key: string]: any
         memberLastName: app.memberName?.split(' ')[1] || 'User',
         memberDob: Timestamp.fromDate(new Date(1960, 5, 15)),
         memberAge: 64,
-        memberMrn: 'MRN12345',
-        confirmMemberMrn: 'MRN12345',
+        memberMrn: app.memberMrn,
+        confirmMemberMrn: app.memberMrn,
         memberLanguage: 'English',
         memberCounty: 'Los Angeles',
 
