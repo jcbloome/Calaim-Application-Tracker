@@ -85,7 +85,7 @@ export default function Step4() {
                     render={({ field }) => (
                         <FormItem>
                         <FormLabel>Type of Location <span className="text-destructive">*</span></FormLabel>
-                         <Select onValueChange={field.onChange} value={field.value}>
+                         <Select onValueChange={field.onChange} value={field.value ?? ''}>
                             <FormControl>
                                 <SelectTrigger><SelectValue placeholder="Select a location type" /></SelectTrigger>
                             </FormControl>
