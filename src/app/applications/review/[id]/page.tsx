@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useMemo, Suspense } from 'react';
+import React, 'useMemo', 'useState'} from 'react';
 import Link from 'next/link';
 import { useRouter, useParams, notFound } from 'next/navigation';
 import {
@@ -37,7 +37,7 @@ function ApplicationReviewPageContent() {
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
-  const applicationId = params.id as string; // Get ID from dynamic route
+  const applicationId = params.id as string;
   const { user } = useUser();
   const firestore = useFirestore();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -98,15 +98,10 @@ function ApplicationReviewPageContent() {
     );
   }
 
-  // Only call notFound if loading is complete and there's still no application
-  if (!isLoading && !application) {
-    notFound();
-    return null;
-  }
-  
   if (!application) {
-    // This part should ideally not be reached if the above logic is correct,
-    // but it's a safe fallback.
+    if (!isLoading) {
+      notFound();
+    }
     return (
         <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -115,7 +110,6 @@ function ApplicationReviewPageContent() {
     );
   }
   
-  // A submitted application can be viewed, but not edited or re-submitted.
   const isLocked = application.status === 'Completed & Submitted' || application.status === 'Approved';
 
   return (
@@ -159,7 +153,6 @@ function ApplicationReviewPageContent() {
                 </div>
             </CardHeader>
             <CardContent>
-                {/* We can re-use the detailed view from the admin panel */}
                 <CsSummaryView application={application} />
             </CardContent>
             {!isLocked && (
@@ -198,17 +191,15 @@ function ApplicationReviewPageContent() {
 }
 
 export default function ApplicationReviewPage() {
-  const params = useParams();
-  const id = params.id as string;
-
   return (
-    <Suspense key={id} fallback={
+    // The Suspense key is not strictly needed here with this structure but doesn't hurt.
+    <React.Suspense fallback={
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
         <p className="ml-4">Loading Application...</p>
       </div>
     }>
       <ApplicationReviewPageContent />
-    </Suspense>
+    </React.Suspense>
   );
 }

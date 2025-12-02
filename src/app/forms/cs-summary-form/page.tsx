@@ -276,7 +276,7 @@ function CsSummaryFormComponent() {
         description: 'Please review your information before final submission.',
       });
       // Redirect to the new review page instead of the pathway page
-      router.push(`/applications/${finalAppId}`);
+      router.push(`/applications/review/${finalAppId}`);
     } catch (error: any) {
       toast({
         variant: "destructive",
