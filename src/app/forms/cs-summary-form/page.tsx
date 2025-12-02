@@ -267,19 +267,17 @@ function CsSummaryFormComponent() {
     const finalData = {
       ...sanitizedData,
       forms: requiredForms,
-      // Keep status as 'In Progress' until user confirms on the review page
-      status: 'In Progress' as const,
+      status: 'Completed & Submitted' as const,
       lastUpdated: serverTimestamp(),
     };
   
     try {
       await setDoc(docRef, finalData, { merge: true });
       toast({
-        title: 'CS Member Summary Complete!',
-        description: 'Please review your information before final submission.',
+        title: 'Application Submitted!',
+        description: 'Your application has been sent for review.',
       });
-      // Redirect to the new review page instead of the pathway page
-      router.push(`/applications/review/${finalAppId}`);
+      router.push(`/pathway?applicationId=${finalAppId}`);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -342,7 +340,7 @@ function CsSummaryFormComponent() {
                     Next
                   </Button>
                 ) : (
-                  <Button type="submit">Review & Continue</Button>
+                  <Button type="submit">Submit</Button>
                 )}
               </div>
               

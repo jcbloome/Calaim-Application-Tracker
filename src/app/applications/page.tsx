@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -67,8 +68,8 @@ const ApplicationsTable = ({
     if (app.status === 'In Progress' || app.status === 'Requires Revision') {
       return `/forms/cs-summary-form?applicationId=${app.id}`;
     }
-    // For all other statuses, send them to the read-only review page.
-    return `/applications/review/${app.id}`;
+    // For all other statuses, send them to the read-only pathway page.
+    return `/pathway?applicationId=${app.id}`;
   };
 
   const getActionText = (app: ApplicationData) => {
