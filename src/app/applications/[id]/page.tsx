@@ -98,9 +98,21 @@ function ApplicationReviewPageContent() {
     );
   }
 
-  if (!application) {
+  // Only call notFound if loading is complete and there's still no application
+  if (!isLoading && !application) {
     notFound();
     return null;
+  }
+  
+  if (!application) {
+    // This part should ideally not be reached if the above logic is correct,
+    // but it's a safe fallback.
+    return (
+        <div className="flex items-center justify-center h-screen">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="ml-4">Loading Application to Review...</p>
+        </div>
+    );
   }
   
   // A submitted application can be viewed, but not edited or re-submitted.
