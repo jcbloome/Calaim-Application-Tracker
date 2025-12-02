@@ -44,12 +44,12 @@ export function PrintableCsSummaryFormContent() {
             <Field label="Age" />
             <Field 
               label="Medi-Cal Number"
-              description="For Health Net, this is the 9-digit number starting with 9."
+              description="This is a 9 digit number starting with 9."
             />
             <Field label="Confirm Medi-Cal Number" />
             <Field 
               label="Medical Record Number (MRN)"
-              description="For Kaiser, use their specific MRN (often starting with 3-4 zeros)."
+              description="For Health Net use the same Medi-Cal number. For Kaiser this is not the Medi-Cal number but a distinct number oftentimes starting with some zeros."
             />
             <Field label="Confirm Medical Record Number (MRN)" />
             <Field label="Preferred Language" description="e.g., English, Spanish"/>
@@ -116,6 +116,7 @@ export function PrintableCsSummaryFormContent() {
               </div>
             </div>
             <h3 className="text-sm font-medium text-gray-800 mt-4">Representative's Contact Info</h3>
+            <CheckboxField label="Is the Legal Representative also the Primary Contact Person?" />
             <p className="text-xs text-gray-500 pt-1">If the member does not have a legal representative, please enter N/A in the following fields.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
               <Field label="Name" />
@@ -123,7 +124,6 @@ export function PrintableCsSummaryFormContent() {
               <Field label="Phone" description="(xxx) xxx-xxxx" />
               <Field label="Email" />
             </div>
-            <CheckboxField label="Is the Legal Representative also the Primary Contact Person?" />
         </div>
 
         <div>

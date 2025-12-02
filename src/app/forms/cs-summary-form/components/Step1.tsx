@@ -183,7 +183,7 @@ export default function Step1() {
                         <FormControl>
                             <Input {...field} value={field.value ?? ''} />
                         </FormControl>
-                        <FormDescription>For Health Net, this is the 9-digit number starting with 9.</FormDescription>
+                        <FormDescription>This is a 9 digit number starting with 9.</FormDescription>
                         <FormMessage />
                         </FormItem>
                     )}
@@ -212,7 +212,7 @@ export default function Step1() {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
-                  <FormDescription>For Kaiser, use their specific MRN (often starting with 3-4 zeros).</FormDescription>
+                  <FormDescription>For Health Net use the same Medi-Cal number. For Kaiser this is not the Medi-Cal number but a distinct number oftentimes starting with some zeros.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
