@@ -3,7 +3,7 @@
 
 import React, { useState, useMemo, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams, notFound } from 'next/navigation';
+import { useRouter, useParams, notFound } from 'next/navigation';
 import {
   Card,
   CardContent,
@@ -35,9 +35,9 @@ import {
 
 function ApplicationReviewPageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const params = useParams();
   const { toast } = useToast();
-  const applicationId = searchParams.get('id'); // Get ID from dynamic route
+  const applicationId = params.id as string; // Get ID from dynamic route
   const { user } = useUser();
   const firestore = useFirestore();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -186,8 +186,8 @@ function ApplicationReviewPageContent() {
 }
 
 export default function ApplicationReviewPage() {
-  const searchParams = useSearchParams();
-  const id = searchParams.get('id');
+  const params = useParams();
+  const id = params.id as string;
 
   return (
     <Suspense key={id} fallback={
