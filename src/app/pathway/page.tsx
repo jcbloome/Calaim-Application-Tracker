@@ -195,18 +195,18 @@ function PathwayPageContent() {
         case 'upload':
              return (
                 <div className="space-y-2">
-                    {req.href && (
-                        <Button asChild variant="secondary" className="w-full">
-                            <Link href={req.href} target="_blank">
-                                <Download className="mr-2 h-4 w-4" /> Download Blank Form
-                            </Link>
-                        </Button>
-                    )}
                     <Label htmlFor={req.id} className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50">
                         <UploadCloud className="mr-2 h-4 w-4" />
                         <span>Upload File</span>
                     </Label>
                     <Input id={req.id} type="file" className="sr-only" />
+                    {req.href && (
+                         <Button asChild variant="link" className="w-full text-xs h-auto py-0">
+                            <Link href={req.href} target="_blank">
+                                <Download className="mr-1 h-3 w-3" /> Download Blank Form
+                            </Link>
+                        </Button>
+                    )}
                 </div>
             );
         default:
@@ -227,12 +227,11 @@ function PathwayPageContent() {
                 Application for {application.memberFirstName} {application.memberLastName}
               </CardTitle>
               <CardDescription>
-                {application.pathway} ({application.healthPlan})
+                Submitted by {user?.displayName} | {application.pathway} ({application.healthPlan})
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-2 text-sm">
-                <div><strong>Applicant:</strong> {user?.displayName}</div>
                 <div className="truncate"><strong>Application ID:</strong> <span className="font-mono text-xs">{application.id}</span></div>
                 <div><strong>Status:</strong> <span className="font-semibold">{application.status}</span></div>
               </div>
