@@ -202,7 +202,7 @@ function PathwayPageContent() {
                     <Input id={req.id} type="file" className="sr-only" />
                     {req.href && (
                          <Button asChild variant="link" className="w-full text-xs h-auto py-0">
-                            <Link href={req.href} download>
+                            <Link href={req.href} target="_blank" download>
                                 <Download className="mr-1 h-3 w-3" /> Download Blank Form
                             </Link>
                         </Button>
