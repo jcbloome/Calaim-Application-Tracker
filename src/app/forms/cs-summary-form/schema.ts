@@ -137,7 +137,9 @@ export const formSchema = z.object({
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Language is required.", path: ["bestContactLanguage"] });
       }
     }
-    if (data.copyAddress === false) {
+    
+    // Updated logic for customary residence
+    if (data.copyAddress !== true) {
       if (!data.customaryAddress) {
           ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryAddress'] });
       }
@@ -154,6 +156,7 @@ export const formSchema = z.object({
           ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryCounty'] });
       }
     }
+    
     if (data.healthPlan === 'Other') {
         if (!data.existingHealthPlan) {
             ctx.addIssue({ code: 'custom', message: 'Please specify the existing health plan.', path: ['existingHealthPlan'] });
