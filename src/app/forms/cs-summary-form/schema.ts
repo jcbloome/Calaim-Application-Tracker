@@ -113,18 +113,16 @@ export const formSchema = z.object({
     path: ["confirmMemberMrn"],
   })
   .superRefine((data, ctx) => {
-    // Primary Contact conditional validation
     if (data.bestContactType === 'other') {
-      if (!data.bestContactFirstName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "First name is required.", path: ["bestContactFirstName"] });
-      if (!data.bestContactLastName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Last name is required.", path: ["bestContactLastName"] });
-      if (!data.bestContactRelationship) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Relationship is required.", path: ["bestContactRelationship"] });
+      if (!data.bestContactFirstName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactFirstName"] });
+      if (!data.bestContactLastName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactLastName"] });
+      if (!data.bestContactRelationship) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactRelationship"] });
       if (!data.bestContactPhone || !phoneRegex.test(data.bestContactPhone)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "A valid phone number is required.", path: ["bestContactPhone"] });
-      if (!data.bestContactEmail) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Email is required.", path: ["bestContactEmail"] });
+      if (!data.bestContactEmail) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactEmail"] });
       else if (!z.string().email().safeParse(data.bestContactEmail).success) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid email address.", path: ["bestContactEmail"] });
-      if (!data.bestContactLanguage) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Language is required.", path: ["bestContactLanguage"] });
+      if (!data.bestContactLanguage) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactLanguage"] });
     }
 
-    // Health Plan conditional validation
     if (data.healthPlan === 'Other') {
       if (!data.existingHealthPlan || data.existingHealthPlan.trim() === '') {
         ctx.addIssue({
@@ -142,7 +140,6 @@ export const formSchema = z.object({
       }
     }
     
-    // SNF Diversion conditional validation
     if (data.pathway === 'SNF Diversion' && (!data.snfDiversionReason || data.snfDiversionReason.trim() === '')) {
       ctx.addIssue({
         code: 'custom',
@@ -151,11 +148,10 @@ export const formSchema = z.object({
       });
     }
 
-    // RCFE conditional validation
     if (data.hasPrefRCFE === 'Yes') {
-        if (!data.rcfeName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Facility Name is required.", path: ["rcfeName"] });
-        if (!data.rcfeAddress) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Facility Address is required.", path: ["rcfeAddress"] });
-        if (!data.rcfeAdminName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Administrator Name is required.", path: ["rcfeAdminName"] });
+        if (!data.rcfeName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["rcfeName"] });
+        if (!data.rcfeAddress) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["rcfeAddress"] });
+        if (!data.rcfeAdminName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["rcfeAdminName"] });
         if (!data.rcfeAdminPhone || !phoneRegex.test(data.rcfeAdminPhone)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "A valid Administrator Phone is required.", path: ["rcfeAdminPhone"] });
         if (!data.rcfeAdminEmail || !z.string().email().safeParse(data.rcfeAdminEmail).success) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "A valid Administrator Email is required.", path: ["rcfeAdminEmail"] });
     }

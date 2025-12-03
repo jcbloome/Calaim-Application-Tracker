@@ -19,7 +19,7 @@ import { PhoneInput } from '@/components/ui/phone-input';
 
 
 export default function Step1() {
-  const { control, watch, setValue, getValues } = useFormContext<FormValues>();
+  const { control, watch, setValue, getValues, trigger } = useFormContext<FormValues>();
   const memberDob = watch('memberDob');
   const bestContactType = watch('bestContactType');
 
@@ -47,14 +47,14 @@ export default function Step1() {
   }, [memberDob, setValue]);
 
   useEffect(() => {
-    const { memberFirstName, memberLastName, memberPhone, memberEmail, memberLanguage } = getValues();
+    const { memberFirstName, memberLastName, bestContactPhone, bestContactEmail, bestContactLanguage } = getValues();
     if (bestContactType === 'member') {
       setValue('bestContactFirstName', memberFirstName, { shouldValidate: true });
       setValue('bestContactLastName', memberLastName, { shouldValidate: true });
       setValue('bestContactRelationship', 'Self', { shouldValidate: true });
-      setValue('bestContactPhone', memberPhone, { shouldValidate: true });
-      setValue('bestContactEmail', memberEmail, { shouldValidate: true });
-      setValue('bestContactLanguage', memberLanguage, { shouldValidate: true });
+      setValue('bestContactPhone', bestContactPhone, { shouldValidate: true });
+      setValue('bestContactEmail', bestContactEmail, { shouldValidate: true });
+      setValue('bestContactLanguage', bestContactLanguage, { shouldValidate: true });
     } else if (bestContactType === 'other') {
       setValue('bestContactFirstName', '', { shouldValidate: true });
       setValue('bestContactLastName', '', { shouldValidate: true });
@@ -62,8 +62,9 @@ export default function Step1() {
       setValue('bestContactPhone', '', { shouldValidate: true });
       setValue('bestContactEmail', '', { shouldValidate: true });
       setValue('bestContactLanguage', '', { shouldValidate: true });
+      trigger(['bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage']);
     }
-  }, [bestContactType, setValue, getValues]);
+  }, [bestContactType, setValue, getValues, trigger]);
 
 
   return (
