@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, FormProvider, FieldPath } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
@@ -22,6 +22,7 @@ import type { FormStatus as FormStatusType } from '@/lib/definitions';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formSchema, type FormValues } from './schema';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
 const steps = [
@@ -29,7 +30,7 @@ const steps = [
       'memberFirstName', 'memberLastName', 'memberDob', 'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'memberCounty',
       'memberMediCalNum', 'confirmMemberMediCalNum',
       'referrerPhone', 'referrerRelationship', 'agency',
-      'bestContactType', 'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
+      'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
       'secondaryContactFirstName', 'secondaryContactLastName', 'secondaryContactRelationship', 'secondaryContactPhone', 'secondaryContactEmail', 'secondaryContactLanguage',
       'hasCapacity', 'hasLegalRep', 'repName', 'repRelationship', 'repPhone', 'repEmail'
   ]},
@@ -66,14 +67,14 @@ const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatus
 function CsSummaryFormComponent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { toast, dismiss } = useToast();
-  const activeToastId = useRef<string | null>(null);
+  const { toast } = useToast();
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
   
   const [applicationId, setApplicationId] = useState<string | null>(searchParams.get('applicationId'));
   const initialStep = parseInt(searchParams.get('step') || '1', 10);
   const [currentStep, setCurrentStep] = useState(initialStep);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
 
   const methods = useForm<FormValues>({
@@ -125,13 +126,12 @@ function CsSummaryFormComponent() {
     fetchApplicationData();
   }, [applicationId, user, firestore, reset]);
 
-  // Dismiss validation toast when errors are resolved
+  // Dismiss validation error when errors are resolved
   useEffect(() => {
-    if (Object.keys(errors).length === 0 && activeToastId.current) {
-      dismiss(activeToastId.current);
-      activeToastId.current = null;
+    if (Object.keys(errors).length === 0 && validationError) {
+      setValidationError(null);
     }
-  }, [errors, dismiss]);
+  }, [errors, validationError]);
 
   const saveProgress = async (isNavigating: boolean = false): Promise<string | null> => {
     if (!user || !firestore) {
@@ -185,17 +185,11 @@ function CsSummaryFormComponent() {
     const isValid = await trigger(fields as FieldPath<FormValues>[], { shouldFocus: true });
     
     if (!isValid) {
-      if (activeToastId.current) dismiss(activeToastId.current);
-      const { id } = toast({
-        variant: "destructive",
-        title: "Validation Error",
-        description: "Please fix the errors on this page before continuing.",
-      });
-      activeToastId.current = id;
+      setValidationError("Please fix the errors on this page before continuing.");
       return; // Stop advancement
     }
 
-    if (activeToastId.current) dismiss(activeToastId.current);
+    setValidationError(null);
     
     await saveProgress(true);
     if (currentStep < steps.length) {
@@ -226,23 +220,11 @@ function CsSummaryFormComponent() {
     const firstErrorStep = findFirstErrorStep(errors);
     if (firstErrorStep && firstErrorStep !== currentStep) {
         setCurrentStep(firstErrorStep);
-        if (activeToastId.current) dismiss(activeToastId.current);
-        const { id } = toast({
-            variant: 'destructive',
-            title: 'Validation Error',
-            description: `Please correct the errors on Step ${firstErrorStep}: ${steps[firstErrorStep - 1].name}.`,
-        });
-        activeToastId.current = id;
+        setValidationError(`Please correct the errors on Step ${firstErrorStep}: ${steps[firstErrorStep - 1].name}.`);
         return;
     }
 
-    if (activeToastId.current) dismiss(activeToastId.current);
-    const { id } = toast({
-      variant: 'destructive',
-      title: 'Submission Failed',
-      description: 'Please check the form for errors and try again.',
-    });
-    activeToastId.current = id;
+    setValidationError('Please check the form for errors and try again.');
   };
 
   const checkForDuplicates = async (data: FormValues): Promise<boolean> => {
@@ -346,6 +328,13 @@ function CsSummaryFormComponent() {
                     </span>
                 </div>
                 <Progress value={progress} className="w-full" />
+                 {validationError && (
+                  <Alert variant="destructive" className="mt-4">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Validation Error</AlertTitle>
+                    <AlertDescription>{validationError}</AlertDescription>
+                  </Alert>
+                )}
               </div>
 
               <div className="min-h-[450px]">
@@ -384,5 +373,3 @@ export default function CsSummaryFormPage() {
     </React.Suspense>
   );
 }
-
-    
