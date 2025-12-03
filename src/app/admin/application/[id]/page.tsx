@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { CheckCircle2, FileWarning, PenSquare, ArrowLeft, Trash2, Loader2, User, Clock, Check, Circle, Lock, ShieldExclamation } from 'lucide-react';
+import { CheckCircle2, FileWarning, PenSquare, ArrowLeft, Trash2, Loader2, User, Clock, Check, Circle, Lock, ShieldAlert } from 'lucide-react';
 import { useUser, useFirestore } from '@/firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
@@ -69,7 +69,7 @@ const getMockApplicationById = (id: string): (Application & { [key: string]: any
         secondaryContactLanguage: 'Spanish',
 
         // Step 1: Legal Rep
-        hasCapacity: 'Yes',
+        hasCapacity: 'No',
         hasLegalRep: 'Yes',
         repName: 'Legal Eagle',
         repRelationship: 'Lawyer',
@@ -430,7 +430,7 @@ export default function AdminApplicationDetailPage() {
 
         {localApplication.hasCapacity === 'No' && (
             <Alert variant="destructive">
-                <ShieldExclamation className="h-4 w-4" />
+                <ShieldAlert className="h-4 w-4" />
                 <AlertTitle>Member Lacks Capacity</AlertTitle>
                 <AlertDescription>
                 This member has been identified as lacking the capacity to make their own decisions. Please ensure a legal representative is involved.
@@ -561,3 +561,5 @@ export default function AdminApplicationDetailPage() {
     </Dialog>
   );
 }
+
+    
