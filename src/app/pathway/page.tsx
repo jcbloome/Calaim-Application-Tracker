@@ -21,7 +21,7 @@ import {
   Loader2,
   UploadCloud,
   Send,
-  Lock,
+  Download,
 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { cn } from '@/lib/utils';
@@ -38,9 +38,9 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
     { id: 'hipaa-auth', title: 'HIPAA Authorization', description: 'Authorize the use or disclosure of Protected Health Information (PHI).', type: 'online-form', href: '/forms/hipaa-authorization', icon: File },
     { id: 'liability-waiver', title: 'Liability Waiver', description: 'Review and sign the Participant Liability Waiver & Hold Harmless Agreement.', type: 'online-form', href: '/forms/liability-waiver', icon: File },
     { id: 'freedom-of-choice', title: 'Freedom of Choice Waiver', description: 'Acknowledge your choice to accept or decline Community Supports services.', type: 'online-form', href: '/forms/freedom-of-choice', icon: File },
-    { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements showing Social Security income.", type: 'upload', icon: UploadCloud },
-    { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, have the physician complete, and upload the report.", type: 'upload', icon: UploadCloud },
-    { id: 'med-list', title: "Medicine List", description: "Upload a current list of all medications.", type: 'upload', icon: UploadCloud },
+    { id: 'proof-of-income', title: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements showing Social Security income.", type: 'upload', icon: UploadCloud, href: null },
+    { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, have the physician complete, and upload the report.", type: 'upload', icon: UploadCloud, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
+    { id: 'med-list', title: "Medicine List", description: "Upload a current list of all medications.", type: 'upload', icon: UploadCloud, href: null },
   ];
 
   if (pathway === 'SNF Diversion') {
@@ -53,7 +53,7 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
   // SNF Transition
   return [
       ...commonRequirements,
-      { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the Skilled Nursing Facility facesheet.", type: 'upload', icon: UploadCloud },
+      { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the Skilled Nursing Facility facesheet.", type: 'upload', icon: UploadCloud, href: null },
   ];
 };
 
@@ -196,7 +196,7 @@ function PathwayPageContent() {
                     {req.href && (
                         <Button asChild variant="secondary" className="w-full">
                             <Link href={req.href} target="_blank">
-                                <File className="mr-2 h-4 w-4" /> Download Blank Form
+                                <Download className="mr-2 h-4 w-4" /> Download Blank Form
                             </Link>
                         </Button>
                     )}

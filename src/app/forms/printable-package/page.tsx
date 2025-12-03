@@ -4,7 +4,7 @@
 import { Header } from '@/components/Header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, Printer, ArrowRight, ExternalLink, Download, FileUp, Send } from 'lucide-react';
+import { FileText, Printer, ArrowRight, ExternalLink, Download, FileUp, Send, Package } from 'lucide-react';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,15 +24,22 @@ const forms = [
 
 const uploadableDocs = [
   { id: 'cs-summary', name: 'CS Member Summary', downloadHref: '/forms/cs-summary-form/printable' },
-  { id: 'hipaa', name: 'HIPAA Authorization', downloadHref: '/forms/hipaa-authorization/printable' },
-  { id: 'liability-waiver', name: 'Liability Waiver', downloadHref: '/forms/liability-waiver/printable' },
-  { id: 'freedom-of-choice', name: 'Freedom of Choice Waiver', downloadHref: '/forms/freedom-of-choice/printable' },
   { id: 'proof-of-income', name: 'Proof of Income (Social Security letter or 3 months bank statements)', downloadHref: null },
-  { id: 'physicians-report', name: 'LIC 602A - Physician\'s Report', downloadHref: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
-  { id: 'declaration', name: 'Declaration of Eligibility (for SNF Diversion only)', downloadHref: '/forms/declaration-of-eligibility/printable' },
   { id: 'med-list', name: 'Medicine List', downloadHref: null },
-  { id: 'snf-facesheet', name: 'SNF Facesheet (for SNF Transition only)', downloadHref: null },
 ];
+
+const bundleUploads = [
+    { 
+        id: 'waivers-bundle', 
+        name: 'All Waivers (HIPAA, Liability, Freedom of Choice)', 
+        description: 'Upload one file containing all signed waiver documents.'
+    },
+    { 
+        id: 'medical-docs-bundle', 
+        name: 'Medical Documents (Physician\'s Report, SNF Facesheet)', 
+        description: 'Upload one file containing the LIC 602A and SNF Facesheet (if applicable).'
+    },
+]
 
 
 export default function ApplicationSubmissionPage() {
@@ -168,6 +175,24 @@ export default function ApplicationSubmissionPage() {
                                                 <Label htmlFor={doc.id} className="flex h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer">
                                                     <FileUp className="mr-2 h-4 w-4" />
                                                     <span>Upload File</span>
+                                                </Label>
+                                                <Input id={doc.id} type="file" className="sr-only" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+
+                                <Separator />
+                                <h3 className='font-semibold text-lg mb-4'>Bundle Uploads</h3>
+                                 {bundleUploads.map((doc) => (
+                                    <div key={doc.id} className="p-3 border rounded-md bg-background">
+                                        <Label className="font-medium text-base">{doc.name}</Label>
+                                        <p className='text-sm text-muted-foreground mt-1'>{doc.description}</p>
+                                        <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                                            <div className="flex-1">
+                                                <Label htmlFor={doc.id} className="flex h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer">
+                                                    <Package className="mr-2 h-4 w-4" />
+                                                    <span>Upload Bundle</span>
                                                 </Label>
                                                 <Input id={doc.id} type="file" className="sr-only" />
                                             </div>
