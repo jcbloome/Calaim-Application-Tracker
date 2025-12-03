@@ -31,8 +31,6 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const logo = PlaceHolderImages.find(p => p.id === 'calaim-logo');
-
   const handleAuthAction = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -92,15 +90,6 @@ export default function LoginPage() {
         <div className="w-full max-w-md">
             <Card className="shadow-2xl">
             <CardHeader className="items-center text-center p-6">
-                {logo && (
-                <Image
-                    src={logo.imageUrl}
-                    alt={logo.description}
-                    width={250}
-                    height={50}
-                    className="object-contain mb-4"
-                />
-                )}
                 <CardTitle className="text-3xl font-bold">
                 {isSigningIn ? 'Welcome Back' : 'Create an Account'}
                 </CardTitle>

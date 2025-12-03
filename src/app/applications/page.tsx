@@ -85,65 +85,67 @@ const ApplicationsTable = ({
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {onSelectionChange && <TableHead className="w-[50px]"></TableHead>}
-              <TableHead>Member / App ID</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="hidden md:table-cell">Pathway</TableHead>
-              <TableHead className="hidden md:table-cell">Health Plan</TableHead>
-              <TableHead className="hidden sm:table-cell">Last Updated</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
+        <div className="w-full overflow-x-auto">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
-                  Loading applications...
-                </TableCell>
+                {onSelectionChange && <TableHead className="w-[50px]"></TableHead>}
+                <TableHead>Member / App ID</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="hidden md:table-cell">Pathway</TableHead>
+                <TableHead className="hidden md:table-cell">Health Plan</TableHead>
+                <TableHead className="hidden sm:table-cell">Last Updated</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
-            ) : applications.length > 0 ? (
-              applications.map(app => (
-                <TableRow key={app.id}>
-                  {onSelectionChange && (
-                    <TableCell>
-                      <Checkbox
-                        checked={selection?.includes(app.id)}
-                        onCheckedChange={checked => onSelectionChange(app.id, !!checked)}
-                        aria-label={`Select application for ${app.memberFirstName} ${app.memberLastName}`}
-                      />
-                    </TableCell>
-                  )}
-                  <TableCell className="font-medium">
-                    <div>{`${app.memberFirstName} ${app.memberLastName}`}</div>
-                    <div className="text-xs text-muted-foreground font-mono truncate">{app.id}</div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={getBadgeVariant(app.status)}>
-                      {app.status}
-                    </Badge>
-                  </TableCell>
-                   <TableCell className="hidden md:table-cell">{app.pathway || 'N/A'}</TableCell>
-                   <TableCell className="hidden md:table-cell">{app.healthPlan || 'N/A'}</TableCell>
-                  <TableCell className="hidden sm:table-cell">{app.lastUpdated ? format(app.lastUpdated.toDate(), 'PPP') : 'N/A'}</TableCell>
-                  <TableCell className="text-right">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={getActionLink(app)}>{getActionText(app)}</Link>
-                    </Button>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
+                    Loading applications...
                   </TableCell>
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
-                  No applications found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+              ) : applications.length > 0 ? (
+                applications.map(app => (
+                  <TableRow key={app.id}>
+                    {onSelectionChange && (
+                      <TableCell>
+                        <Checkbox
+                          checked={selection?.includes(app.id)}
+                          onCheckedChange={checked => onSelectionChange(app.id, !!checked)}
+                          aria-label={`Select application for ${app.memberFirstName} ${app.memberLastName}`}
+                        />
+                      </TableCell>
+                    )}
+                    <TableCell className="font-medium">
+                      <div>{`${app.memberFirstName} ${app.memberLastName}`}</div>
+                      <div className="text-xs text-muted-foreground font-mono truncate">{app.id}</div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={getBadgeVariant(app.status)}>
+                        {app.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">{app.pathway || 'N/A'}</TableCell>
+                    <TableCell className="hidden md:table-cell">{app.healthPlan || 'N/A'}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{app.lastUpdated ? format(app.lastUpdated.toDate(), 'PPP') : 'N/A'}</TableCell>
+                    <TableCell className="text-right">
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={getActionLink(app)}>{getActionText(app)}</Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
+                    No applications found.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   );
