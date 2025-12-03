@@ -19,7 +19,7 @@ const forms = [
     { name: 'Liability Waiver', icon: FileText, href: '/forms/liability-waiver/printable' },
     { name: 'Freedom of Choice Waiver', icon: FileText, href: '/forms/freedom-of-choice/printable' },
     { name: 'Declaration of Eligibility (for SNF Diversion only)', icon: FileText, href: '/forms/declaration-of-eligibility/printable' },
-    { name: 'LIC 602A - Physician\'s Report', icon: ExternalLink, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf', target: '_blank' },
+    { name: 'LIC 602A - Physician\'s Report', icon: ExternalLink, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf', target: '_blank', download: true },
 ];
 
 const uploadableDocs = [
@@ -44,10 +44,6 @@ const bundleUploads = [
 
 export default function ApplicationSubmissionPage() {
   const router = useRouter();
-
-  const handlePrintPackage = () => {
-    router.push('/forms/printable-package/full-package');
-  };
 
   return (
     <>
@@ -93,14 +89,14 @@ export default function ApplicationSubmissionPage() {
                                 <p className="text-sm text-muted-foreground mb-4">Print individual forms:</p>
                                 {forms.map((form) => (
                                     <Button key={form.name} variant="outline" className="w-full justify-start text-left bg-background" asChild>
-                                      <Link href={form.href} target={form.target || '_self'}>
+                                      <Link href={form.href} target={form.target || '_self'} download={form.download}>
                                         <form.icon className="mr-2 h-4 w-4" />
                                         {form.name}
                                       </Link>
                                     </Button>
                                 ))}
                                 <div className="pt-4">
-                                     <Button className="w-full" onClick={handlePrintPackage}>
+                                     <Button className="w-full" onClick={() => router.push('/forms/printable-package/full-package')}>
                                         <Printer className="mr-2 h-4 w-4" />
                                         Print Full Blank Application Package
                                     </Button>
