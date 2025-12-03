@@ -36,13 +36,12 @@ export const formSchema = z.object({
     agency: optionalString,
 
     // Step 1 - Primary Contact Person
-    bestContactType: z.enum(['member', 'other'], { required_error: 'Please select a primary contact type.' }),
-    bestContactFirstName: optionalString,
-    bestContactLastName: optionalString,
-    bestContactRelationship: optionalString,
-    bestContactPhone: optionalPhone,
-    bestContactEmail: optionalEmail,
-    bestContactLanguage: optionalString,
+    bestContactFirstName: requiredString,
+    bestContactLastName: requiredString,
+    bestContactRelationship: requiredString,
+    bestContactPhone: requiredPhone,
+    bestContactEmail: requiredEmail,
+    bestContactLanguage: requiredString,
 
     // Secondary Contact
     secondaryContactFirstName: optionalString,
@@ -113,16 +112,6 @@ export const formSchema = z.object({
     path: ["confirmMemberMrn"],
   })
   .superRefine((data, ctx) => {
-    if (data.bestContactType === 'other') {
-      if (!data.bestContactFirstName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactFirstName"] });
-      if (!data.bestContactLastName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactLastName"] });
-      if (!data.bestContactRelationship) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactRelationship"] });
-      if (!data.bestContactPhone || !phoneRegex.test(data.bestContactPhone)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "A valid phone number is required.", path: ["bestContactPhone"] });
-      if (!data.bestContactEmail) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactEmail"] });
-      else if (!z.string().email().safeParse(data.bestContactEmail).success) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid email address.", path: ["bestContactEmail"] });
-      if (!data.bestContactLanguage) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["bestContactLanguage"] });
-    }
-
     if (data.healthPlan === 'Other') {
       if (!data.existingHealthPlan || data.existingHealthPlan.trim() === '') {
         ctx.addIssue({
@@ -159,3 +148,5 @@ export const formSchema = z.object({
 
 
 export type FormValues = z.infer<typeof formSchema>;
+
+    

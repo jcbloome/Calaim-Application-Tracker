@@ -19,9 +19,8 @@ import { PhoneInput } from '@/components/ui/phone-input';
 
 
 export default function Step1() {
-  const { control, watch, setValue, getValues, trigger } = useFormContext<FormValues>();
+  const { control, watch, setValue } = useFormContext<FormValues>();
   const memberDob = watch('memberDob');
-  const bestContactType = watch('bestContactType');
 
   useEffect(() => {
     if (memberDob) {
@@ -45,28 +44,6 @@ export default function Step1() {
       setValue('memberAge', undefined, { shouldValidate: true });
     }
   }, [memberDob, setValue]);
-
-  useEffect(() => {
-    const { memberFirstName, memberLastName } = getValues();
-    // This effect should only manage the form state, not trigger validation directly for all fields.
-    // The main validation trigger will be the `nextStep` function.
-    if (bestContactType === 'member') {
-      setValue('bestContactFirstName', memberFirstName, { shouldValidate: false });
-      setValue('bestContactLastName', memberLastName, { shouldValidate: false });
-      setValue('bestContactRelationship', 'Self', { shouldValidate: false });
-      setValue('bestContactPhone', '', { shouldValidate: false });
-      setValue('bestContactEmail', '', { shouldValidate: false });
-      setValue('bestContactLanguage', '', { shouldValidate: false });
-    } else if (bestContactType === 'other') {
-      setValue('bestContactFirstName', '', { shouldValidate: true });
-      setValue('bestContactLastName', '', { shouldValidate: true });
-      setValue('bestContactRelationship', '', { shouldValidate: true });
-      setValue('bestContactPhone', '', { shouldValidate: true });
-      setValue('bestContactEmail', '', { shouldValidate: true });
-      setValue('bestContactLanguage', '', { shouldValidate: true });
-      trigger(['bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage']);
-    }
-  }, [bestContactType, setValue, getValues, trigger]);
 
 
   return (
@@ -350,49 +327,32 @@ export default function Step1() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="p-4 border rounded-md space-y-4">
-              <FormField
-                control={control}
-                name="bestContactType"
-                render={({ field }) => (
-                    <FormItem className="space-y-3">
-                    <FormLabel>Who is the primary contact person? <span className="text-destructive">*</span></FormLabel>
-                    <FormControl>
-                        <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-4">
-                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="member" /></FormControl><FormLabel className="font-normal">The Member</FormLabel></FormItem>
-                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="other" /></FormControl><FormLabel className="font-normal">Another Contact Person</FormLabel></FormItem>
-                        </RadioGroup>
-                    </FormControl>
-                    <FormMessage />
-                    </FormItem>
-                )}
-               />
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={control} name="bestContactFirstName" render={({ field }) => (
-                      <FormItem><FormLabel>First Name {bestContactType === 'other' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                   )} />
                   <FormField control={control} name="bestContactLastName" render={({ field }) => (
-                      <FormItem><FormLabel>Last Name {bestContactType === 'other' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                   )} />
               </div>
               <FormField control={control} name="bestContactRelationship" render={({ field }) => (
-                  <FormItem><FormLabel>Relationship {bestContactType === 'other' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Relationship <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
               )} />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={control} name="bestContactPhone" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Phone {bestContactType === 'other' && <span className="text-destructive">*</span>}</FormLabel>
+                        <FormLabel>Phone <span className="text-destructive">*</span></FormLabel>
                         <FormControl><PhoneInput {...field} value={field.value ?? ''} /></FormControl>
                         <FormDescription>(xxx) xxx-xxxx</FormDescription>
                         <FormMessage />
                       </FormItem>
                   )} />
                   <FormField control={control} name="bestContactEmail" render={({ field }) => (
-                      <FormItem><FormLabel>Email {bestContactType === 'other' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>Email <span className="text-destructive">*</span></FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                   )} />
               </div>
               <FormField control={control} name="bestContactLanguage" render={({ field }) => (
-                  <FormItem><FormLabel>Language {bestContactType === 'other' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Language <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
               )} />
           </div>
         </CardContent>
@@ -512,3 +472,5 @@ export default function Step1() {
     </div>
   );
 }
+
+    
