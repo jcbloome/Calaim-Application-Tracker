@@ -19,7 +19,7 @@ import { PhoneInput } from '@/components/ui/phone-input';
 
 
 export default function Step1() {
-  const { control, watch, setValue } = useFormContext<FormValues>();
+  const { control, watch, setValue, getValues } = useFormContext<FormValues>();
   const memberDob = watch('memberDob');
   const bestContactType = watch('bestContactType');
   const isRepPrimaryContact = watch('isRepPrimaryContact');
@@ -46,6 +46,27 @@ export default function Step1() {
       setValue('memberAge', undefined, { shouldValidate: true });
     }
   }, [memberDob, setValue]);
+
+  useEffect(() => {
+    const { memberFirstName, memberLastName } = getValues();
+    if (bestContactType === 'member') {
+      setValue('bestContactFirstName', memberFirstName, { shouldValidate: true });
+      setValue('bestContactLastName', memberLastName, { shouldValidate: true });
+      setValue('bestContactRelationship', 'Self', { shouldValidate: true });
+      // Clear phone/email as they might be different from referrer's
+      setValue('bestContactPhone', '', { shouldValidate: true });
+      setValue('bestContactEmail', '', { shouldValidate: true });
+      setValue('bestContactLanguage', '', { shouldValidate: true });
+    } else if (bestContactType === 'other') {
+      // Clear all fields to allow for new entry
+      setValue('bestContactFirstName', '', { shouldValidate: true });
+      setValue('bestContactLastName', '', { shouldValidate: true });
+      setValue('bestContactRelationship', '', { shouldValidate: true });
+      setValue('bestContactPhone', '', { shouldValidate: true });
+      setValue('bestContactEmail', '', { shouldValidate: true });
+      setValue('bestContactLanguage', '', { shouldValidate: true });
+    }
+  }, [bestContactType, setValue, getValues]);
 
 
   return (

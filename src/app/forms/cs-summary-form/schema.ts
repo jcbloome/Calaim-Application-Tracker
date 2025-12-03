@@ -128,14 +128,16 @@ export const formSchema = z.object({
         path: ['existingHealthPlan'],
     })
    .refine(data => {
-      if (data.bestContactType === 'other') {
-        return !!data.bestContactFirstName && !!data.bestContactLastName && !!data.bestContactRelationship && !!data.bestContactPhone;
-      }
-      return true;
-    }, {
-        message: 'Primary contact details are required when "Another Contact Person" is selected.',
-        path: ['bestContactFirstName'], 
-    })
+    // If 'other' is selected, the fields for best contact must be filled.
+    if (data.bestContactType === 'other') {
+      return data.bestContactFirstName && data.bestContactLastName && data.bestContactRelationship && data.bestContactPhone;
+    }
+    return true;
+  }, {
+    message: "First Name, Last Name, Relationship, and Phone are required for the primary contact.",
+    // Even though there are multiple fields, pointing to the first one is standard practice.
+    path: ["bestContactFirstName"],
+  })
     .refine(data => {
       if (!data.copyAddress) {
         return !!data.customaryAddress && !!data.customaryCity && !!data.customaryState && !!data.customaryZip && !!data.customaryCounty;

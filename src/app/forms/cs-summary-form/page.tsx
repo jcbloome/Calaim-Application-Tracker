@@ -28,8 +28,8 @@ const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
       'memberFirstName', 'memberLastName', 'memberDob', 'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'memberCounty',
       'memberMediCalNum', 'confirmMemberMediCalNum',
-      'referrerPhone', 'referrerRelationship', 'bestContactType',
-      'hasCapacity',
+      'referrerPhone', 'referrerRelationship', 'bestContactType', 'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone',
+      'hasCapacity', 'hasLegalRep'
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty', 'copyAddress', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty'] },
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'meetsPathwayCriteria', 'switchingHealthPlan', 'existingHealthPlan'] },
@@ -176,24 +176,29 @@ function CsSummaryFormComponent() {
 
 
   const nextStep = async () => {
-    const fieldsToValidate = steps[currentStep - 1].fields;
-    const isValidStep = await trigger(fieldsToValidate as (keyof FormValues)[]);
+    const fields = steps[currentStep - 1].fields;
+    console.log(`[Form Debug] Validating Step ${currentStep}. Fields:`, fields);
+    const isValid = await trigger(fields as FieldPath<FormValues>[], { shouldFocus: true });
+    
+    if (!isValid) {
+      console.error('[Form Debug] Validation failed on current step.', errors);
+      if (activeToastId.current) dismiss(activeToastId.current);
+      const { id } = toast({
+        variant: "destructive",
+        title: "Validation Error",
+        description: "Please fix the errors on this page before continuing.",
+      });
+      activeToastId.current = id;
+      return; // Stop advancement
+    }
 
-    if (isValidStep) {
-        if (activeToastId.current) dismiss(activeToastId.current);
-        await saveProgress(true);
-        if (currentStep < steps.length) {
-            setCurrentStep(currentStep + 1);
-            window.scrollTo(0, 0);
-        }
-    } else {
-        if (activeToastId.current) dismiss(activeToastId.current);
-        const { id } = toast({
-            variant: "destructive",
-            title: "Validation Error",
-            description: "Please fill out all required fields marked with an asterisk before continuing.",
-        });
-        activeToastId.current = id;
+    console.log('[Form Debug] Step validation successful.');
+    if (activeToastId.current) dismiss(activeToastId.current);
+    
+    await saveProgress(true);
+    if (currentStep < steps.length) {
+        setCurrentStep(currentStep + 1);
+        window.scrollTo(0, 0);
     }
   };
 
@@ -216,6 +221,7 @@ function CsSummaryFormComponent() {
   }
 
   const onInvalid = (errors: any) => {
+    console.error("[Form Debug] Full form submission failed. Errors:", errors);
     const firstErrorStep = findFirstErrorStep(errors);
     if (firstErrorStep && firstErrorStep !== currentStep) {
         setCurrentStep(firstErrorStep);
