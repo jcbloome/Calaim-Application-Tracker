@@ -4,10 +4,12 @@ import { z } from 'zod';
 const requiredString = z.string().min(1, { message: 'This field is required.' });
 const optionalString = z.string().optional().nullable();
 const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+
 const requiredPhone = z.string().regex(phoneRegex, { message: 'A valid phone number is required.' });
 const optionalPhone = z.string().optional().nullable().refine(val => val === '' || !val || phoneRegex.test(val), {
   message: "Phone number must be in (xxx) xxx-xxxx format or empty.",
 });
+
 const requiredEmail = z.string().email({ message: "Invalid email address." }).min(1, { message: 'This field is required.' });
 const optionalEmail = z.string().email({ message: "Invalid email address." }).optional().nullable().or(z.literal(''));
 
@@ -123,8 +125,13 @@ export const formSchema = z.object({
       if (!data.bestContactPhone || !phoneRegex.test(data.bestContactPhone)) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "A valid phone number is required.", path: ["bestContactPhone"] });
       }
-      if (!data.bestContactEmail) {
+       if (!data.bestContactEmail) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Email is required.", path: ["bestContactEmail"] });
+      } else {
+        const emailValidation = z.string().email().safeParse(data.bestContactEmail);
+        if (!emailValidation.success) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid email address.", path: ["bestContactEmail"] });
+        }
       }
        if (!data.bestContactLanguage) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Language is required.", path: ["bestContactLanguage"] });

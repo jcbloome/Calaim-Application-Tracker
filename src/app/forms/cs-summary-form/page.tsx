@@ -81,7 +81,7 @@ function CsSummaryFormComponent() {
     defaultValues: {
       copyAddress: false,
       hasLegalRep: undefined,
-      meetsPathwayCriteria: false,
+      meetsPathwayCriteria: false, // Ensure this defaults to false
     },
     mode: 'onSubmit',
   });
@@ -110,22 +110,22 @@ function CsSummaryFormComponent() {
         } else {
             setApplicationId(null);
             reset({
-              copyAddress: false,
-              hasLegalRep: undefined,
-               meetsPathwayCriteria: false,
               referrerFirstName: user?.displayName?.split(' ')[0] || '',
               referrerLastName: user?.displayName?.split(' ')[1] || '',
               referrerEmail: user?.email || '',
+              copyAddress: false,
+              hasLegalRep: undefined,
+              meetsPathwayCriteria: false,
             });
         }
       } else if (user && !applicationId) { // Handles case where it's a new form from the start
           reset({
-              copyAddress: false,
-              hasLegalRep: undefined,
-              meetsPathwayCriteria: false,
               referrerFirstName: user?.displayName?.split(' ')[0] || '',
               referrerLastName: user?.displayName?.split(' ')[1] || '',
               referrerEmail: user?.email || '',
+              copyAddress: false,
+              hasLegalRep: undefined,
+              meetsPathwayCriteria: false,
           });
       }
     };
