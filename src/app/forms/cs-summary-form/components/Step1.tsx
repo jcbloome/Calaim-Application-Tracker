@@ -48,17 +48,15 @@ export default function Step1() {
   }, [memberDob, setValue]);
 
   useEffect(() => {
-    const { memberFirstName, memberLastName } = getValues();
+    const { memberFirstName, memberLastName, referrerPhone, referrerEmail } = getValues();
     if (bestContactType === 'member') {
       setValue('bestContactFirstName', memberFirstName, { shouldValidate: true });
       setValue('bestContactLastName', memberLastName, { shouldValidate: true });
       setValue('bestContactRelationship', 'Self', { shouldValidate: true });
-      // Clear phone/email as they might be different from referrer's
       setValue('bestContactPhone', '', { shouldValidate: true });
       setValue('bestContactEmail', '', { shouldValidate: true });
       setValue('bestContactLanguage', '', { shouldValidate: true });
     } else if (bestContactType === 'other') {
-      // Clear all fields to allow for new entry
       setValue('bestContactFirstName', '', { shouldValidate: true });
       setValue('bestContactLastName', '', { shouldValidate: true });
       setValue('bestContactRelationship', '', { shouldValidate: true });
@@ -369,19 +367,19 @@ export default function Step1() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={control} name="bestContactFirstName" render={({ field }) => (
-                      <FormItem><FormLabel>First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={bestContactType === 'member'} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>First Name {bestContactType === 'other' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                   )} />
                   <FormField control={control} name="bestContactLastName" render={({ field }) => (
-                      <FormItem><FormLabel>Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={bestContactType === 'member'} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>Last Name {bestContactType === 'other' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                   )} />
               </div>
               <FormField control={control} name="bestContactRelationship" render={({ field }) => (
-                  <FormItem><FormLabel>Relationship <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} readOnly={bestContactType === 'member'} /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Relationship {bestContactType === 'other' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
               )} />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={control} name="bestContactPhone" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Phone <span className="text-destructive">*</span></FormLabel>
+                        <FormLabel>Phone {bestContactType === 'other' && <span className="text-destructive">*</span>}</FormLabel>
                         <FormControl><PhoneInput {...field} value={field.value ?? ''} /></FormControl>
                         <FormDescription>(xxx) xxx-xxxx</FormDescription>
                         <FormMessage />

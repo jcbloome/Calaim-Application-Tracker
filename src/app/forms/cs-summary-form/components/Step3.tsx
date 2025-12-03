@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import type { FormValues } from '../page';
+import type { FormValues } from '../schema';
 
 export default function Step3() {
   const { control, watch } = useFormContext<FormValues>();
@@ -137,9 +137,9 @@ export default function Step3() {
                                 <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                             </FormControl>
                             <div className="space-y-1 leading-none">
-                                <FormLabel>All criteria for SNF Diversion or Transition has been met. <span className="text-destructive">*</span></FormLabel>
+                                <FormLabel>All criteria for the selected pathway have been met. <span className="text-destructive">*</span></FormLabel>
+                                <FormMessage />
                             </div>
-                            <FormMessage />
                         </FormItem>
                     )}
                 />

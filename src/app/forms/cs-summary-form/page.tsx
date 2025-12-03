@@ -28,12 +28,19 @@ const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
       'memberFirstName', 'memberLastName', 'memberDob', 'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'memberCounty',
       'memberMediCalNum', 'confirmMemberMediCalNum',
-      'referrerPhone', 'referrerRelationship', 'bestContactType', 'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone',
-      'hasCapacity', 'hasLegalRep'
+      'referrerPhone', 'referrerRelationship', 'agency',
+      'bestContactType', 'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
+      'secondaryContactFirstName', 'secondaryContactLastName', 'secondaryContactRelationship', 'secondaryContactPhone', 'secondaryContactEmail', 'secondaryContactLanguage',
+      'hasCapacity', 'hasLegalRep', 'repName', 'repRelationship', 'repPhone', 'repEmail', 'isRepPrimaryContact'
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty', 'copyAddress', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty'] },
-  { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'meetsPathwayCriteria', 'switchingHealthPlan', 'existingHealthPlan'] },
-  { id: 4, name: 'ISP & Facility Selection', fields: ['ispFirstName', 'ispLastName', 'ispRelationship', 'ispPhone', 'ispEmail', 'ispCopyCurrent', 'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty', 'onALWWaitlist', 'hasPrefRCFE', 'rcfeName', 'rcfeAddress', 'rcfeAdminName', 'rcfeAdminPhone', 'rcfeAdminEmail']},
+  { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'meetsPathwayCriteria', 'switchingHealthPlan', 'existingHealthPlan', 'snfDiversionReason'] },
+  { id: 4, name: 'ISP & Facility Selection', fields: [
+      'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail', 
+      'ispCopyCurrent', 'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty', 
+      'onALWWaitlist', 'hasPrefRCFE', 
+      'rcfeName', 'rcfeAddress', 'rcfeAdminName', 'rcfeAdminPhone', 'rcfeAdminEmail'
+  ]},
 ];
 
 const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatusType[] => {
@@ -73,7 +80,7 @@ function CsSummaryFormComponent() {
       copyAddress: false,
       hasLegalRep: undefined,
     },
-    mode: 'onSubmit',
+    mode: 'onSubmit', // Validate on submit
   });
 
   const { formState: { errors }, trigger, getValues, handleSubmit, reset } = methods;
@@ -177,12 +184,10 @@ function CsSummaryFormComponent() {
 
   const nextStep = async () => {
     const fields = steps[currentStep - 1].fields;
-    console.log(`[Form Debug] Validating Step ${currentStep}. Fields:`, fields);
     const isValid = await trigger(fields as FieldPath<FormValues>[], { shouldFocus: true });
     
     if (!isValid) {
-      console.log(`[Form Debug] Validation failed on Step ${currentStep}.`);
-      console.log("[Form Debug] Errors object:", errors);
+      console.error(`[Form Debug] Validation failed on Step ${currentStep}. Errors:`, errors);
       if (activeToastId.current) dismiss(activeToastId.current);
       const { id } = toast({
         variant: "destructive",
@@ -190,10 +195,9 @@ function CsSummaryFormComponent() {
         description: "Please fix the errors on this page before continuing.",
       });
       activeToastId.current = id;
-      return;
+      return; // Stop advancement
     }
 
-    console.log('[Form Debug] Step validation successful.');
     if (activeToastId.current) dismiss(activeToastId.current);
     
     await saveProgress(true);
@@ -388,5 +392,3 @@ export default function CsSummaryFormPage() {
     </React.Suspense>
   );
 }
-
-    

@@ -5,7 +5,9 @@ const requiredString = z.string().min(1, { message: 'This field is required.' })
 const optionalString = z.string().optional().nullable();
 const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
 const requiredPhone = z.string().regex(phoneRegex, { message: 'Phone number must be in (xxx) xxx-xxxx format.' });
-const optionalPhone = z.string().optional().nullable(); // Simplified to remove faulty regex logic
+const optionalPhone = z.string().optional().nullable().refine(val => val === '' || !val || phoneRegex.test(val), {
+  message: "Phone number must be in (xxx) xxx-xxxx format or empty.",
+});
 const optionalEmail = z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal(''));
 
 export const formSchema = z.object({
@@ -27,7 +29,7 @@ export const formSchema = z.object({
     referrerEmail: optionalString,
     referrerPhone: requiredPhone,
     referrerRelationship: requiredString,
-    agency: optionalString.nullable(),
+    agency: optionalString,
 
     // Step 1 - Primary Contact Person
     bestContactType: z.enum(['member', 'other']).optional().nullable(),
@@ -56,12 +58,12 @@ export const formSchema = z.object({
     isRepPrimaryContact: z.boolean().optional().default(false),
 
     // Step 2 - Location
-    currentLocation: optionalString,
-    currentAddress: optionalString,
-    currentCity: optionalString,
-    currentState: optionalString,
-    currentZip: optionalString,
-    currentCounty: optionalString,
+    currentLocation: requiredString,
+    currentAddress: requiredString,
+    currentCity: requiredString,
+    currentState: requiredString,
+    currentZip: requiredString,
+    currentCounty: requiredString,
     copyAddress: z.boolean().optional(),
     customaryAddress: optionalString,
     customaryCity: optionalString,
@@ -70,11 +72,13 @@ export const formSchema = z.object({
     customaryCounty: optionalString,
 
     // Step 3 - Health Plan & Pathway
-    healthPlan: z.enum(['Kaiser', 'Health Net', 'Other']).optional().nullable(),
+    healthPlan: z.enum(['Kaiser', 'Health Net', 'Other'], { required_error: 'Please select a health plan.'}),
     existingHealthPlan: optionalString,
     switchingHealthPlan: z.enum(['Yes', 'No']).optional().nullable(),
-    pathway: z.enum(['SNF Transition', 'SNF Diversion']).optional().nullable(),
-    meetsPathwayCriteria: z.boolean().optional(),
+    pathway: z.enum(['SNF Transition', 'SNF Diversion'], { required_error: 'Please select a pathway.' }),
+    meetsPathwayCriteria: z.boolean().refine(val => val === true, {
+        message: "You must confirm that all criteria have been met.",
+    }),
     snfDiversionReason: optionalString,
 
     // Step 4 - ISP & RCFE
@@ -98,6 +102,52 @@ export const formSchema = z.object({
     rcfeAdminPhone: optionalPhone,
     rcfeAdminEmail: optionalEmail,
     rcfeAddress: optionalString,
+  }).refine(data => data.memberMediCalNum === data.confirmMemberMediCalNum, {
+    message: "Medi-Cal numbers don't match.",
+    path: ["confirmMemberMediCalNum"],
+  }).refine(data => data.memberMrn === data.confirmMemberMrn, {
+    message: "MRN numbers don't match.",
+    path: ["confirmMemberMrn"],
+  }).superRefine((data, ctx) => {
+    if (data.bestContactType === 'other') {
+      if (!data.bestContactFirstName) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "First name is required.", path: ["bestContactFirstName"] });
+      }
+      if (!data.bestContactLastName) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Last name is required.", path: ["bestContactLastName"] });
+      }
+      if (!data.bestContactRelationship) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Relationship is required.", path: ["bestContactRelationship"] });
+      }
+      if (!data.bestContactPhone || !phoneRegex.test(data.bestContactPhone)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "A valid phone number is required.", path: ["bestContactPhone"] });
+      }
+    }
+    if (data.copyAddress === false) {
+      if (!data.customaryAddress) {
+          ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryAddress'] });
+      }
+      if (!data.customaryCity) {
+          ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryCity'] });
+      }
+      if (!data.customaryState) {
+          ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryState'] });
+      }
+      if (!data.customaryZip) {
+          ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryZip'] });
+      }
+      if (!data.customaryCounty) {
+          ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryCounty'] });
+      }
+    }
+    if (data.healthPlan === 'Other') {
+        if (!data.existingHealthPlan) {
+            ctx.addIssue({ code: 'custom', message: 'Please specify the existing health plan.', path: ['existingHealthPlan'] });
+        }
+        if (!data.switchingHealthPlan) {
+            ctx.addIssue({ code: 'custom', message: 'Please select if the member will be switching plans.', path: ['switchingHealthPlan'] });
+        }
+    }
   });
 
 
