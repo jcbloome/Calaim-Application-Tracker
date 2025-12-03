@@ -73,7 +73,7 @@ function CsSummaryFormComponent() {
       copyAddress: false,
       hasLegalRep: undefined,
     },
-    mode: 'onBlur',
+    mode: 'onSubmit',
   });
 
   const { formState: { errors }, trigger, getValues, handleSubmit, reset } = methods;
@@ -388,3 +388,5 @@ export default function CsSummaryFormPage() {
     </React.Suspense>
   );
 }
+
+    
