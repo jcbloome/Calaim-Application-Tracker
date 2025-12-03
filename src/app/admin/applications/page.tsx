@@ -1,3 +1,6 @@
+
+'use client';
+
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,7 +17,8 @@ import { applications as mockApplications } from '@/lib/data';
 import type { ApplicationStatus } from '@/lib/definitions';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FileDown, Search } from 'lucide-react';
+import { FileDown, Search, UserCog } from 'lucide-react';
+import { useUser } from '@/firebase';
 
 const getBadgeVariant = (status: ApplicationStatus) => {
   switch (status) {
@@ -25,7 +29,16 @@ const getBadgeVariant = (status: ApplicationStatus) => {
   }
 };
 
+const ADMIN_EMAIL = 'jason@carehomefinders.com';
+
 export default function AdminApplicationsPage() {
+  const { user } = useUser();
+  const isAdminCreator = (app: (typeof mockApplications)[0]) => {
+      // In a real scenario, this would check app.createdBy === user.uid
+      // For the mock data, we'll check against a hardcoded referrerName.
+      return app.referrerName === 'Jason Bloome' || (user && app.UserEmail === user.email);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -78,8 +91,15 @@ export default function AdminApplicationsPage() {
               {mockApplications.map(app => (
                 <TableRow key={app.id}>
                   <TableCell>
-                    <div className="font-medium">{app.memberName}</div>
-                    <div className="text-xs text-muted-foreground font-mono truncate">{app.id}</div>
+                    <div className="flex items-center gap-2">
+                       {isAdminCreator(app) && (
+                          <UserCog className="h-4 w-4 text-muted-foreground" titleAccess="Created by Admin"/>
+                       )}
+                       <div>
+                          <div className="font-medium">{app.memberName}</div>
+                          <div className="text-xs text-muted-foreground font-mono truncate">{app.id}</div>
+                       </div>
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={getBadgeVariant(app.status)}>

@@ -14,6 +14,7 @@ import {
   LogOut,
   UserCog,
   BellRing,
+  PlusCircle,
 } from 'lucide-react';
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarFooter, SidebarSeparator } from '@/components/ui/sidebar';
 import { useUser, useAuth } from '@/firebase';
@@ -34,6 +35,23 @@ const superAdminMenuItems = [
 
 // Hardcoded admin email
 const ADMIN_EMAIL = 'jason@carehomefinders.com';
+
+function AdminPageHeader({ children }: { children: React.ReactNode}) {
+  return (
+    <div className="flex-1 p-4 sm:p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+        <Button asChild>
+          <Link href="/forms/cs-summary-form">
+            <PlusCircle className="mr-2 h-4 w-4" />
+            Start New Application
+          </Link>
+        </Button>
+      </div>
+      {children}
+    </div>
+  )
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
