@@ -68,7 +68,9 @@ export default function Step2() {
                   <FormLabel>Member's Current Location <span className="text-destructive">*</span></FormLabel>
                    <Select onValueChange={field.onChange} value={field.value ?? ''}>
                     <FormControl>
-                      <SelectTrigger><SelectValue placeholder="Select a location type" /></SelectTrigger>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a location type" />
+                      </SelectTrigger>
                     </FormControl>
                     <SelectContent>
                       <SelectItem value="SNF">Skilled Nursing Facility</SelectItem>
