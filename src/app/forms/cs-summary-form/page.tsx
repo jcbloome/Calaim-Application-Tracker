@@ -80,6 +80,11 @@ function CsSummaryFormComponent() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       meetsPathwayCriteria: false,
+      customaryAddress: '',
+      customaryCity: '',
+      customaryState: '',
+      customaryZip: '',
+      customaryCounty: '',
     },
     mode: 'onSubmit',
   });
