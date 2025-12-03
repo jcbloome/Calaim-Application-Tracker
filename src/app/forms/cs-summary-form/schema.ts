@@ -105,72 +105,45 @@ export const formSchema = z.object({
     rcfeAdminPhone: optionalPhone,
     rcfeAdminEmail: optionalEmail,
     rcfeAddress: optionalString,
-  }).refine(data => data.memberMediCalNum === data.confirmMemberMediCalNum, {
+  })
+  .refine(data => data.memberMediCalNum === data.confirmMemberMediCalNum, {
     message: "Medi-Cal numbers don't match.",
     path: ["confirmMemberMediCalNum"],
-  }).refine(data => data.memberMrn === data.confirmMemberMrn, {
+  })
+  .refine(data => data.memberMrn === data.confirmMemberMrn, {
     message: "MRN numbers don't match.",
     path: ["confirmMemberMrn"],
-  }).superRefine((data, ctx) => {
+  })
+  .superRefine((data, ctx) => {
+    // Primary Contact conditional validation
     if (data.bestContactType === 'other') {
-      if (!data.bestContactFirstName) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "First name is required.", path: ["bestContactFirstName"] });
-      }
-      if (!data.bestContactLastName) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Last name is required.", path: ["bestContactLastName"] });
-      }
-      if (!data.bestContactRelationship) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Relationship is required.", path: ["bestContactRelationship"] });
-      }
-      if (!data.bestContactPhone || !phoneRegex.test(data.bestContactPhone)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "A valid phone number is required.", path: ["bestContactPhone"] });
-      }
-       if (!data.bestContactEmail) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Email is required.", path: ["bestContactEmail"] });
-      } else {
-        const emailValidation = z.string().email().safeParse(data.bestContactEmail);
-        if (!emailValidation.success) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid email address.", path: ["bestContactEmail"] });
-        }
-      }
-       if (!data.bestContactLanguage) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Language is required.", path: ["bestContactLanguage"] });
-      }
-    }
-    
-    if (data.copyAddress !== true) {
-      if (!data.customaryAddress) {
-          ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryAddress'] });
-      }
-      if (!data.customaryCity) {
-          ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryCity'] });
-      }
-      if (!data.customaryState) {
-          ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryState'] });
-      }
-      if (!data.customaryZip) {
-          ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryZip'] });
-      }
-       if (!data.customaryCounty) {
-          ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryCounty'] });
-      }
-    }
-    
-    if (data.healthPlan === 'Other') {
-        if (!data.existingHealthPlan) {
-            ctx.addIssue({ code: 'custom', message: 'Please specify the existing health plan.', path: ['existingHealthPlan'] });
-        }
-        if (!data.switchingHealthPlan) {
-            ctx.addIssue({ code: 'custom', message: 'Please select if the member will be switching plans.', path: ['switchingHealthPlan'] });
-        }
+      if (!data.bestContactFirstName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "First name is required.", path: ["bestContactFirstName"] });
+      if (!data.bestContactLastName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Last name is required.", path: ["bestContactLastName"] });
+      if (!data.bestContactRelationship) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Relationship is required.", path: ["bestContactRelationship"] });
+      if (!data.bestContactPhone || !phoneRegex.test(data.bestContactPhone)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "A valid phone number is required.", path: ["bestContactPhone"] });
+      if (!data.bestContactEmail) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Email is required.", path: ["bestContactEmail"] });
+      else if (!z.string().email().safeParse(data.bestContactEmail).success) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid email address.", path: ["bestContactEmail"] });
+      if (!data.bestContactLanguage) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Language is required.", path: ["bestContactLanguage"] });
     }
 
+    // Customary Residence conditional validation
+    if (data.copyAddress !== true) {
+      if (!data.customaryAddress) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryAddress'] });
+      if (!data.customaryCity) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryCity'] });
+      if (!data.customaryState) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryState'] });
+      if (!data.customaryZip) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryZip'] });
+      if (!data.customaryCounty) ctx.addIssue({ code: 'custom', message: 'This field is required.', path: ['customaryCounty'] });
+    }
+
+    // Health Plan conditional validation
+    if (data.healthPlan === 'Other') {
+      if (!data.existingHealthPlan) ctx.addIssue({ code: 'custom', message: 'Please specify the existing health plan.', path: ['existingHealthPlan'] });
+      if (!data.switchingHealthPlan) ctx.addIssue({ code: 'custom', message: 'Please select if the member will be switching plans.', path: ['switchingHealthPlan'] });
+    }
+    
+    // SNF Diversion conditional validation
     if (data.pathway === 'SNF Diversion' && !data.snfDiversionReason) {
-        ctx.addIssue({
-            code: 'custom',
-            message: 'Reason for SNF Diversion must be provided for this pathway.',
-            path: ['snfDiversionReason'],
-        });
+      ctx.addIssue({ code: 'custom', message: 'Reason for SNF Diversion must be provided for this pathway.', path: ['snfDiversionReason'] });
     }
   });
 
