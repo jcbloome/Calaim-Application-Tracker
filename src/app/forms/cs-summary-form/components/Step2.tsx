@@ -63,29 +63,32 @@ export default function Step2() {
             <FormField
               control={control}
               name="currentLocation"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Member's Current Location <span className="text-destructive">*</span></FormLabel>
-                   <Select onValueChange={field.onChange} value={field.value ?? ''}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a location type" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="SNF">Skilled Nursing Facility</SelectItem>
-                      <SelectItem value="Home">Home</SelectItem>
-                      <SelectItem value="Hospital">Hospital</SelectItem>
-                      <SelectItem value="Sub-Acute">Sub-Acute</SelectItem>
-                      <SelectItem value="Recuperative Care">Recuperative Care</SelectItem>
-                      <SelectItem value="Unhoused">Unhoused</SelectItem>
-                      <SelectItem value="RCFE/ARF">RCFE/ARF</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
+              render={({ field }) => {
+                console.log('[Step2 Dropdown Log] Rendering with value:', field.value);
+                return (
+                  <FormItem>
+                    <FormLabel>Member's Current Location <span className="text-destructive">*</span></FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value ?? ''}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a location type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="SNF">Skilled Nursing Facility</SelectItem>
+                        <SelectItem value="Home">Home</SelectItem>
+                        <SelectItem value="Hospital">Hospital</SelectItem>
+                        <SelectItem value="Sub-Acute">Sub-Acute</SelectItem>
+                        <SelectItem value="Recuperative Care">Recuperative Care</SelectItem>
+                        <SelectItem value="Unhoused">Unhoused</SelectItem>
+                        <SelectItem value="RCFE/ARF">RCFE/ARF</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )
+              }}
             />
           </div>
           <div className="space-y-4 p-4 border rounded-md">
