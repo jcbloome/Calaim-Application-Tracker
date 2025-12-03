@@ -47,14 +47,16 @@ export default function Step1() {
   }, [memberDob, setValue]);
 
   useEffect(() => {
-    const { memberFirstName, memberLastName, bestContactPhone, bestContactEmail, bestContactLanguage } = getValues();
+    const { memberFirstName, memberLastName } = getValues();
+    // This effect should only manage the form state, not trigger validation directly for all fields.
+    // The main validation trigger will be the `nextStep` function.
     if (bestContactType === 'member') {
-      setValue('bestContactFirstName', memberFirstName, { shouldValidate: true });
-      setValue('bestContactLastName', memberLastName, { shouldValidate: true });
-      setValue('bestContactRelationship', 'Self', { shouldValidate: true });
-      setValue('bestContactPhone', bestContactPhone, { shouldValidate: true });
-      setValue('bestContactEmail', bestContactEmail, { shouldValidate: true });
-      setValue('bestContactLanguage', bestContactLanguage, { shouldValidate: true });
+      setValue('bestContactFirstName', memberFirstName, { shouldValidate: false });
+      setValue('bestContactLastName', memberLastName, { shouldValidate: false });
+      setValue('bestContactRelationship', 'Self', { shouldValidate: false });
+      setValue('bestContactPhone', '', { shouldValidate: false });
+      setValue('bestContactEmail', '', { shouldValidate: false });
+      setValue('bestContactLanguage', '', { shouldValidate: false });
     } else if (bestContactType === 'other') {
       setValue('bestContactFirstName', '', { shouldValidate: true });
       setValue('bestContactLastName', '', { shouldValidate: true });
