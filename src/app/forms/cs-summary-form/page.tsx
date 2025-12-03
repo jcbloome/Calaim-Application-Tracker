@@ -37,7 +37,7 @@ const steps = [
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'meetsPathwayCriteria', 'switchingHealthPlan', 'existingHealthPlan', 'snfDiversionReason'] },
   { id: 4, name: 'ISP & Facility Selection', fields: [
       'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail', 
-      'ispCopyCurrent', 'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty', 
+      'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty', 
       'onALWWaitlist', 'hasPrefRCFE', 
       'rcfeName', 'rcfeAddress', 'rcfeAdminName', 'rcfeAdminPhone', 'rcfeAdminEmail'
   ]},
@@ -80,13 +80,8 @@ function CsSummaryFormComponent() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       meetsPathwayCriteria: false,
-      customaryAddress: '',
-      customaryCity: '',
-      customaryState: '',
-      customaryZip: '',
-      customaryCounty: '',
     },
-    mode: 'onSubmit',
+    mode: 'onBlur',
   });
 
   const { formState: { errors }, trigger, getValues, handleSubmit, reset } = methods;
