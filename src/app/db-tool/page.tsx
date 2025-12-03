@@ -29,14 +29,14 @@ const fakeApplicationTemplate = {
     referrerRelationship: 'Social Worker',
     memberPhone: '(555) 987-6543',
     memberEmail: 'test.user@example.com',
-    isBestContact: false,
-    bestContactName: 'Best Contact',
+    bestContactFirstName: 'Primary',
+    bestContactLastName: 'Contact',
     bestContactRelationship: 'Family Member',
     bestContactPhone: '(555) 555-0000',
     bestContactEmail: 'best@contact.com',
     bestContactLanguage: 'English',
     hasCapacity: 'Yes' as const,
-    hasLegalRep: 'Yes' as const, 
+    hasLegalRep: 'Yes' as const,
     repName: 'Legal Rep',
     repRelationship: 'Lawyer',
     repPhone: '(555) 111-2222',
@@ -90,9 +90,10 @@ const fakeApplicationTemplate = {
     // Other app-level fields
     status: 'In Progress' as const,
     progress: 25,
+    lastUpdated: Timestamp.now(),
     forms: [
       { name: 'CS Member Summary', status: 'Completed', type: 'Form', href: '/forms/cs-summary-form' },
-      { name: 'HIPAA Authorization', status: 'Pending', type: 'Form', href: '/forms/hipaa-authorization' },
+      { name: 'HIPAA Authorization', status: 'Pending', type: 'online-form', href: '/forms/hipaa-authorization' },
     ],
 };
 
