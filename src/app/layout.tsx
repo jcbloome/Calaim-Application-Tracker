@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
@@ -7,7 +7,11 @@ import { FirebaseClientProvider } from '@/firebase/client-provider';
 export const metadata: Metadata = {
   title: 'CalAIM Pathfinder',
   description: 'A portal for the CalAIM Community Support for Assisted Transitions for Health Net and Kaiser.',
-  viewport: 'width=device-width, initial-scale=1.0',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1.0,
 };
 
 export default function RootLayout({
