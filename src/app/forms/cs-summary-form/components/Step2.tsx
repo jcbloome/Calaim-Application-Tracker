@@ -8,13 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Step2() {
@@ -66,23 +59,9 @@ export default function Step2() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Member's Current Location <span className="text-destructive">*</span></FormLabel>
-                   <Select onValueChange={field.onChange} defaultValue={field.value ?? ''}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a location type" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="SNF">Skilled Nursing Facility</SelectItem>
-                      <SelectItem value="Home">Home</SelectItem>
-                      <SelectItem value="Hospital">Hospital</SelectItem>
-                      <SelectItem value="Sub-Acute">Sub-Acute</SelectItem>
-                      <SelectItem value="Recuperative Care">Recuperative Care</SelectItem>
-                      <SelectItem value="Unhoused">Unhoused</SelectItem>
-                      <SelectItem value="RCFE/ARF">RCFE/ARF</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
+                   <FormControl>
+                      <Input {...field} value={field.value ?? ''} placeholder="e.g., SNF, Home, Hospital" />
+                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

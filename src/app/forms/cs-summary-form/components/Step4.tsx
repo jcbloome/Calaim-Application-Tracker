@@ -10,7 +10,6 @@ import { type FormValues } from '../schema';
 import { PhoneInput } from '@/components/ui/phone-input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useEffect } from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function Step4() {
   const { control, watch, setValue } = useFormContext<FormValues>();
@@ -85,23 +84,9 @@ export default function Step4() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Type of Location <span className="text-destructive">*</span></FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value ?? ''}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a location type" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="SNF">Skilled Nursing Facility</SelectItem>
-                            <SelectItem value="Home">Home</SelectItem>
-                            <SelectItem value="Hospital">Hospital</SelectItem>
-                            <SelectItem value="Sub-Acute">Sub-Acute</SelectItem>
-                            <SelectItem value="Recuperative Care">Recuperative Care</SelectItem>
-                            <SelectItem value="Unhoused">Unhoused</SelectItem>
-                            <SelectItem value="RCFE/ARF">RCFE/ARF</SelectItem>
-                            <SelectItem value="Other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                            <Input {...field} value={field.value ?? ''} placeholder="e.g., SNF, Home, Hospital" />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
