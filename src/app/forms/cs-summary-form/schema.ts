@@ -80,28 +80,6 @@ export const formSchema = z.object({
     pathway: z.enum(['SNF Transition', 'SNF Diversion'], { required_error: 'Please select a pathway.' }),
     meetsPathwayCriteria: z.boolean(),
     snfDiversionReason: optionalString,
-
-    // Step 4 - ISP & RCFE
-    ispFirstName: optionalString,
-    ispLastName: optionalString,
-    ispRelationship: optionalString,
-    ispFacilityName: optionalString,
-    ispPhone: optionalPhone,
-    ispEmail: optionalEmail,
-    ispCopyCurrent: z.boolean().optional(),
-    ispLocationType: requiredString,
-    ispAddress: requiredString,
-    ispCity: requiredString,
-    ispState: requiredString,
-    ispZip: requiredString,
-    ispCounty: requiredString,
-    onALWWaitlist: z.enum(['Yes', 'No', 'Unknown']).optional().nullable(),
-    hasPrefRCFE: z.enum(['Yes', 'No']).optional().nullable(),
-    rcfeName: optionalString,
-    rcfeAdminName: optionalString,
-    rcfeAdminPhone: optionalPhone,
-    rcfeAdminEmail: optionalEmail,
-    rcfeAddress: optionalString,
   })
   .refine(data => data.memberMediCalNum === data.confirmMemberMediCalNum, {
     message: "Medi-Cal numbers don't match.",
@@ -112,13 +90,13 @@ export const formSchema = z.object({
     path: ["confirmMemberMrn"],
   })
   .refine(data => {
-      if (data.pathway) {
-          return data.meetsPathwayCriteria === true;
-      }
-      return true;
+    if (data.pathway) {
+        return data.meetsPathwayCriteria;
+    }
+    return true;
   }, {
-      message: "You must confirm the criteria have been met.",
-      path: ["meetsPathwayCriteria"],
+    message: "You must confirm the criteria have been met.",
+    path: ["meetsPathwayCriteria"],
   })
   .superRefine((data, ctx) => {
     // Primary Contact conditional validation
