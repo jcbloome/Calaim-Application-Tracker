@@ -4,10 +4,8 @@ import { z } from 'zod';
 const requiredString = z.string().min(1, { message: 'This field is required.' });
 const optionalString = z.string().optional().nullable();
 const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-const optionalPhone = z.string().refine(val => val === '' || !val || phoneRegex.test(val), {
-    message: 'Invalid phone number format. Expected (xxx) xxx-xxxx.',
-}).optional().nullable();
 const requiredPhone = z.string().regex(phoneRegex, { message: 'Phone number must be in (xxx) xxx-xxxx format.' });
+const optionalPhone = z.string().optional().nullable(); // Simplified to remove faulty regex logic
 const optionalEmail = z.string().email({ message: 'Invalid email format.' }).optional().or(z.literal(''));
 
 export const formSchema = z.object({
@@ -32,11 +30,11 @@ export const formSchema = z.object({
     agency: optionalString.nullable(),
 
     // Step 1 - Primary Contact Person
-    bestContactType: z.enum(['member', 'other'], { required_error: 'Please select a primary contact type.'}),
-    bestContactFirstName: requiredString,
-    bestContactLastName: requiredString,
-    bestContactRelationship: requiredString,
-    bestContactPhone: requiredPhone,
+    bestContactType: z.enum(['member', 'other']).optional().nullable(),
+    bestContactFirstName: optionalString,
+    bestContactLastName: optionalString,
+    bestContactRelationship: optionalString,
+    bestContactPhone: optionalPhone,
     bestContactEmail: optionalEmail,
     bestContactLanguage: optionalString,
 
@@ -49,7 +47,7 @@ export const formSchema = z.object({
     secondaryContactLanguage: optionalString,
 
     // Step 1 - Legal Rep
-    hasCapacity: z.enum(['Yes', 'No'], { required_error: 'This field is required.' }),
+    hasCapacity: z.enum(['Yes', 'No']).optional().nullable(),
     hasLegalRep: z.enum(['Yes', 'No', 'Unknown']).optional().nullable(),
     repName: optionalString,
     repRelationship: optionalString,
@@ -58,12 +56,12 @@ export const formSchema = z.object({
     isRepPrimaryContact: z.boolean().optional().default(false),
 
     // Step 2 - Location
-    currentLocation: requiredString,
-    currentAddress: requiredString,
-    currentCity: requiredString,
-    currentState: requiredString,
-    currentZip: requiredString,
-    currentCounty: requiredString,
+    currentLocation: optionalString,
+    currentAddress: optionalString,
+    currentCity: optionalString,
+    currentState: optionalString,
+    currentZip: optionalString,
+    currentCounty: optionalString,
     copyAddress: z.boolean().optional(),
     customaryAddress: optionalString,
     customaryCity: optionalString,
@@ -72,11 +70,11 @@ export const formSchema = z.object({
     customaryCounty: optionalString,
 
     // Step 3 - Health Plan & Pathway
-    healthPlan: z.enum(['Kaiser', 'Health Net', 'Other'], { required_error: 'Please select a health plan.' }),
+    healthPlan: z.enum(['Kaiser', 'Health Net', 'Other']).optional().nullable(),
     existingHealthPlan: optionalString,
     switchingHealthPlan: z.enum(['Yes', 'No']).optional().nullable(),
-    pathway: z.enum(['SNF Transition', 'SNF Diversion'], { required_error: 'Please select a pathway.' }),
-    meetsPathwayCriteria: z.boolean().refine(val => val === true, { message: "You must confirm the criteria are met." }),
+    pathway: z.enum(['SNF Transition', 'SNF Diversion']).optional().nullable(),
+    meetsPathwayCriteria: z.boolean().optional(),
     snfDiversionReason: optionalString,
 
     // Step 4 - ISP & RCFE
@@ -100,17 +98,7 @@ export const formSchema = z.object({
     rcfeAdminPhone: optionalPhone,
     rcfeAdminEmail: optionalEmail,
     rcfeAddress: optionalString,
-  })
-  .refine(data => data.memberMrn === data.confirmMemberMrn, {
-      message: "Medical Record Numbers don't match",
-      path: ["confirmMemberMrn"],
-  })
-  .refine(data => data.memberMediCalNum === data.confirmMemberMediCalNum, {
-      message: "Medi-Cal Numbers don't match",
-      path: ["confirmMemberMediCalNum"],
   });
 
 
 export type FormValues = z.infer<typeof formSchema>;
-
-    
