@@ -56,6 +56,25 @@ const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatus
   return commonForms;
 };
 
+// Safely formats a date that might be a Firestore Timestamp
+const formatDate = (date: any) => {
+    if (!date) return 'N/A';
+    // Firestore Timestamps have a toDate() method
+    if (date && typeof date.toDate === 'function') {
+        return format(date.toDate(), 'PPP');
+    }
+    // Handle if it's already a Date object or a valid date string
+    try {
+        const parsedDate = new Date(date);
+        if (!isNaN(parsedDate.getTime())) {
+            return format(parsedDate, 'PPP');
+        }
+    } catch (e) {
+        // Fallthrough to return 'Invalid Date'
+    }
+    return 'Invalid Date';
+};
+
 
 function ReviewPageComponent() {
     const router = useRouter();
@@ -121,7 +140,7 @@ function ReviewPageComponent() {
         );
     }
     
-    const dobFormatted = application.memberDob ? format(new Date(application.memberDob), 'PPP') : 'N/A';
+    const dobFormatted = formatDate(application.memberDob);
     const editLink = (step: number) => `/forms/cs-summary-form?applicationId=${applicationId}&step=${step}`;
 
     return (
