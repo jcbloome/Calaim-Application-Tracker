@@ -39,6 +39,10 @@ export function Header() {
   const logo = PlaceHolderImages.find(p => p.id === 'calaim-logo');
 
   useEffect(() => {
+    // If on the login page, do nothing.
+    if (typeof window !== 'undefined' && window.location.pathname === '/admin/login') {
+      return;
+    }
     // If the user is logged in and is the admin, log them out because they are on the user-facing side.
     if (user && user.email === ADMIN_EMAIL && auth) {
       auth.signOut().then(() => {
