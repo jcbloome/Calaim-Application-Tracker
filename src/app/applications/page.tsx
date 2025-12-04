@@ -2,7 +2,8 @@
 
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React from 'react';
+import 'use strict';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, Trash2 } from 'lucide-react';
@@ -23,6 +24,7 @@ import { Header } from '@/components/Header';
 import { useUser, useFirestore, useCollection } from '@/firebase';
 import { collection, doc, deleteDoc, Query, Timestamp } from 'firebase/firestore';
 import { format } from 'date-fns';
+import { useMemo, useState, useEffect } from 'react';
 
 
 // Define a type for the application data coming from Firestore
@@ -92,8 +94,6 @@ const ApplicationsTable = ({
                 {onSelectionChange && <TableHead className="w-[50px]"></TableHead>}
                 <TableHead>Member / App ID</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="hidden md:table-cell">Pathway</TableHead>
-                <TableHead className="hidden md:table-cell">Health Plan</TableHead>
                 <TableHead className="hidden sm:table-cell">Last Updated</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -101,7 +101,7 @@ const ApplicationsTable = ({
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
+                  <TableCell colSpan={onSelectionChange ? 5 : 4} className="h-24 text-center">
                     Loading applications...
                   </TableCell>
                 </TableRow>
@@ -126,8 +126,6 @@ const ApplicationsTable = ({
                         {app.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell">{app.pathway || 'N/A'}</TableCell>
-                    <TableCell className="hidden md:table-cell">{app.healthPlan || 'N/A'}</TableCell>
                     <TableCell className="hidden sm:table-cell">{app.lastUpdated ? format(app.lastUpdated.toDate(), 'PPP') : 'N/A'}</TableCell>
                     <TableCell className="text-right">
                       <Button asChild variant="outline" size="sm">
@@ -138,7 +136,7 @@ const ApplicationsTable = ({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
+                  <TableCell colSpan={onSelectionChange ? 5 : 4} className="h-24 text-center">
                     No applications found.
                   </TableCell>
                 </TableRow>
