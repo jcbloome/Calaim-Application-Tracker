@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -6,13 +7,13 @@ import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { PlaceHolderImages } from '@/lib/placeholder-images';
+import imageData from '@/lib/placeholder-images.json';
 import { Header } from '@/components/Header';
 import Confetti from 'react-confetti';
 import { useWindowSize } from '@/hooks/use-window-size';
 
 export default function ApplicationCompletedPage() {
-  const mascot = PlaceHolderImages.find(p => p.id === 'fox-mascot');
+  const mascot = imageData.placeholderImages.find(p => p.id === 'fox-mascot');
   const { width, height } = useWindowSize();
   const [showConfetti, setShowConfetti] = useState(false);
 
