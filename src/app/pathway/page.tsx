@@ -302,5 +302,3 @@ export default function PathwayPage() {
     </Suspense>
   );
 }
-
-    
