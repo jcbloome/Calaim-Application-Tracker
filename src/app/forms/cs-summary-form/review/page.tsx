@@ -47,6 +47,7 @@ const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatus
     { name: 'Proof of Income', status: 'Pending', type: 'upload', href: '#' },
     { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { name: 'Medicine List', status: 'Pending', type: 'upload', href: '#' },
+    // Bundles are implicitly handled now but we still need status objects for them to exist.
     { name: 'Medical Documents Bundle', status: 'Pending', type: 'bundle', href: '#' },
     { name: 'Waivers & Forms Bundle', status: 'Pending', type: 'bundle', href: '/forms/printable-package/full-package' },
   ];
@@ -58,7 +59,6 @@ const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatus
     ];
   }
   
-    // SNF Transition
   return [
       ...commonForms,
       { name: 'SNF Facesheet', status: 'Pending', type: 'upload', href: '#' },

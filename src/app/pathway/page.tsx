@@ -1,7 +1,7 @@
 
 'use client';
 
-import { Suspense, useMemo, useState, useEffect } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
@@ -43,6 +43,8 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form/review', icon: FileText },
     { id: 'program-info', title: 'Program Information', description: 'Review important details about the CalAIM program and our services.', type: 'info', href: '/info', icon: Info },
     { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'upload', icon: UploadCloud, href: '#' },
+    { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
+    { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'upload', icon: UploadCloud, href: '#' },
   ];
 
   if (pathway === 'SNF Diversion') {
@@ -53,7 +55,10 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
   }
 
   // SNF Transition
-  return commonRequirements;
+  return [
+    ...commonRequirements,
+    { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility.", type: 'upload', icon: UploadCloud, href: '#' },
+  ];
 };
 
 
@@ -104,7 +109,7 @@ function PathwayPageContent() {
                 status: newStatus,
                 dateCompleted: newStatus === 'Completed' ? Timestamp.now() : undefined,
             };
-            if (fileName !== undefined) { // Check for undefined to handle clearing the name
+            if (fileName !== undefined) {
                 update.fileName = fileName;
             }
             return { ...form, ...update };
@@ -140,7 +145,6 @@ function PathwayPageContent() {
   };
   
     const handleFileRemove = async (requirementTitle: string) => {
-    // Pass empty string to clear the fileName field
     await handleFormStatusUpdate([requirementTitle], 'Pending', '');
   };
 
@@ -192,16 +196,17 @@ function PathwayPageContent() {
   const pathwayRequirements = getPathwayRequirements(application.pathway);
   const formStatusMap = new Map(application.forms?.map(f => [f.name, {status: f.status, fileName: f.fileName}]));
   
-  const nonBundleRequirements = pathwayRequirements;
+  const requiredForProgress = pathwayRequirements.filter(req => req.id !== 'medical-documents-bundle' && req.id !== 'waivers-bundle');
 
-  const completedCount = nonBundleRequirements.reduce((acc, req) => {
-    if (formStatusMap.get(req.title)?.status === 'Completed') {
-      return acc + 1;
+  const completedCount = requiredForProgress.reduce((acc, req) => {
+    const formName = req.title;
+    if (formStatusMap.get(formName)?.status === 'Completed') {
+        return acc + 1;
     }
     return acc;
   }, 0);
   
-  const totalCount = nonBundleRequirements.length;
+  const totalCount = requiredForProgress.length;
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
   const allRequiredFormsComplete = completedCount === totalCount;
 
@@ -323,7 +328,8 @@ function PathwayPageContent() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {pathwayRequirements.map((req) => {
-                const status = formStatusMap.get(req.title)?.status || 'Pending';
+                const formInfo = formStatusMap.get(req.title);
+                const status = formInfo?.status || 'Pending';
                 
                 return (
                     <Card key={req.id} className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
@@ -347,7 +353,6 @@ function PathwayPageContent() {
             <h2 className="text-xl font-semibold text-center text-muted-foreground">Bundle Upload Options</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 
-                 {/* Waivers Bundle Card */}
                 <Card className="flex flex-col shadow-sm hover:shadow-md transition-shadow border-2 border-dashed border-primary/50">
                     <CardHeader className="pb-4">
                         <div className="flex justify-between items-start gap-4">
@@ -378,7 +383,7 @@ function PathwayPageContent() {
                             </Link>
                         </Button>
                         <div>
-                             <Label htmlFor="waiver-bundle-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isReadOnly && "opacity-50 pointer-events-none")}>
+                            <Label htmlFor="waiver-bundle-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isReadOnly && "opacity-50 pointer-events-none")}>
                                 <UploadCloud className="mr-2 h-4 w-4" />
                                 <span>Upload Waiver Package</span>
                             </Label>
@@ -387,8 +392,6 @@ function PathwayPageContent() {
                     </CardContent>
                 </Card>
 
-
-                {/* Medical Documents Bundle Card */}
                 <Card className="flex flex-col shadow-sm hover:shadow-md transition-shadow border-2 border-dashed border-primary/50">
                     <CardHeader className="pb-4">
                         <div className="flex justify-between items-start gap-4">
@@ -402,7 +405,7 @@ function PathwayPageContent() {
                            {[
                                 {name: "LIC 602A - Physician's Report"},
                                 {name: "Medicine List"},
-                                application.pathway === 'SNF Transition' && {name: "SNF Facesheet"},
+                                application.pathway === 'SNF Transition' ? {name: "SNF Facesheet"} : null,
                            ].filter(Boolean).map(form => (
                                 <div key={form!.name} className="flex items-center space-x-2">
                                      <Checkbox 
@@ -445,5 +448,3 @@ export default function PathwayPage() {
     </Suspense>
   );
 }
-
-    
