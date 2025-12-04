@@ -23,6 +23,7 @@ import {
   Send,
   Download,
   Printer,
+  ExternalLink,
 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { cn } from '@/lib/utils';
@@ -42,7 +43,7 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
     { id: 'liability-waiver', title: 'Liability Waiver', description: 'Review and sign the Participant Liability Waiver & Hold Harmless Agreement.', type: 'online-form', href: '/forms/liability-waiver', icon: File },
     { id: 'freedom-of-choice', title: 'Freedom of Choice Waiver', description: 'Acknowledge your choice to accept or decline Community Supports services.', type: 'online-form', href: '/forms/freedom-of-choice', icon: File },
     { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'upload', icon: UploadCloud, href: '#' },
-    { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "To download this form, go to the Printable Forms page, then return here to upload the completed document.", type: 'upload', icon: Printer, href: '/forms/printable-package' },
+    { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Click the 'Download Form' button below to get the required PDF, then return here to upload the completed document.", type: 'upload', icon: ExternalLink, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { id: 'med-list', title: "Medicine List", description: "Upload a current list of all medications.", type: 'upload', icon: UploadCloud, href: '#' },
   ];
 
@@ -201,14 +202,22 @@ function PathwayPageContent() {
                         <span>Upload File</span>
                     </Label>
                     <Input id={req.id} type="file" className="sr-only" />
-                    {req.href && req.href !== '#' && (
+                    {req.href && req.href.startsWith('http') && (
                          <Button asChild variant="link" className="w-full text-xs h-auto py-0">
-                            <Link href={req.href}>
-                                {req.icon === Printer ? <Printer className="mr-1 h-3 w-3" /> : <Download className="mr-1 h-3 w-3" />}
-                                Go to Printable Forms
+                            <Link href={req.href} target="_blank">
+                                <Download className="mr-1 h-3 w-3" />
+                                Download Form
                             </Link>
                         </Button>
                     )}
+                    {req.href && !req.href.startsWith('http') && req.href !== '#' && (
+                        <Button asChild variant="link" className="w-full text-xs h-auto py-0">
+                           <Link href={req.href}>
+                               <Printer className="mr-1 h-3 w-3" />
+                               Go to Printable Forms
+                           </Link>
+                       </Button>
+                   )}
                 </div>
             );
         default:
