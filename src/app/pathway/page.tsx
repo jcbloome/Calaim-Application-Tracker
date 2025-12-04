@@ -44,30 +44,18 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
     { id: 'liability-waiver', title: 'Liability Waiver', description: 'Review and sign the Participant Liability Waiver & Hold Harmless Agreement.', type: 'online-form', href: '/forms/liability-waiver', icon: File },
     { id: 'freedom-of-choice', title: 'Freedom of Choice Waiver', description: 'Acknowledge your choice to accept or decline Community Supports services.', type: 'online-form', href: '/forms/freedom-of-choice', icon: File },
     { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'upload', icon: UploadCloud, href: '#' },
+    { id: 'medical-docs-bundle', title: 'Medical Documents Bundle', description: "Option to upload the Physician's Report, Medicine List, and SNF Facesheet in one package.", type: 'upload', icon: Package, href: '#' },
   ];
-
-  const medicalDocsBundle = { 
-      id: 'medical-docs-bundle', 
-      title: 'Medical Documents Bundle', 
-      description: "Upload the Physician's Report, Medicine List, and SNF Facesheet (if applicable) in one package.", 
-      type: 'upload', 
-      icon: Package, 
-      href: '#' 
-  };
 
   if (pathway === 'SNF Diversion') {
     return [
       ...commonRequirements,
-      medicalDocsBundle,
       { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: 'Download the form, have it signed by a PCP, and upload it here.', type: 'upload', icon: Printer, href: '/forms/declaration-of-eligibility/printable' },
     ];
   }
 
   // SNF Transition
-  return [
-      ...commonRequirements,
-      medicalDocsBundle
-  ];
+  return commonRequirements;
 };
 
 
