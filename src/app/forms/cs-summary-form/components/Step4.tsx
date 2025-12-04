@@ -113,7 +113,7 @@ export default function Step4() {
                     )}
                   />
                  <FormField control={control} name="ispFacilityName" render={({ field }) => (
-                    <FormItem><FormLabel>Facility Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={ispCopyCurrent} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Facility Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                 )} />
                  <FormField control={control} name="ispAddress" render={({ field }) => (
                     <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={ispCopyCurrent} /></FormControl><FormMessage /></FormItem>
