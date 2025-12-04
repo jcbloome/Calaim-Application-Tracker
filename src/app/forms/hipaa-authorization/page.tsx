@@ -4,7 +4,7 @@
 import React, { useState, useMemo, Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, FileCheck2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, FileCheck2, AlertCircle, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Header } from '@/components/Header';
@@ -67,10 +67,6 @@ function HipaaAuthorizationFormComponent() {
     const [signerRelationship, setSignerRelationship] = useState('');
     const [signatureDate, setSignatureDate] = useState('');
 
-    useEffect(() => {
-        setSignatureDate(new Date().toLocaleDateString());
-    }, []);
-
     const applicationDocRef = useMemo(() => {
         if (user && firestore && applicationId) {
             return doc(firestore, `users/${user.uid}/applications`, applicationId);
@@ -79,6 +75,25 @@ function HipaaAuthorizationFormComponent() {
     }, [user, firestore, applicationId]);
 
     const { data: application, isLoading: isLoadingApplication } = useDoc<Application>(applicationDocRef);
+
+    const isReadOnly = application?.status === 'Completed & Submitted' || application?.status === 'Approved';
+
+    useEffect(() => {
+        if (application) {
+            const form = application.forms?.find(f => f.name === 'HIPAA Authorization');
+            if (form && form.status === 'Completed') {
+                setSignerType(form.signerType || '');
+                setSignerName(form.signerName || '');
+                setSignerRelationship(form.signerRelationship || '');
+                setSignatureDate(form.dateCompleted ? new Date(form.dateCompleted.seconds * 1000).toLocaleDateString() : new Date().toLocaleDateString());
+            } else {
+                 setSignatureDate(new Date().toLocaleDateString());
+            }
+        } else {
+            setSignatureDate(new Date().toLocaleDateString());
+        }
+    }, [application]);
+
 
     const isSignatureValid = () => {
         if (!signerType || !signerName) return false;
@@ -110,7 +125,7 @@ function HipaaAuthorizationFormComponent() {
             status: 'Completed',
             signerType,
             signerName,
-            signerRelationship: signerType === 'representative' ? signerRelationship : null,
+            signerRelationship: signerType === 'representative' ? signerRelationship : undefined,
             dateCompleted: Timestamp.now(),
         };
 
@@ -163,6 +178,16 @@ function HipaaAuthorizationFormComponent() {
                         </Button>
                     </div>
 
+                     {isReadOnly && (
+                        <Alert variant="default" className="mb-6 bg-blue-50 border-blue-200 text-blue-800">
+                            <Lock className="h-4 w-4 !text-blue-800" />
+                            <AlertTitle>Form Locked</AlertTitle>
+                            <AlertDescription>
+                                This form is part of a submitted application and is now read-only.
+                            </AlertDescription>
+                        </Alert>
+                    )}
+
                     <Card>
                         <CardHeader>
                             <CardTitle className="text-2xl">HIPAA Authorization Form</CardTitle>
@@ -187,7 +212,7 @@ function HipaaAuthorizationFormComponent() {
                             <div className="mt-8 pt-6 border-t">
                                 <h3 className="text-base font-semibold text-gray-800">Electronic Signature</h3>
                                 <div className="space-y-4 mt-4">
-                                    <RadioGroup onValueChange={(v) => setSignerType(v as any)} value={signerType}>
+                                    <RadioGroup onValueChange={(v) => setSignerType(v as any)} value={signerType} disabled={isReadOnly}>
                                         <Label>I am the:</Label>
                                         <div className="flex items-center gap-4">
                                             <div className="flex items-center space-x-2">
@@ -204,13 +229,13 @@ function HipaaAuthorizationFormComponent() {
                                     {signerType === 'representative' && (
                                         <div className="space-y-2">
                                             <Label htmlFor="signer-relationship">Relationship to Member</Label>
-                                            <Input id="signer-relationship" value={signerRelationship} onChange={e => setSignerRelationship(e.target.value)} placeholder="e.g., Son, Daughter, Conservator" />
+                                            <Input id="signer-relationship" value={signerRelationship} onChange={e => setSignerRelationship(e.target.value)} placeholder="e.g., Son, Daughter, Conservator" disabled={isReadOnly} />
                                         </div>
                                     )}
 
                                     <div className="space-y-2">
                                         <Label htmlFor="signer-name">Type Full Name to Sign</Label>
-                                        <Input id="signer-name" value={signerName} onChange={e => setSignerName(e.target.value)} placeholder="Your full legal name" />
+                                        <Input id="signer-name" value={signerName} onChange={e => setSignerName(e.target.value)} placeholder="Your full legal name" disabled={isReadOnly} />
                                     </div>
                                      <div>
                                         <Label>Date Signed</Label>
@@ -219,23 +244,27 @@ function HipaaAuthorizationFormComponent() {
                                 </div>
                             </div>
 
-                            <div className="p-4 border-t mt-6 space-y-4">
-                                <Alert>
-                                    <AlertCircle className="h-4 w-4" />
-                                    <AlertTitle>Legal Attestation</AlertTitle>
-                                    <AlertDescription>
-                                        By clicking the button below, I acknowledge that under penalty of perjury, I am the member or an authorized representative legally empowered to sign on behalf of the member.
-                                    </AlertDescription>
-                                </Alert>
-                            </div>
+                             {!isReadOnly && (
+                                <>
+                                <div className="p-4 border-t mt-6 space-y-4">
+                                    <Alert>
+                                        <AlertCircle className="h-4 w-4" />
+                                        <AlertTitle>Legal Attestation</AlertTitle>
+                                        <AlertDescription>
+                                            By clicking the button below, I acknowledge that under penalty of perjury, I am the member or an authorized representative legally empowered to sign on behalf of the member.
+                                        </AlertDescription>
+                                    </Alert>
+                                </div>
 
-                            <Button onClick={handleSubmit} disabled={isLoading || !isSignatureValid()} className="w-full">
-                                {isLoading ? (
-                                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
-                                ) : (
-                                    <><FileCheck2 className="mr-2 h-4 w-4" /> Acknowledge and Complete</>
-                                )}
-                            </Button>
+                                <Button onClick={handleSubmit} disabled={isLoading || !isSignatureValid()} className="w-full">
+                                    {isLoading ? (
+                                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
+                                    ) : (
+                                        <><FileCheck2 className="mr-2 h-4 w-4" /> Acknowledge and Complete</>
+                                    )}
+                                </Button>
+                                </>
+                             )}
                         </CardContent>
                     </Card>
                 </div>
