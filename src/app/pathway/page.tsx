@@ -53,16 +53,18 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
 
   if (pathway === 'SNF Diversion') {
     return [
-      ...commonRequirements,
+      ...commonRequirements.slice(0, 5), // common forms up to waivers
       { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: 'Download the form, have it signed by a PCP, and upload it here.', type: 'upload', icon: Printer, href: '/forms/declaration-of-eligibility/printable' },
+      ...commonRequirements.slice(5), // 602a and med list
       proofOfIncome,
     ];
   }
 
   // SNF Transition
   return [
-    ...commonRequirements,
+    ...commonRequirements.slice(0, 5),
     { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility.", type: 'upload', icon: UploadCloud, href: '#' },
+    ...commonRequirements.slice(5),
     proofOfIncome,
   ];
 };
@@ -93,8 +95,8 @@ function PathwayPageContent() {
   const applicationId = searchParams.get('applicationId');
   const { user } = useUser();
   const firestore = useFirestore();
-  const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploading, setUploading] = useState<Record<string, boolean>>({});
 
   const applicationDocRef = useMemo(() => {
     if (user && firestore && applicationId) {
