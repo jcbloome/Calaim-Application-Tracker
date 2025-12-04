@@ -42,12 +42,7 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form/review', icon: FileText },
     { id: 'program-info', title: 'Program Information', description: 'Review important details about the CalAIM program and our services.', type: 'info', href: '/info', icon: Info },
-    { id: 'hipaa-auth', title: 'HIPAA Authorization', description: 'Authorize the use or disclosure of Protected Health Information (PHI).', type: 'online-form', href: '/forms/hipaa-authorization', icon: File },
-    { id: 'liability-waiver', title: 'Liability Waiver', description: 'Review and sign the Participant Liability Waiver & Hold Harmless Agreement.', type: 'online-form', href: '/forms/liability-waiver', icon: File },
-    { id: 'freedom-of-choice', title: 'Freedom of Choice Waiver', description: 'Acknowledge your choice to accept or decline Community Supports services.', type: 'online-form', href: '/forms/freedom-of-choice', icon: File },
     { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'upload', icon: UploadCloud, href: '#' },
-    { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, have the physician complete, and upload the signed report.", type: 'upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
-    { id: 'medicine-list', title: "Medicine List", description: "Upload a current list of all prescribed medications.", type: 'upload', icon: UploadCloud, href: '#' },
   ];
 
   if (pathway === 'SNF Diversion') {
@@ -58,10 +53,7 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
   }
 
   // SNF Transition
-  return [
-      ...commonRequirements,
-      { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the latest facesheet from the Skilled Nursing Facility.", type: 'upload', icon: UploadCloud, href: '#' },
-  ];
+  return commonRequirements;
 };
 
 
@@ -92,7 +84,6 @@ function PathwayPageContent() {
   const firestore = useFirestore();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
-  const [uploadedFiles, setUploadedFiles] = useState<Record<string, string>>({});
 
   const applicationDocRef = useMemo(() => {
     if (user && firestore && applicationId) {
@@ -102,18 +93,6 @@ function PathwayPageContent() {
   }, [user, firestore, applicationId]);
 
   const { data: application, isLoading, error } = useDoc<Application>(applicationDocRef);
-  
-    useEffect(() => {
-    if (application?.forms) {
-      const initialFiles: Record<string, string> = {};
-      application.forms.forEach(form => {
-        if (form.fileName) {
-          initialFiles[form.name] = form.fileName;
-        }
-      });
-      setUploadedFiles(initialFiles);
-    }
-  }, [application]);
   
   const handleFormStatusUpdate = async (formNames: string[], newStatus: 'Completed' | 'Pending', fileName?: string) => {
       if (!applicationDocRef || !application) return;
@@ -125,10 +104,8 @@ function PathwayPageContent() {
                 status: newStatus,
                 dateCompleted: newStatus === 'Completed' ? Timestamp.now() : undefined,
             };
-            if (newStatus === 'Completed' && fileName) {
+            if (fileName !== undefined) { // Check for undefined to handle clearing the name
                 update.fileName = fileName;
-            } else if (newStatus === 'Pending') {
-                update.fileName = undefined;
             }
             return { ...form, ...update };
           }
@@ -155,7 +132,6 @@ function PathwayPageContent() {
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     await handleFormStatusUpdate([requirementTitle], 'Completed', file.name);
-    setUploadedFiles(prev => ({ ...prev, [requirementTitle]: file.name }));
 
     setUploading(prev => ({...prev, [requirementTitle]: false}));
     
@@ -164,12 +140,8 @@ function PathwayPageContent() {
   };
   
     const handleFileRemove = async (requirementTitle: string) => {
-    await handleFormStatusUpdate([requirementTitle], 'Pending');
-    setUploadedFiles(prev => {
-        const newFiles = { ...prev };
-        delete newFiles[requirementTitle];
-        return newFiles;
-    });
+    // Pass empty string to clear the fileName field
+    await handleFormStatusUpdate([requirementTitle], 'Pending', '');
   };
 
   const handleSubmitApplication = async () => {
@@ -218,12 +190,12 @@ function PathwayPageContent() {
   const isReadOnly = application.status === 'Completed & Submitted' || application.status === 'Approved';
 
   const pathwayRequirements = getPathwayRequirements(application.pathway);
-  const formStatusMap = new Map(application.forms?.map(f => [f.name, f.status]));
+  const formStatusMap = new Map(application.forms?.map(f => [f.name, {status: f.status, fileName: f.fileName}]));
   
-  const nonBundleRequirements = pathwayRequirements.filter(req => req.type !== 'bundle');
+  const nonBundleRequirements = pathwayRequirements;
 
   const completedCount = nonBundleRequirements.reduce((acc, req) => {
-    if (req.type === 'info' || formStatusMap.get(req.title) === 'Completed') {
+    if (formStatusMap.get(req.title)?.status === 'Completed') {
       return acc + 1;
     }
     return acc;
@@ -234,7 +206,9 @@ function PathwayPageContent() {
   const allRequiredFormsComplete = completedCount === totalCount;
 
 
-  const getFormAction = (req: (typeof pathwayRequirements)[0], isCompleted: boolean) => {
+  const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
+    const formInfo = formStatusMap.get(req.title);
+    const isCompleted = formInfo?.status === 'Completed';
     const href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
     
     if (isReadOnly) {
@@ -260,7 +234,7 @@ function PathwayPageContent() {
             );
         case 'upload':
              const isUploading = uploading[req.title];
-             const uploadedFileName = uploadedFiles[req.title];
+             const uploadedFileName = formInfo?.fileName;
 
              if (uploadedFileName) {
                 return (
@@ -349,8 +323,7 @@ function PathwayPageContent() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {pathwayRequirements.map((req) => {
-                const status = (req.type === 'info') ? 'Completed' : (formStatusMap.get(req.title) || 'Pending');
-                const isCompleted = status === 'Completed';
+                const status = formStatusMap.get(req.title)?.status || 'Pending';
                 
                 return (
                     <Card key={req.id} className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
@@ -363,7 +336,7 @@ function PathwayPageContent() {
                         </CardHeader>
                         <CardContent className="flex flex-col flex-grow justify-end gap-4">
                              <StatusIndicator status={status} />
-                            {getFormAction(req, isCompleted)}
+                            {getFormAction(req)}
                         </CardContent>
                     </Card>
                 )
@@ -389,7 +362,7 @@ function PathwayPageContent() {
                                 <div key={formName} className="flex items-center space-x-2">
                                     <Checkbox 
                                         id={`waiver-${formName}`} 
-                                        checked={formStatusMap.get(formName) === 'Completed'}
+                                        checked={formStatusMap.get(formName)?.status === 'Completed'}
                                         onCheckedChange={(checked) => handleFormStatusUpdate([formName], checked ? 'Completed' : 'Pending')}
                                         disabled={isReadOnly}
                                     />
@@ -434,7 +407,7 @@ function PathwayPageContent() {
                                 <div key={form!.name} className="flex items-center space-x-2">
                                      <Checkbox 
                                         id={`med-bundle-${form!.name}`} 
-                                        checked={formStatusMap.get(form!.name) === 'Completed'}
+                                        checked={formStatusMap.get(form!.name)?.status === 'Completed'}
                                         onCheckedChange={(checked) => handleFormStatusUpdate([form!.name], checked ? 'Completed' : 'Pending')}
                                         disabled={isReadOnly}
                                     />
@@ -472,3 +445,5 @@ export default function PathwayPage() {
     </Suspense>
   );
 }
+
+    
