@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { PawPrint, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -23,9 +23,9 @@ function AdminLoginHeader() {
           <Image
             src="https://images.squarespace-cdn.com/content/v1/5513063be4b069b54e721157/e4e0f894-c7c1-4b7f-a715-6dab7fc055db/calaimlogosmall.jpg?format=2500w"
             alt="CalAIM Pathfinder Logo"
-            width={144}
-            height={40}
-            className="w-36 h-auto object-contain"
+            width={180}
+            height={50}
+            className="w-48 h-auto object-contain"
             priority
           />
         </Link>
@@ -126,7 +126,6 @@ export default function AdminLoginPage() {
     <main className="flex-grow flex items-center justify-center p-4 sm:p-6 md:p-8">
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="items-center text-center p-6">
-            <PawPrint className="h-12 w-12 text-primary mb-4" />
           <CardTitle className="text-3xl font-bold">
             Admin Portal
           </CardTitle>
