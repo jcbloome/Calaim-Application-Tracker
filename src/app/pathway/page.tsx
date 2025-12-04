@@ -43,13 +43,24 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form/review', icon: FileText },
     { id: 'program-info', title: 'Program Information', description: 'Review important details about the CalAIM program and our services.', type: 'info', href: '/info', icon: Info },
     { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'upload', icon: UploadCloud, href: '#' },
-    { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
-    { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'upload', icon: UploadCloud, href: '#' },
+  ];
+
+  const waiverRequirements = [
+    { id: 'hipaa-authorization', title: 'HIPAA Authorization', description: 'Complete the online HIPAA authorization form.', type: 'online-form', href: '/forms/hipaa-authorization', icon: FileText },
+    { id: 'liability-waiver', title: 'Liability Waiver', description: 'Complete the online liability waiver.', type: 'online-form', href: '/forms/liability-waiver', icon: FileText },
+    { id: 'freedom-of-choice', title: 'Freedom of Choice Waiver', description: 'Complete the online Freedom of Choice waiver.', type: 'online-form', href: '/forms/freedom-of-choice', icon: FileText },
+  ];
+
+  const medicalRequirements = [
+      { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
+      { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'upload', icon: UploadCloud, href: '#' },
   ];
 
   if (pathway === 'SNF Diversion') {
     return [
       ...commonRequirements,
+      ...waiverRequirements,
+      ...medicalRequirements,
       { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: 'Download the form, have it signed by a PCP, and upload it here.', type: 'upload', icon: Printer, href: '/forms/declaration-of-eligibility/printable' },
     ];
   }
@@ -57,6 +68,8 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
   // SNF Transition
   return [
     ...commonRequirements,
+    ...waiverRequirements,
+    ...medicalRequirements,
     { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility.", type: 'upload', icon: UploadCloud, href: '#' },
   ];
 };
@@ -107,8 +120,10 @@ function PathwayPageContent() {
           if (formNames.includes(form.name)) {
             const update: Partial<FormStatusType> = { 
                 status: newStatus,
-                dateCompleted: newStatus === 'Completed' ? Timestamp.now() : undefined,
             };
+             if (newStatus === 'Completed') {
+                update.dateCompleted = Timestamp.now();
+            }
             if (fileName !== undefined) {
                 update.fileName = fileName;
             }
@@ -133,14 +148,24 @@ function PathwayPageContent() {
     
     setUploading(prev => ({...prev, [requirementTitle]: true}));
     
-    // Simulate upload time
+    // Simulate upload time - in a real app, this would be where you upload to Firebase Storage
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    await handleFormStatusUpdate([requirementTitle], 'Completed', file.name);
+    let formsToUpdate = [requirementTitle];
+    if (requirementTitle === 'Medical Documents Bundle') {
+        formsToUpdate.push("LIC 602A - Physician's Report", "Medicine List");
+        if (application.pathway === 'SNF Transition') {
+            formsToUpdate.push('SNF Facesheet');
+        }
+    }
+     if (requirementTitle === 'Waivers & Forms Bundle') {
+        formsToUpdate.push("HIPAA Authorization", "Liability Waiver", "Freedom of Choice Waiver");
+    }
+
+    await handleFormStatusUpdate(formsToUpdate, 'Completed', file.name);
 
     setUploading(prev => ({...prev, [requirementTitle]: false}));
     
-    // Clear the input value so the same file can be re-uploaded if needed
     event.target.value = '';
   };
   
@@ -223,13 +248,39 @@ function PathwayPageContent() {
             </Button>
         );
     }
+
+    const uploadedFileName = formInfo?.fileName;
+    if (uploadedFileName) {
+        return (
+            <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-green-50 border border-green-200 text-sm">
+                <FileText className="h-4 w-4 text-green-600 shrink-0" />
+                <span className="truncate flex-1 text-green-800 font-medium">{uploadedFileName}</span>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(req.title)} disabled={isReadOnly}>
+                    <X className="h-4 w-4" />
+                </Button>
+            </div>
+        )
+    }
+
+    const isUploading = uploading[req.title];
     
     switch (req.type) {
         case 'online-form':
             return (
-                <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
-                    <Link href={href}>{isCompleted ? 'View/Edit Form' : 'Start Form'} &rarr;</Link>
-                </Button>
+                <div className="space-y-2">
+                    <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
+                        <Link href={href}>{isCompleted ? 'View/Edit Form' : 'Start Form'} &rarr;</Link>
+                    </Button>
+                     <div className="flex items-center space-x-2">
+                        <Checkbox 
+                            id={`bundle-check-${req.id}`} 
+                            checked={isCompleted && !formInfo?.fileName}
+                            onCheckedChange={(checked) => handleFormStatusUpdate([req.title], checked ? 'Completed' : 'Pending')}
+                            disabled={isReadOnly || !!formInfo?.fileName}
+                        />
+                        <Label htmlFor={`bundle-check-${req.id}`} className="text-xs text-muted-foreground">I included this in a bundle</Label>
+                    </div>
+                </div>
             );
         case 'info':
             return (
@@ -238,42 +289,29 @@ function PathwayPageContent() {
                 </Button>
             );
         case 'upload':
-             const isUploading = uploading[req.title];
-             const uploadedFileName = formInfo?.fileName;
-
-             if (uploadedFileName) {
-                return (
-                    <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-green-50 border border-green-200 text-sm">
-                        <FileText className="h-4 w-4 text-green-600 shrink-0" />
-                        <span className="truncate flex-1 text-green-800 font-medium">{uploadedFileName}</span>
-                         <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(req.title)} disabled={isReadOnly}>
-                            <X className="h-4 w-4" />
-                        </Button>
-                    </div>
-                )
-             }
-
              return (
                 <div className="space-y-2">
-                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isUploading && "opacity-50 pointer-events-none")}>
+                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isReadOnly) && "opacity-50 pointer-events-none")}>
                         {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                         <span>{isUploading ? 'Uploading...' : 'Upload File'}</span>
                     </Label>
                     <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isReadOnly} />
-                    {req.href && req.href.startsWith('http') && (
-                         <Button asChild variant="link" className="w-full text-xs h-auto py-0">
-                            <Link href={req.href} target="_blank">
-                                <Download className="mr-1 h-3 w-3" /> Download Form
-                            </Link>
-                        </Button>
-                    )}
-                    {req.href && !req.href.startsWith('http') && req.href !== '#' && (
+                    {req.href && (
                         <Button asChild variant="link" className="w-full text-xs h-auto py-0">
                            <Link href={req.href} target="_blank">
                                <Printer className="mr-1 h-3 w-3" /> Download/Print Blank Form
                            </Link>
                        </Button>
-                   )}
+                    )}
+                    <div className="flex items-center space-x-2">
+                        <Checkbox 
+                            id={`bundle-check-${req.id}`} 
+                            checked={isCompleted && !formInfo?.fileName}
+                            onCheckedChange={(checked) => handleFormStatusUpdate([req.title], checked ? 'Completed' : 'Pending')}
+                            disabled={isReadOnly || !!formInfo?.fileName}
+                        />
+                        <Label htmlFor={`bundle-check-${req.id}`} className="text-xs text-muted-foreground">I included this in a bundle</Label>
+                    </div>
                 </div>
             );
         default:
