@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Header } from '@/components/Header';
 
 export default function LoginPage() {
@@ -160,7 +160,7 @@ export default function LoginPage() {
                 </div>
                 {error && <p className="text-sm text-destructive">{error}</p>}
                 <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? 'Processing...' : (isSigningIn ? 'Sign In' : 'Sign Up')}
+                    {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Processing...</> : (isSigningIn ? 'Sign In' : 'Sign Up')}
                 </Button>
                 </form>
                 <div className="mt-4 text-center text-sm">
