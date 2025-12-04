@@ -43,9 +43,6 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form/review', icon: FileText },
     { id: 'program-info', title: 'Program Information', description: 'Review important details about the CalAIM program and our services.', type: 'info', href: '/info', icon: Info },
     { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'upload', icon: UploadCloud, href: '#' },
-  ];
-
-  const waiverRequirements = [
     { id: 'hipaa-authorization', title: 'HIPAA Authorization', description: 'Complete the online HIPAA authorization form.', type: 'online-form', href: '/forms/hipaa-authorization', icon: FileText },
     { id: 'liability-waiver', title: 'Liability Waiver', description: 'Complete the online liability waiver.', type: 'online-form', href: '/forms/liability-waiver', icon: FileText },
     { id: 'freedom-of-choice', title: 'Freedom of Choice Waiver', description: 'Complete the online Freedom of Choice waiver.', type: 'online-form', href: '/forms/freedom-of-choice', icon: FileText },
@@ -59,7 +56,6 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
   if (pathway === 'SNF Diversion') {
     return [
       ...commonRequirements,
-      ...waiverRequirements,
       ...medicalRequirements,
       { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: 'Download the form, have it signed by a PCP, and upload it here.', type: 'upload', icon: Printer, href: '/forms/declaration-of-eligibility/printable' },
     ];
@@ -68,7 +64,6 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
   // SNF Transition
   return [
     ...commonRequirements,
-    ...waiverRequirements,
     ...medicalRequirements,
     { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility.", type: 'upload', icon: UploadCloud, href: '#' },
   ];
@@ -221,7 +216,7 @@ function PathwayPageContent() {
   const pathwayRequirements = getPathwayRequirements(application.pathway);
   const formStatusMap = new Map(application.forms?.map(f => [f.name, {status: f.status, fileName: f.fileName}]));
   
-  const requiredForProgress = pathwayRequirements.filter(req => req.id !== 'medical-documents-bundle' && req.id !== 'waivers-bundle');
+  const requiredForProgress = pathwayRequirements;
 
   const completedCount = requiredForProgress.reduce((acc, req) => {
     const formName = req.title;
@@ -250,7 +245,7 @@ function PathwayPageContent() {
     }
 
     const uploadedFileName = formInfo?.fileName;
-    if (uploadedFileName) {
+    if (isCompleted && uploadedFileName) {
         return (
             <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-green-50 border border-green-200 text-sm">
                 <FileText className="h-4 w-4 text-green-600 shrink-0" />
@@ -296,7 +291,7 @@ function PathwayPageContent() {
                         <span>{isUploading ? 'Uploading...' : 'Upload File'}</span>
                     </Label>
                     <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isReadOnly} />
-                    {req.href && (
+                    {req.href && req.href !== '#' && (
                         <Button asChild variant="link" className="w-full text-xs h-auto py-0">
                            <Link href={req.href} target="_blank">
                                <Printer className="mr-1 h-3 w-3" /> Download/Print Blank Form
@@ -425,7 +420,7 @@ function PathwayPageContent() {
                                 <UploadCloud className="mr-2 h-4 w-4" />
                                 <span>Upload Waiver Package</span>
                             </Label>
-                            <Input id="waiver-bundle-upload" type="file" className="sr-only" disabled={isReadOnly} />
+                            <Input id="waiver-bundle-upload" type="file" className="sr-only" disabled={isReadOnly} onChange={(e) => handleFileUpload(e, 'Waivers & Forms Bundle')} />
                         </div>
                     </CardContent>
                 </Card>
@@ -463,7 +458,7 @@ function PathwayPageContent() {
                                 <UploadCloud className="mr-2 h-4 w-4" />
                                 <span>Upload Medical Package</span>
                             </Label>
-                            <Input id="med-bundle-upload" type="file" className="sr-only" disabled={isReadOnly} />
+                            <Input id="med-bundle-upload" type="file" className="sr-only" disabled={isReadOnly} onChange={(e) => handleFileUpload(e, 'Medical Documents Bundle')} />
                         </div>
                     </CardContent>
                 </Card>
