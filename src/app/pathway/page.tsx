@@ -94,6 +94,8 @@ function PathwayPageContent() {
   const { user } = useUser();
   const firestore = useFirestore();
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
 
   const applicationDocRef = useMemo(() => {
     if (user && firestore && applicationId) {
@@ -140,7 +142,6 @@ function PathwayPageContent() {
     
     setUploading(prev => ({...prev, [requirementTitle]: true}));
     
-    // Simulate upload time - in a real app, this would be where you upload to Firebase Storage
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     let formsToUpdate = [requirementTitle];
@@ -162,7 +163,6 @@ function PathwayPageContent() {
   };
   
     const handleFileRemove = async (requirementTitle: string) => {
-    // When removing a file, we set the status to 'Pending' and clear the fileName.
     await handleFormStatusUpdate([requirementTitle], 'Pending', null);
   };
 
@@ -459,5 +459,3 @@ export default function PathwayPage() {
     </Suspense>
   );
 }
-
-    
