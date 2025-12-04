@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { LogOut, User, Database, HelpCircle, Menu } from 'lucide-react';
+import { LogOut, User, Database, HelpCircle, Menu, UserCog } from 'lucide-react';
 import { Button } from './ui/button';
 import { useAuth, useUser } from '@/firebase';
 import {
@@ -78,7 +78,12 @@ export function Header() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuLabel>{user.email}</DropdownMenuLabel>
+                <DropdownMenuLabel>{user.displayName || user.email}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                 <DropdownMenuItem onSelect={() => router.push('/profile')}>
+                  <UserCog className="mr-2 h-4 w-4" />
+                  <span>My Profile</span>
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut}>
                   <LogOut className="mr-2 h-4 w-4" />
@@ -118,7 +123,11 @@ export function Header() {
                                 <div className="h-10 w-full rounded-md bg-muted animate-pulse" />
                             ) : user ? (
                                 <div className="flex flex-col gap-4">
-                                     <p className="text-sm text-muted-foreground text-center truncate">{user.email}</p>
+                                     <p className="text-sm text-muted-foreground text-center truncate">{user.displayName || user.email}</p>
+                                      <Button onClick={() => { router.push('/profile'); setSheetOpen(false); }} variant="outline" className="w-full">
+                                        <UserCog className="mr-2 h-4 w-4" />
+                                        My Profile
+                                     </Button>
                                      <Button onClick={() => { handleSignOut(); setSheetOpen(false); }} className="w-full">
                                         <LogOut className="mr-2 h-4 w-4" />
                                         Log out

@@ -210,11 +210,9 @@ export default function MyApplicationsPage() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex-1">
                     <h1 className="text-3xl font-bold">My Applications</h1>
-                    {user.displayName && (
-                        <p className="text-muted-foreground mt-1">
-                            Welcome, <strong>{user.displayName}</strong>.
-                        </p>
-                    )}
+                    <p className="text-muted-foreground mt-1">
+                        Welcome, <strong>{user.displayName || user.email}</strong>.
+                    </p>
                 </div>
                 <div className="flex items-center gap-2 self-start sm:self-center">
                     {selected.length > 0 && (

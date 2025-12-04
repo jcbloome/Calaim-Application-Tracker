@@ -109,7 +109,8 @@ function CsSummaryFormComponent() {
             setApplicationId(null);
             // This case handles a bad application ID in the URL. Reset to new form state.
             if (user) {
-                const nameParts = user.displayName?.split(' ') || [];
+                const displayName = user.displayName || '';
+                const nameParts = displayName.split(' ');
                 const firstName = nameParts[0] || '';
                 const lastName = nameParts.slice(1).join(' ') || '';
                 reset({
@@ -121,7 +122,8 @@ function CsSummaryFormComponent() {
             }
         }
       } else if (user && !applicationId) { // Handles case where it's a new form from the start
-          const nameParts = user.displayName?.split(' ') || [];
+          const displayName = user.displayName || '';
+          const nameParts = displayName.split(' ');
           const firstName = nameParts[0] || '';
           const lastName = nameParts.slice(1).join(' ') || '';
           reset({
@@ -378,5 +380,3 @@ export default function CsSummaryFormPage() {
     </React.Suspense>
   );
 }
-
-    
