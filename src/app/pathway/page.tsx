@@ -103,7 +103,7 @@ function PathwayPageContent() {
     setIsSubmitting(true);
     try {
         await setDoc(applicationDocRef, {
-            status: 'Completed &amp; Submitted',
+            status: 'Completed & Submitted',
             lastUpdated: serverTimestamp(),
         }, { merge: true });
 
@@ -146,7 +146,7 @@ function PathwayPageContent() {
     );
   }
   
-  const isReadOnly = application.status === 'Completed &amp; Submitted' || application.status === 'Approved';
+  const isReadOnly = application.status === 'Completed & Submitted' || application.status === 'Approved';
 
   const pathwayRequirements = getPathwayRequirements(application.pathway);
   
