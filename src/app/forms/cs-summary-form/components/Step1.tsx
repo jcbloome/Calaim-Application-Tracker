@@ -472,5 +472,3 @@ export default function Step1() {
     </div>
   );
 }
-
-    
