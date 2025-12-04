@@ -23,14 +23,13 @@ import {
   Send,
   Download,
   Printer,
-  ExternalLink,
   Package,
 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore } from '@/firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -91,6 +90,7 @@ function PathwayPageContent() {
   const { user } = useUser();
   const firestore = useFirestore();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploading, setUploading] = useState<Record<string, boolean>>({});
 
   const applicationDocRef = useMemo(() => {
     if (user && firestore && applicationId) {
@@ -101,6 +101,66 @@ function PathwayPageContent() {
 
   const { data: application, isLoading, error } = useDoc<Application>(applicationDocRef);
   
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, requirementId: string) => {
+    if (!event.target.files?.length || !applicationDocRef || !application) {
+        return;
+    }
+
+    setUploading(prev => ({...prev, [requirementId]: true}));
+
+    const file = event.target.files[0];
+    console.log(`Uploading ${file.name} for ${requirementId}`);
+
+    const existingForms = application.forms || [];
+    let formsToUpdate: string[] = [];
+
+    if (requirementId === 'medical-docs-bundle') {
+        formsToUpdate = [
+            'Medical Documents Bundle',
+            "LIC 602A - Physician's Report",
+            'Medicine List',
+        ];
+        // For SNF Transition, the bundle also covers the facesheet
+        if(application.pathway === 'SNF Transition') {
+            formsToUpdate.push('SNF Facesheet');
+        }
+    } else {
+        const req = getPathwayRequirements(application.pathway).find(r => r.id === requirementId);
+        if (req) {
+            formsToUpdate.push(req.title);
+        }
+    }
+    
+    const updatedForms = existingForms.map(form => {
+        if (formsToUpdate.includes(form.name)) {
+            return { ...form, status: 'Completed' as const, dateCompleted: Timestamp.now() };
+        }
+        return form;
+    });
+    
+    try {
+        await setDoc(applicationDocRef, {
+            forms: updatedForms,
+            lastUpdated: serverTimestamp(),
+        }, { merge: true });
+
+        toast({
+            title: 'File Uploaded!',
+            description: `${file.name} has been successfully processed.`,
+            className: 'bg-green-100 text-green-900 border-green-200'
+        });
+    } catch (e: any) {
+        toast({
+            variant: 'destructive',
+            title: 'Upload Error',
+            description: `There was a problem processing your upload: ${e.message}`,
+        });
+    } finally {
+        setUploading(prev => ({...prev, [requirementId]: false}));
+    }
+  };
+
+
   const handleSubmitApplication = async () => {
     if (!applicationDocRef) return;
     setIsSubmitting(true);
@@ -152,20 +212,19 @@ function PathwayPageContent() {
   const isReadOnly = application.status === 'Completed & Submitted' || application.status === 'Approved';
 
   const pathwayRequirements = getPathwayRequirements(application.pathway);
-  
   const formStatusMap = new Map(application.forms?.map(f => [f.name, f.status]));
 
-  const completedCount = pathwayRequirements.reduce((acc, req) => {
-    // Info sections are implicitly complete
-    if (req.type === 'info') return acc + 1;
-    // Check if the form status is marked as 'Completed'
-    if (formStatusMap.get(req.title) === 'Completed') {
-        return acc + 1;
+  // The bundle is an alternative, so don't count it in the total required.
+  const requiredItems = pathwayRequirements.filter(req => req.id !== 'medical-docs-bundle');
+
+  const completedCount = requiredItems.reduce((acc, req) => {
+    if (req.type === 'info' || formStatusMap.get(req.title) === 'Completed') {
+      return acc + 1;
     }
     return acc;
   }, 0);
 
-  const totalCount = pathwayRequirements.length;
+  const totalCount = requiredItems.length;
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
   const allRequiredFormsComplete = completedCount === totalCount;
 
@@ -197,13 +256,18 @@ function PathwayPageContent() {
                 </Button>
             );
         case 'upload':
+             const isUploading = uploading[req.id];
              return (
                 <div className="space-y-2">
-                    <Label htmlFor={req.id} className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50">
-                        <UploadCloud className="mr-2 h-4 w-4" />
-                        <span>Upload File</span>
+                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isUploading && "opacity-50 pointer-events-none")}>
+                        {isUploading ? (
+                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                            <UploadCloud className="mr-2 h-4 w-4" />
+                        )}
+                        <span>{isUploading ? 'Uploading...' : 'Upload File'}</span>
                     </Label>
-                    <Input id={req.id} type="file" className="sr-only" />
+                    <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.id)} disabled={isUploading} />
                     {req.href && req.href.startsWith('http') && (
                          <Button asChild variant="link" className="w-full text-xs h-auto py-0">
                             <Link href={req.href} target="_blank">
@@ -314,4 +378,3 @@ export default function PathwayPage() {
   );
 }
 
-    
