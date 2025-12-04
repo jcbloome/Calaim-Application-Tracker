@@ -113,6 +113,14 @@ export const formSchema = z.object({
     path: ["confirmMemberMrn"],
   })
   .superRefine((data, ctx) => {
+    if (!data.copyAddress) {
+        if (!data.customaryAddress) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["customaryAddress"] });
+        if (!data.customaryCity) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["customaryCity"] });
+        if (!data.customaryState) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["customaryState"] });
+        if (!data.customaryZip) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["customaryZip"] });
+        if (!data.customaryCounty) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["customaryCounty"] });
+    }
+    
     if (data.healthPlan === 'Other') {
       if (!data.existingHealthPlan || data.existingHealthPlan.trim() === '') {
         ctx.addIssue({
