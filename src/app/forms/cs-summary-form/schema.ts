@@ -66,6 +66,7 @@ export const formSchema = z.object({
     currentState: requiredString,
     currentZip: requiredString,
     currentCounty: requiredString,
+    copyAddress: z.boolean().optional(),
     customaryAddress: requiredString,
     customaryCity: requiredString,
     customaryState: requiredString,

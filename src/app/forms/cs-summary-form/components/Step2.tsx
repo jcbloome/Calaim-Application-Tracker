@@ -4,11 +4,35 @@
 import { useFormContext } from 'react-hook-form';
 import type { FormValues } from '../schema';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useEffect } from 'react';
+
+const locationOptions = ["Home", "SNF", "RCFE", "Hospital", "Sub-Acute", "Unhoused", "Other"];
 
 export default function Step2() {
-  const { control } = useFormContext<FormValues>();
+  const { control, watch, setValue, getValues } = useFormContext<FormValues>();
+  const copyAddress = watch('copyAddress');
+
+  useEffect(() => {
+    if (copyAddress) {
+      setValue('customaryAddress', getValues('currentAddress'));
+      setValue('customaryCity', getValues('currentCity'));
+      setValue('customaryState', getValues('currentState'));
+      setValue('customaryZip', getValues('currentZip'));
+      setValue('customaryCounty', getValues('currentCounty'));
+    } else {
+        // Optionally clear fields when unchecked
+        setValue('customaryAddress', '');
+        setValue('customaryCity', '');
+        setValue('customaryState', '');
+        setValue('customaryZip', '');
+        setValue('customaryCounty', '');
+    }
+  }, [copyAddress, getValues, setValue]);
+
 
   return (
     <div className="space-y-6">
@@ -25,9 +49,18 @@ export default function Step2() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Member's Current Location <span className="text-destructive">*</span></FormLabel>
-                   <FormControl>
-                      <Input {...field} value={field.value ?? ''} placeholder="e.g., SNF, Home, Hospital" />
-                   </FormControl>
+                   <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select a location type" />
+                            </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                            {locationOptions.map(option => (
+                                <SelectItem key={option} value={option}>{option}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                   <FormMessage />
                 </FormItem>
               )}
@@ -59,24 +92,38 @@ export default function Step2() {
           <div>
             <h3 className="font-medium mb-2">Customary Residence (where is the member's normal long term address)</h3>
             <div className="p-4 border rounded-md space-y-4">
+                 <FormField
+                    control={control}
+                    name="copyAddress"
+                    render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                        <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                        <div className="space-y-1 leading-none">
+                            <FormLabel>Same as current location</FormLabel>
+                        </div>
+                        </FormItem>
+                    )}
+                />
                 <div className="space-y-4">
                     <FormField control={control} name="customaryAddress" render={({ field }) => (
-                        <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormField control={control} name="customaryCity" render={({ field }) => (
-                            <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                            <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} /></FormControl><FormMessage /></FormItem>
                         )} />
                         <FormField control={control} name="customaryState" render={({ field }) => (
-                            <FormItem><FormLabel>State <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                            <FormItem><FormLabel>State <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} /></FormControl><FormMessage /></FormItem>
                         )} />
                     </div>
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormField control={control} name="customaryZip" render={({ field }) => (
-                            <FormItem><FormLabel>ZIP Code <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                            <FormItem><FormLabel>ZIP Code <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} /></FormControl><FormMessage /></FormItem>
                         )} />
                          <FormField control={control} name="customaryCounty" render={({ field }) => (
-                            <FormItem><FormLabel>County <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                            <FormItem><FormLabel>County <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} /></FormControl><FormMessage /></FormItem>
                         )} />
                     </div>
                 </div>
