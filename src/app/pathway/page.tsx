@@ -96,9 +96,16 @@ function PathwayPageContent() {
   const firestore = useFirestore();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
+  const [logMessages, setLogMessages] = useState<string[]>([]);
+
+  const addLog = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogMessages(prev => [`[${timestamp}] ${message}`, ...prev]);
+  };
 
   const applicationDocRef = useMemo(() => {
     if (user && firestore && applicationId) {
+      addLog(`Creating document reference: users/${user.uid}/applications/${applicationId}`);
       return doc(firestore, `users/${user.uid}/applications`, applicationId);
     }
     return null;
@@ -106,9 +113,20 @@ function PathwayPageContent() {
 
   const { data: application, isLoading, error } = useDoc<Application>(applicationDocRef);
 
+  useEffect(() => {
+    addLog(`useDoc is loading...`);
+  }, []);
+
+  useEffect(() => {
+    if (application) {
+        addLog('Application data updated from Firestore.');
+        addLog(`Current forms status: ${JSON.stringify(application.forms, null, 2)}`);
+    }
+  }, [application]);
+
   // This effect ensures the `forms` array is properly initialized in Firestore.
   useEffect(() => {
-    if (application && applicationDocRef) {
+    if (application && applicationDocRef && application.pathway) {
       const pathwayRequirements = getPathwayRequirements(application.pathway);
       const existingFormNames = new Set(application.forms?.map(f => f.name) || []);
       
@@ -138,13 +156,16 @@ function PathwayPageContent() {
 
 
   const handleFormStatusUpdate = async (formNames: string[], newStatus: 'Completed' | 'Pending', fileName?: string | null) => {
+      addLog(`handleFormStatusUpdate called for: ${formNames.join(', ')} with status: ${newStatus}`);
       if (!applicationDocRef || !application) {
+        addLog('Error: applicationDocRef or application data is missing.');
         return;
       }
 
       const existingForms = application.forms || [];
       const updatedForms = existingForms.map(form => {
           if (formNames.includes(form.name)) {
+            addLog(`Updating form: ${form.name}`);
             const update: Partial<FormStatusType> = { status: newStatus };
              if (newStatus === 'Completed') {
                 update.dateCompleted = Timestamp.now();
@@ -160,11 +181,14 @@ function PathwayPageContent() {
       });
       
       try {
+          addLog('Attempting to save updated forms array to Firestore...');
           await setDoc(applicationDocRef, {
               forms: updatedForms,
               lastUpdated: serverTimestamp(),
           }, { merge: true });
+          addLog('Firestore update successful.');
       } catch (e: any) {
+          addLog(`Error updating form status: ${e.message}`);
           console.error("Failed to update form status:", e);
       }
   };
@@ -172,16 +196,19 @@ function PathwayPageContent() {
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, requirementTitle: string) => {
     if (!event.target.files?.length) return;
     const file = event.target.files[0];
+    addLog(`handleFileUpload: Started for "${requirementTitle}" with file: ${file.name}`);
     
     setUploading(prev => ({...prev, [requirementTitle]: true}));
     
     // Simulate upload time
     await new Promise(resolve => setTimeout(resolve, 1000));
     
+    addLog('Calling handleFormStatusUpdate to mark as "Completed" with fileName.');
     await handleFormStatusUpdate([requirementTitle], 'Completed', file.name);
 
     setUploading(prev => ({...prev, [requirementTitle]: false}));
     
+    addLog(`handleFileUpload: Finished for "${requirementTitle}".`);
     event.target.value = '';
   };
   
@@ -287,15 +314,17 @@ function PathwayPageContent() {
              }
              return (
                 <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                        <Checkbox 
-                            id={`bundle-check-${req.id}`} 
-                            onCheckedChange={(checked) => handleFormStatusUpdate([req.title], checked ? 'Completed' : 'Pending')}
-                            checked={isCompleted}
-                            disabled={isReadOnly}
-                        />
-                        <Label htmlFor={`bundle-check-${req.id}`} className="text-xs text-muted-foreground">I included this in a bundle</Label>
-                    </div>
+                    {req.title !== 'Proof of Income' && (
+                        <div className="flex items-center space-x-2">
+                            <Checkbox 
+                                id={`bundle-check-${req.id}`} 
+                                onCheckedChange={(checked) => handleFormStatusUpdate([req.title], checked ? 'Completed' : 'Pending')}
+                                checked={isCompleted}
+                                disabled={isReadOnly}
+                            />
+                            <Label htmlFor={`bundle-check-${req.id}`} className="text-xs text-muted-foreground">I included this in a bundle</Label>
+                        </div>
+                    )}
                     <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isReadOnly) && "opacity-50 pointer-events-none")}>
                         {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                         <span>{isUploading ? 'Uploading...' : 'Upload File'}</span>
@@ -469,6 +498,23 @@ function PathwayPageContent() {
                     </CardContent>
                 </Card>
             </div>
+            
+             <Card className="mt-8">
+              <CardHeader>
+                <CardTitle>Debug Log</CardTitle>
+                <CardDescription>
+                  This log shows the real-time flow of data and events on this page.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-64 w-full rounded-md border p-4 bg-muted/50 font-mono text-xs">
+                  {logMessages.map((msg, index) => (
+                    <div key={index}>{msg}</div>
+                  ))}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
         </div>
       </main>
     </>
