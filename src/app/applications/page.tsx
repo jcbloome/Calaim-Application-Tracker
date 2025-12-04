@@ -1,7 +1,7 @@
 
 'use client';
 
-import React from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, Trash2 } from 'lucide-react';
@@ -33,6 +33,8 @@ interface ApplicationData {
   pathway: 'SNF Transition' | 'SNF Diversion';
   healthPlan: 'Kaiser' | 'Health Net' | 'Other' | 'Kaiser Permanente';
 }
+
+type ApplicationStatus = 'In Progress' | 'Completed & Submitted' | 'Requires Revision' | 'Approved';
 
 const getBadgeVariant = (status: ApplicationStatus) => {
   switch (status) {
