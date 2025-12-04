@@ -96,62 +96,49 @@ function PathwayPageContent() {
   const firestore = useFirestore();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
-  const [logMessages, setLogMessages] = useState<string[]>([]);
-
-  const log = (message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setLogMessages(prev => [`[${timestamp}] ${message}`, ...prev]);
-  };
 
   const applicationDocRef = useMemo(() => {
     if (user && firestore && applicationId) {
-      log(`Creating document reference: ${`users/${user.uid}/applications/${applicationId}`}`);
       return doc(firestore, `users/${user.uid}/applications`, applicationId);
     }
     return null;
   }, [user, firestore, applicationId]);
 
   const { data: application, isLoading, error } = useDoc<Application>(applicationDocRef);
-  
-  useEffect(() => {
-    if (isLoading) log('useDoc is loading...');
-  }, [isLoading]);
-
-  useEffect(() => {
-    if (application) {
-        log('Application data updated from Firestore.');
-        log(`Current forms status: ${JSON.stringify(application.forms, null, 2)}`);
-    }
-  }, [application]);
-
 
   // This effect ensures the `forms` array is properly initialized in Firestore.
   useEffect(() => {
-    if (application && applicationDocRef && (!application.forms || application.forms.length === 0)) {
-        log('Forms array is missing or empty. Initializing now...');
-        const pathwayRequirements = getPathwayRequirements(application.pathway).map(req => ({
+    if (application && applicationDocRef) {
+      const pathwayRequirements = getPathwayRequirements(application.pathway);
+      const existingFormNames = new Set(application.forms?.map(f => f.name) || []);
+      
+      const missingForms = pathwayRequirements
+        .filter(req => !existingFormNames.has(req.title))
+        .map(req => ({
             name: req.title,
             status: 'Pending' as 'Pending' | 'Completed',
             type: req.type as FormStatusType['type'],
             href: req.href || '#',
+            fileName: null,
         }));
 
-        const summaryIndex = pathwayRequirements.findIndex(f => f.name === 'CS Member Summary');
+      if (missingForms.length > 0) {
+        const updatedForms = [...(application.forms || []), ...missingForms];
+        
+        // Ensure CS Member Summary is always completed
+        const summaryIndex = updatedForms.findIndex(f => f.name === 'CS Member Summary');
         if (summaryIndex !== -1) {
-            pathwayRequirements[summaryIndex].status = 'Completed';
+            updatedForms[summaryIndex].status = 'Completed';
         }
-        log(`Generated ${pathwayRequirements.length} required forms for pathway.`);
-        setDoc(applicationDocRef, { forms: pathwayRequirements }, { merge: true }).then(() => {
-            log('Successfully saved initialized forms to Firestore.');
-        });
+
+        setDoc(applicationDocRef, { forms: updatedForms }, { merge: true });
+      }
     }
   }, [application, applicationDocRef]);
 
 
   const handleFormStatusUpdate = async (formNames: string[], newStatus: 'Completed' | 'Pending', fileName?: string | null) => {
-      log(`handleFormStatusUpdate called for: ${formNames.join(', ')} with status: ${newStatus}`);
       if (!applicationDocRef || !application) {
-        log('Error: applicationDocRef or application data is missing.');
         return;
       }
 
@@ -173,14 +160,11 @@ function PathwayPageContent() {
       });
       
       try {
-          log('Attempting to save updated forms array to Firestore...');
           await setDoc(applicationDocRef, {
               forms: updatedForms,
               lastUpdated: serverTimestamp(),
           }, { merge: true });
-          log('Firestore update successful.');
       } catch (e: any) {
-          log(`Error: Failed to update form status in Firestore: ${e.message}`);
           console.error("Failed to update form status:", e);
       }
   };
@@ -189,23 +173,19 @@ function PathwayPageContent() {
     if (!event.target.files?.length) return;
     const file = event.target.files[0];
     
-    log(`handleFileUpload: Started for "${requirementTitle}" with file: ${file.name}`);
     setUploading(prev => ({...prev, [requirementTitle]: true}));
     
     // Simulate upload time
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    log('Calling handleFormStatusUpdate to mark as "Completed" with fileName.');
     await handleFormStatusUpdate([requirementTitle], 'Completed', file.name);
 
     setUploading(prev => ({...prev, [requirementTitle]: false}));
-    log(`handleFileUpload: Finished for "${requirementTitle}".`);
     
     event.target.value = '';
   };
   
   const handleFileRemove = async (requirementTitle: string) => {
-    log(`handleFileRemove: Called for "${requirementTitle}".`);
     await handleFormStatusUpdate([requirementTitle], 'Pending', null);
   };
 
@@ -489,20 +469,6 @@ function PathwayPageContent() {
                     </CardContent>
                 </Card>
             </div>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle>Debug Log</CardTitle>
-                <CardDescription>Real-time flow of data and events on this page.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-64 w-full rounded-md border p-4 bg-muted/50 font-mono text-xs">
-                  {logMessages.map((msg, index) => (
-                    <div key={index}>{msg}</div>
-                  ))}
-                </ScrollArea>
-              </CardContent>
-            </Card>
         </div>
       </main>
     </>
