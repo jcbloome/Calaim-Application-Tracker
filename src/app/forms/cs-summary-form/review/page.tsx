@@ -101,7 +101,7 @@ function ReviewPageComponent() {
         
         try {
             await setDoc(applicationDocRef, {
-                status: 'In Progress',
+                status: 'In Progress', // Keep status as 'In Progress'
                 forms: requiredForms,
                 lastUpdated: serverTimestamp()
             }, { merge: true });
