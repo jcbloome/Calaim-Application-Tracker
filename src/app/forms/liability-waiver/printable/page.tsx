@@ -46,6 +46,7 @@ export function PrintableLiabilityWaiverContent() {
               
               <div>
                 <SectionTitle>Signature</SectionTitle>
+                <p className="text-xs italic text-gray-600 my-2">By signing below, I acknowledge that under penalty of perjury, I am the member or an authorized representative legally empowered to sign on behalf of the member.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-2">
                     <Field label="Signature (Full Name)" />
                     <Field label="Date" />

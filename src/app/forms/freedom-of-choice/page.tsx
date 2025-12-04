@@ -4,7 +4,7 @@
 import React, { useState, useMemo, Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, FileCheck2 } from 'lucide-react';
+import { ArrowLeft, Loader2, FileCheck2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Header } from '@/components/Header';
@@ -14,6 +14,8 @@ import type { Application, FormStatus } from '@/lib/definitions';
 import { useToast } from '@/hooks/use-toast';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+
 
 function PrintableFreedomOfChoiceContent() {
   return (
@@ -184,7 +186,14 @@ function FreedomOfChoiceFormComponent() {
                                 </RadioGroup>
                             </div>
 
-                             <div className="p-4 border-t mt-6">
+                            <div className="p-4 border-t mt-6 space-y-4">
+                                <Alert variant="destructive">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    <AlertTitle>Legal Attestation</AlertTitle>
+                                    <AlertDescription>
+                                        By clicking the button below, I acknowledge that under penalty of perjury, I am the member or an authorized representative legally empowered to sign on behalf of the member.
+                                    </AlertDescription>
+                                </Alert>
                                 <p className="text-sm text-muted-foreground">
                                     By clicking "Acknowledge and Complete" you are electronically signing and agreeing to the choice you have made above.
                                 </p>
