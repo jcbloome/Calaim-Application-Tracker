@@ -56,7 +56,7 @@ export default function LoginPage() {
         const user = userCredential.user;
         
         await updateProfile(user, {
-          displayName: `${firstName} ${lastName}`
+          displayName: `${firstName} ${lastName}`.trim()
         });
 
         const userDocRef = doc(firestore, 'users', user.uid);
@@ -65,6 +65,7 @@ export default function LoginPage() {
           firstName: firstName,
           lastName: lastName,
           email: user.email,
+          displayName: `${firstName} ${lastName}`.trim(),
         });
       }
       toast({

@@ -41,15 +41,16 @@ export default function AdminLoginPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [email, setEmail] = useState('jason@carehomefinders.com');
-  const [password, setPassword] = useState('fisherman2');
-  const [firstName, setFirstName] = useState('Jason');
-  const [lastName, setLastName] = useState('Bloome');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSigningIn, setIsSigningIn] = useState(true);
 
-  const handleSignIn = async (e: React.FormEvent) => {
+  const handleAuthAction = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
@@ -66,55 +67,46 @@ export default function AdminLoginPage() {
     }
 
     try {
-      await setPersistence(auth, browserSessionPersistence);
-      await signInWithEmailAndPassword(auth, email, password);
-      toast({ title: 'Admin sign-in successful!' });
-      router.push('/admin/applications');
-    } catch (err: any) {
-        if (err.code === 'auth/user-not-found') {
-            // If user doesn't exist, try creating the account
-            try {
-                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-                const user = userCredential.user;
-
-                await updateProfile(user, {
-                    displayName: `${firstName} ${lastName}`
-                });
-
-                const userDocRef = doc(firestore, 'users', user.uid);
-                await setDoc(userDocRef, {
-                    id: user.uid,
-                    firstName: firstName,
-                    lastName: lastName,
-                    email: user.email,
-                });
-                
-                // Also create admin role doc
-                const adminRoleRef = doc(firestore, 'roles_admin', user.uid);
-                await setDoc(adminRoleRef, {
-                   email: user.email,
-                   role: 'admin'
-                });
-
-
-                toast({ title: 'Admin account created and signed in successfully!' });
-                router.push('/admin/applications');
-            } catch (creationError: any) {
-                 setError(creationError.message);
-                toast({
-                    variant: 'destructive',
-                    title: 'Authentication Failed',
-                    description: creationError.message,
-                });
-            }
+        await setPersistence(auth, browserSessionPersistence);
+        if (isSigningIn) {
+            await signInWithEmailAndPassword(auth, email, password);
+            toast({ title: 'Admin sign-in successful!' });
+            router.push('/admin/applications');
         } else {
-            setError(err.message);
-            toast({
-                variant: 'destructive',
-                title: 'Authentication Failed',
-                description: err.message,
+            // Create a new admin user
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+
+            await updateProfile(user, {
+                displayName: `${firstName} ${lastName}`
             });
+
+            // Create user doc
+            const userDocRef = doc(firestore, 'users', user.uid);
+            await setDoc(userDocRef, {
+                id: user.uid,
+                firstName: firstName,
+                lastName: lastName,
+                email: user.email,
+            });
+            
+            // Also create admin role doc
+            const adminRoleRef = doc(firestore, 'roles_admin', user.uid);
+            await setDoc(adminRoleRef, {
+                email: user.email,
+                role: 'admin'
+            });
+
+            toast({ title: 'Admin account created and signed in successfully!' });
+            router.push('/admin/applications');
         }
+    } catch (err: any) {
+        setError(err.message);
+        toast({
+            variant: 'destructive',
+            title: 'Authentication Failed',
+            description: err.message,
+        });
     } finally {
         setIsLoading(false);
     }
@@ -127,14 +119,40 @@ export default function AdminLoginPage() {
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="items-center text-center p-6">
           <CardTitle className="text-3xl font-bold">
-            Admin Portal
+            {isSigningIn ? 'Admin Portal' : 'Create Admin Account'}
           </CardTitle>
           <CardDescription className="text-base">
-            Sign in to manage applications.
+            {isSigningIn ? 'Sign in to manage applications.' : 'Create a new administrative account.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-6">
-          <form onSubmit={handleSignIn} className="space-y-4">
+          <form onSubmit={handleAuthAction} className="space-y-4">
+             {!isSigningIn && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">First Name</Label>
+                  <Input
+                    id="firstName"
+                    type="text"
+                    placeholder="John"
+                    required
+                    value={firstName}
+                    onChange={e => setFirstName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Last Name</Label>
+                  <Input
+                    id="lastName"
+                    type="text"
+                    placeholder="Doe"
+                    required
+                    value={lastName}
+                    onChange={e => setLastName(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -169,12 +187,18 @@ export default function AdminLoginPage() {
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Signing In...</>
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...</>
               ) : (
-                'Sign In'
+                isSigningIn ? 'Sign In' : 'Create Account'
               )}
             </Button>
           </form>
+           <div className="mt-4 text-center text-sm">
+              {isSigningIn ? "Need to create an admin account?" : 'Already have an admin account?'}
+              <Button variant="link" onClick={() => setIsSigningIn(!isSigningIn)} className="pl-1">
+                  {isSigningIn ? 'Sign Up' : 'Sign In'}
+              </Button>
+            </div>
         </CardContent>
       </Card>
     </main>
