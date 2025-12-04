@@ -42,30 +42,28 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form/review', icon: FileText },
     { id: 'program-info', title: 'Program Information', description: 'Review important details about the CalAIM program and our services.', type: 'info', href: '/info', icon: Info },
-    { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'upload', icon: UploadCloud, href: '#' },
     { id: 'hipaa-authorization', title: 'HIPAA Authorization', description: 'Complete the online HIPAA authorization form.', type: 'online-form', href: '/forms/hipaa-authorization', icon: FileText },
     { id: 'liability-waiver', title: 'Liability Waiver', description: 'Complete the online liability waiver.', type: 'online-form', href: '/forms/liability-waiver', icon: FileText },
     { id: 'freedom-of-choice', title: 'Freedom of Choice Waiver', description: 'Complete the online Freedom of Choice waiver.', type: 'online-form', href: '/forms/freedom-of-choice', icon: FileText },
+    { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
+    { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'upload', icon: UploadCloud, href: '#' },
   ];
-
-  const medicalRequirements = [
-      { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
-      { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'upload', icon: UploadCloud, href: '#' },
-  ];
+  
+  const proofOfIncome = { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'upload', icon: UploadCloud, href: '#' };
 
   if (pathway === 'SNF Diversion') {
     return [
       ...commonRequirements,
-      ...medicalRequirements,
       { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: 'Download the form, have it signed by a PCP, and upload it here.', type: 'upload', icon: Printer, href: '/forms/declaration-of-eligibility/printable' },
+      proofOfIncome,
     ];
   }
 
   // SNF Transition
   return [
     ...commonRequirements,
-    ...medicalRequirements,
     { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility.", type: 'upload', icon: UploadCloud, href: '#' },
+    proofOfIncome,
   ];
 };
 
@@ -95,7 +93,6 @@ function PathwayPageContent() {
   const applicationId = searchParams.get('applicationId');
   const { user } = useUser();
   const firestore = useFirestore();
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
 
   const applicationDocRef = useMemo(() => {
@@ -107,7 +104,7 @@ function PathwayPageContent() {
 
   const { data: application, isLoading, error } = useDoc<Application>(applicationDocRef);
   
-  const handleFormStatusUpdate = async (formNames: string[], newStatus: 'Completed' | 'Pending', fileName?: string) => {
+  const handleFormStatusUpdate = async (formNames: string[], newStatus: 'Completed' | 'Pending', fileName?: string | null) => {
       if (!applicationDocRef || !application) return;
 
       const existingForms = application.forms || [];
@@ -119,7 +116,7 @@ function PathwayPageContent() {
              if (newStatus === 'Completed') {
                 update.dateCompleted = Timestamp.now();
             }
-            if (fileName !== undefined) {
+             if (fileName !== undefined) { // Check for undefined to handle clearing the name
                 update.fileName = fileName;
             }
             return { ...form, ...update };
@@ -165,7 +162,8 @@ function PathwayPageContent() {
   };
   
     const handleFileRemove = async (requirementTitle: string) => {
-    await handleFormStatusUpdate([requirementTitle], 'Pending', '');
+    // When removing a file, we set the status to 'Pending' and clear the fileName.
+    await handleFormStatusUpdate([requirementTitle], 'Pending', null);
   };
 
   const handleSubmitApplication = async () => {
@@ -250,7 +248,7 @@ function PathwayPageContent() {
             <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-green-50 border border-green-200 text-sm">
                 <FileText className="h-4 w-4 text-green-600 shrink-0" />
                 <span className="truncate flex-1 text-green-800 font-medium">{uploadedFileName}</span>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(req.title)} disabled={isReadOnly}>
+                <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(req.title)} disabled={isReadOnly}>
                     <X className="h-4 w-4" />
                 </Button>
             </div>
@@ -262,20 +260,9 @@ function PathwayPageContent() {
     switch (req.type) {
         case 'online-form':
             return (
-                <div className="space-y-2">
-                    <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
-                        <Link href={href}>{isCompleted ? 'View/Edit Form' : 'Start Form'} &rarr;</Link>
-                    </Button>
-                     <div className="flex items-center space-x-2">
-                        <Checkbox 
-                            id={`bundle-check-${req.id}`} 
-                            checked={isCompleted && !formInfo?.fileName}
-                            onCheckedChange={(checked) => handleFormStatusUpdate([req.title], checked ? 'Completed' : 'Pending')}
-                            disabled={isReadOnly || !!formInfo?.fileName}
-                        />
-                        <Label htmlFor={`bundle-check-${req.id}`} className="text-xs text-muted-foreground">I included this in a bundle</Label>
-                    </div>
-                </div>
+                <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
+                    <Link href={href}>{isCompleted ? 'View/Edit Form' : 'Start Form'} &rarr;</Link>
+                </Button>
             );
         case 'info':
             return (
@@ -298,15 +285,6 @@ function PathwayPageContent() {
                            </Link>
                        </Button>
                     )}
-                    <div className="flex items-center space-x-2">
-                        <Checkbox 
-                            id={`bundle-check-${req.id}`} 
-                            checked={isCompleted && !formInfo?.fileName}
-                            onCheckedChange={(checked) => handleFormStatusUpdate([req.title], checked ? 'Completed' : 'Pending')}
-                            disabled={isReadOnly || !!formInfo?.fileName}
-                        />
-                        <Label htmlFor={`bundle-check-${req.id}`} className="text-xs text-muted-foreground">I included this in a bundle</Label>
-                    </div>
                 </div>
             );
         default:
@@ -481,3 +459,5 @@ export default function PathwayPage() {
     </Suspense>
   );
 }
+
+    
