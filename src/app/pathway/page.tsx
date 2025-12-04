@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { Suspense, useMemo, useState } from 'react';
@@ -51,22 +52,24 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
   
   const proofOfIncome = { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'upload', icon: UploadCloud, href: '#' };
 
+  let requirements: typeof commonRequirements = [];
+
   if (pathway === 'SNF Diversion') {
-    return [
-      ...commonRequirements.slice(0, 5), // common forms up to waivers
+    requirements = [
+      ...commonRequirements.slice(0, 5),
       { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: 'Download the form, have it signed by a PCP, and upload it here.', type: 'upload', icon: Printer, href: '/forms/declaration-of-eligibility/printable' },
-      ...commonRequirements.slice(5), // 602a and med list
-      proofOfIncome,
+      ...commonRequirements.slice(5),
+    ];
+  } else { // SNF Transition
+    requirements = [
+        ...commonRequirements.slice(0, 5),
+        { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility.", type: 'upload', icon: UploadCloud, href: '#' },
+        ...commonRequirements.slice(5),
     ];
   }
-
-  // SNF Transition
-  return [
-    ...commonRequirements.slice(0, 5),
-    { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility.", type: 'upload', icon: UploadCloud, href: '#' },
-    ...commonRequirements.slice(5),
-    proofOfIncome,
-  ];
+  
+  requirements.push(proofOfIncome);
+  return requirements;
 };
 
 
@@ -143,26 +146,14 @@ function PathwayPageContent() {
     
     setUploading(prev => ({...prev, [requirementTitle]: true}));
     
-    // Simulate upload time
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     let formsToUpdate = [requirementTitle];
-    // Special handling for bundles
-    if (requirementTitle === 'Medical Documents Bundle') {
-        formsToUpdate.push("LIC 602A - Physician's Report", "Medicine List");
-        if (application.pathway === 'SNF Transition') {
-            formsToUpdate.push('SNF Facesheet');
-        }
-    }
-     if (requirementTitle === 'Waivers & Forms Bundle') {
-        formsToUpdate.push("HIPAA Authorization", "Liability Waiver", "Freedom of Choice Waiver");
-    }
-
+    
     await handleFormStatusUpdate(formsToUpdate, 'Completed', file.name);
 
     setUploading(prev => ({...prev, [requirementTitle]: false}));
     
-    // Clear the input value to allow re-uploading the same file
     event.target.value = '';
   };
   
@@ -409,13 +400,6 @@ function PathwayPageContent() {
                                 </div>
                             ))}
                         </div>
-                        <div>
-                            <Label htmlFor="waiver-bundle-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isReadOnly && "opacity-50 pointer-events-none")}>
-                                <UploadCloud className="mr-2 h-4 w-4" />
-                                <span>Upload Waiver Package</span>
-                            </Label>
-                            <Input id="waiver-bundle-upload" type="file" className="sr-only" disabled={isReadOnly} onChange={(e) => handleFileUpload(e, 'Waivers & Forms Bundle')} />
-                        </div>
                     </CardContent>
                 </Card>
 
@@ -447,13 +431,6 @@ function PathwayPageContent() {
                                 </div>
                             ))}
                         </div>
-                        <div>
-                             <Label htmlFor="med-bundle-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isReadOnly && "opacity-50 pointer-events-none")}>
-                                <UploadCloud className="mr-2 h-4 w-4" />
-                                <span>Upload Medical Package</span>
-                            </Label>
-                            <Input id="med-bundle-upload" type="file" className="sr-only" disabled={isReadOnly} onChange={(e) => handleFileUpload(e, 'Medical Documents Bundle')} />
-                        </div>
                     </CardContent>
                 </Card>
             </div>
@@ -475,5 +452,3 @@ export default function PathwayPage() {
     </Suspense>
   );
 }
-
-    
