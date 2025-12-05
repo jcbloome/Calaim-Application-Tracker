@@ -21,8 +21,8 @@ export default function Home() {
               <Image
                 src={mascot.imageUrl}
                 alt={mascot.description}
-                width={200}
-                height={200}
+                width={250}
+                height={250}
                 data-ai-hint={mascot.imageHint}
                 className="w-24 h-24 sm:w-48 sm:h-48 object-contain rounded-full mb-6"
               />
