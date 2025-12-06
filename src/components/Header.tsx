@@ -57,9 +57,9 @@ export function Header() {
           <Image 
             src="https://images.squarespace-cdn.com/content/v1/5513063be4b069b54e721157/e4e0f894-c7c1-4b7f-a715-6dab7fc055db/calaimlogosmall.jpg?format=2500w"
             alt="CalAIM Pathfinder Logo"
-            width={144}
-            height={40}
-            className="w-36 h-auto object-contain"
+            width={180}
+            height={50}
+            className="w-48 h-auto object-contain"
             priority
           />
         </Link>

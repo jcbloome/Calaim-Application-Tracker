@@ -21,10 +21,10 @@ export default function Home() {
               <Image
                 src={mascot.imageUrl}
                 alt={mascot.description}
-                width={250}
-                height={250}
+                width={200}
+                height={200}
                 data-ai-hint={mascot.imageHint}
-                className="w-36 h-36 sm:w-48 sm:h-48 object-contain rounded-full mb-6"
+                className="w-48 h-48 sm:w-56 sm:h-56 object-contain rounded-full mb-6"
               />
             )}
             <CardTitle className="text-3xl sm:text-5xl font-bold">Connect CalAIM</CardTitle>
