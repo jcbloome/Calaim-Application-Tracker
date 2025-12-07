@@ -1,3 +1,4 @@
+
 'use client';
 
 import { firebaseConfig } from '@/firebase/config';
@@ -6,6 +7,18 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore'
 
 // IMPORTANT: DO NOT MODIFY THIS FUNCTION
+
+// This is a local helper function and should not be exported.
+function getSdks(firebaseApp: FirebaseApp) {
+  const auth = getAuth(firebaseApp);
+  
+  return {
+    firebaseApp,
+    auth: auth,
+    firestore: getFirestore(firebaseApp)
+  };
+}
+
 export function initializeFirebase() {
   if (!getApps().length) {
     // Important! initializeApp() is called without any arguments because Firebase App Hosting
@@ -32,15 +45,6 @@ export function initializeFirebase() {
   return getSdks(getApp());
 }
 
-export function getSdks(firebaseApp: FirebaseApp) {
-  const auth = getAuth(firebaseApp);
-  
-  return {
-    firebaseApp,
-    auth: auth,
-    firestore: getFirestore(firebaseApp)
-  };
-}
 
 export * from './provider';
 export * from './client-provider';
