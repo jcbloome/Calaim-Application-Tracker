@@ -1,7 +1,7 @@
 'use client';
-import { getAuth, type User } from 'firebase/auth';
+import type { User, Auth } from 'firebase/auth';
 
-type SecurityRuleContext = {
+export type SecurityRuleContext = {
   path: string;
   operation: 'get' | 'list' | 'create' | 'update' | 'delete' | 'write';
   requestResourceData?: any;
@@ -70,23 +70,15 @@ function buildAuthObject(currentUser: User | null): FirebaseAuthObject | null {
 
 /**
  * Builds the complete, simulated request object for the error message.
- * It safely tries to get the current authenticated user.
+ * It safely uses the provided, already-initialized auth instance.
  * @param context The context of the failed Firestore operation.
+ * @param auth The initialized Firebase Auth instance.
  * @returns A structured request object.
  */
-function buildRequestObject(context: SecurityRuleContext): SecurityRuleRequest {
+function buildRequestObject(context: SecurityRuleContext, auth: Auth | null): SecurityRuleRequest {
   let authObject: FirebaseAuthObject | null = null;
-  // This is a failsafe. In a client-side context, getAuth() should
-  // return the same initialized instance. The key is to not rely on it
-  // during server-side rendering or before the app is initialized.
-  try {
-    const auth = getAuth();
-    if (auth.currentUser) {
-        authObject = buildAuthObject(auth.currentUser);
-    }
-  } catch (e) {
-    // If getAuth() fails (e.g., app not initialized), we proceed without auth info.
-    console.warn("Could not retrieve auth instance while building error: ", e);
+  if (auth?.currentUser) {
+      authObject = buildAuthObject(auth.currentUser);
   }
 
   return {
@@ -96,6 +88,7 @@ function buildRequestObject(context: SecurityRuleContext): SecurityRuleRequest {
     resource: context.requestResourceData ? { data: context.requestResourceData } : undefined,
   };
 }
+
 
 /**
  * Builds the final, formatted error message for the LLM.
@@ -115,8 +108,8 @@ ${JSON.stringify(requestObject, null, 2)}`;
 export class FirestorePermissionError extends Error {
   public readonly request: SecurityRuleRequest;
 
-  constructor(context: SecurityRuleContext) {
-    const requestObject = buildRequestObject(context);
+  constructor(context: SecurityRuleContext, auth: Auth | null) {
+    const requestObject = buildRequestObject(context, auth);
     super(buildErrorMessage(requestObject));
     this.name = 'FirebaseError';
     this.request = requestObject;

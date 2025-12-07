@@ -8,9 +8,11 @@ import {
   FirestoreError,
   QuerySnapshot,
   CollectionReference,
+  Auth,
 } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
+import { useAuth } from '@/firebase/provider';
 
 /** Utility type to add an 'id' field to a given type T. */
 export type WithId<T> = T & { id: string };
@@ -55,6 +57,7 @@ export function useCollection<T = any>(
     targetRefOrQuery: ((CollectionReference<DocumentData> | Query<DocumentData>))  | null | undefined,
 ): UseCollectionResult<T> {
   const memoizedTargetRefOrQuery = useMemo(() => targetRefOrQuery, [targetRefOrQuery]);
+  const auth = useAuth(); // Get the auth instance from the context
   type ResultItemType = WithId<T>;
   type StateDataType = ResultItemType[] | null;
 
@@ -95,7 +98,7 @@ export function useCollection<T = any>(
         const contextualError = new FirestorePermissionError({
           operation: 'list',
           path,
-        })
+        }, auth); // Pass the auth instance here
 
         setError(contextualError)
         setData(null)
@@ -107,7 +110,7 @@ export function useCollection<T = any>(
     );
 
     return () => unsubscribe();
-  }, [memoizedTargetRefOrQuery]); // Re-run if the target query/reference changes.
+  }, [memoizedTargetRefOrQuery, auth]); // Re-run if the target query/reference or auth instance changes.
 
   return { data, isLoading, error };
 }
