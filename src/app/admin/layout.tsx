@@ -46,28 +46,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     // Wait until user status and auth service are resolved
-    if (isUserLoading || !auth) return; 
-
-    // If we are on the login page, do nothing, allow the user to log in.
-    if (pathname === '/admin/login') {
-      return;
+    if (isUserLoading || !auth) {
+        return;
     }
 
-    // If there is no user, redirect to the admin login page.
+    // If on the login page, do nothing, allow the user to log in.
+    if (pathname === '/admin/login') {
+        return;
+    }
+
+    // If there is no user authenticated, redirect to the admin login page.
     if (!user) {
-      router.push('/admin/login');
-      return;
+        router.push('/admin/login');
+        return;
     }
 
     // If a user is logged in, but they are not the designated admin,
     // sign them out and redirect them to the login page.
-    // This logic should be updated later to check against a list of staff from Firestore.
     if (user.email !== ADMIN_EMAIL) {
-      auth.signOut().then(() => {
-        router.push('/admin/login');
-      });
+        auth.signOut().then(() => {
+            router.push('/admin/login');
+        });
     }
-  }, [user, isUserLoading, pathname, router, auth]);
+}, [user, isUserLoading, pathname, router, auth]);
+
 
   if (isUserLoading) {
     return (

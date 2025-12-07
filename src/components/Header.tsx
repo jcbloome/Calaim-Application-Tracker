@@ -26,22 +26,11 @@ const navLinks = [
     { href: "/db-tool", label: "DB Tool" },
 ];
 
-// Hardcoded admin email for checking purposes
-const ADMIN_EMAIL = 'jason@carehomefinders.com';
-
 export function Header() {
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
   const router = useRouter();
   const [isSheetOpen, setSheetOpen] = useState(false);
-
-  useEffect(() => {
-    // If a user is logged in and they are an admin, log them out
-    // because they are on the user-facing side of the app.
-    if (!isUserLoading && user && user.email === ADMIN_EMAIL && auth) {
-      auth.signOut();
-    }
-  }, [user, isUserLoading, auth]);
 
   const handleSignOut = async () => {
     if (auth) {
