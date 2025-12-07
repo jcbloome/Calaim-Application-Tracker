@@ -143,7 +143,8 @@ export default function ProgramInfoPage() {
               sections = page3Sections;
               break;
           default:
-              sections = [];
+              sections = page1Sections;
+              break;
       }
 
       return (
