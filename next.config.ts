@@ -1,10 +1,8 @@
+
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   /* config options here */
-  experimental: {
-    // any experimental features can be added here
-  },
   images: {
     remotePatterns: [
       {
