@@ -23,11 +23,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("h-full antialiased", inter.className)}>
+    <html lang="en" className={cn('h-full antialiased', inter.className)}>
       <body className="min-h-screen flex flex-col">
-        <FirebaseClientProvider>
-          {children}
-        </FirebaseClientProvider>
+        <FirebaseClientProvider>{children}</FirebaseClientProvider>
         <Toaster />
       </body>
     </html>
