@@ -21,7 +21,7 @@ function AdminLoginHeader() {
       <div className="container mx-auto flex items-center justify-between h-20 px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2 font-bold text-lg text-primary">
           <Image
-            src="https://images.squarespace-cdn.com/content/v1/5513063be4b069b54e721157/e4e0f894-c7c1-4b7f-a715-6dab7fc055db/calaimlogosmall.jpg?format=2500w"
+            src="/calaim-logo.png"
             alt="CalAIM Pathfinder Logo"
             width={180}
             height={50}
