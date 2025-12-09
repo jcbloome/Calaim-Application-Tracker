@@ -266,6 +266,8 @@ export default function AdminApplicationDetailPage() {
   const [localApplication, setLocalApplication] = useState< (Application & { [key: string]: any }) | null | undefined>(undefined);
 
   const [selectedForm, setSelectedForm] = useState<string | null>(null);
+  const [isFormViewerOpen, setFormViewerOpen] = useState(false);
+
   const [revisionDetails, setRevisionDetails] = useState('');
   const [isRevisionDialogOpen, setRevisionDialogOpen] = useState(false);
   const [targetFormForRevision, setTargetFormForRevision] = useState('');
@@ -278,6 +280,12 @@ export default function AdminApplicationDetailPage() {
         setLocalApplication(appData ? appData : null);
     }
   }, [id]);
+  
+  useEffect(() => {
+    if (!isFormViewerOpen) {
+      setSelectedForm(null);
+    }
+  }, [isFormViewerOpen])
 
   const applicationActivities = useMemo(() => {
     return mockActivities.filter(activity => activity.applicationId === id);
@@ -391,179 +399,178 @@ export default function AdminApplicationDetailPage() {
   const progress = totalForms > 0 ? (completedForms / totalForms) * 100 : 0;
 
   return (
-    <Dialog onOpenChange={(isOpen) => { if (!isOpen) setSelectedForm(null) }}>
-      <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <Button asChild variant="outline">
-                  <Link href="/admin/applications">
-                      <ArrowLeft className="mr-2 h-4 w-4" />
-                      Back to All Applications
-                  </Link>
-              </Button>
-               <Dialog open={isDeleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="destructive">
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete Application
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Are you absolutely sure?</DialogTitle>
-                    <DialogDescription>
-                      This action cannot be undone. This will permanently delete the application for <strong>{localApplication.MemberFullName}</strong>.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-2">
-                    <Label htmlFor="delete-message">Optional Message to User</Label>
-                    <Textarea
-                      id="delete-message"
-                      placeholder="e.g., This application was a duplicate. Please refer to application #123."
-                      value={deleteMessage}
-                      onChange={(e) => setDeleteMessage(e.target.value)}
-                    />
-                    <p className="text-xs text-muted-foreground">If you provide a message, an email will be sent to the user notifying them of the deletion.</p>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-                    <Button variant="destructive" onClick={handleDeleteApplication}>Confirm Deletion</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-          </div>
-
-        {localApplication.hasCapacity === 'No' && (
-            <Alert variant="destructive">
-                <ShieldAlert className="h-4 w-4" />
-                <AlertTitle>Member Lacks Capacity</AlertTitle>
-                <AlertDescription>
-                This member has been identified as lacking the capacity to make their own decisions. Please ensure a legal representative is involved.
-                </AlertDescription>
-            </Alert>
-        )}
-
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
-              <div>
-                <CardTitle className="text-2xl">Application: {localApplication.id}</CardTitle>
-                <CardDescription className="flex flex-col sm:flex-row sm:gap-x-2">
-                  <span>Member: <strong>{localApplication.MemberFullName}</strong> | </span>
-                  <span>Health Plan: <strong>{localApplication.healthPlan}</strong> | </span>
-                  <span>Pathway: <strong>{localApplication.pathway}</strong> | </span>
-                  <span>Status: <strong>{localApplication.status}</strong></span>
-                </CardDescription>
-              </div>
-              <div className="text-left sm:text-right shrink-0">
-                <p className="text-sm font-medium text-muted-foreground">Completion</p>
-                <p className="text-2xl font-bold">{Math.round(progress)}%</p>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Progress value={progress} />
-          </CardContent>
-        </Card>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-            <div className="lg:col-span-2 space-y-6">
-                <Card>
-                <CardHeader>
-                    <CardTitle>Forms &amp; Documents</CardTitle>
-                    <CardDescription>Review submitted materials and request revisions if needed.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="space-y-4">
-                    {localApplication.forms?.map((form: FormStatus) => (
-                        <div key={form.name} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-lg border p-4">
-                        <div className="flex items-center gap-4">
-                            {form.status === 'Completed' ? (
-                            <CheckCircle2 className="h-6 w-6 text-green-500" />
-                            ) : (
-                            <PenSquare className="h-6 w-6 text-yellow-500" />
-                            )}
-                            <div>
-                            <p className="font-medium">{form.name}</p>
-                            <p className="text-sm text-muted-foreground">Status: {form.status}</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2 self-end sm:self-center">
-                            <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" onClick={() => setSelectedForm(form.name)}>
-                                    View
-                                </Button>
-                            </DialogTrigger>
-                                <Button variant="secondary" size="sm" onClick={() => {
-                                    setTargetFormForRevision(form.name);
-                                    setRevisionDialogOpen(true);
-                                }}>
-                                    <FileWarning className="mr-2 h-4 w-4" />
-                                    Revise
-                                </Button>
-                        </div>
-                        </div>
-                    ))}
-                    {!localApplication.forms?.length && (
-                        <div className="text-center p-8 text-muted-foreground">No forms required for this pathway yet.</div>
-                    )}
-                    </div>
-                </CardContent>
-                </Card>
-
-                 <ApplicationActivityLog activities={applicationActivities} />
-            </div>
-
-            <div className="lg:col-span-1">
-                 <ApplicationStatusTracker application={localApplication} onStatusChange={handleStatusChange} />
-            </div>
-        </div>
-        
-        {/* Revision Request Dialog */}
-        <Dialog open={isRevisionDialogOpen} onOpenChange={setRevisionDialogOpen}>
-            <DialogContent>
+    <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <Button asChild variant="outline">
+                <Link href="/admin/applications">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back to All Applications
+                </Link>
+            </Button>
+            <Dialog open={isDeleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="destructive">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Application
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>Request Revision</DialogTitle>
-                    <DialogDescription>
-                      Write a message explaining what needs to be corrected for '{targetFormForRevision}'. This will be sent via email.
-                    </DialogDescription>
+                  <DialogTitle>Are you absolutely sure?</DialogTitle>
+                  <DialogDescription>
+                    This action cannot be undone. This will permanently delete the application for <strong>{localApplication.MemberFullName}</strong>.
+                  </DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="memberName">Member Name</Label>
-                        <Input id="memberName" value={localApplication.MemberFullName} readOnly />
-                    </div>
-                     <div className="space-y-2">
-                        <Label htmlFor="userEmail">Recipient Email</Label>
-                        <Input id="userEmail" value={localApplication.UserEmail} readOnly />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="revision-details">Revision Details</Label>
-                        <Textarea 
-                          id="revision-details" 
-                          placeholder="e.g., Please provide a clearer copy of the Proof of Income document." 
-                          rows={5}
-                          value={revisionDetails}
-                          onChange={(e) => setRevisionDetails(e.target.value)}
-                         />
-                    </div>
+                <div className="space-y-2">
+                  <Label htmlFor="delete-message">Optional Message to User</Label>
+                  <Textarea
+                    id="delete-message"
+                    placeholder="e.g., This application was a duplicate. Please refer to application #123."
+                    value={deleteMessage}
+                    onChange={(e) => setDeleteMessage(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">If you provide a message, an email will be sent to the user notifying them of the deletion.</p>
                 </div>
                 <DialogFooter>
-                    <Button variant="outline" onClick={() => setRevisionDialogOpen(false)}>Cancel</Button>
-                    <Button onClick={handleRequestRevision} disabled={!revisionDetails}>Send Request</Button>
+                  <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+                  <Button variant="destructive" onClick={handleDeleteApplication}>Confirm Deletion</Button>
                 </DialogFooter>
-            </DialogContent>
-        </Dialog>
+              </DialogContent>
+            </Dialog>
+        </div>
 
-        {/* Form Viewer Dialog */}
+      {localApplication.hasCapacity === 'No' && (
+          <Alert variant="destructive">
+              <ShieldAlert className="h-4 w-4" />
+              <AlertTitle>Member Lacks Capacity</AlertTitle>
+              <AlertDescription>
+              This member has been identified as lacking the capacity to make their own decisions. Please ensure a legal representative is involved.
+              </AlertDescription>
+          </Alert>
+      )}
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
+            <div>
+              <CardTitle className="text-2xl">Application: {localApplication.id}</CardTitle>
+              <CardDescription className="flex flex-col sm:flex-row sm:gap-x-2">
+                <span>Member: <strong>{localApplication.MemberFullName}</strong> | </span>
+                <span>Health Plan: <strong>{localApplication.healthPlan}</strong> | </span>
+                <span>Pathway: <strong>{localApplication.pathway}</strong> | </span>
+                <span>Status: <strong>{localApplication.status}</strong></span>
+              </CardDescription>
+            </div>
+            <div className="text-left sm:text-right shrink-0">
+              <p className="text-sm font-medium text-muted-foreground">Completion</p>
+              <p className="text-2xl font-bold">{Math.round(progress)}%</p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Progress value={progress} />
+        </CardContent>
+      </Card>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="lg:col-span-2 space-y-6">
+              <Card>
+              <CardHeader>
+                  <CardTitle>Forms &amp; Documents</CardTitle>
+                  <CardDescription>Review submitted materials and request revisions if needed.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                  <div className="space-y-4">
+                  {localApplication.forms?.map((form: FormStatus) => (
+                      <div key={form.name} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-lg border p-4">
+                      <div className="flex items-center gap-4">
+                          {form.status === 'Completed' ? (
+                          <CheckCircle2 className="h-6 w-6 text-green-500" />
+                          ) : (
+                          <PenSquare className="h-6 w-6 text-yellow-500" />
+                          )}
+                          <div>
+                          <p className="font-medium">{form.name}</p>
+                          <p className="text-sm text-muted-foreground">Status: {form.status}</p>
+                          </div>
+                      </div>
+                      <div className="flex items-center gap-2 self-end sm:self-center">
+                          <Button variant="outline" size="sm" onClick={() => {
+                              setSelectedForm(form.name);
+                              setFormViewerOpen(true);
+                          }}>
+                              View
+                          </Button>
+                          <Button variant="secondary" size="sm" onClick={() => {
+                              setTargetFormForRevision(form.name);
+                              setRevisionDialogOpen(true);
+                          }}>
+                              <FileWarning className="mr-2 h-4 w-4" />
+                              Revise
+                          </Button>
+                      </div>
+                      </div>
+                  ))}
+                  {!localApplication.forms?.length && (
+                      <div className="text-center p-8 text-muted-foreground">No forms required for this pathway yet.</div>
+                  )}
+                  </div>
+              </CardContent>
+              </Card>
+
+               <ApplicationActivityLog activities={applicationActivities} />
+          </div>
+
+          <div className="lg:col-span-1">
+               <ApplicationStatusTracker application={localApplication} onStatusChange={handleStatusChange} />
+          </div>
+      </div>
+      
+      {/* Revision Request Dialog */}
+      <Dialog open={isRevisionDialogOpen} onOpenChange={setRevisionDialogOpen}>
+          <DialogContent>
+              <DialogHeader>
+                  <DialogTitle>Request Revision</DialogTitle>
+                  <DialogDescription>
+                    Write a message explaining what needs to be corrected for '{targetFormForRevision}'. This will be sent via email.
+                  </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                  <div className="space-y-2">
+                      <Label htmlFor="memberName">Member Name</Label>
+                      <Input id="memberName" value={localApplication.MemberFullName} readOnly />
+                  </div>
+                   <div className="space-y-2">
+                      <Label htmlFor="userEmail">Recipient Email</Label>
+                      <Input id="userEmail" value={localApplication.UserEmail} readOnly />
+                  </div>
+                  <div className="space-y-2">
+                      <Label htmlFor="revision-details">Revision Details</Label>
+                      <Textarea 
+                        id="revision-details" 
+                        placeholder="e.g., Please provide a clearer copy of the Proof of Income document." 
+                        rows={5}
+                        value={revisionDetails}
+                        onChange={(e) => setRevisionDetails(e.target.value)}
+                       />
+                  </div>
+              </div>
+              <DialogFooter>
+                  <Button variant="outline" onClick={() => setRevisionDialogOpen(false)}>Cancel</Button>
+                  <Button onClick={handleRequestRevision} disabled={!revisionDetails}>Send Request</Button>
+              </DialogFooter>
+          </DialogContent>
+      </Dialog>
+
+      {/* Form Viewer Dialog */}
+      <Dialog open={isFormViewerOpen} onOpenChange={setFormViewerOpen}>
          <DialogContent className="max-w-4xl">
               <DialogHeader>
                   <DialogTitle>{selectedForm || 'Form View'}: Read-Only</DialogTitle>
               </DialogHeader>
               {selectedForm && <FormViewer formName={selectedForm} application={localApplication} />}
           </DialogContent>
-      </div>
-    </Dialog>
+      </Dialog>
+    </div>
   );
 }
-
-    
