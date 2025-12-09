@@ -110,7 +110,7 @@ export default function Step1() {
                             mode="single"
                             selected={field.value ? new Date(field.value) : undefined}
                             onSelect={field.onChange}
-                            captionLayout="dropdown-buttons"
+                            captionLayout="dropdown"
                             fromYear={1900}
                             toYear={new Date().getFullYear()}
                             disabled={(date) => date > new Date() || date < new Date('1900-01-01')}

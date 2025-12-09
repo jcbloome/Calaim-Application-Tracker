@@ -14,10 +14,12 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { applications as mockApplications } from '@/lib/data';
-import type { ApplicationStatus } from '@/lib/definitions';
+import type { Application, ApplicationStatus } from '@/lib/definitions';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileDown, Search } from 'lucide-react';
+import { format } from 'date-fns';
+import { Timestamp } from 'firebase/firestore';
 
 const getBadgeVariant = (status: ApplicationStatus) => {
   switch (status) {
@@ -26,6 +28,22 @@ const getBadgeVariant = (status: ApplicationStatus) => {
     case 'Requires Revision': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
     case 'In Progress': default: return 'bg-gray-100 text-gray-800 border-gray-200';
   }
+};
+
+const formatDate = (date: string | Timestamp | undefined) => {
+    if (!date) return 'N/A';
+    if (typeof date === 'string') {
+        // Try parsing the string, assuming it's a valid date string like 'YYYY-MM-DD'
+        try {
+            return format(new Date(date), 'MM/dd/yyyy');
+        } catch {
+            return date; // Return original string if parsing fails
+        }
+    }
+    if (date instanceof Timestamp) {
+        return format(date.toDate(), 'MM/dd/yyyy');
+    }
+    return 'Invalid Date';
 };
 
 export default function AdminApplicationsPage() {
@@ -82,7 +100,7 @@ export default function AdminApplicationsPage() {
                 {mockApplications.map(app => (
                   <TableRow key={app.id}>
                     <TableCell>
-                      <div className="font-medium">{app.memberName}</div>
+                      <div className="font-medium">{`${app.memberFirstName} ${app.memberLastName}`}</div>
                       <div className="text-xs text-muted-foreground font-mono truncate">{app.id}</div>
                     </TableCell>
                     <TableCell>
@@ -91,7 +109,7 @@ export default function AdminApplicationsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">{app.pathway}</TableCell>
-                    <TableCell className="hidden sm:table-cell">{app.lastUpdated}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{formatDate(app.lastUpdated)}</TableCell>
                     <TableCell className="text-right">
                       <Button asChild variant="outline" size="sm">
                         <Link href={`/admin/application/${app.id}`}>View Details</Link>

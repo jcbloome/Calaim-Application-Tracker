@@ -3,10 +3,13 @@
 import { Application, Acronym, Activity } from './definitions';
 import { format } from 'date-fns';
 
-export const applications: (Application & { healthPlan?: string; referrerName?: string; ispContactName?: string; agency?: string; memberMrn?: string; })[] = [
+export const applications: (Omit<Application, 'userId'> & { id: string; userId: string; memberName?: string; healthPlan?: string; referrerName?: string; ispContactName?: string; agency?: string; memberMrn?: string; })[] = [
   {
     id: 'app-001',
-    memberName: 'John Doe',
+    userId: 'user-001',
+    memberFirstName: 'John',
+    memberLastName: 'Doe',
+    memberCounty: 'Los Angeles',
     memberMrn: 'mrn-test-999',
     status: 'In Progress',
     healthPlan: 'Kaiser Permanente',
@@ -28,7 +31,10 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
   },
   {
     id: 'app-002',
-    memberName: 'Jane Smith',
+    userId: 'user-002',
+    memberFirstName: 'Jane',
+    memberLastName: 'Smith',
+    memberCounty: 'Los Angeles',
     memberMrn: 'MRN-TEST-007',
     status: 'In Progress',
     healthPlan: 'Health Net',
@@ -49,7 +55,10 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
   },
   {
     id: 'd311d971-e3af-43ab-9fc2-89065ee78e8a',
-    memberName: 'Jane Smith (Test)',
+    userId: 'user-001',
+    memberFirstName: 'Jane',
+    memberLastName: 'Smith (Test)',
+    memberCounty: 'Los Angeles',
     memberMrn: 'mrn-test-008',
     status: 'In Progress',
     healthPlan: 'Health Net',
@@ -70,7 +79,10 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
   },
   {
     id: 'app-003',
-    memberName: 'Peter Jones',
+    userId: 'user-003',
+    memberFirstName: 'Peter',
+    memberLastName: 'Jones',
+    memberCounty: 'Los Angeles',
     memberMrn: 'mrn-test-004',
     status: 'In Progress',
     healthPlan: 'Kaiser Permanente',
@@ -89,7 +101,10 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
   },
   {
     id: 'app-004',
-    memberName: 'Mary Johnson',
+    userId: 'user-001',
+    memberFirstName: 'Mary',
+    memberLastName: 'Johnson',
+    memberCounty: 'Los Angeles',
     memberMrn: 'mrn-test-005',
     status: 'In Progress',
     healthPlan: 'Health Net',
@@ -108,7 +123,10 @@ export const applications: (Application & { healthPlan?: string; referrerName?: 
   },
     {
     id: 'app-005',
-    memberName: 'Chris Lee',
+    userId: 'user-002',
+    memberFirstName: 'Chris',
+    memberLastName: 'Lee',
+    memberCounty: 'Los Angeles',
     memberMrn: 'mrn-test-006',
     status: 'In Progress',
     healthPlan: 'Kaiser Permanente',

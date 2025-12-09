@@ -102,7 +102,7 @@ const fakeCompletedApplicationTemplate = {
     memberCounty: 'San Diego',
     switchingHealthPlan: null,
     meetsPathwayCriteria: true,
-    hasPrefRCFE: 'Yes',
+    hasPrefRCFE: 'Yes' as const,
     lastUpdated: Timestamp.now(),
 };
 

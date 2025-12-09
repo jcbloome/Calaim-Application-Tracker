@@ -5,10 +5,10 @@ import React, { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Printer } from 'lucide-react';
 import { PrintableCsSummaryFormContent } from '@/app/forms/cs-summary-form/printable/PrintableCsSummaryFormContent';
-import { PrintableHipaaFormContent } from '@/app/forms/hipaa-authorization/printable/page';
-import { PrintableLiabilityWaiverContent } from '@/app/forms/liability-waiver/printable/page';
-import { PrintableFreedomOfChoiceContent } from '@/app/forms/freedom-of-choice/printable/page';
-import { PrintableDeclarationOfEligibilityContent } from '@/app/forms/declaration-of-eligibility/printable/page';
+import { PrintableHipaaFormContent } from '@/app/forms/hipaa-authorization/printable/PrintableHipaaFormContent';
+import { PrintableLiabilityWaiverContent } from '@/app/forms/liability-waiver/printable/PrintableLiabilityWaiverContent';
+import { PrintableFreedomOfChoiceContent } from '@/app/forms/freedom-of-choice/printable/PrintableFreedomOfChoiceContent';
+import { PrintableDeclarationOfEligibilityContent } from '@/app/forms/declaration-of-eligibility/printable/PrintableDeclarationOfEligibilityContent';
 import { PrintableProgramInfo } from '@/app/info/components/PrintableProgramInfo';
 
 const PageBreak = () => <div className="page-break-before"></div>;

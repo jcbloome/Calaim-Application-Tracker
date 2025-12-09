@@ -40,8 +40,8 @@ const getMockApplicationById = (id: string): (Application & { [key: string]: any
       return {
         ...app,
         // Step 1: Member Info
-        memberFirstName: app.memberName?.split(' ')[0] || 'Test',
-        memberLastName: app.memberName?.split(' ')[1] || 'User',
+        memberFirstName: app.memberFirstName || 'Test',
+        memberLastName: app.memberLastName || 'User',
         memberDob: Timestamp.fromDate(new Date(1960, 5, 15)),
         memberAge: 64,
         memberMrn: app.memberMrn,
@@ -127,7 +127,8 @@ const getMockApplicationById = (id: string): (Application & { [key: string]: any
         // Other top-level fields from the original mock structure
         forms: app.forms, // Explicitly carry over the forms array
         UserEmail: 'user@example.com', // Keep for notifications if used elsewhere
-        MemberFullName: app.memberName, // Keep for display if needed
+        MemberFullName: `${app.memberFirstName} ${app.memberLastName}`, // Keep for display if needed
+        userId: app.userId,
       };
   }
   return undefined;
