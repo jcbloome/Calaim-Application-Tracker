@@ -1,5 +1,6 @@
 'use client';
 import type { User, Auth } from 'firebase/auth';
+import { initializeFirebase } from './client-init';
 
 export type SecurityRuleContext = {
   path: string;
@@ -70,15 +71,20 @@ function buildAuthObject(currentUser: User | null): FirebaseAuthObject | null {
 
 /**
  * Builds the complete, simulated request object for the error message.
- * It safely uses the provided, already-initialized auth instance.
+ * It safely initializes Firebase to get the auth instance.
  * @param context The context of the failed Firestore operation.
- * @param auth The initialized Firebase Auth instance.
  * @returns A structured request object.
  */
-function buildRequestObject(context: SecurityRuleContext, auth: Auth | null): SecurityRuleRequest {
+function buildRequestObject(context: SecurityRuleContext): SecurityRuleRequest {
   let authObject: FirebaseAuthObject | null = null;
-  if (auth?.currentUser) {
+  try {
+    // Safely get the auth instance. This is idempotent.
+    const { auth } = initializeFirebase();
+    if (auth?.currentUser) {
       authObject = buildAuthObject(auth.currentUser);
+    }
+  } catch (e) {
+    console.error("Firebase Auth could not be initialized for error reporting:", e);
   }
 
   return {
@@ -103,13 +109,14 @@ ${JSON.stringify(requestObject, null, 2)}`;
 /**
  * A custom error class designed to be consumed by an LLM for debugging.
  * It structures the error information to mimic the request object
- * available in Firestore Security Rules.
+ * available in Firestore Security Rules. It is self-contained and does not
+ * require an auth instance to be passed to it.
  */
 export class FirestorePermissionError extends Error {
   public readonly request: SecurityRuleRequest;
 
-  constructor(context: SecurityRuleContext, auth: Auth | null) {
-    const requestObject = buildRequestObject(context, auth);
+  constructor(context: SecurityRuleContext) {
+    const requestObject = buildRequestObject(context);
     super(buildErrorMessage(requestObject));
     this.name = 'FirebaseError';
     this.request = requestObject;

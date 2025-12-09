@@ -57,7 +57,6 @@ export function useCollection<T = any>(
     targetRefOrQuery: ((CollectionReference<DocumentData> | Query<DocumentData>))  | null | undefined,
 ): UseCollectionResult<T> {
   const memoizedTargetRefOrQuery = useMemo(() => targetRefOrQuery, [targetRefOrQuery]);
-  const auth = useAuth(); // Get the auth instance from the context
   type ResultItemType = WithId<T>;
   type StateDataType = ResultItemType[] | null;
 
@@ -98,7 +97,7 @@ export function useCollection<T = any>(
         const contextualError = new FirestorePermissionError({
           operation: 'list',
           path,
-        }, auth); // Pass the auth instance here
+        });
 
         setError(contextualError)
         setData(null)
@@ -110,7 +109,7 @@ export function useCollection<T = any>(
     );
 
     return () => unsubscribe();
-  }, [memoizedTargetRefOrQuery, auth]); // Re-run if the target query/reference or auth instance changes.
+  }, [memoizedTargetRefOrQuery]); // Re-run if the target query/reference changes.
 
   return { data, isLoading, error };
 }
