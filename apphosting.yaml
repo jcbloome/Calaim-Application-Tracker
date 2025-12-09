@@ -1,6 +1,2 @@
-
 # Settings to manage and configure a Firebase App Hosting backend.
 # https://firebase.google.com/docs/app-hosting/configure
-
-# The run command is not needed for the dev server
-# command: "npm run dev"

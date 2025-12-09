@@ -1,8 +1,6 @@
-
-import type {NextConfig} from 'next';
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
   images: {
     remotePatterns: [
       {
@@ -28,13 +26,12 @@ const nextConfig: NextConfig = {
         hostname: 'images.squarespace-cdn.com',
         port: '',
         pathname: '/**',
-      }
+      },
     ],
   },
-  // This is the correct way to allow cross-origin requests in the Next.js dev server.
   allowedDevOrigins: [
-      "https://6000-firebase-studio-1763747953373.cluster-f4iwdviaqvc2ct6pgytzw4xqy4.cloudworkstations.dev"
-  ]
+    'https://6000-firebase-studio-1763747953373.cluster-f4iwdviaqvc2ct6pgytzw4xqy4.cloudworkstations.dev',
+  ],
 };
 
 export default nextConfig;
