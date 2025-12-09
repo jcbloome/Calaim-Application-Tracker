@@ -47,7 +47,7 @@ const steps = [
 const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatusType[] => {
   const commonForms: FormStatusType[] = [
     { name: 'CS Member Summary', status: 'Completed', type: 'online-form', href: '/forms/cs-summary-form' },
-    { name: 'Program Information', status: 'Pending', type: 'info', href: '/info' },
+    { name: 'Program Information', status: 'Pending', type: 'Info', href: '/info' },
     { name: 'HIPAA Authorization', status: 'Pending', type: 'online-form', href: '/forms/hipaa-authorization' },
     { name: 'Liability Waiver', status: 'Pending', type: 'online-form', href: '/forms/liability-waiver' },
     { name: 'Freedom of Choice Waiver', status: 'Pending', type: 'online-form', href: '/forms/freedom-of-choice' },

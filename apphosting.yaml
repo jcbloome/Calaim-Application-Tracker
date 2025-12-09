@@ -7,4 +7,4 @@ runConfig:
   maxInstances: 1
 run:
   # This command is used to start the development server.
-  command: "npm run dev"
+  command: "npm run build && next start --port 9002 --hostname 0.0.0.0"
