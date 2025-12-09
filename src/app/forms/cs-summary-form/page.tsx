@@ -56,7 +56,7 @@ const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatus
   if (pathway === 'SNF Diversion') {
     return [
       ...commonForms,
-      { name: 'Declaration of Eligibility', status: 'Pending', type: 'upload', href: '/forms/declaration-of-eligibility/printable' },
+      { name: 'Declaration of Eligibility', status: 'Pending', type: 'Upload', href: '/forms/declaration-of-eligibility/printable' },
     ];
   }
   // Default to SNF Transition forms if pathway is not specified or is SNF Transition
