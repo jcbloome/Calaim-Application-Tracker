@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from 'firebase/firestore';
 
 export type ApplicationStatus = 'In Progress' | 'Completed & Submitted' | 'Requires Revision' | 'Approved';
@@ -11,6 +10,7 @@ export type Application = {
   memberLastName: string;
   memberCounty: string;
   memberMrn: string;
+  memberDob?: string | Timestamp | Date;
   status: ApplicationStatus;
   lastUpdated: string | Timestamp; 
   pathway: 'SNF Transition' | 'SNF Diversion';

@@ -101,7 +101,7 @@ function ReviewPageComponent() {
         return null;
     }, [user, firestore, applicationId]);
 
-    const { data: application, isLoading } = useDoc<Application>(applicationDocRef);
+    const { data: application, isLoading } = useDoc<Application & FormValues>(applicationDocRef);
 
     const handleConfirm = async () => {
         if (!applicationDocRef || !application) return;
