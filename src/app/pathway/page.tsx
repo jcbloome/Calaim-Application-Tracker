@@ -105,9 +105,9 @@ function PathwayPageContent() {
   useEffect(() => {
     if (application && applicationDocRef && application.pathway && (!application.forms || application.forms.length === 0)) {
         const pathwayRequirements = getPathwayRequirements(application.pathway);
-        const initialForms = pathwayRequirements.map(req => ({
+        const initialForms: FormStatusType[] = pathwayRequirements.map(req => ({
             name: req.title,
-            status: 'Pending' as 'Pending',
+            status: 'Pending',
             type: req.type as FormStatusType['type'],
             href: req.href || '#',
         }));
