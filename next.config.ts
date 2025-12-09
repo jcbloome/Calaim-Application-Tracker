@@ -31,6 +31,15 @@ const nextConfig: NextConfig = {
       }
     ],
   },
+  async rewrites() {
+    return [
+      {
+        source: '/_next/:path*',
+        destination:
+          'http://0.0.0.0:9002/_next/:path*',
+      },
+    ];
+  },
   experimental: {
   },
 };
