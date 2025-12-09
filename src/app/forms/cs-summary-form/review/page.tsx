@@ -46,22 +46,22 @@ const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatus
     { name: 'HIPAA Authorization', status: 'Pending', type: 'online-form', href: '/forms/hipaa-authorization' },
     { name: 'Liability Waiver', status: 'Pending', type: 'online-form', href: '/forms/liability-waiver' },
     { name: 'Freedom of Choice Waiver', status: 'Pending', type: 'online-form', href: '/forms/freedom-of-choice' },
-    { name: 'Proof of Income', status: 'Pending', type: 'upload', href: '#' },
-    { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
-    { name: 'Medicine List', status: 'Pending', type: 'upload', href: '#' },
+    { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' },
+    { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
+    { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
   ];
 
   if (pathway === 'SNF Diversion') {
     return [
       ...commonForms,
-      { name: 'Declaration of Eligibility', status: 'Pending', type: 'upload', href: '/forms/declaration-of-eligibility/printable' },
+      { name: 'Declaration of Eligibility', status: 'Pending', type: 'Upload', href: '/forms/declaration-of-eligibility/printable' },
     ];
   }
   
   // SNF Transition
   return [
       ...commonForms,
-      { name: 'SNF Facesheet', status: 'Pending', type: 'upload', href: '#' },
+      { name: 'SNF Facesheet', status: 'Pending', type: 'Upload', href: '#' },
   ];
 };
 
