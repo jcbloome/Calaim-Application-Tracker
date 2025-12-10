@@ -101,7 +101,7 @@ export default function Step3() {
                     </FormItem>
                      <FormItem className="flex items-center space-x-3 space-y-0">
                         <FormControl><RadioGroupItem value="SNF Diversion" /></FormControl>
-                        <FormLabel className="font-normal">SNF Diversion - For members at risk of SNF admission who can be safely cared for in the community.</FormLabel>
+                        <FormLabel className="font-normal">SNF Diversion - For members at risk of SNF admission who can be safely cared for in the community (e.g., from home or hospital, etc.).</FormLabel>
                     </FormItem>
                   </RadioGroup>
                 </FormControl>
