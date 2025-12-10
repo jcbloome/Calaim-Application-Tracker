@@ -182,7 +182,6 @@ export default function Step1() {
                     <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                     </FormControl>
-                    <FormDescription>Please capitalize each word, e.g., Los Angeles.</FormDescription>
                     <FormMessage />
                 </FormItem>
                 )}
@@ -261,7 +260,6 @@ export default function Step1() {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
-                  <FormDescription>Please capitalize each word, e.g., Family Member.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -389,6 +387,20 @@ export default function Step1() {
                 <h3 className="font-medium">Representative's Contact Info</h3>
                  <FormField
                     control={control}
+                    name="isRepPrimaryContact"
+                    render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                        <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                        <div className="space-y-1 leading-none">
+                            <FormLabel>Is the Legal Rep also the Primary Contact?</FormLabel>
+                        </div>
+                        </FormItem>
+                    )}
+                />
+                 <FormField
+                    control={control}
                     name="hasLegalRep"
                     render={({ field }) => (
                         <FormItem className="space-y-3">
@@ -404,20 +416,6 @@ export default function Step1() {
                         </FormControl>
                          <FormDescription>If member does not have capacity, this will be flagged for staff to follow up.</FormDescription>
                         <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={control}
-                    name="isRepPrimaryContact"
-                    render={({ field }) => (
-                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                        <FormControl>
-                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                        </FormControl>
-                        <div className="space-y-1 leading-none">
-                            <FormLabel>Is the Legal Rep also the Primary Contact?</FormLabel>
-                        </div>
                         </FormItem>
                     )}
                 />
