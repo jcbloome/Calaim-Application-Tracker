@@ -6,7 +6,7 @@ const optionalString = z.string().optional().nullable();
 const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
 
 const requiredPhone = z.string().regex(phoneRegex, { message: 'A valid phone number is required.' });
-const optionalPhone = z.string().optional().nullable().refine(val => val === '' || !val || phoneRegex.test(val), {
+const optionalPhone = z.string().optional().nullable().transform(val => val ?? '').refine(val => val === '' || !val || phoneRegex.test(val), {
   message: "Phone number must be in (xxx) xxx-xxxx format or empty.",
 });
 
