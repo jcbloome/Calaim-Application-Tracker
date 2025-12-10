@@ -78,7 +78,7 @@ export default function Step4() {
                   />
                  <FormField control={control} name="ispFacilityName" render={({ field }) => (
                     <FormItem>
-                        <FormLabel>Facility Name</FormLabel>
+                        <FormLabel>Facility Name <span className="text-destructive">*</span></FormLabel>
                         <FormControl><Input {...field} value={field.value ?? ''} /></FormControl>
                         <FormDescription>If not applicable, enter N/A.</FormDescription>
                         <FormMessage />
