@@ -22,6 +22,13 @@ import { Header } from '@/components/Header';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { PrintableProgramInfo } from './components/PrintableProgramInfo';
 import { Button } from '@/components/ui/button';
+import { acronyms } from '@/lib/data';
+
+const Acronym = ({ term, definition }: { term: string, definition: string }) => (
+    <div>
+        <p><strong className="font-semibold text-gray-700">{term}:</strong> {definition}</p>
+    </div>
+);
 
 const allSections = [
     // Page 1
@@ -29,7 +36,7 @@ const allSections = [
         page: 1,
         icon: HelpCircle,
         title: "What is CalAIM?",
-        content: ["CalAIM (California Advancing and Innovating Medi-Cal) is a long-term initiative by the state of California to transform the Medi-Cal program. Its goals are to improve health outcomes, reduce health disparities, and create a more integrated and seamless healthcare system. This portal focuses on one specific part of CalAIM: the Community Supports service for assisted living transitions. CS and ECM are administered through managed care plans (MCPs)."]
+        content: ["California Advancing and Innovating Medi-Cal (CalAIM) is California's long-term initiative to transform the Medi-Cal program by improving quality outcomes, reducing health disparities, and creating a more seamless and consistent system. It aims to achieve this through a focus on \"whole person care,\" which includes addressing social determinants of health, integrating physical, mental, and social services, and launching new programs like Enhanced Care Management (ECM) and Community Supports. CS and ECM are administered through managed care plans (MCPs)."]
     },
     {
         page: 1,
@@ -196,6 +203,15 @@ export default function ProgramInfoPage() {
                 </div>
                 <GlossaryDialog />
              </div>
+
+            <div className="my-8 p-6 bg-gray-50 rounded-lg border-2 border-primary">
+                <h2 className="text-xl font-bold text-gray-800 mb-4 text-center">Acronym Glossary</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                    {acronyms.map((acronym) => (
+                        <Acronym key={acronym.term} term={acronym.term} definition={acronym.definition} />
+                    ))}
+                </div>
+            </div>
 
              {renderPageContent()}
              
