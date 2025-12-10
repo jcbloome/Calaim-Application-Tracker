@@ -57,7 +57,7 @@ const allSections = [
         page: 1,
         icon: Home,
         title: "Types of Assisted Living (RCFEs/ARFs)",
-        content: ["Assisted living facilities in California (also known as residential care facilities for the elderly - RCFEs) come in various sizes, each offering a different environment. Connections can help you find a setting that best suits your needs:"],
+        content: ["Assisted Living facilities (RCFEs or ARFs) come in various sizes, each offering a different environment. Connections can help you find a setting that best suits your needs:"],
         list: [
             "Small, Home-Like Settings: These are typically 4-6 bed homes that provide a high staff-to-resident ratio. This environment offers more personalized attention and a quieter, more intimate living experience.",
             "Large, Community Settings: These are often 100+ bed facilities that feature amenities like group dining rooms, a wide variety of planned activities, and social opportunities. Staff is available as needed to provide care and support."
