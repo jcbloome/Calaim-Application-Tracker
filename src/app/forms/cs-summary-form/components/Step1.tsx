@@ -5,13 +5,7 @@ import { useFormContext } from 'react-hook-form';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Button } from '@/components/ui/button';
-import { CalendarIcon, UserPlus } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Calendar } from '@/components/ui/calendar';
-import { format } from 'date-fns';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { type FormValues } from '../schema';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -24,9 +18,17 @@ export default function Step1() {
   const memberDob = watch('memberDob');
 
   useEffect(() => {
-    if (memberDob) {
-      const age = new Date().getFullYear() - new Date(memberDob).getFullYear();
-      setValue('memberAge', age);
+    if (memberDob && /^\d{2}\/\d{2}\/\d{4}$/.test(memberDob)) {
+      const birthDate = new Date(memberDob);
+      if (!isNaN(birthDate.getTime())) {
+        const age = new Date().getFullYear() - birthDate.getFullYear();
+        const m = new Date().getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && new Date().getDate() < birthDate.getDate())) {
+            setValue('memberAge', age - 1);
+        } else {
+            setValue('memberAge', age);
+        }
+      }
     }
   }, [memberDob, setValue]);
 
@@ -72,42 +74,12 @@ export default function Step1() {
               control={control}
               name="memberDob"
               render={({ field }) => (
-                <FormItem className="flex flex-col">
+                <FormItem>
                   <FormLabel>Date of Birth <span className="text-destructive">*</span></FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant={"outline"}
-                          className={cn(
-                            "w-[240px] pl-3 text-left font-normal",
-                            !field.value && "text-muted-foreground"
-                          )}
-                        >
-                          {field.value ? (
-                            format(field.value, "PPP")
-                          ) : (
-                            <span>Pick a date</span>
-                          )}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        disabled={(date) =>
-                          date > new Date() || date < new Date("1900-01-01")
-                        }
-                        initialFocus
-                        captionLayout="dropdown-buttons"
-                        fromYear={1900}
-                        toYear={new Date().getFullYear()}
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ''} placeholder="MM/DD/YYYY" />
+                  </FormControl>
+                  <FormDescription>Must be in MM/DD/YYYY format.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

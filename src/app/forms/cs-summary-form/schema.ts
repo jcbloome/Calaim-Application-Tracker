@@ -13,14 +13,18 @@ const optionalPhone = z.string().optional().nullable().refine(val => val === '' 
 const requiredEmail = z.string().email({ message: "Invalid email address." }).min(1, { message: 'This field is required.' });
 const optionalEmail = z.string().email({ message: "Invalid email address." }).optional().nullable().or(z.literal(''));
 
+const dateSchema = z.string().refine(val => {
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(val)) return false;
+    const date = new Date(val);
+    return !isNaN(date.getTime());
+}, { message: "Invalid date format. Use MM/DD/YYYY." });
+
 
 export const formSchema = z.object({
     // Step 1 - Member Info
     memberFirstName: requiredString,
     memberLastName: requiredString,
-    memberDob: z.date({
-      required_error: "A date of birth is required.",
-    }),
+    memberDob: dateSchema,
     memberAge: z.number({ required_error: 'Age is required.'}).min(0).optional(),
     memberMediCalNum: z.string().regex(/^[a-zA-Z0-9]{9}$/, { message: 'Medi-Cal number must be 9 characters.' }),
     confirmMemberMediCalNum: requiredString,

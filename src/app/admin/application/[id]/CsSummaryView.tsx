@@ -3,7 +3,7 @@
 
 import type { Application } from '@/lib/definitions';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { format } from 'date-fns';
+import { format, parse } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -33,17 +33,29 @@ const Section = ({ title, children }: { title: string; children: React.ReactNode
 
 const formatDate = (date: any) => {
     if (!date) return 'N/A';
+    if (typeof date === 'string') {
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(date)) {
+            try {
+                const parsedDate = parse(date, 'MM/dd/yyyy', new Date());
+                return format(parsedDate, 'PPP');
+            } catch (e) {
+                return date;
+            }
+        }
+        try {
+            const parsedDate = new Date(date);
+            if (!isNaN(parsedDate.getTime())) {
+                return format(parsedDate, 'PPP');
+            }
+        } catch (e) {
+            // Fallthrough
+        }
+    }
     if (date && typeof date.toDate === 'function') {
         return format(date.toDate(), 'PPP');
     }
     if (date instanceof Date) {
         return format(date, 'PPP');
-    }
-    if (typeof date === 'string') {
-        const parsedDate = new Date(date);
-        if (!isNaN(parsedDate.getTime())) {
-            return format(parsedDate, 'PPP');
-        }
     }
     return 'Invalid Date';
 };

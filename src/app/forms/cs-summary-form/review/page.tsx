@@ -11,7 +11,7 @@ import { Header } from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, ArrowLeft, Send, Edit, CheckCircle2 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, parse } from 'date-fns';
 import { Separator } from '@/components/ui/separator';
 import type { FormValues } from '../schema';
 import type { FormStatus as FormStatusType, Application } from '@/lib/definitions';
@@ -65,21 +65,32 @@ const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatus
   ];
 };
 
-// Safely formats a date that might be a Firestore Timestamp
+// Safely formats a date that might be a string or a Timestamp
 const formatDate = (date: any) => {
     if (!date) return 'N/A';
+    if (typeof date === 'string') {
+        // Handle MM/DD/YYYY string format
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(date)) {
+            try {
+                const parsedDate = parse(date, 'MM/dd/yyyy', new Date());
+                return format(parsedDate, 'PPP');
+            } catch (e) {
+                return date; // Return original string if parsing fails
+            }
+        }
+        // Handle ISO string format
+        try {
+            const parsedDate = new Date(date);
+            if (!isNaN(parsedDate.getTime())) {
+                return format(parsedDate, 'PPP');
+            }
+        } catch (e) {
+            // Fallthrough
+        }
+    }
     // Firestore Timestamps have a toDate() method
     if (date && typeof date.toDate === 'function') {
         return format(date.toDate(), 'PPP');
-    }
-    // Handle if it's already a Date object or a valid date string
-    try {
-        const parsedDate = new Date(date);
-        if (!isNaN(parsedDate.getTime())) {
-            return format(parsedDate, 'PPP');
-        }
-    } catch (e) {
-        // Fallthrough to return 'Invalid Date'
     }
     return 'Invalid Date';
 };
@@ -152,6 +163,7 @@ function ReviewPageComponent() {
     
     const isReadOnly = application.status === 'Completed & Submitted' || application.status === 'Approved';
     const editLink = (step: number) => `/forms/cs-summary-form?applicationId=${applicationId}&step=${step}`;
+    const dobFormatted = formatDate(application.memberDob);
 
     return (
         <>
@@ -181,53 +193,54 @@ function ReviewPageComponent() {
                             <Section title="Member Information" editLink={editLink(1)} isReadOnly={isReadOnly}>
                                 <Field label="First Name" value={application.memberFirstName} />
                                 <Field label="Last Name" value={application.memberLastName} />
-                                <Field label="Age" value={(application as any).memberAge} />
-                                <Field label="Medi-Cal Number" value={(application as any).memberMediCalNum} />
+                                <Field label="Date of Birth" value={dobFormatted} />
+                                <Field label="Age" value={application.memberAge} />
+                                <Field label="Medi-Cal Number" value={application.memberMediCalNum} />
                                 <Field label="Medical Record Number (MRN)" value={application.memberMrn} />
-                                <Field label="Preferred Language" value={(application as any).memberLanguage} />
+                                <Field label="Preferred Language" value={application.memberLanguage} />
                                 <Field label="County" value={application.memberCounty} />
                             </Section>
 
                             <Separator />
 
                             <Section title="Referrer Information" editLink={editLink(1)} isReadOnly={isReadOnly}>
-                                <Field label="First Name" value={(application as any).referrerFirstName} />
-                                <Field label="Last Name" value={(application as any).referrerLastName} />
-                                <Field label="Email" value={(application as any).referrerEmail} />
-                                <Field label="Phone" value={(application as any).referrerPhone} />
-                                <Field label="Relationship to Member" value={(application as any).referrerRelationship} />
-                                <Field label="Agency" value={(application as any).agency} />
+                                <Field label="First Name" value={application.referrerFirstName} />
+                                <Field label="Last Name" value={application.referrerLastName} />
+                                <Field label="Email" value={application.referrerEmail} />
+                                <Field label="Phone" value={application.referrerPhone} />
+                                <Field label="Relationship to Member" value={application.referrerRelationship} />
+                                <Field label="Agency" value={application.agency} />
                             </Section>
                             
                              <Separator />
 
                             <Section title="Primary Contact" editLink={editLink(1)} isReadOnly={isReadOnly}>
-                                <Field label="First Name" value={(application as any).bestContactFirstName} />
-                                <Field label="Last Name" value={(application as any).bestContactLastName} />
-                                <Field label="Relationship" value={(application as any).bestContactRelationship} />
-                                <Field label="Phone" value={(application as any).bestContactPhone} />
-                                <Field label="Email" value={(application as any).bestContactEmail} />
-                                <Field label="Language" value={(application as any).bestContactLanguage} />
+                                <Field label="First Name" value={application.bestContactFirstName} />
+                                <Field label="Last Name" value={application.bestContactLastName} />
+                                <Field label="Relationship" value={application.bestContactRelationship} />
+                                <Field label="Phone" value={application.bestContactPhone} />
+                                <Field label="Email" value={application.bestContactEmail} />
+                                <Field label="Language" value={application.bestContactLanguage} />
                             </Section>
                             
                             <Separator />
                             
                              <Section title="Legal Representative" editLink={editLink(1)} isReadOnly={isReadOnly}>
-                                <Field label="Member Has Capacity" value={(application as any).hasCapacity} />
-                                <Field label="Has Legal Representative" value={(application as any).hasLegalRep} />
-                                <Field label="Representative First Name" value={(application as any).repFirstName} />
-                                <Field label="Representative Last Name" value={(application as any).repLastName} />
-                                <Field label="Representative Relationship" value={(application as any).repRelationship} />
-                                <Field label="Representative Phone" value={(application as any).repPhone} />
-                                <Field label="Representative Email" value={(application as any).repEmail} />
+                                <Field label="Member Has Capacity" value={application.hasCapacity} />
+                                <Field label="Has Legal Representative" value={application.hasLegalRep} />
+                                <Field label="Representative First Name" value={application.repFirstName} />
+                                <Field label="Representative Last Name" value={application.repLastName} />
+                                <Field label="Representative Relationship" value={application.repRelationship} />
+                                <Field label="Representative Phone" value={application.repPhone} />
+                                <Field label="Representative Email" value={application.repEmail} />
                             </Section>
 
                             <Separator />
 
                             <Section title="Location Information" editLink={editLink(2)} isReadOnly={isReadOnly}>
-                                <Field label="Current Location" value={(application as any).currentLocation} fullWidth />
-                                <Field label="Current Address" value={`${(application as any).currentAddress}, ${(application as any).currentCity}, ${(application as any).currentState} ${(application as any).currentZip}`} fullWidth />
-                                <Field label="Customary Residence" value={`${(application as any).customaryAddress}, ${(application as any).customaryCity}, ${(application as any).customaryState} ${(application as any).customaryZip}`} fullWidth />
+                                <Field label="Current Location" value={application.currentLocation} fullWidth />
+                                <Field label="Current Address" value={`${application.currentAddress}, ${application.currentCity}, ${application.currentState} ${application.currentZip}`} fullWidth />
+                                <Field label="Customary Residence" value={`${application.customaryAddress}, ${application.customaryCity}, ${application.customaryState} ${application.customaryZip}`} fullWidth />
                             </Section>
 
                             <Separator />
@@ -236,24 +249,24 @@ function ReviewPageComponent() {
                                 <Field label="Health Plan" value={application.healthPlan} />
                                 {application.healthPlan === 'Other' && (
                                     <>
-                                        <Field label="Existing Plan" value={(application as any).existingHealthPlan} />
-                                        <Field label="Switching Plans?" value={(application as any).switchingHealthPlan} />
+                                        <Field label="Existing Plan" value={application.existingHealthPlan} />
+                                        <Field label="Switching Plans?" value={application.switchingHealthPlan} />
                                     </>
                                 )}
                                 <Field label="Pathway" value={application.pathway} />
-                                <Field label="Meets Criteria" value={(application as any).meetsPathwayCriteria ? 'Yes' : 'No'} fullWidth />
-                                {application.pathway === 'SNF Diversion' && <Field label="Reason for Diversion" value={(application as any).snfDiversionReason} fullWidth />}
+                                <Field label="Meets Criteria" value={application.meetsPathwayCriteria ? 'Yes' : 'No'} fullWidth />
+                                {application.pathway === 'SNF Diversion' && <Field label="Reason for Diversion" value={application.snfDiversionReason} fullWidth />}
                             </Section>
                             
                             <Separator />
 
                             <Section title="ISP &amp; RCFE Information" editLink={editLink(4)} isReadOnly={isReadOnly}>
-                                <Field label="ISP Contact Name" value={`${(application as any).ispFirstName} ${(application as any).ispLastName}`} />
-                                <Field label="ISP Contact Phone" value={(application as any).ispPhone} />
-                                <Field label="ISP Assessment Location" value={`${(application as any).ispAddress}, ${(application as any).ispCity}, ${(application as any).ispState}`} fullWidth />
-                                <Field label="On ALW Waitlist?" value={(application as any).onALWWaitlist} />
-                                <Field label="Has Preferred RCFE?" value={(application as any).hasPrefRCFE} />
-                                <Field label="RCFE Name" value={(application as any).rcfeName} fullWidth />
+                                <Field label="ISP Contact Name" value={`${application.ispFirstName} ${application.ispLastName}`} />
+                                <Field label="ISP Contact Phone" value={application.ispPhone} />
+                                <Field label="ISP Assessment Location" value={`${application.ispAddress}, ${application.ispCity}, ${application.ispState}`} fullWidth />
+                                <Field label="On ALW Waitlist?" value={application.onALWWaitlist} />
+                                <Field label="Has Preferred RCFE?" value={application.hasPrefRCFE} />
+                                <Field label="RCFE Name" value={application.rcfeName} fullWidth />
                             </Section>
 
                             {!isReadOnly && (
