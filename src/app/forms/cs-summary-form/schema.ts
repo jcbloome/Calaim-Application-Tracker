@@ -28,7 +28,7 @@ export const formSchema = z.object({
     memberLastName: requiredString,
     memberDob: dateSchema,
     memberAge: z.number({ required_error: 'Age is required.'}).min(0).optional(),
-    memberMediCalNum: z.string().regex(/^[a-zA-Z0-9]{9}$/, { message: 'Medi-Cal number must be 9 characters.' }),
+    memberMediCalNum: z.string().regex(/^[9]\d{8}$/, { message: 'Medi-Cal number must be 9 digits and start with 9.' }),
     confirmMemberMediCalNum: requiredString,
     memberMrn: requiredString,
     confirmMemberMrn: requiredString,
@@ -41,7 +41,7 @@ export const formSchema = z.object({
     referrerEmail: optionalString,
     referrerPhone: requiredPhone,
     referrerRelationship: requiredString,
-    agency: requiredString,
+    agency: optionalString,
 
     // Step 1 - Primary Contact Person
     bestContactFirstName: requiredString,

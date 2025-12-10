@@ -271,11 +271,11 @@ export default function Step1() {
               name="agency"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Agency <span className="text-destructive">*</span></FormLabel>
+                  <FormLabel>Agency</FormLabel>
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
-                  <FormDescription>Please capitalize each word, e.g., Hospital Name. If not applicable, enter N/A.</FormDescription>
+                  <FormDescription>e.g., Hospital Name. If not applicable, leave blank.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -385,29 +385,28 @@ export default function Step1() {
                 )}
             />
 
-            <FormField
-                control={control}
-                name="hasLegalRep"
-                render={({ field }) => (
-                    <FormItem className="space-y-3 p-4 border rounded-md">
-                    <FormLabel>
-                        Does member have a legal representative? (e.g., power of attorney)
-                    </FormLabel>
-                    <FormControl>
-                        <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex items-center space-x-4">
-                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Yes" /></FormControl><FormLabel className="font-normal">Yes</FormLabel></FormItem>
-                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="No" /></FormControl><FormLabel className="font-normal">No</FormLabel></FormItem>
-                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Unknown" /></FormControl><FormLabel className="font-normal">Unknown</FormLabel></FormItem>
-                        </RadioGroup>
-                    </FormControl>
-                     <FormDescription>If member does not have capacity, this will be flagged for staff to follow up.</FormDescription>
-                    <FormMessage />
-                    </FormItem>
-                )}
-            />
-
             <div className="p-4 border rounded-md space-y-4">
                 <h3 className="font-medium">Representative's Contact Info</h3>
+                 <FormField
+                    control={control}
+                    name="hasLegalRep"
+                    render={({ field }) => (
+                        <FormItem className="space-y-3">
+                        <FormLabel>
+                            Does member have a legal representative? (e.g., power of attorney)
+                        </FormLabel>
+                        <FormControl>
+                            <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex items-center space-x-4">
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Yes" /></FormControl><FormLabel className="font-normal">Yes</FormLabel></FormItem>
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="No" /></FormControl><FormLabel className="font-normal">No</FormLabel></FormItem>
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Unknown" /></FormControl><FormLabel className="font-normal">Unknown</FormLabel></FormItem>
+                            </RadioGroup>
+                        </FormControl>
+                         <FormDescription>If member does not have capacity, this will be flagged for staff to follow up.</FormDescription>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                />
                 <FormField
                     control={control}
                     name="isRepPrimaryContact"
