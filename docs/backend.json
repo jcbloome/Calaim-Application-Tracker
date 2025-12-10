@@ -165,11 +165,11 @@
           "type": "string",
           "description": "Reference to Application. (Relationship: Application 1:1 LegalRepresentative). Represents the application this legal representative relates to."
         },
-        "firstName": {
+        "repFirstName": {
           "type": "string",
           "description": "First name of the legal representative."
         },
-        "lastName": {
+        "repLastName": {
           "type": "string",
           "description": "Last name of the legal representative."
         },
@@ -190,8 +190,8 @@
       "required": [
         "id",
         "applicationId",
-        "firstName",
-        "lastName",
+        "repFirstName",
+        "repLastName",
         "relationshipToMember"
       ]
     },

@@ -56,7 +56,8 @@ export const formSchema = z.object({
     // Step 1 - Legal Rep
     hasCapacity: z.enum(['Yes', 'No'], { required_error: 'Please select an option for member capacity.' }),
     hasLegalRep: z.enum(['Yes', 'No', 'Unknown']).optional().nullable(),
-    repName: optionalString,
+    repFirstName: optionalString,
+    repLastName: optionalString,
     repRelationship: optionalString,
     repPhone: optionalPhone,
     repEmail: optionalEmail,

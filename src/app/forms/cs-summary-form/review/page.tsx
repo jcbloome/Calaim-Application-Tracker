@@ -215,7 +215,8 @@ function ReviewPageComponent() {
                              <Section title="Legal Representative" editLink={editLink(1)} isReadOnly={isReadOnly}>
                                 <Field label="Member Has Capacity" value={(application as any).hasCapacity} />
                                 <Field label="Has Legal Representative" value={(application as any).hasLegalRep} />
-                                <Field label="Representative Name" value={(application as any).repName} />
+                                <Field label="Representative First Name" value={(application as any).repFirstName} />
+                                <Field label="Representative Last Name" value={(application as any).repLastName} />
                                 <Field label="Representative Relationship" value={(application as any).repRelationship} />
                                 <Field label="Representative Phone" value={(application as any).repPhone} />
                                 <Field label="Representative Email" value={(application as any).repEmail} />
@@ -279,5 +280,3 @@ export default function ReviewPage() {
     </Suspense>
   );
 }
-
-    

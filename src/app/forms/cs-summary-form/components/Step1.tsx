@@ -450,13 +450,16 @@ export default function Step1() {
                 />
                 <p className="text-sm text-muted-foreground">If the member does not have a legal representative, you can leave these fields blank.</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField control={control} name="repName" render={({ field }) => (
-                        <FormItem><FormLabel>Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    <FormField control={control} name="repFirstName" render={({ field }) => (
+                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                     )} />
-                    <FormField control={control} name="repRelationship" render={({ field }) => (
-                        <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    <FormField control={control} name="repLastName" render={({ field }) => (
+                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
+                <FormField control={control} name="repRelationship" render={({ field }) => (
+                    <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repPhone" render={({ field }) => (
                         <FormItem>
