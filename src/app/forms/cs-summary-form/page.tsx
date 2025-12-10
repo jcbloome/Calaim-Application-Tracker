@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useForm, FormProvider, FieldPath } from 'react-hook-form';
+import { useForm, FormProvider, FieldPath, FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -61,6 +61,17 @@ const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatus
   }
   // Default to SNF Transition forms if pathway is not specified or is SNF Transition
   return commonForms;
+};
+
+// Function to format the errors object into a user-friendly string
+const formatErrorsForDisplay = (errors: FieldErrors<FormValues>): string => {
+  const errorMessages = Object.entries(errors).map(([fieldName, error]) => {
+    if (error && error.message) {
+      return `${fieldName}: ${error.message}`;
+    }
+    return `${fieldName}: An unknown error occurred.`;
+  });
+  return errorMessages.join('\n');
 };
 
 
@@ -192,8 +203,12 @@ function CsSummaryFormComponent() {
     const isValid = await trigger(fields as FieldPath<FormValues>[], { shouldFocus: true });
     
     if (!isValid) {
-      console.log('Validation Errors:', errors); // Log validation errors
-      setValidationError("Please fix the errors on this page before continuing.");
+      // Find the first error in the current step's fields
+      const firstErrorField = fields.find(field => errors[field as keyof FormValues]);
+      const errorMessage = firstErrorField ? `${firstErrorField}: ${errors[firstErrorField as keyof FormValues]?.message}` : "Please fix the errors on this page before continuing.";
+      
+      const detailedErrors = formatErrorsForDisplay(errors);
+      setValidationError(`Please correct the following errors:\n${detailedErrors}`);
       return; // Stop advancement
     }
 
@@ -224,16 +239,18 @@ function CsSummaryFormComponent() {
     return null;
   }
 
-  const onInvalid = (errors: any) => {
-    console.log("Form Validation Failed:", errors);
+  const onInvalid = (errors: FieldErrors<FormValues>) => {
+    const errorLog = formatErrorsForDisplay(errors);
+    console.log("Form Validation Failed:", errors); // Keep console log for dev debugging
+    
     const firstErrorStep = findFirstErrorStep(errors);
     if (firstErrorStep && firstErrorStep !== currentStep) {
         setCurrentStep(firstErrorStep);
-        setValidationError(`Please correct the errors on Step ${firstErrorStep}: ${steps[firstErrorStep - 1].name}.`);
+        setValidationError(`Please correct errors on Step ${firstErrorStep} (and other steps):\n${errorLog}`);
         return;
     }
 
-    setValidationError('Please check the form for errors and try again.');
+    setValidationError(`Please check the form for the following errors:\n${errorLog}`);
   };
 
   const checkForDuplicates = async (data: FormValues): Promise<boolean> => {
@@ -347,7 +364,9 @@ function CsSummaryFormComponent() {
                   <Alert variant="destructive" className="mb-4">
                     <AlertCircle className="h-4 w-4" />
                     <AlertTitle>Validation Error</AlertTitle>
-                    <AlertDescription>{validationError}</AlertDescription>
+                    <AlertDescription className="whitespace-pre-wrap">
+                      {validationError}
+                    </AlertDescription>
                   </Alert>
                 )}
                 <div className="flex justify-between">
