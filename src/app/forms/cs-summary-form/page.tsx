@@ -27,7 +27,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
-      'memberFirstName', 'memberLastName', 'memberDob', 'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'memberCounty',
+      'memberFirstName', 'memberLastName', 'memberAge', 'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'memberCounty',
       'memberMediCalNum', 'confirmMemberMediCalNum',
       'referrerPhone', 'referrerRelationship', 'agency',
       'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
@@ -99,10 +99,6 @@ function CsSummaryFormComponent() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
-          
-          if (data.memberDob && typeof data.memberDob.toDate === 'function') {
-            data.memberDob = data.memberDob.toDate();
-          }
           
           reset(data);
         } else {
@@ -380,3 +376,5 @@ export default function CsSummaryFormPage() {
     </React.Suspense>
   );
 }
+
+    

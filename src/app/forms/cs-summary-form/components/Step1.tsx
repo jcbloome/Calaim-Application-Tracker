@@ -20,31 +20,6 @@ import { PhoneInput } from '@/components/ui/phone-input';
 
 export default function Step1() {
   const { control, watch, setValue } = useFormContext<FormValues>();
-  const memberDob = watch('memberDob');
-
-  useEffect(() => {
-    if (memberDob) {
-      try {
-        const birthDate = new Date(memberDob);
-        if (!isNaN(birthDate.getTime())) {
-          const today = new Date();
-          let age = today.getFullYear() - birthDate.getFullYear();
-          const m = today.getMonth() - birthDate.getMonth();
-          if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-            age--;
-          }
-          setValue('memberAge', age, { shouldValidate: true });
-        } else {
-          setValue('memberAge', undefined, { shouldValidate: true });
-        }
-      } catch (e) {
-        setValue('memberAge', undefined, { shouldValidate: true });
-      }
-    } else {
-      setValue('memberAge', undefined, { shouldValidate: true });
-    }
-  }, [memberDob, setValue]);
-
 
   return (
     <div className="space-y-6">
@@ -84,44 +59,6 @@ export default function Step1() {
             />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-             <FormField
-                control={control}
-                name="memberDob"
-                render={({ field }) => (
-                    <FormItem>
-                    <FormLabel>Date of Birth <span className="text-destructive">*</span></FormLabel>
-                    <Popover>
-                        <PopoverTrigger asChild>
-                        <FormControl>
-                            <Button
-                            variant={'outline'}
-                            className={cn(
-                                'w-full pl-3 text-left font-normal',
-                                !field.value && 'text-muted-foreground'
-                            )}
-                            >
-                            {field.value ? format(new Date(field.value), 'PPP') : <span>Pick a date</span>}
-                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                            </Button>
-                        </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                            mode="single"
-                            selected={field.value ? new Date(field.value) : undefined}
-                            onSelect={field.onChange}
-                            captionLayout="dropdown"
-                            fromYear={1900}
-                            toYear={new Date().getFullYear()}
-                            disabled={(date) => date > new Date() || date < new Date('1900-01-01')}
-                            initialFocus
-                        />
-                        </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                    </FormItem>
-                )}
-            />
             <FormField
               control={control}
               name="memberAge"
@@ -129,7 +66,7 @@ export default function Step1() {
                 <FormItem>
                   <FormLabel>Age</FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} type="number" readOnly className="bg-muted" />
+                    <Input {...field} value={field.value ?? ''} type="number" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -486,3 +423,5 @@ export default function Step1() {
     </div>
   );
 }
+
+    

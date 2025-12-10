@@ -151,7 +151,6 @@ function ReviewPageComponent() {
     }
     
     const isReadOnly = application.status === 'Completed & Submitted' || application.status === 'Approved';
-    const dobFormatted = formatDate(application.memberDob);
     const editLink = (step: number) => `/forms/cs-summary-form?applicationId=${applicationId}&step=${step}`;
 
     return (
@@ -182,7 +181,6 @@ function ReviewPageComponent() {
                             <Section title="Member Information" editLink={editLink(1)} isReadOnly={isReadOnly}>
                                 <Field label="First Name" value={application.memberFirstName} />
                                 <Field label="Last Name" value={application.memberLastName} />
-                                <Field label="Date of Birth" value={dobFormatted} />
                                 <Field label="Age" value={(application as any).memberAge} />
                                 <Field label="Medi-Cal Number" value={(application as any).memberMediCalNum} />
                                 <Field label="Medical Record Number (MRN)" value={application.memberMrn} />
@@ -281,3 +279,5 @@ export default function ReviewPage() {
     </Suspense>
   );
 }
+
+    

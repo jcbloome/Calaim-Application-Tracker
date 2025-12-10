@@ -18,8 +18,7 @@ export const formSchema = z.object({
     // Step 1 - Member Info
     memberFirstName: requiredString,
     memberLastName: requiredString,
-    memberDob: z.date({ required_error: 'Date of birth is required.' }),
-    memberAge: z.number().optional(),
+    memberAge: z.number({ required_error: 'Age is required.'}).min(0).optional(),
     memberMediCalNum: z.string().regex(/^[a-zA-Z0-9]{9}$/, { message: 'Medi-Cal number must be 9 characters.' }),
     confirmMemberMediCalNum: requiredString,
     memberMrn: requiredString,
