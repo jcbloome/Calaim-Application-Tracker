@@ -412,12 +412,11 @@ export default function Step1() {
                                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Unknown" /></FormControl><FormLabel className="font-normal">Unknown</FormLabel></FormItem>
                             </RadioGroup>
                         </FormControl>
-                         <FormDescription>If member does not have capacity, this will be flagged for staff to follow up.</FormDescription>
+                        <FormDescription>If the member does not have a legal representative, you can leave these fields blank.</FormDescription>
                         <FormMessage />
                         </FormItem>
                     )}
                 />
-                <p className="text-sm text-muted-foreground">If the member does not have a legal representative, you can leave these fields blank.</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repFirstName" render={({ field }) => (
                         <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>

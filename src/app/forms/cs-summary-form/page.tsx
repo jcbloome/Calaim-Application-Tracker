@@ -244,7 +244,7 @@ function CsSummaryFormComponent() {
 
   const onInvalid = (errors: FieldErrors<FormValues>) => {
     const errorLog = formatErrorsForDisplay(errors);
-    console.log("Form Validation Failed:", errors); // Keep console log for dev debugging
+    console.log("Form Validation Failed:", errors);
     
     const firstErrorStep = findFirstErrorStep(errors);
     if (firstErrorStep && firstErrorStep !== currentStep) {
