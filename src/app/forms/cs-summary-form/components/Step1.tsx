@@ -19,15 +19,17 @@ export default function Step1() {
 
   useEffect(() => {
     if (memberDob && /^\d{2}\/\d{2}\/\d{4}$/.test(memberDob)) {
-      const birthDate = new Date(memberDob);
+      const [month, day, year] = memberDob.split('/').map(Number);
+      const birthDate = new Date(year, month - 1, day);
+
       if (!isNaN(birthDate.getTime())) {
-        const age = new Date().getFullYear() - birthDate.getFullYear();
-        const m = new Date().getMonth() - birthDate.getMonth();
-        if (m < 0 || (m === 0 && new Date().getDate() < birthDate.getDate())) {
-            setValue('memberAge', age - 1);
-        } else {
-            setValue('memberAge', age);
+        const today = new Date();
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
         }
+        setValue('memberAge', age);
       }
     }
   }, [memberDob, setValue]);
@@ -180,7 +182,7 @@ export default function Step1() {
                     <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                     </FormControl>
-                    <FormDescription>e.g., Los Angeles</FormDescription>
+                    <FormDescription>Please capitalize each word, e.g., Los Angeles.</FormDescription>
                     <FormMessage />
                 </FormItem>
                 )}
@@ -259,7 +261,7 @@ export default function Step1() {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
-                  <FormDescription>e.g., Family Member, Social Worker</FormDescription>
+                  <FormDescription>Please capitalize each word, e.g., Family Member.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -269,11 +271,11 @@ export default function Step1() {
               name="agency"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Agency</FormLabel>
+                  <FormLabel>Agency <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
-                  <FormDescription>If not applicable, enter N/A. (e.g., Bob's Referral Agency, Hospital Name, etc.)</FormDescription>
+                  <FormDescription>Please capitalize each word, e.g., Hospital Name. If not applicable, enter N/A.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

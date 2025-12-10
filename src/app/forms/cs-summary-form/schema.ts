@@ -15,8 +15,10 @@ const optionalEmail = z.string().email({ message: "Invalid email address." }).op
 
 const dateSchema = z.string().refine(val => {
     if (!/^\d{2}\/\d{2}\/\d{4}$/.test(val)) return false;
-    const date = new Date(val);
-    return !isNaN(date.getTime());
+    const [month, day, year] = val.split('/').map(Number);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+    const date = new Date(year, month - 1, day);
+    return !isNaN(date.getTime()) && date.getDate() === day && date.getMonth() === month - 1 && date.getFullYear() === year;
 }, { message: "Invalid date format. Use MM/DD/YYYY." });
 
 
@@ -39,7 +41,7 @@ export const formSchema = z.object({
     referrerEmail: optionalString,
     referrerPhone: requiredPhone,
     referrerRelationship: requiredString,
-    agency: optionalString,
+    agency: requiredString,
 
     // Step 1 - Primary Contact Person
     bestContactFirstName: requiredString,
