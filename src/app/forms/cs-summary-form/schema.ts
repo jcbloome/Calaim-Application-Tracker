@@ -77,6 +77,7 @@ export const formSchema = z.object({
     currentZip: requiredString,
     currentCounty: requiredString,
     copyAddress: z.boolean().optional(),
+    customaryLocationType: requiredString,
     customaryAddress: requiredString,
     customaryCity: requiredString,
     customaryState: requiredString,
@@ -125,28 +126,12 @@ export const formSchema = z.object({
   })
   .superRefine((data, ctx) => {
     if (!data.copyAddress) {
+        if (!data.customaryLocationType) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["customaryLocationType"] });
         if (!data.customaryAddress) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["customaryAddress"] });
         if (!data.customaryCity) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["customaryCity"] });
         if (!data.customaryState) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["customaryState"] });
         if (!data.customaryZip) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["customaryZip"] });
         if (!data.customaryCounty) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "This field is required.", path: ["customaryCounty"] });
-    }
-    
-    if (data.healthPlan === 'Other') {
-      if (!data.existingHealthPlan || data.existingHealthPlan.trim() === '') {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'Please specify the existing health plan or enter "N/A".',
-          path: ['existingHealthPlan'],
-        });
-      }
-      if (!data.switchingHealthPlan) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'Please select if the member will be switching plans.',
-          path: ['switchingHealthPlan'],
-        });
-      }
     }
     
     if (data.pathway === 'SNF Diversion' && (!data.snfDiversionReason || data.snfDiversionReason.trim() === '')) {

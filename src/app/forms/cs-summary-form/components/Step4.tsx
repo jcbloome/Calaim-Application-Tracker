@@ -12,7 +12,7 @@ import { PhoneInput } from '@/components/ui/phone-input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-const locationOptions = ["Home", "SNF", "RCFE", "Hospital", "Sub-Acute", "Unhoused", "Other"];
+const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub-Acute", "Assisted Living", "Other"];
 
 export default function Step4() {
   const { control, watch, setValue, getValues, clearErrors } = useFormContext<FormValues>();
@@ -68,7 +68,7 @@ export default function Step4() {
                     </FormItem>
                 )} />
                  <FormField control={control} name="ispPhone" render={({ field }) => (
-                    <FormItem><FormLabel>Phone <span className="text-destructive">*</span></FormLabel><FormControl><PhoneInput {...field} placeholder="(xxx) xxx-xxxx" value={field.value ?? ''} /></FormControl><FormDescription>Format: (xxx) xxx-xxxx</FormDescription><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Phone <span className="text-destructive">*</span></FormLabel><FormControl><PhoneInput placeholder="(xxx) xxx-xxxx" value={field.value ?? ''} {...field} /></FormControl><FormDescription>Format: (xxx) xxx-xxxx</FormDescription><FormMessage /></FormItem>
                 )} />
               </div>
               <FormField control={control} name="ispEmail" render={({ field }) => (
@@ -205,7 +205,7 @@ export default function Step4() {
                 )} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="rcfeAdminPhone" render={({ field }) => (
-                        <FormItem><FormLabel>Administrator Phone {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><PhoneInput {...field} placeholder="(xxx) xxx-xxxx" value={field.value ?? ''} /></FormControl><FormDescription>Format: (xxx) xxx-xxxx</FormDescription><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Administrator Phone {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><PhoneInput placeholder="(xxx) xxx-xxxx" value={field.value ?? ''} {...field} /></FormControl><FormDescription>Format: (xxx) xxx-xxxx</FormDescription><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="rcfeAdminEmail" render={({ field }) => (
                         <FormItem><FormLabel>Administrator Email {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>

@@ -18,15 +18,17 @@ export default function Step2() {
 
   useEffect(() => {
     if (copyAddress) {
+      setValue('customaryLocationType', getValues('currentLocation'));
       setValue('customaryAddress', getValues('currentAddress'));
       setValue('customaryCity', getValues('currentCity'));
       setValue('customaryState', getValues('currentState'));
       setValue('customaryZip', getValues('currentZip'));
       setValue('customaryCounty', getValues('currentCounty'));
       // Clear any validation errors on these fields when the box is checked
-      clearErrors(['customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty']);
+      clearErrors(['customaryLocationType', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty']);
     } else {
         // Optionally clear fields when unchecked
+        setValue('customaryLocationType', '');
         setValue('customaryAddress', '');
         setValue('customaryCity', '');
         setValue('customaryState', '');
@@ -50,7 +52,7 @@ export default function Step2() {
               name="currentLocation"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Member's Current Location <span className="text-destructive">*</span></FormLabel>
+                  <FormLabel>Member's Current Location Type <span className="text-destructive">*</span></FormLabel>
                    <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                             <SelectTrigger>
@@ -109,6 +111,28 @@ export default function Step2() {
                     )}
                 />
                 <div className="space-y-4">
+                    <FormField
+                      control={control}
+                      name="customaryLocationType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Customary Residence Location Type <span className="text-destructive">*</span></FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={copyAddress}>
+                                <FormControl>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select a location type" />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    {locationOptions.map(option => (
+                                        <SelectItem key={option} value={option}>{option}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     <FormField control={control} name="customaryAddress" render={({ field }) => (
                         <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} /></FormControl><FormMessage /></FormItem>
                     )} />

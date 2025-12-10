@@ -238,9 +238,10 @@ function ReviewPageComponent() {
                             <Separator />
 
                             <Section title="Location Information" editLink={editLink(2)} isReadOnly={isReadOnly}>
-                                <Field label="Current Location" value={application.currentLocation} fullWidth />
-                                <Field label="Current Address" value={`${application.currentAddress}, ${application.currentCity}, ${application.currentState} ${application.currentZip}`} fullWidth />
-                                <Field label="Customary Residence" value={`${application.customaryAddress}, ${application.customaryCity}, ${application.customaryState} ${application.customaryZip}`} fullWidth />
+                                <Field label="Current Location Type" value={application.currentLocation} />
+                                <Field label="Current Address" value={`${application.currentAddress || ''}, ${application.currentCity || ''}, ${application.currentState || ''} ${application.currentZip || ''}`.replace(/, , /g, ', ').replace(/^, |, $/g, '')} fullWidth />
+                                <Field label="Customary Residence Location Type" value={application.customaryLocationType} />
+                                <Field label="Customary Residence" value={`${application.customaryAddress || ''}, ${application.customaryCity || ''}, ${application.customaryState || ''} ${application.customaryZip || ''}`.replace(/, , /g, ', ').replace(/^, |, $/g, '')} fullWidth />
                             </Section>
 
                             <Separator />
