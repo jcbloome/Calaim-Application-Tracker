@@ -77,15 +77,6 @@ export default function Step3() {
                       </FormItem>
                   )}
               />
-              {healthPlan === 'Other' && switchingHealthPlan === 'No' && (
-                <Alert variant="destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>Eligibility Warning</AlertTitle>
-                  <AlertDescription>
-                    To use this service, the member must be enrolled with Kaiser or Health Net, or be planning to switch. If they are not switching, this application cannot proceed.
-                  </AlertDescription>
-                </Alert>
-              )}
           </div>
         </CardContent>
       </Card>
@@ -132,7 +123,7 @@ export default function Step3() {
                 </div>
                 <div className="p-4 border rounded-md">
                     <h3 className="font-semibold text-lg">SNF Diversion Eligibility Requirements</h3>
-                    <p className="text-sm text-muted-foreground mt-1">Transition a member who, without this support, would need to reside in a SNF and instead transitions him/her to RCFE or ARF.</p>
+                    <p className="text-sm text-muted-foreground mt-1">Transition a member who, without this support, would need to reside in a SNF and instead transitions him/her to RCFE or ARF in the community (e.g., from home or from the hospital).</p>
                     <ul className="list-disc pl-5 mt-2 space-y-1 text-sm">
                         <li>Interested in remaining in the community; and</li>
                         <li>Is able to safely reside in RCFE with appropriate and cost-effective supports and services; and</li>

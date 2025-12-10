@@ -147,13 +147,6 @@ export const formSchema = z.object({
           path: ['switchingHealthPlan'],
         });
       }
-      if (data.switchingHealthPlan === 'No') {
-        ctx.addIssue({
-            code: 'custom',
-            message: 'Member must be willing to switch to an approved Health Plan to proceed.',
-            path: ['switchingHealthPlan'],
-        });
-      }
     }
     
     if (data.pathway === 'SNF Diversion' && (!data.snfDiversionReason || data.snfDiversionReason.trim() === '')) {
