@@ -42,7 +42,7 @@ export default function AdminLoginPage() {
   const { toast } = useToast();
   const { user, isUserLoading } = useUser();
 
-  const [email, setEmail] = useState('jason@carehomefinders.com');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
