@@ -11,6 +11,8 @@ export const applications: (Omit<Application, 'userId'> & { id: string; userId: 
     userId: 'user-001',
     memberFirstName: 'Tim',
     memberLastName: 'Frank',
+    memberMrn: '123456789',
+    memberCounty: 'Los Angeles',
     status: 'In Progress',
     lastUpdated: Timestamp.fromDate(new Date('2023-10-26T10:00:00Z')),
     pathway: 'SNF Transition',
