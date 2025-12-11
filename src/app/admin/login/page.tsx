@@ -49,37 +49,60 @@ export default function AdminLoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSigningIn, setIsSigningIn] = useState(true);
+  const [log, setLog] = useState<string[]>([]);
   
-  // This effect will redirect a user if they are already logged in and are an admin.
-  // It prevents a logged-in admin from seeing the login page again.
+  const addLog = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLog(prev => [`${timestamp}: ${message}`, ...prev]);
+  };
+
   useEffect(() => {
-    if (!isUserLoading && user && firestore) {
-      const checkAdminAndRedirect = async () => {
+    if (user && !isUserLoading && firestore) {
+      addLog(`User detected: ${user.uid}. Checking roles...`);
+      const verifyAdminAndRedirect = async (user: User) => {
+        const adminDocRef = doc(firestore, 'roles_admin', user.uid);
+        const superAdminDocRef = doc(firestore, 'roles_super_admin', user.uid);
+        
         try {
-          const adminDoc = await getDoc(doc(firestore, 'roles_admin', user.uid));
-          const superAdminDoc = await getDoc(doc(firestore, 'roles_super_admin', user.uid));
+          addLog(`Checking admin role at path: ${adminDocRef.path}`);
+          const adminDoc = await getDoc(adminDocRef);
+          addLog(`Admin role exists: ${adminDoc.exists()}`);
+
+          addLog(`Checking super admin role at path: ${superAdminDocRef.path}`);
+          const superAdminDoc = await getDoc(superAdminDocRef);
+          addLog(`Super admin role exists: ${superAdminDoc.exists()}`);
 
           if (adminDoc.exists() || superAdminDoc.exists()) {
+            addLog('Role verified. Redirecting to /admin/applications');
             router.push('/admin/applications');
           } else {
+            addLog('User is not an admin. Signing out.');
             if(auth) await auth.signOut();
+            setError("Access Denied. You do not have admin privileges.");
           }
-        } catch(e: any) {
-            // Error checking roles, stay on login
+        } catch (e: any) {
+          addLog(`Error checking roles: ${e.message}`);
+          setError(`Error during role verification: ${e.message}`);
+           if(auth) await auth.signOut();
         }
       };
-      checkAdminAndRedirect();
+      verifyAdminAndRedirect(user);
+    } else if (!user && !isUserLoading) {
+        addLog("No user logged in.");
     }
-  }, [user, isUserLoading, firestore, router, auth]);
+  }, [user, isUserLoading, firestore, auth, router]);
 
 
   const handleAuthAction = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setLog([]); // Clear log on new attempt
+    addLog(`Starting ${isSigningIn ? 'Sign In' : 'Sign Up'} process for ${email}...`);
     setIsLoading(true);
 
     if (!auth || !firestore) {
       const errorMsg = "Firebase auth service is not available.";
+      addLog(errorMsg);
       setError(errorMsg);
       toast({
         variant: 'destructive',
@@ -91,53 +114,46 @@ export default function AdminLoginPage() {
     }
 
     try {
+      addLog("Setting session persistence.");
       await setPersistence(auth, browserSessionPersistence);
-      let userCredential;
 
       if (isSigningIn) {
-          userCredential = await signInWithEmailAndPassword(auth, email, password);
-      } else {
-          userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          const userCredential = await signInWithEmailAndPassword(auth, email, password);
+          addLog("signInWithEmailAndPassword successful.");
+          // The useEffect will now handle role checking and redirection.
+      } else { // Signing Up
+          const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          addLog("createUserWithEmailAndPassword successful.");
           const newUser = userCredential.user;
 
+          addLog("Updating user profile...");
           await updateProfile(newUser, {
-              displayName: `${firstName} ${lastName}`
+              displayName: `${firstName} ${lastName}`.trim()
           });
 
+          addLog(`Creating user document in 'users/${newUser.uid}'...`);
           const userDocRef = doc(firestore, 'users', newUser.uid);
           await setDoc(userDocRef, {
               id: newUser.uid,
               firstName: firstName,
               lastName: lastName,
+              displayName: `${firstName} ${lastName}`.trim(),
               email: newUser.email,
           });
           
+          addLog(`Creating admin role document in 'roles_admin/${newUser.uid}'...`);
           const adminRoleRef = doc(firestore, 'roles_admin', newUser.uid);
           await setDoc(adminRoleRef, {
               email: newUser.email,
               role: 'admin'
           });
-      }
 
-      // After auth action, verify role before redirecting.
-      const loggedInUser = userCredential.user;
-      const adminDoc = await getDoc(doc(firestore, 'roles_admin', loggedInUser.uid));
-      const superAdminDoc = await getDoc(doc(firestore, 'roles_super_admin', loggedInUser.uid));
-
-      if (adminDoc.exists() || superAdminDoc.exists()) {
-        toast({ title: 'Admin sign-in successful!', duration: 2000 });
-        router.push('/admin/applications');
-      } else {
-        await auth.signOut();
-        setError("Access Denied. You do not have admin privileges.");
-        toast({
-          variant: 'destructive',
-          title: 'Access Denied',
-          description: 'This account does not have the required permissions.',
-        });
+          addLog("Sign up complete. Redirecting...");
+          // The useEffect will handle the redirection after the user state changes.
       }
 
     } catch (err: any) {
+        addLog(`Authentication failed: ${err.message}`);
         setError(err.message);
         toast({
             variant: 'destructive',
@@ -236,6 +252,14 @@ export default function AdminLoginPage() {
                   {isSigningIn ? 'Sign Up' : 'Sign In'}
               </Button>
             </div>
+            {log.length > 0 && (
+            <div className="mt-6 p-4 border bg-muted/50 rounded-lg max-h-48 overflow-y-auto">
+              <h4 className="text-sm font-semibold mb-2">Login Process Log:</h4>
+              <div className="text-xs font-mono space-y-1">
+                {log.map((entry, i) => <p key={i}>{entry}</p>)}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </main>
