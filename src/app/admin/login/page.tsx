@@ -1,8 +1,9 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
 import { useAuth, useFirestore, useUser } from '@/firebase';
-import { createUserWithEmailAndPassword, updateProfile, signInWithEmailAndPassword, setPersistence, browserSessionPersistence } from 'firebase/auth';
+import { createUserWithEmailAndPassword, updateProfile, signInWithEmailAndPassword, setPersistence, browserSessionPersistence, User } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,7 +29,6 @@ function AdminLoginHeader() {
             priority
           />
         </Link>
-        {/* No navigation links in the admin header */}
       </div>
     </header>
   );
@@ -85,38 +85,52 @@ export default function AdminLoginPage() {
     }
 
     try {
-        await setPersistence(auth, browserSessionPersistence);
-        if (isSigningIn) {
-            await signInWithEmailAndPassword(auth, email, password);
-            toast({ title: 'Admin sign-in successful!', duration: 2000 });
-            // The useEffect hook in the admin layout will handle redirection after successful login.
-            router.push('/admin/applications');
+      await setPersistence(auth, browserSessionPersistence);
+      let userCredential;
 
-        } else {
-            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            const newUser = userCredential.user;
+      if (isSigningIn) {
+          userCredential = await signInWithEmailAndPassword(auth, email, password);
+      } else {
+          userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          const newUser = userCredential.user;
 
-            await updateProfile(newUser, {
-                displayName: `${firstName} ${lastName}`
-            });
+          await updateProfile(newUser, {
+              displayName: `${firstName} ${lastName}`
+          });
 
-            const userDocRef = doc(firestore, 'users', newUser.uid);
-            await setDoc(userDocRef, {
-                id: newUser.uid,
-                firstName: firstName,
-                lastName: lastName,
-                email: newUser.email,
-            });
-            
-            const adminRoleRef = doc(firestore, 'roles_admin', newUser.uid);
-            await setDoc(adminRoleRef, {
-                email: newUser.email,
-                role: 'admin'
-            });
+          const userDocRef = doc(firestore, 'users', newUser.uid);
+          await setDoc(userDocRef, {
+              id: newUser.uid,
+              firstName: firstName,
+              lastName: lastName,
+              email: newUser.email,
+          });
+          
+          const adminRoleRef = doc(firestore, 'roles_admin', newUser.uid);
+          await setDoc(adminRoleRef, {
+              email: newUser.email,
+              role: 'admin'
+          });
+      }
 
-            toast({ title: 'Admin account created and signed in successfully!', duration: 2000 });
-            router.push('/admin/applications');
-        }
+      // After auth action, verify role before redirecting.
+      const loggedInUser = userCredential.user;
+      const adminDoc = await getDoc(doc(firestore, 'roles_admin', loggedInUser.uid));
+      const superAdminDoc = await getDoc(doc(firestore, 'roles_super_admin', loggedInUser.uid));
+
+      if (adminDoc.exists() || superAdminDoc.exists()) {
+        toast({ title: 'Admin sign-in successful!', duration: 2000 });
+        router.push('/admin/applications');
+      } else {
+        await auth.signOut();
+        setError("Access Denied. You do not have admin privileges.");
+        toast({
+          variant: 'destructive',
+          title: 'Access Denied',
+          description: 'This account does not have the required permissions.',
+        });
+      }
+
     } catch (err: any) {
         setError(err.message);
         toast({

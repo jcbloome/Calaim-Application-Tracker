@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -35,17 +36,22 @@ export function Header() {
 
   useEffect(() => {
     const checkAndSignOutAdmin = async () => {
+      // If the user is on the user-facing part of the site, check if they have an admin role.
+      // If they do, sign them out to enforce session separation.
       if (user && firestore) {
         const adminDocRef = doc(firestore, 'roles_admin', user.uid);
-        const adminDocSnap = await getDoc(adminDocRef);
-
         const superAdminDocRef = doc(firestore, 'roles_super_admin', user.uid);
-        const superAdminDocSnap = await getDoc(superAdminDocRef);
+        
+        const [adminDocSnap, superAdminDocSnap] = await Promise.all([
+          getDoc(adminDocRef),
+          getDoc(superAdminDocSnap)
+        ]);
 
         if (adminDocSnap.exists() || superAdminDocSnap.exists()) {
           if (auth) {
             await auth.signOut();
           }
+          // Redirect to the user login page, as they were trying to access a user route.
           router.push('/login');
         }
       }
