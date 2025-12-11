@@ -1,9 +1,8 @@
-
 'use client';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Users,
   LayoutGrid,
@@ -16,9 +15,9 @@ import {
   BellRing,
 } from 'lucide-react';
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarFooter, SidebarSeparator } from '@/components/ui/sidebar';
-import { useUser, useAuth } from '@/firebase';
+import { useUser, useAuth, useFirestore } from '@/firebase';
 import imageData from '@/lib/placeholder-images.json';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { doc, getDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 
 const menuItems = [
@@ -32,46 +31,70 @@ const superAdminMenuItems = [
     { href: '/admin/activity-log', label: 'Activity Log', icon: Activity },
 ];
 
-// Hardcoded admin email
-const ADMIN_EMAIL = 'jason@carehomefinders.com';
-
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
   const mascot = imageData.placeholderImages.find(p => p.id === 'fox-mascot');
 
-  const isSuperAdmin = user?.email === ADMIN_EMAIL;
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isCheckingRole, setIsCheckingRole] = useState(true);
 
   useEffect(() => {
-    // Wait until user status and auth service are resolved
-    if (isUserLoading || !auth) {
+    const checkAdminRole = async () => {
+      if (isUserLoading || !user || !firestore) {
+        if (!isUserLoading) setIsCheckingRole(false);
         return;
-    }
+      }
+      
+      setIsCheckingRole(true);
 
-    // If on the login page, do nothing, allow the user to log in.
+      try {
+        const adminDocRef = doc(firestore, 'roles_admin', user.uid);
+        const adminDocSnap = await getDoc(adminDocRef);
+        const hasAdminRole = adminDocSnap.exists();
+        setIsAdmin(hasAdminRole);
+
+        const superAdminDocRef = doc(firestore, 'roles_super_admin', user.uid);
+        const superAdminDocSnap = await getDoc(superAdminDocRef);
+        const hasSuperAdminRole = superAdminDocSnap.exists();
+        setIsSuperAdmin(hasSuperAdminRole);
+        
+        if (!hasAdminRole && !hasSuperAdminRole) {
+          await auth?.signOut();
+          router.push('/login');
+        }
+
+      } catch (error) {
+        console.error("Error checking admin role:", error);
+        setIsAdmin(false);
+        setIsSuperAdmin(false);
+        await auth?.signOut();
+        router.push('/login');
+      } finally {
+        setIsCheckingRole(false);
+      }
+    };
+    
     if (pathname === '/admin/login') {
-        return;
+      setIsCheckingRole(false);
+      return;
     }
 
-    // If there is no user authenticated, redirect to the admin login page.
-    if (!user) {
+    if (!isUserLoading && !user) {
         router.push('/admin/login');
+        setIsCheckingRole(false);
         return;
     }
 
-    // If a user is logged in, but they are not the designated admin,
-    // sign them out and redirect them to the login page.
-    if (user.email !== ADMIN_EMAIL) {
-        auth.signOut().then(() => {
-            router.push('/admin/login');
-        });
-    }
-}, [user, isUserLoading, pathname, router, auth]);
+    checkAdminRole();
+  }, [user, isUserLoading, firestore, pathname, router, auth]);
 
 
-  if (isUserLoading) {
+  if (isUserLoading || isCheckingRole) {
     return (
       <div className="flex items-center justify-center h-screen">
         <p>Loading...</p>
@@ -79,14 +102,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
   
-  // If on the login page, just render children (the login page itself).
   if (pathname === '/admin/login') {
     return <>{children}</>;
   }
 
-  // If there's no user, or the user is not the admin, we render a loader
-  // while the useEffect handles the redirection. This avoids content flashing.
-  if (!user || user.email !== ADMIN_EMAIL) {
+  if (!isAdmin && !isSuperAdmin) {
      return (
       <div className="flex items-center justify-center h-screen">
         <p>Redirecting to login...</p>

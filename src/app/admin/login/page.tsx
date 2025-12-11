@@ -1,10 +1,9 @@
-
 'use client';
 
-import React, { useState } from 'react';
-import { useAuth, useFirestore } from '@/firebase';
+import React, { useState, useEffect } from 'react';
+import { useAuth, useFirestore, useUser } from '@/firebase';
 import { createUserWithEmailAndPassword, updateProfile, signInWithEmailAndPassword, setPersistence, browserSessionPersistence } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -40,6 +39,7 @@ export default function AdminLoginPage() {
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
+  const { user, isUserLoading } = useUser();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -49,6 +49,25 @@ export default function AdminLoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSigningIn, setIsSigningIn] = useState(true);
+
+  useEffect(() => {
+    const checkAndRedirect = async () => {
+      if (user && firestore) {
+        const adminDocRef = doc(firestore, 'roles_admin', user.uid);
+        const adminDocSnap = await getDoc(adminDocRef);
+        const superAdminDocRef = doc(firestore, 'roles_super_admin', user.uid);
+        const superAdminDocSnap = await getDoc(superAdminDocRef);
+        
+        if (adminDocSnap.exists() || superAdminDocSnap.exists()) {
+          router.push('/admin/applications');
+        }
+      }
+    };
+    if (!isUserLoading) {
+        checkAndRedirect();
+    }
+  }, [user, isUserLoading, firestore, router]);
+
 
   const handleAuthAction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,7 +92,6 @@ export default function AdminLoginPage() {
             toast({ title: 'Admin sign-in successful!' });
             router.push('/admin/applications');
         } else {
-            // Create a new admin user
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const user = userCredential.user;
 
@@ -81,7 +99,6 @@ export default function AdminLoginPage() {
                 displayName: `${firstName} ${lastName}`
             });
 
-            // Create user doc
             const userDocRef = doc(firestore, 'users', user.uid);
             await setDoc(userDocRef, {
                 id: user.uid,
@@ -90,7 +107,6 @@ export default function AdminLoginPage() {
                 email: user.email,
             });
             
-            // Also create admin role doc
             const adminRoleRef = doc(firestore, 'roles_admin', user.uid);
             await setDoc(adminRoleRef, {
                 email: user.email,

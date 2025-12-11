@@ -1,10 +1,9 @@
-
 'use client';
 
 import Link from 'next/link';
 import { LogOut, User, Database, HelpCircle, Menu, UserCog } from 'lucide-react';
 import { Button } from './ui/button';
-import { useAuth, useUser } from '@/firebase';
+import { useAuth, useUser, useFirestore } from '@/firebase';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +16,7 @@ import { useRouter } from 'next/navigation';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
+import { doc, getDoc } from 'firebase/firestore';
 
 const navLinks = [
     { href: "/info", label: "Program Information" },
@@ -29,8 +29,29 @@ const navLinks = [
 export function Header() {
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
   const [isSheetOpen, setSheetOpen] = useState(false);
+
+  useEffect(() => {
+    const checkAndSignOutAdmin = async () => {
+      if (user && firestore) {
+        const adminDocRef = doc(firestore, 'roles_admin', user.uid);
+        const adminDocSnap = await getDoc(adminDocRef);
+
+        const superAdminDocRef = doc(firestore, 'roles_super_admin', user.uid);
+        const superAdminDocSnap = await getDoc(superAdminDocRef);
+
+        if (adminDocSnap.exists() || superAdminDocSnap.exists()) {
+          if (auth) {
+            await auth.signOut();
+          }
+          router.push('/login');
+        }
+      }
+    };
+    checkAndSignOutAdmin();
+  }, [user, firestore, auth, router]);
 
   const handleSignOut = async () => {
     if (auth) {
