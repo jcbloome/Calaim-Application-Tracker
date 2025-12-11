@@ -86,6 +86,7 @@
       transparent
     );
     background-repeat: no-repeat;
+    overflow-x: hidden;
   }
 }
 

@@ -198,7 +198,7 @@ export default function ProgramInfoPage() {
                         An overview of the CalAIM program and our services.
                     </p>
                 </div>
-                <GlossaryDialog />
+                <GlossaryDialog className="hidden sm:flex" />
             </div>
 
              {renderPageContent()}
@@ -244,5 +244,3 @@ export default function ProgramInfoPage() {
     </div>
   );
 }
-
-    
