@@ -33,6 +33,25 @@ const superAdminMenuItems = [
     { href: '/admin/activity-log', label: 'Activity Log', icon: Activity },
 ];
 
+function AdminAuthLoading({ logs }: { logs: string[] }) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-gray-100 font-sans">
+        <div className="p-6 bg-white rounded-lg shadow-md flex flex-col items-center gap-4 w-full max-w-md">
+            <div className="flex items-center gap-4">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <h2 className="text-xl font-semibold">Verifying Session...</h2>
+            </div>
+            <div className="mt-4 w-full bg-gray-900 text-white font-mono text-xs rounded-md p-4 h-48 overflow-y-auto">
+              <p className="font-bold mb-2">Auth Log:</p>
+              {logs.map((log, index) => (
+                <p key={index} className="whitespace-pre-wrap">{log}</p>
+              ))}
+            </div>
+        </div>
+      </div>
+    );
+}
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, isUserLoading } = useUser();
@@ -44,38 +63,49 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isCheckingRole, setIsCheckingRole] = useState(true);
+  const [logs, setLogs] = useState<string[]>([]);
+
+  const addLog = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs(prev => [...prev, `${timestamp}: ${message}`]);
+  };
 
   useEffect(() => {
-    // If we're on the login page, don't do any auth checks here. Let the login page handle it.
+    addLog(`Path changed to: ${pathname}`);
+
     if (pathname === '/admin/login') {
+      addLog('On login page, skipping auth checks here.');
       setIsCheckingRole(false);
       return;
     }
 
-    // Wait until Firebase has determined the auth state.
+    addLog(`User loading state: ${isUserLoading}`);
     if (isUserLoading) {
+      addLog('Waiting for Firebase Auth to initialize...');
       return;
     }
 
-    // If no user is logged in, redirect to the admin login page.
     if (!user) {
+      addLog('No user found. Redirecting to admin login.');
       router.push('/admin/login');
       setIsCheckingRole(false);
       return;
     }
 
-    // If there is a user, check their roles.
     const checkAdminRole = async () => {
+      // Ensure firestore is available before trying to use it
       if (!firestore) {
-        setIsCheckingRole(false);
+        addLog('Firestore is not available yet. Waiting...');
         return;
       }
       
+      addLog(`User found: ${user.uid}. Checking roles in Firestore.`);
       setIsCheckingRole(true);
       try {
         const adminDocRef = doc(firestore, 'roles_admin', user.uid);
         const superAdminDocRef = doc(firestore, 'roles_super_admin', user.uid);
         
+        addLog('Fetching admin and super_admin docs.');
         const [adminDocSnap, superAdminDocSnap] = await Promise.all([
             getDoc(adminDocRef),
             getDoc(superAdminDocSnap)
@@ -83,22 +113,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         
         const hasAdminRole = adminDocSnap.exists();
         const hasSuperAdminRole = superAdminDocSnap.exists();
+        
+        addLog(`Admin role exists: ${hasAdminRole}`);
+        addLog(`Super Admin role exists: ${hasSuperAdminRole}`);
 
         setIsAdmin(hasAdminRole);
         setIsSuperAdmin(hasSuperAdminRole);
         
-        // If the user has neither role, sign them out and send to the public login.
         if (!hasAdminRole && !hasSuperAdminRole) {
+          addLog('User has no admin roles. Signing out and redirecting to user login.');
           if (auth) await auth.signOut();
           router.push('/login'); 
         }
       } catch (error: any) {
-        console.error("Error checking admin roles:", error);
+        addLog(`Error checking admin roles: ${error.message}`);
         setIsAdmin(false);
         setIsSuperAdmin(false);
         if (auth) await auth.signOut();
         router.push('/login');
       } finally {
+        addLog('Role check finished.');
         setIsCheckingRole(false);
       }
     };
@@ -107,15 +141,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [user, isUserLoading, firestore, pathname, router, auth]);
 
 
-  if (isUserLoading || (isCheckingRole && pathname !== '/admin/login')) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gray-100 font-sans">
-        <div className="p-6 bg-white rounded-lg shadow-md flex items-center gap-4">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            <h2 className="text-xl font-semibold">Verifying Session...</h2>
-        </div>
-      </div>
-    );
+  if ((isUserLoading || isCheckingRole) && pathname !== '/admin/login') {
+    return <AdminAuthLoading logs={logs} />;
   }
   
   if (pathname === '/admin/login') {
