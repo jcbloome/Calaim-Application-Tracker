@@ -39,7 +39,7 @@ function AdminAuthLoading() {
         <div className="p-6 bg-white rounded-lg shadow-md flex flex-col items-center gap-4 w-full max-w-md">
             <div className="flex items-center gap-4">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              <h2 className="text-xl font-semibold">Verifying Session...</h2>
+              <h2 className="text-xl font-semibold">Verifying Admin Access...</h2>
             </div>
         </div>
       </div>
@@ -50,20 +50,51 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
   const mascot = imageData.placeholderImages.find(p => p.id === 'fox-mascot');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isCheckingRole, setIsCheckingRole] = useState(true);
 
   useEffect(() => {
-    // If auth is still loading, do nothing.
+    // If auth is still loading, wait.
     if (isUserLoading) {
       return;
     }
 
     // If there is no user and we are not on the login page, redirect to login.
-    if (!user && pathname !== '/admin/login') {
-      router.push('/admin/login');
+    if (!user) {
+      if (pathname !== '/admin/login') {
+        router.push('/admin/login');
+      }
+      setIsCheckingRole(false);
+      return;
     }
-  }, [user, isUserLoading, pathname, router]);
+
+    // If we have a user, check their admin status.
+    const checkAdminStatus = async () => {
+      if (firestore && user) {
+        const adminDocRef = doc(firestore, 'roles_admin', user.uid);
+        const superAdminDocRef = doc(firestore, 'roles_super_admin', user.uid);
+        
+        const [adminDocSnap, superAdminDocSnap] = await Promise.all([
+            getDoc(adminDocRef),
+            getDoc(superAdminDocRef)
+        ]);
+
+        if (adminDocSnap.exists() || superAdminDocSnap.exists()) {
+          setIsAdmin(true);
+        } else {
+          // If not an admin, sign them out and redirect to login
+          if (auth) await auth.signOut();
+          router.push('/admin/login');
+        }
+      }
+      setIsCheckingRole(false);
+    };
+
+    checkAdminStatus();
+  }, [user, isUserLoading, firestore, auth, router, pathname]);
 
   const handleSignOut = async () => {
     if (auth) {
@@ -73,23 +104,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     router.push('/admin/login');
   };
   
-  if (isUserLoading && pathname !== '/admin/login') {
-    return <AdminAuthLoading />;
-  }
-
-  // If we are on the login page, just render the children (the login page itself).
   if (pathname === '/admin/login') {
     return <>{children}</>;
   }
 
-  // If there's no user, we show a loading state while the effect redirects.
-  if (!user) {
+  if (isCheckingRole || !isAdmin) {
     return <AdminAuthLoading />;
   }
 
-  // At this point, we have a user. We assume the login page has already verified their role.
-  // The logic in Header.tsx will handle signing out admins who navigate to the user side.
-
+  // At this point, we have a user and they are a verified admin.
   return (
     <SidebarProvider>
       <Sidebar>
@@ -124,7 +147,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             ))}
           </SidebarMenu>
           
-          {/* This part can be improved by storing the role in a custom claim or context */}
           <SidebarSeparator />
           <div className="p-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Super Admin</p>
