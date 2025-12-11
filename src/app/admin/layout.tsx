@@ -45,55 +45,61 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isCheckingRole, setIsCheckingRole] = useState(true);
 
   useEffect(() => {
-    // Don't run any checks on the login page itself.
+    console.log('[AdminLayout] useEffect triggered. Pathname:', pathname);
+
     if (pathname === '/admin/login') {
+      console.log('[AdminLayout] On login page, skipping auth checks.');
       setIsCheckingRole(false);
       return;
     }
 
-    // If user state is still loading, wait.
     if (isUserLoading) {
+      console.log('[AdminLayout] User state is loading. Waiting...');
       return;
     }
 
-    // If no user is logged in, redirect to admin login.
     if (!user) {
+      console.log('[AdminLayout] No user found. Redirecting to /admin/login.');
       router.push('/admin/login');
       setIsCheckingRole(false);
       return;
     }
 
-    // If we have a user, check their roles.
     const checkAdminRole = async () => {
       if (!firestore) {
+        console.error('[AdminLayout] Firestore not available.');
         setIsCheckingRole(false);
         return;
       }
       
       setIsCheckingRole(true);
+      console.log(`[AdminLayout] Checking roles for user: ${user.uid}`);
       try {
         const adminDocRef = doc(firestore, 'roles_admin', user.uid);
         const adminDocSnap = await getDoc(adminDocRef);
         const hasAdminRole = adminDocSnap.exists();
         setIsAdmin(hasAdminRole);
+        console.log(`[AdminLayout] Is admin? ${hasAdminRole}`);
 
         const superAdminDocRef = doc(firestore, 'roles_super_admin', user.uid);
         const superAdminDocSnap = await getDoc(superAdminDocRef);
         const hasSuperAdminRole = superAdminDocSnap.exists();
         setIsSuperAdmin(hasSuperAdminRole);
+        console.log(`[AdminLayout] Is super admin? ${hasSuperAdminRole}`);
         
-        // If user has neither role after checking, sign out and redirect.
         if (!hasAdminRole && !hasSuperAdminRole) {
+          console.log('[AdminLayout] User is not an admin. Signing out and redirecting to /login.');
           if (auth) await auth.signOut();
-          router.push('/login'); // Redirect to main user login, not admin
+          router.push('/login'); 
         }
       } catch (error) {
-        console.error("Error checking admin role:", error);
+        console.error("[AdminLayout] Error checking admin role:", error);
         setIsAdmin(false);
         setIsSuperAdmin(false);
         if (auth) await auth.signOut();
         router.push('/login');
       } finally {
+        console.log('[AdminLayout] Role check finished.');
         setIsCheckingRole(false);
       }
     };
@@ -105,21 +111,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (isUserLoading || isCheckingRole) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <p>Loading...</p>
+        <p>Verifying session...</p>
       </div>
     );
   }
   
-  // Let the login page render itself without the layout.
   if (pathname === '/admin/login') {
     return <>{children}</>;
   }
 
-  // If after all checks, the user is not an admin, show redirecting message.
   if (!isAdmin && !isSuperAdmin) {
      return (
       <div className="flex items-center justify-center h-screen">
-        <p>Access Denied. Redirecting...</p>
+        <p>Access Denied. Redirecting to login...</p>
       </div>
     );
   }

@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -53,16 +54,30 @@ export default function AdminLoginPage() {
   useEffect(() => {
     const checkAndRedirect = async () => {
       if (user && firestore) {
+        console.log(`[LoginPage] User detected: ${user.uid}. Checking roles...`);
         const adminDocRef = doc(firestore, 'roles_admin', user.uid);
-        const adminDocSnap = await getDoc(adminDocRef);
         const superAdminDocRef = doc(firestore, 'roles_super_admin', user.uid);
-        const superAdminDocSnap = await getDoc(superAdminDocRef);
-        
-        if (adminDocSnap.exists() || superAdminDocSnap.exists()) {
-          router.push('/admin/applications');
+
+        try {
+            const [adminDocSnap, superAdminDocSnap] = await Promise.all([
+                getDoc(adminDocRef),
+                getDoc(superAdminDocRef)
+            ]);
+
+            if (adminDocSnap.exists() || superAdminDocSnap.exists()) {
+              console.log('[LoginPage] User is an admin. Redirecting to /admin/applications.');
+              router.push('/admin/applications');
+            } else {
+              console.log('[LoginPage] User is not an admin. Stay on login page or redirect to user login.');
+            }
+        } catch(e) {
+            console.error("[LoginPage] Error checking roles:", e);
         }
+      } else {
+        console.log('[LoginPage] No user detected or firestore not ready.');
       }
     };
+
     if (!isUserLoading) {
         checkAndRedirect();
     }
@@ -90,7 +105,7 @@ export default function AdminLoginPage() {
         if (isSigningIn) {
             await signInWithEmailAndPassword(auth, email, password);
             toast({ title: 'Admin sign-in successful!' });
-            router.push('/admin/applications');
+            // Let useEffect handle the redirect
         } else {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const user = userCredential.user;
@@ -114,7 +129,7 @@ export default function AdminLoginPage() {
             });
 
             toast({ title: 'Admin account created and signed in successfully!' });
-            router.push('/admin/applications');
+            // Let useEffect handle the redirect
         }
     } catch (err: any) {
         setError(err.message);
