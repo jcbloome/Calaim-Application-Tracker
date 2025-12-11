@@ -1,3 +1,4 @@
+
 'use client';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -42,29 +43,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isCheckingRole, setIsCheckingRole] = useState(true);
-  const [log, setLog] = useState<string[]>(['Initializing...']);
-
-  const addLog = (message: string) => {
-    console.log(message); // Keep console log for dev purposes
-    setLog(prev => [...prev, message]);
-  }
 
   useEffect(() => {
-    addLog(`[AdminLayout] useEffect triggered. Pathname: ${pathname}`);
-
     if (pathname === '/admin/login') {
-      addLog('[AdminLayout] On login page, skipping auth checks.');
       setIsCheckingRole(false);
       return;
     }
 
     if (isUserLoading) {
-      addLog('[AdminLayout] User state is loading. Waiting...');
       return;
     }
 
     if (!user) {
-      addLog('[AdminLayout] No user found. Redirecting to /admin/login.');
       router.push('/admin/login');
       setIsCheckingRole(false);
       return;
@@ -72,39 +62,32 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     const checkAdminRole = async () => {
       if (!firestore) {
-        addLog('[AdminLayout] Firestore not available.');
         setIsCheckingRole(false);
         return;
       }
       
       setIsCheckingRole(true);
-      addLog(`[AdminLayout] Checking roles for user: ${user.uid}`);
       try {
         const adminDocRef = doc(firestore, 'roles_admin', user.uid);
         const adminDocSnap = await getDoc(adminDocRef);
         const hasAdminRole = adminDocSnap.exists();
         setIsAdmin(hasAdminRole);
-        addLog(`[AdminLayout] Is admin? ${hasAdminRole}`);
 
         const superAdminDocRef = doc(firestore, 'roles_super_admin', user.uid);
         const superAdminDocSnap = await getDoc(superAdminDocRef);
         const hasSuperAdminRole = superAdminDocSnap.exists();
         setIsSuperAdmin(hasSuperAdminRole);
-        addLog(`[AdminLayout] Is super admin? ${hasSuperAdminRole}`);
         
         if (!hasAdminRole && !hasSuperAdminRole) {
-          addLog('[AdminLayout] User is not an admin. Signing out and redirecting to /login.');
           if (auth) await auth.signOut();
           router.push('/login'); 
         }
       } catch (error: any) {
-        addLog(`[AdminLayout] Error checking admin role: ${error.message}`);
         setIsAdmin(false);
         setIsSuperAdmin(false);
         if (auth) await auth.signOut();
         router.push('/login');
       } finally {
-        addLog('[AdminLayout] Role check finished.');
         setIsCheckingRole(false);
       }
     };
@@ -113,23 +96,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [user, isUserLoading, firestore, pathname, router, auth]);
 
 
-  if (isUserLoading || isCheckingRole) {
+  if (isUserLoading || (isCheckingRole && pathname !== '/admin/login')) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-gray-100 font-sans">
         <div className="p-6 bg-white rounded-lg shadow-md max-w-2xl w-full">
             <h2 className="text-xl font-semibold mb-4 text-center">Verifying Session...</h2>
-            <div className="p-4 bg-gray-800 text-white rounded-md font-mono text-xs overflow-y-auto h-64">
-                {log.map((line, index) => (
-                    <p key={index}>&gt; {line}</p>
-                ))}
-            </div>
-            <div className="mt-4 text-sm text-gray-600">
-                <p><strong>isUserLoading:</strong> {String(isUserLoading)}</p>
-                <p><strong>isCheckingRole:</strong> {String(isCheckingRole)}</p>
-                <p><strong>User ID:</strong> {user?.uid || 'null'}</p>
-                <p><strong>isAdmin:</strong> {String(isAdmin)}</p>
-                <p><strong>isSuperAdmin:</strong> {String(isSuperAdmin)}</p>
-            </div>
         </div>
       </div>
     );
@@ -145,11 +116,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="p-6 bg-white rounded-lg shadow-md max-w-2xl w-full">
           <h2 className="text-xl font-semibold mb-4 text-center text-red-600">Access Denied</h2>
           <p className="text-center">You do not have the required admin role. Redirecting...</p>
-          <div className="mt-4 p-4 bg-gray-800 text-white rounded-md font-mono text-xs overflow-y-auto h-64">
-              {log.map((line, index) => (
-                  <p key={index}>&gt; {line}</p>
-              ))}
-          </div>
         </div>
       </div>
     );
