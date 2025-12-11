@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { LogOut, User, Database, HelpCircle, Menu, UserCog } from 'lucide-react';
 import { Button } from './ui/button';
-import { useAuth, useUser, useFirestore } from '@/firebase';
+import { useAuth, useUser } from '@/firebase';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,9 +15,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useRouter } from 'next/navigation';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Image from 'next/image';
-import { doc, getDoc } from 'firebase/firestore';
 
 const navLinks = [
     { href: "/info", label: "Program Information" },
@@ -30,34 +29,8 @@ const navLinks = [
 export function Header() {
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
-  const firestore = useFirestore();
   const router = useRouter();
   const [isSheetOpen, setSheetOpen] = useState(false);
-
-  useEffect(() => {
-    const checkAndSignOutAdmin = async () => {
-      // If the user is on the user-facing part of the site, check if they have an admin role.
-      // If they do, sign them out to enforce session separation.
-      if (user && firestore) {
-        const adminDocRef = doc(firestore, 'roles_admin', user.uid);
-        const superAdminDocRef = doc(firestore, 'roles_super_admin', user.uid);
-        
-        const [adminDocSnap, superAdminDocSnap] = await Promise.all([
-          getDoc(adminDocRef),
-          getDoc(superAdminDocRef)
-        ]);
-
-        if (adminDocSnap.exists() || superAdminDocSnap.exists()) {
-          if (auth) {
-            await auth.signOut();
-          }
-          // Redirect to the user login page, as they were trying to access a user route.
-          router.push('/login');
-        }
-      }
-    };
-    checkAndSignOutAdmin();
-  }, [user, firestore, auth, router]);
 
   const handleSignOut = async () => {
     if (auth) {
