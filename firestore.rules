@@ -184,8 +184,9 @@ service cloud.firestore {
       }
     }
     
-    match /applications/{applicationId} {
-       allow read, list, create, update, delete: if isAdmin() || isSuperAdmin();
+    // This rule allows collection group queries on 'applications' for admins.
+    match /{path=**}/applications/{applicationId} {
+      allow list: if isAdmin() || isSuperAdmin();
     }
     
      match /applications/{applicationId}/{subcollection}/{docId} {
