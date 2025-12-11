@@ -106,7 +106,7 @@ export default function FormTrackerPage() {
 
     const applicationsQuery = useMemo(() => {
         if (!firestore) return null;
-        return query(collectionGroup(firestore, 'applications')) as any;
+        return query(collectionGroup(firestore, 'applications'));
     }, [firestore]);
 
     const { data: applications, isLoading } = useCollection<Application>(applicationsQuery);
