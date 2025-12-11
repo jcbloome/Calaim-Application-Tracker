@@ -44,7 +44,7 @@ export function Header() {
         
         const [adminDocSnap, superAdminDocSnap] = await Promise.all([
           getDoc(adminDocRef),
-          getDoc(superAdminDocSnap)
+          getDoc(superAdminDocRef)
         ]);
 
         if (adminDocSnap.exists() || superAdminDocSnap.exists()) {
