@@ -224,7 +224,9 @@ export default function SuperAdminPage() {
     };
 
     useEffect(() => {
-        fetchStaff();
+        if(firestore){
+            fetchStaff();
+        }
     }, [firestore]);
     
 

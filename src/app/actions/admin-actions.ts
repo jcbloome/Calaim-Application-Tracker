@@ -2,7 +2,7 @@
 'use server';
 
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { initializeAdminApp } from '@/firebase/admin-init';
 
 interface CreateUserPayload {
@@ -60,4 +60,3 @@ export const createAdminUser = async (payload: CreateUserPayload) => {
         return { success: false, error: error.message || "An unknown error occurred" };
     }
 };
-
