@@ -3,7 +3,7 @@
 
 import React, { useState } from 'react';
 import { useAuth, useFirestore } from '@/firebase';
-import { signInWithEmailAndPassword, setPersistence, browserSessionPersistence } from 'firebase/auth';
+import { signInWithEmailAndPassword, setPersistence, browserSessionPersistence, AuthErrorCodes } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -76,7 +76,11 @@ export default function AdminLoginPage() {
       }
 
     } catch (err: any) {
-        setError(err.message);
+        if (err.code === AuthErrorCodes.INVALID_LOGIN_CREDENTIALS || err.code === 'auth/invalid-credential') {
+          setError('Invalid email or password. Please try again.');
+        } else {
+          setError(err.message);
+        }
     } finally {
         setIsLoading(false);
     }

@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useAuth, useFirestore } from '@/firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, setPersistence, browserSessionPersistence } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, setPersistence, browserSessionPersistence, AuthErrorCodes } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -75,11 +75,20 @@ export default function LoginPage() {
       });
       router.push('/applications');
     } catch (err: any) {
-      setError(err.message);
+      let errorMessage = 'An unexpected error occurred. Please try again.';
+      if (err.code === AuthErrorCodes.INVALID_LOGIN_CREDENTIALS || err.code === 'auth/invalid-credential') {
+        errorMessage = 'Invalid email or password. Please try again.';
+      } else if (err.code === AuthErrorCodes.EMAIL_EXISTS) {
+        errorMessage = 'An account with this email already exists. Please sign in.';
+      } else {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
       toast({
         variant: 'destructive',
         title: 'Authentication Failed',
-        description: err.message,
+        description: errorMessage,
       });
     } finally {
         setIsLoading(false);
