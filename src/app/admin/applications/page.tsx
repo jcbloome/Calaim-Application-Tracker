@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import Link from 'next/link';
@@ -128,8 +127,8 @@ export default function AdminApplicationsPage() {
                     <TableCell className="hidden md:table-cell">{app.pathway}</TableCell>
                     <TableCell className="hidden sm:table-cell">{formatDate(app.lastUpdated)}</TableCell>
                     <TableCell className="text-right">
-                      <Button asChild variant="outline" size="sm" disabled={!app.userId}>
-                        <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View Details</Link>
+                      <Button asChild variant="outline" size="sm" disabled={!app.id}>
+                        <Link href={`/admin/applications/${app.id}`}>View Details</Link>
                       </Button>
                     </TableCell>
                   </TableRow>

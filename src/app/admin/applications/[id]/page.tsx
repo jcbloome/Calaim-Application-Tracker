@@ -1,17 +1,16 @@
 
 import { notFound } from 'next/navigation';
 import { initializeAdminApp } from '@/firebase/admin-init';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, collectionGroup, query, where, getDocs } from 'firebase-admin/firestore';
 import { ApplicationDetailClientView } from './ApplicationDetailClientView';
 import type { Application } from '@/lib/definitions';
 
 // This is now a Server Component. It fetches data on the server.
-export default async function AdminApplicationDetailPage({ params, searchParams }: { params: { id: string }, searchParams: { userId?: string } }) {
+export default async function AdminApplicationDetailPage({ params }: { params: { id: string } }) {
   const { id } = params;
-  const { userId } = searchParams;
 
-  if (!id || !userId) {
-    // If we don't have an ID or userId, we can't fetch the data.
+  if (!id) {
+    // If we don't have an ID, we can't fetch the data.
     notFound();
   }
 
@@ -20,17 +19,24 @@ export default async function AdminApplicationDetailPage({ params, searchParams 
   try {
     const adminApp = initializeAdminApp();
     const adminFirestore = getFirestore(adminApp);
-    const docRef = adminFirestore.collection('users').doc(userId).collection('applications').doc(id);
-    const docSnap = await docRef.get();
+    
+    // Query the 'applications' collection group to find the document by its ID
+    const applicationsCollection = collectionGroup(adminFirestore, 'applications');
+    const q = query(applicationsCollection, where('id', '==', id));
+    const querySnapshot = await getDocs(q);
 
-    if (docSnap.exists) {
+    if (!querySnapshot.empty) {
+      const docSnap = querySnapshot.docs[0];
       // Manually converting Firestore data to a plain object
       const data = docSnap.data();
       applicationData = {
         id: docSnap.id,
         ...data,
+        // The userId is part of the document path, so we can get it from the ref
+        userId: docSnap.ref.parent.parent?.id,
         // Convert Timestamps to ISO strings for serialization
         lastUpdated: data?.lastUpdated?.toDate().toISOString(),
+        memberDob: data?.memberDob?.toDate().toISOString(),
         forms: data?.forms?.map((form: any) => ({
           ...form,
           dateCompleted: form.dateCompleted?.toDate().toISOString() || null,

@@ -151,13 +151,11 @@ const ApplicationStatusTracker = ({ application, onStatusChange }: { application
 
 export function ApplicationDetailClientView({ initialApplication }: { initialApplication: Application }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { user } = useUser();
   const firestore = useFirestore();
   const { toast } = useToast();
   
-  const userId = searchParams.get('userId');
-  const id = initialApplication.id;
+  const { id, userId } = initialApplication;
 
   const applicationDocRef = useMemo(() => {
     if (!firestore || !userId || !id) return null;
