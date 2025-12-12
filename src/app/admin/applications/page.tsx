@@ -66,7 +66,6 @@ export default function AdminApplicationsPage() {
                   const appsRef = collection(firestore, `users/${userId}/applications`);
                   const appsSnapshot = await getDocs(appsRef);
                   appsSnapshot.forEach(appDoc => {
-                      // Add the userId to the application object for link generation
                       allApplications.push({ ...appDoc.data(), id: appDoc.id, userId } as Application);
                   });
               }
@@ -154,9 +153,9 @@ export default function AdminApplicationsPage() {
                     <TableCell className="hidden md:table-cell">{app.pathway}</TableCell>
                     <TableCell className="hidden sm:table-cell">{formatDate(app.lastUpdated)}</TableCell>
                     <TableCell className="text-right">
-                      <Button asChild variant="outline" size="sm" disabled={!app.id || !app.userId}>
-                        <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View Details</Link>
-                      </Button>
+                       <Button asChild variant="outline" size="sm">
+                         <Link href={`/admin/applications/${app.id}`}>View Details</Link>
+                       </Button>
                     </TableCell>
                   </TableRow>
                 ))) : (
