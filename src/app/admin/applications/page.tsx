@@ -1,4 +1,3 @@
-
 'use client';
 
 import Link from 'next/link';
@@ -18,9 +17,9 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileDown, Search, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
-import { Timestamp, collectionGroup, query } from 'firebase/firestore';
-import { useFirestore, useCollection } from '@/firebase';
-import { useMemo, useState } from 'react';
+import { Timestamp, collection, getDocs } from 'firebase/firestore';
+import { useFirestore } from '@/firebase';
+import { useMemo, useState, useEffect } from 'react';
 
 const getBadgeVariant = (status: ApplicationStatus) => {
   switch (status) {
@@ -48,13 +47,41 @@ const formatDate = (date: string | Timestamp | undefined) => {
 
 export default function AdminApplicationsPage() {
     const firestore = useFirestore();
+    const [applications, setApplications] = useState<Application[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    const applicationsQuery = useMemo(() => {
-        if (!firestore) return null;
-        return query(collectionGroup(firestore, 'applications'));
+    useEffect(() => {
+      const fetchAllApplications = async () => {
+          if (!firestore) return;
+          setIsLoading(true);
+          
+          try {
+              const allApplications: Application[] = [];
+              // 1. Get all user documents
+              const usersSnapshot = await getDocs(collection(firestore, 'users'));
+              
+              // 2. For each user, get their applications
+              for (const userDoc of usersSnapshot.docs) {
+                  const userId = userDoc.id;
+                  const appsRef = collection(firestore, `users/${userId}/applications`);
+                  const appsSnapshot = await getDocs(appsRef);
+                  appsSnapshot.forEach(appDoc => {
+                      // Add the userId to the application object for link generation
+                      allApplications.push({ ...appDoc.data(), id: appDoc.id, userId } as Application);
+                  });
+              }
+              
+              setApplications(allApplications);
+          } catch (error) {
+              console.error("Failed to fetch applications:", error);
+          } finally {
+              setIsLoading(false);
+          }
+      };
+
+      fetchAllApplications();
     }, [firestore]);
 
-    const { data: applications, isLoading } = useCollection<Application>(applicationsQuery);
 
   return (
     <div className="space-y-6">
@@ -127,8 +154,8 @@ export default function AdminApplicationsPage() {
                     <TableCell className="hidden md:table-cell">{app.pathway}</TableCell>
                     <TableCell className="hidden sm:table-cell">{formatDate(app.lastUpdated)}</TableCell>
                     <TableCell className="text-right">
-                      <Button asChild variant="outline" size="sm" disabled={!app.id}>
-                        <Link href={`/admin/applications/${app.id}`}>View Details</Link>
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View Details</Link>
                       </Button>
                     </TableCell>
                   </TableRow>

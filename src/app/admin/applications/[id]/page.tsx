@@ -1,27 +1,27 @@
-
 'use client';
 
-import { notFound, useParams } from 'next/navigation';
-import { useFirestore, useCollection } from '@/firebase';
+import { notFound, useParams, useSearchParams } from 'next/navigation';
+import { useFirestore, useDoc } from '@/firebase';
 import { ApplicationDetailClientView } from './ApplicationDetailClientView';
 import type { Application } from '@/lib/definitions';
 import { useMemo } from 'react';
-import { collectionGroup, query, where } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
 
-// This is now a Client Component again to resolve server-side auth issues.
+// This is now a Client Component that fetches data.
 export default function AdminApplicationDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const id = params.id as string;
+  const userId = searchParams.get('userId');
   const firestore = useFirestore();
 
-  const applicationsQuery = useMemo(() => {
-    if (!firestore || !id) return null;
-    // Query the collection group to find the application by its ID, regardless of the user.
-    return query(collectionGroup(firestore, 'applications'), where('id', '==', id));
-  }, [firestore, id]);
+  const applicationDocRef = useMemo(() => {
+    if (!firestore || !id || !userId) return null;
+    return doc(firestore, `users/${userId}/applications`, id);
+  }, [firestore, id, userId]);
 
-  const { data: applications, isLoading } = useCollection<Application>(applicationsQuery);
+  const { data: applicationData, isLoading } = useDoc<Application>(applicationDocRef);
 
   if (isLoading) {
     return (
@@ -31,8 +31,6 @@ export default function AdminApplicationDetailPage() {
       </div>
     );
   }
-
-  const applicationData = applications?.[0];
 
   if (!applicationData) {
     // If the query completes and there's no data, then the application doesn't exist.
