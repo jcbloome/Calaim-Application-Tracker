@@ -19,7 +19,7 @@ import { FileDown, Search, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Timestamp, collection, getDocs } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
-import { useMemo, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 
 const getBadgeVariant = (status: ApplicationStatus) => {
   switch (status) {

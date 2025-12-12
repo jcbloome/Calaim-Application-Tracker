@@ -2,11 +2,12 @@
 
 import { notFound, useParams, useSearchParams } from 'next/navigation';
 import { useFirestore, useDoc } from '@/firebase';
-import { ApplicationDetailClientView } from './ApplicationDetailClientView';
 import type { Application } from '@/lib/definitions';
 import { useMemo } from 'react';
 import { doc } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
+import { ApplicationDetailClientView } from './ApplicationDetailClientView';
+
 
 // This is now a Client Component that fetches data.
 export default function AdminApplicationDetailPage() {
@@ -16,8 +17,14 @@ export default function AdminApplicationDetailPage() {
   const userId = searchParams.get('userId');
   const firestore = useFirestore();
 
+  // Check for missing parameters right away
+  if (!id || !userId) {
+      // This immediately halts rendering and shows a 404/not found page
+      notFound(); 
+  }
+
   const applicationDocRef = useMemo(() => {
-    if (!firestore || !id || !userId) return null;
+    if (!firestore) return null;
     return doc(firestore, `users/${userId}/applications`, id);
   }, [firestore, id, userId]);
 
