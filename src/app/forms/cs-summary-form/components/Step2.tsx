@@ -46,35 +46,35 @@ export default function Step2() {
           <CardDescription>Details about the member's current and customary residence.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div>
-            <FormField
-              control={control}
-              name="currentLocation"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Member's Current Location Type <span className="text-destructive">*</span></FormLabel>
-                   <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select a location type" />
-                            </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                            {locationOptions.map(option => (
-                                <SelectItem key={option} value={option}>{option}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
           <div className="space-y-4 p-4 border rounded-md">
             <h3 className="font-medium">Current Address</h3>
-            <FormField control={control} name="currentAddress" render={({ field }) => (
-              <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-            )} />
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={control}
+                  name="currentLocation"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Location Type <span className="text-destructive">*</span></FormLabel>
+                       <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select a location type" />
+                                </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                                {locationOptions.map(option => (
+                                    <SelectItem key={option} value={option}>{option}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField control={control} name="currentAddress" render={({ field }) => (
+                  <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                )} />
+             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField control={control} name="currentCity" render={({ field }) => (
                 <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
@@ -111,31 +111,33 @@ export default function Step2() {
                     )}
                 />
                 <div className="space-y-4">
-                    <FormField
-                      control={control}
-                      name="customaryLocationType"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Customary Residence Location Type <span className="text-destructive">*</span></FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={copyAddress}>
-                                <FormControl>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select a location type" />
-                                    </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                    {locationOptions.map(option => (
-                                        <SelectItem key={option} value={option}>{option}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField control={control} name="customaryAddress" render={({ field }) => (
-                        <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} /></FormControl><FormMessage /></FormItem>
-                    )} />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField
+                          control={control}
+                          name="customaryLocationType"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Location Type <span className="text-destructive">*</span></FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={copyAddress}>
+                                    <FormControl>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select a location type" />
+                                        </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                        {locationOptions.map(option => (
+                                            <SelectItem key={option} value={option}>{option}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField control={control} name="customaryAddress" render={({ field }) => (
+                            <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} /></FormControl><FormMessage /></FormItem>
+                        )} />
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormField control={control} name="customaryCity" render={({ field }) => (
                             <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} /></FormControl><FormMessage /></FormItem>
