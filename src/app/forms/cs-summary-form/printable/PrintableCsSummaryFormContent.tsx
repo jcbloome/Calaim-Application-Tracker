@@ -60,7 +60,7 @@ export function PrintableCsSummaryFormContent() {
             <Field label="Last Name" />
             <Field label="Your Phone" description="(xxx) xxx-xxxx" />
             <Field label="Your Email" />
-            <Field label="Relationship to Member (e.g., Family Member, Social Worker)" />
+            <Field label="Relationship to Member (e.g., Son, POA, Self, etc.)" />
             <Field label="Agency (e.g., Bob's Referral Agency, Hospital Name, etc.)" description="If not applicable, leave blank."/>
           </div>
         </div>
@@ -71,9 +71,9 @@ export function PrintableCsSummaryFormContent() {
               <Field label="First Name" />
               <Field label="Last Name" />
               <Field label="Relationship to Member" />
+              <Field label="Preferred Language" />
               <Field label="Phone" description="(xxx) xxx-xxxx" />
               <Field label="Email" />
-              <Field label="Preferred Language" />
             </div>
         </div>
         
@@ -83,9 +83,9 @@ export function PrintableCsSummaryFormContent() {
               <Field label="First Name" />
               <Field label="Last Name" />
               <Field label="Relationship to Member" />
+              <Field label="Preferred Language" />
               <Field label="Phone" description="(xxx) xxx-xxxx" />
               <Field label="Email" />
-              <Field label="Preferred Language" />
             </div>
         </div>
 
@@ -123,19 +123,11 @@ export function PrintableCsSummaryFormContent() {
           <SectionTitle>Location Information</SectionTitle>
           <div className="space-y-2">
               <p className="text-xs font-medium text-gray-700">Member's Current Location</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  <CheckboxField label="Home" />
-                  <CheckboxField label="Hospital" />
-                  <CheckboxField label="Skilled Nursing" />
-                  <CheckboxField label="Unhoused" />
-                  <CheckboxField label="Sub-Acute" />
-                  <CheckboxField label="Assisted Living" />
-                  <CheckboxField label="Other" />
-              </div>
           </div>
           <h3 className="text-sm font-medium text-gray-800 mt-4">Current Address</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
-              <Field label="Street Address" className="sm:col-span-2"/>
+              <Field label="Location Type" description='e.g., Home, Hospital, SNF' />
+              <Field label="Street Address" />
               <Field label="City" />
               <Field label="State" />
               <Field label="ZIP Code" />
@@ -144,7 +136,8 @@ export function PrintableCsSummaryFormContent() {
           <h3 className="text-sm font-medium text-gray-800 mt-4">Customary Residence (where is the member's normal long term address)</h3>
             <CheckboxField label="Same as current location" />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
-              <Field label="Street Address" className="sm:col-span-2"/>
+               <Field label="Location Type" description='e.g., Home, Hospital, SNF' />
+              <Field label="Street Address" />
               <Field label="City" />
               <Field label="State" />
               <Field label="ZIP Code" />
@@ -202,37 +195,25 @@ export function PrintableCsSummaryFormContent() {
         <div>
           <SectionTitle>ISP & Facility Information</SectionTitle>
             <h3 className="text-sm font-medium text-gray-800 mt-4">Individual Service Plan (ISP) Contact</h3>
+             <p className="text-xs text-gray-600 my-2">An ISP is a comprehensive assessment by the Managed Care Plan's (MCP) clinical team to determine care needs and approve the member for the program. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN. For Health Net, the care level is determined by Connections; for Kaiser, it's determined by Kaiser.
+            <br/><br/>
+            Our MSW/RN needs to know who to contact to discuss the member's care needs, review the Physician's report (602), and other clinical notes. Who is the best person to contact for the ISP? This is not the primary care doctor but could be a SNF social worker, etc.
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
               <Field label="First Name" />
               <Field label="Last Name" />
               <Field label="Relationship to Member" />
-              <Field label="Facility Name" />
               <Field label="Phone" description="(xxx) xxx-xxxx"/>
-              <Field label="Email" />
+              <Field label="Email" className="sm:col-span-2" />
             </div>
             
             <h3 className="text-sm font-medium text-gray-800 mt-4">ISP Assessment Location</h3>
-            <CheckboxField label="Same as current location" />
-            <div className="space-y-2 mt-2">
-              <p className="text-xs font-medium text-gray-700">Type of Location</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  <CheckboxField label="Home" />
-                  <CheckboxField label="SNF" />
-                  <CheckboxField label="RCFE" />
-                  <CheckboxField label="Hospital" />
-                  <CheckboxField label="Sub-Acute" />
-                  <CheckboxField label="Unhoused" />
-                  <CheckboxField label="Other" />
-              </div>
-          </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
-              <Field label="Street Address" className="sm:col-span-2"/>
-              <Field label="City" />
-              <Field label="State" />
-              <Field label="ZIP Code" />
-              <Field label="County" />
-            </div>
-
+             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
+                 <Field label="Type of Location" />
+                <Field label="Facility Name" />
+             </div>
+            <Field label="Street Address" description="Street Address, City, State, ZIP. Required for Kaiser members only." />
+            
           <h3 className="text-sm font-medium text-gray-800 mt-4">Assisted Living Waiver (ALW) Status</h3>
           <p className="text-xs text-gray-700 mt-1">Is the member currently on the ALW waitlist?</p>
           <div className="flex gap-6">

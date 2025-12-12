@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input';
 import { type FormValues } from '../schema';
 import { PhoneInput } from '@/components/ui/phone-input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Info } from 'lucide-react';
 
 const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub-Acute", "Assisted Living", "Other"];
 
@@ -96,6 +98,13 @@ export default function Step4() {
                         <FormMessage />
                     </FormItem>
                 )} />
+                 <Alert variant="default" className="mt-4 bg-blue-50 border-blue-200 text-blue-800">
+                    <Info className="h-4 w-4 !text-blue-700" />
+                    <AlertTitle>Address Requirement</AlertTitle>
+                    <AlertDescription>
+                        The street address for the ISP assessment is only required for <strong>Kaiser Permanente</strong> members. For <strong>Health Net</strong> members, please enter "N/A".
+                    </AlertDescription>
+                </Alert>
             </div>
           </CardContent>
       </Card>
