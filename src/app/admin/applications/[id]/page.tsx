@@ -5,7 +5,7 @@ import { notFound, useParams } from 'next/navigation';
 import { useFirestore, useCollection } from '@/firebase';
 import { ApplicationDetailClientView } from './ApplicationDetailClientView';
 import type { Application } from '@/lib/definitions';
-import { useMemo }embla-carousel-react
+import { useMemo } from 'react';
 import { collectionGroup, query, where } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
 
