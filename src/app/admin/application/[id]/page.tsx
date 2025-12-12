@@ -8,7 +8,7 @@ import dynamic from 'next/dynamic';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { CheckCircle2, FileWarning, PenSquare, ArrowLeft, Trash2, Loader2, User, Clock, Check, Circle, Lock, ShieldAlert } from 'lucide-react';
+import { CheckCircle2, FileWarning, PenSquare, ArrowLeft, Trash2, Loader2, User, Clock, Check, Circle, Lock, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { useUser, useFirestore, useDoc } from '@/firebase';
 import { doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
@@ -339,6 +339,16 @@ export default function AdminApplicationDetailPage() {
               </DialogContent>
             </Dialog>
         </div>
+
+      {application.healthPlan === 'Other' && (
+          <Alert variant="warning">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Non-Contracted Health Plan</AlertTitle>
+              <AlertDescription>
+                The member's selected health plan is '{application.existingHealthPlan || 'Other'}'. The member must switch to Health Net or Kaiser to be eligible for this program.
+              </AlertDescription>
+          </Alert>
+      )}
 
       {application.hasCapacity === 'No' && (
           <Alert variant="destructive">
