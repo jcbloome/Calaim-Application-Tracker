@@ -310,7 +310,7 @@ export default function AdminApplicationDetailPage() {
             </Button>
             <Dialog open={isDeleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="destructive">
+                <Button variant="destructive" className="w-full sm:w-auto">
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete Application
                 </Button>
@@ -365,10 +365,13 @@ export default function AdminApplicationDetailPage() {
           <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
             <div>
               <CardTitle className="text-2xl">Application: {application.id}</CardTitle>
-              <CardDescription className="flex flex-col sm:flex-row sm:gap-x-2">
-                <span>Member: <strong>{application.memberFirstName} {application.memberLastName}</strong> | </span>
-                <span>Health Plan: <strong>{application.healthPlan}</strong> | </span>
-                <span>Pathway: <strong>{application.pathway}</strong> | </span>
+              <CardDescription className="flex flex-wrap gap-x-2 gap-y-1">
+                <span>Member: <strong>{application.memberFirstName} {application.memberLastName}</strong></span>
+                <span className="hidden sm:inline">|</span>
+                <span>Health Plan: <strong>{application.healthPlan}</strong></span>
+                <span className="hidden sm:inline">|</span>
+                <span>Pathway: <strong>{application.pathway}</strong></span>
+                 <span className="hidden sm:inline">|</span>
                 <span>Status: <strong>{application.status}</strong></span>
               </CardDescription>
             </div>

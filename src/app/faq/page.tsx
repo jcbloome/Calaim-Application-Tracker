@@ -77,12 +77,10 @@ export default function FaqPage() {
       <Header />
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
         <div className="max-w-4xl mx-auto space-y-8">
-            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold">Frequently Asked Questions</h1>
-                    <p className="text-muted-foreground mt-1">Answers to common questions about the CalAIM application process.</p>
-                </div>
-                <GlossaryDialog className="hidden sm:flex" />
+            <div className="space-y-2">
+                <h1 className="text-3xl font-bold">Frequently Asked Questions</h1>
+                <p className="text-muted-foreground mt-1">Answers to common questions about the CalAIM application process.</p>
+                <GlossaryDialog />
             </div>
 
             <Card>

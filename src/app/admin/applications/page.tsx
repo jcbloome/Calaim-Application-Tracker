@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -63,7 +64,7 @@ export default function AdminApplicationsPage() {
             <h1 className="text-2xl font-bold tracking-tight">All Applications</h1>
             <p className="text-muted-foreground">Manage and review all submitted applications.</p>
         </div>
-        <Button>
+        <Button className="w-full sm:w-auto">
           <FileDown className="mr-2 h-4 w-4" />
           Export All
         </Button>
@@ -74,9 +75,9 @@ export default function AdminApplicationsPage() {
           <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
             <CardTitle>Application Records</CardTitle>
             <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                <div className="relative w-full">
+                <div className="relative w-full sm:w-auto">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search by name or ID..." className="pl-8 w-full" />
+                    <Input placeholder="Search by name or ID..." className="pl-8 w-full sm:w-64" />
                 </div>
                 <Select>
                     <SelectTrigger className="w-full sm:w-[180px]">

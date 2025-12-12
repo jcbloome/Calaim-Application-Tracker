@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -182,7 +183,7 @@ export default function FormTrackerPage() {
             </div>
              <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline"><BookOpen className="mr-2 h-4 w-4" /> View Legend</Button>
+                <Button variant="outline" className="w-full sm:w-auto"><BookOpen className="mr-2 h-4 w-4" /> View Legend</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
@@ -231,7 +232,7 @@ export default function FormTrackerPage() {
                         <SelectItem value="SNF Diversion">SNF Diversion</SelectItem>
                     </SelectContent>
                 </Select>
-                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto md:col-span-full lg:col-span-1">
+                 <div className="flex flex-col sm:flex-row gap-2 w-full lg:col-span-1 md:col-span-full sm:col-span-full">
                     <Select value={filters.formName} onValueChange={(v) => handleFilterChange('formName', v)}>
                         <SelectTrigger className="w-full"><SelectValue placeholder="Filter by Form" /></SelectTrigger>
                         <SelectContent>
