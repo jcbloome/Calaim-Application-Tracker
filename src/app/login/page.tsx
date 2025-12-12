@@ -81,7 +81,7 @@ export default function LoginPage() {
       } else if (err.code === AuthErrorCodes.EMAIL_EXISTS) {
         errorMessage = 'An account with this email already exists. Please sign in.';
       } else {
-        errorMessage = err.message;
+        errorMessage = "Invalid email or password. Please try again.";
       }
       
       setError(errorMessage);
@@ -156,7 +156,6 @@ export default function LoginPage() {
                     required
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    minLength={6}
                     />
                     <Button
                     type="button"
