@@ -129,7 +129,7 @@ export default function AdminApplicationsPage() {
                     <TableCell className="hidden sm:table-cell">{formatDate(app.lastUpdated)}</TableCell>
                     <TableCell className="text-right">
                       <Button asChild variant="outline" size="sm" disabled={!app.userId}>
-                        <Link href={`/admin/application/${app.id}?userId=${app.userId}`}>View Details</Link>
+                        <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View Details</Link>
                       </Button>
                     </TableCell>
                   </TableRow>
