@@ -234,8 +234,7 @@ export function CsSummaryView({ application }: { application: Partial<Applicatio
                 <Field label="ISP Contact Facility Name" value={data.ispFacilityName} />
                 <Field label="ISP Contact Phone" value={data.ispPhone} />
                 <Field label="ISP Contact Email" value={data.ispEmail} />
-                <Field label="ISP Address" value={`${data.ispAddress || ''}, ${data.ispCity || ''}, ${data.ispState || ''} ${data.ispZip || ''}`.replace(/, , /g, ', ').replace(/^, |, $/g, '')} />
-                <Field label="ISP County" value={data.ispCounty} />
+                <Field label="ISP Address" value={data.ispAddress} />
             </Section>
 
              <Section title="RCFE & ALW">

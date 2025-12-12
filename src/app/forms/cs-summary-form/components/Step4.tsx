@@ -54,52 +54,45 @@ export default function Step4() {
 
                <div className="space-y-4 p-4 border rounded-md mt-4">
                  <h3 className="font-medium text-base">ISP Assessment Location</h3>
-                  <FormField
-                    control={control}
-                    name="ispLocationType"
-                    render={({ field }) => (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={control}
+                      name="ispLocationType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Type of Location <span className="text-destructive">*</span></FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value ?? ''}>
+                              <FormControl>
+                                  <SelectTrigger>
+                                      <SelectValue placeholder="Select a location type" />
+                                  </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                  {locationOptions.map(option => (
+                                      <SelectItem key={option} value={option}>{option}</SelectItem>
+                                  ))}
+                              </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField control={control} name="ispFacilityName" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Type of Location <span className="text-destructive">*</span></FormLabel>
-                         <Select onValueChange={field.onChange} value={field.value ?? ''}>
-                            <FormControl>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select a location type" />
-                                </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                                {locationOptions.map(option => (
-                                    <SelectItem key={option} value={option}>{option}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <FormMessage />
+                          <FormLabel>Facility Name <span className="text-destructive">*</span></FormLabel>
+                          <FormControl><Input {...field} value={field.value ?? ''} /></FormControl>
+                          <FormDescription>If not applicable, enter N/A.</FormDescription>
+                          <FormMessage />
                       </FormItem>
-                    )}
-                  />
-                 <FormField control={control} name="ispFacilityName" render={({ field }) => (
+                  )} />
+                  </div>
+                 <FormField control={control} name="ispAddress" render={({ field }) => (
                     <FormItem>
-                        <FormLabel>Facility Name <span className="text-destructive">*</span></FormLabel>
+                        <FormLabel>Street Address <span className="text-destructive">*</span></FormLabel>
                         <FormControl><Input {...field} value={field.value ?? ''} /></FormControl>
-                        <FormDescription>If not applicable, enter N/A.</FormDescription>
+                        <FormDescription>Street Address, City, State, ZIP</FormDescription>
                         <FormMessage />
                     </FormItem>
-                )} />
-                 <FormField control={control} name="ispAddress" render={({ field }) => (
-                    <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <FormField control={control} name="ispCity" render={({ field }) => (
-                        <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-                    )} />
-                    <FormField control={control} name="ispState" render={({ field }) => (
-                        <FormItem><FormLabel>State <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-                    )} />
-                    <FormField control={control} name="ispZip" render={({ field }) => (
-                        <FormItem><FormLabel>ZIP Code <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
-                    )} />
-                </div>
-                 <FormField control={control} name="ispCounty" render={({ field }) => (
-                    <FormItem><FormLabel>County <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                 )} />
             </div>
           </CardContent>
