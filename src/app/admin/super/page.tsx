@@ -105,15 +105,16 @@ export default function SuperAdminPage() {
         try {
             let uid: string | null = null;
     
-            // Check if user already exists in Auth
+            // Check if user already exists in the `users` collection in Firestore
             const existingUsersQuery = query(collection(firestore, 'users'), where('email', '==', newStaffEmail));
             const existingUsersSnap = await getDocs(existingUsersQuery);
             
             if (!existingUsersSnap.empty) {
+                // User document exists in Firestore, grant admin role
                 uid = existingUsersSnap.docs[0].id;
                 toast({ title: "Existing User Found", description: `Granting Admin role to ${newStaffEmail}.`});
             } else {
-                // If not, create them in Auth
+                // No user document in Firestore, attempt to create a new user in Auth
                 const tempPassword = `temp-password-${Date.now()}`;
                 try {
                     const { user: newUser } = await createUserWithEmailAndPassword(auth, newStaffEmail, tempPassword);
@@ -129,8 +130,9 @@ export default function SuperAdminPage() {
                     });
                 } catch (error: any) {
                     if (error.code === 'auth/email-already-in-use') {
-                       // This is a rare edge case where a user exists in Auth but not in the 'users' collection.
-                       // We can attempt to recover by querying Auth users, but for now we will throw an error.
+                       // This is the edge case: user exists in Auth but not Firestore.
+                       // We can't get their UID directly from the client, so we must ask for a manual fix for now.
+                       // A more advanced solution would involve a server-side function to look up user by email.
                        throw new Error("This email is registered in Firebase Auth but not in the 'users' collection. Please resolve manually in Firebase Console.");
                     }
                     throw error;
@@ -264,7 +266,7 @@ export default function SuperAdminPage() {
                         </div>
                         <Button onClick={handleAddStaff} className="w-full" disabled={isAddingStaff}>
                             {isAddingStaff ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
-                            Grant Admin Role
+                            Add Staff Member
                         </Button>
                     </div>
                 </CardContent>
@@ -343,5 +345,3 @@ export default function SuperAdminPage() {
     </div>
   );
 }
-
-    
