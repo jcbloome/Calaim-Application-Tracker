@@ -145,14 +145,13 @@ service cloud.firestore {
       allow read, write: if isAdmin() || isSuperAdmin();
     }
 
+    // Rules for the 'users' collection itself (listing)
+    match /users {
+      allow list: if isSuperAdmin();
+    }
+
+    // Rules for individual user documents
     match /users/{userId} {
-      /**
-       * @description Rules for a user's own profile document.
-       * @path /users/{userId}
-       * @allow (read, write) An authenticated user can read and write to their own profile.
-       * @deny (list) Any user attempting to list all user profiles.
-       * @principle Restricts access to a user's own data tree and allows self-creation and update of a profile.
-       */
       allow get: if isOwnerOrAdmin(userId);
       allow write: if isOwner(userId);
       allow delete: if isOwnerOrAdmin(userId);
@@ -160,9 +159,6 @@ service cloud.firestore {
       /**
        * @description Rules for a user's CalAIM applications.
        * @path /users/{userId}/applications/{applicationId}
-       * @allow (create, read, write) An authenticated user managing their own application documents.
-       * @deny (read, write) A user attempting to access another user's applications.
-       * @principle Enforces document ownership for all operations within a user-specific subcollection.
        */
       match /applications/{applicationId} {
         allow get, list: if isOwnerOrAdmin(userId);
@@ -171,14 +167,6 @@ service cloud.firestore {
         allow delete: if isExistingOwnerOrAdmin(userId);
 
         // Wildcard match for all nested subcollections of an application
-        // (contacts, legalRepresentatives, locations, ispContacts, rcfeSelections, formStatuses, eligibilityScreenings)
-        /**
-         * @description Generic rules for all subcollections of an application.
-         * @path /users/{userId}/applications/{applicationId}/{subcollection}/{docId}
-         * @allow (create, read, write) The application owner or an admin managing related data.
-         * @deny (read, write) Any user who does not own the parent application.
-         * @principle Inherits ownership from the parent document path and validates relational integrity.
-         */
         match /{subcollection}/{docId} {
           allow get, list: if isOwnerOrAdmin(userId);
           allow create: if isOwnerOrAdmin(userId) && hasValidSubcollectionDataOnCreate(applicationId);
@@ -188,23 +176,23 @@ service cloud.firestore {
       }
     }
 
-    match /users {
-        allow list: if isSuperAdmin();
-    }
-
+    // Rules for listing the admin roles collection
     match /roles_admin {
-        allow list: if isSuperAdmin();
+      allow list: if isSuperAdmin();
     }
-
+    
+    // Rules for individual admin role documents
     match /roles_admin/{userId} {
       allow get: if isSignedIn();
       allow write, delete: if isSuperAdmin();
     }
     
+    // Rules for listing the super admin roles collection
     match /roles_super_admin {
         allow list: if isSuperAdmin();
     }
-
+    
+    // Rules for individual super admin role documents
     match /roles_super_admin/{userId} {
       allow get: if isSignedIn();
       allow write, delete: if isSuperAdmin();
