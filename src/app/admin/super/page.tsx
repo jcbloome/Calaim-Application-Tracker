@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Trash2, UserPlus, Send, Loader2, ShieldPlus } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { Timestamp, collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { Timestamp, collection, doc, deleteDoc } from 'firebase/firestore';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useFirestore, useCollection } from '@/firebase';
 import { createAdminUser, createSuperAdminUser } from '@/app/actions/admin-actions';
@@ -191,7 +191,7 @@ export default function SuperAdminPage() {
     const { data: users, isLoading: isLoadingUsers } = useCollection(usersQuery);
     const { data: adminRoles, isLoading: isLoadingAdmins } = useCollection(adminRolesQuery);
     const { data: superAdminRoles, isLoading: isLoadingSuperAdmins } = useCollection(superAdminRolesQuery);
-
+    
     const staff = useMemo(() => {
         if (!users || !adminRoles || !superAdminRoles) return [];
 
