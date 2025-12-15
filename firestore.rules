@@ -212,10 +212,8 @@ service cloud.firestore {
      */
     match /roles_super_admin/{userId} {
       allow get: if isSignedIn();
-      allow write: if isSuperAdmin() || request.auth.uid == userId;
+      allow write: if isSuperAdmin();
       allow list: if isSuperAdmin();
     }
   }
 }
-
-    
