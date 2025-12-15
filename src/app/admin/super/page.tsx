@@ -197,14 +197,15 @@ export default function SuperAdminPage() {
     
     const staff = useMemo(() => {
         if (!users || !adminRoles || !superAdminRoles) return [];
-
+    
+        const staffMap = new Map<string, StaffMember>();
         const usersMap = new Map(users.map(u => [u.id, u]));
-        const staffList: StaffMember[] = [];
-
+    
+        // Add admins
         adminRoles.forEach(role => {
             const user = usersMap.get(role.id);
-            if (user) {
-                staffList.push({
+            if (user && !staffMap.has(user.id)) {
+                staffMap.set(user.id, {
                     id: user.id,
                     name: user.displayName || `${user.firstName} ${user.lastName}`,
                     email: user.email,
@@ -212,25 +213,21 @@ export default function SuperAdminPage() {
                 });
             }
         });
-        
+    
+        // Add super admins, overwriting if they are already in the list as a regular admin
         superAdminRoles.forEach(role => {
             const user = usersMap.get(role.id);
             if (user) {
-                const existingIndex = staffList.findIndex(s => s.id === user.id);
-                if (existingIndex > -1) {
-                    staffList[existingIndex].role = 'Super Admin';
-                } else {
-                     staffList.push({
-                        id: user.id,
-                        name: user.displayName || `${user.firstName} ${user.lastName}`,
-                        email: user.email,
-                        role: 'Super Admin'
-                    });
-                }
+                staffMap.set(user.id, {
+                    id: user.id,
+                    name: user.displayName || `${user.firstName} ${user.lastName}`,
+                    email: user.email,
+                    role: 'Super Admin'
+                });
             }
         });
-
-        return staffList.sort((a,b) => a.name.localeCompare(b.name));
+    
+        return Array.from(staffMap.values()).sort((a, b) => a.name.localeCompare(b.name));
     }, [users, adminRoles, superAdminRoles]);
     
     const isLoadingStaff = isLoadingUsers || isLoadingAdmins || isLoadingSuperAdmins;
@@ -370,73 +367,72 @@ export default function SuperAdminPage() {
                     </div>
                 </CardContent>
             </Card>
-            <WebhookPreparer />
-        </div>
 
-        <Card>
-            <CardHeader>
-                <CardTitle>Current Staff</CardTitle>
-                <CardDescription>A list of all users with Admin or Super Admin roles.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <ScrollArea className="h-96">
-                     {isLoadingStaff ? (
-                        <div className="flex items-center justify-center p-8">
-                            <Loader2 className="h-6 w-6 animate-spin" />
-                        </div>
-                     ) : staff.length > 0 ? (
-                        staff.map(member => (
-                            <div key={member.id} className="flex items-center justify-between pr-4 py-2">
-                                <div className="flex items-center gap-4">
-                                    <Avatar>
-                                        <AvatarImage src={member.avatar} alt={member.name} />
-                                        <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
-                                    </Avatar>
-                                    <div>
-                                        <p className="font-semibold">{member.name}</p>
-                                        <p className="text-sm text-muted-foreground">{member.email}</p>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Current Staff</CardTitle>
+                    <CardDescription>A list of all users with Admin or Super Admin roles.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <ScrollArea className="h-96">
+                         {isLoadingStaff ? (
+                            <div className="flex items-center justify-center p-8">
+                                <Loader2 className="h-6 w-6 animate-spin" />
+                            </div>
+                         ) : staff.length > 0 ? (
+                            staff.map(member => (
+                                <div key={member.id} className="flex items-center justify-between pr-4 py-2">
+                                    <div className="flex items-center gap-4">
+                                        <Avatar>
+                                            <AvatarImage src={member.avatar} alt={member.name} />
+                                            <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
+                                        </Avatar>
+                                        <div>
+                                            <p className="font-semibold">{member.name}</p>
+                                            <p className="text-sm text-muted-foreground">{member.email}</p>
+                                        </div>
+                                    </div>
+                                     <div className="flex items-center gap-2">
+                                        <span className="text-xs font-medium text-muted-foreground">{member.role}</span>
+                                        <Dialog>
+                                            <DialogTrigger asChild>
+                                                <Button
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="text-destructive hover:bg-destructive/10"
+                                                    disabled={member.role === 'Super Admin' && superAdminRoles?.length === 1}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </DialogTrigger>
+                                            <DialogContent>
+                                                <DialogHeader>
+                                                    <DialogTitle>Are you sure?</DialogTitle>
+                                                    <DialogDescription>
+                                                        This will remove <strong>{member.role}</strong> permissions for {member.name}. They may still be able to log in but will not have admin access. This does not delete their user account.
+                                                    </DialogDescription>
+                                                </DialogHeader>
+                                                <DialogFooter>
+                                                    <Button variant="outline">Cancel</Button>
+                                                    <Button variant="destructive" onClick={() => handleRemoveStaff(member)}>Confirm Removal</Button>
+                                                </DialogFooter>
+                                            </DialogContent>
+                                        </Dialog>
                                     </div>
                                 </div>
-                                 <div className="flex items-center gap-2">
-                                    <span className="text-xs font-medium text-muted-foreground">{member.role}</span>
-                                    <Dialog>
-                                        <DialogTrigger asChild>
-                                            <Button
-                                                variant="ghost" 
-                                                size="icon" 
-                                                className="text-destructive hover:bg-destructive/10"
-                                                disabled={member.role === 'Super Admin' && superAdminRoles?.length === 1}
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                        </DialogTrigger>
-                                        <DialogContent>
-                                            <DialogHeader>
-                                                <DialogTitle>Are you sure?</DialogTitle>
-                                                <DialogDescription>
-                                                    This will remove <strong>{member.role}</strong> permissions for {member.name}. They may still be able to log in but will not have admin access. This does not delete their user account.
-                                                </DialogDescription>
-                                            </DialogHeader>
-                                            <DialogFooter>
-                                                <Button variant="outline">Cancel</Button>
-                                                <Button variant="destructive" onClick={() => handleRemoveStaff(member)}>Confirm Removal</Button>
-                                            </DialogFooter>
-                                        </DialogContent>
-                                    </Dialog>
-                                </div>
-                            </div>
-                        ))
-                     ) : (
-                        <div className="text-center text-muted-foreground p-8">No staff members found.</div>
-                     )}
-                </ScrollArea>
-            </CardContent>
-        </Card>
+                            ))
+                         ) : (
+                            <div className="text-center text-muted-foreground p-8">No staff members found.</div>
+                         )}
+                    </ScrollArea>
+                </CardContent>
+            </Card>
+        </div>
+
+        <WebhookPreparer />
 
       </div>
 
     </div>
   );
 }
-
-    
