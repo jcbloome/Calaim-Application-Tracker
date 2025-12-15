@@ -145,10 +145,11 @@ service cloud.firestore {
       allow read, write: if isAdmin() || isSuperAdmin();
     }
 
-    /**
-     * @description Rules for the 'users' collection.
-     * @path /users
-     */
+    match /users {
+        // Super admins can list all user documents.
+        allow list: if isSuperAdmin();
+    }
+    
     match /users/{userId} {
       /**
        * @description Rules for a user's own profile document.
@@ -159,8 +160,6 @@ service cloud.firestore {
        */
       allow get: if isOwnerOrAdmin(userId);
       allow write: if isOwner(userId);
-      // list permission must be specified on the collection, not the document
-      allow list: if isSuperAdmin();
       allow delete: if isOwnerOrAdmin(userId);
 
       /**
@@ -193,33 +192,37 @@ service cloud.firestore {
         }
       }
     }
+    
+    match /roles_admin {
+        allow list: if isSuperAdmin();
+    }
 
     /**
      * @description Defines admin roles. The existence of a document grants admin privileges.
      * @path /roles_admin/{userId}
-     * @allow (list) Super admins can list all admin roles.
-     * @allow (get) Any signed-in user can check if a specific user is an admin.
-     * @deny (write, delete) Client-side modifications are restricted to super admins.
-     * @principle Secures administrative role management by granting write access only to super admins.
+     * @allow (get) Any signed-in user can check if they are an admin.
+     * @deny (list, create, update, delete) All other operations are denied for security.
+     * @principle Secures administrative role management by disallowing any client-side modifications.
      */
     match /roles_admin/{userId} {
       allow get: if isSignedIn();
-      allow list, write, delete: if isSuperAdmin();
+      allow write, delete: if isSuperAdmin();
     }
-    
+
+    match /roles_super_admin {
+        allow list: if isSuperAdmin();
+    }
+
     /**
      * @description Defines super admin roles.
      * @path /roles_super_admin/{userId}
-     * @allow (list) Super admins can list all super admin roles.
-     * @allow (get) Any signed-in user can check if they are a super admin.
-     * @deny (write, delete) Client-side modifications are restricted to super admins.
-     * @principle Secures super administrative role management by granting write access only to super admins.
+     * @allow (get) A super admin can check roles.
+     * @deny (all client) All client-side requests to read, list, or write are denied unless super admin.
+     * @principle Secures super administrative role management by disallowing any client-side modifications.
      */
     match /roles_super_admin/{userId} {
       allow get: if isSignedIn();
-      allow list, write, delete: if isSuperAdmin();
+      allow write, delete: if isSuperAdmin();
     }
   }
 }
-
-    
