@@ -2,26 +2,22 @@
 'use server';
 
 /**
- * @fileOverview An AI flow to create a user in Firebase Authentication and send a password reset email.
- * - createUser - A function that handles user creation.
- * - CreateUserInput - The input type for the createUser function.
- * - CreateUserOutput - The return type for the createUser function.
+ * @fileOverview This AI flow is deprecated and no longer functional.
+ * User creation is now handled on the client-side in /admin/super/page.tsx.
  */
 
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
-import { initializeAdminApp } from '@/firebase/admin-init';
-import { getAuth } from 'firebase-admin/auth';
 
 const CreateUserInputSchema = z.object({
-  email: z.string().email().describe('The email address for the new user.'),
-  displayName: z.string().describe('The display name for the new user.'),
+  email: z.string().email(),
+  displayName: z.string(),
 });
 export type CreateUserInput = z.infer<typeof CreateUserInputSchema>;
 
 const CreateUserOutputSchema = z.object({
-  uid: z.string().optional().describe('The unique ID of the newly created user.'),
-  error: z.string().optional().describe('An error message if the creation failed.'),
+  uid: z.string().optional(),
+  error: z.string().optional(),
 });
 export type CreateUserOutput = z.infer<typeof CreateUserOutputSchema>;
 
@@ -36,39 +32,11 @@ const createUserFlow = ai.defineFlow(
     outputSchema: CreateUserOutputSchema,
   },
   async (input) => {
-    // This flow is currently non-functional in the execution environment
-    // due to server-side authentication issues.
-    // It will return a specific error message to be handled by the client.
+    // This flow is non-functional due to server-side auth issues.
+    // It returns an error to be handled by the client, though the client
+    // no longer calls this flow.
     return {
-      error: 'Automatic user creation is currently unavailable. Please create the user manually in the Firebase console and then assign their role here.',
+      error: 'Automatic user creation via AI flow is disabled.',
     };
-
-    /*
-    // The original implementation is commented out below.
-    try {
-      const adminApp = initializeAdminApp();
-      const adminAuth = getAuth(adminApp);
-
-      // 1. Create the user in Firebase Authentication
-      const userRecord = await adminAuth.createUser({
-        email: input.email,
-        displayName: input.displayName,
-        emailVerified: false, // User will verify by setting password
-      });
-
-      // 2. Generate and send password reset email so the user can set their password
-      const link = await adminAuth.generatePasswordResetLink(input.email);
-      // In a real app, you would use a service like Resend to email this link.
-      // For this demo, we'll just log it to the server console.
-      console.log(`Password reset link for ${input.email}: ${link}`);
-
-      return { uid: userRecord.uid };
-    } catch (error: any) {
-      console.error("Error in createUserFlow:", error);
-      // Firebase errors have a `code` property that's useful
-      const errorMessage = error.code ? `Auth error (${error.code})` : error.message;
-      return { error: errorMessage || 'An unknown error occurred during user creation.' };
-    }
-    */
   }
 );

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -12,9 +11,9 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Timestamp, collection, doc, deleteDoc, setDoc } from 'firebase/firestore';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useFirestore, useCollection, useUser } from '@/firebase';
+import { useFirestore, useCollection, useUser, useAuth } from '@/firebase';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { createUser } from '@/ai/flows/create-user';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 
 
 const samplePayload = {
@@ -174,6 +173,7 @@ const WebhookPreparer = () => {
 
 export default function SuperAdminPage() {
     const firestore = useFirestore();
+    const auth = useAuth();
     const { user } = useUser();
     const { toast } = useToast();
     
@@ -242,39 +242,26 @@ export default function SuperAdminPage() {
         role: 'Admin' | 'Super Admin',
         setLoading: (loading: boolean) => void
     ) => {
-        if (!email || !firstName || !lastName || !firestore || !user) {
-            toast({ variant: "destructive", title: "Missing Information", description: "All fields are required and you must be logged in." });
+        if (!email || !firstName || !lastName || !firestore || !auth) {
+            toast({ variant: "destructive", title: "Missing Information", description: "All fields are required." });
             return;
         }
 
         setLoading(true);
+
         try {
-            // 1. Call AI flow to create the user in Firebase Auth
-            const createUserResult = await createUser({
-                email,
-                displayName: `${firstName} ${lastName}`,
-            });
-
-            if (createUserResult.error) {
-                toast({
-                    variant: 'destructive',
-                    title: 'User Creation Failed',
-                    description: createUserResult.error,
-                    duration: 10000,
-                });
-                setLoading(false);
-                return;
-            }
-
-            if (!createUserResult.uid) {
-                throw new Error('Failed to get UID from user creation flow.');
-            }
-            const { uid } = createUserResult;
+            // This is a placeholder password. The user will be expected to reset it.
+            // In a real-world scenario, you would send a password reset email.
+            const tempPassword = `temp-password-${Date.now()}`;
+            
+            // 1. Create the user
+            const userCredential = await createUserWithEmailAndPassword(auth, email, tempPassword);
+            const newUser = userCredential.user;
 
             // 2. Create the user document in the `users` collection
-            const userDocRef = doc(firestore, 'users', uid);
+            const userDocRef = doc(firestore, 'users', newUser.uid);
             await setDoc(userDocRef, {
-                id: uid,
+                id: newUser.uid,
                 firstName,
                 lastName,
                 displayName: `${firstName} ${lastName}`,
@@ -283,14 +270,14 @@ export default function SuperAdminPage() {
 
             // 3. Assign the role in the appropriate roles collection
             const roleCollection = role === 'Admin' ? 'roles_admin' : 'roles_super_admin';
-            const roleDocRef = doc(firestore, roleCollection, uid);
+            const roleDocRef = doc(firestore, roleCollection, newUser.uid);
             await setDoc(roleDocRef, {
                 email,
                 role: role.toLowerCase(),
                 createdAt: Timestamp.now(),
             });
 
-            toast({ title: `${role} Added`, description: `${email} has been created and invited.` });
+            toast({ title: `${role} Added`, description: `${email} has been created and given ${role} privileges.` });
 
             // Clear input fields
             if (role === 'Admin') {
@@ -305,7 +292,10 @@ export default function SuperAdminPage() {
 
         } catch (error: any) {
             console.error(`Failed to Add ${role}:`, error);
-            toast({ variant: "destructive", title: `Failed to Add ${role}`, description: error.message });
+            const errorMessage = error.code === 'auth/email-already-in-use'
+                ? 'A user with this email already exists.'
+                : error.message;
+            toast({ variant: "destructive", title: `Failed to Add ${role}`, description: errorMessage });
         } finally {
             setLoading(false);
         }
@@ -330,7 +320,6 @@ export default function SuperAdminPage() {
                 await deleteDoc(doc(firestore, 'roles_super_admin', staffMember.id));
             }
             // Note: This does not delete the user from Firebase Auth, only removes their role.
-            // A full deletion would require a server-side function.
             toast({ title: "Staff Role Removed", description: `${staffMember.email} no longer has the ${staffMember.role} role.` });
         } catch (error: any) {
              toast({ variant: "destructive", title: "Failed to Remove Role", description: error.message });
