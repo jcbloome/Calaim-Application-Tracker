@@ -253,10 +253,8 @@ export default function SuperAdminPage() {
             // In a real-world scenario, you would send a password reset email.
             const tempPassword = `temp-password-${Date.now()}`;
             
-            // 1. Create the user in a temporary auth instance so we don't affect the current user's session
             const { user: newUser } = await createUserWithEmailAndPassword(auth, email, tempPassword);
 
-            // 2. Create the user document in the `users` collection
             const userDocRef = doc(firestore, 'users', newUser.uid);
             await setDoc(userDocRef, {
                 id: newUser.uid,
@@ -266,7 +264,6 @@ export default function SuperAdminPage() {
                 email,
             });
 
-            // 3. Assign the role in the appropriate roles collection
             const roleCollection = role === 'Admin' ? 'roles_admin' : 'roles_super_admin';
             const roleDocRef = doc(firestore, roleCollection, newUser.uid);
             await setDoc(roleDocRef, {
@@ -277,7 +274,6 @@ export default function SuperAdminPage() {
 
             toast({ title: `${role} Added`, description: `${email} has been created and given ${role} privileges.` });
 
-            // Clear input fields
             if (role === 'Admin') {
                 setNewStaffEmail('');
                 setNewStaffFirstName('');
