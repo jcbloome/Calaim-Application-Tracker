@@ -122,8 +122,7 @@ service cloud.firestore {
     
     match /roles_super_admin/{userId} {
       allow get: if isSignedIn();
-      // Temporarily allow any signed-in user to create their own super_admin role
-      allow write: if isSuperAdmin() || request.auth.uid == userId;
+      allow write: if isSuperAdmin();
       allow delete: if isSuperAdmin();
     }
   }

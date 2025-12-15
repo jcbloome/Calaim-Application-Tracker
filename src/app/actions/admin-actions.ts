@@ -85,14 +85,6 @@ export const createSuperAdminUser = async (payload: CreateUserPayload) => {
             displayName: `${firstName} ${lastName}`,
             email: userRecord.email,
         });
-
-        // 3. Assign the 'super_admin' role in the `roles_super_admin` collection.
-        const superAdminRoleRef = adminFirestore.collection('roles_super_admin').doc(userRecord.uid);
-        await superAdminRoleRef.set({
-            email: userRecord.email,
-            role: 'super_admin',
-            createdAt: Timestamp.now(),
-        });
         
         // 4. Send a password reset email so the new user can set their password
         const link = await adminAuth.generatePasswordResetLink(email);

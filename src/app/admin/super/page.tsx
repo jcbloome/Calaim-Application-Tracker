@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Trash2, UserPlus, Send, Loader2, ShieldPlus } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { Timestamp, collection, doc, deleteDoc } from 'firebase/firestore';
+import { Timestamp, collection, doc, deleteDoc, setDoc } from 'firebase/firestore';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useFirestore, useCollection } from '@/firebase';
 import { createAdminUser, createSuperAdminUser } from '@/app/actions/admin-actions';
@@ -277,13 +277,21 @@ export default function SuperAdminPage() {
                 lastName: newSuperAdminLastName
             });
 
-            if (result.success) {
+            if (result.success && result.userId && firestore) {
+                 // Client-side write to roles_super_admin
+                const roleRef = doc(firestore, 'roles_super_admin', result.userId);
+                await setDoc(roleRef, {
+                    email: newSuperAdminEmail,
+                    role: 'super_admin',
+                    createdAt: Timestamp.now(),
+                });
+
                 toast({ title: "Super Admin Added", description: `${newSuperAdminEmail} has been created and invited.` });
                 setNewSuperAdminEmail('');
                 setNewSuperAdminFirstName('');
                 setNewSuperAdminLastName('');
             } else {
-                throw new Error(result.error || "An unknown error occurred.");
+                throw new Error(result.error || "An unknown error occurred during user creation.");
             }
         } catch (error: any) {
             toast({ variant: "destructive", title: "Failed to Add Super Admin", description: error.message });
