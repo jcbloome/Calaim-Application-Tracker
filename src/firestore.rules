@@ -145,6 +145,11 @@ service cloud.firestore {
       allow read, write: if isAdmin() || isSuperAdmin();
     }
 
+    // Rules for the 'users' collection as a whole
+    match /users {
+      allow list: if isSuperAdmin();
+    }
+    
     // Rules for individual user documents
     match /users/{userId} {
       allow get: if isOwnerOrAdmin(userId);
@@ -171,8 +176,8 @@ service cloud.firestore {
       }
     }
     
-    // Rules for the 'users' collection itself
-    match /users {
+    // Rules for the 'roles_admin' collection as a whole
+    match /roles_admin {
         allow list: if isSuperAdmin();
     }
     
@@ -182,22 +187,15 @@ service cloud.firestore {
       allow write, delete: if isSuperAdmin();
     }
     
-     // Rules for the 'roles_admin' collection itself
-    match /roles_admin {
+    // Rules for the 'roles_super_admin' collection as a whole
+    match /roles_super_admin {
         allow list: if isSuperAdmin();
     }
-    
+
     // Rules for individual super admin role documents
     match /roles_super_admin/{userId} {
       allow get: if isSignedIn();
       allow write, delete: if isSuperAdmin();
     }
-
-    // Rules for the 'roles_super_admin' collection itself
-    match /roles_super_admin {
-        allow list: if isSuperAdmin();
-    }
   }
 }
-
-    
