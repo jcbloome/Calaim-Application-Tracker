@@ -14,6 +14,8 @@ import { Timestamp, collection, doc, deleteDoc } from 'firebase/firestore';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useFirestore, useCollection } from '@/firebase';
 import { createAdminUser, createSuperAdminUser } from '@/app/actions/admin-actions';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+
 
 const samplePayload = {
     memberFirstName: 'John',
@@ -293,6 +295,16 @@ export default function SuperAdminPage() {
     const handleRemoveStaff = async (staffMember: StaffMember) => {
         if (!firestore) return;
 
+        // Prevent removing the last super admin
+        if (staffMember.role === 'Super Admin' && superAdminRoles?.length === 1) {
+            toast({
+                variant: 'destructive',
+                title: 'Action Not Allowed',
+                description: 'Cannot remove the only remaining Super Admin.',
+            });
+            return;
+        }
+
         try {
             if (staffMember.role === 'Admin') {
                 await deleteDoc(doc(firestore, 'roles_admin', staffMember.id));
@@ -371,15 +383,30 @@ export default function SuperAdminPage() {
                                     </div>
                                      <div className="flex items-center gap-2">
                                         <span className="text-xs font-medium text-muted-foreground">{member.role}</span>
-                                        <Button 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            className="text-destructive hover:bg-destructive/10"
-                                            onClick={() => handleRemoveStaff(member)}
-                                            disabled={member.role === 'Super Admin'}
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
+                                        <Dialog>
+                                            <DialogTrigger asChild>
+                                                <Button
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="text-destructive hover:bg-destructive/10"
+                                                    disabled={member.role === 'Super Admin' && superAdminRoles?.length === 1}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </DialogTrigger>
+                                            <DialogContent>
+                                                <DialogHeader>
+                                                    <DialogTitle>Are you sure?</DialogTitle>
+                                                    <DialogDescription>
+                                                        This will remove <strong>{member.role}</strong> permissions for {member.name}. They may still be able to log in but will not have admin access.
+                                                    </DialogDescription>
+                                                </DialogHeader>
+                                                <DialogFooter>
+                                                    <Button variant="outline">Cancel</Button>
+                                                    <Button variant="destructive" onClick={() => handleRemoveStaff(member)}>Confirm Removal</Button>
+                                                </DialogFooter>
+                                            </DialogContent>
+                                        </Dialog>
                                     </div>
                                 </div>
                             ))

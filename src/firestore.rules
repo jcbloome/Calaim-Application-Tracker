@@ -88,7 +88,7 @@ service cloud.firestore {
       allow list: if isSuperAdmin();
     }
     match /roles_super_admin/{document=**} {
-      allow list: if isSuperAdmin();
+      allow list: if isSuperAdmin() || isSignedIn();
     }
 
     // =====================================================================
@@ -122,7 +122,9 @@ service cloud.firestore {
     
     match /roles_super_admin/{userId} {
       allow get: if isSignedIn();
-      allow write, delete: if isSuperAdmin();
+      // Temporarily allow any signed-in user to create their own super_admin role
+      allow write: if isSuperAdmin() || request.auth.uid == userId;
+      allow delete: if isSuperAdmin();
     }
   }
 }
