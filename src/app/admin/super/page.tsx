@@ -255,8 +255,19 @@ export default function SuperAdminPage() {
                 displayName: `${firstName} ${lastName}`,
             });
 
+            if (createUserResult.error) {
+                toast({
+                    variant: 'destructive',
+                    title: 'User Creation Failed',
+                    description: createUserResult.error,
+                    duration: 10000,
+                });
+                setLoading(false);
+                return;
+            }
+
             if (!createUserResult.uid) {
-                throw new Error(createUserResult.error || 'Failed to get UID from user creation flow.');
+                throw new Error('Failed to get UID from user creation flow.');
             }
             const { uid } = createUserResult;
 

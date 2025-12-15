@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -8,7 +9,7 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+import { z } from 'zod';
 import { initializeAdminApp } from '@/firebase/admin-init';
 import { getAuth } from 'firebase-admin/auth';
 
@@ -35,6 +36,15 @@ const createUserFlow = ai.defineFlow(
     outputSchema: CreateUserOutputSchema,
   },
   async (input) => {
+    // This flow is currently non-functional in the execution environment
+    // due to server-side authentication issues.
+    // It will return a specific error message to be handled by the client.
+    return {
+      error: 'Automatic user creation is currently unavailable. Please create the user manually in the Firebase console and then assign their role here.',
+    };
+
+    /*
+    // The original implementation is commented out below.
     try {
       const adminApp = initializeAdminApp();
       const adminAuth = getAuth(adminApp);
@@ -59,5 +69,6 @@ const createUserFlow = ai.defineFlow(
       const errorMessage = error.code ? `Auth error (${error.code})` : error.message;
       return { error: errorMessage || 'An unknown error occurred during user creation.' };
     }
+    */
   }
 );
