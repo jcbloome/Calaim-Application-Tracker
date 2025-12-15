@@ -60,3 +60,48 @@ export const createAdminUser = async (payload: CreateUserPayload) => {
         return { success: false, error: error.message || "An unknown error occurred" };
     }
 };
+
+export const createSuperAdminUser = async (payload: CreateUserPayload) => {
+    const { email, firstName, lastName } = payload;
+    
+    try {
+        const adminApp = initializeAdminApp();
+        const adminAuth = getAuth(adminApp);
+        const adminFirestore = getFirestore(adminApp);
+
+        // 1. Create the user in Firebase Authentication
+        const userRecord = await adminAuth.createUser({
+            email: email,
+            displayName: `${firstName} ${lastName}`,
+            emailVerified: false, 
+        });
+
+        // 2. Create the user document in the `users` collection in Firestore.
+        const userDocRef = adminFirestore.collection('users').doc(userRecord.uid);
+        await userDocRef.set({
+            id: userRecord.uid,
+            firstName,
+            lastName,
+            displayName: `${firstName} ${lastName}`,
+            email: userRecord.email,
+        });
+
+        // 3. Assign the 'super_admin' role in the `roles_super_admin` collection.
+        const superAdminRoleRef = adminFirestore.collection('roles_super_admin').doc(userRecord.uid);
+        await superAdminRoleRef.set({
+            email: userRecord.email,
+            role: 'super_admin',
+            createdAt: Timestamp.now(),
+        });
+        
+        // 4. Send a password reset email so the new user can set their password
+        const link = await adminAuth.generatePasswordResetLink(email);
+        console.log(`Password reset link for ${email}: ${link}`);
+
+        return { success: true, userId: userRecord.uid };
+
+    } catch (error: any) {
+        console.error("Error creating super admin user:", error);
+        return { success: false, error: error.message || "An unknown error occurred" };
+    }
+};

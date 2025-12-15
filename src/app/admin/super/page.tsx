@@ -7,13 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Trash2, UserPlus, Send, Loader2 } from 'lucide-react';
+import { Trash2, UserPlus, Send, Loader2, ShieldPlus } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Timestamp, collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useFirestore } from '@/firebase';
-import { createAdminUser } from '@/app/actions/admin-actions';
+import { createAdminUser, createSuperAdminUser } from '@/app/actions/admin-actions';
 
 const samplePayload = {
     memberFirstName: 'John',
@@ -182,6 +182,11 @@ export default function SuperAdminPage() {
     const [newStaffLastName, setNewStaffLastName] = useState('');
     const [isAddingStaff, setIsAddingStaff] = useState(false);
 
+    const [newSuperAdminEmail, setNewSuperAdminEmail] = useState('');
+    const [newSuperAdminFirstName, setNewSuperAdminFirstName] = useState('');
+    const [newSuperAdminLastName, setNewSuperAdminLastName] = useState('');
+    const [isAddingSuperAdmin, setIsAddingSuperAdmin] = useState(false);
+
     const fetchStaff = async () => {
         if (!firestore) return;
         setIsLoadingStaff(true);
@@ -257,6 +262,36 @@ export default function SuperAdminPage() {
             toast({ variant: "destructive", title: "Failed to Add Staff", description: error.message });
         } finally {
             setIsAddingStaff(false);
+        }
+    };
+
+    const handleAddSuperAdmin = async () => {
+        if (!newSuperAdminEmail || !newSuperAdminFirstName || !newSuperAdminLastName) {
+            toast({ variant: "destructive", title: "Missing Information", description: "Please provide a first name, last name, and email." });
+            return;
+        }
+
+        setIsAddingSuperAdmin(true);
+        try {
+            const result = await createSuperAdminUser({
+                email: newSuperAdminEmail,
+                firstName: newSuperAdminFirstName,
+                lastName: newSuperAdminLastName
+            });
+
+            if (result.success) {
+                toast({ title: "Super Admin Added", description: `${newSuperAdminEmail} has been created and invited.` });
+                setNewSuperAdminEmail('');
+                setNewSuperAdminFirstName('');
+                setNewSuperAdminLastName('');
+                await fetchStaff(); // Refresh the list
+            } else {
+                throw new Error(result.error || "An unknown error occurred.");
+            }
+        } catch (error: any) {
+            toast({ variant: "destructive", title: "Failed to Add Super Admin", description: error.message });
+        } finally {
+            setIsAddingSuperAdmin(false);
         }
     };
     
@@ -363,26 +398,36 @@ export default function SuperAdminPage() {
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                <CardTitle>Notification Settings</CardTitle>
-                <CardDescription>
-                    Designate which staff members receive an email for important system events.
-                </CardDescription>
+                    <CardTitle>Add Super Admin</CardTitle>
+                    <CardDescription>Create a new user with Super Admin privileges.</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6">
-                    <div className="space-y-2">
-                        <Label>New Application Submitted</Label>
-                        <p className="text-sm text-muted-foreground">Select staff to notify when a new application is submitted.</p>
-                        <Input disabled placeholder="jason@carehomefinders.com, alice@example.com" />
+                <CardContent>
+                    <div className="space-y-4 p-4 border rounded-lg">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="superAdminFirstName">First Name</Label>
+                                <Input id="superAdminFirstName" value={newSuperAdminFirstName} onChange={e => setNewSuperAdminFirstName(e.target.value)} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="superAdminLastName">Last Name</Label>
+                                <Input id="superAdminLastName" value={newSuperAdminLastName} onChange={e => setNewSuperAdminLastName(e.target.value)} />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="add-super-admin-email">New Super Admin Email</Label>
+                            <Input
+                                id="add-super-admin-email"
+                                type="email"
+                                placeholder="super.admin@example.com"
+                                value={newSuperAdminEmail}
+                                onChange={(e) => setNewSuperAdminEmail(e.target.value)}
+                            />
+                        </div>
+                        <Button onClick={handleAddSuperAdmin} className="w-full" disabled={isAddingSuperAdmin}>
+                            {isAddingSuperAdmin ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldPlus className="mr-2 h-4 w-4" />}
+                            Add Super Admin
+                        </Button>
                     </div>
-                    <div className="space-y-2">
-                        <Label>Secure Document Upload</Label>
-                        <p className="text-sm text-muted-foreground">Select staff to notify when a document is uploaded to the secure portal.</p>
-                        <Input disabled placeholder="jason@carehomefinders.com" />
-                    </div>
-                    <Button disabled>
-                        <Send className="mr-2 h-4 w-4"/>
-                        Save Notification Settings
-                    </Button>
                 </CardContent>
             </Card>
 
