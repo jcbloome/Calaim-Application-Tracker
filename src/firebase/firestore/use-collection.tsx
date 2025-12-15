@@ -100,11 +100,12 @@ export function useCollection<T = any>(
           path,
         });
 
-        setError(contextualError)
-        setData(null)
-        setIsLoading(false)
+        // Set local error for the component, but do not throw here.
+        setError(contextualError);
+        setData(null);
+        setIsLoading(false);
 
-        // trigger global error propagation
+        // trigger global error propagation for the Next.js overlay
         errorEmitter.emit('permission-error', contextualError);
       }
     );
