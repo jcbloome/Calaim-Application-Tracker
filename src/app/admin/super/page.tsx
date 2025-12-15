@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -192,41 +193,43 @@ export default function SuperAdminPage() {
     const superAdminsQuery = useMemo(() => firestore ? collection(firestore, 'roles_super_admin') : null, [firestore]);
     const usersQuery = useMemo(() => firestore ? collection(firestore, 'users') : null, [firestore]);
     
-    const { data: adminRoles } = useCollection(adminsQuery);
-    const { data: superAdminRoles } = useCollection(superAdminsQuery);
+    const { data: adminRoles, isLoading: isLoadingAdmins } = useCollection(adminsQuery);
+    const { data: superAdminRoles, isLoading: isLoadingSuperAdmins } = useCollection(superAdminsQuery);
     const { data: allUsers, isLoading: isLoadingUsers } = useCollection(usersQuery);
 
     useEffect(() => {
-        setIsLoadingStaff(isLoadingUsers);
-        if (allUsers && adminRoles && superAdminRoles) {
-            const superAdminIds = new Set(superAdminRoles.map(role => role.id));
+        const loading = isLoadingAdmins || isLoadingSuperAdmins || isLoadingUsers;
+        setIsLoadingStaff(loading);
+
+        if (!loading && allUsers && adminRoles && superAdminRoles) {
             const adminIds = new Set(adminRoles.map(role => role.id));
+            const superAdminIds = new Set(superAdminRoles.map(role => role.id));
             
-            const staffMap = new Map<string, StaffMember>();
+            const staffList = allUsers
+                .map(user => {
+                    let role: 'Admin' | 'Super Admin' | null = null;
+                    if (superAdminIds.has(user.id)) {
+                        role = 'Super Admin';
+                    } else if (adminIds.has(user.id)) {
+                        role = 'Admin';
+                    }
 
-            allUsers.forEach(user => {
-                if (superAdminIds.has(user.id)) {
-                    staffMap.set(user.id, {
-                        id: user.id,
-                        name: user.displayName || `${user.firstName} ${user.lastName}`,
-                        email: user.email,
-                        role: 'Super Admin'
-                    });
-                } else if (adminIds.has(user.id)) {
-                     staffMap.set(user.id, {
-                        id: user.id,
-                        name: user.displayName || `${user.firstName} ${user.lastName}`,
-                        email: user.email,
-                        role: 'Admin'
-                    });
-                }
-            });
+                    if (role) {
+                        return {
+                            id: user.id,
+                            name: user.displayName || `${user.firstName} ${user.lastName}`,
+                            email: user.email,
+                            role: role,
+                        };
+                    }
+                    return null;
+                })
+                .filter((s): s is StaffMember => s !== null)
+                .sort((a, b) => a.name.localeCompare(b.name));
 
-            const staffList = Array.from(staffMap.values()).sort((a, b) => a.name.localeCompare(b.name));
             setStaff(staffList);
-            setIsLoadingStaff(false);
         }
-    }, [allUsers, adminRoles, superAdminRoles, isLoadingUsers]);
+    }, [allUsers, adminRoles, superAdminRoles, isLoadingAdmins, isLoadingSuperAdmins, isLoadingUsers]);
 
 
     const handleAddRole = async (
@@ -247,7 +250,6 @@ export default function SuperAdminPage() {
         try {
             let uid: string | null = null;
     
-            // Check if user already exists
             const existingUsersQuery = query(collection(firestore, 'users'), where('email', '==', email));
             const existingUsersSnap = await getDocs(existingUsersQuery);
             
@@ -255,12 +257,10 @@ export default function SuperAdminPage() {
                 uid = existingUsersSnap.docs[0].id;
                 toast({ title: "Existing User Found", description: `Granting ${role} role to ${email}.`});
             } else {
-                // If user doesn't exist, create them in Auth
                 const tempPassword = `temp-password-${Date.now()}`;
                 try {
                     const { user: newUser } = await createUserWithEmailAndPassword(auth, email, tempPassword);
                     uid = newUser.uid;
-                    // Create user profile in Firestore
                     const userDocRef = doc(firestore, 'users', uid);
                     await setDoc(userDocRef, {
                         id: uid,
@@ -281,7 +281,6 @@ export default function SuperAdminPage() {
                 throw new Error("Could not get user ID.");
             }
     
-            // Set the role in the appropriate roles collection
             const roleCollection = role === 'Admin' ? 'roles_admin' : 'roles_super_admin';
             const roleDocRef = doc(firestore, roleCollection, uid);
             await setDoc(roleDocRef, { uid: uid, addedOn: Timestamp.now() });
@@ -483,3 +482,5 @@ export default function SuperAdminPage() {
     </div>
   );
 }
+
+    
