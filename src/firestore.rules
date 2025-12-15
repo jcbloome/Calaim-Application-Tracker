@@ -88,7 +88,7 @@ service cloud.firestore {
       allow list: if isSuperAdmin();
     }
     match /roles_super_admin/{document=**} {
-      allow list: if isSuperAdmin() || isSignedIn();
+      allow list: if isSuperAdmin();
     }
 
     // =====================================================================
@@ -126,3 +126,5 @@ service cloud.firestore {
     }
   }
 }
+
+    

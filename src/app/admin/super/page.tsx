@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -13,7 +14,7 @@ import { Timestamp, collection, doc, deleteDoc, setDoc } from 'firebase/firestor
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useFirestore, useCollection, useUser, useAuth } from '@/firebase';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 
 
 const samplePayload = {
@@ -174,7 +175,6 @@ const WebhookPreparer = () => {
 export default function SuperAdminPage() {
     const firestore = useFirestore();
     const auth = useAuth();
-    const { user } = useUser();
     const { toast } = useToast();
     
     const [newStaffEmail, setNewStaffEmail] = useState('');
@@ -254,9 +254,8 @@ export default function SuperAdminPage() {
             // In a real-world scenario, you would send a password reset email.
             const tempPassword = `temp-password-${Date.now()}`;
             
-            // 1. Create the user
-            const userCredential = await createUserWithEmailAndPassword(auth, email, tempPassword);
-            const newUser = userCredential.user;
+            // 1. Create the user in a temporary auth instance so we don't affect the current user's session
+            const { user: newUser } = await createUserWithEmailAndPassword(auth, email, tempPassword);
 
             // 2. Create the user document in the `users` collection
             const userDocRef = doc(firestore, 'users', newUser.uid);
@@ -469,3 +468,5 @@ export default function SuperAdminPage() {
     </div>
   );
 }
+
+    
