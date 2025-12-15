@@ -83,13 +83,13 @@ service cloud.firestore {
     
     // These rules are for LIST operations on top-level collections.
     // They must be separate from the document-specific rules below.
-    match /users {
+    match /users/{document=**} {
       allow list: if isSuperAdmin();
     }
-    match /roles_admin {
+    match /roles_admin/{document=**} {
       allow list: if isSuperAdmin();
     }
-    match /roles_super_admin {
+    match /roles_super_admin/{document=**} {
       allow list: if isSuperAdmin();
     }
 
