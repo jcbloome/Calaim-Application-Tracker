@@ -329,49 +329,91 @@ export default function SuperAdminPage() {
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-        <Card>
-            <CardHeader>
-                <CardTitle>Manage Staff Access</CardTitle>
-                <CardDescription>Add or remove staff who can access the admin portal.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-                <div className="space-y-4 p-4 border rounded-lg">
-                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="firstName">First Name</Label>
-                          <Input id="firstName" value={newStaffFirstName} onChange={e => setNewStaffFirstName(e.target.value)} />
+        <div className="space-y-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Add Staff Member</CardTitle>
+                    <CardDescription>Create a new user with standard Admin privileges.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-4">
+                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="firstName">First Name</Label>
+                              <Input id="firstName" value={newStaffFirstName} onChange={e => setNewStaffFirstName(e.target.value)} />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="lastName">Last Name</Label>
+                              <Input id="lastName" value={newStaffLastName} onChange={e => setNewStaffLastName(e.target.value)} />
+                            </div>
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="lastName">Last Name</Label>
-                          <Input id="lastName" value={newStaffLastName} onChange={e => setNewStaffLastName(e.target.value)} />
+                            <Label htmlFor="add-staff-email">New Staff Email</Label>
+                            <Input 
+                                id="add-staff-email" 
+                                type="email" 
+                                placeholder="new.staff@example.com"
+                                value={newStaffEmail}
+                                onChange={(e) => setNewStaffEmail(e.target.value)}
+                            />
                         </div>
+                        <Button onClick={() => handleAddRole(newStaffEmail, newStaffFirstName, newStaffLastName, 'Admin', setIsAddingStaff)} className="w-full" disabled={isAddingStaff}>
+                            {isAddingStaff ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+                            Add Staff Member
+                        </Button>
                     </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="add-staff-email">Invite New Staff by Email</Label>
-                        <Input 
-                            id="add-staff-email" 
-                            type="email" 
-                            placeholder="new.staff@example.com"
-                            value={newStaffEmail}
-                            onChange={(e) => setNewStaffEmail(e.target.value)}
-                        />
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Add Super Admin</CardTitle>
+                    <CardDescription>Create a new user with Super Admin privileges.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="superAdminFirstName">First Name</Label>
+                                <Input id="superAdminFirstName" value={newSuperAdminFirstName} onChange={e => setNewSuperAdminFirstName(e.target.value)} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="superAdminLastName">Last Name</Label>
+                                <Input id="superAdminLastName" value={newSuperAdminLastName} onChange={e => setNewSuperAdminLastName(e.target.value)} />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="add-super-admin-email">New Super Admin Email</Label>
+                            <Input
+                                id="add-super-admin-email"
+                                type="email"
+                                placeholder="super.admin@example.com"
+                                value={newSuperAdminEmail}
+                                onChange={(e) => setNewSuperAdminEmail(e.target.value)}
+                            />
+                        </div>
+                        <Button onClick={() => handleAddRole(newSuperAdminEmail, newSuperAdminFirstName, newSuperAdminLastName, 'Super Admin', setIsAddingSuperAdmin)} className="w-full" disabled={isAddingSuperAdmin}>
+                            {isAddingSuperAdmin ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldPlus className="mr-2 h-4 w-4" />}
+                            Add Super Admin
+                        </Button>
                     </div>
-                    <Button onClick={() => handleAddRole(newStaffEmail, newStaffFirstName, newStaffLastName, 'Admin', setIsAddingStaff)} className="w-full" disabled={isAddingStaff}>
-                        {isAddingStaff ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
-                        Add Staff Member
-                    </Button>
-                </div>
+                </CardContent>
+            </Card>
+        </div>
 
-                <Separator />
-
-                <div className="space-y-4">
-                    <h3 className="text-sm font-medium text-muted-foreground">Current Staff</h3>
-                    <ScrollArea className="h-72">
+        <div className="space-y-6">
+             <Card>
+                <CardHeader>
+                    <CardTitle>Current Staff</CardTitle>
+                    <CardDescription>A list of all users with Admin or Super Admin roles.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <ScrollArea className="h-96">
                          {isLoadingStaff ? (
                             <div className="flex items-center justify-center p-8">
                                 <Loader2 className="h-6 w-6 animate-spin" />
                             </div>
-                         ) : (
+                         ) : staff.length > 0 ? (
                             staff.map(member => (
                                 <div key={member.id} className="flex items-center justify-between pr-4 py-2">
                                     <div className="flex items-center gap-4">
@@ -413,48 +455,12 @@ export default function SuperAdminPage() {
                                     </div>
                                 </div>
                             ))
+                         ) : (
+                            <div className="text-center text-muted-foreground p-8">No staff members found.</div>
                          )}
                     </ScrollArea>
-                </div>
-            </CardContent>
-        </Card>
-
-        <div className="space-y-6">
-            <Card>
-                <CardHeader>
-                    <CardTitle>Add Super Admin</CardTitle>
-                    <CardDescription>Create a new user with Super Admin privileges.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="space-y-4 p-4 border rounded-lg">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="superAdminFirstName">First Name</Label>
-                                <Input id="superAdminFirstName" value={newSuperAdminFirstName} onChange={e => setNewSuperAdminFirstName(e.target.value)} />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="superAdminLastName">Last Name</Label>
-                                <Input id="superAdminLastName" value={newSuperAdminLastName} onChange={e => setNewSuperAdminLastName(e.target.value)} />
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="add-super-admin-email">New Super Admin Email</Label>
-                            <Input
-                                id="add-super-admin-email"
-                                type="email"
-                                placeholder="super.admin@example.com"
-                                value={newSuperAdminEmail}
-                                onChange={(e) => setNewSuperAdminEmail(e.target.value)}
-                            />
-                        </div>
-                        <Button onClick={() => handleAddRole(newSuperAdminEmail, newSuperAdminFirstName, newSuperAdminLastName, 'Super Admin', setIsAddingSuperAdmin)} className="w-full" disabled={isAddingSuperAdmin}>
-                            {isAddingSuperAdmin ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldPlus className="mr-2 h-4 w-4" />}
-                            Add Super Admin
-                        </Button>
-                    </div>
                 </CardContent>
             </Card>
-
             <WebhookPreparer />
         </div>
 
