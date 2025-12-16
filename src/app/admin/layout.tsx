@@ -4,11 +4,21 @@
 import { ReactNode, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Header } from '@/components/Header';
 import { cn } from '@/lib/utils';
 import { useAdmin } from '@/hooks/use-admin';
-import { LayoutDashboard, List, Shield, Loader2, Lock } from 'lucide-react';
+import { LayoutDashboard, List, Shield, Loader2, Lock, LogOut, User as UserIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/firebase';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import Image from 'next/image';
 
 const adminNavLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -49,6 +59,58 @@ function AdminSidebar() {
   );
 }
 
+function AdminHeader() {
+    const { user } = useAdmin();
+    const auth = useAuth();
+    const router = useRouter();
+
+    const handleSignOut = async () => {
+        if (auth) {
+            await auth.signOut();
+        }
+        router.push('/admin/login');
+    };
+
+    return (
+        <header className="bg-card border-b sticky top-0 z-40">
+            <div className="container mx-auto flex items-center justify-between h-16 px-4 sm:px-6">
+                <Link href="/admin" className="flex items-center gap-2 font-bold text-lg text-primary">
+                    <Image 
+                        src="/calaimlogopdf.png"
+                        alt="CalAIM Pathfinder Logo"
+                        width={180}
+                        height={50}
+                        className="w-40 h-auto object-contain"
+                        priority
+                    />
+                     <span className="border-l-2 pl-2 text-muted-foreground font-normal">Admin Portal</span>
+                </Link>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="icon" className="rounded-full">
+                        <UserIcon className="h-5 w-5" />
+                        <span className="sr-only">User menu</span>
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>{user?.displayName || user?.email}</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => router.push('/profile')}>
+                            <UserIcon className="mr-2 h-4 w-4" />
+                            <span>My Profile</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={handleSignOut}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        <span>Log out</span>
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
+        </header>
+    );
+}
+
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
     const { isAdmin, isSuperAdmin, isLoading, user } = useAdmin();
@@ -72,8 +134,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     if (user && !isAdmin && !isSuperAdmin) {
         return (
             <>
-            <Header />
-             <main className="flex-grow flex items-center justify-center p-4">
+             <main className="flex-grow flex items-center justify-center p-4 bg-slate-100 min-h-screen">
                 <Card className="w-full max-w-md text-center">
                     <CardHeader>
                         <CardTitle className="flex items-center justify-center gap-2">
@@ -92,12 +153,13 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     }
 
     if (!user) {
+        // This state is briefly hit during the redirect, returning null prevents a flash of unstyled content.
         return null;
     }
 
   return (
     <>
-      <Header />
+      <AdminHeader />
       <div className="flex flex-1">
         <AdminSidebar />
         <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">

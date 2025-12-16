@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { useUser, useFirestore } from '@/firebase';
+import { useRouter } from 'next/navigation';
 
 interface AdminStatus {
   isAdmin: boolean;
@@ -14,6 +15,7 @@ interface AdminStatus {
 export function useAdmin(): AdminStatus & { user: ReturnType<typeof useUser>['user'] } {
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
+  const router = useRouter();
   const [adminStatus, setAdminStatus] = useState<AdminStatus>({
     isAdmin: false,
     isSuperAdmin: false,
@@ -28,6 +30,7 @@ export function useAdmin(): AdminStatus & { user: ReturnType<typeof useUser>['us
 
     if (!user || !firestore) {
       setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: false });
+      // No user, but don't redirect here. The layout will handle it.
       return;
     }
 
@@ -47,7 +50,7 @@ export function useAdmin(): AdminStatus & { user: ReturnType<typeof useUser>['us
       unsubAdmin();
       unsubSuperAdmin();
     };
-  }, [user, isUserLoading, firestore]);
+  }, [user, isUserLoading, firestore, router]);
 
   return { ...adminStatus, user };
 }

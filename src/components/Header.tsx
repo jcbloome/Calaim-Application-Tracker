@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { LogOut, User, Menu, UserCog, Shield } from 'lucide-react';
+import { LogOut, User, Menu, UserCog } from 'lucide-react';
 import { Button } from './ui/button';
 import { useUser } from '@/firebase';
 import { useAuth } from '@/firebase/provider';
@@ -18,7 +18,6 @@ import { useRouter } from 'next/navigation';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet';
 import { useState } from 'react';
 import Image from 'next/image';
-import { useAdmin } from '@/hooks/use-admin';
 
 const navLinks = [
     { href: "/info", label: "Program Information" },
@@ -29,7 +28,6 @@ const navLinks = [
 
 export function Header() {
   const { user, isUserLoading } = useUser();
-  const { isAdmin, isSuperAdmin } = useAdmin();
   const auth = useAuth();
   const router = useRouter();
   const [isSheetOpen, setSheetOpen] = useState(false);
@@ -77,12 +75,6 @@ export function Header() {
                   <UserCog className="mr-2 h-4 w-4" />
                   <span>My Profile</span>
                 </DropdownMenuItem>
-                {(isAdmin || isSuperAdmin) && (
-                   <DropdownMenuItem onSelect={() => router.push('/admin')}>
-                    <Shield className="mr-2 h-4 w-4" />
-                    <span>Admin Panel</span>
-                  </DropdownMenuItem>
-                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut}>
                   <LogOut className="mr-2 h-4 w-4" />
@@ -127,12 +119,6 @@ export function Header() {
                                         <UserCog className="mr-2 h-4 w-4" />
                                         My Profile
                                      </Button>
-                                     {(isAdmin || isSuperAdmin) && (
-                                      <Button onClick={() => { router.push('/admin'); setSheetOpen(false); }} variant="secondary" className="w-full">
-                                        <Shield className="mr-2 h-4 w-4" />
-                                        Admin Panel
-                                      </Button>
-                                     )}
                                      <Button onClick={() => { handleSignOut(); setSheetOpen(false); }} className="w-full">
                                         <LogOut className="mr-2 h-4 w-4" />
                                         Log out
