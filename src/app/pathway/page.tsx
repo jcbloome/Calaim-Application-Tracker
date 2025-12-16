@@ -225,23 +225,19 @@ function PathwayPageContent() {
     // Admins can view any application, so we don't check for user ownership if they are an admin.
     // The query to get the application data is done in the Admin table, which requires a collectionGroup query.
     // The user ID is part of the application data itself.
-    if (firestore && applicationId) {
-        // Find a way to get the userId for an admin, for now assume it's on the application object.
-        // For a regular user, the path is known.
-        // This is a simplification. A real implementation would need to robustly find the application.
-        // For now, we assume if an admin is viewing, the app data will contain the userId.
-        // And if a user is viewing, their user.uid is the userId.
-        
-        // This part is tricky without knowing the originating user's ID for an admin.
-        // Let's assume for now that admins get the userId from somewhere else (e.g. from the app list they clicked on).
-        // This hook is designed for USER ownership, so it is implicitly using `user.uid`.
-        // We will rely on security rules to block non-admins from seeing other users' data.
-      if (user) {
+    if (firestore && applicationId && user) {
+        // This part is tricky. If an admin is viewing, the application's original userId must be used.
+        // The useDoc hook implicitly uses the currently logged-in user's UID if not handled carefully.
+        // For this to work for admins, the `application` object (when available) must contain the original `userId`.
+        const userIdToUse = isAdmin || isSuperAdmin ? application?.userId : user.uid;
+        if (userIdToUse) {
+             return doc(firestore, `users/${userIdToUse}/applications`, applicationId);
+        }
+        // Fallback for regular user before app data is loaded
         return doc(firestore, `users/${user.uid}/applications`, applicationId);
-      }
     }
     return null;
-  }, [user, firestore, applicationId]);
+  }, [user, firestore, applicationId, isAdmin, isSuperAdmin]);
 
   const { data: application, isLoading, error } = useDoc<Application>(applicationDocRef, {}, [applicationId]);
 
@@ -395,7 +391,7 @@ function PathwayPageContent() {
     const isCompleted = formInfo?.status === 'Completed';
     const href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
     
-    if (isReadOnly && !isAdmin && !isSuperAdmin) {
+    if (isReadOnly) {
        if (req.type === 'Upload') {
            return (
                 <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-green-50 border border-green-200 text-sm">

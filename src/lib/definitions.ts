@@ -1,7 +1,7 @@
 
 import { Timestamp } from 'firebase/firestore';
 
-export type ApplicationStatus = 'In Progress' | 'Completed & Submitted' | 'Requires Revision' | 'Approved';
+export type ApplicationStatus = 'In Progress' | 'Completed & Submitted' | 'Requires Revision' | 'Approved' | 'Deleted';
 
 export type Application = {
   id: string;
@@ -18,6 +18,7 @@ export type Application = {
   forms: FormStatus[];
   progress: number;
   referrerName?: string;
+  referrerEmail?: string;
   ispContactName?: string;
 };
 
@@ -48,5 +49,3 @@ export type Activity = {
   details: string;
   applicationId?: string;
 };
-
-  
