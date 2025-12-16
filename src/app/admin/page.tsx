@@ -1,19 +1,74 @@
+
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign, Users, Activity } from 'lucide-react';
+import { Loader2, FolderKanban, Users, Activity, FileCheck2 } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
+import { useFirestore, useCollection, type WithId } from '@/firebase';
+import { collectionGroup, query, Query } from 'firebase/firestore';
+import type { Application } from '@/lib/definitions';
+import { AdminApplicationsTable } from './applications/components/AdminApplicationsTable';
+import { Button } from '@/components/ui/button';
+import Link from 'next/link';
 
 export default function AdminDashboardPage() {
   const { user } = useAdmin();
+  const firestore = useFirestore();
+
+  const applicationsQuery = useMemo(() => {
+    if (!firestore) return null;
+    return query(collectionGroup(firestore, 'applications')) as Query<Application>;
+  }, [firestore]);
+
+  const { data: applications, isLoading, error } = useCollection<Application>(applicationsQuery);
+
+  const stats = useMemo(() => {
+    if (!applications) {
+      return { total: 0, revisions: 0, approved: 0 };
+    }
+    return {
+      total: applications.length,
+      revisions: applications.filter(app => app.status === 'Requires Revision').length,
+      approved: applications.filter(app => app.status === 'Approved').length,
+    };
+  }, [applications]);
+
+  const recentApplications = useMemo(() => {
+    if (!applications) return [];
+    return [...applications]
+      .sort((a, b) => b.lastUpdated.toMillis() - a.lastUpdated.toMillis())
+      .slice(0, 5);
+  }, [applications]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="ml-4">Loading dashboard data...</p>
+      </div>
+    );
+  }
+
+   if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Error</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-destructive">Failed to load application data: {error.message}</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Admin Dashboard</h1>
         <p className="text-muted-foreground">
-          Welcome back, {user?.displayName || 'Admin'}. Here's an overview of the platform.
+          Welcome back, {user?.displayName || 'Admin'}. Here's an overview of all applications.
         </p>
       </div>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -25,10 +80,7 @@ export default function AdminDashboardPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1,234</div>
-            <p className="text-xs text-muted-foreground">
-              +20.1% from last month
-            </p>
+            <div className="text-2xl font-bold">{stats.total}</div>
           </CardContent>
         </Card>
         <Card>
@@ -39,32 +91,31 @@ export default function AdminDashboardPage() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">57</div>
-            <p className="text-xs text-muted-foreground">
-              +1 since yesterday
-            </p>
+            <div className="text-2xl font-bold">{stats.revisions}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Approvals This Month</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Approvals</CardTitle>
+            <FileCheck2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">128</div>
-            <p className="text-xs text-muted-foreground">
-              +15.2% from last month
-            </p>
+            <div className="text-2xl font-bold">{stats.approved}</div>
           </CardContent>
         </Card>
       </div>
        <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-          <CardDescription>A log of recent administrator and user actions.</CardDescription>
+        <CardHeader className="flex items-center justify-between">
+            <div>
+              <CardTitle>Recent Applications</CardTitle>
+              <CardDescription>A list of the 5 most recently updated applications.</CardDescription>
+            </div>
+            <Button asChild variant="outline">
+                <Link href="/admin/applications">View All</Link>
+            </Button>
         </CardHeader>
         <CardContent>
-           <p className="text-muted-foreground">Activity feed coming soon...</p>
+           <AdminApplicationsTable applications={recentApplications as WithId<Application>[]} isLoading={isLoading} />
         </CardContent>
       </Card>
     </div>

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAdmin } from '@/hooks/use-admin';
-import { LayoutDashboard, List, Shield, Loader2, Lock, LogOut, User as UserIcon } from 'lucide-react';
+import { LayoutDashboard, List, Shield, Loader2, Lock, LogOut, User as UserIcon, FolderKanban } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/firebase';
@@ -22,6 +22,7 @@ import Image from 'next/image';
 
 const adminNavLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
   { href: '/admin/activities', label: 'Activities', icon: List },
   { href: '/admin/super', label: 'Super Admin', icon: Shield, super: true },
 ];
@@ -38,7 +39,7 @@ function AdminSidebar() {
           {adminNavLinks.map(link => {
             if (link.super && !isSuperAdmin) return null;
 
-            const isActive = pathname === link.href;
+            const isActive = pathname === link.href || (link.href !== '/admin' && pathname.startsWith(link.href));
             return (
               <Link
                 key={link.href}
