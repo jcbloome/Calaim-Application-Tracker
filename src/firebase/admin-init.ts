@@ -1,6 +1,5 @@
-
 // This file is exclusively for SERVER-SIDE Firebase Admin initialization.
-import { initializeApp, getApps, App, applicationDefault } from 'firebase-admin/app';
+import { initializeApp, getApps, App } from 'firebase-admin/app';
 
 const adminAppId = 'firebase-admin-app-grant-role';
 

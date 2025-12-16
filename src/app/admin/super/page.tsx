@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -11,7 +10,7 @@ import { Trash2, Loader2, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Timestamp, collection, doc, deleteDoc, setDoc, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useAuth, useFirestore } from '@/firebase';
+import { useAuth, useFirestore, useFirebaseApp } from '@/firebase';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { WebhookPreparer } from './WebhookPreparer';
@@ -97,7 +96,14 @@ export default function SuperAdminPage() {
             });
 
             if (result.error) {
-                throw new Error(result.error);
+                // Throwing the error here will allow it to be caught by the catch block below
+                // and display a toast to the user, which is better UX than a Next.js error overlay.
+                toast({
+                    variant: 'destructive',
+                    title: 'Failed to Add Staff',
+                    description: result.error,
+                });
+                return;
             }
             
             toast({
@@ -196,7 +202,8 @@ export default function SuperAdminPage() {
                 <CardHeader>
                     <CardTitle>Add Staff Member</CardTitle>
                     <CardDescription>
-                        Grant 'Admin' privileges to a user. If the user doesn't have an account, one will be created.
+                        Grant 'Admin' privileges to a user. If the user doesn't have an
+                        account, one will be created.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">

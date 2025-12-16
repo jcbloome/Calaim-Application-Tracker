@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview Grants admin role to a user, creating them if they don't exist.
@@ -102,9 +101,14 @@ const grantAdminRoleFlow = ai.defineFlow(
 
       return { uid, email, displayName };
 
-    } catch (error: any) {
+    } catch (error: any)
+       {
       console.error('grantAdminRoleFlow Error:', error);
-      const errorMessage = error.message || 'An unexpected error occurred.';
+      let errorMessage = error.message || 'An unexpected error occurred.';
+       // Specifically catch the token error to provide a more helpful message
+      if (error.message?.includes('Error fetching access token')) {
+          errorMessage = `Credential setup failed on the server. Please ensure Application Default Credentials are configured correctly for the environment. Details: ${error.message}`;
+      }
       return {
         uid: '',
         email: '',
