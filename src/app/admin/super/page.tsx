@@ -32,7 +32,8 @@ export default function SuperAdminPage() {
     const [staff, setStaff] = useState<StaffMember[]>([]);
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
     const [newStaffEmail, setNewStaffEmail] = useState('');
-    const [newStaffName, setNewStaffName] = useState('');
+    const [newStaffFirstName, setNewStaffFirstName] = useState('');
+    const [newStaffLastName, setNewStaffLastName] = useState('');
     const [isAddingStaff, setIsAddingStaff] = useState(false);
 
     const fetchStaff = async () => {
@@ -79,16 +80,16 @@ export default function SuperAdminPage() {
 
     useEffect(() => {
         fetchStaff();
-    }, [firestore]);
+    }, [firestore, toast]);
     
     const handleAddStaff = async () => {
-        if (!newStaffEmail || !newStaffName) {
-            toast({ variant: 'destructive', title: 'Missing Information', description: 'Please enter both a name and an email.' });
+        if (!newStaffEmail || !newStaffFirstName || !newStaffLastName) {
+            toast({ variant: 'destructive', title: 'Missing Information', description: 'Please fill out all fields.' });
             return;
         }
         setIsAddingStaff(true);
         try {
-            const result = await createUser({ email: newStaffEmail, displayName: newStaffName });
+            const result = await createUser({ email: newStaffEmail, firstName: newStaffFirstName, lastName: newStaffLastName });
 
             if (result.error) {
                 throw new Error(result.error);
@@ -96,11 +97,12 @@ export default function SuperAdminPage() {
             
             toast({
                 title: 'Staff Member Added',
-                description: `${newStaffName} has been granted admin privileges. They can now log in.`,
+                description: `${newStaffFirstName} ${newStaffLastName} has been granted admin privileges. They can now log in.`,
                 className: 'bg-green-100 text-green-900 border-green-200',
             });
             setNewStaffEmail('');
-            setNewStaffName('');
+            setNewStaffFirstName('');
+            setNewStaffLastName('');
             await fetchStaff(); // Refresh the staff list
         } catch (error: any) {
             console.error('Error adding staff member:', error);
@@ -190,14 +192,25 @@ export default function SuperAdminPage() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                     <div className="space-y-2">
-                        <Label htmlFor="new-staff-name">Full Name</Label>
-                        <Input 
-                            id="new-staff-name" 
-                            placeholder="e.g., Jane Doe" 
-                            value={newStaffName}
-                            onChange={(e) => setNewStaffName(e.target.value)}
-                        />
+                     <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                           <Label htmlFor="new-staff-first-name">First Name</Label>
+                           <Input 
+                               id="new-staff-first-name" 
+                               placeholder="e.g., Jane" 
+                               value={newStaffFirstName}
+                               onChange={(e) => setNewStaffFirstName(e.target.value)}
+                           />
+                       </div>
+                        <div className="space-y-2">
+                           <Label htmlFor="new-staff-last-name">Last Name</Label>
+                           <Input 
+                               id="new-staff-last-name" 
+                               placeholder="e.g., Doe" 
+                               value={newStaffLastName}
+                               onChange={(e) => setNewStaffLastName(e.target.value)}
+                           />
+                       </div>
                     </div>
                      <div className="space-y-2">
                         <Label htmlFor="new-staff-email">Email Address</Label>

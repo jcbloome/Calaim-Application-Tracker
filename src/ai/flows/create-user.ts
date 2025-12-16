@@ -18,7 +18,8 @@ import { getFirestore } from 'firebase-admin/firestore';
 
 const CreateUserInputSchema = z.object({
   email: z.string().email(),
-  displayName: z.string(),
+  firstName: z.string(),
+  lastName: z.string(),
 });
 export type CreateUserInput = z.infer<typeof CreateUserInputSchema>;
 
@@ -45,20 +46,19 @@ const createUserFlow = ai.defineFlow(
       const adminFirestore = getFirestore(adminApp);
 
       let uid: string;
-      let userExists = false;
+      const displayName = `${input.firstName} ${input.lastName}`.trim();
 
       // 1. Check if user already exists in Firebase Auth
       try {
         const userRecord = await adminAuth.getUserByEmail(input.email);
         uid = userRecord.uid;
-        userExists = true;
       } catch (error: any) {
         if (error.code === 'auth/user-not-found') {
           // 2. If user does not exist, create them
           const tempPassword = Math.random().toString(36).slice(-8); // Generate a temporary password
           const newUserRecord = await adminAuth.createUser({
             email: input.email,
-            displayName: input.displayName,
+            displayName: displayName,
             password: tempPassword,
           });
           uid = newUserRecord.uid;
@@ -67,19 +67,15 @@ const createUserFlow = ai.defineFlow(
           throw error;
         }
       }
-
-      const nameParts = input.displayName.split(' ');
-      const firstName = nameParts[0] || '';
-      const lastName = nameParts.slice(1).join(' ') || '';
       
       // 3. Create or update user profile in 'users' collection
       const userDocRef = adminFirestore.collection('users').doc(uid);
       await userDocRef.set({
         id: uid,
         email: input.email,
-        displayName: input.displayName,
-        firstName: firstName,
-        lastName: lastName,
+        displayName: displayName,
+        firstName: input.firstName,
+        lastName: input.lastName,
       }, { merge: true });
 
       // 4. Assign admin role in 'roles_admin' collection
