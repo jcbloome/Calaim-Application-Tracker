@@ -1,6 +1,4 @@
 
-'use server';
-
 import { initializeApp, getApps, App, cert, ServiceAccount } from 'firebase-admin/app';
 
 // This is a guard to prevent re-initializing the app on hot reloads.
