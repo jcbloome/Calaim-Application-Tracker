@@ -1,5 +1,5 @@
 
-import { initializeApp, getApps, getApp, type App } from 'firebase-admin/app';
+import { initializeApp, getApps, type App } from 'firebase-admin/app';
 
 const adminAppId = 'firebase-admin-app-e1a2b3c4d5';
 
