@@ -1,4 +1,3 @@
-
 // IMPORTANT: This file should not have 'use client' on its own.
 // It is a shared utility for server-side code (Genkit flows).
 
