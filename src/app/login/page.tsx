@@ -1,9 +1,10 @@
+
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import Image from 'next/image';
+import React, { useState } from 'react';
 import { useAuth, useFirestore } from '@/firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, setPersistence, browserSessionPersistence, AuthErrorCodes } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, setPersistence, browserSessionPersistence } from 'firebase/auth';
+import type { AuthError } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -55,8 +56,9 @@ export default function LoginPage() {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
         
+        const newDisplayName = `${firstName} ${lastName}`.trim();
         await updateProfile(user, {
-          displayName: `${firstName} ${lastName}`.trim()
+          displayName: newDisplayName
         });
 
         const userDocRef = doc(firestore, 'users', user.uid);
@@ -65,7 +67,7 @@ export default function LoginPage() {
           firstName: firstName,
           lastName: lastName,
           email: user.email,
-          displayName: `${firstName} ${lastName}`.trim(),
+          displayName: newDisplayName,
         });
       }
       toast({
@@ -73,14 +75,13 @@ export default function LoginPage() {
         duration: 2000,
       });
       router.push('/applications');
-    } catch (err: any) {
+    } catch (err) {
+      const authError = err as AuthError;
       let errorMessage = 'An unexpected error occurred. Please try again.';
-      if (err.code === AuthErrorCodes.INVALID_LOGIN_CREDENTIALS || err.code === 'auth/invalid-credential') {
+      if (authError.code === 'auth/invalid-credential' || authError.code === 'auth/wrong-password' || authError.code === 'auth/user-not-found') {
         errorMessage = 'Invalid email or password. Please try again.';
-      } else if (err.code === AuthErrorCodes.EMAIL_EXISTS) {
+      } else if (authError.code === 'auth/email-already-in-use') {
         errorMessage = 'An account with this email already exists. Please sign in.';
-      } else {
-        errorMessage = "Invalid email or password. Please try again.";
       }
       
       setError(errorMessage);

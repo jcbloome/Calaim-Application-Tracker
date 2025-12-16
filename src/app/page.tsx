@@ -1,3 +1,4 @@
+
 'use client';
 
 import Image from 'next/image';
@@ -27,7 +28,7 @@ export default function Home() {
                 className="w-40 h-40 sm:w-48 sm:h-48 object-contain rounded-full mb-6"
               />
             )}
-            <CardTitle className="text-3xl sm:text-5xl font-bold">Connect CalAIM</CardTitle>
+            <CardTitle className="text-3xl sm:text-5xl font-bold">CalAIM Pathfinder</CardTitle>
             <CardDescription className="text-md sm:text-lg max-w-2xl mt-2">
               The Connections Care Home Consultants application portal for the California
               Advancing and Innovating Medi-Cal (CalAIM) Community Support for Assisted
