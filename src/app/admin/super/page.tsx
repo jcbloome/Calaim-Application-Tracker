@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Trash2, Loader2, UserPlus } from 'lucide-react';
+import { Trash2, Loader2, UserPlus, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   Timestamp,
@@ -38,7 +38,7 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { WebhookPreparer } from './WebhookPreparer';
-import { grantAdminRole } from '@/ai/flows/grant-admin-role';
+import { syncStaff } from '@/ai/flows/sync-staff';
 
 
 interface StaffMember {
@@ -55,10 +55,7 @@ export default function SuperAdminPage() {
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(true);
-  const [newStaffEmail, setNewStaffEmail] = useState('');
-  const [newStaffFirstName, setNewStaffFirstName] = useState('');
-  const [newStaffLastName, setNewStaffLastName] = useState('');
-  const [isAddingStaff, setIsAddingStaff] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const fetchStaff = async () => {
     if (!firestore) return;
@@ -87,8 +84,6 @@ export default function SuperAdminPage() {
                   isSuperAdmin: superAdminIds.has(id),
               };
           }
-          // If user doc doesn't exist, we might have an orphaned role.
-          // For now, we'll just ignore it, but you could add logic to fetch from auth.
           return null;
       });
       
@@ -118,40 +113,25 @@ export default function SuperAdminPage() {
   }, [firestore]);
   
   
-  const handleAddStaff = async () => {
-    if (!newStaffEmail || !newStaffFirstName || !newStaffLastName) {
-      toast({ variant: 'destructive', title: 'Missing Information', description: 'Please fill out all fields.' });
-      return;
-    }
-    setIsAddingStaff(true);
-  
+  const handleSyncStaff = async () => {
+    setIsSyncing(true);
+    toast({ title: 'Syncing Staff...', description: 'Fetching all users and assigning roles. This may take a moment.' });
     try {
-      const result = await grantAdminRole({
-          email: newStaffEmail,
-          firstName: newStaffFirstName,
-          lastName: newStaffLastName
-      });
-  
-      toast({
-        title: 'Success!',
-        description: result.message,
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
-      
-      // Reset form and refresh the staff list
-      setNewStaffEmail('');
-      setNewStaffFirstName('');
-      setNewStaffLastName('');
-      await fetchStaff();
-  
+        const result = await syncStaff();
+        toast({
+            title: 'Sync Complete!',
+            description: result.message,
+            className: 'bg-green-100 text-green-900 border-green-200',
+        });
+        await fetchStaff(); // Refresh the list
     } catch (error: any) {
-       toast({
-          variant: "destructive",
-          title: "Failed to Add Staff",
-          description: error.message || "An unexpected error occurred on the server.",
+        toast({
+            variant: "destructive",
+            title: "Failed to Sync Staff",
+            description: error.message || "An unexpected error occurred on the server.",
         });
     } finally {
-      setIsAddingStaff(false);
+        setIsSyncing(false);
     }
   };
 
@@ -251,54 +231,16 @@ export default function SuperAdminPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Add Staff Member</CardTitle>
+              <CardTitle>Sync Staff from Authentication</CardTitle>
               <CardDescription>
-                Grant 'Admin' privileges to a user. If the user doesn't have an account, one will be created.
+                This will retrieve all users from Firebase Authentication, grant them an 'Admin' role if they don't have one, and add them to the list. Your account will be skipped.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="new-staff-first-name">First Name</Label>
-                  <Input
-                    id="new-staff-first-name"
-                    placeholder="e.g., Jane"
-                    value={newStaffFirstName}
-                    onChange={e => setNewStaffFirstName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="new-staff-last-name">Last Name</Label>
-                  <Input
-                    id="new-staff-last-name"
-                    placeholder="e.g., Doe"
-                    value={newStaffLastName}
-                    onChange={e => setNewStaffLastName(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-staff-email">Email Address</Label>
-                <Input
-                  id="new-staff-email"
-                  type="email"
-                  placeholder="e.g., jane.doe@example.com"
-                  value={newStaffEmail}
-                  onChange={e => setNewStaffEmail(e.target.value)}
-                />
-              </div>
-              <Button
-                onClick={handleAddStaff}
-                disabled={isAddingStaff}
-                className="w-full"
-              >
-                {isAddingStaff ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <UserPlus className="mr-2 h-4 w-4" />
-                )}
-                Add Staff Member
-              </Button>
+            <CardContent>
+                <Button onClick={handleSyncStaff} disabled={isSyncing} className="w-full">
+                    {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                    Sync All Staff
+                </Button>
             </CardContent>
           </Card>
 
