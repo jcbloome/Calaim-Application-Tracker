@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -37,9 +38,7 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { WebhookPreparer } from './WebhookPreparer';
-import { initializeApp, deleteApp, type FirebaseApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, updateProfile, fetchSignInMethodsForEmail } from 'firebase/auth';
-import { firebaseConfig } from '@/firebase/config';
+import { grantAdminRole } from '@/ai/flows/grant-admin-role';
 
 interface StaffMember {
   id: string;
@@ -72,9 +71,8 @@ export default function SuperAdminPage() {
 
       const adminIds = new Set(adminRolesSnap.docs.map(doc => doc.id));
       const superAdminIds = new Set(superAdminRolesSnap.docs.map(doc => doc.id));
-      const allRoleIds = new Set([...adminIds, ...superAdminIds]);
-
-      const staffListPromises = Array.from(allRoleIds).map(async (id) => {
+      
+      const staffListPromises = Array.from(adminIds).map(async (id) => {
           const userDocRef = doc(firestore, 'users', id);
           const userDocSnap = await getDoc(userDocRef);
 
@@ -87,6 +85,8 @@ export default function SuperAdminPage() {
                   isSuperAdmin: superAdminIds.has(id),
               };
           }
+          // If user doc doesn't exist, we might have an orphaned role.
+          // For now, we'll just ignore it, but you could add logic to fetch from auth.
           return null;
       });
       
@@ -108,71 +108,49 @@ export default function SuperAdminPage() {
     }
   };
 
+
   useEffect(() => {
     fetchStaff();
   }, [firestore, toast]);
   
   const handleAddStaff = async () => {
-      if (!newStaffEmail || !newStaffFirstName || !newStaffLastName || !firestore || !auth) {
+      if (!newStaffEmail || !newStaffFirstName || !newStaffLastName) {
         toast({ variant: 'destructive', title: 'Missing Information', description: 'Please fill out all fields.' });
         return;
       }
       setIsAddingStaff(true);
   
-      let tempApp: FirebaseApp | null = null;
       try {
-        tempApp = initializeApp(firebaseConfig, `staff-creation-${Date.now()}`);
-        const tempAuth = getAuth(tempApp);
-        const displayName = `${newStaffFirstName} ${newStaffLastName}`.trim();
-  
-        // Create user with temporary password.
-        const userCredential = await createUserWithEmailAndPassword(tempAuth, newStaffEmail, 'password123');
-        const user = userCredential.user;
-        await updateProfile(user, { displayName });
-  
-        // Now commit user data and roles to Firestore
-        const batch = writeBatch(firestore);
-        const userDocRef = doc(firestore, 'users', user.uid);
-        batch.set(userDocRef, {
-          id: user.uid,
+        const result = await grantAdminRole({
+          email: newStaffEmail,
           firstName: newStaffFirstName,
           lastName: newStaffLastName,
-          email: newStaffEmail,
-          displayName: displayName,
         });
-  
-        const adminRoleRef = doc(firestore, 'roles_admin', user.uid);
-        batch.set(adminRoleRef, { grantedAt: Timestamp.now() });
-  
-        await batch.commit();
-  
-        toast({
-          title: 'Staff Member Added',
-          description: `${displayName} has been granted admin privileges. They must use the "Forgot Password" link to set their password.`,
-          className: 'bg-green-100 text-green-900 border-green-200',
-          duration: 10000,
-        });
-  
-        setNewStaffEmail('');
-        setNewStaffFirstName('');
-        setNewStaffLastName('');
-        await fetchStaff();
+
+        if (result.success) {
+            toast({
+              title: 'Staff Member Added',
+              description: `${result.displayName} has been granted admin privileges. If they are a new user, they must use the "Forgot Password" link to set their password.`,
+              className: 'bg-green-100 text-green-900 border-green-200',
+              duration: 10000,
+            });
+
+            setNewStaffEmail('');
+            setNewStaffFirstName('');
+            setNewStaffLastName('');
+            await fetchStaff();
+        } else {
+            throw new Error(result.error || "An unknown error occurred in the grantAdminRole flow.");
+        }
   
       } catch (error: any) {
-        if (error.code === 'auth/email-already-in-use') {
-           toast({ variant: "destructive", title: "User Already Exists", description: "This email is already associated with an account. Please verify they are in the staff list or contact support." });
-        } else {
-          console.error("Error in handleAddStaff:", error);
-          toast({
-            variant: "destructive",
-            title: "Failed to Add Staff",
-            description: error.message || "An unexpected error occurred.",
-          });
-        }
+        console.error("Error in handleAddStaff:", error);
+        toast({
+          variant: "destructive",
+          title: "Failed to Add Staff",
+          description: error.message || "An unexpected error occurred.",
+        });
       } finally {
-        if (tempApp) {
-          await deleteApp(tempApp);
-        }
         setIsAddingStaff(false);
       }
   };
@@ -273,7 +251,7 @@ export default function SuperAdminPage() {
             <CardHeader>
               <CardTitle>Add Staff Member</CardTitle>
               <CardDescription>
-                Grant 'Admin' privileges to a user. If the user doesn't have an account, one will be created. New users will need to use the "Forgot Password" link to log in for the first time.
+                Grant 'Admin' privileges to a user. If the user doesn't have an account, one will be created.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
