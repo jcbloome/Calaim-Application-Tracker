@@ -1,4 +1,3 @@
-
 'use client';
 
 import Link from 'next/link';
@@ -23,7 +22,6 @@ const navLinks = [
     { href: "/faq", label: "FAQ & Glossary" },
     { href: "/applications", label: "My Applications" },
     { href: "/forms/printable-package", label: "Printable Forms" },
-    { href: "/db-tool", label: "DB Tool" },
 ];
 
 export function Header() {
