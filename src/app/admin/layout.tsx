@@ -1,3 +1,4 @@
+
 'use client';
 
 import { ReactNode, useEffect } from 'react';
@@ -133,7 +134,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     
     if (user && !isAdmin && !isSuperAdmin) {
         return (
-            <>
              <main className="flex-grow flex items-center justify-center p-4 bg-slate-100 min-h-screen">
                 <Card className="w-full max-w-md text-center">
                     <CardHeader>
@@ -148,7 +148,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                     </CardContent>
                 </Card>
             </main>
-            </>
         );
     }
 
