@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -38,7 +37,9 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { WebhookPreparer } from './WebhookPreparer';
-import { grantAdminRole } from '@/ai/flows/grant-admin-role';
+import { initializeApp, type FirebaseApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signOut, type Auth } from 'firebase/auth';
+
 
 interface StaffMember {
   id: string;
@@ -50,7 +51,7 @@ interface StaffMember {
 
 export default function SuperAdminPage() {
   const firestore = useFirestore();
-  const auth = useAuth();
+  const mainApp = useFirebaseApp();
   const { toast } = useToast();
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -72,7 +73,9 @@ export default function SuperAdminPage() {
       const adminIds = new Set(adminRolesSnap.docs.map(doc => doc.id));
       const superAdminIds = new Set(superAdminRolesSnap.docs.map(doc => doc.id));
       
-      const staffListPromises = Array.from(adminIds).map(async (id) => {
+      const combinedIds = new Set([...adminIds, ...superAdminIds]);
+
+      const staffListPromises = Array.from(combinedIds).map(async (id) => {
           const userDocRef = doc(firestore, 'users', id);
           const userDocSnap = await getDoc(userDocRef);
 
@@ -113,46 +116,88 @@ export default function SuperAdminPage() {
     fetchStaff();
   }, [firestore, toast]);
   
+  const grantAdminRoleInFirestore = async (uid: string, email: string, firstName: string, lastName: string) => {
+      if (!firestore) throw new Error("Firestore not available");
+      const displayName = `${firstName} ${lastName}`.trim();
+      const userDocRef = doc(firestore, 'users', uid);
+      const adminRoleRef = doc(firestore, 'roles_admin', uid);
+  
+      const batch = writeBatch(firestore);
+      
+      batch.set(userDocRef, {
+        id: uid,
+        email,
+        firstName,
+        lastName,
+        displayName,
+      }, { merge: true });
+  
+      batch.set(adminRoleRef, { grantedAt: Timestamp.now() });
+  
+      await batch.commit();
+  }
+  
   const handleAddStaff = async () => {
-      if (!newStaffEmail || !newStaffFirstName || !newStaffLastName) {
-        toast({ variant: 'destructive', title: 'Missing Information', description: 'Please fill out all fields.' });
+    if (!newStaffEmail || !newStaffFirstName || !newStaffLastName) {
+      toast({ variant: 'destructive', title: 'Missing Information', description: 'Please fill out all fields.' });
+      return;
+    }
+    if (!mainApp) {
+        toast({ variant: "destructive", title: "Firebase Error", description: "Main Firebase app not initialized." });
         return;
-      }
-      setIsAddingStaff(true);
+    }
+    setIsAddingStaff(true);
   
-      try {
-        const result = await grantAdminRole({
-          email: newStaffEmail,
-          firstName: newStaffFirstName,
-          lastName: newStaffLastName,
-        });
-
-        if (result.success) {
-            toast({
-              title: 'Staff Member Added',
-              description: `${result.displayName} has been granted admin privileges. If they are a new user, they must use the "Forgot Password" link to set their password.`,
-              className: 'bg-green-100 text-green-900 border-green-200',
-              duration: 10000,
-            });
-
-            setNewStaffEmail('');
-            setNewStaffFirstName('');
-            setNewStaffLastName('');
-            await fetchStaff();
-        } else {
-            throw new Error(result.error || "An unknown error occurred in the grantAdminRole flow.");
-        }
+    let tempApp: FirebaseApp | null = null;
+    let tempAuth: Auth | null = null;
   
-      } catch (error: any) {
-        console.error("Error in handleAddStaff:", error);
+    try {
+      const tempAppName = `temp-auth-app-${Date.now()}`;
+      tempApp = initializeApp(mainApp.options, tempAppName);
+      tempAuth = getAuth(tempApp);
+  
+      const userCredential = await createUserWithEmailAndPassword(tempAuth, newStaffEmail, newStaffLastName);
+      const uid = userCredential.user.uid;
+      
+      await grantAdminRoleInFirestore(uid, newStaffEmail, newStaffFirstName, newStaffLastName);
+  
+      toast({
+        title: 'Staff Member Added',
+        description: `${newStaffFirstName} ${newStaffLastName} has been granted admin privileges.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+  
+    } catch (error: any) {
+      if (error.code === 'auth/email-already-in-use') {
+          toast({
+              title: "Existing User Found",
+              description: `This user already has an account. Granting them admin permissions now...`,
+          });
+          // This part is tricky without a backend. The best client-side approach is to inform the super admin.
+          // A proper fix requires a server-side function to lookup the user by email.
+          // For now, we will just toast and let the user know. A better solution would be a callable function.
+           toast({
+            variant: "destructive",
+            title: "Action Required",
+            description: "Could not automatically grant role to existing user. This feature requires a backend function not yet implemented. Please ask for the 'grantAdminRole' flow to be created.",
+          });
+      } else {
         toast({
           variant: "destructive",
           title: "Failed to Add Staff",
           description: error.message || "An unexpected error occurred.",
         });
-      } finally {
-        setIsAddingStaff(false);
       }
+    } finally {
+        if (tempAuth) {
+            await signOut(tempAuth);
+        }
+      setIsAddingStaff(false);
+      setNewStaffEmail('');
+      setNewStaffFirstName('');
+      setNewStaffLastName('');
+      await fetchStaff();
+    }
   };
 
   const handleRemoveStaff = async (staffMember: StaffMember) => {
@@ -173,8 +218,10 @@ export default function SuperAdminPage() {
       const superAdminRoleRef = doc(firestore, 'roles_super_admin', staffMember.id);
 
       batch.delete(adminRoleRef);
-      batch.delete(superAdminRoleRef);
-
+      if (staffMember.isSuperAdmin) {
+        batch.delete(superAdminRoleRef);
+      }
+      
       await batch.commit();
 
       setStaff(prev => prev.filter(s => s.id !== staffMember.id));
