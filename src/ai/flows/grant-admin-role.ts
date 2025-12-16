@@ -80,6 +80,7 @@ const grantAdminRoleFlow = ai.defineFlow(
 
     const batch = firestore.batch();
 
+    // Create/update the user profile document
     batch.set(userDocRef, {
       id: uid,
       email: email,
@@ -88,6 +89,7 @@ const grantAdminRoleFlow = ai.defineFlow(
       displayName: displayName,
     }, { merge: true });
 
+    // Assign the admin role
     batch.set(adminRoleRef, { grantedAt: new Date() });
 
     await batch.commit();

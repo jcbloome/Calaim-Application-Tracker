@@ -25,7 +25,7 @@ import {
   getDoc,
 } from 'firebase/firestore';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useAuth, useFirestore, useFirebaseApp } from '@/firebase';
+import { useFirestore } from '@/firebase';
 import {
   Dialog,
   DialogContent,
@@ -111,8 +111,10 @@ export default function SuperAdminPage() {
 
 
   useEffect(() => {
-    fetchStaff();
-  }, [firestore, toast]);
+    if (firestore) {
+      fetchStaff();
+    }
+  }, [firestore]);
   
   
   const handleAddStaff = async () => {

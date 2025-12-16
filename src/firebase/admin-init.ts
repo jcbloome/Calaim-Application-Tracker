@@ -11,6 +11,7 @@ export function initializeAdminApp(): App {
   }
 
   try {
+    // This relies on the FIREBASE_SERVICE_ACCOUNT_KEY environment variable being set.
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY as string);
     return initializeApp({
       credential: cert(serviceAccount)
@@ -19,7 +20,7 @@ export function initializeAdminApp(): App {
   } catch (error: any) {
     console.error("Firebase Admin SDK initialization failed:", error);
     // If parsing fails, fall back to default credentials for environments
-    // where it might be configured automatically.
+    // where it might be configured automatically (e.g., Cloud Functions).
     return initializeApp({}, 'firebase-admin');
   }
 }
