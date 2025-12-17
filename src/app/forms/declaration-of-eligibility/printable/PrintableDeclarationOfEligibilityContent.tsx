@@ -2,6 +2,8 @@
 'use client';
 
 import React from 'react';
+import { Button } from '@/components/ui/button';
+import { Printer } from 'lucide-react';
 
 const Field = ({ label, className = '', description }: { label: string; className?: string; description?: string }) => (
     <div className={`pt-2 ${className}`}>
@@ -20,6 +22,12 @@ const LongField = ({ className = '' }: { className?: string }) => (
 export function PrintableDeclarationOfEligibilityContent() {
     return (
         <form>
+             <div className="flex justify-end mb-8 print:hidden">
+                <Button onClick={() => window.print()}>
+                    <Printer className="mr-2 h-4 w-4" />
+                    Print Form
+                </Button>
+            </div>
             <div className="text-center mb-6">
                 <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Declaration of Eligibility</h1>
                 <p className="text-sm text-gray-500">For SNF Diversion only</p>
