@@ -83,7 +83,7 @@ function AdminHeader() {
                 const isActive = pathname === link.href || (link.href !== '/admin' && pathname.startsWith(link.href));
                 return (
                   <NavigationMenuItem key={link.href}>
-                    <Link href={link.href} legacyBehavior passHref>
+                    <Link href={link.href} legacyBehavior={false} passHref={false}>
                       <NavigationMenuLink active={isActive} className={navigationMenuTriggerStyle()}>
                         <link.icon className="mr-2 h-4 w-4" />
                         {link.label}
