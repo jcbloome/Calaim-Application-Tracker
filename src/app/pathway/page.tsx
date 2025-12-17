@@ -215,45 +215,55 @@ function PathwayPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const applicationId = searchParams.get('applicationId');
-  const { user } = useUser();
+  const { user, isUserLoading } = useUser();
   const { isAdmin, isSuperAdmin } = useAdmin();
   const firestore = useFirestore();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
 
+  // Memoize the document reference to prevent re-renders
   const applicationDocRef = useMemo(() => {
-    // Admins can view any application, so we don't check for user ownership if they are an admin.
-    // The query to get the application data is done in the Admin table, which requires a collectionGroup query.
-    // The user ID is part of the application data itself.
-    if (firestore && applicationId && user) {
-        // This part is tricky. If an admin is viewing, the application's original userId must be used.
-        // The useDoc hook implicitly uses the currently logged-in user's UID if not handled carefully.
-        // For this to work for admins, the `application` object (when available) must contain the original `userId`.
-        const userIdToUse = isAdmin || isSuperAdmin ? application?.userId : user.uid;
-        if (userIdToUse) {
-             return doc(firestore, `users/${userIdToUse}/applications`, applicationId);
-        }
-        // Fallback for regular user before app data is loaded
-        return doc(firestore, `users/${user.uid}/applications`, applicationId);
-    }
-    return null;
-  }, [user, firestore, applicationId, isAdmin, isSuperAdmin]);
-
-  const { data: application, isLoading, error } = useDoc<Application>(applicationDocRef, {}, [applicationId]);
+    if (!firestore || !applicationId || !user) return null;
+    
+    // Admins need to construct the path with the application's actual userId,
+    // which we might not have yet. Regular users use their own UID.
+    // The hook will update once the application data (and its userId) is fetched.
+    const userIdToUse = user.uid;
+    return doc(firestore, `users/${userIdToUse}/applications`, applicationId);
+  }, [firestore, applicationId, user]);
+  
+  // The 'deps' array on useDoc is crucial for admin access.
+  // We need to re-run the hook if the application data is loaded and reveals
+  // a different userId (for an admin viewing someone else's app).
+  const { data: application, isLoading, error } = useDoc<Application>(
+      useMemo(() => {
+          if (!firestore || !applicationId) return null;
+          // If the current user is an admin and we have the application data, use its userId
+          if ((isAdmin || isSuperAdmin) && application?.userId) {
+              return doc(firestore, `users/${application.userId}/applications`, applicationId);
+          }
+          // Otherwise, fall back to the logged-in user's UID
+          if (user) {
+              return doc(firestore, `users/${user.uid}/applications`, applicationId);
+          }
+          return null;
+      }, [firestore, applicationId, user, isAdmin, isSuperAdmin, application?.userId]),
+      {}, [application?.userId] // Re-run when application.userId becomes available
+  );
 
 
   useEffect(() => {
     // If the hook is done loading and there's no application, it might be an admin trying to access it.
-    // In a real-world scenario, you might have a separate data fetching mechanism for admins.
     // For this prototype, we'll redirect if a non-admin can't find the app in their own collection.
     if (!isLoading && !application && !isAdmin && !isSuperAdmin) {
-        // router.push('/applications'); // Or some error page
+        router.push('/applications'); // Or some error page
     }
   }, [isLoading, application, isAdmin, isSuperAdmin, router]);
 
 
   useEffect(() => {
-    if (application && applicationDocRef && application.pathway && (!application.forms || application.forms.length === 0)) {
+    const appRef = applicationDocRef || (application?.userId && firestore && applicationId ? doc(firestore, `users/${application.userId}/applications`, applicationId) : null);
+    if (application && appRef && application.pathway && (!application.forms || application.forms.length === 0)) {
         const pathwayRequirements = getPathwayRequirements(application.pathway);
         const initialForms: FormStatusType[] = pathwayRequirements.map(req => ({
             name: req.title,
@@ -267,13 +277,14 @@ function PathwayPageContent() {
             initialForms[summaryIndex].status = 'Completed';
         }
 
-        setDoc(applicationDocRef, { forms: initialForms }, { merge: true });
+        setDoc(appRef, { forms: initialForms }, { merge: true });
     }
-}, [application, applicationDocRef]);
+}, [application, applicationDocRef, firestore, applicationId]);
 
 
   const handleFormStatusUpdate = async (formNames: string[], newStatus: 'Completed' | 'Pending', fileName?: string | null) => {
-      if (!applicationDocRef || !application) {
+      const docRefToUpdate = applicationDocRef || (application?.userId && firestore && applicationId ? doc(firestore, `users/${application.userId}/applications`, applicationId) : null);
+      if (!docRefToUpdate || !application) {
         return;
       }
 
@@ -295,7 +306,7 @@ function PathwayPageContent() {
       });
       
       try {
-          await setDoc(applicationDocRef, {
+          await setDoc(docRefToUpdate, {
               forms: updatedForms,
               lastUpdated: serverTimestamp(),
           }, { merge: true });
@@ -305,8 +316,9 @@ function PathwayPageContent() {
   };
   
    const handleStatusChange = async (newStatus: Application['status']) => {
-        if (!applicationDocRef) return;
-        await setDoc(applicationDocRef, { status: newStatus, lastUpdated: serverTimestamp() }, { merge: true });
+        const docRefToUpdate = applicationDocRef || (application?.userId && firestore && applicationId ? doc(firestore, `users/${application.userId}/applications`, applicationId) : null);
+        if (!docRefToUpdate) return;
+        await setDoc(docRefToUpdate, { status: newStatus, lastUpdated: serverTimestamp() }, { merge: true });
     };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, requirementTitle: string) => {
@@ -331,10 +343,11 @@ function PathwayPageContent() {
   };
 
   const handleSubmitApplication = async () => {
-    if (!applicationDocRef) return;
+    const docRefToUpdate = applicationDocRef || (application?.userId && firestore && applicationId ? doc(firestore, `users/${application.userId}/applications`, applicationId) : null);
+    if (!docRefToUpdate) return;
     setIsSubmitting(true);
     try {
-        await setDoc(applicationDocRef, {
+        await setDoc(docRefToUpdate, {
             status: 'Completed & Submitted',
             lastUpdated: serverTimestamp(),
         }, { merge: true });
@@ -346,7 +359,7 @@ function PathwayPageContent() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || isUserLoading) {
     return (
         <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />

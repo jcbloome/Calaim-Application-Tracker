@@ -53,8 +53,8 @@ export function useDoc<T = any>(
   type StateDataType = WithId<T> | null;
 
   const [data, setData] = useState<StateDataType>(() => {
-    if (options?.initialData) {
-      return { ...options.initialData, id: memoizedDocRef?.id || '' } as WithId<T>;
+    if (options?.initialData && memoizedDocRef) {
+      return { ...options.initialData, id: memoizedDocRef.id } as WithId<T>;
     }
     return null;
   });
