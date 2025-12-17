@@ -219,10 +219,10 @@ function WaiversFormComponent() {
                             </Section>
 
                             <Section title="Liability Waiver & Hold Harmless Agreement" icon={FileText}>
-                                <p><strong>Intention.</strong> Resident understands that this Agreement covers liability, claims, and actions caused in whole or in part by any acts or failures to act of the Releasees, including, but not limited to, negligence, fault, or breach of contract.</p>
-                                <p><strong>Assumption of Risk.</strong> Resident understands that their participation in the Program may involve a risk of injury or even death. Resident assumes all possible risks, both known and unknown, and agrees to release, defend, indemnify, and hold harmless the Releasees from any injury, loss, or damage.</p>
-                                <p><strong>No Insurance.</strong> Resident understands that the Company does not provide any medical, health, accident, or life insurance and is responsible for their own insurance.</p>
-                                <p><strong>Acknowledgment.</strong> Resident acknowledges that they have read this Agreement, understand its content, and sign it of their own free will.</p>
+                                <p><strong>Intention.</strong> The purpose of this agreement ('Agreement') is to forever release and discharge Connections Care Home Consultants, LLC (the 'Company') and all its agents, officers, and employees (collectively referred to as 'Releasees') from all liability for injury or damages that may arise out of the resident/client's ('Resident') participation in the Community Supports program ('Program'). Resident understands that this Agreement covers liability, claims, and actions caused in whole or in part by any acts or failures to act of the Releasees, including, but not limited to, negligence, fault, or breach of contract.</p>
+                                <p><strong>Assumption of Risk.</strong> Resident understands that their participation in the Program may involve a risk of injury or even death from various causes. Resident assumes all possible risks, both known and unknown, of participating in the Program and agrees to release, defend, indemnify, and hold harmless the Releasees from any injury, loss, liability, damage, or cost they may incur due to their participation in the Program.</p>
+                                <p><strong>No Insurance.</strong> Resident understands that the Company does not assume any responsibility for or obligation to provide financial assistance or other assistance, including but not limited to medical, health, or disability insurance, in the event of injury or illness. Resident understands that they are not covered by any medical, health, accident, or life insurance provided by the Company and is responsible for providing their own insurance.</p>
+                                <p><strong>Acknowledgment.</strong> Resident acknowledges that they have read this Agreement in its entirety and understands its content. Resident is aware that this is a release of liability and a contract of indemnity, and they sign it of their own free will.</p>
                                  <Alert variant="warning" className="mt-4">
                                     <AlertCircle className="h-4 w-4" />
                                     <AlertTitle>Acknowledgment</AlertTitle>
@@ -239,7 +239,7 @@ function WaiversFormComponent() {
 
                             <Section title="Freedom of Choice Waiver" icon={HeartHandshake}>
                                 <p>I understand I have a choice to receive services in the community. Community Supports for Community Transition are available to help me. I can choose to accept or decline these services.</p>
-                                <p>If I accept these services, I will receive assistance from Connections Care Home Consultants to move into a community-based setting like an assisted living facility.</p>
+                                <p>If I accept these services, I will receive assistance from Connections Care Home Consultants to move into a community-based setting like an assisted living facility. They will help me find a place, coordinate paperwork, and ensure I am settled in. This will be authorized and paid for by my Managed Care Plan.</p>
                                 <p>If I decline these services, I am choosing to remain where I am, and I will not receive the transition support services offered by this program at this time.</p>
                                 <div className="p-4 border rounded-md space-y-3 mt-4 bg-background">
                                     <h3 className="font-medium text-base">My Choice</h3>
