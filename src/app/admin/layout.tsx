@@ -83,12 +83,12 @@ function AdminHeader() {
                 const isActive = pathname === link.href || (link.href !== '/admin' && pathname.startsWith(link.href));
                 return (
                   <NavigationMenuItem key={link.href}>
-                    <Link href={link.href} legacyBehavior passHref>
-                      <NavigationMenuLink active={isActive} className={navigationMenuTriggerStyle()}>
+                    <NavigationMenuLink asChild active={isActive} className={navigationMenuTriggerStyle()}>
+                      <Link href={link.href}>
                         <link.icon className="mr-2 h-4 w-4" />
                         {link.label}
-                      </NavigationMenuLink>
-                    </Link>
+                      </Link>
+                    </NavigationMenuLink>
                   </NavigationMenuItem>
                 );
               })}
