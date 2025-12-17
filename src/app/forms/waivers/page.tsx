@@ -4,7 +4,7 @@
 import React, { useState, useMemo, Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, FileCheck2, AlertCircle, Lock, ShieldCheck, FileText, HeartHandshake } from 'lucide-react';
+import { ArrowLeft, Loader2, FileCheck2, AlertCircle, Lock, ShieldCheck, FileText, HeartHandshake, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Header } from '@/components/Header';
@@ -17,7 +17,6 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Separator } from '@/components/ui/separator';
 
 function Section({ title, icon: Icon, children }: { title: string, icon: React.ElementType, children: React.ReactNode }) {
   return (
@@ -50,6 +49,7 @@ function WaiversFormComponent() {
     const [ackHipaa, setAckHipaa] = useState(false);
     const [ackLiability, setAckLiability] = useState(false);
     const [ackFoc, setAckFoc] = useState(false);
+    const [ackRoomAndBoard, setAckRoomAndBoard] = useState(false);
     const [focChoice, setFocChoice] = useState<'accept' | 'decline' | ''>('');
 
 
@@ -74,6 +74,7 @@ function WaiversFormComponent() {
                 setAckHipaa(true);
                 setAckLiability(true);
                 setAckFoc(true);
+                setAckRoomAndBoard(true); // Assume completed forms have this acknowledged
                 setSignatureDate(form.dateCompleted ? new Date(form.dateCompleted.seconds * 1000).toLocaleDateString() : new Date().toLocaleDateString());
             } else {
                  setSignatureDate(new Date().toLocaleDateString());
@@ -84,7 +85,7 @@ function WaiversFormComponent() {
     }, [application]);
 
     const isFormComplete = () => {
-        if (!signerType || !signerName || !focChoice || !ackHipaa || !ackLiability || !ackFoc) return false;
+        if (!signerType || !signerName || !focChoice || !ackHipaa || !ackLiability || !ackFoc || !ackRoomAndBoard) return false;
         if (signerType === 'representative' && !signerRelationship) return false;
         return true;
     };
@@ -268,6 +269,24 @@ function WaiversFormComponent() {
                                 </Alert>
                             </Section>
 
+                            <Section title="Room & Board Obligation" icon={Home}>
+                                <p>I understand that if I enroll in the CalAIM Community Supports program for assisted living, I will be responsible for paying a "Room and Board" fee directly to the assisted living facility (RCFE/ARF).</p>
+                                <p>This fee is based on my monthly income. The current rate is the Supplemental Security Income/State Supplementary Payment (SSI/SSP) rate for a non-medical out-of-home care recipient. As of 2024, this amount is <strong>$1,575.07 per month</strong>.</p>
+                                <p>This fee covers the cost of my housing, meals, and utilities. The separate "care" portion of my assisted living costs will be paid by my Managed Care Plan (Health Net or Kaiser) through the CalAIM program.</p>
+                                <p>I acknowledge that this Room and Board fee is my personal financial responsibility and is subject to change in the future based on SSI/SSP rate adjustments.</p>
+                                <Alert variant="warning" className="mt-4">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <AlertTitle>Acknowledgment</AlertTitle>
+                                    <AlertDescription>
+                                        <div className="flex items-start space-x-2 mt-2">
+                                            <Checkbox id="ack-room-and-board" checked={ackRoomAndBoard} onCheckedChange={(c) => setAckRoomAndBoard(!!c)} disabled={isReadOnly} />
+                                            <label htmlFor="ack-room-and-board" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                               I have read and understood my financial obligation for Room and Board.
+                                            </label>
+                                        </div>
+                                    </AlertDescription>
+                                </Alert>
+                            </Section>
                             
                             <div className="mt-8 pt-6 border-t">
                                 <h3 className="text-base font-semibold text-gray-800">Electronic Signature</h3>

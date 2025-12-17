@@ -1,5 +1,5 @@
 
-'use client'; // 👈 THIS IS CRITICAL. Without it, onClick will not work.
+'use client'; 
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
@@ -15,14 +15,12 @@ const CheckboxField = ({ label }: { label: string }) => (
 
 export default function WaiverFormPage() {
   
-  // This function triggers the browser's print dialog
   const handlePrint = () => {
     window.print();
   };
 
   return (
     <div className="min-h-screen bg-gray-50 text-black print:bg-white">
-      {/* --- TOP CONTROLS (Hidden when printing) --- */}
       <header className="print:hidden sticky top-0 bg-white/80 backdrop-blur-sm border-b z-10">
         <div className="container mx-auto py-4 px-4">
             <div className="flex justify-between items-center">
@@ -40,20 +38,17 @@ export default function WaiverFormPage() {
         </div>
       </header>
       
-      {/* --- PRINTABLE CONTENT --- */}
       <main className="container mx-auto py-8 px-4">
         <div className="max-w-4xl mx-auto border p-8 shadow-sm bg-white print:border-none print:shadow-none print:p-0">
-            {/* Header */}
             <div className="text-center mb-8">
             <h1 className="text-2xl font-bold uppercase tracking-wide text-slate-900">
                 Waivers & Authorizations
             </h1>
             <p className="text-slate-600 mt-2 text-sm">
-                This document contains the HIPAA Authorization, Liability Waiver, and Freedom of Choice acknowledgments.
+                This document contains the HIPAA Authorization, Liability Waiver, Freedom of Choice, and Room & Board acknowledgments.
             </p>
             </div>
 
-            {/* Input Fields Row */}
             <div className="grid grid-cols-2 gap-8 mb-8">
             <div>
                 <label className="block text-xs uppercase font-bold text-slate-500 mb-1">
@@ -72,7 +67,6 @@ export default function WaiverFormPage() {
             </div>
             </div>
 
-            {/* Content Body */}
             <div className="space-y-6 text-sm leading-relaxed text-slate-800">
             <section>
                 <h2 className="text-lg font-bold text-slate-900 mb-2 border-b pb-1">
@@ -120,7 +114,19 @@ export default function WaiverFormPage() {
                 </div>
             </section>
 
-            {/* Signature Area */}
+            <section>
+                <h2 className="text-lg font-bold text-slate-900 mb-2 border-b pb-1">
+                Room & Board Obligation
+                </h2>
+                <div className="prose prose-sm max-w-none text-gray-700 space-y-3">
+                    <p>I understand that if I enroll in the CalAIM Community Supports program for assisted living, I will be responsible for paying a "Room and Board" fee directly to the assisted living facility (RCFE/ARF).</p>
+                    <p>This fee is based on my monthly income. The current rate is the Supplemental Security Income/State Supplementary Payment (SSI/SSP) rate for a non-medical out-of-home care recipient. As of 2024, this amount is <strong>$1,575.07 per month</strong>.</p>
+                    <p>This fee covers the cost of my housing, meals, and utilities. The separate "care" portion of my assisted living costs will be paid by my Managed Care Plan (Health Net or Kaiser) through the CalAIM program.</p>
+                    <p>I acknowledge that this Room and Board fee is my personal financial responsibility and is subject to change in the future based on SSI/SSP rate adjustments.</p>
+                </div>
+                 <CheckboxField label="I have read and understood my financial obligation for Room and Board." />
+            </section>
+
             <div className="mt-12 pt-8 border-t">
                 <h2 className="text-lg font-bold text-slate-900 mb-2">Signature for All Sections</h2>
                 <p className="text-xs italic text-gray-600 my-2">By signing below, I acknowledge that under penalty of perjury, I am the member or an authorized representative legally empowered to sign on behalf of the member, and that I agree to all sections above.</p>
@@ -157,4 +163,3 @@ export default function WaiverFormPage() {
     </div>
   );
 }
-
