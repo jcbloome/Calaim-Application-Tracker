@@ -29,7 +29,7 @@ const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
       'memberFirstName', 'memberLastName', 'memberAge', 'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'memberCounty',
       'memberMediCalNum', 'confirmMemberMediCalNum', 'memberDob',
-      'referrerPhone', 'referrerRelationship', 'agency',
+      'referrerFirstName', 'referrerLastName', 'referrerPhone', 'referrerRelationship', 'agency',
       'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
       'secondaryContactFirstName', 'secondaryContactLastName', 'secondaryContactRelationship', 'secondaryContactPhone', 'secondaryContactEmail', 'secondaryContactLanguage',
       'hasCapacity', 'hasLegalRep', 'repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail'

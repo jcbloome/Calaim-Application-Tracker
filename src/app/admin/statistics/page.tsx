@@ -85,14 +85,23 @@ export default function AdminStatisticsPage() {
         if (app.memberCounty) {
             counts.byCounty.set(app.memberCounty, (counts.byCounty.get(app.memberCounty) || 0) + 1);
         }
-        // Health Plan
+        
+        // Health Plan - Consolidate Kaiser & Kaiser Permanente
         if (app.healthPlan) {
-            counts.byHealthPlan.set(app.healthPlan, (counts.byHealthPlan.get(app.healthPlan) || 0) + 1);
+            let plan = app.healthPlan;
+            if (plan === 'Kaiser Permanente') {
+                plan = 'Kaiser';
+            }
+            if (plan !== 'Other') {
+                counts.byHealthPlan.set(plan, (counts.byHealthPlan.get(plan) || 0) + 1);
+            }
         }
+
         // Pathway
         if (app.pathway) {
             counts.byPathway.set(app.pathway, (counts.byPathway.get(app.pathway) || 0) + 1);
         }
+        
         // Referrer (user who created application)
         if (app.referrerName) {
             counts.byReferrer.set(app.referrerName, (counts.byReferrer.get(app.referrerName) || 0) + 1);
