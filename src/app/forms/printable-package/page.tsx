@@ -16,9 +16,7 @@ const forms = [
     { name: 'CS Member Summary', icon: FileText, href: '/forms/cs-summary-form/printable' },
     { name: 'Program Information', icon: FileText, href: '/info' },
     { name: 'Acronym Glossary', icon: BookOpen, href: '/forms/acronym-glossary/printable' },
-    { name: 'HIPAA Authorization', icon: FileText, href: '/forms/hipaa-authorization/printable' },
-    { name: 'Liability Waiver', icon: FileText, href: '/forms/liability-waiver/printable' },
-    { name: 'Freedom of Choice Waiver', icon: FileText, href: '/forms/freedom-of-choice/printable' },
+    { name: 'Waivers & Authorizations (HIPAA, Liability, FOC)', icon: FileText, href: '/forms/waivers/printable' },
     { name: 'Declaration of Eligibility', description: 'For SNF Diversion only', icon: FileText, href: '/forms/declaration-of-eligibility/printable' },
     { name: "LIC 602A - Physician's Report", icon: ExternalLink, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf', target: '_blank', download: true },
 ];

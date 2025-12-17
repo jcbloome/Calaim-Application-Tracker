@@ -43,9 +43,7 @@ const Section = ({ title, children, editLink, isReadOnly }: { title: string; chi
 const getRequiredFormsForPathway = (pathway?: FormValues['pathway']): FormStatusType[] => {
   const commonForms: FormStatusType[] = [
     { name: 'CS Member Summary', status: 'Completed', type: 'online-form', href: '/forms/cs-summary-form' },
-    { name: 'HIPAA Authorization', status: 'Pending', type: 'online-form', href: '/forms/hipaa-authorization' },
-    { name: 'Liability Waiver', status: 'Pending', type: 'online-form', href: '/forms/liability-waiver' },
-    { name: 'Freedom of Choice Waiver', status: 'Pending', type: 'online-form', href: '/forms/freedom-of-choice' },
+    { name: 'Waivers & Authorizations', status: 'Pending', type: 'online-form', href: '/forms/waivers' },
     { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' },
     { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },

@@ -5,9 +5,7 @@ import React, { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Printer, ArrowLeft } from 'lucide-react';
 import { PrintableCsSummaryFormContent } from '@/app/forms/cs-summary-form/printable/PrintableCsSummaryFormContent';
-import { PrintableHipaaFormContent } from '@/app/forms/hipaa-authorization/printable/PrintableHipaaFormContent';
-import { PrintableLiabilityWaiverContent } from '@/app/forms/liability-waiver/printable/PrintableLiabilityWaiverContent';
-import { PrintableFreedomOfChoiceContent } from '@/app/forms/freedom-of-choice/printable/PrintableFreedomOfChoiceContent';
+import { PrintableWaiversContent } from '@/app/forms/waivers/printable/PrintableWaiversContent';
 import { PrintableDeclarationOfEligibilityContent } from '@/app/forms/declaration-of-eligibility/printable/PrintableDeclarationOfEligibilityContent';
 import { PrintableProgramInfo } from '@/app/info/components/PrintableProgramInfo';
 import { PrintableGlossaryContent } from '@/app/forms/acronym-glossary/printable/PrintableGlossaryContent';
@@ -51,9 +49,7 @@ export default function FullPackagePrintPage() {
             <PrintableGlossaryContent />
             <PageBreak />
             <PrintableCsSummaryFormContent />
-            <PrintableHipaaFormContent />
-            <PrintableLiabilityWaiverContent />
-            <PrintableFreedomOfChoiceContent />
+            <PrintableWaiversContent />
             <PrintableDeclarationOfEligibilityContent />
         </div>
         <style jsx global>{`

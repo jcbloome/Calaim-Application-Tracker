@@ -5,10 +5,9 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Printer, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-import { PrintableFreedomOfChoiceContent } from './PrintableFreedomOfChoiceContent';
+import { PrintableWaiversContent } from './PrintableWaiversContent';
 
-
-export default function PrintableFreedomOfChoiceWaiverPage() {
+export default function PrintableWaiversPage() {
 
   const handlePrint = () => {
     window.print();
@@ -31,7 +30,7 @@ export default function PrintableFreedomOfChoiceWaiverPage() {
             </Button>
           </div>
           
-          <PrintableFreedomOfChoiceContent />
+          <PrintableWaiversContent />
         </div>
       </div>
     </div>
