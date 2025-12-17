@@ -28,8 +28,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
-import { Trash2, FileText } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import type { Application } from '@/lib/definitions';
+import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import type { WithId } from '@/firebase';
 import {
   Dialog,
@@ -56,10 +57,10 @@ const getBadgeVariant = (status: ApplicationStatusType) => {
   }
 };
 
-const QuickViewField = ({ label, value }: { label: string, value?: string | number | null }) => (
-    <div>
+const QuickViewField = ({ label, value, fullWidth = false }: { label: string, value?: string | number | boolean | null, fullWidth?: boolean }) => (
+    <div className={fullWidth ? 'col-span-2' : ''}>
         <p className="text-sm text-muted-foreground">{label}</p>
-        <p className="font-semibold">{value || <span className="font-normal text-gray-400">N/A</span>}</p>
+        <p className="font-semibold">{String(value) || <span className="font-normal text-gray-400">N/A</span>}</p>
     </div>
 );
 
@@ -83,36 +84,85 @@ const formatDate = (date: any) => {
     return 'Invalid Date';
 };
 
+const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+    <div>
+        <h3 className="text-lg font-semibold mb-2 text-primary">{title}</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            {children}
+        </div>
+        <Separator className="my-6" />
+    </div>
+);
 
-const QuickViewDialog = ({ application }: { application: WithId<Application> }) => {
+const QuickViewDialog = ({ application }: { application: WithId<Application & FormValues> }) => {
     return (
          <Dialog>
             <DialogTrigger asChild>
                 <Button variant="outline" size="sm">Quick View</Button>
             </DialogTrigger>
-            <DialogContent className="max-w-3xl">
+            <DialogContent className="max-w-4xl">
                 <DialogHeader>
                     <DialogTitle>Quick Summary: {application.memberFirstName} {application.memberLastName}</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-6 py-4 max-h-[70vh] overflow-y-auto">
-                    <div>
-                        <h3 className="text-lg font-semibold mb-2">Member Information</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                            <QuickViewField label="DOB" value={formatDate(application.memberDob)} />
-                            <QuickViewField label="MRN" value={application.memberMrn} />
-                            <QuickViewField label="County" value={application.memberCounty} />
-                            <QuickViewField label="Health Plan" value={application.healthPlan} />
-                            <QuickViewField label="Pathway" value={application.pathway} />
-                        </div>
-                    </div>
-                    <Separator />
-                     <div>
-                        <h3 className="text-lg font-semibold mb-2">Referrer Information</h3>
-                        <div className="grid grid-cols-2 gap-4">
-                            <QuickViewField label="Name" value={application.referrerName} />
-                            <QuickViewField label="Email" value={application.referrerEmail} />
-                        </div>
-                    </div>
+                <div className="space-y-6 py-4 max-h-[70vh] overflow-y-auto px-2">
+                    <Section title="Member Information">
+                        <QuickViewField label="First Name" value={application.memberFirstName} />
+                        <QuickViewField label="Last Name" value={application.memberLastName} />
+                        <QuickViewField label="Date of Birth" value={formatDate(application.memberDob)} />
+                        <QuickViewField label="Age" value={application.memberAge} />
+                        <QuickViewField label="Medi-Cal Number" value={application.memberMediCalNum} />
+                        <QuickViewField label="Medical Record Number (MRN)" value={application.memberMrn} />
+                        <QuickViewField label="Preferred Language" value={application.memberLanguage} />
+                        <QuickViewField label="County" value={application.memberCounty} />
+                    </Section>
+
+                    <Section title="Referrer Information">
+                        <QuickViewField label="Name" value={`${application.referrerFirstName} ${application.referrerLastName}`} />
+                        <QuickViewField label="Email" value={application.referrerEmail} />
+                        <QuickViewField label="Phone" value={application.referrerPhone} />
+                        <QuickViewField label="Relationship" value={application.referrerRelationship} />
+                        <QuickViewField label="Agency" value={application.agency} />
+                    </Section>
+
+                    <Section title="Primary Contact">
+                        <QuickViewField label="Name" value={`${application.bestContactFirstName} ${application.bestContactLastName}`} />
+                        <QuickViewField label="Relationship" value={application.bestContactRelationship} />
+                        <QuickViewField label="Phone" value={application.bestContactPhone} />
+                        <QuickViewField label="Email" value={application.bestContactEmail} />
+                        <QuickViewField label="Language" value={application.bestContactLanguage} />
+                    </Section>
+
+                    <Section title="Legal Representative">
+                        <QuickViewField label="Member Has Capacity" value={application.hasCapacity} />
+                        <QuickViewField label="Has Legal Representative" value={application.hasLegalRep} />
+                        <QuickViewField label="Rep Name" value={`${application.repFirstName} ${application.repLastName}`} />
+                        <QuickViewField label="Rep Relationship" value={application.repRelationship} />
+                        <QuickViewField label="Rep Phone" value={application.repPhone} />
+                        <QuickViewField label="Rep Email" value={application.repEmail} />
+                    </Section>
+                    
+                    <Section title="Location Information">
+                        <QuickViewField label="Current Location Type" value={application.currentLocation} />
+                        <QuickViewField label="Current Address" value={`${application.currentAddress}, ${application.currentCity}, ${application.currentState} ${application.currentZip}`} fullWidth />
+                        <QuickViewField label="Customary Residence Type" value={application.customaryLocationType} />
+                        <QuickViewField label="Customary Address" value={`${application.customaryAddress}, ${application.customaryCity}, ${application.customaryState} ${application.customaryZip}`} fullWidth />
+                    </Section>
+                    
+                    <Section title="Health Plan & Pathway">
+                        <QuickViewField label="Health Plan" value={application.healthPlan} />
+                        <QuickViewField label="Pathway" value={application.pathway} />
+                        <QuickViewField label="Meets Criteria" value={application.meetsPathwayCriteria ? 'Yes' : 'No'} fullWidth />
+                        {application.pathway === 'SNF Diversion' && <QuickViewField label="Reason for Diversion" value={application.snfDiversionReason} fullWidth />}
+                    </Section>
+
+                     <Section title="ISP & RCFE Information">
+                        <QuickViewField label="ISP Contact Name" value={`${application.ispFirstName} ${application.ispLastName}`} />
+                        <QuickViewField label="ISP Contact Phone" value={application.ispPhone} />
+                        <QuickViewField label="ISP Assessment Location" value={application.ispAddress} fullWidth />
+                        <QuickViewField label="On ALW Waitlist?" value={application.onALWWaitlist} />
+                        <QuickViewField label="Has Preferred RCFE?" value={application.hasPrefRCFE} />
+                        <QuickViewField label="RCFE Name" value={application.rcfeName} fullWidth />
+                    </Section>
                 </div>
             </DialogContent>
         </Dialog>
@@ -123,7 +173,7 @@ export const AdminApplicationsTable = ({
   applications,
   isLoading,
 }: {
-  applications: WithId<Application>[];
+  applications: WithId<Application & FormValues>[];
   isLoading: boolean;
 }) => {
     const firestore = useFirestore();
@@ -147,7 +197,6 @@ export const AdminApplicationsTable = ({
         }
     };
     
-    // Sort applications by lastUpdated timestamp, most recent first
     const sortedApplications = [...applications].sort((a, b) => {
         const dateA = a.lastUpdated ? (a.lastUpdated as Timestamp).toMillis() : 0;
         const dateB = b.lastUpdated ? (b.lastUpdated as Timestamp).toMillis() : 0;
@@ -160,8 +209,9 @@ export const AdminApplicationsTable = ({
         <TableHeader>
           <TableRow>
             <TableHead>Member / App ID</TableHead>
-            <TableHead>Submitted By (User)</TableHead>
+            <TableHead className="hidden md:table-cell">Submitted By (User)</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead className="hidden lg:table-cell">Plan & Pathway</TableHead>
             <TableHead className="hidden sm:table-cell">Last Updated</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -169,7 +219,7 @@ export const AdminApplicationsTable = ({
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={5} className="h-24 text-center">
+              <TableCell colSpan={6} className="h-24 text-center">
                 Loading applications...
               </TableCell>
             </TableRow>
@@ -180,7 +230,7 @@ export const AdminApplicationsTable = ({
                   <div>{`${app.memberFirstName} ${app.memberLastName}`}</div>
                   <div className="text-xs text-muted-foreground font-mono truncate">{app.id}</div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
                   <div className="font-medium">{app.referrerName || 'N/A'}</div>
                   <div className="text-xs text-muted-foreground font-mono truncate">{app.userId}</div>
                 </TableCell>
@@ -188,6 +238,10 @@ export const AdminApplicationsTable = ({
                   <Badge variant="outline" className={getBadgeVariant(app.status)}>
                     {app.status}
                   </Badge>
+                </TableCell>
+                 <TableCell className="hidden lg:table-cell">
+                    <div className="font-medium">{app.healthPlan}</div>
+                    <div className="text-xs text-muted-foreground">{app.pathway}</div>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">
                     {app.lastUpdated ? format((app.lastUpdated as Timestamp).toDate(), 'MM/dd/yyyy p') : 'N/A'}
@@ -224,7 +278,7 @@ export const AdminApplicationsTable = ({
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={5} className="h-24 text-center">
+              <TableCell colSpan={6} className="h-24 text-center">
                 No applications found.
               </TableCell>
             </TableRow>

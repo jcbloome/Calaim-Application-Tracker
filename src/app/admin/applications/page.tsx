@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useFirestore, useCollection } from '@/firebase';
 import { collectionGroup, query, Query } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
+import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
 
 export default function AdminApplicationsPage() {
@@ -15,10 +16,10 @@ export default function AdminApplicationsPage() {
     if (!firestore) return null;
     // Use a collection group query to get all applications across all users.
     // This requires a Firestore index.
-    return query(collectionGroup(firestore, 'applications')) as Query<Application>;
+    return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
   }, [firestore]);
 
-  const { data: applications, isLoading, error } = useCollection<Application>(applicationsQuery);
+  const { data: applications, isLoading, error } = useCollection<Application & FormValues>(applicationsQuery);
 
   return (
     <div className="space-y-6">

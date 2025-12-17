@@ -25,7 +25,8 @@ import {
   X,
   FileText,
   Lock,
-  Edit
+  Edit,
+  Mail,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker } from '@/lib/definitions';
@@ -48,9 +49,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Textarea } from '@/components/ui/textarea';
-import { sendRevisionRequestEmail, sendApplicationStatusEmail } from '@/app/actions/send-email';
+import { sendApplicationStatusEmail } from '@/app/actions/send-email';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const healthNetSteps = [
   "Application Being Reviewed",
@@ -188,17 +190,35 @@ function StaffApplicationTracker({ application }: { application: Application }) 
     );
 }
 
-function AdminActions({ application, onStatusChange }: { application: Application, onStatusChange: (status: Application['status']) => Promise<void> }) {
+function AdminActions({ application }: { application: Application }) {
     const { isAdmin, isSuperAdmin } = useAdmin();
-    const [revisionNotes, setRevisionNotes] = useState('');
+    const [notes, setNotes] = useState('');
+    const [status, setStatus] = useState<Application['status'] | ''>('');
     const [isSending, setIsSending] = useState(false);
     const { toast } = useToast();
+    const router = useRouter();
+
+    const firestore = useFirestore();
+    const docRef = useMemo(() => {
+        if (!firestore || !application.userId || !application.id) return null;
+        return doc(firestore, `users/${application.userId}/applications`, application.id);
+    }, [firestore, application.id, application.userId]);
 
     if (!isAdmin && !isSuperAdmin) {
         return null;
     }
     
-    const sendEmailAndUpdateStatus = async (status: Application['status'], subject: string, message: string) => {
+    const sendEmailAndUpdateStatus = async () => {
+        if (!status) {
+             toast({ variant: 'destructive', title: 'Error', description: 'Please select a status before sending.' });
+            return;
+        }
+
+        if (status === 'Requires Revision' && !notes) {
+            toast({ variant: 'destructive', title: 'Error', description: 'Notes are required when requesting a revision.' });
+            return;
+        }
+        
         if (!application.referrerEmail) {
             toast({ variant: 'destructive', title: 'Error', description: 'Referrer email is not available for this application.' });
             return;
@@ -207,32 +227,26 @@ function AdminActions({ application, onStatusChange }: { application: Applicatio
         setIsSending(true);
 
         try {
-            if (status === 'Requires Revision') {
-                 await sendRevisionRequestEmail({
-                    to: application.referrerEmail,
-                    subject: subject,
-                    memberName: `${application.memberFirstName} ${application.memberLastName}`,
-                    formName: 'the application', // Can be made more specific if needed
-                    revisionNotes: message,
-                });
-            } else {
-                 await sendApplicationStatusEmail({
-                    to: application.referrerEmail,
-                    subject: subject,
-                    memberName: `${application.memberFirstName} ${application.memberLastName}`,
-                    staffName: "The Connections Team",
-                    message: message,
-                    status: status,
-                });
+            await sendApplicationStatusEmail({
+                to: application.referrerEmail,
+                subject: `Update on CalAIM Application for ${application.memberFirstName} ${application.memberLastName}`,
+                memberName: application.referrerName || 'there',
+                staffName: "The Connections Team",
+                message: notes || 'Your application status has been updated. Please log in to your dashboard for more details.',
+                status: status as any, // Cast because we know it's valid
+            });
+            
+            if (docRef) {
+                 await setDoc(docRef, { status: status, lastUpdated: serverTimestamp() }, { merge: true });
             }
-
-            await onStatusChange(status);
 
             toast({
                 title: 'Success!',
                 description: `Application status set to "${status}" and an email has been sent.`,
                 className: 'bg-green-100 text-green-900',
             });
+            setNotes('');
+            setStatus('');
 
         } catch (error: any) {
             toast({
@@ -246,53 +260,41 @@ function AdminActions({ application, onStatusChange }: { application: Applicatio
     };
 
 
-    const handleRevisionRequest = () => {
-        if (!revisionNotes) {
-            toast({ variant: 'destructive', title: 'Error', description: 'Revision notes cannot be empty.' });
-            return;
-        }
-        sendEmailAndUpdateStatus('Requires Revision', 'Revision Required for CalAIM Application', revisionNotes);
-    };
-
-    const handleApproval = () => {
-        sendEmailAndUpdateStatus('Approved', 'Your CalAIM Application Has Been Approved!', 'Congratulations! Your application has been approved. Our team will be in touch with the next steps.');
-    };
-
     return (
         <Card>
             <CardHeader>
                 <CardTitle>Admin Actions</CardTitle>
-                <CardDescription>Manage the status of this application.</CardDescription>
+                <CardDescription>Update status and notify the referrer.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-                 <Dialog>
-                    <DialogTrigger asChild>
-                        <Button variant="outline" className="w-full">Request Revision</Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Request Revision</DialogTitle>
-                            <DialogDescription>
-                                Describe the changes needed. An email will be sent to the referrer.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <Textarea
-                            placeholder="e.g., 'Please upload a clearer copy of the Proof of Income document.'"
-                            value={revisionNotes}
-                            onChange={(e) => setRevisionNotes(e.target.value)}
-                        />
-                        <DialogFooter>
-                            <Button onClick={handleRevisionRequest} disabled={isSending}>
-                                {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                Send Request
-                            </Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
-
-                <Button className="w-full bg-green-600 hover:bg-green-700" onClick={handleApproval} disabled={isSending}>
-                    {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Approve Application
+                 <div className="space-y-2">
+                    <Label htmlFor="status-select">Application Status</Label>
+                     <Select value={status} onValueChange={(value) => setStatus(value as Application['status'])}>
+                        <SelectTrigger id="status-select">
+                            <SelectValue placeholder="Select new status..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="In Progress">In Progress</SelectItem>
+                            <SelectItem value="Requires Revision">Requires Revision</SelectItem>
+                            <SelectItem value="Approved">Approved</SelectItem>
+                            <SelectItem value="Completed & Submitted">Completed & Submitted</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="status-notes">Notes for Referrer (Optional)</Label>
+                    <Textarea
+                        id="status-notes"
+                        placeholder="e.g., 'Congratulations! The application is approved.' or 'Please upload a clearer copy of the Proof of Income document.'"
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        rows={4}
+                    />
+                     <p className="text-xs text-muted-foreground">This message will be sent in the email to the referrer.</p>
+                </div>
+                <Button className="w-full" onClick={sendEmailAndUpdateStatus} disabled={isSending || !status}>
+                    {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                    Send Status Update
                 </Button>
             </CardContent>
         </Card>
@@ -345,42 +347,7 @@ function ApplicationDetailPageContent() {
 
     return () => unsubscribe();
   }, [docRef, isUserLoading]);
-
-  const handleFormStatusUpdate = async (formNames: string[], newStatus: 'Completed' | 'Pending', fileName?: string | null) => {
-      if (!docRef || !application) return;
-
-      const existingForms = application.forms || [];
-      const updatedForms = existingForms.map(form => {
-          if (formNames.includes(form.name)) {
-            const update: Partial<FormStatusType> = { status: newStatus };
-             if (newStatus === 'Completed') {
-                update.dateCompleted = Timestamp.now();
-            }
-             if (fileName !== undefined) {
-                update.fileName = fileName;
-            } else if (newStatus === 'Pending') {
-                update.fileName = null;
-            }
-            return { ...form, ...update };
-          }
-          return form;
-      });
-      
-      try {
-          await setDoc(docRef, {
-              forms: updatedForms,
-              lastUpdated: serverTimestamp(),
-          }, { merge: true });
-      } catch (e: any) {
-          console.error("Failed to update form status:", e);
-      }
-  };
   
-   const handleStatusChange = async (newStatus: Application['status']) => {
-        if (!docRef) return;
-        await setDoc(docRef, { status: newStatus, lastUpdated: serverTimestamp() }, { merge: true });
-    };
-
   if (isLoading || isUserLoading) {
     return (
         <div className="flex items-center justify-center h-full">
@@ -506,7 +473,7 @@ function ApplicationDetailPageContent() {
 
       <aside className="lg:col-span-1 space-y-6">
         <StaffApplicationTracker application={application} />
-        <AdminActions application={application} onStatusChange={handleStatusChange} />
+        <AdminActions application={application} />
       </aside>
     </div>
   );

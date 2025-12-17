@@ -49,6 +49,17 @@ const highlightText = {
   ...paragraph,
   color: '#333',
   margin: 0,
+  whiteSpace: 'pre-wrap' as const,
+};
+
+const button = {
+  backgroundColor: '#4782D1',
+  color: '#ffffff',
+  padding: '12px 24px',
+  borderRadius: '4px',
+  textDecoration: 'none',
+  display: 'inline-block',
+  marginTop: '16px',
 };
 
 const footer = {
@@ -88,15 +99,22 @@ const ApplicationStatusEmail: React.FC<Readonly<ApplicationStatusEmailProps>> = 
       <p style={paragraph}>
         This email is to inform you that your CalAIM application {getStatusMessage(status)}
       </p>
-      <div style={highlightBox}>
-        <p style={{ ...paragraph, fontWeight: 'bold', marginBottom: '8px' }}>A message from {staffName}:</p>
-        <p style={highlightText}>
-          {message}
-        </p>
-      </div>
+      
+      {message && (
+          <div style={highlightBox}>
+            <p style={{ ...paragraph, fontWeight: 'bold', marginBottom: '8px' }}>A message from {staffName}:</p>
+            <p style={highlightText}>
+              {message}
+            </p>
+          </div>
+      )}
+
       <p style={paragraph}>
-        If you have any questions, please reply to this email or contact our office directly.
+        If you have any questions, please reply to this email or contact our office directly. You can view the full application status by logging into your dashboard.
       </p>
+       <a href="https://calaim-pathfinder.web.app/login" style={button}>
+        Go to My Dashboard
+      </a>
       <p style={footer}>
         This is an automated message from CalAIM Pathfinder.
       </p>
