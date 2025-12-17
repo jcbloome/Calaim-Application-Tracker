@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
@@ -18,6 +19,7 @@ import Step3 from './Step3';
 import Step4 from './Step4';
 import { formSchema, type FormValues } from '../schema';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import type { Application } from '@/lib/definitions';
 
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
@@ -60,6 +62,7 @@ function CsSummaryFormComponent() {
   const appUserId = searchParams.get('userId'); // For admins editing a user's app
 
   const [internalApplicationId, setInternalApplicationId] = useState<string | null>(applicationId);
+  const [existingApplicationData, setExistingApplicationData] = useState<Application | null>(null);
   const initialStep = parseInt(searchParams.get('step') || '1', 10);
   const [currentStep, setCurrentStep] = useState(initialStep);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -84,10 +87,12 @@ function CsSummaryFormComponent() {
         const docRef = doc(firestore, `users/${targetUserId}/applications`, internalApplicationId);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
-          const data = docSnap.data();
-          reset(data);
+          const data = docSnap.data() as Application;
+          setExistingApplicationData(data);
+          reset(data as FormValues);
         } else {
             setInternalApplicationId(null);
+            setExistingApplicationData(null);
             if (user && !isAdminView) { // Only reset referrer for new user forms
                 const displayName = user.displayName || '';
                 const nameParts = displayName.split(' ');
@@ -153,7 +158,7 @@ function CsSummaryFormComponent() {
       status: 'In Progress' as const,
       lastUpdated: serverTimestamp(),
       // Only set referrerName on initial creation, otherwise keep existing
-      ...( !getValues('referrerName') && { referrerName: `${currentData.referrerFirstName} ${currentData.referrerLastName}`.trim() } ),
+      ...( !existingApplicationData?.referrerName && { referrerName: `${currentData.referrerFirstName} ${currentData.referrerLastName}`.trim() } ),
     };
   
     try {
