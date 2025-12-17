@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useFirestore, useCollection } from '@/firebase';
 import { collectionGroup, query, Query, Timestamp } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
-import { Loader2, Users, Map as MapIcon, HeartHandshake, Forklift, Trophy, CalendarDays } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -68,7 +68,7 @@ export default function AdminStatisticsPage() {
     
     const counts = {
         byCounty: new Map<string, number>(),
-        byHealthPlan: new Map<string, number>(),
+        byHealthPlan: new Map<string, number>([['Kaiser', 0], ['Health Net', 0]]),
         byPathway: new Map<string, number>(),
         byReferrer: new Map<string, number>(),
     };
@@ -91,7 +91,7 @@ export default function AdminStatisticsPage() {
             if (plan === 'Kaiser Permanente') {
                 plan = 'Kaiser';
             }
-            if (plan !== 'Other') {
+            if (counts.byHealthPlan.has(plan)) {
                 counts.byHealthPlan.set(plan, (counts.byHealthPlan.get(plan) || 0) + 1);
             }
         }
