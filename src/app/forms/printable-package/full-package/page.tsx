@@ -1,3 +1,4 @@
+
 'use client';
 
 import React from 'react';
@@ -10,13 +11,23 @@ import { PrintableProgramInfo } from '@/app/info/components/PrintableProgramInfo
 import { PrintableGlossaryContent } from '@/app/forms/acronym-glossary/printable/PrintableGlossaryContent';
 import Link from 'next/link';
 
-const PageBreak = () => <div className="page-break-before"></div>;
+const PageBreak = () => <div className="break-before-page"></div>;
 
 export default function FullPackagePrintPage() {
   
+  React.useEffect(() => {
+    // Automatically trigger print dialog when component mounts
+    // Using a timeout gives the browser a moment to render the content
+    const timer = setTimeout(() => {
+      window.print();
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <div className="bg-gray-50 min-h-screen print:bg-white">
-        <div className="print:hidden p-8 text-center space-y-4 bg-gray-100 flex flex-col items-center">
+        <header className="print:hidden p-8 text-center space-y-4 bg-gray-100 flex flex-col items-center">
             <div className="w-full max-w-5xl flex justify-start">
                 <Button variant="outline" asChild>
                     <Link href="/forms/printable-package">
@@ -26,15 +37,12 @@ export default function FullPackagePrintPage() {
                 </Button>
             </div>
             <div className="py-8">
-                <h1 className="text-2xl font-bold">Print Full Application Package</h1>
-                <p className="text-muted-foreground">Click the button below to open the print dialog for the complete package.</p>
-                <Button onClick={() => window.print()} className="mt-4">
-                  <Printer className="mr-2 h-4 w-4" />
-                  Print Now
-                </Button>
+                <h1 className="text-2xl font-bold">Full Application Package</h1>
+                <p className="text-muted-foreground">Your print dialog should appear automatically.</p>
+                <p className="text-sm text-muted-foreground">If it doesn't, please use your browser's print function (Ctrl/Cmd + P).</p>
             </div>
-        </div>
-        <div className="p-8 print:p-4 space-y-8 bg-white max-w-5xl mx-auto">
+        </header>
+        <main className="p-8 print:p-4 space-y-8 bg-white max-w-5xl mx-auto">
             {/* This is the content that will be printed */}
             <PrintableProgramInfo />
             <PageBreak />
@@ -45,10 +53,10 @@ export default function FullPackagePrintPage() {
             <PrintableWaiversContent />
             <PageBreak />
             <PrintableDeclarationOfEligibilityContent />
-        </div>
+        </main>
         <style jsx global>{`
           @media print {
-            .page-break-before {
+            .break-before-page {
               page-break-before: always;
             }
           }

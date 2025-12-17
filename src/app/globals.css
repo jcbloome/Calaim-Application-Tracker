@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -92,19 +93,25 @@
 
 @media print {
   body {
-    background-image: none;
-    background-color: white;
+    background-image: none !important;
+    background-color: white !important;
   }
   .print\:hidden {
-    display: none;
+    display: none !important;
   }
   .print\:block {
-    display: block;
+    display: block !important;
   }
   .print\:shadow-none {
-    box-shadow: none;
+    box-shadow: none !important;
   }
   .print\:p-0 {
-    padding: 0;
+    padding: 0 !important;
+  }
+  .print\:border-none {
+    border: none !important;
+  }
+  nav, aside, header, .no-print {
+    display: none !important;
   }
 }
