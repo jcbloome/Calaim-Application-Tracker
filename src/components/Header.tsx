@@ -29,7 +29,6 @@ const navLinks = [
 
 export function Header() {
   const { user, isUserLoading } = useUser();
-  const { isAdmin, isSuperAdmin } = useAdmin();
   const auth = useAuth();
   const router = useRouter();
   const [isSheetOpen, setSheetOpen] = useState(false);
@@ -40,8 +39,6 @@ export function Header() {
     }
     router.push('/');
   };
-  
-  const hasAdminRole = isAdmin || isSuperAdmin;
 
   return (
     <header className="bg-card/80 backdrop-blur-sm border-b sticky top-0 z-40">
@@ -67,13 +64,6 @@ export function Header() {
             <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
           ) : user ? (
             <div className='flex items-center gap-2'>
-              {hasAdminRole && (
-                  <Button asChild variant="secondary">
-                      <Link href="/admin">
-                          <Shield className="mr-2 h-4 w-4" /> Go to Admin
-                      </Link>
-                  </Button>
-              )}
              <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" className="rounded-full">
@@ -129,13 +119,6 @@ export function Header() {
                             ) : user ? (
                                 <div className="flex flex-col gap-4">
                                      <p className="text-sm text-muted-foreground text-center truncate">{user.displayName || user.email}</p>
-                                     {hasAdminRole && (
-                                         <Button asChild className="w-full" variant="secondary" onClick={() => setSheetOpen(false)}>
-                                            <Link href="/admin">
-                                                <Shield className="mr-2 h-4 w-4" /> Go to Admin
-                                            </Link>
-                                        </Button>
-                                     )}
                                       <Button onClick={() => { router.push('/profile'); setSheetOpen(false); }} variant="outline" className="w-full">
                                         <UserCog className="mr-2 h-4 w-4" />
                                         My Profile
@@ -159,5 +142,3 @@ export function Header() {
     </header>
   );
 }
-
-    

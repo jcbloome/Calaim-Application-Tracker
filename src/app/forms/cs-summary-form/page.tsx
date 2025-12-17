@@ -165,9 +165,8 @@ function CsSummaryFormComponent() {
       docId = doc(collection(firestore, `users/${user.uid}/applications`)).id;
       setApplicationId(docId);
       // Update URL without a full reload to keep state
-      if (isNavigating) {
-        router.replace(`/forms/cs-summary-form?applicationId=${docId}`, { scroll: false });
-      }
+      const newUrl = `/forms/cs-summary-form?applicationId=${docId}&step=${currentStep}`;
+      router.replace(newUrl, { scroll: false });
     }
   
     const docRef = doc(firestore, `users/${user.uid}/applications`, docId);
@@ -213,15 +212,21 @@ function CsSummaryFormComponent() {
     setValidationError(null);
     
     if (currentStep < steps.length) {
-        await saveProgress(true);
-        setCurrentStep(currentStep + 1);
-        window.scrollTo(0, 0);
+        const savedAppId = await saveProgress(true);
+        if(savedAppId) {
+          const newUrl = `/forms/cs-summary-form?applicationId=${savedAppId}&step=${currentStep + 1}`;
+          router.push(newUrl);
+          setCurrentStep(currentStep + 1);
+          window.scrollTo(0, 0);
+        }
     }
   };
 
   const prevStep = async () => {
-    await saveProgress(true);
-    if (currentStep > 1) {
+    const savedAppId = await saveProgress(true);
+    if (currentStep > 1 && savedAppId) {
+      const newUrl = `/forms/cs-summary-form?applicationId=${savedAppId}&step=${currentStep - 1}`;
+      router.push(newUrl);
       setCurrentStep(currentStep - 1);
       window.scrollTo(0, 0);
     }
