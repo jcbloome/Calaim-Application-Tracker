@@ -8,6 +8,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore, useCollection, type WithId } from '@/firebase';
 import { collectionGroup, query, Query } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
+import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './applications/components/AdminApplicationsTable';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -18,10 +19,10 @@ export default function AdminDashboardPage() {
 
   const applicationsQuery = useMemo(() => {
     if (!firestore) return null;
-    return query(collectionGroup(firestore, 'applications')) as Query<Application>;
+    return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
   }, [firestore]);
 
-  const { data: applications, isLoading, error } = useCollection<Application>(applicationsQuery);
+  const { data: applications, isLoading, error } = useCollection<Application & FormValues>(applicationsQuery);
 
   const stats = useMemo(() => {
     if (!applications) {
@@ -119,7 +120,7 @@ export default function AdminDashboardPage() {
             </Button>
         </CardHeader>
         <CardContent>
-           <AdminApplicationsTable applications={recentApplications as WithId<Application>[]} isLoading={isLoading} />
+           <AdminApplicationsTable applications={recentApplications as WithId<Application & FormValues>[]} isLoading={isLoading} />
         </CardContent>
       </Card>
     </div>

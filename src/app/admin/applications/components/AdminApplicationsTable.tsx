@@ -178,8 +178,8 @@ export const AdminApplicationsTable = ({
 }: {
   applications: WithId<Application & FormValues>[];
   isLoading: boolean;
-  onSelectionChange: (id: string, checked: boolean) => void;
-  selected: string[];
+  onSelectionChange?: (id: string, checked: boolean) => void;
+  selected?: string[];
 }) => {
     
     const sortedApplications = [...applications].sort((a, b) => {
@@ -193,15 +193,17 @@ export const AdminApplicationsTable = ({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[50px]">
-                <Checkbox
-                    checked={selected.length === sortedApplications.length && sortedApplications.length > 0}
-                    onCheckedChange={(checked) => {
-                        sortedApplications.forEach(app => onSelectionChange(app.id, !!checked))
-                    }}
-                    aria-label="Select all"
-                />
-            </TableHead>
+            {onSelectionChange && selected && (
+              <TableHead className="w-[50px]">
+                  <Checkbox
+                      checked={selected.length === sortedApplications.length && sortedApplications.length > 0}
+                      onCheckedChange={(checked) => {
+                          sortedApplications.forEach(app => onSelectionChange(app.id, !!checked))
+                      }}
+                      aria-label="Select all"
+                  />
+              </TableHead>
+            )}
             <TableHead>Member / App ID</TableHead>
             <TableHead className="hidden md:table-cell">Submitted By (User)</TableHead>
             <TableHead>Status</TableHead>
@@ -220,13 +222,15 @@ export const AdminApplicationsTable = ({
           ) : sortedApplications.length > 0 ? (
             sortedApplications.map(app => (
               <TableRow key={app.id}>
-                <TableCell>
-                    <Checkbox
-                        checked={selected.includes(app.id)}
-                        onCheckedChange={(checked) => onSelectionChange(app.id, !!checked)}
-                        aria-label={`Select application for ${app.memberFirstName}`}
-                    />
-                </TableCell>
+                {onSelectionChange && selected && (
+                  <TableCell>
+                      <Checkbox
+                          checked={selected.includes(app.id)}
+                          onCheckedChange={(checked) => onSelectionChange(app.id, !!checked)}
+                          aria-label={`Select application for ${app.memberFirstName}`}
+                      />
+                  </TableCell>
+                )}
                 <TableCell className="font-medium">
                   <div>{`${app.memberFirstName} ${app.memberLastName}`}</div>
                   <div className="text-xs text-muted-foreground font-mono truncate">{app.id}</div>
@@ -257,7 +261,7 @@ export const AdminApplicationsTable = ({
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={7} className="h-24 text-center">
+              <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
                 No applications found.
               </TableCell>
             </TableRow>
