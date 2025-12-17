@@ -50,7 +50,8 @@ export default function AdminLoginPage() {
         description: 'Redirecting to your dashboard...',
         duration: 2000,
       });
-      router.push('/admin');
+      // Use window.location.href for a full page reload to ensure auth state is re-evaluated correctly by the layout.
+      window.location.href = '/admin';
     } catch (err) {
       const authError = err as AuthError;
       let errorMessage = 'Invalid email or password. Please try again.';
