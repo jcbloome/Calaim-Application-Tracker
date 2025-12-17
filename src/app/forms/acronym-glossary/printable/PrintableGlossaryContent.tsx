@@ -1,20 +1,11 @@
-
 'use client';
 
 import React from 'react';
 import { acronyms } from '@/lib/data';
-import { Button } from '@/components/ui/button';
-import { Printer } from 'lucide-react';
 
 export function PrintableGlossaryContent() {
     return (
         <form>
-            <div className="flex justify-end mb-8 print:hidden">
-                <Button onClick={() => window.print()}>
-                    <Printer className="mr-2 h-4 w-4" />
-                    Print Form
-                </Button>
-            </div>
             <div className="text-center mb-6">
                 <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Acronym Glossary</h1>
                 <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">A list of common acronyms used throughout the CalAIM application process.</p>
