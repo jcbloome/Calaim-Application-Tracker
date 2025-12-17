@@ -1,17 +1,18 @@
 
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore, useCollection } from '@/firebase';
 import { collectionGroup, query, Query } from 'firebase/firestore';
-import type { Application, FormStatus } from '@/lib/definitions';
+import type { Application } from '@/lib/definitions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, CheckCircle2, XCircle, Circle } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Circle, Filter } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { GlossaryDialog } from '@/components/GlossaryDialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 
 const trackedComponents = [
   { key: 'CS Member Summary', abbreviation: 'CS' },
@@ -51,9 +52,11 @@ const StatusIndicator = ({ status, formName }: { status: 'Completed' | 'Pending'
 const getComponentStatus = (app: Application, componentKey: string): 'Completed' | 'Pending' | 'Not Applicable' => {
     const form = app.forms?.find(f => f.name === componentKey);
     
+    // SNF Diversion specific form
     if (componentKey === 'Declaration of Eligibility' && app.pathway !== 'SNF Diversion') {
         return 'Not Applicable';
     }
+    // SNF Transition specific form
     if (componentKey === 'SNF Facesheet' && app.pathway !== 'SNF Transition') {
         return 'Not Applicable';
     }
@@ -68,6 +71,7 @@ const getComponentStatus = (app: Application, componentKey: string): 'Completed'
 
 export default function ProgressTrackerPage() {
   const firestore = useFirestore();
+  const [filters, setFilters] = useState<string[]>([]);
 
   const applicationsQuery = useMemo(() => {
     if (!firestore) return null;
@@ -75,15 +79,32 @@ export default function ProgressTrackerPage() {
   }, [firestore]);
 
   const { data: applications, isLoading, error } = useCollection<Application>(applicationsQuery);
+  
+  const handleFilterChange = (componentKey: string, checked: boolean) => {
+    setFilters(prev => 
+        checked ? [...prev, componentKey] : prev.filter(key => key !== componentKey)
+    );
+  }
 
-  const sortedApplications = useMemo(() => {
+  const filteredApplications = useMemo(() => {
     if (!applications) return [];
-    return [...applications].sort((a, b) => {
+    
+    const sorted = [...applications].sort((a, b) => {
         const timeA = a.lastUpdated ? (a.lastUpdated as any).toMillis() : 0;
         const timeB = b.lastUpdated ? (b.lastUpdated as any).toMillis() : 0;
         return timeB - timeA;
-      });
-  }, [applications])
+    });
+
+    if (filters.length === 0) {
+        return sorted;
+    }
+
+    return sorted.filter(app => {
+        // Show app if it is missing ALL of the selected components
+        return filters.every(filterKey => getComponentStatus(app, filterKey) === 'Pending');
+    });
+
+  }, [applications, filters])
 
   return (
     <div className="space-y-6">
@@ -95,19 +116,39 @@ export default function ProgressTrackerPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-            <div className="flex flex-wrap gap-x-4 gap-y-2 p-4 border rounded-lg bg-muted/50 mb-6 items-center">
-                 <div className="flex-1">
-                    <h3 className="font-semibold text-sm">Legend</h3>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        <span><strong className="font-mono">CS:</strong> CS Member Summary</span>
-                        <span><strong className="font-mono">LW:</strong> Liability Waiver</span>
-                        <span><strong className="font-mono">FoC:</strong> Freedom of Choice</span>
-                        <span><strong className="font-mono">602:</strong> Physician's Report</span>
-                        <span><strong className="font-mono">POI:</strong> Proof of Income</span>
-                        <span><strong className="font-mono">DE:</strong> Declaration of Eligibility</span>
+            <Card className="mb-6 bg-muted/50">
+                <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                        <Filter className="h-5 w-5" />
+                        Filter by Missing Components
+                    </CardTitle>
+                    <CardDescription>Select one or more components to find applications that are missing all of the selected documents.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                        {trackedComponents.map(c => (
+                            <div key={c.key} className="flex items-center space-x-2">
+                                <Checkbox 
+                                    id={`filter-${c.key}`} 
+                                    onCheckedChange={(checked) => handleFilterChange(c.key, !!checked)}
+                                    checked={filters.includes(c.key)}
+                                />
+                                <Label htmlFor={`filter-${c.key}`} className="text-sm font-normal cursor-pointer">
+                                    {c.abbreviation} - <span className="text-muted-foreground">{c.key.split(' ')[0]}</span>
+                                </Label>
+                            </div>
+                        ))}
                     </div>
+                </CardContent>
+            </Card>
+
+            <div className="p-4 border rounded-lg bg-muted/50 mb-6">
+                 <h3 className="font-semibold text-sm">Legend</h3>
+                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    {trackedComponents.map(c => (
+                        <span key={c.key}><strong className="font-mono">{c.abbreviation}:</strong> {c.key}</span>
+                    ))}
                 </div>
-                 <GlossaryDialog className="mt-2 sm:mt-0" />
             </div>
 
           {error && <p className="text-destructive">Error: {error.message}</p>}
@@ -141,7 +182,7 @@ export default function ProgressTrackerPage() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {sortedApplications.length > 0 ? sortedApplications.map(app => (
+                        {filteredApplications.length > 0 ? filteredApplications.map(app => (
                             <TableRow key={app.id}>
                                 <TableCell>
                                     <div className="font-medium">{`${app.memberFirstName} ${app.memberLastName}`}</div>
@@ -164,7 +205,7 @@ export default function ProgressTrackerPage() {
                         )) : (
                              <TableRow>
                                 <TableCell colSpan={trackedComponents.length + 2} className="h-24 text-center">
-                                    No applications found.
+                                    No applications match the current filter.
                                 </TableCell>
                             </TableRow>
                         )}
@@ -177,4 +218,3 @@ export default function ProgressTrackerPage() {
     </div>
   );
 }
-
