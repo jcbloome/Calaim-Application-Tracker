@@ -345,6 +345,59 @@ function ApplicationDetailPageContent() {
     return () => unsubscribe();
   }, [docRef, isUserLoading]);
   
+    const handleFormStatusUpdate = async (formNames: string[], newStatus: 'Completed' | 'Pending', fileName?: string | null) => {
+      if (!docRef || !application) return;
+
+      const existingForms = application.forms || [];
+      const updatedForms = existingForms.map(form => {
+          if (formNames.includes(form.name)) {
+            const update: Partial<FormStatusType> = { status: newStatus };
+             if (newStatus === 'Completed') {
+                update.dateCompleted = Timestamp.now();
+            }
+             if (fileName !== undefined) {
+                update.fileName = fileName;
+            } else if (newStatus === 'Pending') {
+                update.fileName = null;
+            }
+            return { ...form, ...update };
+          }
+          return form;
+      });
+      
+      try {
+          await setDoc(docRef, {
+              forms: updatedForms,
+              lastUpdated: serverTimestamp(),
+          }, { merge: true });
+      } catch (e: any) {
+          console.error("Failed to update form status:", e);
+      }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, requirementTitle: string) => {
+    if (!event.target.files?.length) return;
+    const files = Array.from(event.target.files);
+    
+    setUploading(prev => ({...prev, [requirementTitle]: true}));
+    
+    // Simulate upload time
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const fileNames = files.map(f => f.name).join(', ');
+    await handleFormStatusUpdate([requirementTitle], 'Completed', fileNames);
+
+    setUploading(prev => ({...prev, [requirementTitle]: false}));
+    
+    // Clear the input value to allow re-uploading the same file
+    event.target.value = '';
+  };
+  
+  const handleFileRemove = async (requirementTitle: string) => {
+    await handleFormStatusUpdate([requirementTitle], 'Pending', null);
+  };
+
+
   if (isLoading || isUserLoading) {
     return (
         <div className="flex items-center justify-center h-full">
@@ -394,6 +447,9 @@ function ApplicationDetailPageContent() {
       viewHref = editHref; // If completed, view and edit might be the same
     }
 
+    const isUploading = uploading[req.title];
+    const isMultiple = req.title === 'Proof of Income';
+
     switch (req.type) {
         case 'online-form':
         case 'Info':
@@ -414,12 +470,27 @@ function ApplicationDetailPageContent() {
                  return (
                     <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-green-50 border border-green-200 text-sm">
                         <span className="truncate flex-1 text-green-800 font-medium">{formInfo?.fileName || 'Completed'}</span>
+                         <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(req.title)}>
+                            <X className="h-4 w-4" />
+                            <span className="sr-only">Remove file</span>
+                        </Button>
                     </div>
                  )
              }
              return (
                 <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground">This document must be uploaded by the user.</p>
+                    {req.href && req.href !== '#' && (
+                        <Button asChild variant="link" className="w-full text-xs h-auto py-0">
+                           <Link href={req.href} target="_blank">
+                               <Printer className="mr-1 h-3 w-3" /> Download/Print Blank Form
+                           </Link>
+                       </Button>
+                    )}
+                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isUploading && "opacity-50 pointer-events-none")}>
+                        {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                        <span>{isUploading ? 'Uploading...' : 'Upload File(s)'}</span>
+                    </Label>
+                    <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading} multiple={isMultiple} />
                 </div>
             );
         default:
