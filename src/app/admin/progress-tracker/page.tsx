@@ -16,9 +16,7 @@ import { Label } from '@/components/ui/label';
 
 const trackedComponents = [
   { key: 'CS Member Summary', abbreviation: 'CS' },
-  { key: 'HIPAA Authorization', abbreviation: 'HIPAA' },
-  { key: 'Liability Waiver', abbreviation: 'LW' },
-  { key: 'Freedom of Choice Waiver', abbreviation: 'FoC' },
+  { key: 'Waivers & Authorizations', abbreviation: 'Waivers' },
   { key: "LIC 602A - Physician's Report", abbreviation: '602' },
   { key: 'Medicine List', abbreviation: 'Meds' },
   { key: 'Proof of Income', abbreviation: 'POI' },
@@ -162,14 +160,9 @@ export default function ProgressTrackerPage() {
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead className="min-w-[200px]">Member</TableHead>
-                            <TableHead colSpan={trackedComponents.length} className="text-center">Required Components</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                        <TableRow>
-                            <TableHead></TableHead>
-                            {trackedComponents.map(c => (
-                                <TableHead key={c.key} className="text-center w-[60px] p-2">
+                            <TableHead className="w-[250px] font-semibold">Member</TableHead>
+                             {trackedComponents.map(c => (
+                                <TableHead key={c.key} className="text-center w-[70px] p-2">
                                      <TooltipProvider>
                                         <Tooltip>
                                             <TooltipTrigger className="cursor-help font-mono text-xs">{c.abbreviation}</TooltipTrigger>
@@ -178,7 +171,7 @@ export default function ProgressTrackerPage() {
                                     </TooltipProvider>
                                 </TableHead>
                             ))}
-                            <TableHead></TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -186,7 +179,9 @@ export default function ProgressTrackerPage() {
                             <TableRow key={app.id}>
                                 <TableCell>
                                     <div className="font-medium">{`${app.memberFirstName} ${app.memberLastName}`}</div>
-                                    <div className="text-xs text-muted-foreground font-mono">{app.id}</div>
+                                    <div className="text-xs text-muted-foreground">
+                                        {app.healthPlan} / {app.pathway}
+                                    </div>
                                 </TableCell>
                                 {trackedComponents.map(c => (
                                     <TableCell key={c.key} className="text-center">
