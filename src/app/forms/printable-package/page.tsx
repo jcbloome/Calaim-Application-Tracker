@@ -9,8 +9,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 const forms = [
-    { name: 'CS Member Summary', icon: FileText, href: '/forms/cs-summary-form/printable' },
     { name: 'Program Information', icon: FileText, href: '/info' },
+    { name: 'CS Member Summary', icon: FileText, href: '/forms/cs-summary-form/printable' },
     { name: 'Acronym Glossary', icon: BookOpen, href: '/forms/acronym-glossary/printable' },
     { name: 'Waivers & Authorizations (HIPAA, Liability, FOC)', icon: FileText, href: '/forms/waivers/printable' },
     { name: 'Declaration of Eligibility', description: 'For SNF Diversion only', icon: FileText, href: '/forms/declaration-of-eligibility/printable' },
@@ -49,11 +49,11 @@ export default function ApplicationSubmissionPage() {
 
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-xl">2. Manual Download</CardTitle>
+                    <CardTitle className="text-xl">2. Manual Download & Print</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <p className="text-muted-foreground mb-6">
-                        If you prefer to work offline, you can download the blank forms below. For security and HIPAA compliance, please do not email completed forms. Instead, start an online application and use our secure upload portal.
+                        If you prefer to work offline, you can download and print the blank forms below. For security and HIPAA compliance, please do not email completed forms. Instead, start an online application and use our secure upload portal.
                     </p>
 
                     <Card className="bg-muted/30">
@@ -77,7 +77,7 @@ export default function ApplicationSubmissionPage() {
                                     </Button>
                                 ))}
                                 <div className="pt-4">
-                                     <Button className="w-full" onClick={() => router.push('/forms/printable-package/full-package')}>
+                                     <Button className="w-full" onClick={() => window.print()}>
                                         <Printer className="mr-2 h-4 w-4" />
                                         Print Full Blank Application Package
                                     </Button>

@@ -8,10 +8,6 @@ import Link from 'next/link';
 import { PrintableDeclarationOfEligibilityContent } from './PrintableDeclarationOfEligibilityContent';
 
 export default function PrintableDeclarationOfEligibilityPage() {
-
-  const handlePrint = () => {
-    window.print();
-  };
   
   return (
     <div className="bg-gray-50 min-h-screen print:bg-white">
@@ -24,7 +20,7 @@ export default function PrintableDeclarationOfEligibilityPage() {
                     Return to Printable Forms
                 </Link>
             </Button>
-            <Button onClick={handlePrint}>
+            <Button onClick={() => window.print()}>
               <Printer className="mr-2 h-4 w-4" />
               Print Form
             </Button>
