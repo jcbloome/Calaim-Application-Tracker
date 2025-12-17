@@ -78,10 +78,10 @@ const kaiserSteps = [
 
 const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => {
   const commonRequirements = [
-    { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form/review', icon: FileText },
-    { id: 'hipaa-authorization', title: 'HIPAA Authorization', description: 'Complete the online HIPAA authorization form.', type: 'online-form', href: '/forms/hipaa-authorization', icon: FileText },
-    { id: 'liability-waiver', title: 'Liability Waiver', description: 'Complete the online liability waiver.', type: 'online-form', href: '/forms/liability-waiver', icon: FileText },
-    { id: 'freedom-of-choice', title: 'Freedom of Choice Waiver', description: 'Complete the online Freedom of Choice waiver.', type: 'online-form', href: '/forms/freedom-of-choice', icon: FileText },
+    { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/admin/forms/review', editHref: '/admin/forms/edit', icon: FileText },
+    { id: 'hipaa-authorization', title: 'HIPAA Authorization', description: 'Complete the online HIPAA authorization form.', type: 'online-form', href: '/admin/forms/hipaa-authorization', icon: FileText },
+    { id: 'liability-waiver', title: 'Liability Waiver', description: 'Complete the online liability waiver.', type: 'online-form', href: '/admin/forms/liability-waiver', icon: FileText },
+    { id: 'freedom-of-choice', title: 'Freedom of Choice Waiver', description: 'Complete the online Freedom of Choice waiver.', type: 'online-form', href: '/admin/forms/freedom-of-choice', icon: FileText },
     { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'Upload', icon: UploadCloud, href: '#' },
     { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'Upload', icon: UploadCloud, href: '#' },
@@ -387,17 +387,30 @@ function ApplicationDetailPageContent() {
 
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
-    let href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
-    // Admins need userId to view forms
-    href += `&userId=${appUserId}`;
-    
+    const isCompleted = formInfo?.status === 'Completed';
+
+    let baseQueryParams = `?applicationId=${applicationId}&userId=${appUserId}`;
+    let viewHref = req.href ? `${req.href}${baseQueryParams}` : '#';
+    let editHref = req.editHref ? `${req.editHref}${baseQueryParams}` : viewHref;
+
+    if (isCompleted && req.editHref) {
+      viewHref = editHref; // If completed, view and edit might be the same
+    }
+
     switch (req.type) {
         case 'online-form':
         case 'Info':
             return (
-                <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
-                    <Link href={href}>View &rarr;</Link>
-                </Button>
+                <div className="flex gap-2">
+                    <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100 flex-1">
+                        <Link href={viewHref}>View</Link>
+                    </Button>
+                    {req.editHref && (
+                      <Button asChild variant="secondary" className="flex-1">
+                          <Link href={editHref}>Edit</Link>
+                      </Button>
+                    )}
+                </div>
             );
         case 'Upload':
              if (formInfo?.status === 'Completed') {
