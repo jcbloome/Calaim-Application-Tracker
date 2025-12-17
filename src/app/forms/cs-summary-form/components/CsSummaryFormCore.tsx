@@ -20,6 +20,7 @@ import Step4 from './Step4';
 import { formSchema, type FormValues } from '../schema';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { Application } from '@/lib/definitions';
+import { GlossaryDialog } from '@/components/GlossaryDialog';
 
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
@@ -36,7 +37,8 @@ const steps = [
       'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail', 
       'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty', 
       'onALWWaitlist', 'hasPrefRCFE', 
-      'rcfeName', 'rcfeAddress', 'rcfeAdminName', 'rcfeAdminPhone', 'rcfeAdminEmail'
+      'rcfeName', 'rcfeAddress', 'rcfeAdminName', 'rcfeAdminPhone', 'rcfeAdminEmail',
+      'monthlyIncome', 'ackRoomAndBoard'
   ]},
 ];
 
@@ -336,9 +338,12 @@ function CsSummaryFormComponent() {
                        </Button>
                         <h1 className="text-2xl font-bold hidden sm:block">CS Member Summary</h1>
                    </div>
-                  <span className="text-sm font-medium text-muted-foreground">
-                      Step {currentStep} of {steps.length}: {steps[currentStep - 1].name}
-                  </span>
+                  <div className="flex items-center gap-4">
+                     <GlossaryDialog className="hidden md:inline-flex" />
+                      <span className="text-sm font-medium text-muted-foreground">
+                          Step {currentStep} of {steps.length}: {steps[currentStep - 1].name}
+                      </span>
+                  </div>
               </div>
               <Progress value={progress} className="w-full" />
             </div>
