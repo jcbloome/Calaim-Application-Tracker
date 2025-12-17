@@ -10,7 +10,9 @@ import { Button } from '@/components/ui/button';
 export default function PrintableWaiversPage() {
   return (
     <div className="bg-gray-50 min-h-screen flex flex-col print:bg-white">
-      <Header />
+      <div className="print:hidden">
+        <Header />
+      </div>
       <main className="flex-grow container mx-auto py-8 px-4 print:p-0">
         <div className="flex justify-between items-center mb-8 print:hidden">
           <Button variant="outline" asChild>
