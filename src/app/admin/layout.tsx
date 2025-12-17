@@ -71,7 +71,6 @@ function AdminHeader() {
               className="w-48 h-auto object-contain"
               priority
             />
-            <span className="sr-only">Admin Portal</span>
           </Link>
 
           <NavigationMenu className="hidden lg:flex">
