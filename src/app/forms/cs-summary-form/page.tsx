@@ -182,6 +182,7 @@ function CsSummaryFormComponent() {
       userId: user.uid,
       status: 'In Progress' as const,
       lastUpdated: serverTimestamp(),
+      referrerName: `${currentData.referrerFirstName} ${currentData.referrerLastName}`.trim(),
     };
   
     try {
@@ -304,6 +305,7 @@ function CsSummaryFormComponent() {
     const finalData = {
       ...sanitizedData,
       lastUpdated: serverTimestamp(),
+      referrerName: `${data.referrerFirstName} ${data.referrerLastName}`.trim(),
     };
   
     try {

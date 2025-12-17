@@ -204,8 +204,7 @@ function ReviewPageComponent() {
                             <Separator />
 
                             <Section title="Referrer Information" editLink={editLink(1)} isReadOnly={isReadOnly}>
-                                <Field label="First Name" value={application.referrerFirstName} />
-                                <Field label="Last Name" value={application.referrerLastName} />
+                                <Field label="Name" value={application.referrerName} />
                                 <Field label="Email" value={application.referrerEmail} />
                                 <Field label="Phone" value={application.referrerPhone} />
                                 <Field label="Relationship to Member" value={application.referrerRelationship} />
