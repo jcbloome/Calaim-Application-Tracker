@@ -6,10 +6,40 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useFirestore, useCollection } from '@/firebase';
 import { collectionGroup, query, Query } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Users, Map, HeartHandshake, Forklift, Building } from 'lucide-react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658'];
+
+const StatCard = ({ title, icon: Icon, children }: { title: string, icon: React.ElementType, children: React.ReactNode }) => (
+    <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">{title}</CardTitle>
+            <Icon className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+            {children}
+        </CardContent>
+    </Card>
+);
+
+const DataList = ({ data, emptyText = "No data available." }: { data: { name: string, value: number }[], emptyText?: string }) => (
+    <div className="space-y-2">
+        {data.length > 0 ? data.map(item => (
+            <div key={item.name} className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">{item.name}</p>
+                <p className="text-sm font-medium">{item.value}</p>
+            </div>
+        )) : <p className="text-sm text-muted-foreground">{emptyText}</p>}
+    </div>
+);
+
 
 export default function AdminStatisticsPage() {
   const firestore = useFirestore();
@@ -21,26 +51,45 @@ export default function AdminStatisticsPage() {
 
   const { data: applications, isLoading, error } = useCollection<Application>(applicationsQuery);
 
-  const applicationsByCounty = useMemo(() => {
-    if (!applications) return [];
-    const counts: { [key: string]: number } = {};
-    applications.forEach(app => {
-        if (app.memberCounty) {
-            counts[app.memberCounty] = (counts[app.memberCounty] || 0) + 1;
-        }
-    });
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [applications]);
+  const stats = useMemo(() => {
+    if (!applications) return { byCounty: [], byHealthPlan: [], byPathway: [], topReferrers: [] };
+    
+    const counts = {
+        byCounty: new Map<string, number>(),
+        byHealthPlan: new Map<string, number>(),
+        byPathway: new Map<string, number>(),
+        byReferrer: new Map<string, number>(),
+    };
 
-  const applicationsByHealthPlan = useMemo(() => {
-    if (!applications) return [];
-    const counts: { [key: string]: number } = {};
     applications.forEach(app => {
+        // County
+        if (app.memberCounty) {
+            counts.byCounty.set(app.memberCounty, (counts.byCounty.get(app.memberCounty) || 0) + 1);
+        }
+        // Health Plan
         if (app.healthPlan) {
-            counts[app.healthPlan] = (counts[app.healthPlan] || 0) + 1;
+            counts.byHealthPlan.set(app.healthPlan, (counts.byHealthPlan.get(app.healthPlan) || 0) + 1);
+        }
+        // Pathway
+        if (app.pathway) {
+            counts.byPathway.set(app.pathway, (counts.byPathway.get(app.pathway) || 0) + 1);
+        }
+        // Referrer
+        if (app.referrerName) {
+            counts.byReferrer.set(app.referrerName, (counts.byReferrer.get(app.referrerName) || 0) + 1);
         }
     });
-     return Object.entries(counts).map(([name, value]) => ({ name, value }));
+
+    const toSortedArray = (map: Map<string, number>) => Array.from(map.entries())
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value);
+
+    return {
+        byCounty: toSortedArray(counts.byCounty),
+        byHealthPlan: toSortedArray(counts.byHealthPlan),
+        byPathway: toSortedArray(counts.byPathway),
+        topReferrers: toSortedArray(counts.byReferrer).slice(0, 10),
+    };
   }, [applications]);
 
   if (isLoading) {
@@ -65,52 +114,47 @@ export default function AdminStatisticsPage() {
             </p>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-                <CardHeader>
-                    <CardTitle>Applications by County</CardTitle>
-                    <CardDescription>Distribution of applications across different counties.</CardDescription>
+            <StatCard title="Applications by County" icon={Map}>
+                <DataList data={stats.byCounty} />
+            </StatCard>
+            
+            <StatCard title="Applications by Health Plan" icon={HeartHandshake}>
+                <DataList data={stats.byHealthPlan} />
+            </StatCard>
+
+            <StatCard title="Applications by Pathway" icon={Forklift}>
+                <DataList data={stats.byPathway} />
+            </StatCard>
+
+             <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Top 10 Referrers</CardTitle>
+                    <Users className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                    <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={applicationsByCounty} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="name" />
-                            <YAxis />
-                            <Tooltip />
-                            <Bar dataKey="value" fill="hsl(var(--primary))" />
-                        </BarChart>
-                    </ResponsiveContainer>
-                </CardContent>
-            </Card>
-            <Card>
-                <CardHeader>
-                    <CardTitle>Applications by Health Plan</CardTitle>
-                    <CardDescription>Breakdown of applications by the member's health plan.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <ResponsiveContainer width="100%" height={300}>
-                        <PieChart>
-                            <Pie
-                                data={applicationsByHealthPlan}
-                                cx="50%"
-                                cy="50%"
-                                labelLine={false}
-                                outerRadius={80}
-                                fill="#8884d8"
-                                dataKey="value"
-                                nameKey="name"
-                                label={(entry) => `${entry.name} (${entry.value})`}
-                            >
-                                {applicationsByHealthPlan.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                     {stats.topReferrers.length > 0 ? (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Name</TableHead>
+                                    <TableHead className="text-right">Submissions</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {stats.topReferrers.map(r => (
+                                    <TableRow key={r.name}>
+                                        <TableCell className="font-medium">{r.name}</TableCell>
+                                        <TableCell className="text-right">{r.value}</TableCell>
+                                    </TableRow>
                                 ))}
-                            </Pie>
-                            <Tooltip />
-                            <Legend />
-                        </PieChart>
-                    </ResponsiveContainer>
+                            </TableBody>
+                        </Table>
+                     ) : (
+                        <p className="text-sm text-muted-foreground pt-4">No referrer data available.</p>
+                     )}
                 </CardContent>
             </Card>
+
         </div>
     </div>
   );
