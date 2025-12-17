@@ -163,7 +163,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     }
 
   return (
-    <>
+    <div className="flex flex-col min-h-screen">
       <AdminHeader />
       <div className="flex flex-1">
         <AdminSidebar />
@@ -171,6 +171,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             {children}
         </main>
       </div>
-    </>
+    </div>
   );
 }
