@@ -124,7 +124,7 @@ export const AdminApplicationsTable = ({
                 </TableCell>
                 <TableCell className="text-right space-x-2">
                   <Button asChild variant="outline" size="sm">
-                    <Link href={`/pathway?applicationId=${app.id}&userId=${app.userId}`}>View</Link>
+                    <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View</Link>
                   </Button>
                    <AlertDialog>
                         <AlertDialogTrigger asChild>

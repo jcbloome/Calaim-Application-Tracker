@@ -16,43 +16,24 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
   CheckCircle2,
-  File,
   Info,
   Loader2,
   UploadCloud,
   Send,
   Printer,
-  Package,
   X,
   FileText,
-  Lock,
-  Edit
 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType } from '@/lib/definitions';
-import { useDoc, useUser, useFirestore, useCollection } from '@/firebase';
-import { doc, setDoc, serverTimestamp, Timestamp, collection, query, where, getDocs, collectionGroup, onSnapshot } from 'firebase/firestore';
+import { useDoc, useUser, useFirestore } from '@/firebase';
+import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
-import { useToast } from '@/hooks/use-toast';
-import { useAdmin } from '@/hooks/use-admin';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Textarea } from '@/components/ui/textarea';
-import { sendRevisionRequestEmail, sendApplicationStatusEmail } from '@/app/actions/send-email';
-
 
 const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => {
   const commonRequirements = [
@@ -79,7 +60,6 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
   ];
 };
 
-
 function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
     const isCompleted = status === 'Completed';
     return (
@@ -99,125 +79,11 @@ function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
     );
 }
 
-function AdminActions({ application, onStatusChange }: { application: Application, onStatusChange: (status: Application['status']) => Promise<void> }) {
-    const { isAdmin, isSuperAdmin } = useAdmin();
-    const [revisionNotes, setRevisionNotes] = useState('');
-    const [isSending, setIsSending] = useState(false);
-    const { toast } = useToast();
-
-    if (!isAdmin && !isSuperAdmin) {
-        return null;
-    }
-    
-    const sendEmailAndUpdateStatus = async (status: Application['status'], subject: string, message: string) => {
-        if (!application.referrerEmail) {
-            toast({ variant: 'destructive', title: 'Error', description: 'Referrer email is not available for this application.' });
-            return;
-        }
-
-        setIsSending(true);
-
-        try {
-            if (status === 'Requires Revision') {
-                 await sendRevisionRequestEmail({
-                    to: application.referrerEmail,
-                    subject: subject,
-                    memberName: `${application.memberFirstName} ${application.memberLastName}`,
-                    formName: 'the application', // Can be made more specific if needed
-                    revisionNotes: message,
-                });
-            } else {
-                 await sendApplicationStatusEmail({
-                    to: application.referrerEmail,
-                    subject: subject,
-                    memberName: `${application.memberFirstName} ${application.memberLastName}`,
-                    staffName: "The Connections Team",
-                    message: message,
-                    status: status,
-                });
-            }
-
-            await onStatusChange(status);
-
-            toast({
-                title: 'Success!',
-                description: `Application status set to "${status}" and an email has been sent.`,
-                className: 'bg-green-100 text-green-900',
-            });
-
-        } catch (error: any) {
-            toast({
-                variant: 'destructive',
-                title: 'Email Error',
-                description: `Could not send email: ${error.message}`,
-            });
-        } finally {
-            setIsSending(false);
-        }
-    };
-
-
-    const handleRevisionRequest = () => {
-        if (!revisionNotes) {
-            toast({ variant: 'destructive', title: 'Error', description: 'Revision notes cannot be empty.' });
-            return;
-        }
-        sendEmailAndUpdateStatus('Requires Revision', 'Revision Required for CalAIM Application', revisionNotes);
-    };
-
-    const handleApproval = () => {
-        sendEmailAndUpdateStatus('Approved', 'Your CalAIM Application Has Been Approved!', 'Congratulations! Your application has been approved. Our team will be in touch with the next steps.');
-    };
-
-    return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Admin Actions</CardTitle>
-                <CardDescription>Manage the status of this application.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                 <Dialog>
-                    <DialogTrigger asChild>
-                        <Button variant="outline" className="w-full">Request Revision</Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Request Revision</DialogTitle>
-                            <DialogDescription>
-                                Describe the changes needed. An email will be sent to the referrer.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <Textarea
-                            placeholder="e.g., 'Please upload a clearer copy of the Proof of Income document.'"
-                            value={revisionNotes}
-                            onChange={(e) => setRevisionNotes(e.target.value)}
-                        />
-                        <DialogFooter>
-                            <Button onClick={handleRevisionRequest} disabled={isSending}>
-                                {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                Send Request
-                            </Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
-
-                <Button className="w-full bg-green-600 hover:bg-green-700" onClick={handleApproval} disabled={isSending}>
-                    {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Approve Application
-                </Button>
-            </CardContent>
-        </Card>
-    )
-}
-
-
 function PathwayPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const applicationId = searchParams.get('applicationId');
-  const appUserId = searchParams.get('userId'); // userId of application owner, for admins
   const { user, isUserLoading } = useUser();
-  const { isAdmin, isSuperAdmin } = useAdmin();
   const firestore = useFirestore();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
@@ -227,14 +93,10 @@ function PathwayPageContent() {
   const [error, setError] = useState<Error | null>(null);
 
   const docRef = useMemo(() => {
-    if (!firestore || !applicationId) return null;
-    // If you're an admin, use the userId from the URL. Otherwise, use your own uid.
-    const ownerId = (isAdmin || isSuperAdmin) && appUserId ? appUserId : user?.uid;
-    if (!ownerId) return null;
-    return doc(firestore, `users/${ownerId}/applications`, applicationId);
-  }, [firestore, applicationId, user, isAdmin, isSuperAdmin, appUserId]);
+    if (!firestore || !applicationId || !user) return null;
+    return doc(firestore, `users/${user.uid}/applications`, applicationId);
+  }, [firestore, applicationId, user]);
 
-  // Direct document fetch effect
   useEffect(() => {
     if (!docRef) {
       if (!isUserLoading) setIsLoading(false);
@@ -259,13 +121,11 @@ function PathwayPageContent() {
     return () => unsubscribe();
   }, [docRef, isUserLoading]);
 
-
   useEffect(() => {
     if (!isLoading && !application && !isUserLoading) {
       router.push('/applications');
     }
   }, [isLoading, application, isUserLoading, router]);
-
 
   useEffect(() => {
     if (application && docRef && application.pathway && (!application.forms || application.forms.length === 0)) {
@@ -284,8 +144,7 @@ function PathwayPageContent() {
 
         setDoc(docRef, { forms: initialForms }, { merge: true });
     }
-}, [application, docRef]);
-
+  }, [application, docRef]);
 
   const handleFormStatusUpdate = async (formNames: string[], newStatus: 'Completed' | 'Pending', fileName?: string | null) => {
       if (!docRef || !application) return;
@@ -316,11 +175,6 @@ function PathwayPageContent() {
           console.error("Failed to update form status:", e);
       }
   };
-  
-   const handleStatusChange = async (newStatus: Application['status']) => {
-        if (!docRef) return;
-        await setDoc(docRef, { status: newStatus, lastUpdated: serverTimestamp() }, { merge: true });
-    };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, requirementTitle: string) => {
     if (!event.target.files?.length) return;
@@ -401,11 +255,7 @@ function PathwayPageContent() {
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
     const isCompleted = formInfo?.status === 'Completed';
-    let href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
-    // For admins, ensure the userId is passed to the form pages if needed
-    if ((isAdmin || isSuperAdmin) && appUserId) {
-        href += `&userId=${appUserId}`;
-    }
+    const href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
     
     if (isReadOnly) {
        if (req.type === 'Upload') {
@@ -470,9 +320,7 @@ function PathwayPageContent() {
     <>
       <Header />
       <main className="flex-grow bg-slate-50/50 py-8 sm:py-12">
-        <div className="container mx-auto max-w-5xl px-4 sm:px-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          <div className="lg:col-span-2 space-y-8">
+        <div className="container mx-auto max-w-3xl px-4 sm:px-6 space-y-8">
             <Card className="shadow-sm">
                 <CardHeader>
                 <CardTitle className="text-2xl sm:text-3xl font-bold text-primary">
@@ -519,7 +367,7 @@ function PathwayPageContent() {
                 <Info className="h-4 w-4 !text-sky-800" />
                 <AlertTitle>Upload Tip</AlertTitle>
                 <AlertDescription>
-                    You can check the boxes for "I included this in a bundle" for forms that you plan to upload together, like in the 'Medical Documents Bundle' below. This helps track completion.
+                    You can check the boxes for "I included this in a bundle" for forms that you plan to upload together. This helps track completion.
                 </AlertDescription>
             </Alert>
 
@@ -545,63 +393,6 @@ function PathwayPageContent() {
                     )
                 })}
             </div>
-          </div>
-
-          <aside className="lg:col-span-1 space-y-6">
-            {(isAdmin || isSuperAdmin) && <AdminActions application={application} onStatusChange={handleStatusChange} />}
-
-             <Card className="shadow-sm">
-                <CardHeader>
-                    <CardTitle>Bundle Uploads</CardTitle>
-                    <CardDescription>For convenience, upload multiple signed documents as a single file.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                    <div className="p-4 border rounded-md">
-                         <h3 className="font-semibold text-base">Waivers Bundle</h3>
-                         <p className="text-xs text-muted-foreground mb-4">Includes HIPAA, Liability, and Freedom of Choice waivers.</p>
-                         <div className="space-y-3 mb-4">
-                            {[ 'HIPAA Authorization', 'Liability Waiver', 'Freedom of Choice Waiver' ].map(formName => (
-                                <div key={formName} className="flex items-center space-x-2">
-                                     <Checkbox 
-                                        id={`waiver-bundle-${formName}`} 
-                                        checked={formStatusMap.get(formName)?.status === 'Completed'}
-                                        onCheckedChange={(checked) => handleFormStatusUpdate([formName], checked ? 'Completed' : 'Pending')}
-                                        disabled={isReadOnly}
-                                    />
-                                    <Label htmlFor={`waiver-bundle-${formName}`} className="text-sm">{formName}</Label>
-                                </div>
-                            ))}
-                         </div>
-                         <Button asChild className="w-full">
-                            <Link href="/forms/printable-package/full-package" target="_blank"><Printer className="mr-2 h-4 w-4" /> Download Blank Waivers</Link>
-                         </Button>
-                    </div>
-
-                    <div className="p-4 border rounded-md">
-                         <h3 className="font-semibold text-base">Medical Docs Bundle</h3>
-                         <p className="text-xs text-muted-foreground mb-4">Includes Physician's Report, Med List, etc.</p>
-                         <div className="space-y-3 mb-4">
-                           {[
-                                {name: "LIC 602A - Physician's Report"},
-                                {name: "Medicine List"},
-                                application.pathway === 'SNF Transition' ? {name: "SNF Facesheet"} : null,
-                                application.pathway === 'SNF Diversion' ? {name: "Declaration of Eligibility"} : null,
-                           ].filter(Boolean).map(form => (
-                                <div key={form!.name} className="flex items-center space-x-2">
-                                     <Checkbox 
-                                        id={`med-bundle-${form!.name}`} 
-                                        checked={formStatusMap.get(form!.name)?.status === 'Completed'}
-                                        onCheckedChange={(checked) => handleFormStatusUpdate([form!.name], checked ? 'Completed' : 'Pending')}
-                                        disabled={isReadOnly}
-                                    />
-                                    <Label htmlFor={`med-bundle-${form!.name}`} className="text-sm">{form!.name}</Label>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </CardContent>
-             </Card>
-          </aside>
         </div>
       </main>
     </>
