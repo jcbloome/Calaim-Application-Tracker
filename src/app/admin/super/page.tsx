@@ -5,9 +5,10 @@ import { useState, useEffect } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { syncStaff } from '@/ai/flows/sync-staff';
+import { sendTestToMake } from '@/ai/flows/send-to-make-flow';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, RefreshCw, AlertCircle, ShieldAlert, List } from 'lucide-react';
+import { Loader2, RefreshCw, AlertCircle, ShieldAlert, List, Send } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, getDocs, doc, onSnapshot, Unsubscribe, DocumentData } from 'firebase/firestore';
@@ -22,6 +23,64 @@ interface StaffMember {
     email: string;
 }
 
+const sampleApplicationData = {
+    memberFirstName: 'John',
+    memberLastName: 'Doe',
+    memberDob: '01/15/1955',
+    memberAge: 69,
+    memberMediCalNum: '98765432B',
+    memberMrn: 'Kaiser-MRN-12345',
+    memberLanguage: 'English',
+    memberCounty: 'San Diego',
+    referrerFirstName: 'Jason',
+    referrerLastName: 'Bloome',
+    referrerEmail: 'jason@carehomefinders.com',
+    referrerPhone: '(555) 111-2222',
+    referrerRelationship: 'Consultant',
+    agency: 'Connections',
+    bestContactFirstName: 'Jane',
+    bestContactLastName: 'Doe',
+    bestContactRelationship: 'Spouse',
+    bestContactPhone: '(555) 333-4444',
+    bestContactEmail: 'jane.doe@example.com',
+    bestContactLanguage: 'English',
+    hasCapacity: 'Yes' as const,
+    hasLegalRep: 'No' as const,
+    currentLocation: 'Hospital',
+    currentAddress: '123 Hospital Dr',
+    currentCity: 'Healthcare City',
+    currentState: 'CA',
+    currentZip: '90210',
+    currentCounty: 'Los Angeles',
+    customaryLocationType: 'Home',
+    customaryAddress: '456 Home St',
+    customaryCity: 'Homeville',
+    customaryState: 'CA',
+    customaryZip: '90211',
+    customaryCounty: 'Los Angeles',
+    healthPlan: 'Kaiser' as const,
+    pathway: 'SNF Diversion' as const,
+    meetsPathwayCriteria: true,
+    snfDiversionReason: 'At risk of institutionalization, can be cared for in community.',
+    ispFirstName: 'Sarah',
+    ispLastName: 'Connor',
+    ispRelationship: 'SNF Social Worker',
+    ispPhone: '(555) 888-9999',
+    ispEmail: 's.connor@snf.example.com',
+    ispLocationType: 'SNF',
+    ispAddress: '123 Skilled Nursing Way, Careville, CA, 90211',
+    ispFacilityName: 'General SNF',
+    onALWWaitlist: 'No' as const,
+    hasPrefRCFE: 'Yes' as const,
+    rcfeName: 'Sunshine RCFE',
+    rcfeAddress: '789 Community Ln, Happyville, CA, 90212',
+    rcfeAdminName: 'Admin Name',
+    rcfeAdminPhone: '(555) 777-8888',
+    rcfeAdminEmail: 'admin@sunshinercfe.com',
+    userId: 'SUPER_ADMIN_TEST_USER'
+};
+
+
 export default function SuperAdminPage() {
     const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
     const router = useRouter();
@@ -30,6 +89,7 @@ export default function SuperAdminPage() {
 
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState('');
+    const [isSendingWebhook, setIsSendingWebhook] = useState(false);
     const [staffList, setStaffList] = useState<StaffMember[]>([]);
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
 
@@ -125,6 +185,30 @@ export default function SuperAdminPage() {
             setIsSyncing(false);
         }
     };
+    
+    const handleSendWebhook = async () => {
+        setIsSendingWebhook(true);
+        try {
+            const result = await sendTestToMake(sampleApplicationData);
+             if (result.success) {
+                toast({
+                    title: 'Webhook Sent Successfully',
+                    description: result.message,
+                    className: 'bg-green-100 text-green-900 border-green-200',
+                });
+            } else {
+                 throw new Error(result.message);
+            }
+        } catch (error: any) {
+             toast({
+                variant: 'destructive',
+                title: 'Webhook Failed',
+                description: error.message || 'An unknown error occurred.',
+            });
+        } finally {
+            setIsSendingWebhook(false);
+        }
+    };
 
     if (isAdminLoading) {
         return <div className="flex justify-center items-center h-full"><Loader2 className="h-8 w-8 animate-spin"/></div>;
@@ -171,6 +255,32 @@ export default function SuperAdminPage() {
                             <p>{syncMessage}</p>
                         </div>
                     )}
+                </CardContent>
+            </Card>
+            
+            <Card>
+                <CardHeader>
+                    <CardTitle>Make.com Webhook Test</CardTitle>
+                    <CardDescription>
+                        Send a sample CS Summary Form to your Make.com webhook to test the integration.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <Alert>
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>Setup Required</AlertTitle>
+                        <AlertDescription>
+                            Ensure you have added your Make.com webhook URL to the `MAKE_WEBHOOK_URL` variable in your `.env` file.
+                        </AlertDescription>
+                    </Alert>
+
+                     <Button onClick={handleSendWebhook} disabled={isSendingWebhook} className="mt-4 w-full sm:w-auto">
+                        {isSendingWebhook ? (
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</>
+                        ) : (
+                            <><Send className="mr-2 h-4 w-4" /> Send Test Webhook</>
+                        )}
+                    </Button>
                 </CardContent>
             </Card>
 
