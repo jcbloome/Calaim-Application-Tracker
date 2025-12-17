@@ -14,28 +14,30 @@ export interface UserHookResult {
 export const useUser = (): UserHookResult => {
   const auth = useAuth();
   const [userState, setUserState] = useState<UserHookResult>(() => {
-    const isLoading = auth ? !auth.currentUser : true;
+    // Initial state should always be loading, until the first auth check completes.
     return {
-      user: auth?.currentUser || null,
-      isUserLoading: isLoading,
+      user: null,
+      isUserLoading: true,
       userError: null,
     };
   });
 
   useEffect(() => {
     if (!auth) {
-      // If auth service isn't available, we are not loading and there's an error.
       setUserState({ user: null, isUserLoading: false, userError: new Error("Auth service not available.") });
       return;
     }
 
-    // Start with loading state true until the first auth state check completes.
-    setUserState(s => ({...s, isUserLoading: true}));
+    // Set initial user from currentUser if available, but keep loading true
+    // until the onAuthStateChanged listener fires for the first time.
+    if (auth.currentUser && userState.isUserLoading) {
+      setUserState(s => ({ ...s, user: auth.currentUser }));
+    }
 
     const unsubscribe = onAuthStateChanged(
       auth,
       (firebaseUser) => {
-        // Auth state has been confirmed, loading is false.
+        // Auth state has been confirmed, loading is now false.
         setUserState({ user: firebaseUser, isUserLoading: false, userError: null });
       },
       (error) => {
@@ -45,7 +47,7 @@ export const useUser = (): UserHookResult => {
     );
 
     return () => unsubscribe();
-  }, [auth]); // Rerun effect if the auth instance changes.
+  }, [auth]); // Only re-run the effect if the auth instance itself changes.
 
   return userState;
 };
