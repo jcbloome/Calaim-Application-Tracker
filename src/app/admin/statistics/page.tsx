@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useFirestore, useCollection } from '@/firebase';
 import { collectionGroup, query, Query } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
-import { Loader2, Users, Map, HeartHandshake, Forklift, Building } from 'lucide-react';
+import { Loader2, Users, Map as MapIcon, HeartHandshake, Forklift, Building } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -114,7 +114,7 @@ export default function AdminStatisticsPage() {
             </p>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <StatCard title="Applications by County" icon={Map}>
+            <StatCard title="Applications by County" icon={MapIcon}>
                 <DataList data={stats.byCounty} />
             </StatCard>
             
