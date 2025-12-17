@@ -79,9 +79,9 @@ function AdminHeader() {
                     <Image 
                         src="/calaimlogopdf.png"
                         alt="CalAIM Pathfinder Logo"
-                        width={180}
-                        height={50}
-                        className="w-40 h-auto object-contain"
+                        width={240}
+                        height={60}
+                        className="w-60 h-auto object-contain"
                         priority
                     />
                      <span className="border-l-2 pl-2 text-muted-foreground font-normal">Admin Portal</span>
