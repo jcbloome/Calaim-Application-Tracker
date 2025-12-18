@@ -6,6 +6,8 @@
  * - getNotificationRecipients: Retrieves the list of staff UIDs subscribed to notifications.
  * - updateNotificationRecipients: Sets the list of staff UIDs subscribed to notifications.
  */
+import { config } from 'dotenv';
+config();
 
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';

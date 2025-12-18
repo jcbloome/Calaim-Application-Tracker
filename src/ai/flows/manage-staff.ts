@@ -6,6 +6,8 @@
  * - addStaff: Creates a new Firebase user, assigns them an 'Admin' role, and creates a user profile.
  * - updateStaffRole: Toggles a user's 'Super Admin' status.
  */
+import { config } from 'dotenv';
+config();
 
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';

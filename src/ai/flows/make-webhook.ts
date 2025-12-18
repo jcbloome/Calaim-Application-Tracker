@@ -7,6 +7,8 @@
  * It takes a comprehensive JSON payload representing a CalAIM application, validates it,
  * and then creates or updates the corresponding application record in Firestore.
  */
+import { config } from 'dotenv';
+config();
 
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
