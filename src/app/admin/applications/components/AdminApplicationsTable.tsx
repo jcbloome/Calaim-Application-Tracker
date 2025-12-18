@@ -99,7 +99,7 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
     return (
          <Dialog>
             <DialogTrigger asChild>
-                <Link href="#" className="text-sm font-medium text-primary hover:underline">Quick View</Link>
+                <Link href="#" className="text-sm font-medium text-primary hover:underline">View</Link>
             </DialogTrigger>
             <DialogContent className="max-w-4xl">
                 <DialogHeader>
@@ -232,10 +232,10 @@ export const AdminApplicationsTable = ({
                   </TableCell>
                 )}
                 <TableCell className="font-medium">
-                  <div className="truncate">{`${app.memberFirstName} ${app.memberLastName}`} <span className="font-mono text-xs text-muted-foreground">(...{app.id.slice(-4)})</span></div>
+                  {`${app.memberFirstName} ${app.memberLastName}`}
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
-                   <div className="truncate">{app.referrerName || 'N/A'} <span className="font-mono text-xs text-muted-foreground">(...{app.userId.slice(-4)})</span></div>
+                   {app.referrerName || 'N/A'}
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline" className={getBadgeVariant(app.status)}>
@@ -243,7 +243,8 @@ export const AdminApplicationsTable = ({
                   </Badge>
                 </TableCell>
                  <TableCell className="hidden lg:table-cell">
-                    <div>{app.healthPlan} - {app.pathway}</div>
+                    <div>{app.healthPlan}</div>
+                    <div className="text-xs text-muted-foreground">{app.pathway}</div>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">
                     {app.lastUpdated ? format((app.lastUpdated as Timestamp).toDate(), 'MM/dd/yyyy p') : 'N/A'}
