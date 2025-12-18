@@ -10,8 +10,6 @@ import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import * as admin from 'firebase-admin';
 
-const firestore = admin.firestore();
-
 // Define the comprehensive schema for the incoming webhook data.
 // This should match all the fields collected in the CS Member Summary form.
 const WebhookInputSchema = z.object({
@@ -130,6 +128,7 @@ const makeWebhookFlow = ai.defineFlow(
   },
   async (data) => {
     console.log('[makeWebhookFlow] Received data for processing.');
+    const firestore = admin.firestore();
 
     const { userId, applicationId, ...applicationData } = data;
 
