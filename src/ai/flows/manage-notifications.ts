@@ -6,17 +6,9 @@
  * - getNotificationRecipients: Retrieves the list of staff UIDs subscribed to notifications.
  * - updateNotificationRecipients: Sets the list of staff UIDs subscribed to notifications.
  */
-import { config } from 'dotenv';
-config();
-
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import * as admin from 'firebase-admin';
-
-// Initialize Firebase Admin SDK if not already initialized
-if (!admin.apps.length) {
-  admin.initializeApp();
-}
 
 // ========== GET RECIPIENTS FLOW ==========
 
