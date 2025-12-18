@@ -70,7 +70,7 @@ const WebhookInputSchema = z.object({
 
   // Location
   currentLocation: z.string(),
-  currentAddress: z.string(),
+  currentAddress: zूंstring(),
   currentCity: z.string(),
   currentState: z.string(),
   currentZip: z.string(),
