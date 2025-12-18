@@ -4,7 +4,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
-import { syncStaff } from '@/ai/flows/sync-staff';
 import { sendTestToMake } from '@/ai/flows/send-to-make-flow';
 import { addStaff, updateStaffRole } from '@/ai/flows/manage-staff';
 import { Button } from '@/components/ui/button';
@@ -94,7 +93,6 @@ export default function SuperAdminPage() {
     const { toast } = useToast();
     const firestore = useFirestore();
 
-    const [isSyncing, setIsSyncing] = useState(false);
     const [isSendingWebhook, setIsSendingWebhook] = useState(false);
     const [staffList, setStaffList] = useState<StaffMember[]>([]);
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
@@ -148,28 +146,6 @@ export default function SuperAdminPage() {
         
         return () => unsubUsers();
     }, [firestore]);
-
-
-    const handleSyncStaff = async () => {
-        setIsSyncing(true);
-        try {
-            const result = await syncStaff();
-            toast({
-                title: 'Sync Successful',
-                description: result.message,
-                className: 'bg-green-100 text-green-900 border-green-200',
-            });
-        } catch (error: any) {
-            console.error('Error syncing staff:', error);
-            toast({
-                variant: 'destructive',
-                title: 'Sync Failed',
-                description: `An error occurred while syncing staff. ${error.message}`,
-            });
-        } finally {
-            setIsSyncing(false);
-        }
-    };
     
     const handleSendWebhook = async () => {
         setIsSendingWebhook(true);
@@ -300,19 +276,6 @@ export default function SuperAdminPage() {
                             <CardTitle className="text-lg">System Actions</CardTitle>
                          </CardHeader>
                          <CardContent className="space-y-6">
-                            {/* Sync Staff */}
-                            <div>
-                                <h4 className="font-medium">Staff Synchronization</h4>
-                                <p className="text-sm text-muted-foreground mt-1">Grant 'Admin' role to all registered Firebase users.</p>
-                                <Alert variant="warning" className="my-2 text-xs">
-                                    <AlertCircle className="h-4 w-4" />
-                                    <AlertDescription>This will not remove existing admins or affect super admins.</AlertDescription>
-                                </Alert>
-                                <Button onClick={handleSyncStaff} disabled={isSyncing} variant="secondary">
-                                    {isSyncing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Syncing...</> : <><RefreshCw className="mr-2 h-4 w-4" /> Sync All Staff to Admin Role</>}
-                                </Button>
-                            </div>
-                            <Separator />
                             {/* Webhook Test */}
                              <div>
                                 <h4 className="font-medium">Make.com Webhook Test</h4>
