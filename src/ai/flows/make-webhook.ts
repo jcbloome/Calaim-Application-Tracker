@@ -9,6 +9,13 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import * as admin from 'firebase-admin';
+import serviceAccount from '../../../service-account_key.json';
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
+  });
+}
 
 // Define the comprehensive schema for the incoming webhook data.
 // This should match all the fields collected in the CS Member Summary form.

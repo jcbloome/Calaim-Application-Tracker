@@ -8,6 +8,13 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import * as admin from 'firebase-admin';
+import serviceAccount from '../../../service-account_key.json';
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
+  });
+}
 
 // ========== GET RECIPIENTS FLOW ==========
 
