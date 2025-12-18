@@ -1,19 +1,23 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { syncStaff } from '@/ai/flows/sync-staff';
 import { sendTestToMake } from '@/ai/flows/send-to-make-flow';
+import { addStaff, updateStaffRole } from '@/ai/flows/manage-staff';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, RefreshCw, AlertCircle, ShieldAlert, List, Send } from 'lucide-react';
+import { Loader2, RefreshCw, AlertCircle, ShieldAlert, UserPlus, Send, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { collection, getDocs, doc, onSnapshot, Unsubscribe, DocumentData } from 'firebase/firestore';
+import { collection, getDocs, doc, onSnapshot, Unsubscribe, DocumentData, query } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
-
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Separator } from '@/components/ui/separator';
 
 interface StaffMember {
     uid: string;
@@ -82,92 +86,71 @@ const sampleApplicationData = {
 
 
 export default function SuperAdminPage() {
-    const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+    const { isSuperAdmin, isLoading: isAdminLoading, user: currentUser } = useAdmin();
     const router = useRouter();
     const { toast } = useToast();
     const firestore = useFirestore();
 
     const [isSyncing, setIsSyncing] = useState(false);
-    const [syncMessage, setSyncMessage] = useState('');
     const [isSendingWebhook, setIsSendingWebhook] = useState(false);
     const [staffList, setStaffList] = useState<StaffMember[]>([]);
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
 
-     useEffect(() => {
+    // State for new staff form
+    const [newStaffFirstName, setNewStaffFirstName] = useState('');
+    const [newStaffLastName, setNewStaffLastName] = useState('');
+    const [newStaffEmail, setNewStaffEmail] = useState('');
+    const [isAddingStaff, setIsAddingStaff] = useState(false);
+
+
+    useEffect(() => {
         if (!isAdminLoading && !isSuperAdmin) {
             router.push('/admin');
         }
     }, [isSuperAdmin, isAdminLoading, router]);
 
-    const fetchStaffDetails = async (roleDocs: DocumentData[]): Promise<StaffMember[]> => {
-        if (!firestore) return [];
-        const staffPromises = roleDocs.map(async (staffDoc) => {
-            const userDocRef = doc(firestore, 'users', staffDoc.uid);
-            const userDocSnap = await getDocs(collection(firestore, 'users'));
-            const userDoc = userDocSnap.docs.find(d => d.id === staffDoc.uid);
-            
-            const userData = userDoc?.exists() ? userDoc.data() : null;
-
-            return {
-                uid: staffDoc.uid,
-                role: staffDoc.role,
-                firstName: userData?.firstName || 'Unknown',
-                lastName: userData?.lastName || '',
-                email: userData?.email || 'No email found',
-            };
-        });
-        return Promise.all(staffPromises);
-    };
-
     useEffect(() => {
         if (!firestore) return;
         setIsLoadingStaff(true);
 
+        const usersRef = collection(firestore, 'users');
         const adminRolesRef = collection(firestore, 'roles_admin');
         const superAdminRolesRef = collection(firestore, 'roles_super_admin');
 
-        let combinedUnsubscribes: Unsubscribe[] = [];
-
-        const fetchData = () => {
-             const adminUnsub = onSnapshot(adminRolesRef, async (adminSnapshot) => {
-                const superAdminDocs = await getDocs(superAdminRolesRef);
-
-                const adminUsers = adminSnapshot.docs.map(d => ({ ...d.data(), role: 'Admin' as const, uid: d.id }));
-                const superAdminUsers = superAdminDocs.docs.map(d => ({ ...d.data(), role: 'Super Admin' as const, uid: d.id }));
-
-                const allStaff = await fetchStaffDetails([...adminUsers, ...superAdminUsers]);
-                setStaffList(allStaff);
-                setIsLoadingStaff(false);
-            });
-
-            const superAdminUnsub = onSnapshot(superAdminRolesRef, async (superAdminSnapshot) => {
-                 const adminDocs = await getDocs(adminRolesRef);
-
-                const adminUsers = adminDocs.docs.map(d => ({ ...d.data(), role: 'Admin' as const, uid: d.id }));
-                const superAdminUsers = superAdminSnapshot.docs.map(d => ({ ...d.data(), role: 'Super Admin' as const, uid: d.id }));
-
-                const allStaff = await fetchStaffDetails([...adminUsers, ...superAdminUsers]);
-                setStaffList(allStaff);
-                setIsLoadingStaff(false);
-            });
+        const unsubUsers = onSnapshot(query(usersRef), (usersSnapshot) => {
+            const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
             
-            combinedUnsubscribes = [adminUnsub, superAdminUnsub];
-        };
+            onSnapshot(query(adminRolesRef), (adminSnapshot) => {
+                const adminIds = new Set(adminSnapshot.docs.map(doc => doc.id));
+                
+                onSnapshot(query(superAdminRolesRef), (superAdminSnapshot) => {
+                     const superAdminIds = new Set(superAdminSnapshot.docs.map(doc => doc.id));
 
-        fetchData();
+                     const allStaff = usersData
+                        .filter(user => adminIds.has(user.id) || superAdminIds.has(user.id))
+                        .map(user => ({
+                            uid: user.id,
+                            firstName: user.firstName,
+                            lastName: user.lastName,
+                            email: user.email,
+                            role: superAdminIds.has(user.id) ? 'Super Admin' : 'Admin',
+                        }))
+                        .sort((a, b) => a.lastName.localeCompare(b.lastName));
 
-        return () => combinedUnsubscribes.forEach(unsub => unsub());
-
+                     setStaffList(allStaff);
+                     setIsLoadingStaff(false);
+                });
+            });
+        });
+        
+        return () => unsubUsers();
     }, [firestore]);
 
 
     const handleSyncStaff = async () => {
         setIsSyncing(true);
-        setSyncMessage('');
-
         try {
             const result = await syncStaff();
-            setSyncMessage(result.message);
             toast({
                 title: 'Sync Successful',
                 description: result.message,
@@ -175,11 +158,10 @@ export default function SuperAdminPage() {
             });
         } catch (error: any) {
             console.error('Error syncing staff:', error);
-            setSyncMessage(`Error: ${error.message}`);
             toast({
                 variant: 'destructive',
                 title: 'Sync Failed',
-                description: `An error occurred while syncing staff. Please check console for details.`,
+                description: `An error occurred while syncing staff. ${error.message}`,
             });
         } finally {
             setIsSyncing(false);
@@ -209,6 +191,52 @@ export default function SuperAdminPage() {
             setIsSendingWebhook(false);
         }
     };
+    
+    const handleAddStaff = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newStaffEmail || !newStaffFirstName || !newStaffLastName) {
+            toast({ variant: 'destructive', title: 'Missing Information', description: 'Please fill out all fields.' });
+            return;
+        }
+        setIsAddingStaff(true);
+        try {
+            const result = await addStaff({
+                firstName: newStaffFirstName,
+                lastName: newStaffLastName,
+                email: newStaffEmail
+            });
+            toast({
+                title: "Staff Added",
+                description: result.message,
+                className: 'bg-green-100 text-green-900 border-green-200',
+            });
+            setNewStaffFirstName('');
+            setNewStaffLastName('');
+            setNewStaffEmail('');
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Error Adding Staff', description: error.message });
+        } finally {
+            setIsAddingStaff(false);
+        }
+    };
+    
+    const handleRoleToggle = async (uid: string, isSuperAdmin: boolean) => {
+        const optimisticStaffList = staffList.map(s => s.uid === uid ? {...s, role: isSuperAdmin ? 'Super Admin' : 'Admin'} : s);
+        setStaffList(optimisticStaffList);
+
+        try {
+            await updateStaffRole({ uid, isSuperAdmin });
+            toast({
+                title: 'Role Updated',
+                description: `Successfully ${isSuperAdmin ? 'promoted' : 'demoted'} staff member.`,
+            });
+        } catch (error: any) {
+            // Revert optimistic update
+            setStaffList(staffList);
+            toast({ variant: 'destructive', title: 'Update Failed', description: error.message });
+        }
+    };
+
 
     if (isAdminLoading) {
         return <div className="flex justify-center items-center h-full"><Loader2 className="h-8 w-8 animate-spin"/></div>;
@@ -228,65 +256,74 @@ export default function SuperAdminPage() {
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle>Staff Synchronization</CardTitle>
+                    <CardTitle className="text-2xl">Super Admin Tools</CardTitle>
                     <CardDescription>
-                        This tool synchronizes all registered users in Firebase Authentication, granting them 'Admin' role access. This is useful for onboarding new staff members who have already created an account.
+                        Manage staff, roles, and system integrations from this panel.
                     </CardDescription>
                 </CardHeader>
-                <CardContent>
-                     <Alert>
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertTitle>Important Note</AlertTitle>
-                        <AlertDescription>
-                           This process will grant admin privileges to ALL users registered in your Firebase project, except for the Super Admin account ('jason@carehomefinders.com'). It will not remove existing admins.
-                        </AlertDescription>
-                    </Alert>
+                <CardContent className="space-y-8">
+                    {/* Add Staff Section */}
+                    <div>
+                        <h3 className="text-lg font-semibold flex items-center gap-2"><UserPlus className="h-5 w-5" /> Add New Staff Member</h3>
+                        <form onSubmit={handleAddStaff} className="mt-4 p-4 border rounded-lg bg-muted/30 space-y-4">
+                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <Label htmlFor="new-staff-firstname">First Name</Label>
+                                    <Input id="new-staff-firstname" value={newStaffFirstName} onChange={e => setNewStaffFirstName(e.target.value)} />
+                                </div>
+                                 <div>
+                                    <Label htmlFor="new-staff-lastname">Last Name</Label>
+                                    <Input id="new-staff-lastname" value={newStaffLastName} onChange={e => setNewStaffLastName(e.target.value)} />
+                                </div>
+                            </div>
+                            <div>
+                                <Label htmlFor="new-staff-email">Email Address</Label>
+                                <Input id="new-staff-email" type="email" value={newStaffEmail} onChange={e => setNewStaffEmail(e.target.value)} />
+                            </div>
+                            <Button type="submit" disabled={isAddingStaff}>
+                                {isAddingStaff ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Adding...</> : 'Add Staff & Grant Admin Role'}
+                            </Button>
+                        </form>
+                    </div>
 
-                     <Button onClick={handleSyncStaff} disabled={isSyncing} className="mt-4 w-full sm:w-auto">
-                        {isSyncing ? (
-                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Syncing...</>
-                        ) : (
-                            <><RefreshCw className="mr-2 h-4 w-4" /> Sync All Staff to Admin Role</>
-                        )}
-                    </Button>
-                    {syncMessage && (
-                        <div className="mt-4 p-4 rounded-md bg-muted text-sm font-mono whitespace-pre-wrap">
-                            <p className="font-semibold">Sync Status:</p>
-                            <p>{syncMessage}</p>
+                    <Separator />
+                    
+                    {/* System Actions Section */}
+                    <div>
+                         <h3 className="text-lg font-semibold">System Actions</h3>
+                         <div className="mt-4 p-4 border rounded-lg bg-muted/30 space-y-6">
+                            {/* Sync Staff */}
+                            <div>
+                                <h4 className="font-medium">Staff Synchronization</h4>
+                                <p className="text-sm text-muted-foreground mt-1">Grant 'Admin' role to all registered Firebase users. This is useful for onboarding new staff who have already created an account.</p>
+                                <Alert variant="warning" className="my-2 text-xs">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <AlertDescription>This will not remove existing admins or affect super admins.</AlertDescription>
+                                </Alert>
+                                <Button onClick={handleSyncStaff} disabled={isSyncing} variant="secondary">
+                                    {isSyncing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Syncing...</> : <><RefreshCw className="mr-2 h-4 w-4" /> Sync All Staff to Admin Role</>}
+                                </Button>
+                            </div>
+                            {/* Webhook Test */}
+                             <div>
+                                <h4 className="font-medium">Make.com Webhook Test</h4>
+                                <p className="text-sm text-muted-foreground mt-1">Send a sample CS Summary Form to your configured webhook URL to test notifications for new applications.</p>
+                                <Alert variant="warning" className="my-2 text-xs">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <AlertDescription>Ensure your webhook URL is set in the `.env` file.</AlertDescription>
+                                </Alert>
+                                <Button onClick={handleSendWebhook} disabled={isSendingWebhook} variant="secondary">
+                                    {isSendingWebhook ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</> : <><Send className="mr-2 h-4 w-4" /> Send Test Webhook</>}
+                                </Button>
+                            </div>
                         </div>
-                    )}
-                </CardContent>
-            </Card>
-            
-            <Card>
-                <CardHeader>
-                    <CardTitle>Make.com Webhook Test</CardTitle>
-                    <CardDescription>
-                        Send a sample CS Summary Form to your Make.com webhook to test the integration. This can be used to set up staff notifications for new applications.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <Alert>
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertTitle>Setup Required</AlertTitle>
-                        <AlertDescription>
-                            Ensure you have added your Make.com webhook URL to the `MAKE_WEBHOOK_URL` variable in your `.env` file.
-                        </AlertDescription>
-                    </Alert>
-
-                     <Button onClick={handleSendWebhook} disabled={isSendingWebhook} className="mt-4 w-full sm:w-auto">
-                        {isSendingWebhook ? (
-                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</>
-                        ) : (
-                            <><Send className="mr-2 h-4 w-4" /> Send Test Webhook</>
-                        )}
-                    </Button>
+                    </div>
                 </CardContent>
             </Card>
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Current Staff</CardTitle>
+                    <CardTitle className="flex items-center gap-2"><Users className="h-6 w-6" /> Current Staff</CardTitle>
                     <CardDescription>List of users with Admin or Super Admin roles.</CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -295,15 +332,23 @@ export default function SuperAdminPage() {
                             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                         </div>
                     ) : staffList.length > 0 ? (
-                        <div className="space-y-4">
+                        <div className="space-y-2">
                             {staffList.map((staff) => (
-                                <div key={staff.uid} className="flex justify-between items-center p-3 border rounded-lg bg-slate-50">
-                                    <div className="space-y-1">
+                                <div key={staff.uid} className="flex justify-between items-center p-3 border rounded-lg">
+                                    <div>
                                         <p className="font-semibold">{staff.firstName} {staff.lastName}</p>
                                         <p className="text-sm text-muted-foreground">{staff.email}</p>
-                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${staff.role === 'Super Admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <span className={`text-sm font-medium ${staff.role === 'Super Admin' ? 'text-primary' : 'text-muted-foreground'}`}>
                                             {staff.role}
                                         </span>
+                                        <Switch
+                                            checked={staff.role === 'Super Admin'}
+                                            onCheckedChange={(checked) => handleRoleToggle(staff.uid, checked)}
+                                            disabled={staff.uid === currentUser?.uid}
+                                            aria-label={`Toggle Super Admin for ${staff.email}`}
+                                        />
                                     </div>
                                 </div>
                             ))}
