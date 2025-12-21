@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useUser, useFirestore } from '@/firebase';
-import { doc, setDoc, getDoc, serverTimestamp, collection, Timestamp, query, where, getDocs } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, collection, Timestamp, query, where, getDocs, FieldValue } from 'firebase/firestore';
 import Link from 'next/link';
 
 import Step1 from './Step1';
@@ -161,9 +161,12 @@ function CsSummaryFormComponent() {
       userId: targetUserId,
       status: 'In Progress',
       lastUpdated: serverTimestamp(),
-      submissionDate: isNewDoc ? serverTimestamp() : existingApplicationData?.submissionDate,
       referrerName: `${currentData.referrerFirstName} ${currentData.referrerLastName}`.trim(),
     };
+
+    if (isNewDoc) {
+      dataToSave.submissionDate = serverTimestamp();
+    }
   
     try {
       await setDoc(docRef, dataToSave, { merge: true });
@@ -333,13 +336,9 @@ function CsSummaryFormComponent() {
                 </div>
             )}
             <div className="mb-8">
-              <div className="flex items-center justify-between mb-2">
-                   <div className="flex-1">
-                     <h1 className="text-2xl font-bold">CS Member Summary</h1>
-                   </div>
-                  <div className="flex items-center gap-4">
-                     {!isAdminView && <GlossaryDialog />}
-                  </div>
+              <div className="mb-2">
+                  <h1 className="text-2xl font-bold">CS Member Summary</h1>
+                  {!isAdminView && <GlossaryDialog className="p-0 h-auto" />}
               </div>
                <div className="flex items-center justify-between mb-4">
                    <Button type="button" variant="outline" onClick={prevStep} disabled={currentStep === 1}>
