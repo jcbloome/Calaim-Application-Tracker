@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { useUser, useFirestore } from '@/firebase';
 
 interface AdminStatus {
@@ -17,64 +17,51 @@ export function useAdmin(): AdminStatus & { user: ReturnType<typeof useUser>['us
   const [adminStatus, setAdminStatus] = useState<AdminStatus>({
     isAdmin: false,
     isSuperAdmin: false,
-    isLoading: true, // Start in a loading state
+    isLoading: true,
   });
 
   useEffect(() => {
-    // If the user object is still loading, we are definitely in a loading state.
     if (isUserLoading) {
       setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: true });
       return;
     }
 
-    // If user loading is finished but there's no user or no firestore, we're done loading.
     if (!user || !firestore) {
       setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: false });
       return;
     }
 
-    // At this point, we have a user and firestore, so we start checking roles.
-    // We set isLoading to true until both role checks complete.
-    setAdminStatus(prev => ({ ...prev, isLoading: true }));
+    const checkRoles = async () => {
+      try {
+        const adminRef = doc(firestore, 'roles_admin', user.uid);
+        const superAdminRef = doc(firestore, 'roles_super_admin', user.uid);
 
-    const adminRef = doc(firestore, 'roles_admin', user.uid);
-    const superAdminRef = doc(firestore, 'roles_super_admin', user.uid);
+        const [adminSnap, superAdminSnap] = await Promise.all([
+          getDoc(adminRef),
+          getDoc(superAdminRef)
+        ]);
 
-    let isAdmin = false;
-    let isSuperAdmin = false;
+        const hasAdminRole = adminSnap.exists();
+        const hasSuperAdminRole = superAdminSnap.exists();
 
-    // Use a counter to track when both listeners have fired once.
-    let checksCompleted = 0;
-    const totalChecks = 2;
+        setAdminStatus({
+          isAdmin: hasAdminRole || hasSuperAdminRole, // A super admin is also an admin
+          isSuperAdmin: hasSuperAdminRole,
+          isLoading: false,
+        });
 
-    const onCheckComplete = () => {
-      checksCompleted++;
-      if (checksCompleted === totalChecks) {
-        setAdminStatus({ isAdmin, isSuperAdmin, isLoading: false });
+      } catch (error) {
+        console.error("Error checking admin roles:", error);
+        setAdminStatus({
+          isAdmin: false,
+          isSuperAdmin: false,
+          isLoading: false,
+        });
       }
     };
 
-    const unsubAdmin = onSnapshot(adminRef, (doc) => {
-      isAdmin = doc.exists();
-      onCheckComplete();
-    }, () => {
-      isAdmin = false;
-      onCheckComplete();
-    });
-
-    const unsubSuperAdmin = onSnapshot(superAdminRef, (doc) => {
-      isSuperAdmin = doc.exists();
-      onCheckComplete();
-    }, () => {
-      isSuperAdmin = false;
-      onCheckComplete();
-    });
-
-    // Cleanup function to unsubscribe from listeners on component unmount
-    return () => {
-      unsubAdmin();
-      unsubSuperAdmin();
-    };
+    checkRoles();
+    
   }, [user, isUserLoading, firestore]);
 
   return { ...adminStatus, user };
