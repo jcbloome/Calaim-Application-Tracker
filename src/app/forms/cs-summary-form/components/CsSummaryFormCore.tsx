@@ -161,12 +161,9 @@ function CsSummaryFormComponent() {
       userId: targetUserId,
       status: 'In Progress',
       lastUpdated: serverTimestamp(),
+      submissionDate: isNewDoc ? serverTimestamp() : existingApplicationData?.submissionDate,
       referrerName: `${currentData.referrerFirstName} ${currentData.referrerLastName}`.trim(),
     };
-
-    if (isNewDoc) {
-      dataToSave.submissionDate = serverTimestamp();
-    }
   
     try {
       await setDoc(docRef, dataToSave, { merge: true });
@@ -336,19 +333,22 @@ function CsSummaryFormComponent() {
                 </div>
             )}
             <div className="mb-8">
-              <div className="flex items-center justify-between mb-4">
-                   <div className="flex items-center gap-4">
-                       <Button type="button" variant="outline" onClick={prevStep} disabled={currentStep === 1}>
-                           <ArrowLeft className="mr-2 h-4 w-4" /> Previous
-                       </Button>
-                        <h1 className="text-2xl font-bold hidden sm:block">CS Member Summary</h1>
+              <div className="flex items-center justify-between mb-2">
+                   <div className="flex-1">
+                     <h1 className="text-2xl font-bold">CS Member Summary</h1>
                    </div>
                   <div className="flex items-center gap-4">
-                     {!isAdminView && <GlossaryDialog className="hidden md:inline-flex" />}
-                      <span className="text-sm font-medium text-muted-foreground">
-                          Step {currentStep} of {steps.length}: {steps[currentStep - 1].name}
-                      </span>
+                     {!isAdminView && <GlossaryDialog />}
                   </div>
+              </div>
+               <div className="flex items-center justify-between mb-4">
+                   <Button type="button" variant="outline" onClick={prevStep} disabled={currentStep === 1}>
+                       <ArrowLeft className="mr-2 h-4 w-4" /> Previous
+                   </Button>
+                   <span className="text-sm font-medium text-muted-foreground text-center flex-shrink-0 px-4">
+                       Step {currentStep} of {steps.length}: {steps[currentStep - 1].name}
+                   </span>
+                   <span></span>
               </div>
               <Progress value={progress} className="w-full" />
             </div>

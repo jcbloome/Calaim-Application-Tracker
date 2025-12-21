@@ -13,7 +13,7 @@ export type Application = {
   memberDob?: any;
   status: ApplicationStatus;
   submissionDate?: Timestamp | FieldValue;
-  lastUpdated: string | Timestamp | FieldValue; 
+  lastUpdated: Timestamp | FieldValue;
   pathway: 'SNF Transition' | 'SNF Diversion';
   healthPlan: 'Kaiser' | 'Health Net' | 'Other' | 'Kaiser Permanente';
   forms: FormStatus[];
