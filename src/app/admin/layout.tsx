@@ -17,6 +17,8 @@ import {
   BarChart3,
   ListChecks,
   Menu,
+  BookOpen,
+  FileText,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -44,8 +46,15 @@ const adminNavLinks = [
   { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
   { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
   { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
-  { href: '/admin/super', label: 'Super Admin', icon: Shield, super: true },
 ];
+
+const userNavLinks = [
+    { href: "/info", label: "Program Information", icon: FileText },
+    { href: "/faq", label: "FAQ & Glossary", icon: BookOpen },
+    { href: "/applications", label: "My Applications", icon: FolderKanban },
+    { href: "/forms/printable-package", label: "Printable Forms", icon: FileText },
+];
+
 
 function AdminHeader() {
   const { user, isSuperAdmin } = useAdmin();
@@ -61,6 +70,12 @@ function AdminHeader() {
     window.location.href = '/admin/login';
   };
 
+  const combinedNavLinks = [
+    ...adminNavLinks,
+    ...(isSuperAdmin ? [{ href: '/admin/super', label: 'Super Admin', icon: Shield, super: true }] : []),
+    ...userNavLinks.map(link => ({...link, super: false}))
+  ];
+
   return (
     <header className="bg-card border-b sticky top-0 z-40">
       <div className="container mx-auto flex items-center justify-between h-16 px-4 sm:px-6">
@@ -69,9 +84,9 @@ function AdminHeader() {
             <Image
               src="/calaimlogopdf.png"
               alt="CalAIM Pathfinder Logo"
-              width={400}
-              height={112}
-              className="w-96 h-auto object-contain"
+              width={240}
+              height={67}
+              className="w-64 h-auto object-contain"
               priority
             />
           </Link>
@@ -92,6 +107,16 @@ function AdminHeader() {
                   </NavigationMenuItem>
                 );
               })}
+              {isSuperAdmin && (
+                 <NavigationMenuItem key='/admin/super'>
+                    <NavigationMenuLink asChild active={pathname.startsWith('/admin/super')} className={navigationMenuTriggerStyle()}>
+                      <Link href='/admin/super'>
+                        <Shield className="mr-2 h-4 w-4" />
+                        Super Admin
+                      </Link>
+                    </NavigationMenuLink>
+                  </NavigationMenuItem>
+              )}
             </NavigationMenuList>
           </NavigationMenu>
         </div>
@@ -129,7 +154,7 @@ function AdminHeader() {
                 </SheetTrigger>
                 <SheetContent>
                   <nav className="flex flex-col gap-4 mt-8">
-                    {adminNavLinks.map((link) => {
+                    {combinedNavLinks.map((link) => {
                       if (link.super && !isSuperAdmin) return null;
                       return (
                         <SheetClose asChild key={link.href}>
