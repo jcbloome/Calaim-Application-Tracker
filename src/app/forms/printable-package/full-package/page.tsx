@@ -8,7 +8,6 @@ import { PrintableCsSummaryFormContent } from '@/app/forms/cs-summary-form/print
 import { PrintableWaiversContent } from '@/app/forms/waivers/printable/PrintableWaiversContent';
 import { PrintableDeclarationOfEligibilityContent } from '@/app/forms/declaration-of-eligibility/printable/PrintableDeclarationOfEligibilityContent';
 import { PrintableProgramInfo } from '@/app/info/components/PrintableProgramInfo';
-import { PrintableGlossaryContent } from '@/app/forms/acronym-glossary/printable/PrintableGlossaryContent';
 import Link from 'next/link';
 
 const PageBreak = () => <div className="break-before-page"></div>;
@@ -45,8 +44,6 @@ export default function FullPackagePrintPage() {
         <main className="p-8 print:p-4 space-y-8 bg-white max-w-5xl mx-auto">
             {/* This is the content that will be printed */}
             <PrintableProgramInfo />
-            <PageBreak />
-            <PrintableGlossaryContent />
             <PageBreak />
             <PrintableCsSummaryFormContent />
             <PageBreak />
