@@ -139,14 +139,14 @@ export default function SuperAdminPage() {
                 onSnapshot(query(superAdminRolesRef), (superAdminSnapshot) => {
                      const superAdminIds = new Set(superAdminSnapshot.docs.map(doc => doc.id));
 
-                     const allStaff = usersData
+                     const allStaff: StaffMember[] = usersData
                         .filter(user => adminIds.has(user.id) || superAdminIds.has(user.id))
                         .map(user => ({
                             uid: user.id,
                             firstName: user.firstName,
                             lastName: user.lastName,
                             email: user.email,
-                            role: superAdminIds.has(user.id) ? 'Super Admin' : 'Admin' as 'Admin' | 'Super Admin',
+                            role: superAdminIds.has(user.id) ? 'Super Admin' : 'Admin',
                         }))
                         .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
 
@@ -214,7 +214,7 @@ export default function SuperAdminPage() {
     };
     
     const handleRoleToggle = async (uid: string, isSuperAdmin: boolean) => {
-        const optimisticStaffList = staffList.map(s => s.uid === uid ? {...s, role: isSuperAdmin ? 'Super Admin' : 'Admin'} : s);
+        const optimisticStaffList = staffList.map(s => s.uid === uid ? {...s, role: isSuperAdmin ? 'Super Admin' : 'Admin'} : s) as StaffMember[];
         setStaffList(optimisticStaffList);
 
         try {
@@ -461,7 +461,5 @@ export default function SuperAdminPage() {
             </div>
         </div>
     );
-}
 
-    
     
