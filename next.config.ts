@@ -22,17 +22,6 @@ const nextConfig: NextConfig = {
       }
     ]
   },
-  experimental: {
-    watcherOptions: {
-      ignored: [
-        '**/.idea/**',
-        '**/.vscode/**',
-        '**/.git/**',
-        '**/.genkit/**',
-        '**/lib/genkit/**',
-      ],
-    },
-  },
 };
 
 export default nextConfig;
