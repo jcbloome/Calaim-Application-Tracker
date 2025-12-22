@@ -10,7 +10,7 @@ import { getNotificationRecipients, updateNotificationRecipients } from '@/ai/fl
 import { sendReminderEmails } from '@/ai/flows/manage-reminders';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, RefreshCw, AlertCircle, ShieldAlert, UserPlus, Send, Users, Mail, Save, BellRing } from 'lucide-react';
+import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, BellRing, List, ChevronDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, onSnapshot, query } from 'firebase/firestore';
@@ -20,9 +20,8 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ChevronDown, List } from 'lucide-react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { sendApplicationStatusEmail } from '@/app/actions/send-email';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 interface StaffMember {
@@ -106,10 +105,7 @@ export default function SuperAdminPage() {
     const [isSavingNotifications, setIsSavingNotifications] = useState(false);
     const [testEmail, setTestEmail] = useState('');
     const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
-    
-    // State for reminder settings
     const [isSendingReminders, setIsSendingReminders] = useState(false);
-
 
     // State for new staff form
     const [newStaffFirstName, setNewStaffFirstName] = useState('');
@@ -155,7 +151,7 @@ export default function SuperAdminPage() {
                             lastName: user.lastName,
                             email: user.email,
                             role: superAdminIds.has(user.id) ? 'Super Admin' : 'Admin',
-                        }))
+                        } as StaffMember))
                         .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
 
                      setStaffList(allStaff);
@@ -329,206 +325,122 @@ export default function SuperAdminPage() {
                 </CardHeader>
             </Card>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                <div className="space-y-6">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="text-lg flex items-center gap-2"><UserPlus className="h-5 w-5" /> Add New Staff Member</CardTitle>
-                        </CardHeader>
-                         <CardContent>
-                            <form onSubmit={handleAddStaff} className="space-y-4">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div>
-                                        <Label htmlFor="new-staff-firstname">First Name</Label>
-                                        <Input id="new-staff-firstname" value={newStaffFirstName} onChange={e => setNewStaffFirstName(e.target.value)} />
+            <Accordion type="single" collapsible className="w-full space-y-4">
+                <AccordionItem value="item-1">
+                    <AccordionTrigger>
+                        <div className="flex items-center gap-3">
+                            <Users className="h-5 w-5" />
+                            <span className="text-lg font-semibold">Staff Management</span>
+                        </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-4 space-y-6">
+                         <Card>
+                            <CardHeader>
+                                <CardTitle className="text-base flex items-center gap-2"><UserPlus className="h-5 w-5" /> Add New Staff Member</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <form onSubmit={handleAddStaff} className="space-y-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div><Label htmlFor="new-staff-firstname">First Name</Label><Input id="new-staff-firstname" value={newStaffFirstName} onChange={e => setNewStaffFirstName(e.target.value)} /></div>
+                                        <div><Label htmlFor="new-staff-lastname">Last Name</Label><Input id="new-staff-lastname" value={newStaffLastName} onChange={e => setNewStaffLastName(e.target.value)} /></div>
                                     </div>
-                                    <div>
-                                        <Label htmlFor="new-staff-lastname">Last Name</Label>
-                                        <Input id="new-staff-lastname" value={newStaffLastName} onChange={e => setNewStaffLastName(e.target.value)} />
-                                    </div>
-                                </div>
-                                <div>
-                                    <Label htmlFor="new-staff-email">Email Address</Label>
-                                    <Input id="new-staff-email" type="email" value={newStaffEmail} onChange={e => setNewStaffEmail(e.target.value)} />
-                                </div>
-                                <Button type="submit" disabled={isAddingStaff}>
-                                    {isAddingStaff ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Adding...</> : 'Add Staff & Grant Admin Role'}
-                                </Button>
-                            </form>
-                        </CardContent>
-                    </Card>
-
-                    <Card>
-                         <CardHeader>
-                            <CardTitle className="text-lg">System Actions</CardTitle>
-                         </CardHeader>
-                         <CardContent className="space-y-6">
-                             <div>
-                                <h4 className="font-medium">Make.com Webhook Test</h4>
-                                <p className="text-sm text-muted-foreground mt-1">Send a sample CS Summary Form to your configured webhook URL.</p>
-                                <Collapsible className="mt-2">
-                                    <CollapsibleTrigger asChild>
-                                        <Button variant="outline" size="sm" className="w-full justify-between">
-                                            View Webhook Data
-                                            <ChevronDown className="h-4 w-4" />
-                                        </Button>
-                                    </CollapsibleTrigger>
-                                    <CollapsibleContent>
-                                        <pre className="mt-2 p-2 bg-muted rounded-md text-xs overflow-x-auto">
-                                            {JSON.stringify(sampleApplicationData, null, 2)}
-                                        </pre>
-                                    </CollapsibleContent>
-                                </Collapsible>
-                                <Alert variant="warning" className="my-2 text-xs">
-                                    <AlertCircle className="h-4 w-4" />
-                                    <AlertDescription>Ensure your webhook URL is set in the `.env` file.</AlertDescription>
-                                </Alert>
-                                <Button onClick={handleSendWebhook} disabled={isSendingWebhook} variant="secondary">
-                                    {isSendingWebhook ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</> : <><Send className="mr-2 h-4 w-4" /> Send Test Webhook</>}
-                                </Button>
-                            </div>
-                             <div className="pt-6 border-t">
-                                 <Collapsible>
-                                    <CollapsibleTrigger asChild>
-                                        <Button variant="outline" className="w-full justify-between">
-                                            <div className="flex items-center gap-2">
-                                                <List className="h-4 w-4" />
-                                                <span>View CS Summary Form Fields</span>
-                                            </div>
-                                            <ChevronDown className="h-4 w-4" />
-                                        </Button>
-                                    </CollapsibleTrigger>
-                                    <CollapsibleContent>
-                                        <Card className="mt-2">
-                                            <CardHeader>
-                                                <CardTitle className="text-base">CS Summary Form Fields</CardTitle>
-                                                <CardDescription>Use these field names for your Make.com and Caspio integration.</CardDescription>
-                                            </CardHeader>
-                                            <CardContent>
-                                                <ul className="list-disc pl-5 text-sm space-y-1 font-mono bg-muted p-4 rounded-md max-h-60 overflow-y-auto">
-                                                    {formFields.map(field => <li key={field}>{field}</li>)}
-                                                </ul>
-                                            </CardContent>
-                                        </Card>
-                                    </CollapsibleContent>
-                                 </Collapsible>
-                             </div>
-                        </CardContent>
-                    </Card>
-
-                     <Card>
-                        <CardHeader>
-                            <CardTitle className="text-lg">Test Email Notifications</CardTitle>
-                        </CardHeader>
-                         <CardContent className="space-y-4">
-                            <div>
-                                <Label htmlFor="test-email-input">Recipient Email</Label>
-                                <Input 
-                                    id="test-email-input" 
-                                    type="email" 
-                                    value={testEmail} 
-                                    onChange={e => setTestEmail(e.target.value)} 
-                                    placeholder="Enter email to send test to"
-                                />
-                            </div>
-                            <Button onClick={handleSendTestEmail} disabled={isSendingTestEmail}>
-                                {isSendingTestEmail ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Sending...</> : <><Mail className="mr-2 h-4 w-4" /> Send Test Email</>}
-                            </Button>
-                         </CardContent>
-                    </Card>
-                </div>
-                 <div className="space-y-6">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2"><Users className="h-6 w-6" /> Current Staff</CardTitle>
-                            <CardDescription>List of users with Admin or Super Admin roles.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            {isLoadingStaff ? (
-                                <div className="flex justify-center items-center h-24">
-                                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                                </div>
-                            ) : staffList.length > 0 ? (
-                                <div className="space-y-2">
-                                    {staffList.map((staff) => (
+                                    <div><Label htmlFor="new-staff-email">Email Address</Label><Input id="new-staff-email" type="email" value={newStaffEmail} onChange={e => setNewStaffEmail(e.target.value)} /></div>
+                                    <Button type="submit" disabled={isAddingStaff}>{isAddingStaff ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Adding...</> : 'Add Staff & Grant Admin Role'}</Button>
+                                </form>
+                            </CardContent>
+                        </Card>
+                         <Card>
+                            <CardHeader><CardTitle className="text-base">Current Staff Roles</CardTitle></CardHeader>
+                            <CardContent>
+                                {isLoadingStaff ? <div className="flex justify-center items-center h-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+                                : staffList.length > 0 ? (
+                                    <div className="space-y-2">{staffList.map((staff) => (
                                         <div key={staff.uid} className="flex justify-between items-center p-3 border rounded-lg">
-                                            <div>
-                                                <p className="font-semibold">{staff.firstName} {staff.lastName}</p>
-                                                <p className="text-sm text-muted-foreground">{staff.email}</p>
-                                            </div>
-                                            <div className="flex items-center gap-4">
-                                                <span className={`text-sm font-medium ${staff.role === 'Super Admin' ? 'text-primary' : 'text-muted-foreground'}`}>
-                                                    {staff.role}
-                                                </span>
-                                                <Switch
-                                                    checked={staff.role === 'Super Admin'}
-                                                    onCheckedChange={(checked) => handleRoleToggle(staff.uid, checked)}
-                                                    disabled={staff.uid === currentUser?.uid}
-                                                    aria-label={`Toggle Super Admin for ${staff.email}`}
-                                                />
-                                            </div>
+                                            <div><p className="font-semibold">{staff.firstName} {staff.lastName}</p><p className="text-sm text-muted-foreground">{staff.email}</p></div>
+                                            <div className="flex items-center gap-4"><span className={`text-sm font-medium ${staff.role === 'Super Admin' ? 'text-primary' : 'text-muted-foreground'}`}>{staff.role}</span><Switch checked={staff.role === 'Super Admin'} onCheckedChange={(checked) => handleRoleToggle(staff.uid, checked)} disabled={staff.uid === currentUser?.uid} aria-label={`Toggle Super Admin for ${staff.email}`} /></div>
                                         </div>
-                                    ))}
+                                    ))}</div>
+                                ) : <p className="text-center text-muted-foreground py-8">No staff members found.</p>}
+                            </CardContent>
+                        </Card>
+                    </AccordionContent>
+                </AccordionItem>
+
+                 <AccordionItem value="item-2">
+                    <AccordionTrigger>
+                        <div className="flex items-center gap-3">
+                            <Send className="h-5 w-5" />
+                            <span className="text-lg font-semibold">System Actions & Webhooks</span>
+                        </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-4">
+                         <Card>
+                            <CardHeader><CardTitle className="text-base">Webhook & Integration</CardTitle></CardHeader>
+                            <CardContent className="space-y-6">
+                                <div>
+                                    <h4 className="font-medium">Make.com Webhook Test</h4>
+                                    <p className="text-sm text-muted-foreground mt-1">Send a sample CS Summary Form to your configured webhook URL.</p>
+                                    <Button onClick={handleSendWebhook} disabled={isSendingWebhook} variant="secondary" className="mt-2">{isSendingWebhook ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</> : <><Send className="mr-2 h-4 w-4" /> Send Test Webhook</>}</Button>
                                 </div>
-                            ) : (
-                                <p className="text-center text-muted-foreground py-8">No staff members found.</p>
-                            )}
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2"><Mail className="h-5 w-5" /> Notification Settings</CardTitle>
-                            <CardDescription>Select which staff members should receive an email when an application status changes.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                             {isLoadingStaff ? (
-                                <div className="flex justify-center items-center h-24">
-                                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                                </div>
-                            ) : staffList.length > 0 ? (
-                                <div className="space-y-4">
-                                    <div className="space-y-2 max-h-60 overflow-y-auto p-1">
-                                        {staffList.map(staff => (
-                                            <div key={staff.uid} className="flex items-center space-x-2 p-2 rounded-md hover:bg-muted">
-                                                <Checkbox 
-                                                    id={`notif-${staff.uid}`} 
-                                                    checked={notificationRecipients.includes(staff.uid)}
-                                                    onCheckedChange={(checked) => handleNotificationToggle(staff.uid, !!checked)}
-                                                />
-                                                <Label htmlFor={`notif-${staff.uid}`} className="flex flex-col cursor-pointer">
-                                                    <span>{staff.firstName} {staff.lastName}</span>
-                                                    <span className="text-xs text-muted-foreground">{staff.email}</span>
-                                                </Label>
-                                            </div>
-                                        ))}
+                                <div className="pt-6 border-t">
+                                     <Collapsible>
+                                        <CollapsibleTrigger asChild><Button variant="outline" className="w-full justify-between">
+                                            <div className="flex items-center gap-2"><List className="h-4 w-4" /><span>View CS Summary Form Fields</span></div><ChevronDown className="h-4 w-4" />
+                                        </Button></CollapsibleTrigger>
+                                        <CollapsibleContent>
+                                            <Card className="mt-2">
+                                                <CardHeader><CardTitle className="text-base">CS Summary Form Fields</CardTitle><CardDescription>Use these field names for your Make.com and Caspio integration.</CardDescription></CardHeader>
+                                                <CardContent><ul className="list-disc pl-5 text-sm space-y-1 font-mono bg-muted p-4 rounded-md max-h-60 overflow-y-auto">{formFields.map(field => <li key={field}>{field}</li>)}</ul></CardContent>
+                                            </Card>
+                                        </CollapsibleContent>
+                                     </Collapsible>
+                                 </div>
+                            </CardContent>
+                        </Card>
+                    </AccordionContent>
+                </AccordionItem>
+                
+                 <AccordionItem value="item-3">
+                    <AccordionTrigger>
+                        <div className="flex items-center gap-3">
+                            <Mail className="h-5 w-5" />
+                            <span className="text-lg font-semibold">Notifications & Reminders</span>
+                        </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-4 space-y-6">
+                         <Card>
+                            <CardHeader><CardTitle className="text-base">Notification Recipient Settings</CardTitle><CardDescription>Select which staff members should receive an email when an application status changes.</CardDescription></CardHeader>
+                            <CardContent>
+                                {isLoadingStaff ? <div className="flex justify-center items-center h-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+                                : staffList.length > 0 ? (
+                                    <div className="space-y-4">
+                                        <div className="space-y-2 max-h-60 overflow-y-auto p-1">{staffList.map(staff => (
+                                            <div key={staff.uid} className="flex items-center space-x-2 p-2 rounded-md hover:bg-muted"><Checkbox id={`notif-${staff.uid}`} checked={notificationRecipients.includes(staff.uid)} onCheckedChange={(checked) => handleNotificationToggle(staff.uid, !!checked)} /><Label htmlFor={`notif-${staff.uid}`} className="flex flex-col cursor-pointer"><span>{staff.firstName} {staff.lastName}</span><span className="text-xs text-muted-foreground">{staff.email}</span></Label></div>
+                                        ))}</div>
+                                        <Button onClick={handleSaveNotifications} disabled={isSavingNotifications} className="w-full">{isSavingNotifications ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Saving...</> : <><Save className="mr-2 h-4 w-4" /> Save Notification Settings</>}</Button>
                                     </div>
-                                    <Button onClick={handleSaveNotifications} disabled={isSavingNotifications} className="w-full">
-                                        {isSavingNotifications ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Saving...</> : <><Save className="mr-2 h-4 w-4" /> Save Notification Settings</>}
-                                    </Button>
-                                </div>
-                            ) : (
-                                <p className="text-center text-muted-foreground py-8">No staff members found to configure.</p>
-                            )}
-                        </CardContent>
-                    </Card>
-                     <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2"><BellRing className="h-5 w-5" /> Manual Email Reminders</CardTitle>
-                            <CardDescription>Trigger reminder emails to users with incomplete applications.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <p className="text-sm text-muted-foreground mb-4">Clicking this button will scan all applications that are "In Progress" or "Requires Revision" and send a reminder email to the referrer for each one that has pending items.</p>
-                            <Button onClick={handleSendReminders} disabled={isSendingReminders} className="w-full">
-                                {isSendingReminders ? (
-                                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending Reminders...</>
-                                ) : (
-                                    'Send In-Progress Reminders'
-                                )}
-                            </Button>
-                        </CardContent>
-                    </Card>
-                 </div>
-            </div>
+                                ) : <p className="text-center text-muted-foreground py-8">No staff members found to configure.</p>}
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardHeader><CardTitle className="text-base">Test Email Notifications</CardTitle></CardHeader>
+                             <CardContent className="space-y-4">
+                                <div><Label htmlFor="test-email-input">Recipient Email</Label><Input id="test-email-input" type="email" value={testEmail} onChange={e => setTestEmail(e.target.value)} placeholder="Enter email to send test to" /></div>
+                                <Button onClick={handleSendTestEmail} disabled={isSendingTestEmail}>{isSendingTestEmail ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Sending...</> : <><Mail className="mr-2 h-4 w-4" /> Send Test Email</>}</Button>
+                             </CardContent>
+                        </Card>
+                         <Card>
+                            <CardHeader><CardTitle className="text-base flex items-center gap-2"><BellRing className="h-5 w-5" /> Manual Email Reminders</CardTitle><CardDescription>Trigger reminder emails to users with incomplete applications.</CardDescription></CardHeader>
+                            <CardContent>
+                                <p className="text-sm text-muted-foreground mb-4">Clicking this button will scan all applications that are "In Progress" or "Requires Revision" and send a reminder email to the referrer for each one that has pending items.</p>
+                                <Button onClick={handleSendReminders} disabled={isSendingReminders} className="w-full">{isSendingReminders ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending Reminders...</> : 'Send In-Progress Reminders'}</Button>
+                            </CardContent>
+                        </Card>
+                    </AccordionContent>
+                </AccordionItem>
+            </Accordion>
         </div>
     );
 }
+
+    
