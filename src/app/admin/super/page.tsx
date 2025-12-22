@@ -122,7 +122,7 @@ export default function SuperAdminPage() {
         const superAdminRolesRef = collection(firestore, 'roles_super_admin');
 
         const unsubUsers = onSnapshot(query(usersRef), (usersSnapshot) => {
-            const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as DocumentData }));
+            const usersData: DocumentData[] = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as DocumentData }));
             
             onSnapshot(query(adminRolesRef), (adminSnapshot) => {
                 const adminIds = new Set(adminSnapshot.docs.map(doc => doc.id));
@@ -130,14 +130,14 @@ export default function SuperAdminPage() {
                 onSnapshot(query(superAdminRolesRef), (superAdminSnapshot) => {
                      const superAdminIds = new Set(superAdminSnapshot.docs.map(doc => doc.id));
 
-                     const allStaff = usersData
+                     const allStaff: StaffMember[] = usersData
                         .filter(user => adminIds.has(user.id) || superAdminIds.has(user.id))
                         .map(user => ({
                             uid: user.id,
                             firstName: user.firstName,
                             lastName: user.lastName,
                             email: user.email,
-                            role: superAdminIds.has(user.id) ? 'Super Admin' as const : 'Admin' as const,
+                            role: superAdminIds.has(user.id) ? 'Super Admin' : 'Admin',
                         }))
                         .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
 
@@ -260,6 +260,16 @@ export default function SuperAdminPage() {
         }
     };
 
+    const formatAndSetFirstName = (value: string) => {
+        const formatted = value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+        setNewStaffFirstName(formatted);
+    };
+
+    const formatAndSetLastName = (value: string) => {
+        const formatted = value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+        setNewStaffLastName(formatted);
+    };
+
 
     if (isAdminLoading) {
         return <div className="flex justify-center items-center h-full"><Loader2 className="h-8 w-8 animate-spin"/></div>;
@@ -296,8 +306,8 @@ export default function SuperAdminPage() {
                             <h4 className="font-semibold flex items-center gap-2"><UserPlus className="h-5 w-5" /> Add New Staff</h4>
                             <form onSubmit={handleAddStaff} className="space-y-4">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div><Label htmlFor="new-staff-firstname">First Name</Label><Input id="new-staff-firstname" value={newStaffFirstName} onChange={e => setNewStaffFirstName(e.target.value)} /></div>
-                                    <div><Label htmlFor="new-staff-lastname">Last Name</Label><Input id="new-staff-lastname" value={newStaffLastName} onChange={e => setNewStaffLastName(e.target.value)} /></div>
+                                    <div><Label htmlFor="new-staff-firstname">First Name</Label><Input id="new-staff-firstname" value={newStaffFirstName} onChange={e => formatAndSetFirstName(e.target.value)} /></div>
+                                    <div><Label htmlFor="new-staff-lastname">Last Name</Label><Input id="new-staff-lastname" value={newStaffLastName} onChange={e => formatAndSetLastName(e.target.value)} /></div>
                                 </div>
                                 <div><Label htmlFor="new-staff-email">Email Address</Label><Input id="new-staff-email" type="email" value={newStaffEmail} onChange={e => setNewStaffEmail(e.target.value)} /></div>
                                 <Button type="submit" disabled={isAddingStaff} className="w-full">{isAddingStaff ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Adding...</> : 'Add Staff & Grant Admin Role'}</Button>

@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview Server-side flows for managing staff users, including adding new users and updating roles.
@@ -47,9 +48,12 @@ const addStaffFlow = ai.defineFlow(
     const auth = admin.auth();
     const firestore = admin.firestore();
 
+    const formattedFirstName = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+    const formattedLastName = lastName.charAt(0).toUpperCase() + lastName.slice(1).toLowerCase();
+
     // Generate a temporary random password. User will need to reset it.
     const tempPassword = Math.random().toString(36).slice(-8);
-    const displayName = `${firstName} ${lastName}`;
+    const displayName = `${formattedFirstName} ${formattedLastName}`;
 
     try {
       // 1. Create Firebase Auth user
@@ -68,8 +72,8 @@ const addStaffFlow = ai.defineFlow(
       batch.set(userDocRef, {
         id: uid,
         email,
-        firstName,
-        lastName,
+        firstName: formattedFirstName,
+        lastName: formattedLastName,
         displayName,
       });
 

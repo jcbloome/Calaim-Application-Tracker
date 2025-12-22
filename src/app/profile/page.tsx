@@ -53,7 +53,10 @@ export default function ProfilePage() {
       return;
     }
 
-    const newDisplayName = `${firstName} ${lastName}`.trim();
+    const formattedFirstName = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+    const formattedLastName = lastName.charAt(0).toUpperCase() + lastName.slice(1).toLowerCase();
+    
+    const newDisplayName = `${formattedFirstName} ${formattedLastName}`.trim();
     if (!newDisplayName) {
         setError("First and last name cannot be empty.");
         setIsLoading(false);
@@ -67,8 +70,8 @@ export default function ProfilePage() {
       // Update Firestore user document
       const userDocRef = doc(firestore, 'users', user.uid);
       await setDoc(userDocRef, {
-        firstName,
-        lastName,
+        firstName: formattedFirstName,
+        lastName: formattedLastName,
         displayName: newDisplayName,
       }, { merge: true });
 
@@ -91,6 +94,16 @@ export default function ProfilePage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const formatAndSetFirstName = (value: string) => {
+      const formatted = value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+      setFirstName(formatted);
+  };
+
+  const formatAndSetLastName = (value: string) => {
+      const formatted = value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+      setLastName(formatted);
   };
 
   if (isUserLoading || !user) {
@@ -127,7 +140,7 @@ export default function ProfilePage() {
                     placeholder="John"
                     required
                     value={firstName}
-                    onChange={e => setFirstName(e.target.value)}
+                    onChange={e => formatAndSetFirstName(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
@@ -138,7 +151,7 @@ export default function ProfilePage() {
                     placeholder="Doe"
                     required
                     value={lastName}
-                    onChange={e => setLastName(e.target.value)}
+                    onChange={e => formatAndSetLastName(e.target.value)}
                   />
                 </div>
               </div>
