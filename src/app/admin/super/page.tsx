@@ -149,7 +149,7 @@ export default function SuperAdminPage() {
                             firstName: user.firstName,
                             lastName: user.lastName,
                             email: user.email,
-                            role: superAdminIds.has(user.id) ? 'Super Admin' : 'Admin',
+                            role: superAdminIds.has(user.id) ? 'Super Admin' : 'Admin' as 'Admin' | 'Super Admin',
                         }))
                         .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
 
