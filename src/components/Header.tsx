@@ -49,7 +49,7 @@ export function Header() {
             alt="CalAIM Pathfinder Logo"
             width={300}
             height={84}
-            className="w-72 h-auto object-contain"
+            className="w-64 sm:w-72 h-auto object-contain"
             priority
           />
         </Link>
