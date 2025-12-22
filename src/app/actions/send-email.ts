@@ -1,7 +1,9 @@
+
 'use server';
 
 import { Resend } from 'resend';
 import ApplicationStatusEmail from '@/components/emails/ApplicationStatusEmail';
+import ReminderEmail from '@/components/emails/ReminderEmail';
 import * as admin from 'firebase-admin';
 import serviceAccount from '../../../service-account_key.json';
 
@@ -26,6 +28,15 @@ interface ApplicationStatusPayload {
   staffName: string;
   message: string;
   status: 'Deleted' | 'Approved' | 'Submitted' | 'Requires Revision' | 'In Progress' | 'Completed & Submitted';
+}
+
+interface ReminderPayload {
+    to: string;
+    subject: string;
+    referrerName: string;
+    memberName: string;
+    applicationId: string;
+    incompleteItems: string[];
 }
 
 async function getBccRecipients(): Promise<string[]> {
@@ -84,3 +95,37 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
         throw error;
     }
 };
+
+export const sendReminderEmail = async (payload: ReminderPayload) => {
+    const { to, subject, referrerName, memberName, applicationId, incompleteItems } = payload;
+
+    if (!process.env.RESEND_API_KEY) {
+        throw new Error('Resend API key is not configured.');
+    }
+
+    try {
+        const { data, error } = await resend.emails.send({
+            from: 'CalAIM Pathfinder <onboarding@resend.dev>',
+            to: [to],
+            subject: subject,
+            react: ReminderEmail({
+                referrerName,
+                memberName,
+                applicationId,
+                incompleteItems,
+            }),
+        });
+
+        if (error) {
+            console.error('Resend Reminder Error:', error);
+            throw new Error(error.message);
+        }
+
+        return data;
+    } catch (error) {
+        console.error('Failed to send reminder email:', error);
+        throw error;
+    }
+};
+
+    

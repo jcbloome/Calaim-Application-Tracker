@@ -7,9 +7,10 @@ import { useRouter } from 'next/navigation';
 import { sendTestToMake } from '@/ai/flows/send-to-make-flow';
 import { addStaff, updateStaffRole } from '@/ai/flows/manage-staff';
 import { getNotificationRecipients, updateNotificationRecipients } from '@/ai/flows/manage-notifications';
+import { getReminderSettings, updateReminderSettings } from '@/ai/flows/manage-reminders';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, RefreshCw, AlertCircle, ShieldAlert, UserPlus, Send, Users, Mail, Save } from 'lucide-react';
+import { Loader2, RefreshCw, AlertCircle, ShieldAlert, UserPlus, Send, Users, Mail, Save, BellRing } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, onSnapshot, query } from 'firebase/firestore';
@@ -21,6 +22,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Checkbox } from '@/components/ui/checkbox';
 import { ChevronDown, List } from 'lucide-react';
 import { sendApplicationStatusEmail } from '@/app/actions/send-email';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 interface StaffMember {
@@ -104,6 +106,12 @@ export default function SuperAdminPage() {
     const [isSavingNotifications, setIsSavingNotifications] = useState(false);
     const [testEmail, setTestEmail] = useState('');
     const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+    
+    // State for reminder settings
+    const [remindersEnabled, setRemindersEnabled] = useState(false);
+    const [reminderFrequency, setReminderFrequency] = useState<'daily' | 'every_other_day' | ''>('');
+    const [isSavingReminders, setIsSavingReminders] = useState(false);
+
 
     // State for new staff form
     const [newStaffFirstName, setNewStaffFirstName] = useState('');
@@ -141,14 +149,14 @@ export default function SuperAdminPage() {
                 onSnapshot(query(superAdminRolesRef), (superAdminSnapshot) => {
                      const superAdminIds = new Set(superAdminSnapshot.docs.map(doc => doc.id));
 
-                     const allStaff: StaffMember[] = usersData
+                     const allStaff = usersData
                         .filter(user => adminIds.has(user.id) || superAdminIds.has(user.id))
                         .map(user => ({
                             uid: user.id,
                             firstName: user.firstName,
                             lastName: user.lastName,
                             email: user.email,
-                            role: superAdminIds.has(user.id) ? 'Super Admin' : 'Admin' as 'Admin' | 'Super Admin',
+                            role: superAdminIds.has(user.id) ? 'Super Admin' : 'Admin',
                         }))
                         .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
 
@@ -159,6 +167,10 @@ export default function SuperAdminPage() {
         });
 
         getNotificationRecipients().then(result => setNotificationRecipients(result.uids));
+        getReminderSettings().then(result => {
+            setRemindersEnabled(result.isEnabled);
+            setReminderFrequency(result.frequency as any);
+        });
         
         return () => unsubUsers();
     }, [firestore]);
@@ -216,7 +228,7 @@ export default function SuperAdminPage() {
     };
     
     const handleRoleToggle = async (uid: string, isSuperAdmin: boolean) => {
-        const optimisticStaffList: StaffMember[] = staffList.map(s => s.uid === uid ? {...s, role: isSuperAdmin ? 'Super Admin' : 'Admin'} : s);
+        const optimisticStaffList = staffList.map(s => s.uid === uid ? {...s, role: isSuperAdmin ? 'Super Admin' : 'Admin'} : s);
         setStaffList(optimisticStaffList);
 
         try {
@@ -274,6 +286,21 @@ export default function SuperAdminPage() {
             toast({ variant: 'destructive', title: 'Email Error', description: `Could not send email: ${error.message}` });
         } finally {
             setIsSendingTestEmail(false);
+        }
+    };
+    
+    const handleSaveReminders = async () => {
+        setIsSavingReminders(true);
+        try {
+            if (remindersEnabled && !reminderFrequency) {
+                throw new Error('Please select a frequency for the reminders.');
+            }
+            await updateReminderSettings({ isEnabled: remindersEnabled, frequency: reminderFrequency as 'daily' | 'every_other_day' });
+            toast({ title: "Reminder Settings Saved", description: "Automated reminder preferences have been updated.", className: 'bg-green-100 text-green-900 border-green-200' });
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Save Failed', description: error.message });
+        } finally {
+            setIsSavingReminders(false);
         }
     };
 
@@ -485,8 +512,55 @@ export default function SuperAdminPage() {
                             )}
                         </CardContent>
                     </Card>
+                     <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2"><BellRing className="h-5 w-5" /> Automated Reminders</CardTitle>
+                            <CardDescription>Configure automated email reminders for users with incomplete applications.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                             <div className="flex items-center justify-between space-x-2 p-3 border rounded-lg">
+                                <Label htmlFor="reminders-enabled" className="flex flex-col space-y-1">
+                                    <span>Enable Automated Reminders</span>
+                                    <span className="font-normal leading-snug text-muted-foreground text-xs">
+                                        When enabled, the system will send reminder emails for applications that are In Progress or Require Revision.
+                                    </span>
+                                </Label>
+                                <Switch
+                                    id="reminders-enabled"
+                                    checked={remindersEnabled}
+                                    onCheckedChange={setRemindersEnabled}
+                                />
+                            </div>
+                             <div className="space-y-2">
+                                <Label htmlFor="reminder-frequency">Reminder Frequency</Label>
+                                <Select 
+                                    value={reminderFrequency}
+                                    onValueChange={(value) => setReminderFrequency(value as any)}
+                                    disabled={!remindersEnabled}
+                                >
+                                    <SelectTrigger id="reminder-frequency">
+                                        <SelectValue placeholder="Select frequency" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="daily">Daily</SelectItem>
+                                        <SelectItem value="every_other_day">Every Other Day</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <Alert variant="warning" className="text-xs">
+                                <AlertCircle className="h-4 w-4" />
+                                <AlertTitle>Triggering Mechanism</AlertTitle>
+                                <AlertDescription>This feature requires a scheduled job (e.g., Google Cloud Scheduler) to trigger the reminder email flow periodically.</AlertDescription>
+                            </Alert>
+                             <Button onClick={handleSaveReminders} disabled={isSavingReminders} className="w-full">
+                                {isSavingReminders ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Saving...</> : <><Save className="mr-2 h-4 w-4" /> Save Reminder Settings</>}
+                            </Button>
+                        </CardContent>
+                    </Card>
                  </div>
             </div>
         </div>
     );
 }
+
+    
