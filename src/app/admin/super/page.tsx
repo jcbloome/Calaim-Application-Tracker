@@ -29,6 +29,13 @@ interface StaffMember {
     email: string;
 }
 
+interface UserData {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+}
+
 // This is the sample data for the Make.com test webhook.
 // It is intentionally detailed to simulate a real submission.
 const sampleApplicationData: Omit<TestWebhookInput, 'userId'> = {
@@ -122,7 +129,7 @@ export default function SuperAdminPage() {
         const superAdminRolesRef = collection(firestore, 'roles_super_admin');
 
         const unsubUsers = onSnapshot(query(usersRef), (usersSnapshot) => {
-            const usersData: DocumentData[] = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as DocumentData }));
+            const usersData: UserData[] = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as Omit<UserData, 'id'> }));
             
             onSnapshot(query(adminRolesRef), (adminSnapshot) => {
                 const adminIds = new Set(adminSnapshot.docs.map(doc => doc.id));
@@ -137,7 +144,7 @@ export default function SuperAdminPage() {
                             firstName: user.firstName,
                             lastName: user.lastName,
                             email: user.email,
-                            role: superAdminIds.has(user.id) ? 'Super Admin' : 'Admin',
+                            role: superAdminIds.has(user.id) ? 'Super Admin' as const : 'Admin' as const,
                         }))
                         .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
 
@@ -374,3 +381,5 @@ export default function SuperAdminPage() {
         </div>
     );
 }
+
+    
