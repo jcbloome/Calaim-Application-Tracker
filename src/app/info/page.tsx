@@ -120,7 +120,7 @@ export default function ProgramInfoPage() {
                     <h1 className="text-2xl font-bold tracking-tight">Program Information ({currentPage + 1}/{sectionsByPage.length})</h1>
                 </div>
             )}
-             <div className="flex justify-center -mt-2 mb-6">
+             <div className="hidden md:flex justify-center -mt-2 mb-6">
                 <GlossaryDialog />
             </div>
 
