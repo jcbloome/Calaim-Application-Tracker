@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Header } from '@/components/Header';
-import { PrintableProgramInfo } from './components/PrintableProgramInfo';
 import { Button } from '@/components/ui/button';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
 
@@ -127,7 +126,7 @@ export default function ProgramInfoPage() {
                             </p>
                           ))}
                           {section.list && (
-                              <ul className="list-disc pl-5 mt-2">
+                              <ul className="list-disc pl-5 mt-2 space-y-2">
                                   {section.list.map((item, lIndex) => <li key={lIndex}>{item}</li>)}
                               </ul>
                           )}
@@ -152,11 +151,6 @@ export default function ProgramInfoPage() {
                 </Button>
               )}
             </div>
-          </div>
-
-          {/* Content for print view */}
-          <div className="hidden print:block">
-            <PrintableProgramInfo />
           </div>
         </div>
       </main>
