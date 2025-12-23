@@ -73,9 +73,8 @@ const allSections = [
 ];
 
 const sectionsByPage = [
-    [allSections[0], allSections[1]],
-    [allSections[2], allSections[3]],
-    [allSections[4], allSections[5]],
+    [allSections[0], allSections[1], allSections[2]],
+    [allSections[3], allSections[4], allSections[5]],
     [allSections[6], allSections[7]],
 ];
 
