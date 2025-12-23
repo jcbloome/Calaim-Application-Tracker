@@ -54,7 +54,26 @@ const allSections = [
     },
 ];
 
+const sectionsByPage = [
+    [allSections[0], allSections[1]],
+    [allSections[2], allSections[3]],
+    [allSections[4]]
+];
+
 export default function ProgramInfoPage() {
+  const [currentPage, setCurrentPage] = useState(0);
+
+  const handleNext = () => {
+    if (currentPage < sectionsByPage.length - 1) {
+      setCurrentPage(prev => prev + 1);
+    }
+  };
+
+  const handlePrev = () => {
+    if (currentPage > 0) {
+      setCurrentPage(prev => prev - 1);
+    }
+  };
   
   return (
     <div className="flex flex-col min-h-screen bg-slate-50/50 print:bg-white">
@@ -64,14 +83,14 @@ export default function ProgramInfoPage() {
           {/* Main container for online view */}
           <div className="bg-card rounded-lg border shadow-sm p-4 sm:p-8 print:hidden">
             <div className="mb-8">
-                <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Program Information</h1>
+                <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Program Information ({currentPage + 1}/{sectionsByPage.length})</h1>
                 <p className="mt-2 text-md text-muted-foreground">
                     An overview of the CalAIM program and our services. Please review before starting an application.
                 </p>
             </div>
 
             <div className="space-y-4">
-              {allSections.map((section) => (
+              {sectionsByPage[currentPage].map((section) => (
                   <Card key={section.title} className="bg-background/80">
                       <CardHeader className="flex flex-row items-start gap-4 space-y-0">
                           <div className="bg-primary/10 p-2 rounded-full">
@@ -98,16 +117,20 @@ export default function ProgramInfoPage() {
             </div>
              
             <div className="mt-8 pt-5 border-t flex justify-between items-center">
-              <Button variant="outline" asChild>
-                  <Link href="/">
-                      <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
-                  </Link>
+              <Button variant="outline" onClick={handlePrev} disabled={currentPage === 0}>
+                  <ArrowLeft className="mr-2 h-4 w-4" /> Previous
               </Button>
-              <Button asChild>
-                  <Link href="/applications">
-                      Start Application <ArrowRight className="ml-2 h-4 w-4" />
-                  </Link>
-              </Button>
+              {currentPage < sectionsByPage.length - 1 ? (
+                 <Button onClick={handleNext}>
+                    Next <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              ) : (
+                <Button asChild>
+                    <Link href="/applications">
+                        Start Application <FileCheck2 className="ml-2 h-4 w-4" />
+                    </Link>
+                </Button>
+              )}
             </div>
           </div>
 

@@ -21,7 +21,7 @@ export function PrintableProgramInfo() {
         <article className="prose prose-lg max-w-none">
              <div className="text-center mb-10">
                 <h1 className="text-3xl font-bold text-gray-800 tracking-tight">Program Information & Acknowledgment</h1>
-                <p className="mt-2 text-md text-gray-500">The Connections Care Home Consultants application portal for the California Advancing and Innovating Medi-Cal (CalAIM) Community Support for Assisted Transitions (SNF Diversion/Transition) for Health Net and Kaiser.</p>
+                <p className="mt-2 text-md text-gray-500">The Connect CalAIM application portal for the California Advancing and Innovating Medi-Cal (CalAIM) Community Support for Assisted Transitions (SNF Diversion/Transition) for Health Net and Kaiser.</p>
             </div>
             
             <div className="grid grid-cols-2 gap-x-8 gap-y-4 mb-10 p-6 bg-gray-50 rounded-lg not-prose border-2 border-primary">
