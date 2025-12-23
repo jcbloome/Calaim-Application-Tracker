@@ -60,7 +60,7 @@ const allSections = [
         title: "Medicare vs. Medi-Cal",
         content: ["Medicare is a federal health insurance program mainly for people 65 or older. Medi-Cal is California's Medicaid program for low-income individuals. The CalAIM program is a Medi-Cal benefit. While they are different, Medicare-covered days in a facility can count toward the 60-day stay requirement for the SNF Transition pathway."]
     },
-    {
+     {
         title: "Share of Cost (SOC)",
         content: ["A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay. This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.", "Members participating in the CalAIM Community Supports program are not permitted to have a SOC. It must be eliminated before the application can be approved. A common way to do this is by purchasing supplemental health, dental, or vision insurance, which can lower your 'countable' income and remove the SOC."]
     },
@@ -74,7 +74,6 @@ const allSections = [
         isAction: true,
     }
 ];
-
 
 const sectionsByPage = [
     [allSections[0], allSections[1], allSections[2], allSections[3]], // Page 1
@@ -109,7 +108,7 @@ export default function ProgramInfoPage() {
           {/* Main container for online view */}
           <div className="bg-card rounded-lg border shadow-sm p-4 sm:p-8 print:hidden">
 
-            {currentPage === 0 && (
+            {currentPage === 0 ? (
                 <div className="mb-8 p-6 rounded-lg bg-primary text-primary-foreground">
                     <h1 className="text-3xl font-bold tracking-tight">Program Information ({currentPage + 1}/{sectionsByPage.length})</h1>
                     <p className="mt-2 text-md text-primary-foreground/90">
@@ -117,11 +116,10 @@ export default function ProgramInfoPage() {
                     </p>
                     <GlossaryDialog className="p-0 h-auto text-primary-foreground/80 hover:text-primary-foreground" />
                 </div>
-            )}
-             
-            {currentPage > 0 && (
+            ) : (
                  <div className="mb-8 text-center">
                     <h1 className="text-2xl font-bold tracking-tight">Program Information ({currentPage + 1}/{sectionsByPage.length})</h1>
+                     <GlossaryDialog />
                 </div>
             )}
 
