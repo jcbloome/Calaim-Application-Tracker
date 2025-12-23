@@ -19,7 +19,7 @@ export function GlossaryDialog({ className }: { className?: string }) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="link" className={cn("text-muted-foreground", className)}>
+        <Button variant="outline" className={cn("shadow-sm", className)}>
             <BookOpen className="mr-2 h-4 w-4" />
             Acronym Glossary
         </Button>
