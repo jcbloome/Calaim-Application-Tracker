@@ -39,6 +39,13 @@ export function PrintableProgramInfo() {
             <SectionTitle>The Role of Connections Care Home Consultants</SectionTitle>
             <p>For 35 years Connections has helped private paid families find care homes. We are excited to now be partnered with MCPs as a CS Provider that assists with understanding the program, finding participating facilities, coordinating paperwork and assessments, and liaising with your Managed Care Plan to request authorization for the CS. Once a member is placed, we also send a MSW to visit the member at the RCFE/ARF for monthly quality control checks and provide ongoing care coordination.</p>
 
+            <SectionTitle>Types of Assisted Living (RCFEs/ARFs)</SectionTitle>
+             <p>Assisted Living facilities (RCFEs or ARFs) come in various sizes, each offering a different environment. Connections can help you find a setting that best suits your needs:</p>
+            <ul className="list-disc pl-5 space-y-2">
+                <li><strong>Small, Home-Like Settings:</strong> These are typically 4-6 bed homes that provide a high staff-to-resident ratio. This environment offers more personalized attention and a quieter, more intimate living experience.</li>
+                <li><strong>Large, Community Settings:</strong> These are often 100+ bed facilities that feature amenities like group dining rooms, a wide variety of planned activities, and social opportunities. Staff is available as needed to provide care and support.</li>
+            </ul>
+
             <SectionTitle>Managed Care Plans We Work With</SectionTitle>
             <p>You must be a member of one of these plans to utilize us for the CS for Assisted Transitions.</p>
             <ul className="list-disc pl-5">
@@ -46,15 +53,27 @@ export function PrintableProgramInfo() {
                 <li><strong>Kaiser Permanente:</strong> Serving members in various counties throughout California.</li>
             </ul>
             
-            <SectionTitle>Types of Assisted Living (RCFEs/ARFs)</SectionTitle>
-             <p>Assisted Living facilities (RCFEs or ARFs) come in various sizes, each offering a different environment. Connections can help you find a setting that best suits your needs:</p>
-            <ul className="list-disc pl-5">
-                <li><strong>Small, Home-Like Settings:</strong> These are typically 4-6 bed homes that provide a high staff-to-resident ratio. This environment offers more personalized attention and a quieter, more intimate living experience.</li>
-                <li><strong>Large, Community Settings:</strong> These are often 100+ bed facilities that feature amenities like group dining rooms, a wide variety of planned activities, and social opportunities. Staff is available as needed to provide care and support.</li>
-            </ul>
-
-            <SectionTitle>ARF vs. RCFE: What's the Difference?</SectionTitle>
-            <p>In California, the key difference between an Adult Residential Facility (ARF) and a Residential Care Facility for the Elderly (RCFE) is the age of the residents they serve. ARFs provide non-medical care and supervision to adults aged 18 to 59, often with disabilities or other conditions. RCFEs, on the other hand, are specifically for individuals 60 years and older who need assistance with daily living activities.</p>
+            <SectionTitle>Switching to Health Net or Kaiser</SectionTitle>
+            <p>To enroll in this CalAIM program through Connections, you must be a member of Health Net or Kaiser. If you are in another Medi-Cal managed care plan, you will need to switch.</p>
+            <p>You can change your health plan by contacting California Health Care Options at 1-800-430-4263 or visiting their website at: <a href="https://www.healthcareoptions.dhcs.ca.gov/en/enroll" target="_blank" rel="noopener noreferrer">https://www.healthcareoptions.dhcs.ca.gov/en/enroll</a>. Generally, changes made by the end of the month are effective on the first day of the following month.</p>
+            
+            <SectionTitle>What if I am assigned to Molina?</SectionTitle>
+            <p>When applying for Medi-Cal in Los Angeles County, many people are automatically assigned to the Molina health plan. Since we are not contracted with Molina for this specific program, you will need to switch to either Health Net or Kaiser to work with us. You can do this by contacting Health Care Options at the number provided above.</p>
+            
+            <SectionTitle>Share of Cost (SOC)</SectionTitle>
+            <p>A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay. This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.</p>
+            <p>Members participating in the CalAIM Community Supports program are not permitted to have a SOC. It must be eliminated before the application can be approved. A common way to do this is by purchasing supplemental health, dental, or vision insurance, which can lower your 'countable' income and remove the SOC.</p>
+            
+            <SectionTitle>Room & Board Obligation</SectionTitle>
+            <p>The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is responsible for paying the RCFE the 'assisted living' portion.</p>
+            <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for 'room and board'. Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for 'room and board' for a private room or to open up RCFEs in more expensive areas.</p>
+            <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a 'room and board' payment from the member (or their family).</p>
+            
+            <SectionTitle>What is an Individual Service Plan (ISP)?</SectionTitle>
+            <p>An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP) clinical team to determine the member's care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the 'assisted living' portion). For Health Net, the tiered level is determined by Connections. For Kaiser, the tiered level is determined by Kaiser.</p>
+            
+            <SectionTitle>Medicare vs. Medi-Cal</SectionTitle>
+            <p>Medicare is a federal health insurance program mainly for people 65 or older. Medi-Cal is California's Medicaid program for low-income individuals. The CalAIM program is a Medi-Cal benefit. While they are different, Medicare-covered days in a facility can count toward the 60-day stay requirement for the SNF Transition pathway.</p>
         </article>
     );
 }
