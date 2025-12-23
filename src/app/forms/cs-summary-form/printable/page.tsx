@@ -31,6 +31,13 @@ export default function PrintableCsSummaryForm() {
           <PrintableCsSummaryFormContent />
         </div>
       </main>
+      <style jsx global>{`
+        @media print {
+          .page-break-after {
+            page-break-after: always;
+          }
+        }
+      `}</style>
     </div>
   );
 }

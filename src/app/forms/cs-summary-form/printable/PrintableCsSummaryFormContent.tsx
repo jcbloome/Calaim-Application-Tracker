@@ -106,11 +106,9 @@ export function PrintableCsSummaryFormContent() {
                     <div className="flex gap-6">
                         <CheckboxField label="Yes" />
                         <CheckboxField label="No" />
-                        <CheckboxField label="Unknown" />
                     </div>
                     </div>
                     <h3 className="text-sm font-medium text-gray-800 mt-4">Representative's Contact Info</h3>
-                    <CheckboxField label="Is the Legal Representative also the Primary Contact Person?" />
                     <p className="text-xs text-gray-500 pt-1">If the member does not have a legal representative, you can leave these fields blank.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="First Name" />
