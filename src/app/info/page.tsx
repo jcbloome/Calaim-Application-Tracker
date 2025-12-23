@@ -15,6 +15,8 @@ import {
     BookText,
     Network,
     Shuffle,
+    DollarSign,
+    BedDouble,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Header } from '@/components/Header';
@@ -69,13 +71,23 @@ const allSections = [
         icon: Shuffle,
         title: "Switching to Health Net or Kaiser",
         content: ["To enroll in this CalAIM program through Connections, you must be a member of Health Net or Kaiser. If you are in another Medi-Cal managed care plan, you will need to switch.", "You can change your health plan by contacting California Health Care Options at 1-800-430-4263. Generally, changes made by the end of the month are effective on the first day of the following month."]
-    }
+    },
+    {
+        icon: DollarSign,
+        title: "Share of Cost (SOC)",
+        content: ["A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay. This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.", "Members participating in the CalAIM Community Supports program are not permitted to have a SOC. It must be eliminated before the application can be approved. A common way to do this is by purchasing supplemental health, dental, or vision insurance, which can lower your 'countable' income and remove the SOC."]
+    },
+    {
+        icon: BedDouble,
+        title: "Room & Board Obligation",
+        content: ["The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is responsible for paying the RCFE the 'assisted living' portion.", "For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for 'room and board'. Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for 'room and board' for a private room or to open up RCFEs in more expensive areas.", "Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a 'room and board' payment from the member (or their family)."]
+    },
 ];
 
 const sectionsByPage = [
     [allSections[0], allSections[1], allSections[2]],
     [allSections[3], allSections[4], allSections[5]],
-    [allSections[6], allSections[7]],
+    [allSections[6], allSections[7], allSections[8], allSections[9]],
 ];
 
 export default function ProgramInfoPage() {
