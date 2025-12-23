@@ -1,3 +1,4 @@
+
 'use client';
 
 import React from 'react';
@@ -24,7 +25,7 @@ const SectionTitle = ({ children }: { children: React.ReactNode }) => (
 
 export function PrintableWaiversContent() {
     return (
-        <form className="page-break-after">
+        <form>
             <div className="text-center mb-6">
                 <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Waivers & Authorizations</h1>
                 <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This document contains the HIPAA Authorization, Liability Waiver, and Freedom of Choice acknowledgments.</p>

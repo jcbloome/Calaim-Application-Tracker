@@ -20,6 +20,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Header } from '@/components/Header';
 import { PrintableProgramInfo } from './components/PrintableProgramInfo';
 import { Button } from '@/components/ui/button';
+import { GlossaryDialog } from '@/components/GlossaryDialog';
 
 const allSections = [
     {
@@ -89,7 +90,7 @@ export default function ProgramInfoPage() {
 
   const handlePrev = () => {
     if (currentPage > 0) {
-      setCurrentPage(prev => prev - 1);
+      setCurrentPage(prev => prev + 1);
     }
   };
   
@@ -105,6 +106,7 @@ export default function ProgramInfoPage() {
                 <p className="mt-2 text-md text-muted-foreground">
                     An overview of the CalAIM program and our services. Please review before starting an application.
                 </p>
+                 <GlossaryDialog className="p-0 h-auto" />
             </div>
 
             <div className="space-y-4">
