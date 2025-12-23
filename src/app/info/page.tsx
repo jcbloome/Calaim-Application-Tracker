@@ -109,27 +109,28 @@ export default function ProgramInfoPage() {
           <div className="bg-card rounded-lg border shadow-sm p-4 sm:p-8 print:hidden">
 
             {currentPage === 0 ? (
-                <div className="mb-8 p-6 rounded-lg bg-primary text-primary-foreground">
+                <div className="mb-4 p-6 rounded-lg bg-primary text-primary-foreground">
                     <h1 className="text-3xl font-bold tracking-tight">Program Information ({currentPage + 1}/{sectionsByPage.length})</h1>
                     <p className="mt-2 text-md text-primary-foreground/90">
                         An overview of the CalAIM program and our services. Please review before starting an application.
                     </p>
-                    <GlossaryDialog className="p-0 h-auto text-primary-foreground/80 hover:text-primary-foreground" />
                 </div>
             ) : (
-                 <div className="mb-8 text-center">
+                 <div className="mb-4 text-center">
                     <h1 className="text-2xl font-bold tracking-tight">Program Information ({currentPage + 1}/{sectionsByPage.length})</h1>
-                     <GlossaryDialog />
                 </div>
             )}
+             <div className="flex justify-center -mt-2 mb-6">
+                <GlossaryDialog />
+            </div>
 
-            <div className="space-y-4">
+            <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-1 md:gap-6">
               {sectionsByPage[currentPage].map((section) => (
-                  <Card key={section.title} className="bg-background/80">
+                  <Card key={section.title} className="bg-background/80 flex flex-col">
                       <CardHeader>
                           <CardTitle className="text-lg text-gray-900">{section.title}</CardTitle>
                       </CardHeader>
-                      <CardContent className="prose prose-sm max-w-none text-gray-700">
+                      <CardContent className="prose prose-sm max-w-none text-gray-700 flex-grow flex flex-col">
                           {section.content.map((paragraph, pIndex) => (
                             <p key={pIndex} className="mb-4 last:mb-0">
                                 {paragraph}
@@ -148,11 +149,13 @@ export default function ProgramInfoPage() {
                               </Button>
                            )}
                            {section.isAction && (
-                            <Button asChild className="mt-4">
-                               <Link href={user ? "/applications" : "/login"}>
-                                  Start Application <FileCheck2 className="ml-2 h-4 w-4" />
-                               </Link>
-                            </Button>
+                            <div className="mt-auto pt-4">
+                                <Button asChild className="mt-4">
+                                   <Link href={user ? "/applications" : "/login"}>
+                                      Start Application <FileCheck2 className="ml-2 h-4 w-4" />
+                                   </Link>
+                                </Button>
+                            </div>
                           )}
                       </CardContent>
                   </Card>
