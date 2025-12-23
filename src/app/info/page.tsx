@@ -17,11 +17,13 @@ import {
     Shuffle,
     DollarSign,
     BedDouble,
+    PartyPopper,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Header } from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
+import { useUser } from '@/firebase';
 
 const allSections = [
     {
@@ -35,11 +37,6 @@ const allSections = [
         content: ["There are 14 Community Supports (CS), and this application portal is for one of them, called Assisted Living Transitions. This CS gives eligible members the choice to reside in an assisted living setting—such as a Residential Care Facility for the Elderly (RCFE) or an Adult Residential Facility (ARF)—as a safe alternative to a skilled nursing facility (SNF), promoting greater independence and community integration.", "The CS is either for SNF Diversion (e.g. for members coming from a community-based setting (e.g., from home or hospital) at risk of premature institutionalization or SNF Transitions (e.g., for members residing in SNFs) eligible to reside in assisted living settings."]
     },
     {
-        icon: HeartHandshake,
-        title: "The Role of Connections Care Home Consultants",
-        content: ["For 35 years Connections has helped private paid families find care homes. We are excited to now be partnered with MCPs as a CS Provider that assists with understanding the program, finding participating facilities, coordinating paperwork and assessments, and liaising with your Managed Care Plan to request authorization for the CS. Once a member is placed, we also send a MSW to visit the member at the RCFE/ARF for monthly quality control checks and provide ongoing care coordination."]
-    },
-    {
         icon: Building,
         title: "Managed Care Plans We Work With",
         content: ["You must be a member of one of these plans to utilize us for the CS for Assisted Transitions."],
@@ -47,6 +44,11 @@ const allSections = [
             "Health Net: Serving members in Sacramento and Los Ángeles counties.",
             "Kaiser Permanente: Serving members in various counties throughout California."
         ]
+    },
+    {
+        icon: HeartHandshake,
+        title: "The Role of Connections Care Home Consultants",
+        content: ["For 35 years Connections has helped private paid families find care homes. We are excited to now be partnered with MCPs as a CS Provider that assists with understanding the program, finding participating facilities, coordinating paperwork and assessments, and liaising with your Managed Care Plan to request authorization for the CS. Once a member is placed, we also send a MSW to visit the member at the RCFE/ARF for monthly quality control checks and provide ongoing care coordination."]
     },
     {
         icon: Home,
@@ -82,16 +84,24 @@ const allSections = [
         title: "Room & Board Obligation",
         content: ["The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is responsible for paying the RCFE the 'assisted living' portion.", "For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for 'room and board'. Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for 'room and board' for a private room or to open up RCFEs in more expensive areas.", "Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a 'room and board' payment from the member (or their family)."]
     },
+    {
+        icon: PartyPopper,
+        title: "Let's Get Started!",
+        content: ["You've reviewed the program details. The next step is to begin the application for the member."],
+        isAction: true,
+    }
 ];
 
 const sectionsByPage = [
-    [allSections[0], allSections[1], allSections[3]],
-    [allSections[2], allSections[4], allSections[5]],
-    [allSections[6], allSections[7], allSections[8], allSections[9]],
+    [allSections[0], allSections[1], allSections[2]], // Page 1
+    [allSections[3], allSections[4], allSections[5]], // Page 2
+    [allSections[6], allSections[7], allSections[8], allSections[9], allSections[10]], // Page 3
 ];
+
 
 export default function ProgramInfoPage() {
   const [currentPage, setCurrentPage] = useState(0);
+  const { user } = useUser();
 
   const handleNext = () => {
     if (currentPage < sectionsByPage.length - 1) {
@@ -142,6 +152,13 @@ export default function ProgramInfoPage() {
                                   {section.list.map((item, lIndex) => <li key={lIndex}>{item}</li>)}
                               </ul>
                           )}
+                           {section.isAction && (
+                            <Button asChild className="mt-4">
+                               <Link href={user ? "/applications" : "/login"}>
+                                  Start Application <FileCheck2 className="ml-2 h-4 w-4" />
+                               </Link>
+                            </Button>
+                          )}
                       </CardContent>
                   </Card>
               ))}
@@ -151,15 +168,9 @@ export default function ProgramInfoPage() {
               <Button variant="outline" onClick={handlePrev} disabled={currentPage === 0}>
                   <ArrowLeft className="mr-2 h-4 w-4" /> Previous
               </Button>
-              {currentPage < sectionsByPage.length - 1 ? (
+              {currentPage < sectionsByPage.length - 1 && (
                  <Button onClick={handleNext}>
                     Next <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              ) : (
-                <Button asChild>
-                    <Link href="/applications">
-                        Start Application <FileCheck2 className="ml-2 h-4 w-4" />
-                    </Link>
                 </Button>
               )}
             </div>
