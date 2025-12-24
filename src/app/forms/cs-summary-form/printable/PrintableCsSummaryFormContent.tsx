@@ -23,13 +23,19 @@ const SectionTitle = ({ children }: { children: React.ReactNode }) => (
     <h2 className="text-base font-semibold text-gray-800 border-b pb-1 mb-2 mt-4">{children}</h2>
 );
 
+const PageFooter = ({ pageNumber, totalPages }: { pageNumber: number, totalPages: number }) => (
+  <div className="text-center text-xs text-gray-500 pt-4">
+    Page {pageNumber} of {totalPages}
+  </div>
+);
+
 export function PrintableCsSummaryFormContent() {
   return (
     <form>
         {/* Page 1 */}
         <div className="page-break-after">
             <div className="text-center mb-6">
-                <h1 className="text-2xl font-bold text-gray-800 tracking-tight">CS Member Summary (Page 1 of 3)</h1>
+                <h1 className="text-2xl font-bold text-gray-800 tracking-tight">CS Member Summary</h1>
                 <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This form gathers essential information about the member to determine eligibility for the CalAIM Community Supports program.</p>
             </div>
             <div className="space-y-4">
@@ -119,12 +125,13 @@ export function PrintableCsSummaryFormContent() {
                     </div>
                 </div>
             </div>
+            <PageFooter pageNumber={1} totalPages={3} />
         </div>
 
       {/* Page 2 */}
        <div className="page-break-after">
             <div className="text-center mb-6">
-                <h1 className="text-2xl font-bold text-gray-800 tracking-tight">CS Member Summary (Page 2 of 3)</h1>
+                <h1 className="text-2xl font-bold text-gray-800 tracking-tight">CS Member Summary</h1>
             </div>
              <div className="space-y-4">
                 <div>
@@ -200,12 +207,13 @@ export function PrintableCsSummaryFormContent() {
                 </div>
                 </div>
             </div>
+            <PageFooter pageNumber={2} totalPages={3} />
       </div>
 
        {/* Page 3 */}
        <div>
             <div className="text-center mb-6">
-                <h1 className="text-2xl font-bold text-gray-800 tracking-tight">CS Member Summary (Page 3 of 3)</h1>
+                <h1 className="text-2xl font-bold text-gray-800 tracking-tight">CS Member Summary</h1>
             </div>
              <div className="space-y-4">
                 <div>
@@ -273,6 +281,7 @@ export function PrintableCsSummaryFormContent() {
                     <CheckboxField label="I have read and understood the financial obligation for Room and Board." />
                 </div>
             </div>
+             <PageFooter pageNumber={3} totalPages={3} />
        </div>
     </form>
   )
