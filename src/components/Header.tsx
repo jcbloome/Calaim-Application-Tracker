@@ -44,14 +44,7 @@ export function Header() {
     <header className="bg-card/80 backdrop-blur-sm border-b sticky top-0 z-40">
       <div className="container mx-auto flex items-center justify-between h-20 px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2 font-bold text-lg text-primary">
-          <Image 
-            src="/calaimlogopdf.png"
-            alt="Connect CalAIM Logo"
-            width={240}
-            height={67}
-            className="w-48 h-auto object-contain"
-            priority
-          />
+          Connect CalAIM
         </Link>
         <nav className="hidden md:flex items-center gap-2">
             {navLinks.map(link => (
