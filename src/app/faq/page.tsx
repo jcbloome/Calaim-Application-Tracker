@@ -20,6 +20,14 @@ const faqs = [
     answer: "Community Supports are an optional set of 14 services for eligible Medi-Cal members. These services are designed to address social drivers of health and help individuals with complex needs remain in their communities. This application portal focuses on one specific service: Assisted Living Transitions."
   },
   {
+    question: "What is the role of Connections Care Home Consultants?",
+    answer: "For 35 years Connections has helped private paid families find care homes. We are now partnered with Managed Care Plans (MCPs) as a Community Supports (CS) Provider. We assist with understanding the program, finding participating facilities, coordinating paperwork and assessments, and liaising with your MCP to request authorization for the CS. Once a member is placed, we also send a MSW to visit for monthly quality control checks and provide ongoing care coordination."
+  },
+  {
+    question: "What is an Individual Service Plan (ISP)?",
+    answer: "An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP) clinical team to determine the member's care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the 'assisted living' portion)."
+  },
+  {
     question: "What is the difference between SNF Diversion and SNF Transition?",
     answer: "SNF Diversion is for members at risk of being admitted to a Skilled Nursing Facility (SNF) who can instead be cared for in the community. SNF Transition is for members who are currently in a SNF and wish to move to a community-based setting like an RCFE or ARF."
   },
