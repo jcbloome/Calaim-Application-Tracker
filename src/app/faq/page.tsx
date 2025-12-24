@@ -7,9 +7,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Header } from '@/components/Header';
-import { acronyms } from '@/lib/data';
+import { GlossaryDialog } from '@/components/GlossaryDialog';
 
 const faqs = [
   {
@@ -46,16 +45,15 @@ export default function FaqPage() {
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
         <div className="text-center mb-10">
           <h1 className="text-3xl font-bold tracking-tight">
-            Frequently Asked Questions & Glossary
+            Frequently Asked Questions
           </h1>
           <p className="mt-2 text-lg text-muted-foreground max-w-3xl mx-auto">
             Find answers to common questions and definitions for key terms.
           </p>
         </div>
 
-        <div className="max-w-3xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="max-w-3xl mx-auto">
             <div className="space-y-4">
-                 <h2 className="text-2xl font-semibold">FAQ</h2>
                  <Accordion type="single" collapsible className="w-full">
                     {faqs.map((faq, index) => (
                     <AccordionItem value={`item-${index}`} key={index}>
@@ -64,27 +62,9 @@ export default function FaqPage() {
                     </AccordionItem>
                     ))}
                 </Accordion>
-            </div>
-             <div className="space-y-4">
-                <h2 className="text-2xl font-semibold">Glossary</h2>
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Common Acronyms</CardTitle>
-                        <CardDescription>
-                            A quick reference for terms used in the CalAIM application process.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <dl className="space-y-4">
-                            {acronyms.map(item => (
-                                <div key={item.term} className="flex items-baseline">
-                                    <dt className="w-20 font-bold text-primary shrink-0">{item.term}</dt>
-                                    <dd className="text-muted-foreground">{item.definition}</dd>
-                                </div>
-                            ))}
-                        </dl>
-                    </CardContent>
-                </Card>
+                <div className="text-center mt-6">
+                  <GlossaryDialog />
+                </div>
             </div>
         </div>
       </main>
