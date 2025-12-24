@@ -129,7 +129,7 @@ export default function ProgramInfoPage() {
                       </CardHeader>
                       <CardContent className="prose prose-sm max-w-none text-gray-700">
                           {section.content.map((paragraph, pIndex) => (
-                            <p key={pIndex}>
+                            <p key={pIndex} className="mb-4 last:mb-0">
                                 {paragraph}
                             </p>
                           ))}
