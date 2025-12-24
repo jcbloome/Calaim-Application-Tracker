@@ -148,7 +148,8 @@ export default function ProgramInfoPage() {
                            {section.isAction && (
                             <Button asChild className="mt-4">
                                <Link href={user ? "/applications" : "/login"}>
-                                  Start Application <FileCheck2 className="ml-2 h-4 w-4" />
+                                  {user ? "Continue" : "Let's Go!"}
+                                  <FileCheck2 className="ml-2 h-4 w-4" />
                                </Link>
                             </Button>
                           )}
