@@ -8,7 +8,6 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { Header } from '@/components/Header';
 import { acronyms } from '@/lib/data';
 
