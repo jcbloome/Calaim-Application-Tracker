@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { LogOut, User, Menu, UserCog, Shield } from 'lucide-react';
+import { LogOut, User, Menu, UserCog, Shield, LogIn } from 'lucide-react';
 import { Button } from './ui/button';
 import { useUser } from '@/firebase';
 import { useAuth } from '@/firebase/provider';
@@ -49,7 +49,7 @@ export function Header() {
             alt="Connect CalAIM Logo"
             width={240}
             height={67}
-            className="w-64 h-auto object-contain"
+            className="h-auto object-contain"
             priority
           />
         </Link>
@@ -88,7 +88,7 @@ export function Header() {
             </div>
           ) : (
             <Button asChild>
-              <Link href="/login">Login</Link>
+              <Link href="/login"><LogIn className="mr-2 h-4 w-4" />Login</Link>
             </Button>
           )}
         </nav>
@@ -130,7 +130,7 @@ export function Header() {
                                 </div>
                             ) : (
                                 <Button asChild className="w-full">
-                                    <Link href="/login" onClick={() => setSheetOpen(false)}>Login</Link>
+                                    <Link href="/login" onClick={() => setSheetOpen(false)}><LogIn className="mr-2 h-4 w-4" />Login</Link>
                                 </Button>
                             )}
                         </div>
