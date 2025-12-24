@@ -75,13 +75,13 @@ export default function InfoEligibilityPage() {
                 </CardContent>
             </Card>
           ))}
-           <div className="flex justify-between items-center pt-4">
+           <div className="flex flex-col sm:flex-row justify-between items-center pt-4 mt-4 border-t gap-4">
                 <Button asChild variant="outline">
                     <Link href="/info/details">
                         <ArrowLeft className="mr-2 h-4 w-4" /> Previous
                     </Link>
                 </Button>
-                <span className="text-sm text-muted-foreground">Page 3 of 3</span>
+                <span className="text-sm text-muted-foreground order-first sm:order-none">Page 3 of 3</span>
                  <Button asChild>
                     <Link href="/applications">
                         Next <ArrowRight className="ml-2 h-4 w-4" />

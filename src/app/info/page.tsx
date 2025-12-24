@@ -89,7 +89,7 @@ export default function InfoPage() {
                 </CardContent>
             </Card>
           ))}
-            <div className="flex justify-between items-center pt-4">
+            <div className="flex flex-col sm:flex-row justify-between items-center pt-4 mt-4 border-t gap-4">
                 <span className="text-sm text-muted-foreground">Page 1 of 3</span>
                 <Button asChild>
                     <Link href="/info/details">
