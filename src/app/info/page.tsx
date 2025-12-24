@@ -125,37 +125,33 @@ export default function ProgramInfoPage() {
     <div className="flex flex-col min-h-screen bg-slate-50/50 print:bg-white">
       <Header />
       <main className="flex-grow flex items-center justify-center py-8 px-4 sm:px-6">
-        <div className="w-full max-w-4xl mx-auto">
-          {/* Main container for online view */}
-          <div className="bg-card rounded-lg border shadow-sm p-4 sm:p-8 print:hidden">
-            
+        <div className="w-full max-w-4xl mx-auto space-y-8">
             <div className="mb-4">
-              {currentPage === 0 ? (
-                 <div className="p-6 rounded-lg bg-blue-600 text-white mb-6">
+                {currentPage === 0 ? (
+                    <div className="p-6 rounded-lg bg-blue-600 text-white mb-6">
+                        <h1 className="text-3xl font-bold tracking-tight">Program Information ({currentPage + 1}/{sectionsByPage.length})</h1>
+                        <p className="mt-2 text-lg text-blue-100">
+                        An overview of the CalAIM program and our services. Please review before starting an application.
+                        </p>
+                    </div>
+                ) : (
                     <h1 className="text-3xl font-bold tracking-tight">Program Information ({currentPage + 1}/{sectionsByPage.length})</h1>
-                    <p className="mt-2 text-lg text-blue-100">
-                      An overview of the CalAIM program and our services. Please review before starting an application.
-                    </p>
-                 </div>
-              ) : (
-                <h1 className="text-3xl font-bold tracking-tight">Program Information ({currentPage + 1}/{sectionsByPage.length})</h1>
-              )}
-            </div>
-            
-            <div className="mb-4 hidden md:block">
-                <GlossaryDialog />
+                )}
+                <div className="hidden md:block">
+                  <GlossaryDialog />
+                </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+            <div className="space-y-6">
               {sectionsByPage[currentPage].map((section) => (
-                  <Card key={section.title} className="bg-background/80 flex flex-col">
+                  <Card key={section.title} className="bg-card/80">
                       <CardHeader className="flex-row items-center gap-4 space-y-0">
                           <section.icon className="h-6 w-6 text-primary" />
-                          <CardTitle className="text-lg text-gray-900">{section.title}</CardTitle>
+                          <CardTitle className="text-lg">{section.title}</CardTitle>
                       </CardHeader>
-                      <CardContent className="prose prose-sm max-w-none text-gray-700 flex-grow flex flex-col">
+                      <CardContent className="prose prose-sm max-w-none text-gray-700">
                           {section.content.map((paragraph, pIndex) => (
-                            <p key={pIndex} className="mb-4 last:mb-0">
+                            <p key={pIndex}>
                                 {paragraph}
                             </p>
                           ))}
@@ -165,20 +161,18 @@ export default function ProgramInfoPage() {
                               </ul>
                           )}
                            {section.link && (
-                              <Button asChild variant="link" className="px-0 -mt-2">
+                              <Button asChild variant="link" className="px-0">
                                 <a href={section.link} target="_blank" rel="noopener noreferrer">
                                   Go to Health Care Options <ArrowRight className="ml-2 h-4 w-4" />
                                 </a>
                               </Button>
                            )}
                            {section.isAction && (
-                            <div className="mt-auto pt-4">
-                                <Button asChild className="mt-4">
-                                   <Link href={user ? "/applications" : "/login"}>
-                                      Start Application <FileCheck2 className="ml-2 h-4 w-4" />
-                                   </Link>
-                                </Button>
-                            </div>
+                            <Button asChild className="mt-4">
+                               <Link href={user ? "/applications" : "/login"}>
+                                  Start Application <FileCheck2 className="ml-2 h-4 w-4" />
+                               </Link>
+                            </Button>
                           )}
                       </CardContent>
                   </Card>
@@ -195,7 +189,6 @@ export default function ProgramInfoPage() {
                 </Button>
               )}
             </div>
-          </div>
         </div>
       </main>
     </div>
