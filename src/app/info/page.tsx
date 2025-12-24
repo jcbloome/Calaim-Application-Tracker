@@ -54,10 +54,10 @@ export default function InfoPage() {
       <Header />
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
         <div className="text-center mb-10">
-          <h1 className="text-3xl font-bold tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             Program Information (1 of 3)
           </h1>
-          <p className="mt-2 text-lg text-muted-foreground max-w-3xl mx-auto">
+          <p className="mt-2 text-md sm:text-lg text-muted-foreground max-w-3xl mx-auto">
             Understanding the CalAIM Community Supports program for Assisted Living Transitions.
           </p>
         </div>
@@ -66,7 +66,7 @@ export default function InfoPage() {
           {infoSections.map((section, index) => (
             <Card key={index} className="shadow-sm">
               <CardHeader>
-                <CardTitle>{section.title}</CardTitle>
+                <CardTitle className="text-xl sm:text-2xl">{section.title}</CardTitle>
               </CardHeader>
                 <CardContent className="prose prose-sm max-w-none text-gray-700">
                     {section.content.map((paragraph, pIndex) => (
@@ -87,7 +87,7 @@ export default function InfoPage() {
             <div className="flex justify-end pt-4">
                 <Button asChild>
                     <Link href="/info/details">
-                        Next: Health Plans & Eligibility <ArrowRight className="ml-2 h-4 w-4" />
+                        Next <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>
                 </Button>
             </div>

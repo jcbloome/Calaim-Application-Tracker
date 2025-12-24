@@ -47,10 +47,10 @@ export default function InfoDetailsPage() {
       <Header />
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
         <div className="text-center mb-10">
-          <h1 className="text-3xl font-bold tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             Program Information (2 of 3)
           </h1>
-          <p className="mt-2 text-lg text-muted-foreground max-w-3xl mx-auto">
+          <p className="mt-2 text-md sm:text-lg text-muted-foreground max-w-3xl mx-auto">
             Details on Health Plan requirements for program eligibility.
           </p>
         </div>
@@ -59,7 +59,7 @@ export default function InfoDetailsPage() {
           {infoSections.map((section, index) => (
             <Card key={index} className="shadow-sm">
               <CardHeader>
-                <CardTitle>{section.title}</CardTitle>
+                <CardTitle className="text-xl sm:text-2xl">{section.title}</CardTitle>
               </CardHeader>
                 <CardContent className="prose prose-sm max-w-none text-gray-700">
                     {section.content.map((paragraph, pIndex) => (
@@ -85,12 +85,12 @@ export default function InfoDetailsPage() {
            <div className="flex justify-between pt-4">
                 <Button asChild variant="outline">
                     <Link href="/info">
-                        <ArrowLeft className="mr-2 h-4 w-4" /> Previous: Program Overview
+                        <ArrowLeft className="mr-2 h-4 w-4" /> Previous
                     </Link>
                 </Button>
                 <Button asChild>
                     <Link href="/info/eligibility">
-                        Next: Financial & Other Info <ArrowRight className="ml-2 h-4 w-4" />
+                        Next <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>
                 </Button>
             </div>
