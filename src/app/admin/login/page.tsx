@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import Image from 'next/image';
 
 export default function AdminLoginPage() {
@@ -82,9 +82,6 @@ export default function AdminLoginPage() {
         </div>
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="items-center text-center p-6">
-            <div className="bg-primary/10 p-3 rounded-full mb-4">
-                <LogIn className="h-8 w-8 text-primary" />
-            </div>
           <CardTitle className="text-3xl font-bold">
             Admin Portal
           </CardTitle>

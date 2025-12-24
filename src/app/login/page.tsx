@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Header } from '@/components/Header';
 
 export default function LoginPage() {
@@ -88,9 +88,6 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="items-center text-center p-6">
-          <div className="bg-primary/10 p-3 rounded-full mb-4">
-            <LogIn className="h-8 w-8 text-primary" />
-          </div>
           <CardTitle className="text-3xl font-bold">Sign In</CardTitle>
           <CardDescription className="text-base">
             Access your applications and profile.
