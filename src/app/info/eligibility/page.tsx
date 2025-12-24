@@ -55,9 +55,6 @@ export default function InfoEligibilityPage() {
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             Program Information
           </h1>
-          <p className="mt-2 text-md sm:text-lg text-muted-foreground max-w-3xl mx-auto">
-            Financial obligations and other key program details.
-          </p>
         </div>
 
         <div className="max-w-4xl mx-auto space-y-6">
@@ -75,14 +72,20 @@ export default function InfoEligibilityPage() {
                 </CardContent>
             </Card>
           ))}
-           <div className="flex flex-col-reverse sm:flex-row justify-between items-center pt-4 mt-4 border-t gap-2">
-                <Link href="/info/details" className="flex items-center text-sm font-medium text-primary hover:underline">
-                    <ArrowLeft className="mr-1 h-4 w-4" /> Previous
-                </Link>
-                <span className="text-sm text-muted-foreground">Page 3 of 3</span>
-                <Link href="/applications" className="flex items-center text-sm font-medium text-primary hover:underline">
-                    Next <ArrowRight className="ml-1 h-4 w-4" />
-                </Link>
+           <div className="flex flex-wrap justify-between items-center pt-4 mt-4 border-t gap-4">
+                <div className="w-1/3">
+                    <Link href="/info/details" className="text-sm font-medium text-primary hover:underline">
+                        <ArrowLeft className="mr-1 h-4 w-4 inline" /> Previous
+                    </Link>
+                </div>
+                <div className="w-1/3 text-center">
+                    <span className="text-sm text-muted-foreground">Page 3 of 3</span>
+                </div>
+                <div className="w-1/3 text-right">
+                    <Link href="/applications" className="text-sm font-medium text-primary hover:underline">
+                        Next <ArrowRight className="ml-1 h-4 w-4 inline" />
+                    </Link>
+                </div>
             </div>
         </div>
       </main>
