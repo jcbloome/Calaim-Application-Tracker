@@ -97,14 +97,14 @@ export default function PrintablePackagePage() {
         </div>
         
         <div className="space-y-8">
-            <Card className="bg-blue-50 border-blue-200">
+            <Card className="border-primary border-2">
                 <CardHeader className="flex-row items-center gap-4">
-                        <AlertCircle className="h-8 w-8 text-blue-700" />
-                    <CardTitle className="text-blue-900">Online Application is Preferred</CardTitle>
+                        <AlertCircle className="h-8 w-8 text-primary" />
+                    <CardTitle className="text-primary">Important Note on Online Applications</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <CardDescription className="text-blue-800 mb-4">
-                        For the fastest and most secure experience, we strongly recommend completing the application through our online portal. This ensures your data is saved as you go and allows for real-time status updates.
+                    <CardDescription className="text-foreground/80 mb-4">
+                        For the fastest and most secure experience, we strongly recommend completing the application through our online portal. Even if the CS Summary Form is uploaded, the information must be inputted online for quicker processing and application tracking. This ensures your data is saved as you go and allows for real-time status updates.
                     </CardDescription>
                     <Button asChild className="w-full sm:w-auto" variant="secondary">
                         <Link href="/applications">Go to My Applications</Link>
