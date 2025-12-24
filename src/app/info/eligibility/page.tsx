@@ -72,16 +72,14 @@ export default function InfoEligibilityPage() {
                 </CardContent>
             </Card>
           ))}
-           <div className="flex flex-wrap justify-between items-center pt-4 mt-4 border-t gap-4">
-                <div className="w-1/3">
+           <div className="mt-4 w-full border-t pt-4">
+                <div className="text-left">
+                    <span className="text-sm text-muted-foreground">Page 3 of 3</span>
+                </div>
+                <div className="flex justify-between mt-2">
                     <Link href="/info/details" className="text-sm font-medium text-primary hover:underline">
                         <ArrowLeft className="mr-1 h-4 w-4 inline" /> Previous
                     </Link>
-                </div>
-                <div className="w-1/3 text-center">
-                    <span className="text-sm text-muted-foreground">Page 3 of 3</span>
-                </div>
-                <div className="w-1/3 text-right">
                     <Link href="/applications" className="text-sm font-medium text-primary hover:underline">
                         Next <ArrowRight className="ml-1 h-4 w-4 inline" />
                     </Link>

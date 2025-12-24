@@ -96,12 +96,11 @@ export default function InfoPage() {
                 </CardContent>
             </Card>
           ))}
-            <div className="flex flex-wrap justify-between items-center pt-4 mt-4 border-t gap-4">
-                <div className="w-1/3"></div>
-                <div className="w-1/3 text-center">
+            <div className="mt-4 w-full border-t pt-4">
+                <div className="text-left">
                     <span className="text-sm text-muted-foreground">Page 1 of 3</span>
                 </div>
-                <div className="w-1/3 text-right">
+                <div className="flex justify-end mt-2">
                     <Link href="/info/details" className="text-sm font-medium text-primary hover:underline">
                         Next <ArrowRight className="ml-1 h-4 w-4 inline" />
                     </Link>
