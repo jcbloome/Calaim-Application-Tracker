@@ -4,7 +4,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/firebase';
 import {
-  signInWithEmailAndPassword,
   setPersistence,
   browserSessionPersistence,
 } from 'firebase/auth';
@@ -23,6 +22,8 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Header } from '@/components/Header';
+import { initiateEmailSignIn } from '@/firebase';
+
 
 export default function LoginPage() {
   const auth = useAuth();
@@ -54,13 +55,19 @@ export default function LoginPage() {
 
     try {
       await setPersistence(auth, browserSessionPersistence);
-      await signInWithEmailAndPassword(auth, email, password);
+      // Use the non-blocking sign-in function
+      initiateEmailSignIn(auth, email, password);
+      
       toast({
         title: 'Successfully signed in!',
         description: 'Redirecting to your applications...',
         duration: 2000,
       });
+      
+      // The onAuthStateChanged listener will handle the redirect via the useUser hook.
+      // We can optimistically push to the applications page.
       router.push('/applications');
+
     } catch (err) {
       const authError = err as AuthError;
       let errorMessage = 'Invalid email or password. Please try again.';
@@ -70,6 +77,8 @@ export default function LoginPage() {
         authError.code === 'auth/invalid-credential'
       ) {
         errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+      } else {
+        errorMessage = authError.message;
       }
       setError(errorMessage);
       toast({
@@ -77,9 +86,10 @@ export default function LoginPage() {
         title: 'Sign In Failed',
         description: errorMessage,
       });
-    } finally {
       setIsLoading(false);
-    }
+    } 
+    // Do not set isLoading to false in a finally block here, 
+    // as the page will navigate away on success. It's only needed on error.
   };
 
   return (
