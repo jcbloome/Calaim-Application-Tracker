@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState } from 'react';
@@ -10,6 +9,7 @@ import { Printer, FileText, Info, FileQuestion, UploadCloud, FileSymlink, Packag
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const individualForms = [
   {
@@ -38,6 +38,18 @@ const individualForms = [
     icon: Info,
   },
 ];
+
+const uploadableDocumentTypes = [
+  "CS Member Summary",
+  "Waivers & Authorizations",
+  "Proof of Income",
+  "LIC 602A - Physician's Report",
+  "Medicine List",
+  "Declaration of Eligibility",
+  "SNF Facesheet",
+  "Other",
+];
+
 
 export default function PrintablePackagePage() {
     const { toast } = useToast();
@@ -158,8 +170,19 @@ export default function PrintablePackagePage() {
                                 <Input id="member-name" placeholder="Jane Smith" required />
                             </div>
                              <div>
-                                <Label htmlFor="document-name">Name of Document</Label>
-                                <Input id="document-name" placeholder="e.g., Signed HIPAA Waiver" required />
+                                <Label htmlFor="document-type">Name of Document</Label>
+                                 <Select name="document-type" required>
+                                    <SelectTrigger id="document-type">
+                                        <SelectValue placeholder="Select document type..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {uploadableDocumentTypes.map(docType => (
+                                            <SelectItem key={docType} value={docType}>
+                                                {docType}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
                             <div>
                                 <Label htmlFor="file-upload">Document File</Label>
