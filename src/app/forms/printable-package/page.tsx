@@ -132,18 +132,20 @@ export default function PrintablePackagePage() {
                             <CardTitle>Individual Forms</CardTitle>
                             <CardDescription>Print specific forms as needed.</CardDescription>
                         </CardHeader>
-                        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <CardContent>
+                          <ul className="space-y-3">
                             {individualForms.map((form) => {
                                 const Icon = form.icon;
                                 return (
-                                    <Link key={form.title} href={form.href} target="_blank" rel="noopener noreferrer" className="block p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-                                        <div className="flex items-center gap-4">
-                                            <Icon className="h-5 w-5 text-muted-foreground" />
-                                            <span className="font-medium text-sm">{form.title}</span>
-                                        </div>
+                                  <li key={form.title}>
+                                    <Link href={form.href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm font-medium text-primary hover:underline underline-offset-4">
+                                      <Icon className="h-4 w-4 text-muted-foreground" />
+                                      {form.title}
                                     </Link>
+                                  </li>
                                 )
                             })}
+                          </ul>
                         </CardContent>
                     </Card>
                 </div>
