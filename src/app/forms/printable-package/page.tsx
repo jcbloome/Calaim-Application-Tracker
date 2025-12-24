@@ -124,13 +124,11 @@ export default function PrintablePackagePage() {
                             <CardDescription>Print specific forms as needed or view informational sheets.</CardDescription>
                         </CardHeader>
                         <CardContent>
-                          <ul className="space-y-4">
+                          <ul className="space-y-2">
                             {individualForms.map((form) => {
-                                const Icon = form.icon;
                                 return (
                                   <li key={form.title}>
-                                    <Link href={form.href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 -m-3 rounded-lg hover:bg-muted transition-colors">
-                                      <Icon className="h-5 w-5 text-primary" />
+                                    <Link href={form.href} target="_blank" rel="noopener noreferrer" className="flex items-center p-2 -m-2 rounded-lg hover:bg-muted transition-colors">
                                       <span className="text-sm font-medium text-foreground hover:text-primary">
                                         {form.title}
                                       </span>
@@ -138,13 +136,12 @@ export default function PrintablePackagePage() {
                                   </li>
                                 )
                             })}
-                            <li className="pt-4 border-t">
-                                 <Link href="/forms/printable-package/full-package" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 -m-3 rounded-lg hover:bg-muted transition-colors font-bold">
-                                      <Package className="h-5 w-5 text-primary" />
-                                      <span className="text-sm text-primary hover:underline">
-                                        Print Full Application Package
-                                      </span>
-                                    </Link>
+                            <li className="pt-2 border-t">
+                               <Link href="/forms/printable-package/full-package" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-2 -m-2 rounded-lg hover:bg-muted transition-colors font-bold">
+                                  <span className="text-sm text-primary hover:underline">
+                                    Print Full Application Package
+                                  </span>
+                                </Link>
                             </li>
                           </ul>
                         </CardContent>
