@@ -15,10 +15,20 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 
 const infoSections = [
   {
+    title: 'Managed Care Plans We Work With',
+    content: [
+      'Connections currently is only contracted with Kaiser and Health Net for the CS for Assisted Living Transitions. You must switch to one of these plans if you would like to work with Connections.',
+    ],
+    list: [
+      'Health Net: Serving members in Sacramento and Los Ángeles counties.',
+      'Kaiser Permanente: Serving members in various counties throughout California.',
+    ],
+  },
+  {
     title: 'Switching to Health Net or Kaiser',
     content: [
       'To enroll in this CalAIM program through Connections, you must be a member of Health Net or Kaiser. If you are in another Medi-Cal managed care plan, you will need to switch.',
-      <>You can change your health plan by contacting <a href="https://www.healthcareoptions.dhcs.ca.gov/en/enroll" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">California Health Care Options</a> (https://www.healthcareoptions.dhcs.ca.gov/en/enroll) at 1-800-430-4263.</>,
+      <>You can change your health plan by contacting <a href="https://www.healthcareoptions.dhcs.ca.gov/en/enroll" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">California Health Care Options</a> at 1-800-430-4263.</>,
       'Generally, changes made by the end of the month are effective on the first day of the following month.',
     ],
   },
@@ -65,10 +75,10 @@ export default function InfoDetailsPage() {
             </Card>
           ))}
            <div className="mt-4 w-full border-t pt-4">
-                <div className="text-left">
+                <div className="text-left mb-2">
                     <span className="text-sm text-muted-foreground">Page 2 of 3</span>
                 </div>
-                <div className="flex justify-between mt-2">
+                <div className="flex justify-between">
                     <Link href="/info" className="text-sm font-medium text-primary hover:underline">
                         <ArrowLeft className="mr-1 h-4 w-4 inline" /> Previous
                     </Link>
