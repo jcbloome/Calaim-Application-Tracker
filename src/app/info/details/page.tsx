@@ -28,7 +28,7 @@ const infoSections = [
     title: 'Switching to Health Net or Kaiser',
     content: [
       'To enroll in this CalAIM program through Connections, you must be a member of Health Net or Kaiser. If you are in another Medi-Cal managed care plan, you will need to switch.',
-      <>You can change your health plan by contacting <a href="https://www.healthcareoptions.dhcs.ca.gov/en/enroll" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">California Health Care Options</a> at 1-800-430-4263.</>,
+      <>You can change your health plan by contacting <a href="https://www.healthcareoptions.dhcs.ca.gov/en/enroll" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">California Health Care Options</a> at 1-800-430-4263 (or visit their website: https://www.healthcareoptions.dhcs.ca.gov/en/enroll).</>,
       'Generally, changes made by the end of the month are effective on the first day of the following month.',
     ],
   },
@@ -74,18 +74,14 @@ export default function InfoDetailsPage() {
                 </CardContent>
             </Card>
           ))}
-           <div className="flex flex-col sm:flex-row justify-between items-center pt-4 mt-4 border-t gap-4">
-                <Button asChild variant="outline">
-                    <Link href="/info">
-                        <ArrowLeft className="mr-2 h-4 w-4" /> Previous
-                    </Link>
-                </Button>
-                <span className="text-sm text-muted-foreground order-first sm:order-none">Page 2 of 3</span>
-                <Button asChild>
-                    <Link href="/info/eligibility">
-                        Next <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
-                </Button>
+           <div className="flex flex-col-reverse sm:flex-row justify-between items-center pt-4 mt-4 border-t gap-2">
+                <Link href="/info" className="flex items-center text-sm font-medium text-primary hover:underline">
+                    <ArrowLeft className="mr-1 h-4 w-4" /> Previous
+                </Link>
+                <span className="text-sm text-muted-foreground">Page 2 of 3</span>
+                <Link href="/info/eligibility" className="flex items-center text-sm font-medium text-primary hover:underline">
+                    Next <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
             </div>
         </div>
       </main>

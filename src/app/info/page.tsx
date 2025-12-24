@@ -99,19 +99,12 @@ export default function InfoPage() {
                 </CardContent>
             </Card>
           ))}
-            <div className="flex flex-col sm:flex-row justify-between items-center pt-4 mt-4 border-t gap-4">
-                <div className="sm:hidden w-full text-center">
-                    <span className="text-sm text-muted-foreground">Page 1 of 3</span>
-                </div>
-                <div className="hidden sm:block"></div>
-                <div className="hidden sm:block">
-                     <span className="text-sm text-muted-foreground">Page 1 of 3</span>
-                </div>
-                <Button asChild>
-                    <Link href="/info/details">
-                        Next <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
-                </Button>
+            <div className="flex flex-col-reverse sm:flex-row justify-between items-center pt-4 mt-4 border-t gap-2">
+                <div />
+                <span className="text-sm text-muted-foreground">Page 1 of 3</span>
+                <Link href="/info/details" className="flex items-center text-sm font-medium text-primary hover:underline">
+                    Next <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
             </div>
         </div>
       </main>
