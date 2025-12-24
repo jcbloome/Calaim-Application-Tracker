@@ -123,8 +123,7 @@ export default function ProgramInfoPage() {
             <div className="space-y-6">
               {allSections.map((section) => (
                   <Card key={section.title} className="bg-card/80">
-                      <CardHeader className="flex-row items-center gap-4 space-y-0">
-                          <section.icon className="h-6 w-6 text-primary" />
+                      <CardHeader>
                           <CardTitle className="text-lg">{section.title}</CardTitle>
                       </CardHeader>
                       <CardContent className="prose prose-sm max-w-none text-gray-700">
