@@ -52,9 +52,9 @@ export default function InfoEligibilityPage() {
     <>
       <Header />
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
-        <div className="text-center mb-10">
-          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-muted-foreground">
-            Program Information
+        <div className="mb-10">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+            Program Information Page 3
           </h1>
           <div className="mt-4">
             <GlossaryDialog />
