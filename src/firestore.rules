@@ -201,7 +201,7 @@ service cloud.firestore {
     /**
      * @description Defines admin roles. The existence of a document grants admin privileges.
      * @path /roles_admin/{userId}
-     * @allow (get) Any signed-in user can check if they are an admin.
+     * @allow (get) Any signed-in user can check if a user is an admin.
      * @deny (list, create, update, delete) All other operations are denied for security.
      * @principle Secures administrative role management by disallowing any client-side modifications.
      */
@@ -215,8 +215,8 @@ service cloud.firestore {
     /**
      * @description Defines super admin roles.
      * @path /roles_super_admin/{userId}
-     * @allow (get) A super admin can check roles.
-     * @deny (all client) All client-side requests to read, list, or write are denied unless super admin.
+     * @allow (get) Any signed-in user can check if a user is a super admin.
+     * @deny (all client) All client-side requests to list or write are denied unless super admin.
      * @principle Secures super administrative role management by disallowing any client-side modifications.
      */
     match /roles_super_admin/{userId} {
