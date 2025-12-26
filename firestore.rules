@@ -155,7 +155,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isOwnerOrAdmin(userId);
       allow create, update: if isOwner(userId) || isSuperAdmin();
-      allow list: if isSuperAdmin(); // Allow listing of users for super admins
+      allow list: if isAdmin() || isSuperAdmin(); // Allow listing of users for admins and super admins
       allow delete: if isOwnerOrAdmin(userId);
 
       /**
@@ -201,14 +201,14 @@ service cloud.firestore {
     /**
      * @description Defines admin roles. The existence of a document grants admin privileges.
      * @path /roles_admin/{userId}
-     * @allow (get) Any signed-in user can check if they are an admin.
+     * @allow (get) Any signed-in user can check if THEY are an admin.
      * @deny (list, create, update, delete) All other operations are denied for security.
      * @principle Secures administrative role management by disallowing any client-side modifications.
      */
     match /roles_admin/{userId} {
-      allow get: if isSignedIn();
+      allow get: if isOwner(userId);
       allow write: if isSuperAdmin();
-      allow list: if isSuperAdmin();
+      allow list: if isAdmin() || isSuperAdmin();
       allow delete: if isSuperAdmin();
     }
 
@@ -220,7 +220,7 @@ service cloud.firestore {
      * @principle Secures super administrative role management by disallowing any client-side modifications.
      */
     match /roles_super_admin/{userId} {
-      allow get: if isSignedIn();
+      allow get: if isOwner(userId);
       allow write: if isSuperAdmin();
       allow list: if isSuperAdmin();
     }
