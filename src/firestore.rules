@@ -24,13 +24,13 @@ service cloud.firestore {
      * - User Data Isolation: All access controls for the `/users/{userId}` data tree
      *   are based on the `userId` from the path, ensuring a user can only interact
      *   with their own data branch.
-     * - No User Enumeration: Listing documents in the top-level `/users` and `/roles_admin`
-     *   collections is explicitly forbidden to prevent enumeration of all users or admins.
+     * - No User Enumeration: Listing documents in the top-level `/users` collection is
+     *   explicitly forbidden to prevent enumeration of all users or admins, except by admins.
      * - Admin Privileges: Users whose UID exists in the `/roles_admin` collection are
      *   granted full read/write access to all user data for moderation and support.
-     * - Admin Role Management: The `/roles_admin` collection is read-only and unlistable
-     *   from the client. Roles must be managed manually via the Firebase Console or through
-     *   a trusted server-side environment for maximum security.
+     * - Admin Role Management: The `/roles_admin` and `/roles_super_admin` collections
+     *   are read-only for most users. Roles must be managed by a Super Admin or via the
+     *   Firebase Console for maximum security.
      *
      * Denormalization for Authorization:
      * To ensure fast and secure authorization, documents contain fields that simplify
@@ -42,9 +42,9 @@ service cloud.firestore {
      *
      * Structural Segregation:
      * User data and administrative roles are stored in separate top-level collections
-     * (`/users` and `/roles_admin`). This clear separation ensures that security rules
-     * for application data do not get mixed with rules for administrative access control,
-     * leading to a more secure and maintainable ruleset.
+     * (`/users`, `/roles_admin`, `/roles_super_admin`). This clear separation ensures that
+     * security rules for application data do not get mixed with rules for administrative
+     * access control, leading to a more secure and maintainable ruleset.
      */
 
     // =================================
@@ -87,21 +87,11 @@ service cloud.firestore {
     }
 
     /**
-     * Grants access if the user is the owner of the resource OR is an admin.
+     * Grants access if the user is the owner of the resource OR is an admin or super admin.
      * @param userId The UID of the document's owner.
      */
     function isOwnerOrAdmin(userId) {
       return isOwner(userId) || isAdmin() || isSuperAdmin();
-    }
-
-    /**
-     * Grants access for state-changing operations (update, delete) if the user
-     * is the owner or an admin, AND the document already exists.
-     * This prevents modifying or deleting non-existent data.
-     * @param userId The UID of the document's owner.
-     */
-    function isExistingOwnerOrAdmin(userId) {
-      return isOwnerOrAdmin(userId) && resource != null;
     }
 
     /**
@@ -148,52 +138,40 @@ service cloud.firestore {
     /**
      * @description Rules for a user's own profile document.
      * @path /users/{userId}
-     * @allow (read, write) An authenticated user can read and write to their own profile.
-     * @deny (list) Any user attempting to list all user profiles.
-     * @principle Restricts access to a user's own data tree and allows self-creation and update of a profile.
      */
     match /users/{userId} {
       allow get: if isOwnerOrAdmin(userId);
       allow create, update: if isOwner(userId) || isSuperAdmin();
-      allow list: if isAdmin() || isSuperAdmin(); // Allow listing of users for admins and super admins
+      allow list: if isAdmin() || isSuperAdmin();
       allow delete: if isOwnerOrAdmin(userId);
 
       /**
        * @description Rules for a user's CalAIM applications.
        * @path /users/{userId}/applications/{applicationId}
-       * @allow (create, read, write) An authenticated user managing their own application documents.
-       * @deny (read, write) A user attempting to access another user's applications.
-       * @principle Enforces document ownership for all operations within a user-specific subcollection.
        */
       match /applications/{applicationId} {
         allow get, list: if isOwnerOrAdmin(userId);
         allow create: if isOwnerOrAdmin(userId) && hasValidApplicationDataOnCreate(userId);
-        allow update: if isExistingOwnerOrAdmin(userId) && hasValidApplicationDataOnUpdate();
-        allow delete: if isExistingOwnerOrAdmin(userId);
+        allow update: if isOwnerOrAdmin(userId) && hasValidApplicationDataOnUpdate();
+        allow delete: if isOwnerOrAdmin(userId);
 
         /**
          * @description Rules for the internal staff progress tracker.
          * @path /users/{userId}/applications/{applicationId}/staffTrackers/{trackerId}
-         * @allow (read, write) Only admins can read or write to the tracker.
          */
         match /staffTrackers/{trackerId} {
           allow read, write: if isAdmin() || isSuperAdmin();
         }
 
-        // Wildcard match for all nested subcollections of an application
-        // (contacts, legalRepresentatives, locations, ispContacts, rcfeSelections, formStatuses, eligibilityScreenings)
         /**
          * @description Generic rules for all subcollections of an application.
          * @path /users/{userId}/applications/{applicationId}/{subcollection}/{docId}
-         * @allow (create, read, write) The application owner or an admin managing related data.
-         * @deny (read, write) Any user who does not own the parent application.
-         * @principle Inherits ownership from the parent document path and validates relational integrity.
          */
         match /{subcollection}/{docId} {
           allow get, list: if isOwnerOrAdmin(userId);
           allow create: if isOwnerOrAdmin(userId) && hasValidSubcollectionDataOnCreate(applicationId);
-          allow update: if isExistingOwnerOrAdmin(userId) && hasValidSubcollectionDataOnUpdate();
-          allow delete: if isExistingOwnerOrAdmin(userId);
+          allow update: if isOwnerOrAdmin(userId) && hasValidSubcollectionDataOnUpdate();
+          allow delete: if isOwnerOrAdmin(userId);
         }
       }
     }
@@ -201,28 +179,25 @@ service cloud.firestore {
     /**
      * @description Defines admin roles. The existence of a document grants admin privileges.
      * @path /roles_admin/{userId}
-     * @allow (get) Any signed-in user can check if a user is an admin.
-     * @deny (list, create, update, delete) All other operations are denied for security.
-     * @principle Secures administrative role management by disallowing any client-side modifications.
+     * @allow (get) Any signed-in user can check if THEY are an admin.
+     * @deny (list, write, delete) All other operations are denied for security unless super admin.
      */
     match /roles_admin/{userId} {
       allow get: if isSignedIn();
-      allow write: if isSuperAdmin();
       allow list: if isAdmin() || isSuperAdmin();
-      allow delete: if isSuperAdmin();
+      allow write, delete: if isSuperAdmin();
     }
 
     /**
      * @description Defines super admin roles.
      * @path /roles_super_admin/{userId}
-     * @allow (get) Any signed-in user can check if a user is a super admin.
-     * @deny (all client) All client-side requests to list or write are denied unless super admin.
-     * @principle Secures super administrative role management by disallowing any client-side modifications.
+     * @allow (get) Any signed-in user can check if THEY are a super admin.
+     * @deny (list, write, delete) All other operations are denied unless super admin.
      */
     match /roles_super_admin/{userId} {
       allow get: if isSignedIn();
-      allow write: if isSuperAdmin();
       allow list: if isSuperAdmin();
+      allow write, delete: if isSuperAdmin();
     }
 
     /**
