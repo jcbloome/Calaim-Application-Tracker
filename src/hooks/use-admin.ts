@@ -82,7 +82,8 @@ export function useAdmin(): AdminStatus & { user: User | null } {
     return () => {
       isMounted = false;
     };
-    // This effect depends only on the user object and the loading state from useUser.
+    // This effect should ONLY depend on the user object and the loading state from useUser.
+    // Including adminStatus in the dependency array was causing an infinite loop.
   }, [user, isUserLoading, firestore]);
 
   return { ...adminStatus, user };
