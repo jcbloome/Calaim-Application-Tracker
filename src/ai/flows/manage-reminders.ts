@@ -9,10 +9,6 @@ import { z } from 'zod';
 import * as admin from 'firebase-admin';
 import { sendReminderEmail } from '@/app/actions/send-email';
 
-if (!admin.apps.length) {
-  admin.initializeApp();
-}
-
 // ========== SEND REMINDER EMAILS FLOW ==========
 
 const SendRemindersOutputSchema = z.object({

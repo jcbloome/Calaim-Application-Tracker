@@ -11,10 +11,6 @@ import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import * as admin from 'firebase-admin';
 
-if (!admin.apps.length) {
-  admin.initializeApp();
-}
-
 // Define the comprehensive schema for the incoming webhook data.
 // This should match all the fields collected in the CS Member Summary form.
 const WebhookInputSchema = z.object({

@@ -10,10 +10,6 @@ import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import * as admin from 'firebase-admin';
 
-if (!admin.apps.length) {
-  admin.initializeApp();
-}
-
 // ========== ADD STAFF FLOW ==========
 
 const AddStaffInputSchema = z.object({

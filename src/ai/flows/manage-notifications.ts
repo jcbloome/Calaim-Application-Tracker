@@ -10,10 +10,6 @@ import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import * as admin from 'firebase-admin';
 
-if (!admin.apps.length) {
-  admin.initializeApp();
-}
-
 // ========== GET RECIPIENTS FLOW ==========
 
 const GetRecipientsOutputSchema = z.object({

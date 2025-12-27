@@ -6,12 +6,6 @@ import ApplicationStatusEmail from '@/components/emails/ApplicationStatusEmail';
 import ReminderEmail from '@/components/emails/ReminderEmail';
 import * as admin from 'firebase-admin';
 
-// This file is a server-side action and needs its own Admin SDK initialization.
-// The check prevents re-initialization if it has already been done elsewhere.
-if (!admin.apps.length) {
-  admin.initializeApp();
-}
-
 if (!process.env.RESEND_API_KEY) {
   console.warn("RESEND_API_KEY is not set. Email functionality will be disabled.");
 }
