@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -7,7 +8,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
-import { getAuthenticatedUser } from '@genkit-ai/next/auth';
+import { getAuthenticatedUser } from '@genkit-ai/next';
 
 const UserSchema = z.object({
   uid: z.string(),
