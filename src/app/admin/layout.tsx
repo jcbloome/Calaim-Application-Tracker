@@ -116,27 +116,29 @@ function AdminHeader() {
         </div>
 
         <div className="flex items-center gap-4">
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="rounded-full">
-                    <UserIcon className="h-5 w-5" />
-                    <span className="sr-only">User menu</span>
-                </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                <DropdownMenuLabel>{user?.displayName || user?.email}</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => router.push('/profile')}>
-                    <UserIcon className="mr-2 h-4 w-4" />
-                    <span>My Profile</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSignOut}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Log out</span>
-                </DropdownMenuItem>
-                </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="hidden lg:flex items-center gap-4">
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon" className="rounded-full">
+                        <UserIcon className="h-5 w-5" />
+                        <span className="sr-only">User menu</span>
+                    </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>{user?.displayName || user?.email}</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => router.push('/profile')}>
+                        <UserIcon className="mr-2 h-4 w-4" />
+                        <span>My Profile</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleSignOut}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        <span>Log out</span>
+                    </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
 
             <div className="lg:hidden">
               <Sheet>
@@ -170,6 +172,33 @@ function AdminHeader() {
                         </Link>
                     </SheetClose>
                   </nav>
+                  {/* User Actions for mobile */}
+                   <div className="mt-auto border-t pt-6">
+                     {user ? (
+                        <div className="flex flex-col gap-4">
+                            <p className="text-sm text-muted-foreground text-center truncate">{user.displayName || user.email}</p>
+                            <SheetClose asChild>
+                                <Button onClick={() => router.push('/profile')} variant="outline" className="w-full">
+                                <UserIcon className="mr-2 h-4 w-4" />
+                                My Profile
+                                </Button>
+                            </SheetClose>
+                             <SheetClose asChild>
+                                <Button onClick={handleSignOut} className="w-full">
+                                    <LogOut className="mr-2 h-4 w-4" />
+                                    Log out
+                                </Button>
+                            </SheetClose>
+                        </div>
+                        ) : (
+                         <SheetClose asChild>
+                            <Button onClick={() => router.push('/admin/login')} className="w-full">
+                                <LogOut className="mr-2 h-4 w-4" />
+                                Log In
+                            </Button>
+                        </SheetClose>
+                        )}
+                    </div>
                 </SheetContent>
               </Sheet>
             </div>
