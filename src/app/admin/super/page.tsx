@@ -94,9 +94,33 @@ const sampleApplicationData: Omit<TestWebhookInput, 'userId'> = {
     rcfeAdminEmail: "emily@sunshinemeadows.com"
 };
 
+const DebugInfo = ({ isAdmin, isSuperAdmin, isLoading }: { isAdmin: boolean, isSuperAdmin: boolean, isLoading: boolean }) => (
+  <Card className="mb-6 bg-yellow-50 border-yellow-300">
+    <CardHeader>
+      <CardTitle className="text-lg">Live Debug Status</CardTitle>
+      <CardDescription>Current state of the `useAdmin` hook.</CardDescription>
+    </CardHeader>
+    <CardContent>
+      <div className="grid grid-cols-3 gap-4 text-center">
+        <div>
+          <p className="text-sm text-muted-foreground">isLoading</p>
+          <p className="text-lg font-bold">{isLoading ? 'true' : 'false'}</p>
+        </div>
+        <div>
+          <p className="text-sm text-muted-foreground">isAdmin</p>
+          <p className="text-lg font-bold">{isAdmin ? 'true' : 'false'}</p>
+        </div>
+        <div>
+          <p className="text-sm text-muted-foreground">isSuperAdmin</p>
+          <p className="text-lg font-bold">{isSuperAdmin ? 'true' : 'false'}</p>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+);
 
 export default function SuperAdminPage() {
-    const { isSuperAdmin, isLoading: isAdminLoading, user: currentUser } = useAdmin();
+    const { isSuperAdmin, isAdmin, isLoading: isAdminLoading, user: currentUser } = useAdmin();
     const router = useRouter();
     const { toast } = useToast();
     const firestore = useFirestore();
@@ -114,12 +138,8 @@ export default function SuperAdminPage() {
     const [isAddingStaff, setIsAddingStaff] = useState(false);
     const [isSendingWebhook, setIsSendingWebhook] = useState(false);
 
-    console.log('[SuperAdminPage] Rendering. Admin loading state:', isAdminLoading, 'Is Super Admin:', isSuperAdmin);
-
-
     useEffect(() => {
         if (!isAdminLoading && !isSuperAdmin) {
-            console.log('[SuperAdminPage] Effect: Not a super admin, redirecting.');
             router.push('/admin');
         }
     }, [isSuperAdmin, isAdminLoading, router]);
@@ -127,10 +147,8 @@ export default function SuperAdminPage() {
     
     const fetchAllStaff = async () => {
         if (!firestore) {
-            console.log('[fetchAllStaff] Firestore not available.');
             return;
         }
-        console.log('[fetchAllStaff] Starting to fetch staff data.');
         setIsLoadingStaff(true);
         try {
             // Fetch all documents from the relevant collections in parallel
@@ -139,8 +157,6 @@ export default function SuperAdminPage() {
                 getDocs(collection(firestore, 'roles_admin')),
                 getDocs(collection(firestore, 'roles_super_admin'))
             ]);
-
-            console.log(`[fetchAllStaff] Fetched ${usersSnap.size} users, ${adminRolesSnap.size} admins, ${superAdminRolesSnap.size} super admins.`);
 
 
             // Create maps for quick lookups
@@ -169,34 +185,28 @@ export default function SuperAdminPage() {
             // Sort the final list
             staff.sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
             setStaffList(staff);
-            console.log('[fetchAllStaff] Successfully processed and set staff list:', staff);
 
         } catch (error) {
             console.error("[fetchAllStaff] Error fetching staff list:", error);
             toast({ variant: "destructive", title: "Error", description: "Could not load staff members." });
         } finally {
             setIsLoadingStaff(false);
-            console.log('[fetchAllStaff] Finished fetching staff data.');
         }
     };
 
     useEffect(() => {
         if (firestore && currentUser && isSuperAdmin) {
-            console.log('[SuperAdminPage] Effect: Firestore, user, and super admin status confirmed. Fetching initial data.');
             const fetchInitialData = async () => {
                 await fetchAllStaff();
                 try {
                     const result = await getNotificationRecipients({ user: currentUser });
                     setNotificationRecipients(result.uids);
-                     console.log('[SuperAdminPage] Fetched notification recipients:', result.uids);
                 } catch (error) {
                     console.error("Error fetching notification settings:", error);
                     toast({ variant: "destructive", title: "Error", description: "Could not load notification settings." });
                 }
             };
             fetchInitialData();
-        } else {
-             console.log('[SuperAdminPage] Effect: Skipping initial data fetch. Conditions not met.', { hasFirestore: !!firestore, hasUser: !!currentUser, isSuperAdmin });
         }
     }, [firestore, currentUser, isSuperAdmin, toast]);
     
@@ -344,16 +354,21 @@ export default function SuperAdminPage() {
 
     if (!isSuperAdmin) {
          return (
-            <Alert variant="destructive">
-                <ShieldAlert className="h-4 w-4" />
-                <AlertTitle>Access Denied</AlertTitle>
-                <AlertDescription>You do not have the required permissions to view this page.</AlertDescription>
-            </Alert>
+             <>
+                <DebugInfo isAdmin={isAdmin} isSuperAdmin={isSuperAdmin} isLoading={isAdminLoading} />
+                <Alert variant="destructive">
+                    <ShieldAlert className="h-4 w-4" />
+                    <AlertTitle>Access Denied</AlertTitle>
+                    <AlertDescription>You do not have the required permissions to view this page.</AlertDescription>
+                </Alert>
+             </>
         );
     }
     
     return (
         <div className="space-y-6">
+            <DebugInfo isAdmin={isAdmin} isSuperAdmin={isSuperAdmin} isLoading={isAdminLoading} />
+            
              <Card>
                 <CardHeader>
                     <CardTitle className="text-2xl">Super Admin Tools</CardTitle>
@@ -441,5 +456,3 @@ export default function SuperAdminPage() {
         </div>
     );
 }
-
-    
