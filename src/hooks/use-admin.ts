@@ -59,17 +59,14 @@ export function useAdmin(): AdminStatus & { user: User | null } {
 
 
   useEffect(() => {
-    // Show loading state while the user object is being loaded.
     if (isUserLoading) {
       setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: true });
       return;
     }
 
-    // If loading is done and there is a user, check their roles.
     if (user) {
       checkRoles(user);
     } else {
-      // If loading is done and there is no user, they are not an admin.
       setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: false });
     }
     
