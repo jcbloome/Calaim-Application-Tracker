@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -216,7 +216,6 @@ export default function SuperAdminPage() {
             // We can't create users directly on the client without special privileges.
             // This will fail unless the rules are open, which they are not.
             // A server-side flow (Firebase Function) is required for this.
-            // Re-introducing a minimal server flow for user creation ONLY.
             
             // For now, let's just create the DB records, assuming user is created manually or via another process.
             // This is a placeholder to allow UI to function. A proper fix involves Firebase Functions.
@@ -429,3 +428,5 @@ export default function SuperAdminPage() {
         </div>
     );
 }
+
+    
