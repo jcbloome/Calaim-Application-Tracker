@@ -38,6 +38,7 @@ const addStaffFlow = ai.defineFlow(
     inputSchema: AddStaffInputSchema,
     outputSchema: AddStaffOutputSchema,
     tools: [getUser],
+    withFlowContext: true,
   },
   async ({ email, firstName, lastName }) => {
     // Ensure the user is authenticated before proceeding.
@@ -127,7 +128,8 @@ const updateStaffRoleFlow = ai.defineFlow(
     name: 'updateStaffRoleFlow',
     inputSchema: UpdateStaffRoleInputSchema,
     outputSchema: UpdateStaffRoleOutputSchema,
-    tools: [getUser]
+    tools: [getUser],
+    withFlowContext: true,
   },
   async ({ uid, isSuperAdmin }) => {
     // Ensure the user is authenticated before proceeding.

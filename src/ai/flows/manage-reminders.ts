@@ -27,7 +27,8 @@ const sendReminderEmailsFlow = ai.defineFlow(
     {
         name: 'sendReminderEmailsFlow',
         outputSchema: SendRemindersOutputSchema,
-        tools: [getUser]
+        tools: [getUser],
+        withFlowContext: true,
     },
     async () => {
         // Ensure the user is authenticated before proceeding.

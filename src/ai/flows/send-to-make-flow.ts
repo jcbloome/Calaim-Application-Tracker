@@ -91,6 +91,7 @@ const sendToMakeFlow = ai.defineFlow(
     inputSchema: TestWebhookInputSchema,
     outputSchema: WebhookResponseSchema,
     tools: [getUser],
+    withFlowContext: true,
   },
   async (data) => {
     // Ensure the user is authenticated before proceeding.

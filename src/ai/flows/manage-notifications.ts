@@ -28,7 +28,8 @@ const getNotificationRecipientsFlow = ai.defineFlow(
   {
     name: 'getNotificationRecipientsFlow',
     outputSchema: GetRecipientsOutputSchema,
-    tools: [getUser]
+    tools: [getUser],
+    withFlowContext: true,
   },
   async () => {
     // Ensure the user is authenticated before proceeding.
@@ -76,7 +77,8 @@ const updateNotificationRecipientsFlow = ai.defineFlow(
     name: 'updateNotificationRecipientsFlow',
     inputSchema: UpdateRecipientsInputSchema,
     outputSchema: UpdateRecipientsOutputSchema,
-    tools: [getUser]
+    tools: [getUser],
+    withFlowContext: true,
   },
   async ({ uids }) => {
     // Ensure the user is authenticated before proceeding.
