@@ -22,68 +22,59 @@ export function useAdmin(): AdminStatus & { user: User | null } {
   });
 
   useEffect(() => {
-    // The main loading state is now a combination of the user loading and the roles check.
-    // If the useUser hook is still loading, we should wait.
+    // If the main user object is still loading, the admin status is also loading.
     if (isUserLoading) {
       setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: true });
       return;
     }
 
-    // If there is no user, they cannot be an admin. We are done loading.
+    // If there's no user, they can't be an admin. We are done loading.
     if (!user) {
       setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: false });
       return;
     }
 
-    // If there is a user but Firestore is not ready, we can't check roles.
-    // Treat as non-admin for now and stop loading.
+    // If we have a user but no firestore instance, we can't check roles.
     if (!firestore) {
-        console.warn("useAdmin: Firestore service not available.");
-        setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: false });
-        return;
+      console.warn("useAdmin: Firestore service not available.");
+      setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: false });
+      return;
     }
 
-    let isMounted = true;
     const checkRoles = async () => {
       try {
         const adminRef = doc(firestore, 'roles_admin', user.uid);
         const superAdminRef = doc(firestore, 'roles_super_admin', user.uid);
 
-        // Fetch both role documents in parallel.
+        // Fetch both role documents in parallel for efficiency.
         const [adminSnap, superAdminSnap] = await Promise.all([
           getDoc(adminRef),
           getDoc(superAdminRef)
         ]);
+        
+        const hasSuperAdminRole = superAdminSnap.exists();
+        // An admin is someone who is either in the admin role or is a super admin.
+        const hasAdminRole = adminSnap.exists() || hasSuperAdminRole;
 
-        if (isMounted) {
-          const hasAdminRole = adminSnap.exists();
-          const hasSuperAdminRole = superAdminSnap.exists();
-          
-          setAdminStatus({
-            isAdmin: hasAdminRole || hasSuperAdminRole,
+        setAdminStatus({
+            isAdmin: hasAdminRole,
             isSuperAdmin: hasSuperAdminRole,
-            isLoading: false, // Finished loading roles
-          });
-        }
+            isLoading: false,
+        });
+
       } catch (error) {
         console.error("useAdmin: Error checking admin roles:", error);
-        if (isMounted) {
-          setAdminStatus({
-            isAdmin: false,
-            isSuperAdmin: false,
-            isLoading: false,
-          });
-        }
+        setAdminStatus({
+          isAdmin: false,
+          isSuperAdmin: false,
+          isLoading: false,
+        });
       }
     };
 
     checkRoles();
-
-    return () => {
-      isMounted = false;
-    };
-  // This effect depends ONLY on the user object from useUser and the firestore instance.
-  // It will re-run only if the user logs in/out or firestore becomes available.
+  // This effect should ONLY re-run if the user's authentication state changes.
+  // It does not depend on its own state. This breaks the infinite loop.
   }, [user, isUserLoading, firestore]);
 
   return { ...adminStatus, user };
