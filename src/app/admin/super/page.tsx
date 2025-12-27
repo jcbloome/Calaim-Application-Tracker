@@ -13,7 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { collection, onSnapshot, query, DocumentData, getDocs } from 'firebase/firestore';
+import { collection, getDocs, DocumentData } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -121,67 +121,67 @@ export default function SuperAdminPage() {
     }, [isSuperAdmin, isAdminLoading, router]);
 
     
+    const fetchAllStaff = async () => {
+        if (!firestore) return;
+        setIsLoadingStaff(true);
+        try {
+            // Fetch all documents from the relevant collections in parallel
+            const [usersSnap, adminRolesSnap, superAdminRolesSnap] = await Promise.all([
+                getDocs(collection(firestore, 'users')),
+                getDocs(collection(firestore, 'roles_admin')),
+                getDocs(collection(firestore, 'roles_super_admin'))
+            ]);
+
+            // Create maps for quick lookups
+            const users = new Map(usersSnap.docs.map(doc => [doc.id, doc.data() as Omit<UserData, 'id'>]));
+            const adminIds = new Set(adminRolesSnap.docs.map(doc => doc.id));
+            const superAdminIds = new Set(superAdminRolesSnap.docs.map(doc => doc.id));
+
+            // Combine the data into a single staff list
+            const allStaffIds = new Set([...adminIds, ...superAdminIds]);
+            const staff: StaffMember[] = [];
+
+            allStaffIds.forEach(uid => {
+                const userData = users.get(uid);
+                // Only add users who have an admin or super admin role
+                if (userData) {
+                    staff.push({
+                        uid,
+                        firstName: userData.firstName,
+                        lastName: userData.lastName,
+                        email: userData.email,
+                        role: superAdminIds.has(uid) ? 'Super Admin' : 'Admin',
+                    });
+                }
+            });
+            
+            // Sort the final list
+            staff.sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
+            setStaffList(staff);
+
+        } catch (error) {
+            console.error("Error fetching staff list:", error);
+            toast({ variant: "destructive", title: "Error", description: "Could not load staff members." });
+        } finally {
+            setIsLoadingStaff(false);
+        }
+    };
+
     useEffect(() => {
-        if (!firestore || !currentUser) return;
-
-        const fetchAllStaff = async () => {
-            setIsLoadingStaff(true);
-            try {
-                // Fetch all documents from the relevant collections in parallel
-                const [usersSnap, adminRolesSnap, superAdminRolesSnap] = await Promise.all([
-                    getDocs(collection(firestore, 'users')),
-                    getDocs(collection(firestore, 'roles_admin')),
-                    getDocs(collection(firestore, 'roles_super_admin'))
-                ]);
-
-                // Create maps for quick lookups
-                const users = new Map(usersSnap.docs.map(doc => [doc.id, doc.data() as Omit<UserData, 'id'>]));
-                const adminIds = new Set(adminRolesSnap.docs.map(doc => doc.id));
-                const superAdminIds = new Set(superAdminRolesSnap.docs.map(doc => doc.id));
-
-                // Combine the data into a single staff list
-                const allStaffIds = new Set([...adminIds, ...superAdminIds]);
-                const staff: StaffMember[] = [];
-
-                allStaffIds.forEach(uid => {
-                    const userData = users.get(uid);
-                    if (userData) {
-                        staff.push({
-                            uid,
-                            firstName: userData.firstName,
-                            lastName: userData.lastName,
-                            email: userData.email,
-                            role: superAdminIds.has(uid) ? 'Super Admin' : 'Admin',
-                        });
-                    }
-                });
-                
-                // Sort the final list
-                staff.sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
-
-                setStaffList(staff);
-
-            } catch (error) {
-                console.error("Error fetching staff list:", error);
-                toast({ variant: "destructive", title: "Error", description: "Could not load staff members." });
-            } finally {
-                setIsLoadingStaff(false);
-            }
-        };
-
-        const fetchNotificationSettings = async () => {
-             try {
-                const result = await getNotificationRecipients({ user: currentUser });
-                setNotificationRecipients(result.uids);
-            } catch (error) {
-                console.error("Error fetching notification settings:", error);
-            }
-        };
-
-        fetchAllStaff();
-        fetchNotificationSettings();
-
-    }, [firestore, currentUser, toast]);
+        if (firestore && currentUser && isSuperAdmin) {
+            const fetchInitialData = async () => {
+                await fetchAllStaff();
+                try {
+                    const result = await getNotificationRecipients({ user: currentUser });
+                    setNotificationRecipients(result.uids);
+                } catch (error) {
+                    console.error("Error fetching notification settings:", error);
+                    toast({ variant: "destructive", title: "Error", description: "Could not load notification settings." });
+                }
+            };
+            fetchInitialData();
+        }
+    }, [firestore, currentUser, isSuperAdmin, toast]);
     
     
     const handleAddStaff = async (e: React.FormEvent) => {
@@ -207,30 +207,9 @@ export default function SuperAdminPage() {
                 description: result.message,
                 className: 'bg-green-100 text-green-900 border-green-200',
             });
+            
             // Refetch staff list after adding
-            if (firestore) {
-               const usersSnap = await getDocs(collection(firestore, 'users'));
-               const users = new Map(usersSnap.docs.map(doc => [doc.id, doc.data() as Omit<UserData, 'id'>]));
-               const adminRolesSnap = await getDocs(collection(firestore, 'roles_admin'));
-               const adminIds = new Set(adminRolesSnap.docs.map(doc => doc.id));
-               const superAdminRolesSnap = await getDocs(collection(firestore, 'roles_super_admin'));
-               const superAdminIds = new Set(superAdminRolesSnap.docs.map(doc => doc.id));
-               const allStaffIds = new Set([...adminIds, ...superAdminIds]);
-               const newStaffList: StaffMember[] = [];
-                allStaffIds.forEach(uid => {
-                    const userData = users.get(uid);
-                    if (userData) {
-                        newStaffList.push({
-                            uid,
-                            firstName: userData.firstName,
-                            lastName: userData.lastName,
-                            email: userData.email,
-                            role: superAdminIds.has(uid) ? 'Super Admin' : 'Admin',
-                        });
-                    }
-                });
-                setStaffList(newStaffList.sort((a,b) => a.lastName.localeCompare(b.lastName)));
-            }
+            await fetchAllStaff();
 
             setNewStaffFirstName('');
             setNewStaffLastName('');
