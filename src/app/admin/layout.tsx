@@ -106,39 +106,32 @@ function AdminHeader() {
                     </NavigationMenuLink>
                   </NavigationMenuItem>
               )}
-               <NavigationMenuItem>
-                  <NavigationMenuLink asChild className={navigationMenuTriggerStyle()}>
-                      <Link href="/applications">User View</Link>
-                  </NavigationMenuLink>
-                </NavigationMenuItem>
             </NavigationMenuList>
           </NavigationMenu>
         </div>
 
         <div className="flex items-center gap-4">
-            <div className="hidden lg:flex items-center gap-4">
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="icon" className="rounded-full">
-                        <UserIcon className="h-5 w-5" />
-                        <span className="sr-only">User menu</span>
-                    </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>{user?.displayName || user?.email}</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={() => router.push('/profile')}>
-                        <UserIcon className="mr-2 h-4 w-4" />
-                        <span>My Profile</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleSignOut}>
-                        <LogOut className="mr-2 h-4 w-4" />
-                        <span>Log out</span>
-                    </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
-            </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="rounded-full hidden lg:inline-flex">
+                <UserIcon className="h-5 w-5" />
+                <span className="sr-only">User menu</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>{user?.displayName || user?.email}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => router.push('/profile')}>
+                <UserIcon className="mr-2 h-4 w-4" />
+                <span>My Profile</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleSignOut}>
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Log out</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
             <div className="lg:hidden">
               <Sheet>
@@ -165,12 +158,6 @@ function AdminHeader() {
                         </SheetClose>
                       );
                     })}
-                     <SheetClose asChild>
-                      <Link href="/applications" className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary">
-                          <UserIcon className="h-4 w-4" />
-                          User View
-                        </Link>
-                    </SheetClose>
                   </nav>
                   {/* User Actions for mobile */}
                    <div className="mt-auto border-t pt-6">
@@ -212,6 +199,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const { isAdmin, isSuperAdmin, isLoading, user } = useAdmin();
   const router = useRouter();
   const pathname = usePathname();
+  const auth = useAuth();
 
   useEffect(() => {
     // If auth is still loading, wait.
@@ -219,13 +207,20 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       return;
     }
     
+    // On the admin login page, if a user is already logged in, sign them out.
+    // This forces a clean login and prevents session conflicts.
+    if (user && pathname === '/admin/login') {
+        auth?.signOut();
+        return;
+    }
+
     // If auth is done, there's no user, and we are not on the login page, redirect to login.
     if (!user && pathname !== '/admin/login') {
       router.push('/admin/login');
       return;
     }
 
-  }, [isLoading, user, pathname, router]);
+  }, [isLoading, user, pathname, router, auth]);
 
   // Allow login page to render without the main layout or any auth checks.
   if (pathname === '/admin/login') {

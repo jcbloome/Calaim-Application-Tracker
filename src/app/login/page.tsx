@@ -1,8 +1,8 @@
 
 'use client';
 
-import React, { useState } from 'react';
-import { useAuth } from '@/firebase';
+import React, { useState, useEffect } from 'react';
+import { useAuth, useUser } from '@/firebase';
 import {
   setPersistence,
   browserSessionPersistence,
@@ -29,12 +29,21 @@ export default function LoginPage() {
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
+  const { user, isUserLoading } = useUser();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // If a user is already logged in when visiting this page, sign them out.
+    // This ensures that an admin switching to the user portal gets a clean session.
+    if (user && !isUserLoading) {
+      auth?.signOut();
+    }
+  }, [user, isUserLoading, auth]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
