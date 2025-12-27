@@ -6,6 +6,7 @@ import { useAuth } from '@/firebase';
 import {
   setPersistence,
   browserSessionPersistence,
+  signInWithEmailAndPassword,
 } from 'firebase/auth';
 import type { AuthError } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -22,7 +23,6 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Header } from '@/components/Header';
-import { initiateEmailSignIn } from '@/firebase';
 
 
 export default function LoginPage() {
@@ -54,9 +54,9 @@ export default function LoginPage() {
     }
 
     try {
+      // Use session persistence to isolate the user session
       await setPersistence(auth, browserSessionPersistence);
-      // Use the non-blocking sign-in function
-      initiateEmailSignIn(auth, email, password);
+      await signInWithEmailAndPassword(auth, email, password);
       
       toast({
         title: 'Successfully signed in!',
@@ -64,7 +64,7 @@ export default function LoginPage() {
         duration: 2000,
       });
       
-      // The onAuthStateChanged listener will handle the redirect via the useUser hook.
+      // The onAuthStateChanged listener in useUser will handle the redirect.
       // We can optimistically push to the applications page.
       router.push('/applications');
 
@@ -88,8 +88,6 @@ export default function LoginPage() {
       });
       setIsLoading(false);
     } 
-    // Do not set isLoading to false in a finally block here, 
-    // as the page will navigate away on success. It's only needed on error.
   };
 
   return (

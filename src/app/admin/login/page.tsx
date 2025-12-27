@@ -43,6 +43,7 @@ export default function AdminLoginPage() {
     }
 
     try {
+      // Use session persistence to isolate the admin session
       await setPersistence(auth, browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
       toast({
