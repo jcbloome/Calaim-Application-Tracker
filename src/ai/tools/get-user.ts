@@ -25,18 +25,20 @@ export type User = z.infer<typeof UserSchema>;
 export const getUser = ai.defineTool(
   {
     name: 'getUser',
-    description: 'Gets the currently authenticated user.',
+    description: "Gets the currently authenticated user's details.",
+    inputSchema: z.void(),
     outputSchema: UserSchema,
   },
-  async () => {
-    const user = getAuthenticatedUser();
+  async (input, context) => {
+    // The 'context' argument contains execution details, including auth.
+    const user = context?.auth;
 
     if (!user) {
-      // This will automatically throw an unauthenticated error,
-      // which is the correct behavior if no user is found.
+      // This will automatically throw an unauthenticated error if no user is found in the context.
       throw new Error('User not authenticated.');
     }
 
+    // The user object from context already contains uid, email, etc.
     return {
       uid: user.uid,
       email: user.email || undefined,
