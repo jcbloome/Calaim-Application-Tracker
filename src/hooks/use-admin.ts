@@ -22,9 +22,11 @@ export function useAdmin(): AdminStatus & { user: User | null } {
   });
 
   useEffect(() => {
-    // If the main user object is still loading, the admin status is also loading.
+    // We are always loading if the user or roles are still being determined.
+    setAdminStatus(s => ({ ...s, isLoading: true }));
+
+    // If the main user object is still loading, we can't do anything yet.
     if (isUserLoading) {
-      setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: true });
       return;
     }
 
@@ -56,6 +58,7 @@ export function useAdmin(): AdminStatus & { user: User | null } {
         // An admin is someone who is either in the admin role or is a super admin.
         const hasAdminRole = adminSnap.exists() || hasSuperAdminRole;
 
+        // Now that all checks are complete, set the final status and mark loading as false.
         setAdminStatus({
             isAdmin: hasAdminRole,
             isSuperAdmin: hasSuperAdminRole,
@@ -73,8 +76,6 @@ export function useAdmin(): AdminStatus & { user: User | null } {
     };
 
     checkRoles();
-  // This effect should ONLY re-run if the user's authentication state changes.
-  // It does not depend on its own state. This breaks the infinite loop.
   }, [user, isUserLoading, firestore]);
 
   return { ...adminStatus, user };
