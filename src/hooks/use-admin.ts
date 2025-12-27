@@ -22,24 +22,25 @@ export function useAdmin(): AdminStatus & { user: User | null } {
   });
 
   useEffect(() => {
-    // Start loading whenever the user or loading status changes.
-    setAdminStatus(prev => ({ ...prev, isLoading: true }));
-
+    // The main loading state is now a combination of the user loading and the roles check.
+    // If the useUser hook is still loading, we should wait.
     if (isUserLoading) {
-      // If the parent user hook is loading, we are also loading.
+      setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: true });
       return;
     }
 
+    // If there is no user, they cannot be an admin. We are done loading.
     if (!user) {
-      // If there's no user, they have no roles, and we are done loading.
       setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: false });
       return;
     }
 
+    // If there is a user but Firestore is not ready, we can't check roles.
+    // Treat as non-admin for now and stop loading.
     if (!firestore) {
-      // If firestore isn't ready, we can't check roles. Stop loading.
-      setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: false });
-      return;
+        console.warn("useAdmin: Firestore service not available.");
+        setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: false });
+        return;
     }
 
     let isMounted = true;
@@ -59,10 +60,9 @@ export function useAdmin(): AdminStatus & { user: User | null } {
           const hasSuperAdminRole = superAdminSnap.exists();
           
           setAdminStatus({
-            // An admin is someone with either a super admin OR a regular admin role.
             isAdmin: hasAdminRole || hasSuperAdminRole,
             isSuperAdmin: hasSuperAdminRole,
-            isLoading: false,
+            isLoading: false, // Finished loading roles
           });
         }
       } catch (error) {
@@ -82,10 +82,9 @@ export function useAdmin(): AdminStatus & { user: User | null } {
     return () => {
       isMounted = false;
     };
-    // This effect should ONLY depend on the user object and the loading state from useUser.
-    // Including adminStatus in the dependency array was causing an infinite loop.
+  // This effect depends ONLY on the user object from useUser and the firestore instance.
+  // It will re-run only if the user logs in/out or firestore becomes available.
   }, [user, isUserLoading, firestore]);
 
   return { ...adminStatus, user };
 }
-
