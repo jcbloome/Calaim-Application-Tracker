@@ -93,24 +93,6 @@ const sampleApplicationData: Omit<TestWebhookInput, 'userId'> = {
     rcfeAdminEmail: "emily@sunshinemeadows.com"
 };
 
-const DebugInfo = ({ user, isAdmin, isSuperAdmin, isLoading }: { user: any, isAdmin: boolean, isSuperAdmin: boolean, isLoading: boolean }) => (
-  <Card className="mb-6 bg-yellow-50 border-yellow-300">
-    <CardHeader>
-      <CardTitle className="text-lg">Live Debug Status</CardTitle>
-      <CardDescription>Current state of the `useAdmin` hook and user.</CardDescription>
-    </CardHeader>
-    <CardContent>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-        <div><p className="text-sm text-muted-foreground">isLoading</p><p className="text-lg font-bold">{isLoading ? 'true' : 'false'}</p></div>
-        <div><p className="text-sm text-muted-foreground">isAdmin</p><p className="text-lg font-bold">{isAdmin ? 'true' : 'false'}</p></div>
-        <div><p className="text-sm text-muted-foreground">isSuperAdmin</p><p className="text-lg font-bold">{isSuperAdmin ? 'true' : 'false'}</p></div>
-         <div><p className="text-sm text-muted-foreground">User UID</p><p className="text-sm font-mono truncate">{user?.uid || 'N/A'}</p></div>
-         <div className="col-span-full"><p className="text-sm text-muted-foreground">User Email</p><p className="text-sm font-mono truncate">{user?.email || 'N/A'}</p></div>
-      </div>
-    </CardContent>
-  </Card>
-);
-
 export default function SuperAdminPage() {
     const { isSuperAdmin, isAdmin, isLoading: isAdminLoading, user: currentUser } = useAdmin();
     const router = useRouter();
@@ -327,7 +309,6 @@ export default function SuperAdminPage() {
     if (!isSuperAdmin) {
          return (
              <>
-                <DebugInfo user={currentUser} isAdmin={isAdmin} isSuperAdmin={isSuperAdmin} isLoading={isAdminLoading} />
                 <Alert variant="destructive">
                     <ShieldAlert className="h-4 w-4" />
                     <AlertTitle>Access Denied</AlertTitle>
@@ -339,7 +320,6 @@ export default function SuperAdminPage() {
     
     return (
         <div className="space-y-6">
-            <DebugInfo user={currentUser} isAdmin={isAdmin} isSuperAdmin={isSuperAdmin} isLoading={isAdminLoading} />
             
              <Card>
                 <CardHeader>
