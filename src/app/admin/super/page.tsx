@@ -121,44 +121,58 @@ export default function SuperAdminPage() {
     }, [isSuperAdmin, isAdminLoading, router]);
 
     useEffect(() => {
-        if (!firestore) return;
-        setIsLoadingStaff(true);
+      if (!firestore) return;
+      setIsLoadingStaff(true);
 
-        const usersRef = collection(firestore, 'users');
-        const adminRolesRef = collection(firestore, 'roles_admin');
-        const superAdminRolesRef = collection(firestore, 'roles_super_admin');
+      const usersRef = collection(firestore, 'users');
+      const adminRolesRef = collection(firestore, 'roles_admin');
+      const superAdminRolesRef = collection(firestore, 'roles_super_admin');
 
-        const unsubUsers = onSnapshot(query(usersRef), (usersSnapshot) => {
-            const usersData: UserData[] = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as Omit<UserData, 'id'> }));
-            
-            onSnapshot(query(adminRolesRef), (adminSnapshot) => {
-                const adminIds = new Set(adminSnapshot.docs.map(doc => doc.id));
-                
-                onSnapshot(query(superAdminRolesRef), (superAdminSnapshot) => {
-                     const superAdminIds = new Set(superAdminSnapshot.docs.map(doc => doc.id));
+      let users: UserData[] = [];
+      let adminIds = new Set<string>();
+      let superAdminIds = new Set<string>();
 
-                     const allStaff: StaffMember[] = usersData
-                        .filter(user => adminIds.has(user.id) || superAdminIds.has(user.id))
-                        .map(user => ({
-                            uid: user.id,
-                            firstName: user.firstName,
-                            lastName: user.lastName,
-                            email: user.email,
-                            role: superAdminIds.has(user.id) ? 'Super Admin' as const : 'Admin' as const,
-                        }))
-                        .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
+      const combineAndSetStaff = () => {
+        const allStaff: StaffMember[] = users
+          .filter(user => adminIds.has(user.id) || superAdminIds.has(user.id))
+          .map(user => ({
+            uid: user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            role: superAdminIds.has(user.id) ? 'Super Admin' as const : 'Admin' as const,
+          }))
+          .sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
 
-                     setStaffList(allStaff);
-                     setIsLoadingStaff(false);
-                });
-            });
-        });
+        setStaffList(allStaff);
+        setIsLoadingStaff(false);
+      };
+      
+      const unsubUsers = onSnapshot(query(usersRef), (snap) => {
+        users = snap.docs.map(doc => ({ id: doc.id, ...doc.data() as Omit<UserData, 'id'> }));
+        combineAndSetStaff();
+      });
 
-        if (currentUser) {
-            getNotificationRecipients({ user: currentUser }).then(result => setNotificationRecipients(result.uids));
-        }
-        
-        return () => unsubUsers();
+      const unsubAdmins = onSnapshot(query(adminRolesRef), (snap) => {
+        adminIds = new Set(snap.docs.map(doc => doc.id));
+        combineAndSetStaff();
+      });
+
+      const unsubSuperAdmins = onSnapshot(query(superAdminRolesRef), (snap) => {
+        superAdminIds = new Set(snap.docs.map(doc => doc.id));
+        combineAndSetStaff();
+      });
+
+      if (currentUser) {
+          getNotificationRecipients({ user: currentUser }).then(result => setNotificationRecipients(result.uids));
+      }
+
+      // Cleanup function to unsubscribe from all listeners on component unmount
+      return () => {
+        unsubUsers();
+        unsubAdmins();
+        unsubSuperAdmins();
+      };
     }, [firestore, currentUser]);
     
     
@@ -400,3 +414,5 @@ export default function SuperAdminPage() {
         </div>
     );
 }
+
+    
