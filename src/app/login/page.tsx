@@ -38,12 +38,11 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // If a user is already logged in when visiting this page, sign them out.
-    // This ensures that an admin switching to the user portal gets a clean session.
-    if (user && !isUserLoading) {
-      auth?.signOut();
+    // On mount, if the user is already authenticated, redirect them away from login.
+    if (!isUserLoading && user) {
+      router.push('/applications');
     }
-  }, [user, isUserLoading, auth]);
+  }, [user, isUserLoading, router]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,8 +72,6 @@ export default function LoginPage() {
         duration: 2000,
       });
       
-      // The onAuthStateChanged listener in useUser will handle the redirect.
-      // We can optimistically push to the applications page.
       router.push('/applications');
 
     } catch (err) {

@@ -1,8 +1,8 @@
 
 'use client';
 
-import React, { useState } from 'react';
-import { useAuth } from '@/firebase';
+import React, { useState, useEffect } from 'react';
+import { useAuth, useUser } from '@/firebase';
 import { signInWithEmailAndPassword, setPersistence, browserSessionPersistence } from 'firebase/auth';
 import type { AuthError } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -19,12 +19,21 @@ export default function AdminLoginPage() {
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
+  const { user, isUserLoading } = useUser();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // If the user is already logged in and we are not on the login page, redirect them.
+    // This handles the case where an admin is already authenticated.
+    if (!isUserLoading && user) {
+      router.push('/admin');
+    }
+  }, [user, isUserLoading, router]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,14 +68,9 @@ export default function AdminLoginPage() {
       if (authError.code === 'auth/user-not-found' || authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
         errorMessage = 'Invalid email or password. Please check your credentials and try again.';
       } else {
-        errorMessage = `An unexpected error occurred: ${authError.code} - ${authError.message}`;
+        errorMessage = `An unexpected error occurred: ${authError.message}`;
       }
       setError(errorMessage);
-      toast({
-        variant: 'destructive',
-        title: 'Sign In Failed',
-        description: errorMessage,
-      });
     } finally {
       setIsLoading(false);
     }
