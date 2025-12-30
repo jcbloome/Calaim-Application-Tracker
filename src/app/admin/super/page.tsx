@@ -357,8 +357,10 @@ export default function SuperAdminPage() {
         }
 
         try {
-            // Directly call the simplified server action
-            const result = await sendReminderEmails(appsToRemind);
+            // Convert Firestore Timestamps to strings before sending to the server action.
+            const plainApps = JSON.parse(JSON.stringify(appsToRemind));
+            
+            const result = await sendReminderEmails(plainApps);
             if (result.success) {
                 toast({ title: 'Reminders Sent!', description: `Successfully sent ${result.sentCount} reminder emails.`, className: 'bg-green-100 text-green-900 border-green-200' });
             } else {
