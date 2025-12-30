@@ -159,9 +159,18 @@ export default function Step4() {
               name="monthlyIncome"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Total Monthly Income <span className="text-destructive">*</span></FormLabel>
+                  <FormLabel>What is member's total monthly income <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} placeholder="Enter total monthly income amount" type="number" />
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">$</span>
+                      <Input
+                        {...field}
+                        value={field.value ?? ''}
+                        placeholder="2000"
+                        type="number"
+                        className="pl-7"
+                      />
+                    </div>
                   </FormControl>
                   <FormDescription>Please note that proof of income (e.g., Social Security award letter) will need to be submitted later.</FormDescription>
                   <FormMessage />
