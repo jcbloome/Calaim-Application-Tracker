@@ -27,6 +27,7 @@ import {
   Lock,
   Edit,
   Mail,
+  AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker } from '@/lib/definitions';
@@ -436,6 +437,8 @@ function ApplicationDetailPageContent() {
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
   
   const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
+  const servicesDeclined = waiverFormStatus?.choice === 'decline';
+
   const waiverSubTasks = [
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
       { id: 'liability', label: 'Liability Waiver', completed: !!waiverFormStatus?.ackLiability },
@@ -528,6 +531,15 @@ function ApplicationDetailPageContent() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
       <div className="lg:col-span-2 space-y-8">
+         {servicesDeclined && (
+            <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Services Declined</AlertTitle>
+                <AlertDescription>
+                    The member or their representative has declined Community Support services in the Freedom of Choice waiver. Immediate follow-up may be required.
+                </AlertDescription>
+            </Alert>
+        )}
         <Card className="shadow-sm">
             <CardHeader>
             <CardTitle className="text-2xl sm:text-3xl font-bold text-primary">

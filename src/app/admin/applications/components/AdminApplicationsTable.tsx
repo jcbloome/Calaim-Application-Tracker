@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState } from 'react';
@@ -27,7 +28,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
-import { Trash2 } from 'lucide-react';
+import { Trash2, AlertTriangle } from 'lucide-react';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import type { WithId } from '@/firebase';
@@ -40,6 +41,7 @@ import {
 } from "@/components/ui/dialog"
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 type ApplicationStatusType = Application['status'];
 
@@ -223,6 +225,7 @@ export const AdminApplicationsTable = ({
               const referrerName = app.referrerName || `${app.referrerFirstName || ''} ${app.referrerLastName || ''}`.trim() || 'N/A';
               const submissionDate = app.submissionDate ? (app.submissionDate as Timestamp).toDate() : null;
               const lastUpdatedDate = app.lastUpdated ? (app.lastUpdated as Timestamp).toDate() : null;
+              const servicesDeclined = app.forms?.find(f => f.name === 'Waivers & Authorizations')?.choice === 'decline';
 
               return (
               <TableRow key={app.id}>
@@ -260,9 +263,23 @@ export const AdminApplicationsTable = ({
                 </TableCell>
                 <TableCell className="text-right space-x-4">
                   <QuickViewDialog application={app} />
-                  <Link href={`/admin/applications/${app.id}?userId=${app.userId}`} className="text-sm font-medium text-primary hover:underline">
-                    Details
-                  </Link>
+                   <div className="inline-flex items-center gap-2">
+                    {servicesDeclined && (
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger>
+                                    <AlertTriangle className="h-4 w-4 text-destructive" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>Services were declined by member.</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    )}
+                    <Link href={`/admin/applications/${app.id}?userId=${app.userId}`} className="text-sm font-medium text-primary hover:underline">
+                        Details
+                    </Link>
+                  </div>
                 </TableCell>
               </TableRow>
             )})
