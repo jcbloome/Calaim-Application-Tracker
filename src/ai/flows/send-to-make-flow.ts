@@ -78,15 +78,6 @@ const WebhookResponseSchema = z.object({
 export type WebhookResponse = z.infer<typeof WebhookResponseSchema>;
 
 
-/**
- * Public function to be called from the client.
- */
-export async function sendTestToMake(input: z.infer<typeof TestWebhookInputSchema>): Promise<WebhookResponse> {
-  console.log(`[sendTestToMake] Starting flow.`);
-  return sendToMakeFlow(input);
-}
-
-
 const sendToMakeFlow = ai.defineFlow(
   {
     name: 'sendToMakeFlow',
@@ -137,3 +128,11 @@ const sendToMakeFlow = ai.defineFlow(
     }
   }
 );
+
+/**
+ * Public function to be called from the client.
+ */
+export async function sendTestToMake(input: z.infer<typeof TestWebhookInputSchema>): Promise<WebhookResponse> {
+  console.log(`[sendTestToMake] Starting flow.`);
+  return sendToMakeFlow(input);
+}
