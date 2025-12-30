@@ -6,7 +6,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save } from 'lucide-react';
+import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
@@ -15,6 +15,17 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 // CLIENT-SIDE LOGIC - Replaces the need for server-side AI flows for UI data.
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
@@ -252,6 +263,39 @@ export default function SuperAdminPage() {
             toast({ variant: 'destructive', title: 'Update Failed', description: error.message });
         }
     };
+    
+    const handleDeleteStaff = async (uid: string) => {
+        if (!firestore) return;
+
+        const batch = writeBatch(firestore);
+        
+        // Remove roles
+        batch.delete(doc(firestore, 'roles_admin', uid));
+        batch.delete(doc(firestore, 'roles_super_admin', uid));
+        
+        // Remove from notification recipients list if present
+        if (notificationRecipients.includes(uid)) {
+            const updatedRecipients = notificationRecipients.filter(id => id !== uid);
+            batch.set(doc(firestore, 'system_settings', 'notifications'), { recipientUids: updatedRecipients }, { merge: true });
+        }
+
+        try {
+            await batch.commit();
+            
+            // Note: Deleting the 'users' document and the Firebase Auth user is a more destructive action
+            // and is omitted here for safety. This action primarily revokes permissions.
+            // await deleteDoc(doc(firestore, 'users', uid));
+
+            toast({ title: 'Staff Roles Revoked', description: `Admin permissions have been removed for the user.`, className: 'bg-green-100 text-green-900 border-green-200' });
+            
+            // Refresh data from Firestore
+            await fetchAllStaff();
+            await fetchNotificationRecipients();
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Delete Failed', description: error.message });
+        }
+    };
+
 
     const handleNotificationToggle = (uid: string, checked: boolean) => {
         setNotificationRecipients(prev => 
@@ -353,14 +397,35 @@ export default function SuperAdminPage() {
                              {isLoadingStaff ? <div className="flex justify-center items-center h-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
                             : staffList.length > 0 ? (
                                 <div className="space-y-2 max-h-96 overflow-y-auto pr-2">{staffList.map((staff) => (
-                                    <div key={staff.uid} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 border rounded-lg bg-background">
-                                        <div className="flex-1 min-w-0">
+                                    <div key={staff.uid} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border rounded-lg bg-background">
+                                        <div className="flex-1 flex flex-col min-w-0">
                                             <p className="font-semibold truncate">{staff.firstName} {staff.lastName}</p>
                                             <p className="text-sm text-muted-foreground truncate">{staff.email}</p>
                                         </div>
                                         <div className="flex items-center gap-4 shrink-0">
                                             <span className={`text-sm font-medium ${staff.role === 'Super Admin' ? 'text-primary' : 'text-muted-foreground'}`}>{staff.role}</span>
                                             <Switch checked={staff.role === 'Super Admin'} onCheckedChange={(checked) => handleRoleToggle(staff.uid, checked)} disabled={staff.uid === currentUser?.uid} aria-label={`Toggle Super Admin for ${staff.email}`} />
+                                            <AlertDialog>
+                                                <AlertDialogTrigger asChild>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" disabled={staff.uid === currentUser?.uid}>
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </AlertDialogTrigger>
+                                                <AlertDialogContent>
+                                                    <AlertDialogHeader>
+                                                        <AlertDialogTitle>Delete Staff Member?</AlertDialogTitle>
+                                                        <AlertDialogDescription>
+                                                            This will revoke all admin permissions for {staff.email}. This action does not delete their auth account but prevents them from accessing admin areas. Are you sure?
+                                                        </AlertDialogDescription>
+                                                    </AlertDialogHeader>
+                                                    <AlertDialogFooter>
+                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                        <AlertDialogAction onClick={() => handleDeleteStaff(staff.uid)} className="bg-destructive hover:bg-destructive/90">
+                                                            Yes, Revoke Access
+                                                        </AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                            </AlertDialog>
                                         </div>
                                     </div>
                                 ))}</div>
@@ -414,7 +479,3 @@ export default function SuperAdminPage() {
         </div>
     );
 }
-
-    
-
-    
