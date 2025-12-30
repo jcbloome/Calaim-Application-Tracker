@@ -140,7 +140,7 @@ export default function WaiverFormPage() {
 
                 <div className="mt-4">
                   <label className="block text-xs uppercase font-bold text-slate-500 mb-1">
-                    If Authorized Representative, relationship to member:
+                    If Authorized Representative, what is your relationship to the member?
                   </label>
                   <div className="border-b border-slate-400 h-8"></div>
                 </div>

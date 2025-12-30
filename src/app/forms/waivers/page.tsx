@@ -86,7 +86,7 @@ function WaiversFormComponent() {
 
     const isFormComplete = () => {
         if (!signerType || !signerName || !focChoice || !ackHipaa || !ackLiability || !ackFoc || !ackRoomAndBoard) return false;
-        if (signerType === 'representative' && !signerRelationship) return false;
+        // The relationship field is optional, so it's not checked here.
         return true;
     };
 
@@ -314,7 +314,7 @@ function WaiversFormComponent() {
                                     
                                     {signerType === 'representative' && (
                                         <div className="space-y-2">
-                                            <Label htmlFor="signer-relationship">Relationship to Member</Label>
+                                            <Label htmlFor="signer-relationship">What is your relationship to the member? (Optional)</Label>
                                             <Input id="signer-relationship" value={signerRelationship} onChange={e => setSignerRelationship(e.target.value)} placeholder="e.g., Son, Daughter, Conservator" disabled={isReadOnly} />
                                         </div>
                                     )}
