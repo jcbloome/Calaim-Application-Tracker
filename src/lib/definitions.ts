@@ -11,6 +11,7 @@ export type Application = {
   memberCounty: string;
   memberMrn: string;
   memberDob?: any;
+  sex?: 'Male' | 'Female';
   status: ApplicationStatus;
   submissionDate?: Timestamp | FieldValue;
   lastUpdated: Timestamp | FieldValue;

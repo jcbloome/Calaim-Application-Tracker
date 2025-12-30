@@ -83,19 +83,43 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 </FormItem>
               )}
             />
-            <FormField
-              control={control}
-              name="memberAge"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Age</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} type="number" readOnly className="bg-muted" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="flex gap-4">
+               <FormField
+                control={control}
+                name="memberAge"
+                render={({ field }) => (
+                  <FormItem className="w-1/2">
+                    <FormLabel>Age</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ''} type="number" readOnly className="bg-muted" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+               <FormField
+                  control={control}
+                  name="sex"
+                  render={({ field }) => (
+                    <FormItem className="w-1/2">
+                      <FormLabel>Sex <span className="text-destructive">*</span></FormLabel>
+                      <FormControl>
+                        <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex pt-2 space-x-4">
+                          <FormItem className="flex items-center space-x-2 space-y-0">
+                            <FormControl><RadioGroupItem value="Male" /></FormControl>
+                            <FormLabel className="font-normal">Male</FormLabel>
+                          </FormItem>
+                          <FormItem className="flex items-center space-x-2 space-y-0">
+                            <FormControl><RadioGroupItem value="Female" /></FormControl>
+                            <FormLabel className="font-normal">Female</FormLabel>
+                          </FormItem>
+                        </RadioGroup>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+            </div>
           </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField

@@ -27,6 +27,7 @@ export const formSchema = z.object({
     memberFirstName: requiredString,
     memberLastName: requiredString,
     memberDob: dateSchema,
+    sex: z.enum(['Male', 'Female'], { required_error: 'Please select the member\'s sex.' }),
     memberAge: z.number({ required_error: 'Age is required.'}).min(0).optional(),
     memberMediCalNum: z.string().regex(/^[9][0-9]{7}[A-Za-z]$/, { message: "Medi-Cal number must be 9 characters, start with '9', and end with a letter." }),
     confirmMemberMediCalNum: requiredString,
