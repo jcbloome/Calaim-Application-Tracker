@@ -9,8 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, ShieldCheck, Bell } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
-import { useFirestore, useUser } from '@/firebase';
+import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, type Query } from 'firebase/firestore';
+import { useFirestore, useUser, useCollection } from '@/firebase';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -32,6 +32,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { triggerMakeWebhook } from '@/ai/flows/send-to-make-flow';
 import { sendReminderEmails } from '@/ai/flows/manage-reminders';
+import type { Application } from '@/lib/definitions';
+import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 
 
 interface StaffMember {
@@ -150,6 +152,14 @@ export default function SuperAdminPage() {
     const [isAddingStaff, setIsAddingStaff] = useState(false);
     const [isSendingWebhook, setIsSendingWebhook] = useState(false);
     const [webhookLog, setWebhookLog] = useState<string | null>(null);
+
+    // New: Fetch all applications on the client
+    const applicationsQuery = useMemo(() => {
+        if (!firestore || !isSuperAdmin) return null;
+        return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
+    }, [firestore, isSuperAdmin]);
+
+    const { data: allApplications, isLoading: isLoadingApplications } = useCollection<Application & FormValues>(applicationsQuery);
     
     // This function now runs on the client, directly interacting with Firestore
     const fetchAllStaff = async () => {
@@ -335,9 +345,20 @@ export default function SuperAdminPage() {
 
     const handleSendReminders = async () => {
         setIsSendingReminders(true);
+        
+        const appsToRemind = allApplications?.filter(app => 
+            (app.status === 'In Progress' || app.status === 'Requires Revision')
+        );
+
+        if (!appsToRemind || appsToRemind.length === 0) {
+            toast({ title: 'No Reminders Needed', description: 'No applications are currently in a state that requires a reminder.' });
+            setIsSendingReminders(false);
+            return;
+        }
+
         try {
             // Directly call the simplified server action
-            const result = await sendReminderEmails();
+            const result = await sendReminderEmails(appsToRemind);
             if (result.success) {
                 toast({ title: 'Reminders Sent!', description: `Successfully sent ${result.sentCount} reminder emails.`, className: 'bg-green-100 text-green-900 border-green-200' });
             } else {
@@ -426,7 +447,7 @@ export default function SuperAdminPage() {
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <p className="text-sm text-muted-foreground">Trigger reminder emails for all applications that are "In Progress" or "Requires Revision" and have pending items.</p>
-                            <Button onClick={handleSendReminders} disabled={isSendingReminders} className="w-full">{isSendingReminders ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</> : 'Send In-Progress Reminders'}</Button>
+                            <Button onClick={handleSendReminders} disabled={isSendingReminders || isLoadingApplications} className="w-full">{isSendingReminders ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</> : 'Send In-Progress Reminders'}</Button>
                         </CardContent>
                     </Card>
 
@@ -547,7 +568,3 @@ export default function SuperAdminPage() {
         </div>
     );
 }
-
-    
-
-    

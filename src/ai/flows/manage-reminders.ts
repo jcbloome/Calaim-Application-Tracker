@@ -2,11 +2,10 @@
 'use server';
 /**
  * @fileOverview A simple server action for sending reminder emails.
- * This file replaces the more complex Genkit flow to avoid recursion issues.
+ * This function receives a list of applications from the client and sends emails.
  */
-import '@/ai/firebase'; // CRITICAL: Ensures Firebase Admin is initialized.
-import * as admin from 'firebase-admin';
 import { sendReminderEmail } from '@/app/actions/send-email';
+import type { Application } from '@/lib/definitions';
 
 interface SendRemindersOutput {
     success: boolean;
@@ -15,22 +14,13 @@ interface SendRemindersOutput {
 }
 
 /**
- * Finds incomplete applications and sends reminder emails directly.
+ * Iterates over a list of applications and sends reminder emails.
  * This is a standard Next.js Server Action, not a Genkit flow.
  */
-export async function sendReminderEmails(): Promise<SendRemindersOutput> {
-    const firestore = admin.firestore();
-
+export async function sendReminderEmails(applications: Application[]): Promise<SendRemindersOutput> {
+    let sentCount = 0;
     try {
-        const applicationsSnapshot = await firestore.collectionGroup('applications')
-            .where('status', 'in', ['In Progress', 'Requires Revision'])
-            .get();
-        
-        let sentCount = 0;
-
-        for (const doc of applicationsSnapshot.docs) {
-            const app = doc.data() as any;
-            
+        for (const app of applications) {
             // Find pending forms or uploads
             const incompleteItems = app.forms
                 ?.filter((form: any) => form.status === 'Pending')
