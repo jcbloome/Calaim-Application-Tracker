@@ -73,13 +73,31 @@ export default function WaiverFormPage() {
                 HIPAA Authorization
                 </h2>
                 <div className="prose prose-sm max-w-none text-gray-700 space-y-3">
-                <p>This form, when completed and signed by you, authorizes the use and/or disclosure of your protected health information. The information authorized for release may include information related to HIV/AIDS, mental health, and substance use, unless specified otherwise.</p>
-                <p><strong>Authorized to disclose:</strong> Any health care related agency or person providing information for the purpose of applying for the CalAIM CS for Assisted Living Transitions.</p>
-                <p><strong>Authorized to receive:</strong> Connections Care Home Consultants, LLC.</p>
-                <p><strong>Information to be disclosed:</strong> All medical records necessary for Community Supports (CS) application.</p>
-                <p><strong>Purpose:</strong> To determine eligibility and arrange services for CS for Assisted Living Transitions.</p>
-                <p><strong>Expiration:</strong> This authorization expires one year from the date of signature.</p>
-                <p><strong>My Rights:</strong> Under my rights member must sign document to move forward with the CS but can revoke this authorization at any time.</p>
+                    <p>This form, when completed and signed by you, authorizes the use and/or disclosure of your protected health information. The information authorized for release may include information related to HIV/AIDS, mental health, and substance use, unless specified otherwise.</p>
+                    <p><strong>Authorized to disclose:</strong> Any health care related agency or person providing information for the purpose of applying for the CalAIM CS for Assisted Living Transitions.</p>
+                    <p><strong>Authorized to receive:</strong> Connections Care Home Consultants, LLC.</p>
+                    
+                    <p className="font-bold">Description of Information to be Disclosed</p>
+                    <p>The information to be disclosed includes, but is not limited to:</p>
+                    <ul className="list-disc pl-5">
+                        <li>Demographic information (Name, DOB, Social Security Number, Medi-Cal ID).</li>
+                        <li>Medical history and physical examination reports.</li>
+                        <li>Individual Service Plans (ISP) and Functional Assessments.</li>
+                        <li>Level of Care (LOC) Tier determinations.</li>
+                        <li>Physician orders and medication lists.</li>
+                    </ul>
+
+                    <p className="font-bold mt-4">Purpose of Disclosure</p>
+                    <p>This information will be used specifically for:</p>
+                    <ul className="list-disc pl-5">
+                        <li>Determining eligibility for CalAIM Community Supports.</li>
+                        <li>Conducting clinical assessments for tier-level placement.</li>
+                        <li>Facilitating transition and admission into a contracted RCFE/ARF.</li>
+                        <li>Coordinating billing and claims processing between the Facility, Connections, and the MCP.</li>
+                    </ul>
+
+                    <p><strong>Expiration:</strong> This authorization expires one year from the date of signature.</p>
+                    <p><strong>My Rights:</strong> Under my rights member must sign document to move forward with the CS but can revoke this authorization at any time.</p>
                 </div>
                 <CheckboxField label="I have read and understood the HIPAA Authorization section." />
             </section>
@@ -162,7 +180,5 @@ export default function WaiverFormPage() {
     </div>
   );
 }
-
-    
 
     
