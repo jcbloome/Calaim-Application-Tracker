@@ -5,8 +5,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, ShieldCheck } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, ShieldCheck, Bell } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
@@ -199,21 +199,14 @@ export default function SuperAdminPage() {
             return;
         }
         setIsAddingStaff(true);
-        // This is a simplified client-side version. A more robust solution would use a Firebase Function
-        // to create the user to avoid needing a temporary password on the client.
-        // For this context, we will assume a simplified (but less secure) client-side creation.
         try {
             // NOTE: This approach is simplified. In a production app, creating users with passwords
             // on the client like this is not recommended. A Cloud Function is the standard practice.
             const tempPassword = Math.random().toString(36).slice(-8);
             const auth = getAuth();
-            // We can't create users directly on the client without special privileges.
-            // This will fail unless the rules are open, which they are not.
-            // A server-side flow (Firebase Function) is required for this.
             
-            // For now, let's just create the DB records, assuming user is created manually or via another process.
             // This is a placeholder to allow UI to function. A proper fix involves Firebase Functions.
-            const uid = doc(collection(firestore, 'users')).id; // Placeholder UID
+            const uid = doc(collection(firestore, 'users')).id;
 
             const batch = writeBatch(firestore);
             const userDocRef = doc(firestore, 'users', uid);
@@ -259,7 +252,7 @@ export default function SuperAdminPage() {
                 await deleteDoc(superAdminRoleRef);
             }
             toast({ title: 'Role Updated', description: `Successfully updated role.` });
-            await fetchAllStaff(); // Refetch to update the UI state from the source of truth
+            await fetchAllStaff();
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Update Failed', description: error.message });
         }
@@ -270,11 +263,9 @@ export default function SuperAdminPage() {
 
         const batch = writeBatch(firestore);
         
-        // Remove roles
         batch.delete(doc(firestore, 'roles_admin', uid));
         batch.delete(doc(firestore, 'roles_super_admin', uid));
         
-        // Remove from notification recipients list if present
         if (notificationRecipients.includes(uid)) {
             const updatedRecipients = notificationRecipients.filter(id => id !== uid);
             batch.set(doc(firestore, 'system_settings', 'notifications'), { recipientUids: updatedRecipients }, { merge: true });
@@ -283,16 +274,11 @@ export default function SuperAdminPage() {
         try {
             await batch.commit();
             
-            // Note: Deleting the 'users' document and the Firebase Auth user is a more destructive action
-            // and is omitted here for safety. This action primarily revokes permissions.
-            // await deleteDoc(doc(firestore, 'users', uid));
-
             toast({ title: 'Staff Roles Revoked', description: `Admin permissions have been removed for the user.`, className: 'bg-green-100 text-green-900 border-green-200' });
             
-            // Refresh data from Firestore
             await fetchAllStaff();
             await fetchNotificationRecipients();
-        } catch (error: any) {
+        } catch (error: any) => {
             toast({ variant: 'destructive', title: 'Delete Failed', description: error.message });
         }
     };
@@ -311,7 +297,7 @@ export default function SuperAdminPage() {
             const settingsRef = doc(firestore, 'system_settings', 'notifications');
             await setDoc(settingsRef, { recipientUids: notificationRecipients }, { merge: true });
             toast({ title: "Settings Saved", description: "Notification preferences updated.", className: 'bg-green-100 text-green-900 border-green-200' });
-        } catch (error: any) {
+        } catch (error: any) => {
             toast({ variant: 'destructive', title: 'Save Failed', description: error.message });
         } finally {
             setIsSavingNotifications(false);
@@ -324,7 +310,7 @@ export default function SuperAdminPage() {
         try {
             const result = await sendReminderEmails({ user: currentUser });
             toast({ title: 'Reminders Sent!', description: `Successfully sent ${result.sentCount} reminder emails.`, className: 'bg-green-100 text-green-900 border-green-200' });
-        } catch (error: any) {
+        } catch (error: any) => {
             toast({ variant: 'destructive', title: 'Reminder Error', description: `Could not send reminders: ${error.message}` });
         } finally {
             setIsSendingReminders(false);
@@ -379,98 +365,30 @@ export default function SuperAdminPage() {
             </Card>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                <div className="space-y-6">
-                     <Card className="border-t-4 border-blue-500">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-3 text-lg"><UserPlus className="h-5 w-5 text-blue-500" />Add New Staff</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                             <form onSubmit={handleAddStaff} className="space-y-4">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div><Label htmlFor="new-staff-firstname">First Name</Label><Input id="new-staff-firstname" value={newStaffFirstName} onChange={e => formatAndSetFirstName(e.target.value)} /></div>
-                                    <div><Label htmlFor="new-staff-lastname">Last Name</Label><Input id="new-staff-lastname" value={newStaffLastName} onChange={e => formatAndSetLastName(e.target.value)} /></div>
-                                </div>
-                                <div><Label htmlFor="new-staff-email">Email Address</Label><Input id="new-staff-email" type="email" value={newStaffEmail} onChange={e => setNewStaffEmail(e.target.value)} /></div>
-                                <Button type="submit" disabled={isAddingStaff} className="w-full">{isAddingStaff ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Adding...</> : 'Add Staff & Grant Admin Role'}</Button>
-                            </form>
-                        </CardContent>
-                     </Card>
-
-                     <Card className="border-t-4 border-purple-500">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-3 text-lg"><Users className="h-5 w-5 text-purple-500" />Current Staff Roles</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            {isLoadingStaff ? <div className="flex justify-center items-center h-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-                            : staffList.length > 0 ? (
-                                <div className="space-y-4">{staffList.map((staff) => (
-                                    <div key={staff.uid} className="flex flex-col gap-4 p-3 border rounded-lg bg-background">
-                                        <div className="flex items-center justify-between gap-4">
-                                            <div className="flex-1 min-w-0">
-                                                <p className="font-semibold text-sm truncate">{staff.firstName} {staff.lastName}</p>
-                                                <p className="text-xs text-muted-foreground break-words">{staff.email}</p>
-                                            </div>
-                                            <AlertDialog>
-                                                <AlertDialogTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive shrink-0" disabled={staff.uid === currentUser?.uid}>
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
-                                                </AlertDialogTrigger>
-                                                <AlertDialogContent>
-                                                    <AlertDialogHeader>
-                                                        <AlertDialogTitle>Delete Staff Member?</AlertDialogTitle>
-                                                        <AlertDialogDescription>
-                                                            This will revoke all admin permissions for {staff.email}. This action does not delete their auth account but prevents them from accessing admin areas. Are you sure?
-                                                        </AlertDialogDescription>
-                                                    </AlertDialogHeader>
-                                                    <AlertDialogFooter>
-                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                        <AlertDialogAction onClick={() => handleDeleteStaff(staff.uid)} className="bg-destructive hover:bg-destructive/90">
-                                                            Yes, Revoke Access
-                                                        </AlertDialogAction>
-                                                    </AlertDialogFooter>
-                                                </AlertDialogContent>
-                                            </AlertDialog>
-                                        </div>
-                                         <div className="flex items-center justify-between gap-4 pt-3 border-t">
-                                            <div className="flex items-center gap-2">
-                                                <ShieldCheck className={`h-4 w-4 ${staff.role === 'Super Admin' ? 'text-primary' : 'text-muted-foreground'}`}/>
-                                                <Label htmlFor={`superadmin-switch-${staff.uid}`} className="text-sm font-medium">Super Admin</Label>
-                                            </div>
-                                            <Switch id={`superadmin-switch-${staff.uid}`} checked={staff.role === 'Super Admin'} onCheckedChange={(checked) => handleRoleToggle(staff.uid, checked)} disabled={staff.uid === currentUser?.uid} aria-label={`Toggle Super Admin for ${staff.email}`} />
-                                        </div>
-                                    </div>
-                                ))}</div>
-                            ) : <p className="text-center text-muted-foreground py-8">No staff members found.</p>}
-                        </CardContent>
+                <Card className="border-t-4 border-blue-500">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-3 text-lg"><UserPlus className="h-5 w-5 text-blue-500" />Add New Staff</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                            <form onSubmit={handleAddStaff} className="space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div><Label htmlFor="new-staff-firstname">First Name</Label><Input id="new-staff-firstname" value={newStaffFirstName} onChange={e => formatAndSetFirstName(e.target.value)} /></div>
+                                <div><Label htmlFor="new-staff-lastname">Last Name</Label><Input id="new-staff-lastname" value={newStaffLastName} onChange={e => formatAndSetLastName(e.target.value)} /></div>
+                            </div>
+                            <div><Label htmlFor="new-staff-email">Email Address</Label><Input id="new-staff-email" type="email" value={newStaffEmail} onChange={e => setNewStaffEmail(e.target.value)} /></div>
+                            <Button type="submit" disabled={isAddingStaff} className="w-full">{isAddingStaff ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Adding...</> : 'Add Staff & Grant Admin Role'}</Button>
+                        </form>
+                    </CardContent>
                     </Card>
-                </div>
-                
+
                 <div className="space-y-6">
                     <Card className="border-t-4 border-orange-500">
                         <CardHeader>
-                            <CardTitle className="flex items-center gap-3 text-lg"><Mail className="h-5 w-5 text-orange-500" />Notifications & Reminders</CardTitle>
+                            <CardTitle className="flex items-center gap-3 text-lg"><Mail className="h-5 w-5 text-orange-500" />Manual Email Reminders</CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="space-y-4">
-                                <h4 className="font-semibold">Notification Recipient Settings</h4>
-                                <p className="text-sm text-muted-foreground">Select staff to be BCC'd on emails when an application status changes.</p>
-                                {isLoadingStaff ? <div className="flex justify-center items-center h-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-                                : staffList.length > 0 ? (
-                                    <div className="space-y-4">
-                                        <div className="space-y-2 max-h-60 overflow-y-auto p-1 border rounded-md">{staffList.map(staff => (
-                                            <div key={staff.uid} className="flex items-center space-x-2 p-2 rounded-md hover:bg-muted"><Checkbox id={`notif-${staff.uid}`} checked={notificationRecipients.includes(staff.uid)} onCheckedChange={(checked) => handleNotificationToggle(staff.uid, !!checked)} /><Label htmlFor={`notif-${staff.uid}`} className="flex flex-col cursor-pointer"><span>{staff.firstName} {staff.lastName}</span><span className="text-xs text-muted-foreground">{staff.email}</span></Label></div>
-                                        ))}</div>
-                                        <Button onClick={handleSaveNotifications} disabled={isSavingNotifications} className="w-full">{isSavingNotifications ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Saving...</> : <><Save className="mr-2 h-4 w-4" /> Save Notification Settings</>}</Button>
-                                    </div>
-                                ) : <p className="text-center text-muted-foreground py-8">No staff members to configure.</p>}
-                            </div>
-                            
-                            <div className="space-y-4 pt-6 border-t">
-                                <h4 className="font-semibold">Manual Email Reminders</h4>
-                                <p className="text-sm text-muted-foreground">Trigger reminder emails for all applications that are "In Progress" or "Requires Revision" and have pending items.</p>
-                                <Button onClick={handleSendReminders} disabled={isSendingReminders} className="w-full">{isSendingReminders ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</> : 'Send In-Progress Reminders'}</Button>
-                            </div>
+                        <CardContent className="space-y-4">
+                            <p className="text-sm text-muted-foreground">Trigger reminder emails for all applications that are "In Progress" or "Requires Revision" and have pending items.</p>
+                            <Button onClick={handleSendReminders} disabled={isSendingReminders} className="w-full">{isSendingReminders ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...</> : 'Send In-Progress Reminders'}</Button>
                         </CardContent>
                     </Card>
 
@@ -498,6 +416,74 @@ export default function SuperAdminPage() {
                     </Card>
                 </div>
             </div>
+
+            <Card className="border-t-4 border-purple-500 w-full">
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-3 text-lg"><Users className="h-5 w-5 text-purple-500" />Current Staff Roles & Notifications</CardTitle>
+                    <CardDescription>Manage roles and status email notifications for staff members.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {isLoadingStaff ? <div className="flex justify-center items-center h-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+                    : staffList.length > 0 ? (
+                        <div className="space-y-4">{staffList.map((staff) => (
+                            <div key={staff.uid} className="flex flex-col gap-4 p-3 border rounded-lg bg-background">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-semibold truncate">{staff.firstName} {staff.lastName}</p>
+                                        <p className="text-xs text-muted-foreground break-words">{staff.email}</p>
+                                    </div>
+                                    <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive shrink-0" disabled={staff.uid === currentUser?.uid}>
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>Delete Staff Member?</AlertDialogTitle>
+                                                <AlertDialogDescription>
+                                                    This will revoke all admin permissions for {staff.email}. This action does not delete their auth account but prevents them from accessing admin areas. Are you sure?
+                                                </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                <AlertDialogAction onClick={() => handleDeleteStaff(staff.uid)} className="bg-destructive hover:bg-destructive/90">
+                                                    Yes, Revoke Access
+                                                </AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
+                                </div>
+                                <div className="space-y-4 pt-3 border-t">
+                                     <div className="flex items-center justify-between gap-4">
+                                        <div className="flex items-center gap-2">
+                                            <ShieldCheck className={`h-4 w-4 ${staff.role === 'Super Admin' ? 'text-primary' : 'text-muted-foreground'}`}/>
+                                            <Label htmlFor={`superadmin-switch-${staff.uid}`} className="text-sm font-medium">Super Admin</Label>
+                                        </div>
+                                        <Switch id={`superadmin-switch-${staff.uid}`} checked={staff.role === 'Super Admin'} onCheckedChange={(checked) => handleRoleToggle(staff.uid, checked)} disabled={staff.uid === currentUser?.uid} aria-label={`Toggle Super Admin for ${staff.email}`} />
+                                    </div>
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div className="flex items-center gap-2">
+                                            <Bell className={`h-4 w-4 ${notificationRecipients.includes(staff.uid) ? 'text-primary' : 'text-muted-foreground'}`} />
+                                            <Label htmlFor={`notif-${staff.uid}`} className="text-sm font-medium">Notifications</Label>
+                                        </div>
+                                        <Checkbox id={`notif-${staff.uid}`} checked={notificationRecipients.includes(staff.uid)} onCheckedChange={(checked) => handleNotificationToggle(staff.uid, !!checked)} aria-label={`Toggle notifications for ${staff.email}`} />
+                                    </div>
+                                </div>
+                            </div>
+                        ))}</div>
+                    ) : <p className="text-center text-muted-foreground py-8">No staff members found.</p>}
+                </CardContent>
+                {staffList.length > 0 && (
+                    <CardFooter>
+                        <Button onClick={handleSaveNotifications} disabled={isSavingNotifications} className="w-full sm:w-auto">
+                            {isSavingNotifications ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Saving...</> : <><Save className="mr-2 h-4 w-4" /> Save Notification Settings</>}
+                        </Button>
+                    </CardFooter>
+                )}
+            </Card>
         </div>
     );
 }
+
+    
