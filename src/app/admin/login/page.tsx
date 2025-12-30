@@ -17,16 +17,18 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function AdminLoginPage() {
   const [logs, setLogs] = useState<string[]>([]);
-  const addLog = (message: string) => {
+
+  // Using React.useCallback to memoize the function, ensuring it's stable
+  const addLog = React.useCallback((message: string) => {
     const timestampedMessage = `[${new Date().toISOString()}] ${message}`;
-    console.log(timestampedMessage); // Keep console log for server-side visibility
+    console.log(timestampedMessage); // Keep for server/browser console visibility
     setLogs(prev => [...prev, timestampedMessage]);
-  };
+  }, []);
 
   useEffect(() => {
-    addLog("AdminLoginPage: Component rendering.");
-  }, []);
-  
+    addLog("AdminLoginPage: Component is mounting.");
+  }, [addLog]);
+
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
@@ -45,7 +47,7 @@ export default function AdminLoginPage() {
       router.push('/admin');
     }
     addLog("AdminLoginPage useEffect: Finished.");
-  }, [user, isUserLoading, router]);
+  }, [user, isUserLoading, router, addLog]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,7 +96,10 @@ export default function AdminLoginPage() {
     }
   };
 
-  addLog("AdminLoginPage: Returning JSX.");
+  useEffect(() => {
+    addLog("AdminLoginPage: Returning JSX.");
+  }, [addLog]);
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
         <div className="w-full max-w-md space-y-4">
