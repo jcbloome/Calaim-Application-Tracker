@@ -67,7 +67,7 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
     try {
         const { data, error } = await resend.emails.send({
             from: 'CalAIM Pathfinder <onboarding@resend.dev>',
-            to: ["jason@carehomefinders.com"],
+            to: [to],
             bcc: bccList,
             subject: subject,
             react: ApplicationStatusEmail({
@@ -100,7 +100,7 @@ export const sendReminderEmail = async (payload: ReminderPayload) => {
     try {
         const { data, error } = await resend.emails.send({
             from: 'CalAIM Pathfinder <onboarding@resend.dev>',
-            to: ["jason@carehomefinders.com"],
+            to: [to],
             subject: subject,
             react: ReminderEmail({
                 referrerName,
