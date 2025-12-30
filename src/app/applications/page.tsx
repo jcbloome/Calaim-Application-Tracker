@@ -19,7 +19,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Header } from '@/components/Header';
 import { useUser, useFirestore, useCollection } from '@/firebase';
-import { collection, doc, deleteDoc, Query, Timestamp } from 'firebase/firestore';
+import { collection, doc, deleteDoc, Query, Timestamp, writeBatch } from 'firebase/firestore';
 import { format } from 'date-fns';
 import {
   AlertDialog,
@@ -206,7 +206,7 @@ export default function MyApplicationsPage() {
   const handleDelete = async () => {
     if (!user || !firestore || selected.length === 0) return;
 
-    const batch = doc(firestore).firestore.batch();
+    const batch = writeBatch(firestore);
     selected.forEach(appId => {
         const docRef = doc(firestore, `users/${user.uid}/applications`, appId);
         batch.delete(docRef);
