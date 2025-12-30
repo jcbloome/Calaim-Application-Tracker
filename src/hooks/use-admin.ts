@@ -23,19 +23,12 @@ export function useAdmin(): AdminStatus {
   });
 
   useEffect(() => {
-    // isLoading should be true if either the user is loading or we haven't checked roles yet.
-    const combinedLoading = isUserLoading || adminStatus.isLoading;
-
     if (isUserLoading) {
-      // If user state is loading, we are loading.
-      if (!adminStatus.isLoading) {
-        setAdminStatus(s => ({ ...s, isLoading: true }));
-      }
+      setAdminStatus(s => ({ ...s, isLoading: true }));
       return;
     }
 
     if (!user) {
-      // If no user, they are not an admin, and we are done loading.
       setAdminStatus({ isAdmin: false, isSuperAdmin: false, isLoading: false });
       return;
     }
@@ -48,6 +41,9 @@ export function useAdmin(): AdminStatus {
 
     let isMounted = true;
     const checkRoles = async () => {
+      // Ensure we don't run this check unnecessarily if component unmounts
+      if (!isMounted) return;
+
       try {
         const adminRef = doc(firestore, 'roles_admin', user.uid);
         const superAdminRef = doc(firestore, 'roles_super_admin', user.uid);
