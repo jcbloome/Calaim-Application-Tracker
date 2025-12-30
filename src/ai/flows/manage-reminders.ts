@@ -7,7 +7,7 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import * as admin from 'firebase-admin';
-import { sendReminderEmail } from '@/app/actions/send-email';
+import { sendReminderEmail as resendReminderEmail } from '@/app/actions/send-email';
 
 // ========== SEND REMINDER EMAILS FLOW ==========
 
@@ -55,7 +55,7 @@ const sendReminderEmailsFlow = ai.defineFlow(
                     .map((form: any) => form.name);
                 
                 if (incompleteItems && incompleteItems.length > 0 && app.referrerEmail) {
-                    await sendReminderEmail({
+                    await resendReminderEmail({
                         to: app.referrerEmail,
                         subject: `Reminder: Action needed for CalAIM application for ${app.memberFirstName} ${app.memberLastName}`,
                         referrerName: app.referrerName || 'there',
