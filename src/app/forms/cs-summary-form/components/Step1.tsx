@@ -225,7 +225,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 <FormItem>
                   <FormLabel>First Name</FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} readOnly className="bg-muted" />
+                    <Input {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} />
                   </FormControl>
                 </FormItem>
               )}
@@ -237,7 +237,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 <FormItem>
                   <FormLabel>Last Name</FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} readOnly className="bg-muted" />
+                    <Input {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} />
                   </FormControl>
                 </FormItem>
               )}
@@ -251,7 +251,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input type="email" {...field} value={field.value ?? ''} readOnly className="bg-muted" />
+                    <Input type="email" {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -262,7 +262,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
               name="referrerPhone"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Phone</FormLabel>
+                  <FormLabel>Phone <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
                     <PhoneInput {...field} />
                   </FormControl>
@@ -277,7 +277,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
               name="referrerRelationship"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Relationship to Member</FormLabel>
+                  <FormLabel>Relationship to Member <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
@@ -415,7 +415,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     control={control}
                     name="hasLegalRep"
                     render={({ field }) => (
-                        <FormItem className="space-y-3">
+                        <FormItem className="space-y-2">
                         <FormLabel>
                             Does member have a legal representative? (e.g., power of attorney)
                         </FormLabel>
@@ -460,5 +460,3 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
     </div>
   );
 }
-
-    

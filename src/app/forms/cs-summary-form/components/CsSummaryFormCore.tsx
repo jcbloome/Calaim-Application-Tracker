@@ -42,17 +42,6 @@ const steps = [
   ]},
 ];
 
-// Function to format the errors object into a user-friendly string
-const formatErrorsForDisplay = (errors: FieldErrors<FormValues>): string => {
-  const errorMessages = Object.entries(errors).map(([fieldName, error]) => {
-    if (error && error.message) {
-      return `${fieldName}: ${error.message}`;
-    }
-    return `${fieldName}: An unknown error occurred.`;
-  });
-  return errorMessages.join('\n');
-};
-
 function CsSummaryFormComponent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -127,10 +116,15 @@ function CsSummaryFormComponent() {
 
 
   useEffect(() => {
-    if (isValid && validationError) {
-      setValidationError(null);
+    // Clear validation error when the form becomes valid for the current step
+    const fieldsForCurrentStep = steps[currentStep - 1].fields;
+    const hasErrorsInCurrentStep = fieldsForCurrentStep.some(field => errors[field as keyof FormValues]);
+
+    if (!hasErrorsInCurrentStep) {
+        setValidationError(null);
     }
-  }, [isValid, validationError]);
+  }, [errors, currentStep]);
+
 
   const saveProgress = async (isNavigating: boolean = false): Promise<string | null> => {
     if (!targetUserId || !firestore) {
@@ -187,8 +181,7 @@ function CsSummaryFormComponent() {
     const isValid = await trigger(fields as FieldPath<FormValues>[], { shouldFocus: true });
     
     if (!isValid) {
-      const detailedErrors = formatErrorsForDisplay(errors);
-      setValidationError(`Please correct the following errors:\n${detailedErrors}`);
+      setValidationError("Please correct the errors on this page. Required fields are marked with a red asterisk (*).");
       return;
     }
 
@@ -226,17 +219,16 @@ function CsSummaryFormComponent() {
   };
 
   const onInvalid = (errors: FieldErrors<FormValues>) => {
-    const errorLog = formatErrorsForDisplay(errors);
     console.log("Form Validation Failed:", errors);
     
     const firstErrorStep = findFirstErrorStep(errors);
     if (firstErrorStep && firstErrorStep !== currentStep) {
         setCurrentStep(firstErrorStep);
-        setValidationError(`Please correct errors on Step ${firstErrorStep} (and other steps):\n${errorLog}`);
+        setValidationError(`Please correct errors on this page before proceeding. Required fields are marked with a red asterisk (*).`);
         return;
     }
 
-    setValidationError(`Please check the form for the following errors:\n${errorLog}`);
+    setValidationError(`Please check the form for errors. Required fields are marked with a red asterisk (*).`);
   };
 
   const checkForDuplicates = async (data: FormValues): Promise<boolean> => {
@@ -364,7 +356,7 @@ function CsSummaryFormComponent() {
                 <Alert variant="destructive" className="mb-4">
                   <AlertCircle className="h-4 w-4" />
                   <AlertTitle>Validation Error</AlertTitle>
-                  <AlertDescription className="whitespace-pre-wrap text-xs font-mono bg-destructive-foreground text-destructive p-2 rounded-md">
+                  <AlertDescription>
                     {validationError}
                   </AlertDescription>
                 </Alert>
