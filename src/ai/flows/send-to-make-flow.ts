@@ -7,6 +7,7 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 
+// This is the schema for the data payload we will send TO the webhook.
 const TestWebhookDataSchema = z.object({
   memberFirstName: z.string(),
   memberLastName: z.string(),
@@ -64,13 +65,15 @@ const TestWebhookDataSchema = z.object({
   userId: z.string(),
 });
 
-const TestWebhookInputSchema = z.object({
+// This is the input schema for the FLOW itself. It includes the user and the data.
+const SendToMakeInputSchema = z.object({
   user: z.any().describe('The authenticated Firebase user object.'),
   data: TestWebhookDataSchema,
 });
+export type SendToMakeInput = z.infer<typeof SendToMakeInputSchema>;
 
-export type TestWebhookInput = z.infer<typeof TestWebhookDataSchema>;
 
+// This is the expected response from our flow.
 const WebhookResponseSchema = z.object({
   success: z.boolean(),
   message: z.string(),
@@ -78,42 +81,42 @@ const WebhookResponseSchema = z.object({
 export type WebhookResponse = z.infer<typeof WebhookResponseSchema>;
 
 
+// Define the Genkit flow. This is the core server-side logic.
 const sendToMakeFlow = ai.defineFlow(
   {
     name: 'sendToMakeFlow',
-    inputSchema: TestWebhookInputSchema,
+    inputSchema: SendToMakeInputSchema,
     outputSchema: WebhookResponseSchema,
   },
   async ({ user, data }) => {
+    // Auth check
     if (!user || !user.uid) {
       throw new Error("User authentication is required to perform this action.");
     }
+    console.log('[sendToMakeFlow] User authenticated. Preparing to send webhook.');
 
-    console.log('[sendToMakeFlow] Received data for webhook.');
-
+    // Get webhook URL from environment variables
     const webhookUrl = process.env.MAKE_WEBHOOK_URL;
-
     if (!webhookUrl) {
       console.error('[sendToMakeFlow] MAKE_WEBHOOK_URL is not set in environment variables.');
       throw new Error('Webhook URL is not configured. Please set MAKE_WEBHOOK_URL in your .env file.');
     }
 
     try {
+      // Make the actual HTTP request to Make.com
       const response = await fetch(webhookUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
 
+      const responseBody = await response.text(); // Read body once
+
       if (!response.ok) {
-        const errorBody = await response.text();
-        console.error(`[sendToMakeFlow] Webhook response not OK: ${response.status} ${response.statusText}`, errorBody);
-        throw new Error(`Webhook failed with status ${response.status}: ${errorBody || response.statusText}`);
+        console.error(`[sendToMakeFlow] Webhook response not OK: ${response.status} ${response.statusText}`, responseBody);
+        throw new Error(`Webhook failed with status ${response.status}: ${responseBody || response.statusText}`);
       }
       
-      const responseBody = await response.text();
       console.log('[sendToMakeFlow] Webhook sent successfully. Response:', responseBody);
 
       return {
@@ -123,16 +126,20 @@ const sendToMakeFlow = ai.defineFlow(
 
     } catch (error: any) {
       console.error('[sendToMakeFlow] Error sending to Make.com webhook:', error);
+      // Re-throw a clean error to be caught by the client
       throw new Error(`Failed to send webhook. Server error: ${error.message}`);
     }
   }
 );
 
+
 /**
- * Public function to be called from the client.
- * This function correctly invokes the Genkit flow.
+ * EXPORTED FUNCTION FOR CLIENT-SIDE USE.
+ * This is the function that the frontend will call. It takes the same input as the flow
+ * and simply invokes the Genkit flow. This is the correct pattern to avoid recursion.
  */
-export async function sendTestToMake(input: z.infer<typeof TestWebhookInputSchema>): Promise<WebhookResponse> {
-  console.log(`[sendTestToMake] Starting flow.`);
-  return sendToMakeFlow(input);
+export async function sendTestToMake(input: SendToMakeInput): Promise<WebhookResponse> {
+  console.log(`[sendTestToMake] Client-side trigger for sendToMakeFlow.`);
+  // Correctly call the Genkit flow object.
+  return await sendToMakeFlow(input);
 }

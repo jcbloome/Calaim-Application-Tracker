@@ -29,7 +29,7 @@ import {
 
 // CLIENT-SIDE LOGIC - Replaces the need for server-side AI flows for UI data.
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
-import { sendTestToMake, type TestWebhookInput } from '@/ai/flows/send-to-make-flow';
+import { sendTestToMake, type SendToMakeInput } from '@/ai/flows/send-to-make-flow';
 import { sendReminderEmails } from '@/ai/flows/manage-reminders';
 
 
@@ -48,7 +48,7 @@ interface UserData {
     email: string;
 }
 
-const sampleApplicationData: Omit<TestWebhookInput, 'userId'> = {
+const sampleApplicationData = {
     memberFirstName: "John",
     memberLastName: "Doe",
     memberDob: "01/15/1965",
@@ -69,8 +69,8 @@ const sampleApplicationData: Omit<TestWebhookInput, 'userId'> = {
     bestContactPhone: "(555) 987-6543",
     bestContactEmail: "jimmy.doe@example.com",
     bestContactLanguage: "English",
-    hasCapacity: "Yes",
-    hasLegalRep: "No",
+    hasCapacity: "Yes" as const,
+    hasLegalRep: "No" as const,
     currentLocation: "Hospital",
     currentAddress: "123 Main St",
     currentCity: "Los Angeles",
@@ -83,8 +83,8 @@ const sampleApplicationData: Omit<TestWebhookInput, 'userId'> = {
     customaryState: "CA",
     customaryZip: "91101",
     customaryCounty: "Los Angeles",
-    healthPlan: "Health Net",
-    pathway: "SNF Transition",
+    healthPlan: "Health Net" as const,
+    pathway: "SNF Transition" as const,
     meetsPathwayCriteria: true,
     snfDiversionReason: "N/A",
     ispFirstName: "Sarah",
@@ -95,8 +95,8 @@ const sampleApplicationData: Omit<TestWebhookInput, 'userId'> = {
     ispLocationType: "Hospital",
     ispAddress: "123 Main St, Los Angeles, CA 90001",
     ispFacilityName: "Community Hospital",
-    onALWWaitlist: "No",
-    hasPrefRCFE: "Yes",
+    onALWWaitlist: "No" as const,
+    hasPrefRCFE: "Yes" as const,
     rcfeName: "Sunshine Meadows",
     rcfeAddress: "789 Flower Lane, Burbank, CA 91505",
     rcfeAdminName: "Emily White",
@@ -120,6 +120,7 @@ export default function SuperAdminPage() {
     const [newStaffEmail, setNewStaffEmail] = useState('');
     const [isAddingStaff, setIsAddingStaff] = useState(false);
     const [isSendingWebhook, setIsSendingWebhook] = useState(false);
+    const [webhookLog, setWebhookLog] = useState<string | null>(null);
     
     // This function now runs on the client, directly interacting with Firestore
     const fetchAllStaff = async () => {
@@ -333,11 +334,14 @@ export default function SuperAdminPage() {
     const handleSendWebhookTest = async () => {
         if (!currentUser?.uid) return;
         setIsSendingWebhook(true);
+        setWebhookLog(null);
         try {
             const result = await sendTestToMake({ user: currentUser, data: { ...sampleApplicationData, userId: currentUser.uid } });
             toast({ title: "Webhook Test Sent", description: result.message, className: 'bg-green-100 text-green-900 border-green-200' });
         } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Webhook Error', description: error.message });
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            setWebhookLog(errorMessage);
+            toast({ variant: 'destructive', title: 'Webhook Error', description: "See log on page for details." });
         } finally {
             setIsSendingWebhook(false);
         }
@@ -400,7 +404,7 @@ export default function SuperAdminPage() {
                                     <div key={staff.uid} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3 border rounded-lg bg-background">
                                         <div className="flex-1 min-w-0">
                                             <p className="font-semibold text-sm truncate">{staff.firstName} {staff.lastName}</p>
-                                            <p className="text-xs text-muted-foreground truncate">{staff.email}</p>
+                                            <p className="text-xs text-muted-foreground break-words">{staff.email}</p>
                                         </div>
                                         <div className="flex items-center gap-4 shrink-0">
                                             <span className={`text-xs font-medium px-2 py-1 rounded-full ${staff.role === 'Super Admin' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>{staff.role}</span>
@@ -445,6 +449,14 @@ export default function SuperAdminPage() {
                             <Button onClick={handleSendWebhookTest} disabled={isSendingWebhook} className="w-full">
                                 {isSendingWebhook ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Sending...</> : 'Send Test Data to Make.com'}
                             </Button>
+                            {webhookLog && (
+                                <Alert variant="destructive" className="mt-4">
+                                    <AlertTitle>Live Error Log</AlertTitle>
+                                    <AlertDescription className="font-mono text-xs break-all">
+                                        {webhookLog}
+                                    </AlertDescription>
+                                </Alert>
+                            )}
                         </div>
                     </CardContent>
                 </Card>
