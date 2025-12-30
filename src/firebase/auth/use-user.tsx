@@ -8,14 +8,14 @@ import { useAuth } from '@/firebase/provider';
 export interface UserHookResult {
   user: User | null;
   isUserLoading: boolean;
-  userError: AuthError | null;
+  userError: Error | null;
 }
 
 export const useUser = (): UserHookResult => {
   const auth = useAuth();
   const [user, setUser] = useState<User | null>(null);
   const [isUserLoading, setIsLoading] = useState(true);
-  const [userError, setError] = useState<AuthError | null>(null);
+  const [userError, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     if (!auth) {
