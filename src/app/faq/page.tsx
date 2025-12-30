@@ -8,7 +8,8 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Header } from '@/components/Header';
-import { GlossaryDialog } from '@/components/GlossaryDialog';
+import { acronyms } from '@/lib/data';
+import { Separator } from '@/components/ui/separator';
 
 const faqs = [
   {
@@ -53,7 +54,7 @@ export default function FaqPage() {
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
         <div className="text-center mb-10">
           <h1 className="text-3xl font-bold tracking-tight">
-            Frequently Asked Questions
+            FAQ & Glossary
           </h1>
           <p className="mt-2 text-lg text-muted-foreground max-w-3xl mx-auto">
             Find answers to common questions and definitions for key terms.
@@ -69,10 +70,23 @@ export default function FaqPage() {
                         <AccordionContent>{faq.answer}</AccordionContent>
                     </AccordionItem>
                     ))}
+                     <AccordionItem value="glossary">
+                        <AccordionTrigger>Acronym Glossary</AccordionTrigger>
+                        <AccordionContent>
+                            <dl className="p-4">
+                                {acronyms.map((item, index) => (
+                                <div key={item.term}>
+                                    <div className="flex items-baseline gap-4 py-3">
+                                    <dt className="w-20 text-right font-bold text-primary shrink-0">{item.term}</dt>
+                                    <dd className="text-muted-foreground">{item.definition}</dd>
+                                    </div>
+                                    {index < acronyms.length - 1 && <Separator />}
+                                </div>
+                                ))}
+                            </dl>
+                        </AccordionContent>
+                    </AccordionItem>
                 </Accordion>
-                <div className="text-center mt-6">
-                  <GlossaryDialog />
-                </div>
             </div>
         </div>
       </main>
