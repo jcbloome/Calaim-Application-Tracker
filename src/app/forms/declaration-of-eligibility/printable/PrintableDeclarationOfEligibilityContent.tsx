@@ -23,11 +23,11 @@ export function PrintableDeclarationOfEligibilityContent() {
             <div className="text-center mb-6">
                 <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Declaration of Eligibility</h1>
                 <p className="text-sm text-gray-500 font-semibold">(Required for SNF Diversion)</p>
-                <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This form is for a Physician/AP to establish presumptive eligibility and must be signed by the member's Primary Care Provider (PCP) or a provider with an established relationship with the member. This form is not required for any Kaiser members.</p>
+                <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This form is for a Physician/AP to establish presumptive eligibility and must be signed by the member's Primary Care Provider (PCP). This form is not required for any Kaiser members.</p>
             </div>
             <div className="space-y-6 text-sm">
                 <div>
-                    <h3 className="text-base font-semibold">To be completed by the Primary Care Provider (PCP) or other physician/practitioner (practitioner).</h3>
+                    <h3 className="text-base font-semibold">To be completed by the Primary Care Provider (PCP).</h3>
                     <div className="prose prose-sm max-w-none text-gray-700 space-y-3 mt-3">
                         <p>
                             I, <span className="inline-block border-b border-gray-400 w-56"></span>, in the professional capacity as a <span className="inline-block border-b border-gray-400 w-56"></span>, affirm that Member <span className="inline-block border-b border-gray-400 w-56"></span> is currently receiving a medically necessary Skilled Nursing Facility Level of Care (SNF LOC) or meets the minimum criteria for receiving SNF LOC services and, in lieu of entering a facility, is choosing to remain in the community and continue receiving medically necessary SNF LOC services in an assisted living facility for the following reason(s):
