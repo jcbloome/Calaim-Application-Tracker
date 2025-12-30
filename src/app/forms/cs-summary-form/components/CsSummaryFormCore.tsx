@@ -25,7 +25,7 @@ import { GlossaryDialog } from '@/components/GlossaryDialog';
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
       'memberFirstName', 'memberLastName', 'memberAge', 'memberMrn', 'confirmMemberMrn', 'memberLanguage', 'memberCounty',
-      'memberMediCalNum', 'confirmMemberMediCalNum', 'memberDob',
+      'memberMediCalNum', 'confirmMemberMediCalNum', 'memberDob', 'sex',
       'referrerFirstName', 'referrerLastName', 'referrerPhone', 'referrerRelationship', 'agency',
       'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
       'secondaryContactFirstName', 'secondaryContactLastName', 'secondaryContactRelationship', 'secondaryContactPhone', 'secondaryContactEmail', 'secondaryContactLanguage',
