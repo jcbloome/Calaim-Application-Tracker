@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -10,6 +11,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { gemini15Pro } from '@genkit-ai/google-genai';
 
 const SuggestNextStepsInputSchema = z.object({
   applicationData: z.record(z.any()).describe('The application data submitted by the user.'),
@@ -31,6 +33,7 @@ export async function suggestNextSteps(input: SuggestNextStepsInput): Promise<Su
 
 const prompt = ai.definePrompt({
   name: 'suggestNextStepsPrompt',
+  model: gemini15Pro,
   input: {schema: SuggestNextStepsInputSchema},
   output: {schema: SuggestNextStepsOutputSchema},
   prompt: `You are an AI assistant helping users complete their CalAIM application accurately and efficiently.
