@@ -115,7 +115,7 @@ function WaiversFormComponent() {
             choice: focChoice,
             signerType,
             signerName,
-            signerRelationship: signerType === 'representative' ? signerRelationship : undefined,
+            signerRelationship: signerType === 'representative' ? signerRelationship : null,
             ackHipaa: ackHipaa,
             ackLiability: ackLiability,
             ackFoc: ackFoc,
