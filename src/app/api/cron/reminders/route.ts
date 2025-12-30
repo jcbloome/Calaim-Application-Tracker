@@ -9,9 +9,9 @@ import { FormValues } from '@/app/forms/cs-summary-form/schema';
 if (!admin.apps.length) {
   try {
     admin.initializeApp();
-    console.log('Firebase Admin SDK initialized in cron route.');
+    console.log('[cron/reminders] Firebase Admin SDK initialized successfully.');
   } catch (error: any) {
-    console.error('Firebase Admin SDK initialization error in cron route:', error.stack);
+    console.error('[cron/reminders] Firebase Admin SDK initialization error:', error.stack);
   }
 }
 
@@ -50,6 +50,11 @@ export async function GET(request: Request) {
     // 3. Call your existing email logic with the fetched data.
     // The data is stringified and parsed to handle non-serializable Firestore Timestamps.
     const result = await sendReminderEmails(JSON.parse(JSON.stringify(appsToRemind)));
+
+    if (!result.success) {
+      // If the email sending failed, return a 500 error to make the cron job status reflect the failure.
+      return NextResponse.json({ success: false, ...result }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true, ...result });
 

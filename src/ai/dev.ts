@@ -1,3 +1,4 @@
+
 /**
  * @fileOverview This is the main server-side entry point for Genkit development.
  * It is responsible for importing all flows and tools to make them available
@@ -8,7 +9,7 @@
  */
 
 // DO NOT MOVE THIS IMPORT. It must be the first line to initialize Firebase Admin.
-import '@/app/api/cron/reminders/route';
+import '@/ai/firebase';
 
 // Import all flows and tools after Firebase has been initialized.
 import '@/ai/flows/ai-prioritize-form-fields.ts';
