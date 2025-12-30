@@ -16,7 +16,7 @@ import { GlossaryDialog } from '@/components/GlossaryDialog';
 
 const infoSections = [
    {
-    title: 'Room & Board Obligation',
+    title: 'Room & Board Payments',
     content: [
         "The MCP member is responsible for paying the RCFE the 'room and board' and the MCP is responsible for paying the RCFE the 'assisted living' portion.",
         "For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for 'room and board'. Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for 'room and board' for a private room or to open up RCFEs in more expensive areas.",

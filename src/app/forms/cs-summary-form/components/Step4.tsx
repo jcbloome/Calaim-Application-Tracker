@@ -141,7 +141,7 @@ export default function Step4() {
         <CardHeader>
           <div className="flex items-center gap-3">
             <Home className="h-6 w-6" />
-            <CardTitle>Room & Board Obligation</CardTitle>
+            <CardTitle>Room & Board Payments</CardTitle>
           </div>
           <CardDescription>Understanding the member's financial responsibility.</CardDescription>
         </CardHeader>
