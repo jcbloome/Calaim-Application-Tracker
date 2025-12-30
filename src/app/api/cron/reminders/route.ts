@@ -5,10 +5,8 @@ import * as admin from 'firebase-admin';
 import { Application } from '@/lib/definitions';
 import { FormValues } from '@/app/forms/cs-summary-form/schema';
 
-// Initialize Firebase Admin SDK if not already done
-if (!admin.apps.length) {
-    admin.initializeApp();
-}
+// Firebase Admin is initialized globally in `src/ai/firebase.ts`
+// and should not be re-initialized here.
 
 /**
  * This is a secure API route designed to be called by a cron job (e.g., Google Cloud Scheduler).
