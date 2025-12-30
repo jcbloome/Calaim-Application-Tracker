@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     );
     
     if (appsToRemind.length === 0) {
-        return NextResponse.json({ success: true, message: 'No applications currently need reminders.' });
+        return NextResponse.json({ success: true, sentCount: 0, message: 'No applications currently need reminders.' });
     }
 
     // 3. Call your existing email logic with the fetched data.
@@ -53,10 +53,10 @@ export async function GET(request: Request) {
 
     if (!result.success) {
       // If the email sending failed, return a 500 error to make the cron job status reflect the failure.
-      return NextResponse.json({ success: false, ...result }, { status: 500 });
+      return NextResponse.json(result, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, ...result });
+    return NextResponse.json(result);
 
   } catch (error: any) {
     console.error('[CRON JOB ERROR]', error);
