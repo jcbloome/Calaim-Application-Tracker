@@ -353,9 +353,15 @@ export default function SuperAdminPage() {
                              {isLoadingStaff ? <div className="flex justify-center items-center h-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
                             : staffList.length > 0 ? (
                                 <div className="space-y-2 max-h-96 overflow-y-auto pr-2">{staffList.map((staff) => (
-                                    <div key={staff.uid} className="flex justify-between items-center p-3 border rounded-lg bg-background">
-                                        <div><p className="font-semibold">{staff.firstName} {staff.lastName}</p><p className="text-sm text-muted-foreground">{staff.email}</p></div>
-                                        <div className="flex items-center gap-4"><span className={`text-sm font-medium ${staff.role === 'Super Admin' ? 'text-primary' : 'text-muted-foreground'}`}>{staff.role}</span><Switch checked={staff.role === 'Super Admin'} onCheckedChange={(checked) => handleRoleToggle(staff.uid, checked)} disabled={staff.uid === currentUser?.uid} aria-label={`Toggle Super Admin for ${staff.email}`} /></div>
+                                    <div key={staff.uid} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 border rounded-lg bg-background">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-semibold truncate">{staff.firstName} {staff.lastName}</p>
+                                            <p className="text-sm text-muted-foreground truncate">{staff.email}</p>
+                                        </div>
+                                        <div className="flex items-center gap-4 shrink-0">
+                                            <span className={`text-sm font-medium ${staff.role === 'Super Admin' ? 'text-primary' : 'text-muted-foreground'}`}>{staff.role}</span>
+                                            <Switch checked={staff.role === 'Super Admin'} onCheckedChange={(checked) => handleRoleToggle(staff.uid, checked)} disabled={staff.uid === currentUser?.uid} aria-label={`Toggle Super Admin for ${staff.email}`} />
+                                        </div>
                                     </div>
                                 ))}</div>
                             ) : <p className="text-center text-muted-foreground py-8">No staff members found.</p>}
@@ -408,5 +414,7 @@ export default function SuperAdminPage() {
         </div>
     );
 }
+
+    
 
     
