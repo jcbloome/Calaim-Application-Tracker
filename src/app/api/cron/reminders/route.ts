@@ -5,8 +5,17 @@ import * as admin from 'firebase-admin';
 import { Application } from '@/lib/definitions';
 import { FormValues } from '@/app/forms/cs-summary-form/schema';
 
-// Firebase Admin is initialized globally in `src/ai/firebase.ts`
-// and should not be re-initialized here.
+// Ensure Firebase Admin is initialized.
+// This check prevents re-initialization errors in environments where it might already be initialized.
+if (!admin.apps.length) {
+  try {
+    admin.initializeApp();
+    console.log('Firebase Admin SDK initialized in cron route.');
+  } catch (error: any) {
+    console.error('Firebase Admin SDK initialization error in cron route:', error.stack);
+  }
+}
+
 
 /**
  * This is a secure API route designed to be called by a cron job (e.g., Google Cloud Scheduler).
@@ -15,7 +24,7 @@ import { FormValues } from '@/app/forms/cs-summary-form/schema';
 export async function GET(request: Request) {
   // 1. Security Check: Ensure only an authorized scheduler can call this endpoint.
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new Response('Unauthorized', { status: 401 });
   }
 
