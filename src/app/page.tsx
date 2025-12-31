@@ -1,3 +1,4 @@
+
 'use client';
 
 import Image from 'next/image';
@@ -7,69 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import imageData from '@/lib/placeholder-images.json';
 import { Header } from '@/components/Header';
-import React, { useState, useEffect } from 'react';
-
-// New component to capture and display console logs
-function ConsoleLog({ onClear }: { onClear: () => void }) {
-  const [logs, setLogs] = useState<string[]>([]);
-
-  useEffect(() => {
-    const originalLog = console.log;
-    const originalError = console.error;
-    const originalWarn = console.warn;
-
-    const captureLog = (method: 'log' | 'warn' | 'error') => (...args: any[]) => {
-      const message = args.map(arg => {
-        try {
-          return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
-        } catch (e) {
-          return 'Unserializable object';
-        }
-      }).join(' ');
-
-      setLogs(prevLogs => [`[${new Date().toLocaleTimeString()}] [${method.toUpperCase()}] ${message}`, ...prevLogs]);
-      
-      // Call the original console method
-      if (method === 'error') originalError(...args);
-      else if (method === 'warn') originalWarn(...args);
-      else originalLog(...args);
-    };
-
-    console.log = captureLog('log');
-    console.error = captureLog('error');
-    console.warn = captureLog('warn');
-
-    return () => {
-      console.log = originalLog;
-      console.error = originalError;
-      console.warn = originalWarn;
-    };
-  }, []);
-
-  return (
-    <Card className="mt-8 w-full max-w-4xl shadow-md">
-      <CardHeader className="flex flex-row justify-between items-center">
-        <div>
-          <CardTitle>Startup Log</CardTitle>
-          <CardDescription>Displaying console messages to debug performance.</CardDescription>
-        </div>
-        <Button variant="outline" size="sm" onClick={onClear}>Clear Log</Button>
-      </CardHeader>
-      <CardContent>
-        <div className="bg-muted p-4 rounded-lg h-48 overflow-y-auto text-xs font-mono">
-          {logs.length > 0 ? logs.map((log, i) => (
-            <p key={i} className="whitespace-pre-wrap break-all">{log}</p>
-          )) : <p className="text-muted-foreground">No logs captured yet. Any server restart messages or errors will appear here.</p>}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
+import React from 'react';
 
 export default function Home() {
   const mascot = imageData.placeholderImages.find(p => p.id === 'fox-mascot');
-  const [showLog, setShowLog] = useState(true);
 
   return (
     <>
@@ -103,7 +45,6 @@ export default function Home() {
               </Button>
           </CardContent>
         </Card>
-        {showLog && <ConsoleLog onClear={() => setShowLog(false)} />}
       </main>
     </>
   );
