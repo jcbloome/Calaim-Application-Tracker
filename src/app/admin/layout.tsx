@@ -200,40 +200,29 @@ function AdminHeader() {
   );
 }
 
-export default function AdminLayout({ children }: { children: ReactNode }) {
+function AdminAuthGuard({ children }: { children: React.ReactNode }) {
   const { isAdmin, isSuperAdmin, isLoading, user } = useAdmin();
   const router = useRouter();
   const pathname = usePathname();
   const auth = useAuth();
 
   useEffect(() => {
-    // If auth is still loading, wait.
     if (isLoading) {
       return;
     }
-    
-    // If auth is done, there's no user, and we are not on the login page, redirect to login.
-    if (!user && pathname !== '/admin/login') {
+    if (!user) {
       router.push('/admin/login');
-      return;
     }
+  }, [isLoading, user, router]);
 
-  }, [isLoading, user, pathname, router]);
-  
   const handleSignOutAndLogin = async () => {
     if (auth) {
-        await auth.signOut();
+      await auth.signOut();
     }
     router.push('/admin/login');
   };
 
-  // Allow login page to render without the main layout or any auth checks.
-  if (pathname === '/admin/login') {
-    return <>{children}</>;
-  }
-
-  // While loading, show a full-page loader to prevent content flash on any admin page.
-  if (isLoading) {
+  if (isLoading || !user) {
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -242,39 +231,44 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  // After loading, if a user is logged in, check their roles.
-  if (user) {
-    if (isAdmin || isSuperAdmin) {
-      // If user is an admin, render the full admin layout.
-      return (
-        <div className="flex flex-col min-h-screen">
-          <AdminHeader />
-          <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
-            {children}
-          </main>
-        </div>
-      );
-    } else {
-      // If user is NOT an admin, show Access Denied.
-      return (
-        <main className="flex-grow flex items-center justify-center p-4 bg-slate-100 min-h-screen">
-          <Card className="w-full max-w-md text-center">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-center gap-2">
-                <Lock className="h-6 w-6 text-destructive" />
-                Access Denied
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p>You are logged in, but you do not have permission to view this page. Please sign out and log in with a staff account.</p>
-              <Button onClick={handleSignOutAndLogin} className="mt-4">Return to Admin Login</Button>
-            </CardContent>
-          </Card>
+  if (user && (isAdmin || isSuperAdmin)) {
+    return (
+      <div className="flex flex-col min-h-screen">
+        <AdminHeader />
+        <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
+          {children}
         </main>
-      );
-    }
+      </div>
+    );
   }
 
-  // Fallback case, typically shown briefly during redirects.
-  return null;
+  return (
+    <main className="flex-grow flex items-center justify-center p-4 bg-slate-100 min-h-screen">
+      <Card className="w-full max-w-md text-center">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-center gap-2">
+            <Lock className="h-6 w-6 text-destructive" />
+            Access Denied
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>You are logged in, but you do not have permission to view this page. Please sign out and log in with a staff account.</p>
+          <Button onClick={handleSignOutAndLogin} className="mt-4">Return to Admin Login</Button>
+        </CardContent>
+      </Card>
+    </main>
+  );
+}
+
+
+export default function AdminLayout({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+
+  // The /admin/login page has its own layout and does not need the auth guard
+  if (pathname === '/admin/login') {
+    return <>{children}</>;
+  }
+
+  // All other /admin pages are protected by the auth guard
+  return <AdminAuthGuard>{children}</AdminAuthGuard>;
 }
