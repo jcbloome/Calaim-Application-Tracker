@@ -58,13 +58,13 @@ service cloud.firestore {
     // This is secure because they can only read documents where the {userId} matches their own UID.
     // The `list` permission is denied, so they cannot enumerate all admins.
     match /roles_admin/{userId} {
-      allow get: if isSignedIn();
+      allow get: if isOwner(userId);
       allow list, write, create, delete: if false; 
     }
     
     match /roles_super_admin/{userId} {
-      allow get: if isSignedIn();
-      allow list, write, create, delete: if false;
+      allow get: if isOwner(userId);
+      allow list, write, create, delete: if false; 
     }
     
     // 2. System Settings
