@@ -3,7 +3,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useFirestore, useCollection } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collectionGroup, query, Query, doc, writeBatch } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
@@ -28,7 +28,7 @@ export default function AdminApplicationsPage() {
   const { toast } = useToast();
   const [selected, setSelected] = useState<string[]>([]);
 
-  const applicationsQuery = useMemo(() => {
+  const applicationsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
   }, [firestore]);

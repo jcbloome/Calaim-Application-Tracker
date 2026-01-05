@@ -3,7 +3,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useFirestore, useCollection } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collectionGroup, query, Query, Timestamp } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import { Loader2 } from 'lucide-react';
@@ -56,7 +56,7 @@ export default function AdminStatisticsPage() {
   const firestore = useFirestore();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
-  const applicationsQuery = useMemo(() => {
+  const applicationsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return query(collectionGroup(firestore, 'applications')) as Query<Application>;
   }, [firestore]);

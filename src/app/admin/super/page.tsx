@@ -10,7 +10,7 @@ import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, Shield
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, type Query, serverTimestamp } from 'firebase/firestore';
-import { useFirestore, useUser, useCollection } from '@/firebase';
+import { useFirestore, useUser, useCollection, useMemoFirebase } from '@/firebase';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -160,7 +160,7 @@ export default function SuperAdminPage() {
     const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
 
     // New: Fetch all applications on the client
-    const applicationsQuery = useMemo(() => {
+    const applicationsQuery = useMemoFirebase(() => {
         if (!firestore || !isSuperAdmin) return null;
         return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
     }, [firestore, isSuperAdmin]);

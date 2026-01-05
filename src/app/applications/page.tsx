@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Header } from '@/components/Header';
-import { useUser, useFirestore, useCollection } from '@/firebase';
+import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, doc, deleteDoc, Query, Timestamp, writeBatch } from 'firebase/firestore';
 import { format } from 'date-fns';
 import {
@@ -165,7 +165,7 @@ export default function MyApplicationsPage() {
   const firestore = useFirestore();
   const router = useRouter();
 
-  const applicationsQuery = useMemo(() => {
+  const applicationsQuery = useMemoFirebase(() => {
     if (user && firestore) {
       return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
     }
