@@ -243,12 +243,12 @@ export default function SuperAdminPage() {
     };
 
     useEffect(() => {
-        // Fetch staff and notification data when the component mounts if firestore is available
-        if (firestore && isSuperAdmin) {
+        // Wait for auth to finish loading and ensure user is a super admin
+        if (!isAdminLoading && firestore && isSuperAdmin) {
             fetchAllStaff();
             fetchNotificationRecipients();
         }
-    }, [firestore, isSuperAdmin]);
+    }, [firestore, isSuperAdmin, isAdminLoading]);
     
      const handleBootstrap = async () => {
         if (!firestore || !currentUser) {
@@ -765,3 +765,5 @@ export default function SuperAdminPage() {
         </div>
     );
 }
+
+    
