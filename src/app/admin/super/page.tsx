@@ -154,6 +154,8 @@ export default function SuperAdminPage() {
     const [isSendingWebhook, setIsSendingWebhook] = useState(false);
     const [webhookLog, setWebhookLog] = useState<string | null>(null);
     const [isCreatingTestApp, setIsCreatingTestApp] = useState(false);
+    const [isBootstrapping, setIsBootstrapping] = useState(false);
+
 
     // New state for test email
     const [testEmail, setTestEmail] = useState('jcbloome@gmail.com');
@@ -225,16 +227,42 @@ export default function SuperAdminPage() {
 
     useEffect(() => {
         if (!isAdminLoading && !isSuperAdmin) {
-            router.push('/admin');
-        }
-    }, [isSuperAdmin, isAdminLoading, router]);
-
-    useEffect(() => {
-        if (isSuperAdmin && firestore) {
+            // Keep the user on the page if they aren't an admin yet, but show a special message
+        } else if (isSuperAdmin && firestore) {
             fetchAllStaff();
             fetchNotificationRecipients();
         }
-    }, [isSuperAdmin, firestore]);
+    }, [isSuperAdmin, isAdminLoading, router, firestore]);
+    
+     const handleBootstrap = async () => {
+        if (!firestore || !currentUser) {
+            toast({ variant: 'destructive', title: 'Error', description: 'User or Firestore not available.' });
+            return;
+        }
+        setIsBootstrapping(true);
+        try {
+            const batch = writeBatch(firestore);
+            const superAdminRef = doc(firestore, 'roles_super_admin', currentUser.uid);
+            const adminRef = doc(firestore, 'roles_admin', currentUser.uid);
+            
+            batch.set(superAdminRef, { grantedAt: serverTimestamp() });
+            batch.set(adminRef, { grantedAt: serverTimestamp() });
+            
+            await batch.commit();
+
+            toast({
+                title: "You are now a Super Admin!",
+                description: "Please refresh the page for the changes to take full effect.",
+                className: 'bg-green-100 text-green-900 border-green-200',
+            });
+            await fetchAllStaff(); // Re-fetch staff to update the UI
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Bootstrap Failed', description: error.message });
+        } finally {
+            setIsBootstrapping(false);
+        }
+    };
+
 
     const handleAddStaff = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -245,32 +273,31 @@ export default function SuperAdminPage() {
         }
         setIsAddingStaff(true);
         try {
-            // NOTE: This approach is simplified. In a production app, creating users with passwords
-            // on the client like this is not recommended. A Cloud Function is the standard practice.
-            const tempPassword = Math.random().toString(36).slice(-8);
-            const auth = getAuth();
+            const tempPassword = Math.random().toString(36).slice(-8); // Generate a temporary password
             
-            // This is a placeholder to allow UI to function. A proper fix involves Firebase Functions.
-            const uid = doc(collection(firestore, 'users')).id;
-
-            const batch = writeBatch(firestore);
-            const userDocRef = doc(firestore, 'users', uid);
-            batch.set(userDocRef, {
-                id: uid,
-                email: newStaffEmail,
-                firstName: newStaffFirstName,
-                lastName: newStaffLastName,
-                displayName: `${newStaffFirstName} ${newStaffLastName}`
+            // This is a special, temporary flow for adding users via a server action
+            // because client-side user creation is often restricted.
+            // A more robust solution would be a dedicated Cloud Function.
+            const response = await fetch('/api/create-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: newStaffEmail,
+                    password: tempPassword,
+                    firstName: newStaffFirstName,
+                    lastName: newStaffLastName,
+                }),
             });
 
-            const adminRoleRef = doc(firestore, 'roles_admin', uid);
-            batch.set(adminRoleRef, { grantedAt: new Date() });
+            const result = await response.json();
 
-            await batch.commit();
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to create user.');
+            }
 
             toast({
-                title: "Staff Records Created",
-                description: `Created DB entries for ${newStaffEmail}. Auth user must be created separately.`,
+                title: "Staff Member Added!",
+                description: `${newStaffEmail} has been created and granted Admin permissions.`,
                 className: 'bg-green-100 text-green-900 border-green-200',
             });
             
@@ -497,16 +524,29 @@ export default function SuperAdminPage() {
     if (isAdminLoading) {
         return <div className="flex justify-center items-center h-full"><Loader2 className="h-8 w-8 animate-spin"/></div>;
     }
-
+    
     if (!isSuperAdmin) {
          return (
-             <>
+             <div className="space-y-6">
                 <Alert variant="destructive">
                     <ShieldAlert className="h-4 w-4" />
-                    <AlertTitle>Access Denied</AlertTitle>
-                    <AlertDescription>You do not have the required permissions to view this page.</AlertDescription>
+                    <AlertTitle>Admin Access Required</AlertTitle>
+                    <AlertDescription>Your account does not have admin permissions. Click the button below to grant yourself Super Admin access.</AlertDescription>
                 </Alert>
-             </>
+                 <Card>
+                    <CardHeader>
+                        <CardTitle>Bootstrap Super Admin</CardTitle>
+                        <CardDescription>
+                            If this is the first time setting up the app, click this button to make your current user ({currentUser?.email}) a Super Admin.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <Button onClick={handleBootstrap} disabled={isBootstrapping}>
+                            {isBootstrapping ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Granting Access...</> : 'Make Me Super Admin'}
+                        </Button>
+                    </CardContent>
+                </Card>
+             </div>
         );
     }
     
