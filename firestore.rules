@@ -58,12 +58,12 @@ service cloud.firestore {
     // This is secure because they can only read documents where the {userId} matches their own UID.
     // The `list` permission is denied, so they cannot enumerate all admins.
     match /roles_admin/{userId} {
-      allow get: if isOwner(userId);
+      allow get: if isOwner(userId) || isAdmin();
       allow list, write, create, delete: if false; 
     }
     
     match /roles_super_admin/{userId} {
-      allow get: if isOwner(userId);
+      allow get: if isOwner(userId) || isSuperAdmin();
       allow list, write, create, delete: if false; 
     }
     
@@ -78,7 +78,7 @@ service cloud.firestore {
     // 3. Test Collection
     // Allow any signed-in user to perform all operations on the test collection.
     match /test_writes/{docId} {
-        allow write: if isSignedIn();
+        allow read, write: if isSignedIn();
     }
   }
 }
