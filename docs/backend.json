@@ -1,59 +1,177 @@
 {
   "entities": {
-    "User": {
-      "title": "User",
+    "GitCommit": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "GitCommit",
       "type": "object",
-      "description": "A user of the application.",
+      "description": "Represents a Git commit.",
       "properties": {
-        "id": { "type": "string", "description": "Unique user ID." },
-        "email": { "type": "string", "format": "email" },
-        "displayName": { "type": "string" },
-        "firstName": { "type": "string" },
-        "lastName": { "type": "string" }
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the GitCommit entity."
+        },
+        "hash": {
+          "type": "string",
+          "description": "The Git commit hash."
+        },
+        "author": {
+          "type": "string",
+          "description": "Author of the commit."
+        },
+        "commitDate": {
+          "type": "string",
+          "description": "Date and time when the commit was made.",
+          "format": "date-time"
+        },
+        "message": {
+          "type": "string",
+          "description": "Commit message."
+        }
       },
-      "required": ["id", "email"]
+      "required": [
+        "id",
+        "hash",
+        "author",
+        "commitDate",
+        "message"
+      ]
     },
-    "Application": {
-      "title": "Application",
+    "ProjectFile": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ProjectFile",
       "type": "object",
-      "description": "A CalAIM application submitted by a user.",
+      "description": "Represents a file within the project at a specific commit.",
       "properties": {
-        "id": { "type": "string" },
-        "userId": { "type": "string" },
-        "status": { "type": "string", "enum": ["In Progress", "Completed & Submitted", "Requires Revision", "Approved", "Deleted"] },
-        "memberFirstName": { "type": "string" },
-        "memberLastName": { "type": "string" }
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ProjectFile entity."
+        },
+        "commitId": {
+          "type": "string",
+          "description": "Reference to GitCommit. (Relationship: GitCommit 1:N ProjectFile)"
+        },
+        "filePath": {
+          "type": "string",
+          "description": "The path to the file within the project."
+        },
+        "content": {
+          "type": "string",
+          "description": "The content of the file at the specified commit."
+        }
       },
-      "required": ["id", "userId", "status"]
+      "required": [
+        "id",
+        "commitId",
+        "filePath",
+        "content"
+      ]
     },
-    "AdminRole": {
-      "title": "AdminRole",
+    "RestoreLog": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "RestoreLog",
       "type": "object",
-      "properties": { "grantedAt": { "type": "string", "format": "date-time" } }
-    },
-    "SuperAdminRole": {
-      "title": "SuperAdminRole",
-      "type": "object",
-      "properties": { "grantedAt": { "type": "string", "format": "date-time" } }
+      "description": "Represents a log entry for file restoration attempts.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the RestoreLog entity."
+        },
+        "commitId": {
+          "type": "string",
+          "description": "Reference to GitCommit. (Relationship: GitCommit 1:N RestoreLog)"
+        },
+        "filePath": {
+          "type": "string",
+          "description": "The path to the file that was attempted to be restored."
+        },
+        "restoreDate": {
+          "type": "string",
+          "description": "The date and time when the restoration was attempted.",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the restore operation (e.g., success, failure)."
+        },
+        "errorMessage": {
+          "type": "string",
+          "description": "Error message in case of restoration failure (if any)."
+        }
+      },
+      "required": [
+        "id",
+        "commitId",
+        "filePath",
+        "restoreDate",
+        "status"
+      ]
     }
   },
-  "auth": { "providers": ["password", "anonymous"] },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
   "firestore": {
-    "/users/{userId}": {
-      "schema": { "$ref": "#/entities/User" },
-      "description": "Stores public profile information for a user."
-    },
-    "/users/{userId}/applications/{applicationId}": {
-      "schema": { "$ref": "#/entities/Application" },
-      "description": "Sub-collection for applications belonging to a user."
-    },
-    "/roles_admin/{userId}": {
-      "schema": { "$ref": "#/entities/AdminRole" },
-      "description": "Collection where document ID is a user UID that has the Admin role."
-    },
-    "/roles_super_admin/{userId}": {
-      "schema": { "$ref": "#/entities/SuperAdminRole" },
-      "description": "Collection where document ID is a user UID that has the Super Admin role."
-    }
+    "structure": [
+      {
+        "path": "/gitCommits/{commitId}",
+        "definition": {
+          "entityName": "GitCommit",
+          "schema": {
+            "$ref": "#/backend/entities/GitCommit"
+          },
+          "description": "Stores information about each Git commit.",
+          "params": [
+            {
+              "name": "commitId",
+              "description": "The unique identifier for the GitCommit entity."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/gitCommits/{commitId}/projectFiles/{fileId}",
+        "definition": {
+          "entityName": "ProjectFile",
+          "schema": {
+            "$ref": "#/backend/entities/ProjectFile"
+          },
+          "description": "Stores the state of each project file for a given commit. Includes denormalized 'commitId' for authorization independence.",
+          "params": [
+            {
+              "name": "commitId",
+              "description": "The unique identifier for the GitCommit entity."
+            },
+            {
+              "name": "fileId",
+              "description": "The unique identifier for the ProjectFile entity."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/gitCommits/{commitId}/restoreLogs/{logId}",
+        "definition": {
+          "entityName": "RestoreLog",
+          "schema": {
+            "$ref": "#/backend/entities/RestoreLog"
+          },
+          "description": "Stores logs of file restoration attempts. Includes denormalized 'commitId' for authorization independence.",
+          "params": [
+            {
+              "name": "commitId",
+              "description": "The unique identifier for the GitCommit entity."
+            },
+            {
+              "name": "logId",
+              "description": "The unique identifier for the RestoreLog entity."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to support the Git State Restorer application's core features: accessing project files by commit hash, replacing file content, and restoring the project state to a specific commit. The structure emphasizes authorization independence and efficient querying.\n\n1.  **Git Commits Collection (`/gitCommits/{commitId}`):** Stores information about each Git commit. No specific authorization concerns beyond ensuring data integrity (e.g., preventing unauthorized modifications). Indexes are important here to filter by commit date and author.\n\n2.  **Project Files Subcollection (`/gitCommits/{commitId}/projectFiles/{fileId}`):** Stores the state of each project file for a given commit. The `commitId` is denormalized into the `ProjectFile` document, enabling direct querying of files for a specific commit without needing to traverse the parent `GitCommit` document (Authorization Independence). This design supports QAPs by enabling secure listing of files associated with a particular commit.\n\n3.  **Restore Logs Subcollection (`/gitCommits/{commitId}/restoreLogs/{logId}`):** Stores logs of file restoration attempts.  Similar to `ProjectFile`, it's a subcollection of `gitCommits`. The design supports QAPs by enabling secure listing of logs associated with a particular commit.\n\nThis structure facilitates clear, predictable security rules. Authorization Independence is achieved by denormalizing the `commitId` in the `ProjectFile` and `RestoreLog` documents, eliminating the need for `get()` calls in security rules. Homogeneous security posture is maintained within each collection, and the structure supports the application's core features and desired access patterns."
   }
 }

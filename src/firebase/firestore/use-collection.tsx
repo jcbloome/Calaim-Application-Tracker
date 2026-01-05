@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -59,7 +58,7 @@ export function useCollection<T = any>(
   type StateDataType = ResultItemType[] | null;
 
   const [data, setData] = useState<StateDataType>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<FirestoreError | Error | null>(null);
 
   useEffect(() => {
@@ -73,6 +72,7 @@ export function useCollection<T = any>(
     setIsLoading(true);
     setError(null);
 
+    // Directly use memoizedTargetRefOrQuery as it's assumed to be the final query
     const unsubscribe = onSnapshot(
       memoizedTargetRefOrQuery,
       (snapshot: QuerySnapshot<DocumentData>) => {
@@ -85,6 +85,7 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       (error: FirestoreError) => {
+        // This logic extracts the path from either a ref or a query
         const path: string =
           memoizedTargetRefOrQuery.type === 'collection'
             ? (memoizedTargetRefOrQuery as CollectionReference).path
@@ -93,24 +94,21 @@ export function useCollection<T = any>(
         const contextualError = new FirestorePermissionError({
           operation: 'list',
           path,
-        });
+        })
 
-        // The error listener will throw this error, which will be caught by the nearest Next.js error boundary.
-        // We no longer need to set local state, as the listener handles the display.
+        setError(contextualError)
+        setData(null)
+        setIsLoading(false)
+
+        // trigger global error propagation
         errorEmitter.emit('permission-error', contextualError);
-        
-        // We still need to update loading state for the component using the hook.
-        setIsLoading(false);
-        setData(null); // Clear data on error
       }
     );
 
     return () => unsubscribe();
-  }, [memoizedTargetRefOrQuery]);
-
+  }, [memoizedTargetRefOrQuery]); // Re-run if the target query/reference changes.
   if(memoizedTargetRefOrQuery && !memoizedTargetRefOrQuery.__memo) {
     throw new Error(memoizedTargetRefOrQuery + ' was not properly memoized using useMemoFirebase');
   }
-
   return { data, isLoading, error };
 }
