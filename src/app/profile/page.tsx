@@ -29,14 +29,21 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // If not loading and there is no user, redirect to login.
-    if (!isUserLoading && !user) {
-      router.push('/login');
+    // Wait until all loading is finished
+    if (isUserLoading || isAdminLoading) {
+      return;
     }
-    // If user is determined to be an admin, they should not be on this page.
-    if (!isAdminLoading && (isAdmin || isSuperAdmin)) {
-      // Redirect admins away to avoid confusion. They have their own profile page.
+    
+    // If finished loading and there's no user, go to login.
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    
+    // If the user is an admin, they should not be on this page. Redirect them.
+    if (isAdmin || isSuperAdmin) {
       router.push('/admin');
+      return;
     }
   }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
 
@@ -114,6 +121,9 @@ export default function ProfilePage() {
       setLastName(formatted);
   };
 
+  // This is the loading state / redirect guard.
+  // It will show a loader until the user/admin status is confirmed,
+  // at which point the useEffect above will trigger any necessary redirects.
   if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
     return (
         <div className="flex items-center justify-center h-screen">
@@ -123,6 +133,7 @@ export default function ProfilePage() {
     );
   }
 
+  // This JSX will only be rendered if the user is loaded, is not an admin, and exists.
   return (
     <>
       <Header />
