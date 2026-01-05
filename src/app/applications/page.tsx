@@ -76,10 +76,10 @@ const ApplicationsTable = ({
   const getActionLink = (app: ApplicationData) => {
     // If the application is still being worked on, send the user back to the form to continue editing.
     if (app.status === 'In Progress' || app.status === 'Requires Revision') {
-      return `/forms/cs-summary-form?applicationId=${'app.id'}`;
+      return `/forms/cs-summary-form?applicationId=${app.id}`;
     }
     // For all other statuses, send them to the read-only pathway page.
-    return `/pathway?applicationId=${'app.id'}`;
+    return `/pathway?applicationId=${app.id}`;
   };
 
   const getActionText = (app: ApplicationData) => {
@@ -122,12 +122,12 @@ const ApplicationsTable = ({
                         <Checkbox
                           checked={selection?.includes(app.id)}
                           onCheckedChange={checked => onSelectionChange(app.id, !!checked)}
-                          aria-label={`Select application for ${'app.memberFirstName'} ${'app.memberLastName'}`}
+                          aria-label={`Select application for ${app.memberFirstName} ${app.memberLastName}`}
                         />
                       </TableCell>
                     )}
                     <TableCell className="font-medium">
-                      <div>{`${'app.memberFirstName'} ${'app.memberLastName'}`}</div>
+                      <div>{`${app.memberFirstName} ${app.memberLastName}`}</div>
                       <div className="text-xs text-muted-foreground font-mono truncate max-w-[120px] sm:max-w-xs">{app.id}</div>
                     </TableCell>
                     <TableCell>
@@ -172,7 +172,7 @@ export default function MyApplicationsPage() {
     return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
   }, [firestore, user]);
   
-  const { data: applications = [], isLoading: isLoadingApplications, error } = useCollection<ApplicationData>(applicationsQuery);
+  const { data: applications, isLoading: isLoadingApplications, error } = useCollection<ApplicationData>(applicationsQuery);
 
   const [selected, setSelected] = useState<string[]>([]);
   
@@ -196,12 +196,18 @@ export default function MyApplicationsPage() {
     );
   }
 
-  const inProgressApps = applications.filter(
-    app => app.status !== 'Completed & Submitted' && app.status !== 'Approved'
-  );
-  const completedApps = applications.filter(
-    app => app.status === 'Completed & Submitted' || app.status === 'Approved'
-  );
+  let inProgressApps: ApplicationData[] = [];
+  let completedApps: ApplicationData[] = [];
+
+  // Guard against null 'applications' before filtering
+  if (applications) {
+    inProgressApps = applications.filter(
+      app => app.status !== 'Completed & Submitted' && app.status !== 'Approved'
+    );
+    completedApps = applications.filter(
+      app => app.status === 'Completed & Submitted' || app.status === 'Approved'
+    );
+  }
 
   const handleSelectionChange = (id: string, isSelected: boolean) => {
     setSelected(prev =>
