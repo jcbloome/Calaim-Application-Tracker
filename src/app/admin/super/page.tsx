@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -9,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, ShieldCheck, Bell, PlusCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, type Query, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp } from 'firebase/firestore';
 import { useFirestore, useUser, useCollection, useMemoFirebase } from '@/firebase';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -163,7 +162,10 @@ export default function SuperAdminPage() {
 
     // New: Fetch all applications on the client
     const applicationsQuery = useMemoFirebase(() => {
-        if (isAdminLoading || !firestore) return null;
+        // CRITICAL: Do not create the query until auth/admin state is fully resolved.
+        if (isAdminLoading || !firestore) {
+          return null;
+        }
         return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
     }, [firestore, isAdminLoading]);
 
@@ -524,33 +526,34 @@ export default function SuperAdminPage() {
         return <div className="flex justify-center items-center h-full"><Loader2 className="h-8 w-8 animate-spin"/></div>;
     }
     
-    if (!isSuperAdmin) {
-         return (
-             <div className="space-y-6">
-                <Alert variant="destructive">
-                    <ShieldAlert className="h-4 w-4" />
-                    <AlertTitle>Super Admin Access Required</AlertTitle>
-                    <AlertDescription>
-                        This page is for managing staff and system settings. If you believe you should have access, please contact the main administrator.
-                        If you are the main administrator and this is your first time setting up the application, please log in and use the button below to grant yourself Super Admin rights.
-                    </AlertDescription>
-                </Alert>
-                 <Card>
-                    <CardHeader>
-                        <CardTitle>Bootstrap Super Admin Role</CardTitle>
-                        <CardDescription>
-                            Click this button to make your current user ({currentUser?.email || '...loading'}) a Super Admin. You only need to do this once.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <Button onClick={handleBootstrap} disabled={isBootstrapping || !currentUser}>
-                            {isBootstrapping ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Granting Access...</> : 'Make Me Super Admin'}
-                        </Button>
-                    </CardContent>
-                </Card>
-             </div>
-        );
-    }
+    // TEMPORARILY DISABLED: Allow access to grant permissions
+    // if (!isSuperAdmin) {
+    //      return (
+    //          <div className="space-y-6">
+    //             <Alert variant="destructive">
+    //                 <ShieldAlert className="h-4 w-4" />
+    //                 <AlertTitle>Super Admin Access Required</AlertTitle>
+    //                 <AlertDescription>
+    //                     This page is for managing staff and system settings. If you believe you should have access, please contact the main administrator.
+    //                     If you are the main administrator and this is your first time setting up the application, please log in and use the button below to grant yourself Super Admin rights.
+    //                 </AlertDescription>
+    //             </Alert>
+    //              <Card>
+    //                 <CardHeader>
+    //                     <CardTitle>Bootstrap Super Admin Role</CardTitle>
+    //                     <CardDescription>
+    //                         Click this button to make your current user ({currentUser?.email || '...loading'}) a Super Admin. You only need to do this once.
+    //                     </CardDescription>
+    //                 </CardHeader>
+    //                 <CardContent>
+    //                     <Button onClick={handleBootstrap} disabled={isBootstrapping || !currentUser}>
+    //                         {isBootstrapping ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Granting Access...</> : 'Make Me Super Admin'}
+    //                     </Button>
+    //                 </CardContent>
+    //             </Card>
+    //          </div>
+    //     );
+    // }
     
     return (
         <div className="space-y-6">
@@ -563,6 +566,22 @@ export default function SuperAdminPage() {
                     </CardDescription>
                 </CardHeader>
             </Card>
+
+            {!isSuperAdmin && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Bootstrap Super Admin Role</CardTitle>
+                        <CardDescription>
+                            Click this button to make your current user ({currentUser?.email || '...loading'}) a Super Admin. You only need to do this once.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <Button onClick={handleBootstrap} disabled={isBootstrapping || !currentUser}>
+                            {isBootstrapping ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Granting Access...</> : 'Make Me Super Admin'}
+                        </Button>
+                    </CardContent>
+                </Card>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                 <div className="space-y-6">

@@ -1,10 +1,9 @@
-
 'use client';
 
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collectionGroup, query, Query } from 'firebase/firestore';
+import { collectionGroup, query, Query, where } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -74,7 +73,10 @@ export default function ProgressTrackerPage() {
   const [filters, setFilters] = useState<string[]>([]);
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (isAdminLoading || !firestore) return null;
+    // CRITICAL: Do not create the query until auth/admin state is fully resolved.
+    if (isAdminLoading || !firestore) {
+      return null;
+    }
     return query(collectionGroup(firestore, 'applications')) as Query<Application>;
   }, [firestore, isAdminLoading]);
 

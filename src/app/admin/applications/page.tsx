@@ -1,10 +1,9 @@
-
 'use client';
 
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collectionGroup, query, Query, doc, writeBatch } from 'firebase/firestore';
+import { collectionGroup, query, Query, where, doc, writeBatch } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
@@ -31,7 +30,10 @@ export default function AdminApplicationsPage() {
   const [selected, setSelected] = useState<string[]>([]);
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (isAdminLoading || !firestore) return null;
+    // CRITICAL: Do not create the query until auth/admin state is fully resolved.
+    if (isAdminLoading || !firestore) {
+      return null;
+    }
     return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
   }, [firestore, isAdminLoading]);
 

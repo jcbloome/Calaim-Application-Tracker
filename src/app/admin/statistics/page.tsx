@@ -1,10 +1,9 @@
-
 'use client';
 
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collectionGroup, query, Query, Timestamp } from 'firebase/firestore';
+import { collectionGroup, query, Query, where, Timestamp } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import { Loader2 } from 'lucide-react';
 import {
@@ -59,7 +58,10 @@ export default function AdminStatisticsPage() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (isAdminLoading || !firestore) return null;
+    // CRITICAL: Do not create the query until auth/admin state is fully resolved.
+    if (isAdminLoading || !firestore) {
+      return null;
+    }
     return query(collectionGroup(firestore, 'applications')) as Query<Application>;
   }, [firestore, isAdminLoading]);
 
