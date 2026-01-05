@@ -25,12 +25,15 @@ import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
+import { useAdmin } from '@/hooks/use-admin';
+
 
 export default function LoginPage() {
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   const { user, isUserLoading } = useUser();
+  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -39,42 +42,52 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isUserLoading && user) {
-      console.log('[Login Page] User already logged in, redirecting...', user);
-      router.push('/applications');
+    // This effect handles redirection for already logged-in users.
+    const isAuthLoading = isUserLoading || isAdminLoading;
+    if (isAuthLoading) {
+      return; // Wait for auth state and roles to be determined.
     }
-  }, [user, isUserLoading, router]);
+
+    if (user) {
+      // If a user is logged in, decide where they should go.
+      if (isAdmin || isSuperAdmin) {
+        // If they are an admin, they should not be on the public login page.
+        // Send them to the admin dashboard.
+        router.push('/admin');
+      } else {
+        // If they are a regular user, send them to their applications.
+        router.push('/applications');
+      }
+    }
+    // If no user, do nothing and just show the login form.
+  }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
-    console.log(`[Login Page] Attempting to sign in user: ${email}`);
 
     if (!auth) {
       const errorMsg = 'Firebase services are not available.';
       setError(errorMsg);
       setIsLoading(false);
-      console.error('[Login Page] Firebase auth instance is not available.');
       return;
     }
 
     try {
       await setPersistence(auth, browserSessionPersistence);
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, email, password);
       
-      console.log('[Login Page] Sign-in successful. User object:', userCredential.user);
-
       toast({
         title: 'Successfully signed in!',
         description: 'Redirecting to your applications...',
       });
       
-      router.push('/applications');
+      // The useEffect will handle the redirection.
+      // A manual push here could cause race conditions if the role isn't loaded yet.
 
     } catch (err) {
       const authError = err as AuthError;
-      console.error('[Login Page] Sign-in failed. Error:', authError);
       let errorMessage = 'Invalid email or password. Please try again.';
       if (authError.code === 'auth/user-not-found' || authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
         errorMessage = 'Invalid email or password. Please check your credentials and try again.';
@@ -82,23 +95,19 @@ export default function LoginPage() {
         errorMessage = `An unexpected error occurred: ${authError.message}`;
       }
       setError(errorMessage);
-      toast({
-        variant: 'destructive',
-        title: 'Sign In Failed',
-        description: errorMessage,
-      });
-    } finally {
       setIsLoading(false);
-    }
+    } 
   };
   
-    if (isUserLoading || (!isUserLoading && user)) {
-        return (
-            <div className="flex items-center justify-center h-screen">
-                <Loader2 className="h-8 w-8 animate-spin" />
-            </div>
-        );
-    }
+  if (isUserLoading || isAdminLoading || user) {
+      // Show a loading screen while checking auth state or if a user is found (before redirect).
+      return (
+          <div className="flex items-center justify-center h-screen">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <p className="ml-2">Loading session...</p>
+          </div>
+      );
+  }
 
   return (
     <>

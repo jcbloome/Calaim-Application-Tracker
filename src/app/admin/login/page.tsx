@@ -25,35 +25,27 @@ export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isReady, setIsReady] = useState(false);
 
+  // This effect handles redirection AFTER a user is successfully logged in and their role is determined.
   useEffect(() => {
+    // Wait until loading is fully complete.
     if (isAdminLoading) {
-      return; // Wait until we know the user's role
+      return;
     }
 
+    // If loading is done, and we have a user with the correct role, redirect to the dashboard.
     if (user && (isAdmin || isSuperAdmin)) {
-      // If user is already an admin, redirect them to the dashboard
       router.push('/admin');
-    } else if (user) {
-      // If user is logged in but NOT an admin, sign them out before showing the form
-      if (auth) {
-        auth.signOut().then(() => {
-          setIsReady(true);
-        });
-      }
-    } else {
-      // If no user is logged in, the page is ready
-      setIsReady(true);
     }
-  }, [user, isAdmin, isSuperAdmin, isAdminLoading, router, auth]);
+
+  }, [user, isAdmin, isSuperAdmin, isAdminLoading, router]);
 
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    setIsSigningIn(true);
     setError(null);
 
     if (!auth) {
@@ -64,20 +56,18 @@ export default function AdminLoginPage() {
         title: 'Error',
         description: errorMsg,
       });
-      setIsLoading(false);
+      setIsSigningIn(false);
       return;
     }
 
     try {
       await setPersistence(auth, browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
+      // After sign-in, the useEffect will handle the redirection once the admin role is confirmed.
       toast({
         title: 'Successfully signed in!',
         description: 'Redirecting to your dashboard...',
-        duration: 2000,
       });
-      // A push is sufficient, the auth guard on the layout will handle the rest.
-      router.push('/admin');
     } catch (err) {
       const authError = err as AuthError;
       let errorMessage = 'Invalid email or password. Please try again.';
@@ -87,16 +77,16 @@ export default function AdminLoginPage() {
         errorMessage = `An unexpected error occurred: ${authError.message}`;
       }
       setError(errorMessage);
-    } finally {
-      setIsLoading(false);
+      setIsSigningIn(false); // Only stop signing in on error. On success, we wait for redirect.
     }
   };
-
-  if (!isReady) {
+  
+  // Show a loading spinner if the initial auth state is loading or if we are in the process of signing in.
+  if (isAdminLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="ml-4">Preparing login...</p>
+          <p className="ml-4">Verifying session...</p>
       </div>
     );
   }
@@ -156,8 +146,8 @@ export default function AdminLoginPage() {
                   </Button>
                 </div>
                 
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Signing In...</> : 'Sign In'}
+                <Button type="submit" className="w-full" disabled={isSigningIn}>
+                  {isSigningIn ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Signing In...</> : 'Sign In'}
                 </Button>
               </form>
             </CardContent>
@@ -175,5 +165,3 @@ export default function AdminLoginPage() {
     </main>
   );
 }
-
-    
