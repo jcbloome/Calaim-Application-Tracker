@@ -245,30 +245,21 @@ export default function SuperAdminPage() {
 
     useEffect(() => {
         // Wait for auth to finish loading and ensure user is a super admin
-        if (!isAdminLoading && firestore && isSuperAdmin) {
+        if (!isAdminLoading && firestore && (isSuperAdmin || isAdmin)) {
             fetchAllStaff();
             fetchNotificationRecipients();
         }
-    }, [firestore, isSuperAdmin, isAdminLoading]);
+    }, [firestore, isSuperAdmin, isAdmin, isAdminLoading]);
     
      const handleBootstrap = async () => {
-        if (!firestore || !currentUser) {
-            toast({ variant: 'destructive', title: 'Error', description: 'You must be logged in to grant yourself permissions.' });
-            return;
-        }
         setIsBootstrapping(true);
         try {
-            const batch = writeBatch(firestore);
-            const superAdminRef = doc(firestore, 'roles_super_admin', currentUser.uid);
-            const adminRef = doc(firestore, 'roles_admin', currentUser.uid);
-            
-            batch.set(superAdminRef, { grantedAt: serverTimestamp() });
-            batch.set(adminRef, { grantedAt: serverTimestamp() });
-            
-            await batch.commit().catch(e => {
-                 errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'roles_super_admin or roles_admin', operation: 'write', requestResourceData: {uid: currentUser.uid} }));
-                 throw e;
-            });
+            const response = await fetch('/api/bootstrap-admin');
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(result.error || 'Failed to bootstrap admin.');
+            }
 
             toast({
                 title: "You are now a Super Admin!",
