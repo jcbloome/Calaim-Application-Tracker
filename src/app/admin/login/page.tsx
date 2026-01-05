@@ -31,7 +31,11 @@ export default function AdminLoginPage() {
   
   // This effect will redirect a user if they are ALREADY an admin
   useEffect(() => {
-    if (!isAdminLoading && (isAdmin || isSuperAdmin)) {
+    // Don't redirect while auth state is loading
+    if (isAdminLoading) return;
+    
+    // If user is determined to be an admin, send to dashboard.
+    if (isAdmin || isSuperAdmin) {
       router.push('/admin');
     }
   }, [isAdmin, isSuperAdmin, isAdminLoading, router]);
@@ -58,9 +62,9 @@ export default function AdminLoginPage() {
       await setPersistence(auth, browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
       
-      // IMPORTANT: The redirect is now handled by the useEffect hook above
-      // and the main admin layout. This allows the useAdmin hook time to
-      // get the new user's roles.
+      // The `useAdmin` hook will now re-evaluate with the new user.
+      // The `useEffect` hook will then catch the role change and redirect.
+      // We don't need to manually check roles here.
       toast({
         title: `Signed in as ${email}`,
         description: 'Checking permissions and redirecting...',
@@ -84,7 +88,8 @@ export default function AdminLoginPage() {
   const handleSignOut = async () => {
     if (auth) {
       await signOut(auth);
-      // The useAdmin hook will update and the component will re-render
+      // The useAdmin hook will update and the component will re-render to show the login form.
+      setError(null);
     }
   };
   
@@ -115,7 +120,7 @@ export default function AdminLoginPage() {
                     </p>
                     <Button onClick={handleSignOut}>
                         <LogOut className="mr-2 h-4 w-4" />
-                        Sign Out
+                        Sign Out and Try Again
                     </Button>
                 </CardContent>
             </Card>
@@ -123,7 +128,8 @@ export default function AdminLoginPage() {
      );
   }
 
-  // If no user is logged in, or if an admin is logged in (but hasn't been redirected yet), show the login form.
+  // If no user is logged in show the login form.
+  // The case where an admin *is* logged in is handled by the useEffect redirect.
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
         <div className="w-full max-w-md space-y-4">
