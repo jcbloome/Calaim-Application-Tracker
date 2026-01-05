@@ -1,9 +1,10 @@
+
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collectionGroup, query, Query, where, Timestamp } from 'firebase/firestore';
+import { collection, query, Query, where, Timestamp, getDocs } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import { Loader2 } from 'lucide-react';
 import {
@@ -57,17 +58,39 @@ export default function AdminStatisticsPage() {
   const { isAdmin, isSuperAdmin, isLoading: isAdminLoading, user } = useAdmin();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
-  const applicationsQuery = useMemoFirebase(() => {
-    if (isAdminLoading || !firestore) {
-      return null;
-    }
-     if (isAdmin || isSuperAdmin) {
-        return query(collectionGroup(firestore, 'applications')) as Query<Application>;
-    }
-    return null;
-  }, [firestore, isAdmin, isSuperAdmin, isAdminLoading]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
-  const { data: applications, isLoading, error } = useCollection<Application>(applicationsQuery);
+  useEffect(() => {
+    if (isAdminLoading || !firestore || !isAdmin) {
+        setIsLoading(false);
+        return;
+    };
+
+    const fetchAllApplications = async () => {
+        setIsLoading(true);
+        try {
+            const usersSnapshot = await getDocs(collection(firestore, 'users'));
+            let apps: Application[] = [];
+            for (const userDoc of usersSnapshot.docs) {
+                const appsCollectionRef = collection(firestore, `users/${userDoc.id}/applications`);
+                const appsSnapshot = await getDocs(appsCollectionRef);
+                appsSnapshot.forEach(appDoc => {
+                    apps.push({ id: appDoc.id, ...appDoc.data() } as Application);
+                });
+            }
+            setApplications(apps);
+        } catch (err: any) {
+            setError(err);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+    
+    fetchAllApplications();
+
+  }, [firestore, isAdmin, isAdminLoading]);
 
   const { stats, availableYears } = useMemo(() => {
     const defaultHealthPlans = new Map<string, number>([['Kaiser', 0], ['Health Net', 0]]);

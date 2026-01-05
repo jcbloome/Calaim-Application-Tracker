@@ -1,9 +1,10 @@
+
 'use client';
 
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collectionGroup, query, Query, where, doc, writeBatch } from 'firebase/firestore';
+import { collection, query, Query, where, doc, writeBatch, getDocs } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
@@ -54,19 +55,38 @@ export default function AdminApplicationsPage() {
   const { toast } = useToast();
   const { isAdmin, isSuperAdmin, isLoading: isAdminLoading, user } = useAdmin();
   const [selected, setSelected] = useState<string[]>([]);
+  const [allApplications, setAllApplications] = useState<(Application & FormValues)[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
-  const applicationsQuery = useMemoFirebase(() => {
-    if (isAdminLoading || !firestore) {
-      return null;
-    }
-    // Only admins/superadmins can query the collection group
-    if (isAdmin || isSuperAdmin) {
-        return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
-    }
-    return null;
-  }, [firestore, isAdmin, isSuperAdmin, isAdminLoading]);
+  useEffect(() => {
+    if (!firestore || !isAdmin) {
+        setIsLoading(false);
+        return;
+    };
 
-  const { data: applications, isLoading, error } = useCollection<Application & FormValues>(applicationsQuery);
+    const fetchAllApplications = async () => {
+        setIsLoading(true);
+        try {
+            const usersSnapshot = await getDocs(collection(firestore, 'users'));
+            let apps: (Application & FormValues)[] = [];
+            for (const userDoc of usersSnapshot.docs) {
+                const appsCollectionRef = collection(firestore, `users/${userDoc.id}/applications`);
+                const appsSnapshot = await getDocs(appsCollectionRef);
+                appsSnapshot.forEach(appDoc => {
+                    apps.push({ id: appDoc.id, ...appDoc.data() } as Application & FormValues);
+                });
+            }
+            setAllApplications(apps);
+        } catch (err: any) {
+            setError(err);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+    fetchAllApplications();
+  }, [firestore, isAdmin]);
+
 
   const handleSelectionChange = (id: string, checked: boolean) => {
     setSelected(prev => checked ? [...prev, id] : prev.filter(item => item !== id));
@@ -78,7 +98,7 @@ export default function AdminApplicationsPage() {
     const batch = writeBatch(firestore);
     
     selected.forEach(id => {
-      const appToDelete = applications?.find(app => app.id === id);
+      const appToDelete = allApplications?.find(app => app.id === id);
       if (appToDelete?.userId) {
           const docRef = doc(firestore, `users/${appToDelete.userId}/applications`, id);
           batch.delete(docRef);
@@ -91,6 +111,7 @@ export default function AdminApplicationsPage() {
         title: 'Applications Deleted',
         description: `${selected.length} application(s) have been successfully deleted.`,
       });
+      setAllApplications(prev => prev.filter(app => !selected.includes(app.id)));
       setSelected([]);
     } catch (error: any) {
       toast({
@@ -138,7 +159,7 @@ export default function AdminApplicationsPage() {
         <CardContent>
           {error && <p className="text-destructive">Error loading applications: {error.message}</p>}
           <AdminApplicationsTable 
-            applications={applications || []} 
+            applications={allApplications || []} 
             isLoading={isLoading || isAdminLoading}
             onSelectionChange={handleSelectionChange}
             selected={selected}

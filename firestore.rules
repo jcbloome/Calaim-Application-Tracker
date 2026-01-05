@@ -1,59 +1,8 @@
-/**
- * @fileoverview Firestore Security Rules for the Git State Restorer application.
- *
- * @description
- * This ruleset establishes a secure-by-default "read-only" model suitable for
- * a developer tool or internal application where data integrity is paramount.
- * It allows any authenticated user to browse the entire Git history, including
- * commits, file states, and restoration logs, but explicitly denies all
 
- * write operations (create, update, delete) on historical data.
- *
- * This approach protects the historical data from accidental or unauthorized
- * modification while providing the necessary read access for the application's
- * core functionality. Write access should be granted explicitly in the future,
- * potentially through a trusted server-side process or to specific admin roles,
- * once those requirements are defined.
- *
- * Core Philosophy:
- * The security model prioritizes data integrity. All authenticated users,
- * including those signed in anonymously, are granted read-only access to the
- * entire datastore. All write operations are universally denied to prevent
- * data corruption, making the Firestore database an immutable record of Git history.
- *
- * Data Structure:
- * The data is organized around a top-level `gitCommits` collection. Each document
- * in this collection represents a single Git commit and can contain two
- * subcollections:
- * - `projectFiles`: Contains the content of each file at that specific commit.
- * - `restoreLogs`: Records any attempts to restore files from that commit.
- *
- * Key Security Decisions:
- * - Read Access: Any authenticated user (`request.auth != null`) can read any
- *   document or list any collection. This is suitable for a tool where the data
- *   is not user-specific or private.
- * - Write Access: All write operations (`create`, `update`, `delete`) are
- *   explicitly disabled (`if false;`) on historical data. This provides maximum data protection
- *   and forces a deliberate and secure implementation when write capabilities
- *   are needed.
- * - No Ownership Model: The data model does not contain user-specific ownership
- *   fields (e.g., `ownerId`, `creatorId`). As a result, implementing owner-based
- *   write rules is not possible. The decision to disable all writes is a direct
- *   consequence of this.
- *
- */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ------------------------------------------------------------------------
-    // Helper Functions
-    // ------------------------------------------------------------------------
-
-    /**
-     * Checks if the user is authenticated.
-     * This function is the foundation for all read access in this ruleset.
-     */
     function isSignedIn() {
       return request.auth != null;
     }
@@ -62,92 +11,59 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
-    // ------------------------------------------------------------------------
-    // Test Collection
-    // ------------------------------------------------------------------------
+    function isAdmin() {
+      return exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+    }
+    
     match /test_writes/{docId} {
       allow read, write: if isSignedIn();
     }
     
-    // ------------------------------------------------------------------------
-    // Users Collection
-    // ------------------------------------------------------------------------
     match /users/{userId} {
       allow read, write: if isOwner(userId);
+      // Admins can read user profiles
+      allow get: if isAdmin();
+      allow list: if isAdmin();
     }
 
-    // ------------------------------------------------------------------------
-    // Collection: gitCommits
-    // ------------------------------------------------------------------------
+    match /users/{userId}/applications/{appId} {
+      allow read, write: if isOwner(userId);
+      // Admins can read any application
+      allow get: if isAdmin();
+      allow list: if isAdmin();
+    }
 
-    /**
-     * @description
-     *   Rules for the top-level `gitCommits` collection. Allows any authenticated
-     *   user to read commit data but prevents any modifications to the historical
-     *   commit records.
-     * @path /gitCommits/{commitId}
-     * @allow (get) An authenticated user reads a specific commit document.
-     * @deny (create) Any user, authenticated or not, attempts to add a new commit.
-     * @principle
-     *   Provides read-only access for authenticated users while ensuring the
-     *   integrity of the historical data by disallowing all writes.
-     */
+    // Admins need to read these roles collections
+    match /roles_admin/{uid} {
+        allow get: if isAdmin();
+    }
+     match /roles_super_admin/{uid} {
+        allow get: if isAdmin();
+    }
+
+    // Allow admins to read system settings
+    match /system_settings/notifications {
+        allow get: if isAdmin();
+    }
+    
+    // The following rules are from the original file and are not currently used by the app,
+    // but are kept to avoid breaking changes if they become needed.
     match /gitCommits/{commitId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn();
-      allow create: if false;
-      allow update: if false;
-      allow delete: if false;
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if false;
 
-      // ----------------------------------------------------------------------
-      // Subcollection: projectFiles
-      // ----------------------------------------------------------------------
-
-      /**
-       * @description
-       *   Rules for project files nested under a specific commit. Allows any
-       *   authenticated user to read file content but prevents any changes to
-       *   the file data associated with a commit.
-       * @path /gitCommits/{commitId}/projectFiles/{fileId}
-       * @allow (get) An authenticated user reads the content of a file from a past commit.
-       * @deny (update) Any user attempts to modify the content of a historical file.
-       * @principle
-       *   Maintains the immutability of historical file states. Authenticated
-       *   users can view file history, but cannot alter it.
-       */
       match /projectFiles/{fileId} {
-        allow get: if isSignedIn();
-        allow list: if isSignedIn();
-        allow create: if false;
-        allow update: if false;
-        allow delete: if false;
+        allow get, list: if isSignedIn();
+        allow create, update, delete: if false;
       }
 
-      // ----------------------------------------------------------------------
-      // Subcollection: restoreLogs
-      // ----------------------------------------------------------------------
-
-      /**
-       * @description
-       *   Rules for restoration logs nested under a specific commit. Allows any
-       *   authenticated user to view logs but prevents creating or altering log entries.
-       * @path /gitCommits/{commitId}/restoreLogs/{logId}
-       * @allow (list) An authenticated user lists all restore attempts for a commit.
-       * @deny (create) A client application attempts to write a new log entry directly.
-       * @principle
-       *   Ensures that log data is a reliable, immutable audit trail. Log entries
-       *   should ideally be created by a trusted server process, not directly by clients.
-       */
       match /restoreLogs/{logId} {
-        allow get: if isSignedIn();
-        allow list: if isSignedIn();
-        allow create: if false;
-        allow update: if false;
-        allow delete: if false;
+        allow get, list: if isSignedIn();
+        allow create, update, delete: if false;
       }
     }
      match /applications/{appId} {
-        allow list: if isSignedIn();
+        allow list, get: if isAdmin();
      }
   }
 }
