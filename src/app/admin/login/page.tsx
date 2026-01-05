@@ -76,6 +76,8 @@ export default function AdminLoginPage() {
         description: 'Redirecting to your dashboard...',
         duration: 2000,
       });
+      // Explicitly redirect to the admin page after successful login.
+      // This is the key fix to prevent the redirect loop.
       router.push('/admin');
     } catch (err) {
       const authError = err as AuthError;
