@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -28,7 +29,8 @@ service cloud.firestore {
       // Rules for the 'applications' subcollection
       match /applications/{applicationId} {
         // A user can manage their own applications. Admins can do anything.
-        allow read, write, delete: if isOwner(userId) || isAdmin();
+        // Grant 'list' permission on the collection and read/write/delete on individual documents.
+        allow list, read, write, delete: if isOwner(userId) || isAdmin();
       }
     }
     
@@ -42,10 +44,9 @@ service cloud.firestore {
        // Only super admins can read or write to the super admin roles.
       allow read, write: if isSuperAdmin();
     }
-
-    // Allow admins to list applications across all users.
-    match /{path=**}/applications/{applicationId} {
-      allow read, list: if isAdmin();
+    
+    match /system_settings/{docId} {
+      allow read, write: if isSuperAdmin();
     }
   }
 }
