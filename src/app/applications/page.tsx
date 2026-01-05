@@ -165,35 +165,29 @@ export default function MyApplicationsPage() {
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
   const router = useRouter();
-  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
 
   const applicationsQuery = useMemoFirebase(() => {
     // Wait until the user is loaded and authenticated
-    if (isUserLoading || !user || !firestore || isAdmin || isSuperAdmin) {
+    if (isUserLoading || !user || !firestore) {
       return null;
     }
     return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
-  }, [user, firestore, isUserLoading, isAdmin, isSuperAdmin]);
+  }, [user, firestore, isUserLoading]);
   
   const { data: applications = [], isLoading: isLoadingApplications } = useCollection<ApplicationData>(applicationsQuery);
 
   const [selected, setSelected] = useState<string[]>([]);
   
   useEffect(() => {
-    const isAuthLoading = isUserLoading || isAdminLoading;
-    if (isAuthLoading) return;
+    if (isUserLoading) return;
 
     if (!user) {
         router.push('/login');
         return;
     }
+  }, [user, isUserLoading, router]);
 
-    if (isAdmin || isSuperAdmin) {
-        router.push('/admin/applications');
-    }
-  }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
-
-  if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
+  if (isUserLoading || !user) {
     return (
         <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin" />
