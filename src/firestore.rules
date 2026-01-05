@@ -12,7 +12,6 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Admins can read/write anywhere.
     function isAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
     }
@@ -26,11 +25,15 @@ service cloud.firestore {
       // A user can read or write to their own user document. Admins can do anything.
       allow read, write: if isOwner(userId) || isAdmin();
 
-      // Rules for the 'applications' subcollection
+      // Rules for the 'applications' subcollection.
+      // This grants permission for collection-level operations (list) and
+      // document-level operations (read, write, delete).
       match /applications/{applicationId} {
-        // A user can manage their own applications. Admins can do anything.
-        // Grant 'list' permission on the collection and read/write/delete on individual documents.
-        allow list, read, write, delete: if isOwner(userId) || isAdmin();
+        allow read, list, write, delete: if isOwner(userId) || isAdmin();
+
+         match /staffTrackers/{trackerId} {
+          allow read, write, list: if isAdmin();
+        }
       }
     }
     
@@ -47,6 +50,12 @@ service cloud.firestore {
     
     match /system_settings/{docId} {
       allow read, write: if isSuperAdmin();
+    }
+
+    // THIS IS AN OPEN RULE FOR PUBLIC ACCESS - BE CAREFUL
+    match /public_info/{docId} {
+      allow get: if true;
+      allow list: if true;
     }
   }
 }
