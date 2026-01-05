@@ -166,12 +166,12 @@ export default function MyApplicationsPage() {
   const router = useRouter();
   
   const applicationsQuery = useMemoFirebase(() => {
-    if (isUserLoading || !user || !firestore) {
+    if (!user || !firestore) {
       return null;
     }
     // This query is now only for the logged-in user.
     return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
-  }, [firestore, user, isUserLoading]);
+  }, [firestore, user]);
   
   const { data: applications = [], isLoading: isLoadingApplications, error } = useCollection<ApplicationData>(applicationsQuery);
 
