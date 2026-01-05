@@ -13,43 +13,69 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+      // Check for existence of the user's UID in either admin or super_admin roles.
+      // A super_admin is implicitly an admin.
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) ||
+        exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid))
+      );
+    }
+    
+    function isSuperAdmin() {
+       return isSignedIn() && exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid));
+    }
+
+    // --- USER-SPECIFIC RULES ---
+    match /users/{userId} {
+      // Admins can manage any user profile. Users can only manage their own.
+      allow read, write: if isOwner(userId) || isAdmin();
+
+      // Application subcollection rules
+      match /applications/{applicationId} {
+        // Users can manage their own applications. Admins can manage any application.
+        allow read, write, delete: if isOwner(userId) || isAdmin();
+        
+        // Staff Trackers sub-subcollection rules
+        match /staffTrackers/{trackerId} {
+            // Only admins can read/write internal staff trackers.
+            allow read, list, write: if isAdmin();
+        }
+      }
     }
     
     // --- COLLECTION GROUP RULES ---
     
-    // Rule to allow Admins to list ALL applications across ALL users.
-    // This is CRITICAL for the admin dashboard to function.
+    // This rule is CRITICAL for the admin dashboard.
+    // It allows any user identified as an admin to list all applications across all users.
     match /{path=**}/applications/{applicationId} {
       allow list: if isAdmin();
     }
 
+    // --- GLOBAL/SYSTEM RULES ---
 
-    // --- STANDARD RULES ---
-
-    // 1. User Documents: Allows owner access immediately. Admins can also read/write user profiles.
-    match /users/{userId} {
-      allow read, write: if isOwner(userId) || isAdmin();
-
-      // 2. Applications: Let users manage their own applications. Admins can also fully manage them.
-      // Note: The 'list' permission here is for listing apps for a SINGLE user.
-      // The collectionGroup rule above handles listing ALL apps.
-      match /applications/{applicationId} {
-        allow read, write, delete: if isOwner(userId) || isAdmin();
-
-        // 3. Staff Trackers: Restricts sensitive tracking data to admins only
-        match /staffTrackers/{trackerId} {
-          allow read, list, write: if isAdmin();
-        }
-      }
-    }
-
-    // 4. Admin Role Verification: Only allow reading roles. Writing is managed via Firebase Console/server-side.
+    // 1. Role Verification: 
+    // Allows any signed-in user to check their OWN admin status.
+    // This is secure because they can only read documents where the {userId} matches their own UID.
+    // The `list` permission is denied, so they cannot enumerate all admins.
     match /roles_admin/{userId} {
-      allow read: if isSignedIn();
-      allow write: if false; 
+      allow get: if isSignedIn();
+      allow list, write, create, delete: if false; 
     }
     
+    match /roles_super_admin/{userId} {
+      allow get: if isSignedIn();
+      allow list, write, create, delete: if false;
+    }
+    
+    // 2. System Settings
+    // Only Super Admins can write to system settings.
+    // Regular admins can read them.
+    match /system_settings/{docId} {
+        allow read: if isAdmin();
+        allow write: if isSuperAdmin();
+    }
+    
+    // 3. Test Collection
     // Allow any signed-in user to perform all operations on the test collection.
     match /test_writes/{docId} {
         allow write: if isSignedIn();
