@@ -14,22 +14,43 @@ import * as admin from 'firebase-admin';
 // Check if the app is already initialized to prevent errors.
 if (!admin.apps.length) {
   try {
-    // Initialize the app. The Admin SDK will automatically use Google
-    // Application Default Credentials in a supported environment like App Hosting.
+    // Option 1: Automatic initialization using Application Default Credentials.
+    // This is the preferred method for deployed Google Cloud environments.
+    console.log('[firebase.ts] Attempting to initialize Firebase Admin SDK with ADC...');
     admin.initializeApp();
-    console.log('[firebase.ts] Firebase Admin SDK initialized successfully.');
-  } catch (error: any) {
-    // Log a critical error if initialization fails. This will likely cause
-    // the server to fail to start, which is intended behavior to prevent
-    // running in a broken state.
-    console.error(
-      '[firebase.ts] CRITICAL: Firebase Admin SDK initialization failed.',
-      error
-    );
-    // Re-throw the error to halt execution.
-    throw new Error(
-      `Firebase Admin SDK failed to initialize: ${error.message}`
-    );
+    console.log('[firebase.ts] Firebase Admin SDK initialized successfully with ADC.');
+
+  } catch (adcError: any) {
+    console.warn(`[firebase.ts] ADC initialization failed: ${adcError.message}. Falling back to service account JSON.`);
+    
+    // Option 2: Fallback to a service account JSON string from environment variables.
+    // This is useful for local development or environments without ADC.
+    const serviceAccountJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+
+    if (serviceAccountJson) {
+      try {
+        const serviceAccount = JSON.parse(serviceAccountJson);
+        console.log('[firebase.ts] Attempting to initialize Firebase Admin SDK with service account JSON...');
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+        });
+        console.log('[firebase.ts] Firebase Admin SDK initialized successfully with service account.');
+      } catch (jsonError: any) {
+        console.error(
+          '[firebase.ts] CRITICAL: Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON or initialize with it.',
+          jsonError
+        );
+        throw new Error(`Firebase Admin SDK failed to initialize: ${jsonError.message}`);
+      }
+    } else {
+      // If both methods fail, log a critical error.
+      console.error(
+        '[firebase.ts] CRITICAL: Firebase Admin SDK initialization failed. ADC failed and GOOGLE_APPLICATION_CREDENTIALS_JSON is not set.'
+      );
+      throw new Error(
+        `Firebase Admin SDK failed to initialize. Application Default Credentials were not found, and no service account was provided.`
+      );
+    }
   }
 } else {
   // This message is helpful for debugging to confirm that the singleton
