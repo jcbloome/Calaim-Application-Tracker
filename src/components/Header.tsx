@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { LogOut, User, Menu, UserCog, Shield, LogIn, UserPlus } from 'lucide-react';
+import { LogOut, User, Menu, UserCog, LogIn } from 'lucide-react';
 import { Button } from './ui/button';
 import { useAuth } from '@/firebase/provider';
 import {

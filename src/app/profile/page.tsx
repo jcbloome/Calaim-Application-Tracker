@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
-import { Loader2, UserCog } from 'lucide-react';
+import { Loader2, UserCog, ShieldAlert } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -37,11 +37,6 @@ export default function ProfilePage() {
 
     if (!user) {
       router.push('/login'); // Not logged in, go to login
-      return;
-    }
-
-    if (isAdmin || isSuperAdmin) {
-      router.push('/admin'); // If user is admin, redirect them away from user profile
       return;
     }
     
@@ -117,12 +112,34 @@ export default function ProfilePage() {
       setLastName(value);
   };
 
-  if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
+  if (isUserLoading || isAdminLoading) {
     return (
         <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin" />
             <p className="ml-4">Loading Profile...</p>
         </div>
+    );
+  }
+  
+  if (isAdmin || isSuperAdmin) {
+    return (
+       <>
+        <Header />
+         <main className="flex-grow flex items-center justify-center p-4 sm:p-6 md:p-8">
+            <Card className="w-full max-w-md shadow-lg">
+                <CardHeader className="text-center">
+                    <ShieldAlert className="mx-auto h-12 w-12 text-destructive mb-4" />
+                    <CardTitle className="text-2xl font-bold">Admin Account</CardTitle>
+                    <CardDescription>This is a user-only page. Please use the Admin Dashboard to manage your profile.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <Button onClick={() => router.push('/admin')} className="w-full">
+                        Go to Admin Dashboard
+                    </Button>
+                </CardContent>
+            </Card>
+        </main>
+      </>
     );
   }
 
@@ -140,7 +157,7 @@ export default function ProfilePage() {
             <form onSubmit={handleUpdateProfile} className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" value={user.email || ''} readOnly disabled className="bg-muted" />
+                <Input id="email" type="email" value={user?.email || ''} readOnly disabled className="bg-muted" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
