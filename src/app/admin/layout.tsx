@@ -110,27 +110,29 @@ function AdminHeader() {
         </div>
 
         <div className="flex items-center gap-4">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="rounded-full hidden lg:inline-flex">
-                <UserIcon className="h-5 w-5" />
-                <span className="sr-only">User menu</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>{user?.displayName || user?.email}</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => router.push('/admin/profile')}>
-                <UserIcon className="mr-2 h-4 w-4" />
-                <span>My Profile</span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleSignOut}>
-                <LogOut className="mr-2 h-4 w-4" />
-                <span>Log out</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {user && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="rounded-full hidden lg:inline-flex">
+                  <UserIcon className="h-5 w-5" />
+                  <span className="sr-only">User menu</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>{user?.displayName || user?.email}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => router.push('/admin/profile')}>
+                  <UserIcon className="mr-2 h-4 w-4" />
+                  <span>My Profile</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleSignOut}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Log out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
             <div className="lg:hidden">
               <Sheet>
@@ -201,56 +203,22 @@ function AdminHeader() {
 }
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  const { isLoading, isAdmin, isSuperAdmin } = useAdmin();
   const pathname = usePathname();
-  const router = useRouter();
 
-  useEffect(() => {
-    // The login page does not need the auth guard.
-    if (pathname === '/admin/login') {
-      return;
-    }
-
-    // Wait until the loading is complete before checking roles.
-    if (isLoading) {
-      return;
-    }
-
-    // If loading is finished and the user is not an admin, redirect them.
-    if (!isAdmin && !isSuperAdmin) {
-      router.push('/admin/login');
-    }
-  }, [isLoading, isAdmin, isSuperAdmin, router, pathname]);
-
-
-  // The login page has its own minimal layout.
+  // If the user is on the login page, don't show the full layout.
+  // This allows the login page to be standalone.
   if (pathname === '/admin/login') {
     return <>{children}</>;
   }
 
-  // While loading, show a full-page loader to prevent content flash.
-  if (isLoading) {
-    return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="mt-4 text-muted-foreground">Verifying administrator access...</p>
-      </div>
-    );
-  }
-
-  // If the user is an admin, show the full admin layout.
-  if (isAdmin || isSuperAdmin) {
-    return (
-      <div className="flex flex-col min-h-screen">
-        <AdminHeader />
-        <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
-          {children}
-        </main>
-      </div>
-    );
-  }
-  
-  // If the user is not an admin, they will be redirected by the useEffect.
-  // This return is a fallback while the redirect is in progress.
-  return null;
+  // For all other admin pages, show the full admin layout.
+  // The useAdmin hook is now hardcoded to grant access, so no checks are needed here.
+  return (
+    <div className="flex flex-col min-h-screen">
+      <AdminHeader />
+      <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
+        {children}
+      </main>
+    </div>
+  );
 }
