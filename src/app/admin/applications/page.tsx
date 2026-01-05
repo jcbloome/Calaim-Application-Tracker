@@ -22,17 +22,19 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { useAdmin } from '@/hooks/use-admin';
 
 export default function AdminApplicationsPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
-  const { isUserLoading } = useUser();
+  const { isSuperAdmin, isAdmin, isLoading: isAdminLoading } = useAdmin();
   const [selected, setSelected] = useState<string[]>([]);
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (isUserLoading || !firestore) return null;
+    // Prevent query from running if firestore is not ready or user is not an admin
+    if (!firestore || isAdminLoading || (!isAdmin && !isSuperAdmin)) return null;
     return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
-  }, [firestore, isUserLoading]);
+  }, [firestore, isAdmin, isSuperAdmin, isAdminLoading]);
 
   const { data: applications, isLoading, error } = useCollection<Application & FormValues>(applicationsQuery);
 
@@ -106,7 +108,7 @@ export default function AdminApplicationsPage() {
           {error && <p className="text-destructive">Error loading applications: {error.message}</p>}
           <AdminApplicationsTable 
             applications={applications || []} 
-            isLoading={isLoading || isUserLoading}
+            isLoading={isLoading || isAdminLoading}
             onSelectionChange={handleSelectionChange}
             selected={selected}
           />
