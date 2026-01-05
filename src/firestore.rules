@@ -26,31 +26,27 @@ service cloud.firestore {
     // =================================
     //         Collection Rules
     // =================================
-
-    // Rule for the user's own document.
-    // Allows a user to read/write their profile info.
-    match /users/{userId} {
-      allow read, update, delete: if isOwner(userId) || isAdmin() || isSuperAdmin();
-      allow create: if isSignedIn();
+    
+    // User can read and write their own user document and all subcollections (e.g., applications)
+    match /users/{userId}/{documents=**} {
+      allow read, write: if isOwner(userId);
     }
     
-    // CRITICAL FIX: Explicitly allow all operations on the applications subcollection for the owner.
-    // This is required for `list` (collection query) to work.
-    match /users/{userId}/applications/{applicationId} {
-      allow read, write: if isOwner(userId) || isAdmin() || isSuperAdmin();
-    }
-    
-    // This rule allows collection group queries on 'applications' for admins.
-    // This is needed for the "All Applications" view in the admin dashboard.
+    // This allows collection group queries on 'applications' for admins.
     match /{path=**}/applications/{applicationId} {
       allow get, list: if isAdmin() || isSuperAdmin();
     }
+    
+    // Admins can read/write any user document. This is needed for the admin dashboard.
+    match /users/{userId} {
+        allow get, list: if isAdmin() || isSuperAdmin();
+    }
 
     // Only Super Admins can manage admin and super admin roles.
-    match /roles_admin/{userId} {
+    match /roles_admin/{adminId} {
       allow read, write: if isSuperAdmin();
     }
-    match /roles_super_admin/{userId} {
+    match /roles_super_admin/{superAdminId} {
         allow read, write: if isSuperAdmin();
     }
 
