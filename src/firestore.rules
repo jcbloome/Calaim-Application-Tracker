@@ -1,67 +1,10 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // =================================
-    //         Helper Functions
-    // =================================
-
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
-    }
-
-    function isSuperAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid));
-    }
-
-    // =================================
-    //         Collection Rules
-    // =================================
-    
-    // Rule 1: Users can read and write individual documents within their own user folder.
-    match /users/{userId}/{document=**} {
-      allow read, write: if isOwner(userId);
-    }
-    
-    // Rule 2: Explicitly allow users to LIST their own applications.
-    // This is required for the `useCollection` hook on the "My Applications" page.
-    match /users/{userId}/applications/{applicationId} {
-        allow list: if isOwner(userId);
-    }
-    
-    // Rule 3: Admins are allowed to perform collection group queries on 'applications'.
-    // This is essential for the admin dashboard to view all applications across all users.
-    match /{path=**}/applications/{applicationId} {
-      allow get, list: if isAdmin() || isSuperAdmin();
-    }
-    
-    // Rule 4: Admins can read user profile documents (but not subcollections via this rule).
-    // This allows admins to see basic user info like names for the application list.
-    match /users/{userId} {
-        allow get, list: if isAdmin() || isSuperAdmin();
-    }
-
-    // Rule 5: Only Super Admins can manage roles.
-    match /roles_admin/{adminId} {
-      allow read, write: if isSuperAdmin();
-    }
-    match /roles_super_admin/{superAdminId} {
-        allow read, write: if isSuperAdmin();
-    }
-
-    // Rule 6: System settings can be read by any signed-in user, but only written by Super Admins.
-    match /system_settings/{settingId} {
-      allow read: if isSignedIn();
-      allow write: if isSuperAdmin();
+    // Allows anyone logged in to access the data.
+    // This is a temporary, insecure rule for debugging.
+    match /{document=**} {
+      allow read, write: if request.auth != null;
     }
   }
 }

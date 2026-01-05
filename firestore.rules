@@ -1,7 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allows anyone logged in (like jason@carehomefinders.com) to access the data
+    // Allows anyone logged in to access the data.
+    // This is a temporary, insecure rule for debugging.
     match /{document=**} {
       allow read, write: if request.auth != null;
     }
