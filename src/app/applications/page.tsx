@@ -4,7 +4,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -32,6 +32,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { useAdmin } from '@/hooks/use-admin';
 
 
 // Define a type for the application data coming from Firestore
@@ -164,29 +165,38 @@ export default function MyApplicationsPage() {
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
   const router = useRouter();
+  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
 
   const applicationsQuery = useMemoFirebase(() => {
     // Wait until the user is loaded and authenticated
-    if (isUserLoading || !user || !firestore) {
+    if (isUserLoading || !user || !firestore || isAdmin || isSuperAdmin) {
       return null;
     }
     return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
-  }, [user, firestore, isUserLoading]);
+  }, [user, firestore, isUserLoading, isAdmin, isSuperAdmin]);
   
   const { data: applications = [], isLoading: isLoadingApplications } = useCollection<ApplicationData>(applicationsQuery);
 
   const [selected, setSelected] = useState<string[]>([]);
   
   useEffect(() => {
-    if (!isUserLoading && !user) {
-      router.push('/login');
-    }
-  }, [user, isUserLoading, router]);
+    const isAuthLoading = isUserLoading || isAdminLoading;
+    if (isAuthLoading) return;
 
-  if (isUserLoading || !user) {
+    if (!user) {
+        router.push('/login');
+        return;
+    }
+
+    if (isAdmin || isSuperAdmin) {
+        router.push('/admin/applications');
+    }
+  }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
+
+  if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
     return (
         <div className="flex items-center justify-center h-screen">
-            <p>Loading...</p>
+            <Loader2 className="h-8 w-8 animate-spin" />
         </div>
     );
   }
