@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { LogOut, User, Menu, UserCog, LogIn } from 'lucide-react';
+import { LogOut, User, Menu, UserCog, LogIn, TestTube2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { useAuth } from '@/firebase/provider';
 import {
@@ -24,6 +24,7 @@ const navLinks = [
     { href: "/faq", label: "FAQ & Glossary" },
     { href: "/applications", label: "My Applications" },
     { href: "/forms/printable-package", label: "Printable Forms" },
+    { href: "/test-firestore", label: "Firestore Test" },
 ];
 
 export function Header() {
