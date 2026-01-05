@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -184,6 +183,7 @@ export const AdminApplicationsTable = ({
 }) => {
     
     const sortedApplications = useMemo(() => {
+        if (!applications) return [];
         return [...applications].sort((a, b) => {
             const dateA = a.lastUpdated ? (a.lastUpdated as Timestamp).toMillis() : 0;
             const dateB = b.lastUpdated ? (b.lastUpdated as Timestamp).toMillis() : 0;

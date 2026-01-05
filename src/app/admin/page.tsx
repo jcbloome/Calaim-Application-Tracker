@@ -17,12 +17,12 @@ export default function AdminDashboardPage() {
   const firestore = useFirestore();
 
   const applicationsQuery = useMemoFirebase(() => {
-    // CRITICAL: Do not create the query until auth/admin state is fully resolved.
-    if (isAdminLoading || !firestore) {
+    // CRITICAL: Do not create the query until auth/admin state and user is fully resolved.
+    if (isAdminLoading || !firestore || !user) {
       return null;
     }
     return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
-  }, [firestore, isAdminLoading]);
+  }, [firestore, isAdminLoading, user]);
 
   const { data: applications, isLoading: isLoadingApps, error } = useCollection<Application & FormValues>(applicationsQuery);
 

@@ -69,16 +69,16 @@ const getComponentStatus = (app: Application, componentKey: string): 'Completed'
 
 export default function ProgressTrackerPage() {
   const firestore = useFirestore();
-  const { isLoading: isAdminLoading } = useAdmin();
+  const { isLoading: isAdminLoading, user } = useAdmin();
   const [filters, setFilters] = useState<string[]>([]);
 
   const applicationsQuery = useMemoFirebase(() => {
-    // CRITICAL: Do not create the query until auth/admin state is fully resolved.
-    if (isAdminLoading || !firestore) {
+    // CRITICAL: Do not create the query until auth/admin state and user is fully resolved.
+    if (isAdminLoading || !firestore || !user) {
       return null;
     }
     return query(collectionGroup(firestore, 'applications')) as Query<Application>;
-  }, [firestore, isAdminLoading]);
+  }, [firestore, isAdminLoading, user]);
 
   const { data: applications, isLoading, error } = useCollection<Application>(applicationsQuery);
   

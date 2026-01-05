@@ -26,16 +26,16 @@ import { useAdmin } from '@/hooks/use-admin';
 export default function AdminApplicationsPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
-  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading, user } = useAdmin();
   const [selected, setSelected] = useState<string[]>([]);
 
   const applicationsQuery = useMemoFirebase(() => {
-    // CRITICAL: Do not create the query until auth/admin state is fully resolved.
-    if (isAdminLoading || !firestore) {
+    // CRITICAL: Do not create the query until auth/admin state and user is fully resolved.
+    if (isAdminLoading || !firestore || !user) {
       return null;
     }
     return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
-  }, [firestore, isAdminLoading]);
+  }, [firestore, isAdminLoading, user]);
 
   const { data: applications, isLoading, error } = useCollection<Application & FormValues>(applicationsQuery);
 

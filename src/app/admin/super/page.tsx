@@ -162,12 +162,12 @@ export default function SuperAdminPage() {
 
     // New: Fetch all applications on the client
     const applicationsQuery = useMemoFirebase(() => {
-        // CRITICAL: Do not create the query until auth/admin state is fully resolved.
-        if (isAdminLoading || !firestore) {
+        // CRITICAL: Do not create the query until auth/admin state and user is fully resolved.
+        if (isAdminLoading || !firestore || !currentUser) {
           return null;
         }
         return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
-    }, [firestore, isAdminLoading]);
+    }, [firestore, isAdminLoading, currentUser]);
 
     const { data: allApplications, isLoading: isLoadingApplications } = useCollection<Application & FormValues>(applicationsQuery);
     
