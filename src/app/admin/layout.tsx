@@ -206,31 +206,35 @@ function AdminAuthGuard({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
 
   useEffect(() => {
+    // If the role check is still in progress, we should not do anything.
+    // We only make a decision once isLoading is false.
     if (isLoading) {
-      return; // Still checking auth state and roles
+      return;
     }
-    
-    // If not loading and there's no user at all, go to login.
+
+    // Once loading is complete, if there is no user, redirect to login.
     if (!user) {
       router.push('/admin/login');
       return;
     }
-    
-    // If there is a user, but they don't have admin rights, force logout and redirect.
+
+    // If there is a user, but they are not an admin, they should not be here.
+    // Force a sign-out and redirect to login to prevent unauthorized access.
     if (user && !isAdmin && !isSuperAdmin) {
-       if (auth) {
+      if (auth) {
         auth.signOut().then(() => {
           router.push('/admin/login');
         });
       } else {
+        // Fallback if auth instance isn't available for some reason
         router.push('/admin/login');
       }
     }
-
   }, [isLoading, user, isAdmin, isSuperAdmin, router, auth]);
 
-  if (isLoading || !user || (!isAdmin && !isSuperAdmin)) {
-    // Show a loading spinner while we check roles or redirect
+  // Show a loading screen while authentication and role checks are in progress.
+  // This prevents the redirect loop by ensuring we wait for the final auth state.
+  if (isLoading || !user) {
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -240,6 +244,17 @@ function AdminAuthGuard({ children }: { children: React.ReactNode }) {
   }
   
   // If we reach here, the user is authenticated and is an admin.
+  // We double-check admin status to avoid showing content to a non-admin user
+  // during the brief moment before the redirect effect runs.
+  if (!isAdmin && !isSuperAdmin) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="ml-4">Redirecting...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen">
       <AdminHeader />
@@ -262,3 +277,5 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   // All other /admin pages are protected by the auth guard
   return <AdminAuthGuard>{children}</AdminAuthGuard>;
 }
+
+    
