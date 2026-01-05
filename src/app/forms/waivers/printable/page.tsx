@@ -25,7 +25,7 @@ export default function WaiverFormPage() {
         <div className="container mx-auto py-4 px-4">
             <div className="flex justify-between items-center">
                 <Button variant="outline" asChild>
-                    <Link href="/forms/printable-package">
+                    <Link href="/forms/printable-package" target="_blank">
                     <ArrowLeft className="mr-2 h-4 w-4" />
                     Return to Printable Forms
                     </Link>
