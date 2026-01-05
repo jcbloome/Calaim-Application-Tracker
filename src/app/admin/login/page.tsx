@@ -11,10 +11,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, LogOut } from 'lucide-react';
 import Image from 'next/image';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useAdmin } from '@/hooks/use-admin';
+import Link from 'next/link';
 
 export default function AdminLoginPage() {
   const auth = useAuth();
@@ -27,22 +28,13 @@ export default function AdminLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isReady, setIsReady] = useState(false);
-
-
+  
+  // This effect will redirect a user if they are ALREADY an admin
   useEffect(() => {
-    // This effect ensures any existing user is logged out when they visit this page.
-    if (auth && user) {
-        signOut(auth).then(() => {
-            // After sign-out, the auth state will change, and the component will re-render.
-            // We can now show the login form.
-            setIsReady(true);
-        });
-    } else if (!user) {
-        // If there's no user to begin with, the form is ready.
-        setIsReady(true);
+    if (!isAdminLoading && (isAdmin || isSuperAdmin)) {
+      router.push('/admin');
     }
-  }, [auth, user]);
+  }, [isAdmin, isSuperAdmin, isAdminLoading, router]);
 
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -64,21 +56,16 @@ export default function AdminLoginPage() {
 
     try {
       await setPersistence(auth, browserSessionPersistence);
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, email, password);
       
-      // After successful sign-in, manually trigger the admin role check and redirect.
-      // This is more reliable than relying on the useEffect hook.
-      const adminUser = userCredential.user;
-      
-      // We must check the roles again after logging in.
-      // The `useAdmin` hook will eventually catch up, but a direct check is faster.
-      // For now, redirecting and letting the layout handle it is the cleanest approach.
-      router.push('/admin');
-
+      // IMPORTANT: The redirect is now handled by the useEffect hook above
+      // and the main admin layout. This allows the useAdmin hook time to
+      // get the new user's roles.
       toast({
         title: `Signed in as ${email}`,
-        description: 'Redirecting to the dashboard...',
+        description: 'Checking permissions and redirecting...',
       });
+
     } catch (err) {
       const authError = err as AuthError;
       let errorMessage = 'An error occurred. Please try again.';
@@ -93,16 +80,50 @@ export default function AdminLoginPage() {
        setIsSigningIn(false);
     }
   };
+
+  const handleSignOut = async () => {
+    if (auth) {
+      await signOut(auth);
+      // The useAdmin hook will update and the component will re-render
+    }
+  };
   
-  if (!isReady) {
+  // While loading auth state, show a loader
+  if (isAdminLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="ml-4">Preparing login page...</p>
+          <p className="ml-4">Checking authentication status...</p>
       </div>
     );
   }
 
+  // If a user is logged in, but is NOT an admin, show the access denied message.
+  if (user && !isAdmin && !isSuperAdmin) {
+     return (
+        <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+            <Card className="w-full max-w-md shadow-2xl">
+                 <CardHeader className="items-center text-center p-6">
+                    <CardTitle className="text-2xl font-bold">Access Denied</CardTitle>
+                </CardHeader>
+                <CardContent className="text-center space-y-4">
+                    <p>
+                        The user <span className="font-semibold">{user.email}</span> does not have administrator permissions.
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                        If you have another account with admin rights, please sign out and sign in again.
+                    </p>
+                    <Button onClick={handleSignOut}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Sign Out
+                    </Button>
+                </CardContent>
+            </Card>
+        </main>
+     );
+  }
+
+  // If no user is logged in, or if an admin is logged in (but hasn't been redirected yet), show the login form.
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
         <div className="w-full max-w-md space-y-4">
@@ -162,6 +183,11 @@ export default function AdminLoginPage() {
                   {isSigningIn ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Signing In...</> : 'Sign In'}
                 </Button>
               </form>
+               <div className="mt-4 text-center text-sm">
+                  <Link href="/" className="underline text-primary">
+                    Return to Main Portal Selection
+                </Link>
+                </div>
             </CardContent>
           </Card>
 

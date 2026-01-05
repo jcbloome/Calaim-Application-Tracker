@@ -23,7 +23,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useAdmin } from '@/hooks/use-admin';
-import { errorEmitter, FirestorePermissionError } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
+import { errorEmitter } from '@/firebase/error-emitter';
 
 
 function AuthDebugPanel() {
@@ -177,7 +178,7 @@ export default function AdminApplicationsPage() {
 
   return (
     <div className="space-y-6">
-       <AuthDebugPanel />
+       {isSuperAdmin && <AuthDebugPanel />}
       <Card>
         <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
