@@ -63,12 +63,9 @@ export default function AdminLoginPage() {
       await signInWithEmailAndPassword(auth, email, password);
       
       // The `useAdmin` hook will now re-evaluate with the new user.
-      // The `useEffect` hook will then catch the role change and redirect.
-      // We don't need to manually check roles here.
-      toast({
-        title: `Signed in as ${email}`,
-        description: 'Checking permissions and redirecting...',
-      });
+      // The `useEffect` hook will then catch the role change and redirect if the user is an admin.
+      // If they are not, the component will re-render and show the 'Access Denied' message.
+      // No toast is needed here as the UI will update naturally.
 
     } catch (err) {
       const authError = err as AuthError;
