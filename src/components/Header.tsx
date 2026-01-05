@@ -40,7 +40,7 @@ export function Header() {
     window.location.href = '/';
   };
 
-  const showUserSession = !isUserLoading && !isAdminLoading && user && !isAdmin && !isSuperAdmin;
+  const showUserSession = !isUserLoading && !isAdminLoading && user;
 
   return (
     <header className="bg-card/80 backdrop-blur-sm border-b sticky top-0 z-40">
@@ -64,7 +64,7 @@ export function Header() {
 
            {(isUserLoading || isAdminLoading) ? (
             <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
-          ) : user ? ( // Show dropdown if ANY user is logged in
+          ) : showUserSession ? ( 
             <div className='flex items-center gap-2'>
              <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -120,7 +120,7 @@ export function Header() {
                         <div className="mt-auto border-t pt-6">
                              {(isUserLoading || isAdminLoading) ? (
                                 <div className="h-10 w-full rounded-md bg-muted animate-pulse" />
-                            ) : user ? (
+                            ) : showUserSession ? (
                                 <div className="flex flex-col gap-4">
                                      <p className="text-sm text-muted-foreground text-center truncate">{user.displayName || user.email}</p>
                                       <Button onClick={() => { router.push('/profile'); setSheetOpen(false); }} variant="outline" className="w-full">

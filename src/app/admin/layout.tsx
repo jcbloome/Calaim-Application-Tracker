@@ -201,20 +201,51 @@ function AdminHeader() {
 }
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
+  const { isLoading, isAdmin, isSuperAdmin } = useAdmin();
   const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    // Wait until the loading is complete before checking roles.
+    if (isLoading) {
+      return;
+    }
+
+    // If loading is finished and the user is not an admin, redirect them.
+    if (!isAdmin && !isSuperAdmin) {
+      router.push('/admin/login');
+    }
+  }, [isLoading, isAdmin, isSuperAdmin, router]);
+
 
   // The /admin/login page has its own layout and does not need the auth guard
   if (pathname === '/admin/login') {
     return <>{children}</>;
   }
 
-  // --- TEMPORARILY DISABLED AUTH GUARD for debugging ---
-  return (
-    <div className="flex flex-col min-h-screen">
-      <AdminHeader />
-      <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
-        {children}
-      </main>
-    </div>
-  );
+  // While loading, show a full-page loader to prevent content flash
+  if (isLoading) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="mt-4 text-muted-foreground">Verifying administrator access...</p>
+      </div>
+    );
+  }
+
+  // If the user is an admin, show the admin layout
+  if (isAdmin || isSuperAdmin) {
+    return (
+      <div className="flex flex-col min-h-screen">
+        <AdminHeader />
+        <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
+          {children}
+        </main>
+      </div>
+    );
+  }
+  
+  // If the user is not an admin, they will be redirected by the useEffect.
+  // This return is a fallback while the redirect is in progress.
+  return null;
 }

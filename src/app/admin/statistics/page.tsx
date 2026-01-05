@@ -54,16 +54,18 @@ const DataList = ({ data, emptyText = "No data available." }: { data: { name: st
 
 export default function AdminStatisticsPage() {
   const firestore = useFirestore();
-  const { isLoading: isAdminLoading, user } = useAdmin();
+  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading, user } = useAdmin();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   const applicationsQuery = useMemoFirebase(() => {
-    // CRITICAL: Do not create the query until auth/admin state and user is fully resolved.
-    if (isAdminLoading || !firestore || !user) {
+    if (isAdminLoading || !firestore) {
       return null;
     }
-    return query(collectionGroup(firestore, 'applications')) as Query<Application>;
-  }, [firestore, isAdminLoading, user]);
+     if (isAdmin || isSuperAdmin) {
+        return query(collectionGroup(firestore, 'applications')) as Query<Application>;
+    }
+    return null;
+  }, [firestore, isAdmin, isSuperAdmin, isAdminLoading]);
 
   const { data: applications, isLoading, error } = useCollection<Application>(applicationsQuery);
 

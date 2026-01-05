@@ -162,7 +162,6 @@ export default function SuperAdminPage() {
 
     // New: Fetch all applications on the client
     const applicationsQuery = useMemoFirebase(() => {
-        // CRITICAL: Do not create the query until auth/admin state and user is fully resolved.
         if (isAdminLoading || !firestore || !currentUser) {
           return null;
         }
@@ -526,49 +525,19 @@ export default function SuperAdminPage() {
         return <div className="flex justify-center items-center h-full"><Loader2 className="h-8 w-8 animate-spin"/></div>;
     }
     
-    // TEMPORARILY DISABLED: Allow access to grant permissions
-    // if (!isSuperAdmin) {
-    //      return (
-    //          <div className="space-y-6">
-    //             <Alert variant="destructive">
-    //                 <ShieldAlert className="h-4 w-4" />
-    //                 <AlertTitle>Super Admin Access Required</AlertTitle>
-    //                 <AlertDescription>
-    //                     This page is for managing staff and system settings. If you believe you should have access, please contact the main administrator.
-    //                     If you are the main administrator and this is your first time setting up the application, please log in and use the button below to grant yourself Super Admin rights.
-    //                 </AlertDescription>
-    //             </Alert>
-    //              <Card>
-    //                 <CardHeader>
-    //                     <CardTitle>Bootstrap Super Admin Role</CardTitle>
-    //                     <CardDescription>
-    //                         Click this button to make your current user ({currentUser?.email || '...loading'}) a Super Admin. You only need to do this once.
-    //                     </CardDescription>
-    //                 </CardHeader>
-    //                 <CardContent>
-    //                     <Button onClick={handleBootstrap} disabled={isBootstrapping || !currentUser}>
-    //                         {isBootstrapping ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Granting Access...</> : 'Make Me Super Admin'}
-    //                     </Button>
-    //                 </CardContent>
-    //             </Card>
-    //          </div>
-    //     );
-    // }
-    
-    return (
-        <div className="space-y-6">
-            
-             <Card>
-                <CardHeader>
-                    <CardTitle className="text-2xl">Super Admin Tools</CardTitle>
-                    <CardDescription>
-                        Manage staff, roles, and system integrations from this panel.
-                    </CardDescription>
-                </CardHeader>
-            </Card>
-
-            {!isSuperAdmin && (
-                <Card>
+    // Logic to show bootstrap button if user is not an admin yet
+    if (!isAdmin && !isSuperAdmin) {
+         return (
+             <div className="space-y-6">
+                <Alert variant="destructive">
+                    <ShieldAlert className="h-4 w-4" />
+                    <AlertTitle>Admin Access Required</AlertTitle>
+                    <AlertDescription>
+                        This page is for managing staff and system settings. If you believe you should have access, please contact the main administrator.
+                        If you are the main administrator and this is your first time setting up the application, please log in and use the button below to grant yourself Super Admin rights.
+                    </AlertDescription>
+                </Alert>
+                 <Card>
                     <CardHeader>
                         <CardTitle>Bootstrap Super Admin Role</CardTitle>
                         <CardDescription>
@@ -581,7 +550,21 @@ export default function SuperAdminPage() {
                         </Button>
                     </CardContent>
                 </Card>
-            )}
+             </div>
+        );
+    }
+    
+    return (
+        <div className="space-y-6">
+            
+             <Card>
+                <CardHeader>
+                    <CardTitle className="text-2xl">Super Admin Tools</CardTitle>
+                    <CardDescription>
+                        Manage staff, roles, and system integrations from this panel. This page is only visible to users with the Super Admin role.
+                    </CardDescription>
+                </CardHeader>
+            </Card>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                 <div className="space-y-6">

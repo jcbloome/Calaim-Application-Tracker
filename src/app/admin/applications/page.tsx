@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, useState } from 'react';
@@ -57,11 +56,15 @@ export default function AdminApplicationsPage() {
   const [selected, setSelected] = useState<string[]>([]);
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (isAdminLoading || !firestore || !user) {
+    if (isAdminLoading || !firestore) {
       return null;
     }
-    return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
-  }, [firestore, isAdminLoading, user]);
+    // Only admins/superadmins can query the collection group
+    if (isAdmin || isSuperAdmin) {
+        return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
+    }
+    return null;
+  }, [firestore, isAdmin, isSuperAdmin, isAdminLoading]);
 
   const { data: applications, isLoading, error } = useCollection<Application & FormValues>(applicationsQuery);
 

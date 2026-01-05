@@ -13,16 +13,18 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
 export default function AdminDashboardPage() {
-  const { user, isLoading: isAdminLoading } = useAdmin();
+  const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
 
   const applicationsQuery = useMemoFirebase(() => {
-    // CRITICAL: Do not create the query until auth/admin state and user is fully resolved.
-    if (isAdminLoading || !firestore || !user) {
+    if (isAdminLoading || !firestore) {
       return null;
     }
-    return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
-  }, [firestore, isAdminLoading, user]);
+    if (isAdmin || isSuperAdmin) {
+        return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
+    }
+    return null;
+  }, [firestore, isAdmin, isSuperAdmin, isAdminLoading]);
 
   const { data: applications, isLoading: isLoadingApps, error } = useCollection<Application & FormValues>(applicationsQuery);
 

@@ -193,26 +193,27 @@ export default function MyApplicationsPage() {
   const router = useRouter();
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (isUserLoading || !user || !firestore) {
+    if (!user || !firestore) {
       return null;
     }
     return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
-  }, [user, firestore, isUserLoading]);
+  }, [user, firestore]);
   
   const { data: applications = [], isLoading: isLoadingApplications } = useCollection<ApplicationData>(applicationsQuery);
 
   const [selected, setSelected] = useState<string[]>([]);
   
-  // NOTE: This effect is now disabled for debugging.
-  // useEffect(() => {
-  //   if (isUserLoading) return;
+  // This effect handles redirection for non-logged-in users.
+  useEffect(() => {
+    if (isUserLoading) return; // Wait until auth state is resolved.
 
-  //   if (!user) {
-  //       router.push('/login');
-  //       return;
-  //   }
-  // }, [user, isUserLoading, router]);
+    if (!user) {
+        router.push('/login'); // If no user, redirect to login.
+        return;
+    }
+  }, [user, isUserLoading, router]);
 
+  // While loading auth state, show a loader.
   if (isUserLoading) {
     return (
         <div className="flex items-center justify-center h-screen">
