@@ -1,17 +1,59 @@
-// Rules for the 'users' collection
-    match /users/{userId} {
-      // Allow the owner to read/write their own profile immediately
-      allow read, write: if isOwner(userId);
-      
-      // Separate check for Admins
-      allow read, write: if isAdmin();
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
 
-      // Rules for the 'applications' subcollection
+    // Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+    }
+    
+    function isSuperAdmin() {
+       return isSignedIn() && exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid));
+    }
+
+    // Rules for the 'users' collection
+    match /users/{userId} {
+      // A user can read or write to their own user document. Admins can do anything.
+      allow read, write: if isOwner(userId) || isAdmin();
+
+      // Rules for the 'applications' subcollection.
       match /applications/{applicationId} {
-        // Explicitly grant 'list' and 'get' to the owner
-        allow read, list, write, delete: if isOwner(userId);
-        
-        // Explicitly grant all to admins
-        allow read, list, write, delete: if isAdmin();
+        // Grant permissions for collection-level (list) and document-level operations.
+        allow list, read, write, delete: if isOwner(userId) || isAdmin();
+
+         match /staffTrackers/{trackerId} {
+          allow read, write, list: if isAdmin();
+        }
       }
     }
+    
+    // Rules for role collections
+    match /roles_admin/{userId} {
+      // Only super admins can read or write to the admin roles.
+      allow read, write: if isSuperAdmin();
+    }
+    
+    match /roles_super_admin/{userId} {
+       // Only super admins can read or write to the super admin roles.
+      allow read, write: if isSuperAdmin();
+    }
+    
+    match /system_settings/{docId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // THIS IS AN OPEN RULE FOR PUBLIC ACCESS - BE CAREFUL
+    match /public_info/{docId} {
+      allow get: if true;
+      allow list: if true;
+    }
+  }
+}
