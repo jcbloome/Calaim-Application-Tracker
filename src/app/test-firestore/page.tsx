@@ -146,28 +146,12 @@ export default function TestFirestorePage() {
       });
   };
 
-  const testListAdmin = async (): Promise<string> => {
-      const appsGroupRef = collectionGroup(firestore!, 'applications');
-      const q = query(appsGroupRef);
-      return new Promise((resolve, reject) => {
-        getDocs(q)
-            .then(snapshot => resolve(`Admin query successful. Listed ${snapshot.size} documents from 'applications' collection group.`))
-            .catch(error => {
-                const permissionError = new FirestorePermissionError({ path: 'applications', operation: 'list' });
-                errorEmitter.emit('permission-error', permissionError);
-                reject(permissionError);
-            });
-      });
-  };
-
-
   const tests = [
     { name: '1. Create Document', fn: testCreate, description: "Writes to 'test_writes/{new_id}'." },
     { name: '2. Read Document', fn: testRead, description: "Reads from 'test_writes/{id}'." },
     { name: '3. Update Document', fn: testUpdate, description: "Updates 'test_writes/{id}'." },
     { name: '4. Delete Document', fn: testDelete, description: "Deletes 'test_writes/{id}'." },
     { name: '5. List User Apps', fn: testListUser, description: "Lists from 'users/{my_uid}/applications'." },
-    { name: '6. List All Apps (Admin)', fn: testListAdmin, description: "Lists via collectionGroup('applications')." },
   ]
 
   return (
