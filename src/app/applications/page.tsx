@@ -44,6 +44,7 @@ interface ApplicationData {
   lastUpdated: Timestamp;
   pathway: 'SNF Transition' | 'SNF Diversion';
   healthPlan: 'Kaiser' | 'Health Net' | 'Other' | 'Kaiser Permanente';
+  userId?: string;
 }
 
 type ApplicationStatus = 'In Progress' | 'Completed & Submitted' | 'Requires Revision' | 'Approved';
@@ -68,14 +69,19 @@ const ApplicationsTable = ({
   onSelectionChange,
   selection,
   isLoading,
+  isAdmin,
 }: {
   title: string;
   applications: ApplicationData[];
   onSelectionChange?: (id: string, isSelected: boolean) => void;
   selection?: string[];
   isLoading: boolean;
+  isAdmin?: boolean;
 }) => {
   const getActionLink = (app: ApplicationData) => {
+    if(isAdmin) {
+        return `/admin/applications/${app.id}?userId=${app.userId}`;
+    }
     // If the application is still being worked on, send the user back to the form to continue editing.
     if (app.status === 'In Progress' || app.status === 'Requires Revision') {
       return `/forms/cs-summary-form?applicationId=${app.id}`;
@@ -85,6 +91,7 @@ const ApplicationsTable = ({
   };
 
   const getActionText = (app: ApplicationData) => {
+    if (isAdmin) return 'Details';
      if (app.status === 'In Progress' || app.status === 'Requires Revision') {
       return 'Continue';
     }
@@ -194,13 +201,21 @@ export default function MyApplicationsPage() {
   const router = useRouter();
   
   const applicationsQuery = useMemoFirebase(() => {
-    if (isUserLoading || isAdminLoading || !user) {
+    // Crucially, wait for both user and admin status to be determined.
+    if (isUserLoading || isAdminLoading) {
       return null;
     }
+
+    // No user, no query.
+    if (!user) {
+      return null;
+    }
+    
     // Admins get a collection group query to see ALL applications
     if (isAdmin || isSuperAdmin) {
       return collectionGroup(firestore, 'applications') as Query<ApplicationData>;
     }
+
     // Regular users only see their own applications
     return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
   }, [firestore, user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading]);
@@ -213,11 +228,13 @@ export default function MyApplicationsPage() {
     const loading = isUserLoading || isAdminLoading;
     if (loading) return; 
 
+    // If loading is finished and there's no user, redirect to login.
     if (!user) {
         router.push('/login');
         return;
     }
 
+    // If user is an admin, redirect them to the admin dashboard.
     if (isAdmin || isSuperAdmin) {
         router.push('/admin');
         return;
@@ -225,7 +242,11 @@ export default function MyApplicationsPage() {
 
   }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
 
+  // Combined loading state for the main page content.
+  const isPageLoading = isUserLoading || isAdminLoading || isLoadingApplications;
+
   if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
+    // This renders a full-page spinner during initial auth checks and redirection.
     return (
         <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin" />
@@ -233,10 +254,10 @@ export default function MyApplicationsPage() {
     );
   }
 
-  const inProgressApps = (applications || []).filter(
+  const inProgressApps = applications.filter(
     app => app.status !== 'Completed & Submitted' && app.status !== 'Approved'
   );
-  const completedApps = (applications || []).filter(
+  const completedApps = applications.filter(
     app => app.status === 'Completed & Submitted' || app.status === 'Approved'
   );
 
@@ -250,9 +271,16 @@ export default function MyApplicationsPage() {
     if (!user || !firestore || selected.length === 0) return;
 
     const batch = writeBatch(firestore);
-    selected.forEach(appId => {
-        const docRef = doc(firestore, `users/${user.uid}/applications`, appId);
-        batch.delete(docRef);
+    
+    // Admins delete from a collection group, regular users from a subcollection.
+    const appsToDelete = applications.filter(app => selected.includes(app.id));
+
+    appsToDelete.forEach(app => {
+        // The path must be constructed based on the app's own userId property
+        if(app.userId) {
+             const docRef = doc(firestore, `users/${app.userId}/applications`, app.id);
+             batch.delete(docRef);
+        }
     });
     
     await batch.commit();
@@ -310,15 +338,17 @@ export default function MyApplicationsPage() {
             applications={inProgressApps}
             onSelectionChange={handleSelectionChange}
             selection={selected}
-            isLoading={isLoadingApplications}
+            isLoading={isPageLoading}
           />
           <ApplicationsTable
             title="Completed"
             applications={completedApps}
-            isLoading={isLoadingApplications}
+            isLoading={isPageLoading}
           />
         </div>
       </main>
     </>
   );
 }
+
+    
