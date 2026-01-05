@@ -350,5 +350,3 @@ export default function MyApplicationsPage() {
     </>
   );
 }
-
-    
