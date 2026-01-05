@@ -21,15 +21,15 @@ service cloud.firestore {
 
     // Rules for the 'users' collection
     match /users/{userId} {
-      // A user can read or write to their own user document. Admins can do anything.
+      // Allow the owner to read/write their own profile immediately
       allow read, write: if isOwner(userId) || isAdmin();
 
-      // Rules for the 'applications' subcollection.
+      // Rules for the 'applications' subcollection
       match /applications/{applicationId} {
-        // Grant permissions for collection-level (list) and document-level operations.
-        allow list, read, write, delete: if isOwner(userId) || isAdmin();
-
-         match /staffTrackers/{trackerId} {
+        // Explicitly grant 'list' and 'get' to the owner
+        allow read, list, write, delete: if isOwner(userId) || isAdmin();
+        
+        match /staffTrackers/{trackerId} {
           allow read, write, list: if isAdmin();
         }
       }
