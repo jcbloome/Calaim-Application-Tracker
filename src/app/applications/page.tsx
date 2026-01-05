@@ -18,7 +18,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Header } from '@/components/Header';
 import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, doc, deleteDoc, Query, Timestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc, Query, Timestamp, writeBatch } from 'firebase/firestore';
 import { format } from 'date-fns';
 import {
   AlertDialog,
@@ -31,6 +31,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { useAdmin } from '@/hooks/use-admin';
+
 
 // Define a type for the application data coming from Firestore
 interface ApplicationData {
@@ -172,7 +174,7 @@ export default function MyApplicationsPage() {
     return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
   }, [firestore, user]);
   
-  const { data: applications, isLoading: isLoadingApplications, error } = useCollection<ApplicationData>(applicationsQuery);
+  const { data: applications = [], isLoading: isLoadingApplications, error } = useCollection<ApplicationData>(applicationsQuery);
 
   const [selected, setSelected] = useState<string[]>([]);
   
@@ -198,7 +200,7 @@ export default function MyApplicationsPage() {
 
   let inProgressApps: ApplicationData[] = [];
   let completedApps: ApplicationData[] = [];
-
+  
   // Guard against null 'applications' before filtering
   if (applications) {
     inProgressApps = applications.filter(
@@ -208,6 +210,7 @@ export default function MyApplicationsPage() {
       app => app.status === 'Completed & Submitted' || app.status === 'Approved'
     );
   }
+
 
   const handleSelectionChange = (id: string, isSelected: boolean) => {
     setSelected(prev =>
