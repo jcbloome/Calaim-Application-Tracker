@@ -14,24 +14,42 @@ import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import Image from 'next/image';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useAdmin } from '@/hooks/use-admin';
 
 export default function AdminLoginPage() {
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const { user, isUserLoading } = useUser();
+  const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    if (!isUserLoading && user) {
-      router.push('/admin');
+    if (isAdminLoading) {
+      return; // Wait until we know the user's role
     }
-  }, [user, isUserLoading, router]);
+
+    if (user && (isAdmin || isSuperAdmin)) {
+      // If user is already an admin, redirect them to the dashboard
+      router.push('/admin');
+    } else if (user) {
+      // If user is logged in but NOT an admin, sign them out before showing the form
+      if (auth) {
+        auth.signOut().then(() => {
+          setIsReady(true);
+        });
+      }
+    } else {
+      // If no user is logged in, the page is ready
+      setIsReady(true);
+    }
+  }, [user, isAdmin, isSuperAdmin, isAdminLoading, router, auth]);
+
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,11 +91,11 @@ export default function AdminLoginPage() {
     }
   };
 
-  if (isUserLoading || user) {
+  if (!isReady) {
     return (
       <div className="flex items-center justify-center h-screen">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="ml-4">Loading...</p>
+          <p className="ml-4">Preparing login...</p>
       </div>
     );
   }

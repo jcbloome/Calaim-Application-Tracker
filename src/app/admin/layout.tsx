@@ -203,26 +203,34 @@ function AdminHeader() {
 function AdminAuthGuard({ children }: { children: React.ReactNode }) {
   const { isAdmin, isSuperAdmin, isLoading, user } = useAdmin();
   const router = useRouter();
-  const pathname = usePathname();
   const auth = useAuth();
 
   useEffect(() => {
     if (isLoading) {
-      return;
+      return; // Still checking auth state and roles
     }
+    
+    // If not loading and there's no user at all, go to login.
     if (!user) {
       router.push('/admin/login');
+      return;
     }
-  }, [isLoading, user, router]);
-
-  const handleSignOutAndLogin = async () => {
-    if (auth) {
-      await auth.signOut();
+    
+    // If there is a user, but they don't have admin rights, force logout and redirect.
+    if (user && !isAdmin && !isSuperAdmin) {
+       if (auth) {
+        auth.signOut().then(() => {
+          router.push('/admin/login');
+        });
+      } else {
+        router.push('/admin/login');
+      }
     }
-    router.push('/admin/login');
-  };
 
-  if (isLoading || !user) {
+  }, [isLoading, user, isAdmin, isSuperAdmin, router, auth]);
+
+  if (isLoading || !user || (!isAdmin && !isSuperAdmin)) {
+    // Show a loading spinner while we check roles or redirect
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -230,33 +238,15 @@ function AdminAuthGuard({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
-  if (user && (isAdmin || isSuperAdmin)) {
-    return (
-      <div className="flex flex-col min-h-screen">
-        <AdminHeader />
-        <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
-          {children}
-        </main>
-      </div>
-    );
-  }
-
+  
+  // If we reach here, the user is authenticated and is an admin.
   return (
-    <main className="flex-grow flex items-center justify-center p-4 bg-slate-100 min-h-screen">
-      <Card className="w-full max-w-md text-center">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-center gap-2">
-            <Lock className="h-6 w-6 text-destructive" />
-            Access Denied
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>You are logged in, but you do not have permission to view this page. Please sign out and log in with a staff account.</p>
-          <Button onClick={handleSignOutAndLogin} className="mt-4">Return to Admin Login</Button>
-        </CardContent>
-      </Card>
-    </main>
+    <div className="flex flex-col min-h-screen">
+      <AdminHeader />
+      <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
+        {children}
+      </main>
+    </div>
   );
 }
 
