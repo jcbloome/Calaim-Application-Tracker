@@ -5,21 +5,13 @@ import 'firebase-admin/auth';
 import 'firebase-admin/firestore';
 
 // This initializes the Firebase Admin SDK.
-// It's safe to import here as it ensures initialization only happens once.
 import '@/ai/firebase';
 
-// --- Hardcoded Admin User Details ---
 const ADMIN_EMAIL = 'jason@carehomefinders.com';
-const ADMIN_PASSWORD = 'fisherman2';
+const ADMIN_PASSWORD = 'defaultpassword'; // This is temporary
 const ADMIN_FIRST_NAME = 'Jason';
 const ADMIN_LAST_NAME = 'Carefinder';
-// ------------------------------------
 
-
-/**
- * This is a one-time use API route to create the initial Super Admin user.
- * Once the admin is created, this file can be deleted for security.
- */
 export async function GET(request: NextRequest) {
   try {
     const firestore = admin.firestore();
@@ -71,7 +63,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Successfully created or verified user '${ADMIN_EMAIL}' and granted Super Admin permissions. You can now log in.`,
+      message: `Successfully created or verified user '${ADMIN_EMAIL}' and granted Super Admin permissions.`,
       uid: userId,
     });
 

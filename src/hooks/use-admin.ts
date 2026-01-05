@@ -22,25 +22,28 @@ export function useAdmin(): AdminStatus {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Start by assuming the user is not an admin, and we are loading.
     setIsLoading(true);
     setIsAdmin(false);
     setIsSuperAdmin(false);
 
-    // If the main user hook is still loading, we wait.
     if (isUserLoading) {
       return;
     }
 
-    // If there's no user, they are definitely not an admin.
     if (!user || !firestore) {
       setIsLoading(false);
       return;
     }
 
-    // User is logged in, now check their roles from Firestore.
     const checkAdminStatus = async () => {
       try {
+        // The primary user is hardcoded as an admin in firestore.rules
+        if (user.email === 'jason@carehomefinders.com') {
+            setIsAdmin(true);
+            setIsSuperAdmin(true); // Treat the hardcoded admin as super admin initially
+            return;
+        }
+
         const adminRoleRef = doc(firestore, 'roles_admin', user.uid);
         const superAdminRoleRef = doc(firestore, 'roles_super_admin', user.uid);
 
@@ -51,17 +54,16 @@ export function useAdmin(): AdminStatus {
 
         const hasAdminRole = adminDoc.exists();
         const hasSuperAdminRole = superAdminDoc.exists();
-
-        setIsAdmin(hasAdminRole);
+        
+        // A super admin is always a regular admin.
+        setIsAdmin(hasAdminRole || hasSuperAdminRole);
         setIsSuperAdmin(hasSuperAdminRole);
 
       } catch (error) {
         console.error("Error checking admin status:", error);
-        // In case of error, default to non-admin status for security.
         setIsAdmin(false);
         setIsSuperAdmin(false);
       } finally {
-        // We are done loading roles.
         setIsLoading(false);
       }
     };
@@ -73,7 +75,6 @@ export function useAdmin(): AdminStatus {
     user,
     isAdmin,
     isSuperAdmin,
-    // The overall loading state is true if the user is loading OR the roles are loading.
     isLoading: isUserLoading || isLoading,
   };
 }

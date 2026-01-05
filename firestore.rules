@@ -66,13 +66,13 @@ service cloud.firestore {
     match /roles_admin/{userId} {
       allow get: if isOwner(userId) || isAdmin();
       allow list: if isAdmin();
-      allow write, create, delete: if false; 
+      allow write, create, delete: if isSuperAdmin(); 
     }
     
     match /roles_super_admin/{userId} {
       allow get: if isOwner(userId) || isSuperAdmin();
       allow list: if isSuperAdmin();
-      allow write, create, delete: if false; 
+      allow write, create, delete: if isSuperAdmin(); 
     }
     
     // 2. System Settings

@@ -154,14 +154,10 @@ export default function SuperAdminPage() {
     const [isSendingWebhook, setIsSendingWebhook] = useState(false);
     const [webhookLog, setWebhookLog] = useState<string | null>(null);
     const [isCreatingTestApp, setIsCreatingTestApp] = useState(false);
-    const [isBootstrapping, setIsBootstrapping] = useState(false);
 
-
-    // New state for test email
     const [testEmail, setTestEmail] = useState('jcbloome@gmail.com');
     const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
 
-    // New: Fetch all applications on the client
     const applicationsQuery = useMemoFirebase(() => {
         if (isAdminLoading || !firestore || !currentUser) {
           return null;
@@ -171,7 +167,6 @@ export default function SuperAdminPage() {
 
     const { data: allApplications, isLoading: isLoadingApplications } = useCollection<Application & FormValues>(applicationsQuery);
     
-    // This function now runs on the client, directly interacting with Firestore
     const fetchAllStaff = async () => {
         if (!firestore) return;
         setIsLoadingStaff(true);
@@ -219,13 +214,11 @@ export default function SuperAdminPage() {
             setStaffList(staff);
         } catch (error) {
             console.error("[fetchAllStaff] Error:", error);
-            // The specific error is emitted above, no need for a generic toast here.
         } finally {
             setIsLoadingStaff(false);
         }
     };
     
-    // This function also runs on the client
     const fetchNotificationRecipients = async () => {
         if (!firestore) return;
         try {
@@ -244,36 +237,11 @@ export default function SuperAdminPage() {
     };
 
     useEffect(() => {
-        // Wait for auth to finish loading and ensure user is a super admin
         if (!isAdminLoading && firestore && (isSuperAdmin || isAdmin)) {
             fetchAllStaff();
             fetchNotificationRecipients();
         }
     }, [firestore, isSuperAdmin, isAdmin, isAdminLoading]);
-    
-     const handleBootstrap = async () => {
-        setIsBootstrapping(true);
-        try {
-            const response = await fetch('/api/bootstrap-admin');
-            const result = await response.json();
-
-            if (!response.ok || !result.success) {
-                throw new Error(result.error || 'Failed to bootstrap admin.');
-            }
-
-            toast({
-                title: "You are now a Super Admin!",
-                description: "The page will refresh for the changes to take effect.",
-                className: 'bg-green-100 text-green-900 border-green-200',
-            });
-            setTimeout(() => window.location.reload(), 2000);
-        } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Bootstrap Failed', description: error.message });
-        } finally {
-            setIsBootstrapping(false);
-        }
-    };
-
 
     const handleAddStaff = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -286,6 +254,8 @@ export default function SuperAdminPage() {
         try {
             const tempPassword = Math.random().toString(36).slice(-8);
             
+            // This is a placeholder for a secure server-side function
+            // In a real app, this would be an API call to a Cloud Function
             const response = await fetch('/api/create-user', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -305,7 +275,7 @@ export default function SuperAdminPage() {
 
             toast({
                 title: "Staff Member Added!",
-                description: `${newStaffEmail} has been created and granted Admin permissions.`,
+                description: `${newStaffEmail} has been created and granted Admin permissions. They will need to reset their password.`,
                 className: 'bg-green-100 text-green-900 border-green-200',
             });
             
@@ -321,12 +291,12 @@ export default function SuperAdminPage() {
         }
     };
     
-    const handleRoleToggle = async (uid: string, isSuperAdmin: boolean) => {
+    const handleRoleToggle = async (uid: string, isSuperAdminRole: boolean) => {
         if (!firestore) return;
         const superAdminRoleRef = doc(firestore, 'roles_super_admin', uid);
         const data = { grantedAt: new Date() };
         try {
-            if (isSuperAdmin) {
+            if (isSuperAdminRole) {
                 await setDoc(superAdminRoleRef, data).catch(e => {
                     errorEmitter.emit('permission-error', new FirestorePermissionError({ path: superAdminRoleRef.path, operation: 'create', requestResourceData: data }));
                     throw e;
@@ -340,7 +310,7 @@ export default function SuperAdminPage() {
             toast({ title: 'Role Updated', description: `Successfully updated role.` });
             await fetchAllStaff();
         } catch (error: any) {
-            // Error is emitted above, generic toast is okay here if it fails
+             // Error is emitted above
         }
     };
     
@@ -359,6 +329,7 @@ export default function SuperAdminPage() {
 
         try {
             await batch.commit().catch(e => {
+                // Emitting a general error as batch write can fail on any of its operations
                 errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `roles_admin/${uid}`, operation: 'delete' }));
                 throw e;
             });
@@ -412,8 +383,6 @@ export default function SuperAdminPage() {
             return;
         }
 
-        // The data fetched from Firestore contains complex objects (Timestamps)
-        // We need to convert them to plain objects before sending to a server action.
         const plainApps = JSON.parse(JSON.stringify(appsToRemind));
 
         try {
@@ -542,32 +511,15 @@ export default function SuperAdminPage() {
         return <div className="flex justify-center items-center h-full"><Loader2 className="h-8 w-8 animate-spin"/></div>;
     }
     
-    // Logic to show bootstrap button if user is not an admin yet
-    if (!isAdmin && !isSuperAdmin) {
+    if (!isSuperAdmin) {
          return (
-             <div className="space-y-6">
-                <Alert variant="destructive">
-                    <ShieldAlert className="h-4 w-4" />
-                    <AlertTitle>Admin Access Required</AlertTitle>
-                    <AlertDescription>
-                        This page is for managing staff and system settings. If you believe you should have access, please contact the main administrator.
-                        If you are the main administrator and this is your first time setting up the application, please log in and use the button below to grant yourself Super Admin rights.
-                    </AlertDescription>
-                </Alert>
-                 <Card>
-                    <CardHeader>
-                        <CardTitle>Bootstrap Super Admin Role</CardTitle>
-                        <CardDescription>
-                            Click this button to make your current user ({currentUser?.email || '...loading'}) a Super Admin. You only need to do this once.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <Button onClick={handleBootstrap} disabled={isBootstrapping || !currentUser}>
-                            {isBootstrapping ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Granting Access...</> : 'Make Me Super Admin'}
-                        </Button>
-                    </CardContent>
-                </Card>
-             </div>
+             <Alert variant="destructive">
+                <ShieldAlert className="h-4 w-4" />
+                <AlertTitle>Access Denied</AlertTitle>
+                <AlertDescription>
+                   This page is restricted to Super Admins.
+                </AlertDescription>
+            </Alert>
         );
     }
     
@@ -578,7 +530,7 @@ export default function SuperAdminPage() {
                 <CardHeader>
                     <CardTitle className="text-2xl">Super Admin Tools</CardTitle>
                     <CardDescription>
-                        Manage staff, roles, and system integrations from this panel. This page is only visible to users with the Super Admin role.
+                        Manage staff, roles, and system integrations from this panel.
                     </CardDescription>
                 </CardHeader>
             </Card>
@@ -757,7 +709,3 @@ export default function SuperAdminPage() {
         </div>
     );
 }
-
-    
-
-    

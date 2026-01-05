@@ -17,8 +17,9 @@ import {
   BarChart3,
   ListChecks,
   Menu,
+  ShieldAlert,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/firebase';
 import {
@@ -38,6 +39,7 @@ import {
   navigationMenuTriggerStyle,
 } from '@/components/ui/navigation-menu';
 import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 const adminNavLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, super: false },
@@ -57,7 +59,6 @@ function AdminHeader() {
     if (auth) {
       await auth.signOut();
     }
-    // Always force a full reload to the login page to clear all state.
     window.location.href = '/admin/login';
   };
 
@@ -166,7 +167,6 @@ function AdminHeader() {
                       )
                     )}
                   </nav>
-                  {/* User Actions for mobile */}
                    <div className="mt-auto border-t pt-6">
                      {user ? (
                         <div className="flex flex-col gap-4">
@@ -204,15 +204,47 @@ function AdminHeader() {
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { isAdmin, isSuperAdmin, isLoading } = useAdmin();
 
-  // If the user is on the login page, don't show the full layout.
-  // This allows the login page to be standalone.
+  useEffect(() => {
+    if (!isLoading && !isAdmin && !isSuperAdmin) {
+      router.push('/admin/login');
+    }
+  }, [isLoading, isAdmin, isSuperAdmin, router]);
+
   if (pathname === '/admin/login') {
     return <>{children}</>;
   }
 
-  // For all other admin pages, show the full admin layout.
-  // The useAdmin hook is now hardcoded to grant access, so no checks are needed here.
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <p className="ml-4">Verifying admin access...</p>
+      </div>
+    );
+  }
+
+  if (!isAdmin && !isSuperAdmin) {
+    return (
+       <div className="flex h-screen items-center justify-center bg-gray-100 p-4">
+         <Card className="w-full max-w-md text-center">
+             <CardHeader>
+                <ShieldAlert className="mx-auto h-12 w-12 text-destructive" />
+                <CardTitle className="mt-4">Access Denied</CardTitle>
+                <CardDescription>You do not have permission to view this page.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <Button onClick={() => router.push('/admin/login')}>
+                    Return to Login
+                </Button>
+            </CardContent>
+         </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen">
       <AdminHeader />
