@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import {
   Table,
@@ -183,11 +183,13 @@ export const AdminApplicationsTable = ({
   selected?: string[];
 }) => {
     
-    const sortedApplications = [...applications].sort((a, b) => {
-        const dateA = a.lastUpdated ? (a.lastUpdated as Timestamp).toMillis() : 0;
-        const dateB = b.lastUpdated ? (b.lastUpdated as Timestamp).toMillis() : 0;
-        return dateB - dateA;
-    });
+    const sortedApplications = useMemo(() => {
+        return [...applications].sort((a, b) => {
+            const dateA = a.lastUpdated ? (a.lastUpdated as Timestamp).toMillis() : 0;
+            const dateB = b.lastUpdated ? (b.lastUpdated as Timestamp).toMillis() : 0;
+            return dateB - dateA;
+        });
+    }, [applications]);
 
   return (
     <div className="w-full overflow-x-auto">
