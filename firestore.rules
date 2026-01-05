@@ -6,7 +6,8 @@
  * a developer tool or internal application where data integrity is paramount.
  * It allows any authenticated user to browse the entire Git history, including
  * commits, file states, and restoration logs, but explicitly denies all
- * write operations (create, update, delete).
+
+ * write operations (create, update, delete) on historical data.
  *
  * This approach protects the historical data from accidental or unauthorized
  * modification while providing the necessary read access for the application's
@@ -30,10 +31,9 @@
  * Key Security Decisions:
  * - Read Access: Any authenticated user (`request.auth != null`) can read any
  *   document or list any collection. This is suitable for a tool where the data
-
  *   is not user-specific or private.
  * - Write Access: All write operations (`create`, `update`, `delete`) are
- *   explicitly disabled (`if false;`). This provides maximum data protection
+ *   explicitly disabled (`if false;`) on historical data. This provides maximum data protection
  *   and forces a deliberate and secure implementation when write capabilities
  *   are needed.
  * - No Ownership Model: The data model does not contain user-specific ownership
@@ -146,5 +146,8 @@ service cloud.firestore {
         allow delete: if false;
       }
     }
+     match /applications/{appId} {
+        allow list: if isSignedIn();
+     }
   }
 }
