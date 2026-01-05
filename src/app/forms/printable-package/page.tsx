@@ -85,12 +85,9 @@ export default function PrintablePackagePage() {
         }, 2000);
     };
 
-    const getBaseUrl = () => {
-        if (typeof window !== 'undefined') {
-            return window.location.origin;
-        }
-        return '';
-    }
+    const handleOpenPrintable = (href: string) => {
+        window.open(href, '_blank', 'noopener,noreferrer');
+    };
 
   return (
     <>
@@ -131,21 +128,26 @@ export default function PrintablePackagePage() {
                             <CardDescription>Print specific forms as needed or view informational sheets.</CardDescription>
                         </CardHeader>
                         <CardContent>
-                          <ul>
-                            {individualForms.map((form) => {
-                                const absoluteUrl = `${getBaseUrl()}${form.href}`;
-                                return (
-                                  <li key={form.title}>
-                                    <a href={absoluteUrl} target="_blank" rel="noopener noreferrer" className="inline-block py-1 text-sm font-medium text-foreground hover:text-primary hover:underline underline-offset-4 transition-colors">
+                          <ul className="space-y-1">
+                            {individualForms.map((form) => (
+                                <li key={form.title}>
+                                    <Button
+                                        variant="link"
+                                        className="p-0 h-auto text-sm font-medium text-foreground hover:text-primary"
+                                        onClick={() => handleOpenPrintable(form.href)}
+                                    >
                                         {form.title}
-                                    </a>
-                                  </li>
-                                )
-                            })}
-                            <li className="pt-2 border-t mt-2">
-                               <a href={`${getBaseUrl()}/forms/printable-package/full-package`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-primary hover:underline underline-offset-4">
+                                    </Button>
+                                </li>
+                            ))}
+                             <li className="pt-2 border-t mt-2">
+                                <Button
+                                    variant="link"
+                                    className="p-0 h-auto text-sm font-bold text-primary"
+                                    onClick={() => handleOpenPrintable('/forms/printable-package/full-package')}
+                                >
                                     Print Full Application Package
-                                </a>
+                                </Button>
                             </li>
                           </ul>
                         </CardContent>
