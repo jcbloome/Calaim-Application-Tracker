@@ -31,7 +31,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { useAdmin } from '@/hooks/use-admin';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
 // Define a type for the application data coming from Firestore
@@ -198,18 +198,12 @@ export default function MyApplicationsPage() {
     );
   }
 
-  let inProgressApps: ApplicationData[] = [];
-  let completedApps: ApplicationData[] = [];
-  
-  // Guard against null 'applications' before filtering
-  if (applications) {
-    inProgressApps = applications.filter(
-      app => app.status !== 'Completed & Submitted' && app.status !== 'Approved'
-    );
-    completedApps = applications.filter(
-      app => app.status === 'Completed & Submitted' || app.status === 'Approved'
-    );
-  }
+  const inProgressApps = applications ? applications.filter(
+    app => app.status !== 'Completed & Submitted' && app.status !== 'Approved'
+  ) : [];
+  const completedApps = applications ? applications.filter(
+    app => app.status === 'Completed & Submitted' || app.status === 'Approved'
+  ) : [];
 
 
   const handleSelectionChange = (id: string, isSelected: boolean) => {
@@ -275,7 +269,17 @@ export default function MyApplicationsPage() {
             </div>
         </div>
 
-        {error && <p className="text-destructive mb-4">Error loading applications: {error.message}</p>}
+        {error && 
+            <Alert variant="destructive" className="mb-4">
+                <AlertTitle>Data Fetching Error</AlertTitle>
+                <AlertDescription>
+                    <p>There was an error loading your applications:</p>
+                    <pre className="mt-2 whitespace-pre-wrap text-xs font-mono bg-destructive/10 p-2 rounded">
+                        {error.message}
+                    </pre>
+                </AlertDescription>
+            </Alert>
+        }
 
         <div className="space-y-8">
           <ApplicationsTable
