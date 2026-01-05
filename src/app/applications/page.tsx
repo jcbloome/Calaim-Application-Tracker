@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, useEffect, useState } from 'react';
@@ -170,18 +171,16 @@ export default function MyApplicationsPage() {
     if (!user || !firestore) {
       return null;
     }
-    // This query is now only for the logged-in user.
     return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
   }, [firestore, user]);
   
-  const { data: applications = [], isLoading: isLoadingApplications, error } = useCollection<ApplicationData>(applicationsQuery);
+  const { data, isLoading: isLoadingApplications, error } = useCollection<ApplicationData>(applicationsQuery);
+  const applications = data || [];
 
   const [selected, setSelected] = useState<string[]>([]);
   
   useEffect(() => {
     if (isUserLoading) return; 
-
-    // If loading is finished and there's no user, redirect to login.
     if (!user) {
         router.push('/login');
     }
@@ -190,7 +189,6 @@ export default function MyApplicationsPage() {
   const isPageLoading = isUserLoading || isLoadingApplications;
 
   if (isUserLoading || !user) {
-    // This renders a full-page spinner during initial auth checks and redirection.
     return (
         <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin" />
@@ -198,12 +196,12 @@ export default function MyApplicationsPage() {
     );
   }
 
-  const inProgressApps = applications ? applications.filter(
+  const inProgressApps = applications.filter(
     app => app.status !== 'Completed & Submitted' && app.status !== 'Approved'
-  ) : [];
-  const completedApps = applications ? applications.filter(
+  );
+  const completedApps = applications.filter(
     app => app.status === 'Completed & Submitted' || app.status === 'Approved'
-  ) : [];
+  );
 
 
   const handleSelectionChange = (id: string, isSelected: boolean) => {
