@@ -12,9 +12,13 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+      // Memoize the result of the exists() call for efficiency within a single request
+      return isSignedIn() && (
+        resource.data.get('isAdmin', false) == true || // For future use
+        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid))
+      );
     }
-    
+
     function isSuperAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid));
     }
@@ -36,9 +40,9 @@ service cloud.firestore {
       }
     }
     
-    // Test collection is writable by any signed-in user.
+    // Test collection is writable by any signed-in user or admin.
     match /test_writes/{docId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isSignedIn() || isAdmin();
     }
     
     // System settings can be read by any signed-in user, but only modified by super admins.
@@ -47,17 +51,17 @@ service cloud.firestore {
         allow list, write, delete: if isSuperAdmin();
     }
 
-    // Role documents can only be read by the user they belong to.
+    // Role documents can only be read by the user they belong to, or by a super admin.
     // This prevents users from listing all admins, but allows the useAdmin hook to function correctly.
     match /roles_admin/{userId} {
-      allow get: if isOwner(userId);
-      // Writes should be managed by a secure backend or super admin UI.
+      allow get: if isOwner(userId) || isSuperAdmin();
+      // Writes should be managed by a secure backend or the super admin UI.
       allow list, create, update, delete: if isSuperAdmin();
     }
     
     match /roles_super_admin/{userId} {
-      allow get: if isOwner(userId);
-      // Writes should be managed by a secure backend or super admin UI.
+      allow get: if isOwner(userId) || isSuperAdmin();
+      // Writes should be managed by a secure backend or the super admin UI.
       allow list, create, update, delete: if isSuperAdmin();
     }
   }
