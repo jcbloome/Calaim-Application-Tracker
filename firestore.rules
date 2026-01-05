@@ -15,37 +15,47 @@ service cloud.firestore {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
     }
 
-    // --- VERSION 4 RULES ---
+    // --- RULES ---
 
-    // 1. User Documents: Allows immediate access for the owner
+    // User documents can be read/written by their owner or any admin.
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
-      allow read, write: if isAdmin();
+      allow read, write: if isOwner(userId) || isAdmin();
 
-      // 2. Applications: Grants 'list' permission so your dashboard can load tables
+      // Applications can be read/written by their owner or any admin.
       match /applications/{applicationId} {
-        allow read, list, write, delete: if isOwner(userId);
-        allow read, list, write, delete: if isAdmin();
+        allow read, list, write, delete: if isOwner(userId) || isAdmin();
 
-        // 3. Nested Staff Trackers: Restricts sensitive data to admins
+        // Staff trackers are restricted to admins only.
         match /staffTrackers/{trackerId} {
-          allow read, list, write: if isAdmin();
+          allow read, list, write, delete: if isAdmin();
         }
       }
     }
     
+    // Test collection is writable by any signed-in user.
     match /test_writes/{docId} {
       allow read, write: if isSignedIn();
     }
-
-    // 4. Admin Role Verification: Restricts who can grant admin status
-    match /roles_admin/{userId} {
-      allow read: if isSignedIn();
-      allow write: if false; // Must be managed via Firebase Console
+    
+    // System settings can be read by any signed-in user, but only modified by super admins
+    // (In this setup, super admins will manage this from the UI, so direct writes are restricted).
+    match /system_settings/{docId} {
+        allow get: if isSignedIn();
+        allow list, write, delete: if false; // Managed via server-side logic if needed.
     }
 
-     match /roles_super_admin/{uid} {
-        allow get: if isSignedIn() && request.auth.uid == uid;
+    // Role documents can only be read by the user they belong to.
+    // This prevents users from listing all admins, but allows the useAdmin hook to function correctly.
+    match /roles_admin/{userId} {
+      allow get: if isOwner(userId);
+      // Writes should be managed by a secure backend or super admin UI.
+      allow list, write, create, update, delete: if false;
+    }
+    
+    match /roles_super_admin/{userId} {
+      allow get: if isOwner(userId);
+      // Writes should be managed by a secure backend or super admin UI.
+      allow list, write, create, update, delete: if false;
     }
   }
 }
