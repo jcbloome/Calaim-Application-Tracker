@@ -12,17 +12,26 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // New function to identify the hardcoded admin user by email.
+    function isJason() {
+      return request.auth != null && request.auth.token.email == "jason@carehomefinders.com";
+    }
+
     function isAdmin() {
-      // Check for existence of the user's UID in either admin or super_admin roles.
-      // A super_admin is implicitly an admin.
+      // An admin is either the hardcoded user 'jason' OR a user whose UID is in the admin roles collection.
       return isSignedIn() && (
+        isJason() ||
         exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) ||
         exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid))
       );
     }
     
     function isSuperAdmin() {
-       return isSignedIn() && exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid));
+       // A super admin is either the hardcoded user 'jason' OR a user whose UID is in the super admin roles collection.
+       return isSignedIn() && (
+         isJason() ||
+         exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid))
+       );
     }
 
     // --- USER-SPECIFIC RULES ---
