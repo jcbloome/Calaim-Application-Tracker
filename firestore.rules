@@ -26,7 +26,7 @@ service cloud.firestore {
 
       // Rules for the 'applications' subcollection
       match /applications/{applicationId} {
-        // Explicitly grant 'list' and 'get' to the owner
+        // Explicitly grant 'list' and 'get' to the owner or an admin
         allow read, list, write, delete: if isOwner(userId) || isAdmin();
         
         match /staffTrackers/{trackerId} {
