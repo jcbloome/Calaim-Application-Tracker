@@ -203,8 +203,8 @@ export default function SuperAdminPage() {
                  const userDoc = users.get(currentUser.uid);
                  staff.push({
                     uid: currentUser.uid,
-                    firstName: userDoc?.firstName || 'Jason',
-                    lastName: userDoc?.lastName || 'Carefinder',
+                    firstName: userDoc?.firstName || 'JC',
+                    lastName: userDoc?.lastName || 'Bloome',
                     email: currentUser.email,
                     role: isSuper ? 'Super Admin' : 'Admin',
                  });
@@ -702,7 +702,7 @@ export default function SuperAdminPage() {
                                                 <ShieldCheck className={`h-4 w-4 ${staff.role === 'Super Admin' ? 'text-primary' : 'text-muted-foreground'}`}/>
                                                 <Label htmlFor={`superadmin-switch-${staff.uid}`} className="text-sm font-medium">Super Admin</Label>
                                             </div>
-                                            <Switch id={`superadmin-switch-${staff.uid}`} checked={staff.role === 'Super Admin'} onCheckedChange={(checked) => handleRoleToggle(staff.uid, checked)} disabled={staff.uid === currentUser?.uid} aria-label={`Toggle Super Admin for ${staff.email}`} />
+                                            <Switch id={`superadmin-switch-${staff.uid}`} checked={staff.role === 'Super Admin'} onCheckedChange={(checked) => handleRoleToggle(staff.uid, checked)} aria-label={`Toggle Super Admin for ${staff.email}`} />
                                         </div>
                                         <div className="flex items-center justify-between gap-4">
                                             <div className="flex items-center gap-2">
@@ -729,5 +729,7 @@ export default function SuperAdminPage() {
         </div>
     );
 }
+
+    
 
     
