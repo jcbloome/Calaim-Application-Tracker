@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker } from '@/lib/definitions';
-import { useDoc, useUser, useFirestore } from '@/firebase';
+import { useDoc, useUser, useFirestore, useMemoFirebase } from '@/firebase';
 import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot, collection } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -122,7 +122,7 @@ function StaffApplicationTracker({ application }: { application: Application }) 
     const firestore = useFirestore();
     const { user } = useUser();
     
-    const trackerDocRef = useMemo(() => {
+    const trackerDocRef = useMemoFirebase(() => {
         if (!firestore || !application.userId || !application.id) return null;
         return doc(firestore, `users/${application.userId}/applications/${application.id}/staffTrackers`, application.id);
     }, [firestore, application.id, application.userId]);
@@ -197,7 +197,7 @@ function AdminActions({ application }: { application: Application }) {
     const router = useRouter();
 
     const firestore = useFirestore();
-    const docRef = useMemo(() => {
+    const docRef = useMemoFirebase(() => {
         if (!firestore || !application.userId || !application.id) return null;
         return doc(firestore, `users/${application.userId}/applications`, application.id);
     }, [firestore, application.id, application.userId]);
@@ -317,10 +317,10 @@ function ApplicationDetailPageContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const docRef = useMemo(() => {
-    if (!firestore || !applicationId || !appUserId) return null;
+  const docRef = useMemoFirebase(() => {
+    if (isUserLoading || !firestore || !applicationId || !appUserId) return null;
     return doc(firestore, `users/${appUserId}/applications`, applicationId);
-  }, [firestore, applicationId, appUserId]);
+  }, [firestore, applicationId, appUserId, isUserLoading]);
 
   useEffect(() => {
     if (!docRef) {

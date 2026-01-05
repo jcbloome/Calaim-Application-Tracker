@@ -1,3 +1,4 @@
+
 'use client';
 
 // This is a wrapper around the main review page component.
@@ -5,7 +6,7 @@
 import React, { Suspense, useMemo } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useUser, useFirestore, useDoc } from '@/firebase';
+import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -65,18 +66,19 @@ function ReviewPageComponent() {
     const searchParams = useSearchParams();
     const applicationId = searchParams.get('applicationId');
     const appUserId = searchParams.get('userId');
+    const { isUserLoading } = useUser();
     const firestore = useFirestore();
 
-    const applicationDocRef = useMemo(() => {
-        if (appUserId && firestore && applicationId) {
-            return doc(firestore, `users/${appUserId}/applications`, applicationId);
+    const applicationDocRef = useMemoFirebase(() => {
+        if (isUserLoading || !appUserId || !firestore || !applicationId) {
+            return null;
         }
-        return null;
-    }, [appUserId, firestore, applicationId]);
+        return doc(firestore, `users/${appUserId}/applications`, applicationId);
+    }, [appUserId, firestore, applicationId, isUserLoading]);
 
     const { data: application, isLoading } = useDoc<Application & FormValues>(applicationDocRef);
     
-    if (isLoading) {
+    if (isLoading || isUserLoading) {
         return (
             <div className="flex items-center justify-center h-full">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />

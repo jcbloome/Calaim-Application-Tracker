@@ -14,13 +14,13 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
 export default function AdminDashboardPage() {
-  const { user } = useAdmin();
+  const { user, isUserLoading } = useAdmin();
   const firestore = useFirestore();
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (isUserLoading || !firestore) return null;
     return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
-  }, [firestore]);
+  }, [firestore, isUserLoading]);
 
   const { data: applications, isLoading, error } = useCollection<Application & FormValues>(applicationsQuery);
 
@@ -46,7 +46,7 @@ export default function AdminDashboardPage() {
       .slice(0, 5);
   }, [applications]);
 
-  if (isLoading) {
+  if (isLoading || isUserLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

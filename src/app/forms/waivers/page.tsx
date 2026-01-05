@@ -8,7 +8,7 @@ import { ArrowLeft, Loader2, FileCheck2, AlertCircle, Lock, ShieldCheck, FileTex
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Header } from '@/components/Header';
-import { useUser, useFirestore, useDoc } from '@/firebase';
+import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import type { Application, FormStatus } from '@/lib/definitions';
 import { useToast } from '@/hooks/use-toast';
@@ -38,7 +38,7 @@ function WaiversFormComponent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const applicationId = searchParams.get('applicationId');
-    const { user } = useUser();
+    const { user, isUserLoading } = useUser();
     const firestore = useFirestore();
 
     const [signerType, setSignerType] = useState<'member' | 'representative' | null>(null);
@@ -53,12 +53,12 @@ function WaiversFormComponent() {
     const [focChoice, setFocChoice] = useState<'accept' | 'decline' | undefined>(undefined);
 
 
-    const applicationDocRef = useMemo(() => {
-        if (user && firestore && applicationId) {
-            return doc(firestore, `users/${user.uid}/applications`, applicationId);
+    const applicationDocRef = useMemoFirebase(() => {
+        if (isUserLoading || !user || !firestore || !applicationId) {
+            return null;
         }
-        return null;
-    }, [user, firestore, applicationId]);
+        return doc(firestore, `users/${user.uid}/applications`, applicationId);
+    }, [user, firestore, applicationId, isUserLoading]);
 
     const { data: application, isLoading: isLoadingApplication } = useDoc<Application>(applicationDocRef);
     const isReadOnly = application?.status === 'Completed & Submitted' || application?.status === 'Approved';
@@ -148,7 +148,7 @@ function WaiversFormComponent() {
         }
     };
     
-    if (isLoadingApplication) {
+    if (isLoadingApplication || isUserLoading) {
         return (
              <div className="flex-grow flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />

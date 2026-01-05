@@ -3,7 +3,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { collectionGroup, query, Query, doc, writeBatch } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
@@ -26,12 +26,13 @@ import {
 export default function AdminApplicationsPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
+  const { isUserLoading } = useUser();
   const [selected, setSelected] = useState<string[]>([]);
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (isUserLoading || !firestore) return null;
     return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
-  }, [firestore]);
+  }, [firestore, isUserLoading]);
 
   const { data: applications, isLoading, error } = useCollection<Application & FormValues>(applicationsQuery);
 
@@ -105,7 +106,7 @@ export default function AdminApplicationsPage() {
           {error && <p className="text-destructive">Error loading applications: {error.message}</p>}
           <AdminApplicationsTable 
             applications={applications || []} 
-            isLoading={isLoading}
+            isLoading={isLoading || isUserLoading}
             onSelectionChange={handleSelectionChange}
             selected={selected}
           />

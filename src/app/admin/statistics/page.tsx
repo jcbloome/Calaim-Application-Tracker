@@ -3,7 +3,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { collectionGroup, query, Query, Timestamp } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import { Loader2 } from 'lucide-react';
@@ -54,12 +54,13 @@ const DataList = ({ data, emptyText = "No data available." }: { data: { name: st
 
 export default function AdminStatisticsPage() {
   const firestore = useFirestore();
+  const { isUserLoading } = useUser();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (isUserLoading || !firestore) return null;
     return query(collectionGroup(firestore, 'applications')) as Query<Application>;
-  }, [firestore]);
+  }, [firestore, isUserLoading]);
 
   const { data: applications, isLoading, error } = useCollection<Application>(applicationsQuery);
 
@@ -134,7 +135,7 @@ export default function AdminStatisticsPage() {
     };
   }, [applications, selectedYear]);
 
-  if (isLoading) {
+  if (isLoading || isUserLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

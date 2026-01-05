@@ -1,9 +1,10 @@
+
 'use client';
 
 import React, { useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useUser, useFirestore, useDoc } from '@/firebase';
+import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
@@ -94,19 +95,19 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
     const router = useRouter();
     const searchParams = useSearchParams();
     const { toast } = useToast();
-    const { user } = useUser();
+    const { user, isUserLoading } = useUser();
     const firestore = useFirestore();
 
     const applicationId = searchParams.get('applicationId');
     const appUserId = searchParams.get('userId'); // For admins viewing a user's app
     const targetUserId = isAdminView ? appUserId : user?.uid;
 
-    const applicationDocRef = useMemo(() => {
-        if (targetUserId && firestore && applicationId) {
-            return doc(firestore, `users/${targetUserId}/applications`, applicationId);
+    const applicationDocRef = useMemoFirebase(() => {
+        if (isUserLoading || !targetUserId || !firestore || !applicationId) {
+            return null;
         }
-        return null;
-    }, [targetUserId, firestore, applicationId]);
+        return doc(firestore, `users/${targetUserId}/applications`, applicationId);
+    }, [targetUserId, firestore, applicationId, isUserLoading]);
 
     const { data: application, isLoading } = useDoc<Application & FormValues>(applicationDocRef);
 
@@ -140,7 +141,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
     };
 
 
-    if (isLoading) {
+    if (isLoading || isUserLoading) {
         return (
             <div className="flex items-center justify-center h-screen">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />

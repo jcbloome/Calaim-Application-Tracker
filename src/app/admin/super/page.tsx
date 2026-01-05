@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -162,9 +163,9 @@ export default function SuperAdminPage() {
 
     // New: Fetch all applications on the client
     const applicationsQuery = useMemoFirebase(() => {
-        if (!firestore || !isSuperAdmin) return null;
+        if (!firestore || !isSuperAdmin || isAdminLoading) return null;
         return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
-    }, [firestore, isSuperAdmin]);
+    }, [firestore, isSuperAdmin, isAdminLoading]);
 
     const { data: allApplications, isLoading: isLoadingApplications } = useCollection<Application & FormValues>(applicationsQuery);
     
@@ -735,5 +736,3 @@ export default function SuperAdminPage() {
         </div>
     );
 }
-
-    

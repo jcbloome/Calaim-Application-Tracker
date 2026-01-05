@@ -27,7 +27,7 @@ import {
 import { Header } from '@/components/Header';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType } from '@/lib/definitions';
-import { useDoc, useUser, useFirestore } from '@/firebase';
+import { useDoc, useUser, useFirestore, useMemoFirebase } from '@/firebase';
 import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -89,7 +89,7 @@ function PathwayPageContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const docRef = useMemo(() => {
+  const docRef = useMemoFirebase(() => {
     if (!firestore || !applicationId || !user) return null;
     return doc(firestore, `users/${user.uid}/applications`, applicationId);
   }, [firestore, applicationId, user]);

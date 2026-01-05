@@ -3,7 +3,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { collectionGroup, query, Query } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -69,12 +69,13 @@ const getComponentStatus = (app: Application, componentKey: string): 'Completed'
 
 export default function ProgressTrackerPage() {
   const firestore = useFirestore();
+  const { isUserLoading } = useUser();
   const [filters, setFilters] = useState<string[]>([]);
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (isUserLoading || !firestore) return null;
     return query(collectionGroup(firestore, 'applications')) as Query<Application>;
-  }, [firestore]);
+  }, [firestore, isUserLoading]);
 
   const { data: applications, isLoading, error } = useCollection<Application>(applicationsQuery);
   
@@ -150,7 +151,7 @@ export default function ProgressTrackerPage() {
             </div>
 
           {error && <p className="text-destructive">Error: {error.message}</p>}
-          {isLoading ? (
+          {isLoading || isUserLoading ? (
              <div className="flex items-center justify-center h-48">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 <p className="ml-4">Loading application data...</p>
