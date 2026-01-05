@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { LogOut, User, Menu, UserCog, Shield, LogIn } from 'lucide-react';
+import { LogOut, User, Menu, UserCog, Shield, LogIn, UserPlus } from 'lucide-react';
 import { Button } from './ui/button';
 import { useUser } from '@/firebase';
 import { useAuth } from '@/firebase/provider';
@@ -86,9 +86,14 @@ export function Header() {
             </DropdownMenu>
             </div>
           ) : (
-            <Button asChild>
-              <Link href="/login"><LogIn className="mr-2 h-4 w-4" />Login</Link>
-            </Button>
+            <div className="flex items-center gap-2">
+                <Button variant="ghost" asChild>
+                    <Link href="/login"><LogIn className="mr-2 h-4 w-4" />Login</Link>
+                </Button>
+                <Button asChild>
+                    <Link href="/signup"><UserPlus className="mr-2 h-4 w-4" />Sign Up</Link>
+                </Button>
+            </div>
           )}
         </nav>
         <div className="md:hidden">
@@ -128,9 +133,14 @@ export function Header() {
                                      </Button>
                                 </div>
                             ) : (
-                                <Button asChild className="w-full">
-                                    <Link href="/login" onClick={() => setSheetOpen(false)}><LogIn className="mr-2 h-4 w-4" />Login</Link>
-                                </Button>
+                                <div className="flex flex-col gap-4">
+                                    <Button asChild className="w-full">
+                                        <Link href="/login" onClick={() => setSheetOpen(false)}><LogIn className="mr-2 h-4 w-4" />Login</Link>
+                                    </Button>
+                                    <Button asChild variant="outline" className="w-full">
+                                        <Link href="/signup" onClick={() => setSheetOpen(false)}><UserPlus className="mr-2 h-4 w-4" />Sign Up</Link>
+                                    </Button>
+                                </div>
                             )}
                         </div>
                     </div>
