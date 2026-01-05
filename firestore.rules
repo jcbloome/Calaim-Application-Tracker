@@ -41,5 +41,10 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if false; 
     }
+    
+    // Allow any signed-in user to write to the test collection
+    match /test_writes/{docId} {
+        allow create: if isSignedIn();
+    }
   }
 }
