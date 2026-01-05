@@ -189,32 +189,39 @@ function AuthDebugPanel() {
 
 export default function MyApplicationsPage() {
   const { user, isUserLoading } = useUser();
+  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
   const router = useRouter();
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (!user || !firestore) {
+    // Prevent query from running if auth/admin state is still loading, or if the user is an admin
+    if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
       return null;
     }
     return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
-  }, [user, firestore]);
+  }, [user, firestore, isUserLoading, isAdminLoading, isAdmin, isSuperAdmin]);
   
   const { data: applications = [], isLoading: isLoadingApplications } = useCollection<ApplicationData>(applicationsQuery);
 
   const [selected, setSelected] = useState<string[]>([]);
   
-  // This effect handles redirection for non-logged-in users.
   useEffect(() => {
-    if (isUserLoading) return; // Wait until auth state is resolved.
+    const loading = isUserLoading || isAdminLoading;
+    if (loading) return; 
 
     if (!user) {
-        router.push('/login'); // If no user, redirect to login.
+        router.push('/login');
         return;
     }
-  }, [user, isUserLoading, router]);
 
-  // While loading auth state, show a loader.
-  if (isUserLoading) {
+    if (isAdmin || isSuperAdmin) {
+        router.push('/admin');
+        return;
+    }
+
+  }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
+
+  if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
     return (
         <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin" />

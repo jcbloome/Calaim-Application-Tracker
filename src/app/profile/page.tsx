@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -37,6 +36,12 @@ export default function ProfilePage() {
 
     if (!user) {
       router.push('/login'); // Not logged in, go to login
+      return;
+    }
+
+    // NEW: Redirect admins away from the user profile page
+    if (isAdmin || isSuperAdmin) {
+      router.push('/admin');
       return;
     }
     
@@ -112,7 +117,7 @@ export default function ProfilePage() {
       setLastName(value);
   };
 
-  if (isUserLoading || isAdminLoading) {
+  if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
     return (
         <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin" />
@@ -121,28 +126,6 @@ export default function ProfilePage() {
     );
   }
   
-  if (isAdmin || isSuperAdmin) {
-    return (
-       <>
-        <Header />
-         <main className="flex-grow flex items-center justify-center p-4 sm:p-6 md:p-8">
-            <Card className="w-full max-w-md shadow-lg">
-                <CardHeader className="text-center">
-                    <ShieldAlert className="mx-auto h-12 w-12 text-destructive mb-4" />
-                    <CardTitle className="text-2xl font-bold">Admin Account</CardTitle>
-                    <CardDescription>This is a user-only page. Please use the Admin Dashboard to manage your profile.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <Button onClick={() => router.push('/admin')} className="w-full">
-                        Go to Admin Dashboard
-                    </Button>
-                </CardContent>
-            </Card>
-        </main>
-      </>
-    );
-  }
-
   return (
     <>
       <Header />
