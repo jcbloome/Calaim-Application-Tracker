@@ -192,14 +192,14 @@ export default function MyApplicationsPage() {
   const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
   const router = useRouter();
-
+  
   const applicationsQuery = useMemoFirebase(() => {
-    // Prevent query from running if auth/admin state is still loading, or if the user is an admin
+    // This query should only run when we have a confirmed, non-admin user.
     if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
       return null;
     }
     return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
-  }, [user, firestore, isUserLoading, isAdminLoading, isAdmin, isSuperAdmin]);
+  }, [firestore, user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading]);
   
   const { data: applications = [], isLoading: isLoadingApplications } = useCollection<ApplicationData>(applicationsQuery);
 
