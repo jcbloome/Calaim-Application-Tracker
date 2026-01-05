@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -193,39 +192,36 @@ export default function SuperAdminPage() {
             const users = new Map(usersSnap.docs.map(doc => [doc.id, doc.data() as Omit<UserData, 'id'>]));
             const adminIds = new Set(adminRolesSnap.docs.map(doc => doc.id));
             const superAdminIds = new Set(superAdminRolesSnap.docs.map(doc => doc.id));
-
-            const allStaffIds = new Set([...adminIds, ...superAdminIds]);
-            const staff: StaffMember[] = [];
             
-            // Manually add the hardcoded admin if they are logged in but not yet in the roles collections
-            if (currentUser.email === 'jason@carehomefinders.com' && !allStaffIds.has(currentUser.uid)) {
-                 const isSuper = superAdminIds.has(currentUser.uid);
-                 const userDoc = users.get(currentUser.uid);
-                 staff.push({
-                    uid: currentUser.uid,
-                    firstName: userDoc?.firstName || 'Jason',
-                    lastName: userDoc?.lastName || 'Bloome',
-                    email: currentUser.email,
-                    role: isSuper ? 'Super Admin' : 'Admin',
-                 });
-                 // Also ensure the hardcoded user is considered an 'adminId' for processing below
-                 allStaffIds.add(currentUser.uid);
+            const allStaffIds = new Set([...adminIds, ...superAdminIds]);
+
+            // Always ensure the hardcoded admin is in the set to be processed.
+            if (currentUser.email === 'jason@carehomefinders.com') {
+              allStaffIds.add(currentUser.uid);
             }
 
+            const staff: StaffMember[] = [];
+            
             allStaffIds.forEach(uid => {
-                 // Avoid duplicating the hardcoded admin user
-                if (uid === currentUser.uid && currentUser.email === 'jason@carehomefinders.com' && staff.some(s => s.uid === uid)) {
-                    return;
-                }
-
                 const userData = users.get(uid);
-                if (userData && (adminIds.has(uid) || superAdminIds.has(uid))) {
+                const isSuper = superAdminIds.has(uid);
+                
+                // Special handling for the hardcoded admin user to ensure correct name is displayed.
+                if (uid === currentUser.uid && currentUser.email === 'jason@carehomefinders.com') {
                     staff.push({
+                        uid,
+                        firstName: userData?.firstName || 'Jason',
+                        lastName: userData?.lastName || 'Bloome',
+                        email: currentUser.email,
+                        role: isSuper ? 'Super Admin' : 'Admin',
+                    });
+                } else if (userData) {
+                     staff.push({
                         uid,
                         firstName: userData.firstName,
                         lastName: userData.lastName,
                         email: userData.email,
-                        role: superAdminIds.has(uid) ? 'Super Admin' : 'Admin',
+                        role: isSuper ? 'Super Admin' : 'Admin',
                     });
                 }
             });
