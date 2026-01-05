@@ -203,38 +203,29 @@ function AdminHeader() {
 function AdminAuthGuard({ children }: { children: React.ReactNode }) {
   const { isAdmin, isSuperAdmin, isLoading, user } = useAdmin();
   const router = useRouter();
-  const auth = useAuth();
 
   useEffect(() => {
-    // If the role check is still in progress, we should not do anything.
-    // We only make a decision once isLoading is false.
+    // Wait until the loading state is definitively false.
     if (isLoading) {
       return;
     }
 
-    // Once loading is complete, if there is no user, redirect to login.
+    // Once loading is complete, check the conditions.
+    // If no user is logged in, redirect to the login page.
     if (!user) {
       router.push('/admin/login');
       return;
     }
 
-    // If there is a user, but they are not an admin, they should not be here.
-    // Force a sign-out and redirect to login to prevent unauthorized access.
+    // If a user is logged in but is not an admin, they should not be here.
     if (user && !isAdmin && !isSuperAdmin) {
-      if (auth) {
-        auth.signOut().then(() => {
-          router.push('/admin/login');
-        });
-      } else {
-        // Fallback if auth instance isn't available for some reason
-        router.push('/admin/login');
-      }
+      router.push('/admin/login');
     }
-  }, [isLoading, user, isAdmin, isSuperAdmin, router, auth]);
+  }, [isLoading, user, isAdmin, isSuperAdmin, router]);
 
-  // Show a loading screen while authentication and role checks are in progress.
-  // This prevents the redirect loop by ensuring we wait for the final auth state.
-  if (isLoading || !user) {
+  // While the initial user authentication OR the role check is in progress, show a loading screen.
+  // This prevents the flicker and the premature redirect.
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -243,24 +234,25 @@ function AdminAuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
   
-  // If we reach here, the user is authenticated and is an admin.
-  // We double-check admin status to avoid showing content to a non-admin user
-  // during the brief moment before the redirect effect runs.
-  if (!isAdmin && !isSuperAdmin) {
+  // If we're done loading and the user is an admin, show the content.
+  // Otherwise, the effect above will have already initiated a redirect, so we can
+  // show a "Redirecting" message to prevent content from flashing.
+  if (isAdmin || isSuperAdmin) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="ml-4">Redirecting...</p>
+      <div className="flex flex-col min-h-screen">
+        <AdminHeader />
+        <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
+          {children}
+        </main>
       </div>
     );
   }
 
+  // Fallback loading state for the brief moment before the redirect completes.
   return (
-    <div className="flex flex-col min-h-screen">
-      <AdminHeader />
-      <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
-        {children}
-      </main>
+    <div className="flex items-center justify-center h-screen">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <p className="ml-4">Redirecting...</p>
     </div>
   );
 }
@@ -277,5 +269,3 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   // All other /admin pages are protected by the auth guard
   return <AdminAuthGuard>{children}</AdminAuthGuard>;
 }
-
-    
