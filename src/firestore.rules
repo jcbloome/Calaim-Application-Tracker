@@ -155,7 +155,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isOwnerOrAdmin(userId);
       allow create, update: if isOwner(userId) || isSuperAdmin();
-      allow list: if isAdmin() || isSuperAdmin(); // Allow listing of users for admins and super admins
+      // list is implicitly denied and handled by the applications subcollection rule
       allow delete: if isOwnerOrAdmin(userId);
 
       /**
@@ -237,3 +237,5 @@ service cloud.firestore {
     }
   }
 }
+
+    
