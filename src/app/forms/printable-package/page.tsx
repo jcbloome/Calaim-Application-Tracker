@@ -85,9 +85,22 @@ export default function PrintablePackagePage() {
         }, 2000);
     };
 
-    const handleOpenPrintable = (href: string) => {
-        window.open(href, '_blank', 'noopener,noreferrer');
-    };
+    const handlePrint = (href: string) => {
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'absolute';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        iframe.src = href;
+        document.body.appendChild(iframe);
+        iframe.onload = () => {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        };
+        iframe.onafterprint = () => {
+          document.body.removeChild(iframe);
+        };
+      };
 
   return (
     <>
@@ -134,7 +147,7 @@ export default function PrintablePackagePage() {
                                     <Button
                                         variant="link"
                                         className="p-0 h-auto text-sm font-medium text-foreground hover:text-primary"
-                                        onClick={() => handleOpenPrintable(form.href)}
+                                        onClick={() => handlePrint(form.href)}
                                     >
                                         {form.title}
                                     </Button>
@@ -144,7 +157,7 @@ export default function PrintablePackagePage() {
                                 <Button
                                     variant="link"
                                     className="p-0 h-auto text-sm font-bold text-primary"
-                                    onClick={() => handleOpenPrintable('/forms/printable-package/full-package')}
+                                    onClick={() => handlePrint('/forms/printable-package/full-package')}
                                 >
                                     Print Full Application Package
                                 </Button>
