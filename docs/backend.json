@@ -1,96 +1,77 @@
 {
   "entities": {
     "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "User",
-      "description": "Represents a user of the application.",
       "type": "object",
+      "description": "Represents a user of the Git State Restorer application.",
       "properties": {
-        "id": { "type": "string", "description": "The user's unique ID." },
-        "email": { "type": "string", "format": "email", "description": "The user's email address." },
-        "displayName": { "type": "string", "description": "The user's full name." },
-        "firstName": { "type": "string" },
-        "lastName": { "type": "string" }
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the User entity."
+        },
+        "username": {
+          "type": "string",
+          "description": "The user's username for login.",
+          "format": "string"
+        },
+        "email": {
+          "type": "string",
+          "description": "The user's email address.",
+          "format": "email"
+        },
+        "failedLoginAttempts": {
+          "type": "number",
+          "description": "Number of failed login attempts. Can be used for rate limiting or account lockout.",
+          "format": "number"
+        },
+        "lastLoginAttempt": {
+          "type": "string",
+          "description": "Timestamp of the last login attempt.",
+          "format": "date-time"
+        },
+        "isLocked": {
+          "type": "boolean",
+          "description": "Indicates whether the user account is locked due to too many failed login attempts."
+        },
+        "lockoutExpiryTime": {
+          "type": "string",
+          "description": "The timestamp when the user lockout will expire.",
+          "format": "date-time"
+        }
       },
-      "required": ["id", "email"]
-    },
-    "Application": {
-      "title": "Application",
-      "description": "Represents a CalAIM application.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "userId": { "type": "string" },
-        "memberFirstName": { "type": "string" },
-        "memberLastName": { "type": "string" },
-        "status": { "type": "string", "enum": ["In Progress", "Completed & Submitted", "Requires Revision", "Approved", "Deleted"] },
-        "submissionDate": { "type": "string", "format": "date-time" },
-        "lastUpdated": { "type": "string", "format": "date-time" },
-        "pathway": { "type": "string", "enum": ["SNF Transition", "SNF Diversion"] },
-        "healthPlan": { "type": "string", "enum": ["Kaiser", "Health Net", "Other", "Kaiser Permanente"] },
-        "forms": { 
-            "type": "array", 
-            "items": { "$ref": "#/entities/FormStatus" }
-        }
-      },
-      "required": ["id", "userId", "memberFirstName", "memberLastName", "status", "pathway", "healthPlan"]
-    },
-    "FormStatus": {
-        "title": "FormStatus",
-        "type": "object",
-        "properties": {
-            "name": { "type": "string" },
-            "status": { "type": "string", "enum": ["Pending", "Completed"] },
-            "type": { "type": "string", "enum": ["Form", "Upload", "Info", "online-form", "bundle"] }
-        }
-    },
-    "Role": {
-        "title": "Role",
-        "type": "object",
-        "properties": {
-            "grantedAt": { "type": "string", "format": "date-time" }
-        }
-    },
-    "SystemSettings": {
-      "title": "SystemSettings",
-      "type": "object",
-      "properties": {
-        "recipientUids": {
-          "type": "array",
-          "items": { "type": "string" }
-        }
-      }
+      "required": [
+        "id",
+        "username",
+        "email"
+      ]
     }
   },
   "auth": {
-    "providers": ["password", "anonymous"]
+    "providers": [
+      "password",
+      "anonymous"
+    ]
   },
   "firestore": {
     "structure": [
       {
         "path": "/users/{userId}",
-        "schema": { "$ref": "#/entities/User" },
-        "description": "Stores user profile information."
-      },
-      {
-        "path": "/users/{userId}/applications/{applicationId}",
-        "schema": { "$ref": "#/entities/Application" },
-        "description": "Stores applications submitted by a user."
-      },
-      {
-        "path": "/roles_admin/{userId}",
-        "schema": { "$ref": "#/entities/Role" },
-        "description": "Stores UIDs of users with Admin role."
-      },
-      {
-        "path": "/roles_super_admin/{userId}",
-        "schema": { "$ref": "#/entities/Role" },
-        "description": "Stores UIDs of users with Super Admin role."
-      },
-      {
-        "path": "/system_settings/notifications",
-        "schema": { "$ref": "#/entities/SystemSettings" },
-        "description": "System-wide notification settings."
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user data. Access is restricted to the authenticated user.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique ID of the user, matching the Firebase Authentication UID."
+            }
+          ]
+        }
       }
-    ]
+    ],
+    "reasoning": "This Firestore structure prioritizes security and scalability for the Git State Restorer application, focusing on user authentication issues. It uses path-based ownership for user data and aims to support simple, robust security rules. Authorization Independence is achieved by avoiding `get()` calls in rules, relying solely on `request.auth.uid` and existence checks. The data structure also segregates user data, ensuring a homogeneous security posture within each collection. Specifically: The user document stores data for login, authentication, and rate limiting. Storing authentication-related details directly in the database could be beneficial for auditing or support. The design assumes all user-related data is private and accessible only to the user themselves. The path `/users/{userId}` provides a secure, path-based ownership model. The absence of collaborative features simplifies the authorization model, as access is primarily based on user identity."
   }
 }
