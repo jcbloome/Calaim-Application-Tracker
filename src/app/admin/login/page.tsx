@@ -16,6 +16,33 @@ import Image from 'next/image';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useAdmin } from '@/hooks/use-admin';
 
+
+function AuthDebugPanel() {
+    const { user, isAdmin, isSuperAdmin, isLoading } = useAdmin();
+
+    const getStatus = () => {
+        if (isLoading) return <span className="text-yellow-500">Loading...</span>;
+        if (user) return <span className="text-green-500">Authenticated</span>;
+        return <span className="text-red-500">Not Authenticated</span>;
+    }
+
+    return (
+        <Card className="mt-6 bg-gray-900 text-white">
+            <CardHeader>
+                <CardTitle className="text-lg text-gray-300">Auth State Debugger</CardTitle>
+            </CardHeader>
+            <CardContent className="font-mono text-xs space-y-2">
+                <p><strong>Status:</strong> {getStatus()}</p>
+                <p><strong>isLoading:</strong> {String(isLoading)}</p>
+                <p><strong>User:</strong> {user ? user.email : 'null'}</p>
+                <p><strong>isAdmin:</strong> {String(isAdmin)}</p>
+                <p><strong>isSuperAdmin:</strong> {String(isSuperAdmin)}</p>
+            </CardContent>
+        </Card>
+    )
+}
+
+
 export default function AdminLoginPage() {
   const auth = useAuth();
   const router = useRouter();
@@ -62,11 +89,11 @@ export default function AdminLoginPage() {
 
     try {
       await setPersistence(auth, browserSessionPersistence);
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       // After sign-in, the useEffect will handle the redirection once the admin role is confirmed.
       toast({
-        title: 'Successfully signed in!',
-        description: 'Redirecting to your dashboard...',
+        title: `Signed in as ${userCredential.user.email}`,
+        description: 'Verifying permissions and redirecting...',
       });
     } catch (err) {
       const authError = err as AuthError;
@@ -77,12 +104,13 @@ export default function AdminLoginPage() {
         errorMessage = `An unexpected error occurred: ${authError.message}`;
       }
       setError(errorMessage);
-      setIsSigningIn(false); // Only stop signing in on error. On success, we wait for redirect.
+    } finally {
+      setIsSigningIn(false); // Stop loading indicator after attempt
     }
   };
   
   // Show a loading spinner if the initial auth state is loading or if we are in the process of signing in.
-  if (isAdminLoading) {
+  if (isAdminLoading && !isSigningIn) {
     return (
       <div className="flex items-center justify-center h-screen">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -161,6 +189,8 @@ export default function AdminLoginPage() {
                 </AlertDescription>
             </Alert>
           )}
+
+          <AuthDebugPanel />
       </div>
     </main>
   );
