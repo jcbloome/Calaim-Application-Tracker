@@ -9,7 +9,7 @@ import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, Shield
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp } from 'firebase/firestore';
-import { useFirestore, useUser, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -175,10 +175,23 @@ export default function SuperAdminPage() {
         if (!firestore) return;
         setIsLoadingStaff(true);
         try {
+            const usersCollectionRef = collection(firestore, 'users');
+            const adminRolesCollectionRef = collection(firestore, 'roles_admin');
+            const superAdminRolesCollectionRef = collection(firestore, 'roles_super_admin');
+
             const [usersSnap, adminRolesSnap, superAdminRolesSnap] = await Promise.all([
-                getDocs(collection(firestore, 'users')),
-                getDocs(collection(firestore, 'roles_admin')),
-                getDocs(collection(firestore, 'roles_super_admin'))
+                getDocs(usersCollectionRef).catch(e => {
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: usersCollectionRef.path, operation: 'list' }));
+                    throw e;
+                }),
+                getDocs(adminRolesCollectionRef).catch(e => {
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: adminRolesCollectionRef.path, operation: 'list' }));
+                    throw e;
+                }),
+                getDocs(superAdminRolesCollectionRef).catch(e => {
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: superAdminRolesCollectionRef.path, operation: 'list' }));
+                    throw e;
+                }),
             ]);
 
             const users = new Map(usersSnap.docs.map(doc => [doc.id, doc.data() as Omit<UserData, 'id'>]));
@@ -205,7 +218,7 @@ export default function SuperAdminPage() {
             setStaffList(staff);
         } catch (error) {
             console.error("[fetchAllStaff] Error:", error);
-            toast({ variant: "destructive", title: "Error", description: "Could not load staff members." });
+            // The specific error is emitted above, no need for a generic toast here.
         } finally {
             setIsLoadingStaff(false);
         }
@@ -216,23 +229,26 @@ export default function SuperAdminPage() {
         if (!firestore) return;
         try {
             const settingsRef = doc(firestore, 'system_settings', 'notifications');
-            const docSnap = await getDoc(settingsRef);
+            const docSnap = await getDoc(settingsRef).catch(e => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({ path: settingsRef.path, operation: 'get' }));
+                throw e;
+            });
+
             if (docSnap.exists()) {
                 setNotificationRecipients(docSnap.data()?.recipientUids || []);
             }
         } catch (error) {
              console.error("Error fetching notification settings:", error);
-             toast({ variant: "destructive", title: "Error", description: "Could not load notification settings." });
         }
     };
 
     useEffect(() => {
         // Fetch staff and notification data when the component mounts if firestore is available
-        if (firestore) {
+        if (firestore && isSuperAdmin) {
             fetchAllStaff();
             fetchNotificationRecipients();
         }
-    }, [firestore]);
+    }, [firestore, isSuperAdmin]);
     
      const handleBootstrap = async () => {
         if (!firestore || !currentUser) {
@@ -248,7 +264,10 @@ export default function SuperAdminPage() {
             batch.set(superAdminRef, { grantedAt: serverTimestamp() });
             batch.set(adminRef, { grantedAt: serverTimestamp() });
             
-            await batch.commit();
+            await batch.commit().catch(e => {
+                 errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'roles_super_admin or roles_admin', operation: 'write', requestResourceData: {uid: currentUser.uid} }));
+                 throw e;
+            });
 
             toast({
                 title: "You are now a Super Admin!",
@@ -273,11 +292,8 @@ export default function SuperAdminPage() {
         }
         setIsAddingStaff(true);
         try {
-            const tempPassword = Math.random().toString(36).slice(-8); // Generate a temporary password
+            const tempPassword = Math.random().toString(36).slice(-8);
             
-            // This is a special, temporary flow for adding users via a server action
-            // because client-side user creation is often restricted.
-            // A more robust solution would be a dedicated Cloud Function.
             const response = await fetch('/api/create-user', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -316,17 +332,23 @@ export default function SuperAdminPage() {
     const handleRoleToggle = async (uid: string, isSuperAdmin: boolean) => {
         if (!firestore) return;
         const superAdminRoleRef = doc(firestore, 'roles_super_admin', uid);
-        
+        const data = { grantedAt: new Date() };
         try {
             if (isSuperAdmin) {
-                await setDoc(superAdminRoleRef, { grantedAt: new Date() });
+                await setDoc(superAdminRoleRef, data).catch(e => {
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: superAdminRoleRef.path, operation: 'create', requestResourceData: data }));
+                    throw e;
+                });
             } else {
-                await deleteDoc(superAdminRoleRef);
+                await deleteDoc(superAdminRoleRef).catch(e => {
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: superAdminRoleRef.path, operation: 'delete' }));
+                    throw e;
+                });
             }
             toast({ title: 'Role Updated', description: `Successfully updated role.` });
             await fetchAllStaff();
         } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Update Failed', description: error.message });
+            // Error is emitted above, generic toast is okay here if it fails
         }
     };
     
@@ -344,14 +366,17 @@ export default function SuperAdminPage() {
         }
 
         try {
-            await batch.commit();
+            await batch.commit().catch(e => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `roles_admin/${uid}`, operation: 'delete' }));
+                throw e;
+            });
             
             toast({ title: 'Staff Roles Revoked', description: `Admin permissions have been removed for the user.`, className: 'bg-green-100 text-green-900 border-green-200' });
             
             await fetchAllStaff();
             await fetchNotificationRecipients();
         } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Delete Failed', description: error.message });
+            // Error is emitted above
         }
     };
 
@@ -367,10 +392,15 @@ export default function SuperAdminPage() {
         setIsSavingNotifications(true);
         try {
             const settingsRef = doc(firestore, 'system_settings', 'notifications');
-            await setDoc(settingsRef, { recipientUids: notificationRecipients }, { merge: true });
+            const data = { recipientUids: notificationRecipients };
+            await setDoc(settingsRef, data, { merge: true }).catch(e => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({ path: settingsRef.path, operation: 'update', requestResourceData: data }));
+                throw e;
+            });
+
             toast({ title: "Settings Saved", description: "Notification preferences updated.", className: 'bg-green-100 text-green-900 border-green-200' });
         } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Save Failed', description: error.message });
+            // Error emitted above
         } finally {
             setIsSavingNotifications(false);
         }
@@ -460,25 +490,21 @@ export default function SuperAdminPage() {
         if (!firestore) return;
         setIsCreatingTestApp(true);
     
-        // A placeholder UID for the user who owns the test application.
-        // In a real scenario, you would get this after the user signs up.
-        // For this test, we can use a hardcoded or randomly generated one.
         const testUserId = "test-user-for-jcbloome";
     
         try {
             const batch = writeBatch(firestore);
 
-            // 1. Create a user document for the test user
             const userDocRef = doc(firestore, 'users', testUserId);
-            batch.set(userDocRef, {
+            const userDocData = {
                 id: testUserId,
                 email: "jcbloome@gmail.com",
                 firstName: "JC",
                 lastName: "Bloome",
                 displayName: "JC Bloome",
-            });
+            };
+            batch.set(userDocRef, userDocData);
 
-            // 2. Create the test application document
             const appDocRef = doc(firestore, `users/${testUserId}/applications`, "test-application-123");
             const testAppData: Partial<Application> = {
                 id: "test-application-123",
@@ -499,7 +525,10 @@ export default function SuperAdminPage() {
             };
             batch.set(appDocRef, testAppData);
     
-            await batch.commit();
+            await batch.commit().catch(e => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `users/${testUserId}/applications`, operation: 'create' }));
+                throw e;
+            });
     
             toast({
                 title: "Test Application Created",
@@ -508,11 +537,7 @@ export default function SuperAdminPage() {
             });
     
         } catch (error: any) {
-            toast({
-                variant: 'destructive',
-                title: 'Creation Failed',
-                description: `Could not create test application: ${error.message}`
-            });
+            // Error is emitted above
         } finally {
             setIsCreatingTestApp(false);
         }
