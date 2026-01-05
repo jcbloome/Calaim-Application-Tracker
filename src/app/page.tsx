@@ -1,48 +1,46 @@
-
 'use client';
 
-import Image from 'next/image';
-import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import imageData from '@/lib/placeholder-images.json';
-import { Header } from '@/components/Header';
 import React from 'react';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Header } from '@/components/Header';
+import { ArrowRight, User, Shield } from 'lucide-react';
+import { useAdmin } from '@/hooks/use-admin';
 
-export default function Home() {
-  const mascot = imageData.placeholderImages.find(p => p.id === 'fox-mascot');
+export default function HomePage() {
+  const { user, isUserLoading, isAdmin, isSuperAdmin } = useAdmin();
 
   return (
     <>
       <Header />
-      <main className="flex-grow flex flex-col items-center justify-center p-4 sm:p-6 md:p-8">
-        <Card className="w-full max-w-4xl shadow-2xl">
-          <CardHeader className="items-center text-center p-6 sm:p-10">
-            {mascot && (
-              <Image
-                src={mascot.imageUrl}
-                alt={mascot.description}
-                width={200}
-                height={200}
-                data-ai-hint={mascot.imageHint}
-                className="w-40 h-40 sm:w-48 sm:h-48 object-contain rounded-full mb-6"
-              />
-            )}
-            <CardTitle className="text-3xl sm:text-5xl font-bold">Connect CalAIM</CardTitle>
-            <CardDescription className="text-md sm:text-lg max-w-2xl mt-2">
-              The Connections Care Home Consultants application portal for the California
-              Advancing and Innovating Medi-Cal (CalAIM) Community Support for Assisted
-              Transitions (SNF Diversion/Transition) for Health Net and Kaiser.
+      <main className="flex-grow flex items-center justify-center bg-slate-50 p-4">
+        <Card className="w-full max-w-lg text-center shadow-lg">
+          <CardHeader>
+            <CardTitle className="text-3xl font-bold">
+              Welcome to CalAIM Pathfinder
+            </CardTitle>
+            <CardDescription>
+              Please select your login portal.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col items-center p-6 pt-0 sm:pb-10">
-             <Button asChild size="lg" className="text-lg py-7 px-8">
-                <Link href="/info">
-                  Let's Go!
-                  <ArrowRight className="ml-2 h-5 w-5" />
-                </Link>
-              </Button>
+          <CardContent className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Button asChild size="lg">
+              <Link href="/applications">
+                <User className="mr-2" /> User Portal
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="lg">
+              <Link href="/admin">
+                <Shield className="mr-2" /> Admin Portal
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       </main>

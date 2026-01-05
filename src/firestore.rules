@@ -1,10 +1,51 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allows anyone logged in to access the data.
-    // This is a temporary, insecure rule for debugging.
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    // Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Admins can read/write anywhere.
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+    }
+    
+    function isSuperAdmin() {
+       return isSignedIn() && exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid));
+    }
+
+    // Rules for the 'users' collection
+    match /users/{userId} {
+      // A user can read or write to their own user document. Admins can do anything.
+      allow read, write: if isOwner(userId) || isAdmin();
+
+      // Rules for the 'applications' subcollection
+      match /applications/{applicationId} {
+        // A user can manage their own applications. Admins can do anything.
+        allow read, write, delete: if isOwner(userId) || isAdmin();
+      }
+    }
+    
+    // Rules for role collections
+    match /roles_admin/{userId} {
+      // Only super admins can read or write to the admin roles.
+      allow read, write: if isSuperAdmin();
+    }
+    
+    match /roles_super_admin/{userId} {
+       // Only super admins can read or write to the super admin roles.
+      allow read, write: if isSuperAdmin();
+    }
+
+    // Allow admins to list applications across all users.
+    match /{path=**}/applications/{applicationId} {
+      allow read, list: if isAdmin();
     }
   }
 }

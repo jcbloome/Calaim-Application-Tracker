@@ -1,77 +1,59 @@
 {
   "entities": {
     "User": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "User",
       "type": "object",
-      "description": "Represents a user of the Git State Restorer application.",
+      "description": "A user of the application.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the User entity."
-        },
-        "username": {
-          "type": "string",
-          "description": "The user's username for login.",
-          "format": "string"
-        },
-        "email": {
-          "type": "string",
-          "description": "The user's email address.",
-          "format": "email"
-        },
-        "failedLoginAttempts": {
-          "type": "number",
-          "description": "Number of failed login attempts. Can be used for rate limiting or account lockout.",
-          "format": "number"
-        },
-        "lastLoginAttempt": {
-          "type": "string",
-          "description": "Timestamp of the last login attempt.",
-          "format": "date-time"
-        },
-        "isLocked": {
-          "type": "boolean",
-          "description": "Indicates whether the user account is locked due to too many failed login attempts."
-        },
-        "lockoutExpiryTime": {
-          "type": "string",
-          "description": "The timestamp when the user lockout will expire.",
-          "format": "date-time"
-        }
+        "id": { "type": "string", "description": "Unique user ID." },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" }
       },
-      "required": [
-        "id",
-        "username",
-        "email"
-      ]
+      "required": ["id", "email"]
+    },
+    "Application": {
+      "title": "Application",
+      "type": "object",
+      "description": "A CalAIM application submitted by a user.",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "status": { "type": "string", "enum": ["In Progress", "Completed & Submitted", "Requires Revision", "Approved", "Deleted"] },
+        "memberFirstName": { "type": "string" },
+        "memberLastName": { "type": "string" }
+      },
+      "required": ["id", "userId", "status"]
+    },
+    "AdminRole": {
+      "title": "AdminRole",
+      "type": "object",
+      "properties": { "grantedAt": { "type": "string", "format": "date-time" } }
+    },
+    "SuperAdminRole": {
+      "title": "SuperAdminRole",
+      "type": "object",
+      "properties": { "grantedAt": { "type": "string", "format": "date-time" } }
     }
   },
-  "auth": {
-    "providers": [
-      "password",
-      "anonymous"
-    ]
-  },
+  "auth": { "providers": ["password", "anonymous"] },
   "firestore": {
-    "structure": [
-      {
-        "path": "/users/{userId}",
-        "definition": {
-          "entityName": "User",
-          "schema": {
-            "$ref": "#/backend/entities/User"
-          },
-          "description": "Stores user data. Access is restricted to the authenticated user.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The unique ID of the user, matching the Firebase Authentication UID."
-            }
-          ]
-        }
-      }
-    ],
-    "reasoning": "This Firestore structure prioritizes security and scalability for the Git State Restorer application, focusing on user authentication issues. It uses path-based ownership for user data and aims to support simple, robust security rules. Authorization Independence is achieved by avoiding `get()` calls in rules, relying solely on `request.auth.uid` and existence checks. The data structure also segregates user data, ensuring a homogeneous security posture within each collection. Specifically: The user document stores data for login, authentication, and rate limiting. Storing authentication-related details directly in the database could be beneficial for auditing or support. The design assumes all user-related data is private and accessible only to the user themselves. The path `/users/{userId}` provides a secure, path-based ownership model. The absence of collaborative features simplifies the authorization model, as access is primarily based on user identity."
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores public profile information for a user."
+    },
+    "/users/{userId}/applications/{applicationId}": {
+      "schema": { "$ref": "#/entities/Application" },
+      "description": "Sub-collection for applications belonging to a user."
+    },
+    "/roles_admin/{userId}": {
+      "schema": { "$ref": "#/entities/AdminRole" },
+      "description": "Collection where document ID is a user UID that has the Admin role."
+    },
+    "/roles_super_admin/{userId}": {
+      "schema": { "$ref": "#/entities/SuperAdminRole" },
+      "description": "Collection where document ID is a user UID that has the Super Admin role."
+    }
   }
 }
