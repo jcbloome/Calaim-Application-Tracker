@@ -34,6 +34,7 @@ service cloud.firestore {
     match /users/{userId} {
       // Admins can manage any user profile. Users can only manage their own.
       allow read, write: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
 
       // Application subcollection rules
       match /applications/{applicationId} {
@@ -61,15 +62,17 @@ service cloud.firestore {
     // 1. Role Verification: 
     // Allows any signed-in user to check their OWN admin status.
     // This is secure because they can only read documents where the {userId} matches their own UID.
-    // The `list` permission is denied, so they cannot enumerate all admins.
+    // The `list` permission is now added so admins can view all other admins.
     match /roles_admin/{userId} {
       allow get: if isOwner(userId) || isAdmin();
-      allow list, write, create, delete: if false; 
+      allow list: if isAdmin();
+      allow write, create, delete: if false; 
     }
     
     match /roles_super_admin/{userId} {
       allow get: if isOwner(userId) || isSuperAdmin();
-      allow list, write, create, delete: if false; 
+      allow list: if isSuperAdmin();
+      allow write, create, delete: if false; 
     }
     
     // 2. System Settings
