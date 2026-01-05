@@ -86,20 +86,8 @@ export default function PrintablePackagePage() {
     };
 
     const handlePrint = (href: string) => {
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'absolute';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = '0';
-        iframe.src = href;
-        document.body.appendChild(iframe);
-        iframe.onload = () => {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-        };
-        iframe.onafterprint = () => {
-          document.body.removeChild(iframe);
-        };
+        // Use window.open to bypass development environment URL issues
+        window.open(href, '_blank', 'noopener,noreferrer');
       };
 
   return (
