@@ -1,239 +1,142 @@
-
+/**
+ * @file firestore.rules
+ * @description Firestore Security Rules for the Git State Restorer application.
+ *
+ * @section Core Philosophy
+ * This ruleset enforces a strict, project-based collaborative security model. All data, including commits and file states,
+ * is nested under a parent project. Access is granted based on a user's role within that project, which is defined
+ * in a `members` map on the project document itself. This ensures that users can only access data from projects they
+ * are explicitly invited to, preventing any cross-project data access.
+ *
+ * @section Data Structure
+ * The data is organized hierarchically to mirror the logical relationship between entities:
+ * - /projects/{projectId}: The root document for a project, containing metadata and the authoritative members list.
+ * - /projects/{projectId}/commits/{commitId}: A subcollection for all commits belonging to the project.
+ * - /projects/{projectId}/commits/{commitId}/fileStates/{fileStateId}: A subcollection for all file states within a specific commit.
+ *
+ * @section Key Security Decisions
+ * - Project Membership is Authoritative: Access to a project and all its sub-collections is determined by a `members`
+ *   map on the `/projects/{projectId}` document (e.g., `{ members: { 'user-abc': 'owner', 'user-xyz': 'editor' } }`).
+ *   This design decision requires that the `Project` entity contains this map for these rules to function correctly.
+ * - Granular Roles: The `members` map supports roles (e.g., 'owner'), allowing for more granular permissions, such as
+ *   restricting project deletion or member management to owners only.
+ * - Subcollection Security via `get()`: Rules for subcollections (`commits`, `fileStates`) use `get()` to read the parent
+ *   project's `members` map to make authorization decisions. This is efficient and ensures a single source of truth for permissions.
+ * - Default Deny: All access is denied by default. Permissions are explicitly granted only to signed-in users who are
+ *   members of the relevant project. There is no public or anonymous access.
+ *
+ * @section Denormalization for Authorization
+ * The security model critically relies on denormalizing a `members` map onto each `Project` document. This avoids
+ * impossible-to-enforce queries (e.g., "find all projects this user is a member of from a separate `memberships` collection")
+ * and makes authorization checks for all nested documents simple and performant.
+ *
+ * @section Structural Segregation
+ * The hierarchical structure naturally segregates data by project, which is the primary security boundary. This is a
+ * secure and scalable pattern for multi-tenant or collaborative applications.
+ */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    /**
-     * Core Philosophy:
-     * This ruleset enforces a strict user-ownership model. All user-generated data,
-     * such as applications and their related documents, is stored in a hierarchical
-     * structure under the user's unique ID (`/users/{userId}`). This ensures that
-     * by default, users can only access their own data. An administrative role
-     * (`/roles_admin`) is defined to grant privileged read/write access across all
-     * user data for administrative purposes.
-     *
-     * Data Structure:
-     * The data is organized hierarchically starting from `/users/{userId}`. Each user
-     * document contains a subcollection for their `applications`. All other data
-     * points, like contacts, locations, and form statuses, are nested as subcollections
-     * under the specific application they relate to. This structure simplifies
-     * ownership-based security rules.
-     *
-     * Key Security Decisions:
-     * - Default Deny: All paths are closed by default. Access is granted explicitly.
-     * - User Data Isolation: All access controls for the `/users/{userId}` data tree
-     *   are based on the `userId` from the path, ensuring a user can only interact
-     *   with their own data branch.
-     * - No User Enumeration: Listing documents in the top-level `/users` and `/roles_admin`
-     *   collections is explicitly forbidden to prevent enumeration of all users or admins.
-     * - Admin Privileges: Users whose UID exists in the `/roles_admin` collection are
-     *   granted full read/write access to all user data for moderation and support.
-     * - Admin Role Management: The `/roles_admin` collection is read-only and unlistable
-     *   from the client. Roles must be managed manually via the Firebase Console or through
-     *   a trusted server-side environment for maximum security.
-     *
-     * Denormalization for Authorization:
-     * To ensure fast and secure authorization, documents contain fields that simplify
-     * rule logic. For example, an `Application` document contains a `userId` field,
-     * which is validated against the path on creation to ensure relational integrity.
-     * This avoids costly and slow `get()` calls in security rules. The admin role is
-     * managed through the existence of a document in `/roles_admin`, which is a
-     * simple and performant lookup.
-     *
-     * Structural Segregation:
-     * User data and administrative roles are stored in separate top-level collections
-     * (`/users` and `/roles_admin`). This clear separation ensures that security rules
-     * for application data do not get mixed with rules for administrative access control,
-     * leading to a more secure and maintainable ruleset.
-     */
-
-    // =================================
-    //         Helper Functions
-    // =================================
+    // -------------------------------------------------------------------------
+    // Helper Functions
+    // -------------------------------------------------------------------------
 
     /**
-     * Checks if the user is authenticated.
+     * @description Checks if the user is authenticated.
      */
     function isSignedIn() {
       return request.auth != null;
     }
 
     /**
-     * Checks if the currently authenticated user's UID matches the provided userId.
-     * This is the foundation of the user-ownership model.
-     * @param userId The UID to check against the authenticated user.
+     * @description Checks if the current user is listed in the members map of a given project.
+     * @note This function assumes the project document contains a `members` map where keys are user UIDs.
+     *       Example: `{ name: 'My Project', members: { 'user-uid-123': 'owner' } }`
      */
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-
-    /**
-     * Checks if the user has an admin role.
-     * Admin status is conferred by the existence of a document for the user
-     * in the /roles_admin collection.
-     */
-    function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
-    }
-
-     /**
-     * Checks if the user has a super admin role.
-     * Super Admin status is conferred by the existence of a document for the user
-     * in the /roles_super_admin collection.
-     */
-    function isSuperAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid));
+    function isProjectMember(projectId) {
+      let projectData = get(/databases/$(database)/documents/projects/$(projectId)).data;
+      return isSignedIn() && request.auth.uid in projectData.members;
     }
 
     /**
-     * Grants access if the user is the owner of the resource OR is an admin.
-     * @param userId The UID of the document's owner.
+     * @description Checks if the current user has the 'owner' role in the members map of a given project.
+     * @note This provides more granular control for administrative actions like deleting a project.
      */
-    function isOwnerOrAdmin(userId) {
-      return isOwner(userId) || isAdmin() || isSuperAdmin();
+    function isProjectOwner(projectId) {
+      let projectData = get(/databases/$(database)/documents/projects/$(projectId)).data;
+      return isSignedIn() && projectData.members[request.auth.uid] == 'owner';
     }
 
     /**
-     * Grants access for state-changing operations (update, delete) if the user
-     * is the owner or an admin, AND the document already exists.
-     * This prevents modifying or deleting non-existent data.
-     * @param userId The UID of the document's owner.
+     * @description On create, validates that the user creating the project sets themselves as the owner.
      */
-    function isExistingOwnerOrAdmin(userId) {
-      return isOwnerOrAdmin(userId) && resource != null;
+    function creatorIsOwner() {
+      return request.resource.data.members[request.auth.uid] == 'owner';
     }
 
     /**
-     * Validates required relational fields on Application document creation.
-     * Ensures the internal userId reference points to the correct owner.
-     * @param userId The user's UID from the path.
+     * @description On update, ensures critical relational IDs and ownership fields are not changed.
      */
-    function hasValidApplicationDataOnCreate(userId) {
-      return request.resource.data.userId == userId;
+    function coreIdsAreImmutable() {
+      return request.resource.data.id == resource.data.id
+          && request.resource.data.commitId == resource.data.commitId
+          && request.resource.data.projectId == resource.data.projectId;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Rules
+    // -------------------------------------------------------------------------
+
+    /**
+     * @description Manages project metadata. Access is restricted to users listed in the project's `members` map.
+     * @path /projects/{projectId}
+     * @allow (get) A signed-in user who is a member of project 'p123' can read its document.
+     * @deny (get) A signed-in user who is not a member of project 'p123' cannot read it.
+     * @allow (create) A signed-in user can create a new project document, but only if they set themselves as the owner in the `members` map.
+     * @deny (delete) A user who is a member but not an 'owner' of project 'p123' cannot delete it.
+     * @principle Enforces collaborative, role-based access control at the root of the data tree.
+     */
+    match /projects/{projectId} {
+      allow get: if isProjectMember(projectId);
+      allow list: if false; // Deny listing all projects for security. Client must know the project ID.
+      allow create: if isSignedIn() && creatorIsOwner();
+      allow update: if isProjectOwner(projectId) && resource != null;
+      allow delete: if isProjectOwner(projectId) && resource != null;
     }
 
     /**
-     * Enforces immutability of the Application's owner ID on update.
+     * @description Stores commit metadata for a project. Access is inherited from the parent project's membership.
+     * @path /projects/{projectId}/commits/{commitId}
+     * @allow (list) A member of project 'p123' can list all commits within that project.
+     * @deny (list) A non-member of project 'p123' cannot list any commits.
+     * @allow (create) A member of project 'p123' can create a new commit document inside it.
+     * @deny (create) A member of project 'p123' cannot create a commit for project 'p456'.
+     * @principle Secures a subcollection by checking permissions on the parent document.
      */
-    function hasValidApplicationDataOnUpdate() {
-      return request.resource.data.userId == resource.data.userId;
+    match /projects/{projectId}/commits/{commitId} {
+      allow get, list: if isProjectMember(projectId);
+      allow create: if isProjectMember(projectId) && request.resource.data.id == commitId;
+      allow update: if isProjectMember(projectId) && resource != null && request.resource.data.id == resource.data.id;
+      allow delete: if isProjectMember(projectId) && resource != null;
     }
 
     /**
-     * Validates relational fields for any subcollection document under an application.
-     * Ensures the internal applicationId reference points to the correct parent application.
-     * @param applicationId The parent application's ID from the path.
+     * @description Stores file states for a specific commit. Access is inherited from the parent project's membership.
+     * @path /projects/{projectId}/commits/{commitId}/fileStates/{fileStateId}
+     * @allow (get) A member of project 'p123' can read a file state from any commit in that project.
+     * @deny (get) A non-member of project 'p123' cannot read any file state data.
+     * @allow (create) A member can create a fileState, provided its internal IDs (`projectId`, `commitId`) match the document path.
+     * @deny (update) A member cannot change the `projectId` or `commitId` of an existing fileState.
+     * @principle Validates relational integrity to prevent data from being associated with the wrong parent document.
      */
-    function hasValidSubcollectionDataOnCreate(applicationId) {
-      return request.resource.data.applicationId == applicationId;
-    }
-
-    /**
-     * Enforces immutability of a subcollection document's parent application ID on update.
-     */
-    function hasValidSubcollectionDataOnUpdate() {
-      return request.resource.data.applicationId == resource.data.applicationId;
-    }
-
-    // =================================
-    //         Collection Rules
-    // =================================
-
-    // This rule allows collection group queries on 'applications' for admins.
-    match /{path=**}/applications/{applicationId} {
-      allow read, write: if isAdmin() || isSuperAdmin();
-    }
-
-    /**
-     * @description Rules for a user's own profile document.
-     * @path /users/{userId}
-     * @allow (read, write) An authenticated user can read and write to their own profile.
-     * @deny (list) Any user attempting to list all user profiles.
-     * @principle Restricts access to a user's own data tree and allows self-creation and update of a profile.
-     */
-    match /users/{userId} {
-      allow get: if isOwnerOrAdmin(userId);
-      allow create, update: if isOwner(userId) || isSuperAdmin();
-      allow list: if isAdmin() || isSuperAdmin(); // Allow listing of users for admins and super admins
-      allow delete: if isOwnerOrAdmin(userId);
-
-      /**
-       * @description Rules for a user's CalAIM applications.
-       * @path /users/{userId}/applications/{applicationId}
-       * @allow (create, read, write) An authenticated user managing their own application documents.
-       * @deny (read, write) A user attempting to access another user's applications.
-       * @principle Enforces document ownership for all operations within a user-specific subcollection.
-       */
-      match /applications/{applicationId} {
-        allow get, list: if isOwnerOrAdmin(userId);
-        allow create: if isOwnerOrAdmin(userId) && hasValidApplicationDataOnCreate(userId);
-        allow update: if isExistingOwnerOrAdmin(userId) && hasValidApplicationDataOnUpdate();
-        allow delete: if isExistingOwnerOrAdmin(userId);
-
-        /**
-         * @description Rules for the internal staff progress tracker.
-         * @path /users/{userId}/applications/{applicationId}/staffTrackers/{trackerId}
-         * @allow (read, write) Only admins can read or write to the tracker.
-         */
-        match /staffTrackers/{trackerId} {
-          allow read, write: if isAdmin() || isSuperAdmin();
-        }
-
-        // Wildcard match for all nested subcollections of an application
-        // (contacts, legalRepresentatives, locations, ispContacts, rcfeSelections, formStatuses, eligibilityScreenings)
-        /**
-         * @description Generic rules for all subcollections of an application.
-         * @path /users/{userId}/applications/{applicationId}/{subcollection}/{docId}
-         * @allow (create, read, write) The application owner or an admin managing related data.
-         * @deny (read, write) Any user who does not own the parent application.
-         * @principle Inherits ownership from the parent document path and validates relational integrity.
-         */
-        match /{subcollection}/{docId} {
-          allow get, list: if isOwnerOrAdmin(userId);
-          allow create: if isOwnerOrAdmin(userId) && hasValidSubcollectionDataOnCreate(applicationId);
-          allow update: if isExistingOwnerOrAdmin(userId) && hasValidSubcollectionDataOnUpdate();
-          allow delete: if isExistingOwnerOrAdmin(userId);
-        }
-      }
-    }
-
-    /**
-     * @description Defines admin roles. The existence of a document grants admin privileges.
-     * @path /roles_admin/{userId}
-     * @allow (get) Any signed-in user can check if THEY are an admin.
-     * @deny (list, create, update, delete) All other operations are denied for security.
-     * @principle Secures administrative role management by disallowing any client-side modifications.
-     */
-    match /roles_admin/{userId} {
-      allow get: if isOwner(userId);
-      allow write: if isSuperAdmin();
-      allow list: if isAdmin() || isSuperAdmin();
-      allow delete: if isSuperAdmin();
-    }
-
-    /**
-     * @description Defines super admin roles.
-     * @path /roles_super_admin/{userId}
-     * @allow (get) A super admin can check roles.
-     * @deny (all client) All client-side requests to read, list, or write are denied unless super admin.
-     * @principle Secures super administrative role management by disallowing any client-side modifications.
-     */
-    match /roles_super_admin/{userId} {
-      allow get: if isOwner(userId);
-      allow write: if isSuperAdmin();
-      allow list: if isSuperAdmin();
-    }
-
-    /**
-     * @description Global system settings.
-     * @path /system_settings/{settingId}
-     * @allow (read) Authenticated users can read settings.
-     * @allow (write) Only super admins can write settings.
-     */
-    match /system_settings/{settingId} {
-      allow read: if isSignedIn();
-      allow write: if isSuperAdmin();
+    match /projects/{projectId}/commits/{commitId}/fileStates/{fileStateId} {
+      allow get, list: if isProjectMember(projectId);
+      // NOTE: The IR 'reasoning' section implies a denormalized `projectId` field on the FileState entity for authorization,
+      // which is validated here for relational integrity upon creation.
+      allow create: if isProjectMember(projectId) && request.resource.data.id == fileStateId && request.resource.data.commitId == commitId && request.resource.data.projectId == projectId;
+      allow update: if isProjectMember(projectId) && resource != null && coreIdsAreImmutable();
+      allow delete: if isProjectMember(projectId) && resource != null;
     }
   }
 }

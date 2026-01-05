@@ -1,8 +1,7 @@
 'use client';
-import type { User, Auth } from 'firebase/auth';
-import { initializeFirebase } from './client-init';
+import { getAuth, type User } from 'firebase/auth';
 
-export type SecurityRuleContext = {
+type SecurityRuleContext = {
   path: string;
   operation: 'get' | 'list' | 'create' | 'update' | 'delete' | 'write';
   requestResourceData?: any;
@@ -71,20 +70,22 @@ function buildAuthObject(currentUser: User | null): FirebaseAuthObject | null {
 
 /**
  * Builds the complete, simulated request object for the error message.
- * It safely initializes Firebase to get the auth instance.
+ * It safely tries to get the current authenticated user.
  * @param context The context of the failed Firestore operation.
  * @returns A structured request object.
  */
 function buildRequestObject(context: SecurityRuleContext): SecurityRuleRequest {
   let authObject: FirebaseAuthObject | null = null;
   try {
-    // Safely get the auth instance. This is idempotent.
-    const { auth } = initializeFirebase();
-    if (auth?.currentUser) {
-      authObject = buildAuthObject(auth.currentUser);
+    // Safely attempt to get the current user.
+    const firebaseAuth = getAuth();
+    const currentUser = firebaseAuth.currentUser;
+    if (currentUser) {
+      authObject = buildAuthObject(currentUser);
     }
-  } catch (e) {
-    console.error("Firebase Auth could not be initialized for error reporting:", e);
+  } catch {
+    // This will catch errors if the Firebase app is not yet initialized.
+    // In this case, we'll proceed without auth information.
   }
 
   return {
@@ -94,7 +95,6 @@ function buildRequestObject(context: SecurityRuleContext): SecurityRuleRequest {
     resource: context.requestResourceData ? { data: context.requestResourceData } : undefined,
   };
 }
-
 
 /**
  * Builds the final, formatted error message for the LLM.
@@ -109,8 +109,7 @@ ${JSON.stringify(requestObject, null, 2)}`;
 /**
  * A custom error class designed to be consumed by an LLM for debugging.
  * It structures the error information to mimic the request object
- * available in Firestore Security Rules. It is self-contained and does not
- * require an auth instance to be passed to it.
+ * available in Firestore Security Rules.
  */
 export class FirestorePermissionError extends Error {
   public readonly request: SecurityRuleRequest;
