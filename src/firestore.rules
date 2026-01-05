@@ -27,22 +27,25 @@ service cloud.firestore {
     //         Collection Rules
     // =================================
     
-    // User can read and write their own user document and all subcollections (e.g., applications)
+    // Rule 1: Users can read and write documents within their own user folder.
+    // This covers their user profile and their own subcollections like 'applications'.
     match /users/{userId}/{documents=**} {
       allow read, write: if isOwner(userId);
     }
     
-    // This allows collection group queries on 'applications' for admins.
+    // Rule 2: Admins are allowed to perform collection group queries on 'applications'.
+    // This is essential for the admin dashboard to view all applications across all users.
     match /{path=**}/applications/{applicationId} {
       allow get, list: if isAdmin() || isSuperAdmin();
     }
     
-    // Admins can read/write any user document. This is needed for the admin dashboard.
+    // Rule 3: Admins can read user profile documents (but not subcollections via this rule).
+    // This allows admins to see basic user info like names for the application list.
     match /users/{userId} {
         allow get, list: if isAdmin() || isSuperAdmin();
     }
 
-    // Only Super Admins can manage admin and super admin roles.
+    // Rule 4: Only Super Admins can manage roles.
     match /roles_admin/{adminId} {
       allow read, write: if isSuperAdmin();
     }
@@ -50,7 +53,7 @@ service cloud.firestore {
         allow read, write: if isSuperAdmin();
     }
 
-    // System settings can be read by any signed-in user but only written by Super Admins.
+    // Rule 5: System settings can be read by any signed-in user, but only written by Super Admins.
     match /system_settings/{settingId} {
       allow read: if isSignedIn();
       allow write: if isSuperAdmin();
