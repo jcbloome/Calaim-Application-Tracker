@@ -85,6 +85,13 @@ export default function PrintablePackagePage() {
         }, 2000);
     };
 
+    const getBaseUrl = () => {
+        if (typeof window !== 'undefined') {
+            return window.location.origin;
+        }
+        return '';
+    }
+
   return (
     <>
       <Header />
@@ -126,18 +133,19 @@ export default function PrintablePackagePage() {
                         <CardContent>
                           <ul>
                             {individualForms.map((form) => {
+                                const absoluteUrl = `${getBaseUrl()}${form.href}`;
                                 return (
                                   <li key={form.title}>
-                                    <Link href={form.href} target="_blank" rel="noopener noreferrer" className="inline-block py-1 text-sm font-medium text-foreground hover:text-primary hover:underline underline-offset-4 transition-colors">
+                                    <a href={absoluteUrl} target="_blank" rel="noopener noreferrer" className="inline-block py-1 text-sm font-medium text-foreground hover:text-primary hover:underline underline-offset-4 transition-colors">
                                         {form.title}
-                                    </Link>
+                                    </a>
                                   </li>
                                 )
                             })}
                             <li className="pt-2 border-t mt-2">
-                               <Link href="/forms/printable-package/full-package" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-primary hover:underline underline-offset-4">
+                               <a href={`${getBaseUrl()}/forms/printable-package/full-package`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-primary hover:underline underline-offset-4">
                                     Print Full Application Package
-                                </Link>
+                                </a>
                             </li>
                           </ul>
                         </CardContent>
