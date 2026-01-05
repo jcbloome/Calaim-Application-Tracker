@@ -27,25 +27,30 @@ service cloud.firestore {
     //         Collection Rules
     // =================================
     
-    // Rule 1: Users can read and write documents within their own user folder.
-    // This covers their user profile and their own subcollections like 'applications'.
-    match /users/{userId}/{documents=**} {
+    // Rule 1: Users can read and write individual documents within their own user folder.
+    match /users/{userId}/{document=**} {
       allow read, write: if isOwner(userId);
     }
     
-    // Rule 2: Admins are allowed to perform collection group queries on 'applications'.
+    // Rule 2: Explicitly allow users to LIST their own applications.
+    // This is required for the `useCollection` hook on the "My Applications" page.
+    match /users/{userId}/applications/{applicationId} {
+        allow list: if isOwner(userId);
+    }
+    
+    // Rule 3: Admins are allowed to perform collection group queries on 'applications'.
     // This is essential for the admin dashboard to view all applications across all users.
     match /{path=**}/applications/{applicationId} {
       allow get, list: if isAdmin() || isSuperAdmin();
     }
     
-    // Rule 3: Admins can read user profile documents (but not subcollections via this rule).
+    // Rule 4: Admins can read user profile documents (but not subcollections via this rule).
     // This allows admins to see basic user info like names for the application list.
     match /users/{userId} {
         allow get, list: if isAdmin() || isSuperAdmin();
     }
 
-    // Rule 4: Only Super Admins can manage roles.
+    // Rule 5: Only Super Admins can manage roles.
     match /roles_admin/{adminId} {
       allow read, write: if isSuperAdmin();
     }
@@ -53,7 +58,7 @@ service cloud.firestore {
         allow read, write: if isSuperAdmin();
     }
 
-    // Rule 5: System settings can be read by any signed-in user, but only written by Super Admins.
+    // Rule 6: System settings can be read by any signed-in user, but only written by Super Admins.
     match /system_settings/{settingId} {
       allow read: if isSignedIn();
       allow write: if isSuperAdmin();

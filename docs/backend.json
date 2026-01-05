@@ -1,167 +1,96 @@
 {
   "entities": {
-    "GitCommit": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "GitCommit",
+    "User": {
+      "title": "User",
+      "description": "Represents a user of the application.",
       "type": "object",
-      "description": "Represents a Git commit with its associated metadata.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Git commit (commit hash)."
-        },
-        "message": {
-          "type": "string",
-          "description": "Commit message associated with the commit."
-        },
-        "authorName": {
-          "type": "string",
-          "description": "Name of the author who made the commit."
-        },
-        "authorEmail": {
-          "type": "string",
-          "description": "Email of the author who made the commit.",
-          "format": "email"
-        },
-        "commitDate": {
-          "type": "string",
-          "description": "Date and time when the commit was made.",
-          "format": "date-time"
-        }
+        "id": { "type": "string", "description": "The user's unique ID." },
+        "email": { "type": "string", "format": "email", "description": "The user's email address." },
+        "displayName": { "type": "string", "description": "The user's full name." },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" }
       },
-      "required": [
-        "id",
-        "message",
-        "authorName",
-        "authorEmail",
-        "commitDate"
-      ]
+      "required": ["id", "email"]
     },
-    "FileState": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "FileState",
+    "Application": {
+      "title": "Application",
+      "description": "Represents a CalAIM application.",
       "type": "object",
-      "description": "Represents the state of a file at a specific Git commit.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the file state."
-        },
-        "commitId": {
-          "type": "string",
-          "description": "Reference to the GitCommit entity. (Relationship: GitCommit 1:N FileState)"
-        },
-        "filePath": {
-          "type": "string",
-          "description": "Path to the file within the repository."
-        },
-        "content": {
-          "type": "string",
-          "description": "Content of the file at the specific commit."
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "memberFirstName": { "type": "string" },
+        "memberLastName": { "type": "string" },
+        "status": { "type": "string", "enum": ["In Progress", "Completed & Submitted", "Requires Revision", "Approved", "Deleted"] },
+        "submissionDate": { "type": "string", "format": "date-time" },
+        "lastUpdated": { "type": "string", "format": "date-time" },
+        "pathway": { "type": "string", "enum": ["SNF Transition", "SNF Diversion"] },
+        "healthPlan": { "type": "string", "enum": ["Kaiser", "Health Net", "Other", "Kaiser Permanente"] },
+        "forms": { 
+            "type": "array", 
+            "items": { "$ref": "#/entities/FormStatus" }
         }
       },
-      "required": [
-        "id",
-        "commitId",
-        "filePath",
-        "content"
-      ]
+      "required": ["id", "userId", "memberFirstName", "memberLastName", "status", "pathway", "healthPlan"]
     },
-    "Project": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Project",
-      "type": "object",
-      "description": "Represents the Git project.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the project."
-        },
-        "name": {
-          "type": "string",
-          "description": "The name of the project."
-        },
-        "description": {
-          "type": "string",
-          "description": "A description of the project."
+    "FormStatus": {
+        "title": "FormStatus",
+        "type": "object",
+        "properties": {
+            "name": { "type": "string" },
+            "status": { "type": "string", "enum": ["Pending", "Completed"] },
+            "type": { "type": "string", "enum": ["Form", "Upload", "Info", "online-form", "bundle"] }
         }
-      },
-      "required": [
-        "id",
-        "name",
-        "description"
-      ]
+    },
+    "Role": {
+        "title": "Role",
+        "type": "object",
+        "properties": {
+            "grantedAt": { "type": "string", "format": "date-time" }
+        }
+    },
+    "SystemSettings": {
+      "title": "SystemSettings",
+      "type": "object",
+      "properties": {
+        "recipientUids": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
     }
   },
   "auth": {
-    "providers": [
-      "password",
-      "anonymous"
-    ]
+    "providers": ["password", "anonymous"]
   },
   "firestore": {
     "structure": [
       {
-        "path": "/projects/{projectId}",
-        "definition": {
-          "entityName": "Project",
-          "schema": {
-            "$ref": "#/backend/entities/Project"
-          },
-          "description": "Stores project metadata.  Root document for a project. Each project contains a unique ID.",
-          "params": [
-            {
-              "name": "projectId",
-              "description": "The unique identifier for the project."
-            }
-          ]
-        }
+        "path": "/users/{userId}",
+        "schema": { "$ref": "#/entities/User" },
+        "description": "Stores user profile information."
       },
       {
-        "path": "/projects/{projectId}/commits/{commitId}",
-        "definition": {
-          "entityName": "GitCommit",
-          "schema": {
-            "$ref": "#/backend/entities/GitCommit"
-          },
-          "description": "Stores commit metadata for each project.",
-          "params": [
-            {
-              "name": "projectId",
-              "description": "The unique identifier for the project."
-            },
-            {
-              "name": "commitId",
-              "description": "The unique identifier for the Git commit (commit hash)."
-            }
-          ]
-        }
+        "path": "/users/{userId}/applications/{applicationId}",
+        "schema": { "$ref": "#/entities/Application" },
+        "description": "Stores applications submitted by a user."
       },
       {
-        "path": "/projects/{projectId}/commits/{commitId}/fileStates/{fileStateId}",
-        "definition": {
-          "entityName": "FileState",
-          "schema": {
-            "$ref": "#/backend/entities/FileState"
-          },
-          "description": "Stores the state of each file at a specific Git commit. Includes denormalized `projectId` for authorization independence.",
-          "params": [
-            {
-              "name": "projectId",
-              "description": "The unique identifier for the project."
-            },
-            {
-              "name": "commitId",
-              "description": "The unique identifier for the Git commit (commit hash)."
-            },
-            {
-              "name": "fileStateId",
-              "description": "The unique identifier for the file state."
-            }
-          ]
-        }
+        "path": "/roles_admin/{userId}",
+        "schema": { "$ref": "#/entities/Role" },
+        "description": "Stores UIDs of users with Admin role."
+      },
+      {
+        "path": "/roles_super_admin/{userId}",
+        "schema": { "$ref": "#/entities/Role" },
+        "description": "Stores UIDs of users with Super Admin role."
+      },
+      {
+        "path": "/system_settings/notifications",
+        "schema": { "$ref": "#/entities/SystemSettings" },
+        "description": "System-wide notification settings."
       }
-    ],
-    "reasoning": "The Firestore structure is designed to support the Git State Restorer application's core features, focusing on secure file access and version restoration based on Git commit hashes. It prioritizes authorization independence to allow for atomic operations and easy debugging. The project files and their states are segregated into collections that reflect their security posture.\n\n*   **Projects Collection:** The root `/projects` collection stores project metadata. Each project has a unique ID.\n*   **Commits Collection:** Each project has a subcollection `/projects/{projectId}/commits` to store commit information. This allows users to look up commit details.\n*   **File States Collection:** Each commit has a subcollection `/projects/{projectId}/commits/{commitId}/fileStates` to store the state of each file at that specific commit.  Denormalization is used here to maintain authorization independence.  Each `fileState` document contains a denormalized `projectId` field that allows rules to enforce ownership.\n\nThis structure enables the required QAPs (queries and permissions) by:\n\n1.  Segregating data based on entity type into distinct collections, simplifying security rules.\n2.  Enabling secure `list` operations for file states within a specific commit, as rules can verify the `projectId` on each `fileState` without needing to access the `project` document.\n\nOwnership and authorization are enforced by the path structure (project ownership) and denormalized `projectId` field on the file states. Timestamps are stored with the commits to provide a record of when the snapshot was taken."
+    ]
   }
 }
