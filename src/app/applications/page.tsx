@@ -76,10 +76,10 @@ const ApplicationsTable = ({
   const getActionLink = (app: ApplicationData) => {
     // If the application is still being worked on, send the user back to the form to continue editing.
     if (app.status === 'In Progress' || app.status === 'Requires Revision') {
-      return `/forms/cs-summary-form?applicationId=${app.id}`;
+      return `/forms/cs-summary-form?applicationId=${'app.id'}`;
     }
     // For all other statuses, send them to the read-only pathway page.
-    return `/pathway?applicationId=${app.id}`;
+    return `/pathway?applicationId=${'app.id'}`;
   };
 
   const getActionText = (app: ApplicationData) => {
@@ -122,12 +122,12 @@ const ApplicationsTable = ({
                         <Checkbox
                           checked={selection?.includes(app.id)}
                           onCheckedChange={checked => onSelectionChange(app.id, !!checked)}
-                          aria-label={`Select application for ${app.memberFirstName} ${app.memberLastName}`}
+                          aria-label={`Select application for ${'app.memberFirstName'} ${'app.memberLastName'}`}
                         />
                       </TableCell>
                     )}
                     <TableCell className="font-medium">
-                      <div>{`${app.memberFirstName} ${app.memberLastName}`}</div>
+                      <div>{`${'app.memberFirstName'} ${'app.memberLastName'}`}</div>
                       <div className="text-xs text-muted-foreground font-mono truncate max-w-[120px] sm:max-w-xs">{app.id}</div>
                     </TableCell>
                     <TableCell>
