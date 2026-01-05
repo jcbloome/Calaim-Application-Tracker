@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -29,21 +30,16 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Wait until all loading is finished
-    if (isUserLoading || isAdminLoading) {
-      return;
+    // This effect handles redirection logic based on user status.
+    const loading = isUserLoading || isAdminLoading;
+    if (loading) {
+      return; // Do nothing while loading.
     }
-    
-    // If finished loading and there's no user, go to login.
+
     if (!user) {
-      router.push('/login');
-      return;
-    }
-    
-    // If the user is an admin, they should not be on this page. Redirect them.
-    if (isAdmin || isSuperAdmin) {
-      router.push('/admin');
-      return;
+      router.push('/login'); // If no user, send to login.
+    } else if (isAdmin || isSuperAdmin) {
+      router.push('/admin'); // CRITICAL FIX: If user is an admin, redirect them away from this page.
     }
   }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
 
