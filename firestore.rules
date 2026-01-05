@@ -30,6 +30,7 @@
  * Key Security Decisions:
  * - Read Access: Any authenticated user (`request.auth != null`) can read any
  *   document or list any collection. This is suitable for a tool where the data
+
  *   is not user-specific or private.
  * - Write Access: All write operations (`create`, `update`, `delete`) are
  *   explicitly disabled (`if false;`). This provides maximum data protection
@@ -55,6 +56,24 @@ service cloud.firestore {
      */
     function isSignedIn() {
       return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // ------------------------------------------------------------------------
+    // Test Collection
+    // ------------------------------------------------------------------------
+    match /test_writes/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    // ------------------------------------------------------------------------
+    // Users Collection
+    // ------------------------------------------------------------------------
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
     }
 
     // ------------------------------------------------------------------------
