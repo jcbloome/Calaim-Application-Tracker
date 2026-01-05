@@ -1,87 +1,17 @@
-/**
- * This ruleset enforces a strict user-ownership model for the Git State Restorer application.
- *
- * Core Philosophy:
- * The security model is built on the principle of least privilege. By default, all access is denied.
- * Rules grant access only when an operation is performed by the authenticated owner of the data.
- * The primary goal is to ensure that a user's private data is completely isolated and accessible only to them.
- *
- * Data Structure:
- * All user-specific data is stored in a top-level `users` collection. Each user is represented
- * by a single document whose ID is the user's Firebase Authentication UID.
- *   - /users/{userId} -> (User Document)
- *
- * Key Security Decisions:
- * - User Enumeration is Prevented: Listing the top-level `/users` collection is explicitly disallowed
- *   to prevent malicious actors from discovering the UIDs or usernames of other users.
- * - Strict Ownership: All operations (read, create, update, delete) on a user document are
- *   strictly limited to the authenticated user who owns that document.
- * - Relational Integrity: On document creation and update, rules ensure that the internal `id` field
- *   of a user document matches the document's ID (the user's UID), preventing data inconsistencies.
- * - No Anonymous Write Access: Unauthenticated users have no write permissions anywhere in the database.
- *
- * Denormalization for Authorization:
- * This model does not require complex denormalization as it relies on a simple and performant
- * path-based ownership check (`request.auth.uid == userId`). The security rules do not need to
- * perform extra `get` or `exists` calls to other documents for authorization decisions.
- *
- * Structural Segregation:
- * The data structure is simple, with all data being private to the user. There is no mix of public
- * and private data, so segregation via separate collections is not necessary. The entire `/users`
- * collection is treated as a private data store.
- */
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-
-    // Helper Functions
-
-    /**
-     * Checks if a user is authenticated.
-     */
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    /**
-     * Checks if the currently authenticated user's UID matches the given userId.
-     * This is the primary function for enforcing document ownership.
-     */
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    /**
-     * Checks for ownership on an existing document. Used for safe updates and deletes.
-     * Denies requests that target non-existent documents, preventing unintended side-effects.
-     */
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
-    }
-
-    /**
-     * @description
-     *   Secures a user's profile document, containing authentication and profile details.
-     *   Access is strictly limited to the document owner. Listing the collection is disallowed.
-     * @path
-     *   /users/{userId}
-     * @allow
-     *   (create): An authenticated user (uid: 'user123') can create their own document at `/users/user123`.
-     *   (get): An authenticated user (uid: 'user123') can read their own document at `/users/user123`.
-     * @deny
-     *   (get): An authenticated user (uid: 'user123') cannot read another user's document at `/users/user456`.
-     *   (list): Any user, authenticated or not, cannot list the documents in the `/users` collection.
-     *   (update): An authenticated user (uid: 'user123') cannot update the `id` field of their document.
-     * @principle
-     *   Restricts access to a user's own data tree. It also validates relational integrity by ensuring
-     *   the document's internal `id` field matches the `userId` in the path, and that this ID is immutable.
-     */
+// Rules for the 'users' collection
     match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow list: if false;
-      allow create: if isOwner(userId) && request.resource.data.id == userId;
-      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
-      allow delete: if isExistingOwner(userId);
+      // Allow the owner to read/write their own profile immediately
+      allow read, write: if isOwner(userId);
+      
+      // Separate check for Admins
+      allow read, write: if isAdmin();
+
+      // Rules for the 'applications' subcollection
+      match /applications/{applicationId} {
+        // Explicitly grant 'list' and 'get' to the owner
+        allow read, list, write, delete: if isOwner(userId);
+        
+        // Explicitly grant all to admins
+        allow read, list, write, delete: if isAdmin();
+      }
     }
-  }
-}
