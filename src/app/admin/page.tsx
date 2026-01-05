@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2, FolderKanban, Users, Activity, FileCheck2 } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore, type WithId } from '@/firebase';
-import { collection, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { collection, onSnapshot, Unsubscribe, Timestamp } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './applications/components/AdminApplicationsTable';
@@ -24,7 +24,7 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     if (isAdminLoading || !firestore || !isAdmin) {
-      setIsLoadingApps(false);
+      if (!isAdminLoading) setIsLoadingApps(false);
       return;
     }
     
@@ -38,38 +38,50 @@ export default function AdminDashboardPage() {
         applicationListeners = [];
 
         let allApps: (Application & FormValues)[] = [];
-        let pending = usersSnapshot.docs.length;
-        if(pending === 0) {
+        let pendingUserCollections = usersSnapshot.docs.length;
+        
+        if (pendingUserCollections === 0) {
           setAllApplications([]);
           setIsLoadingApps(false);
           return;
         }
 
+        const appUpdateCallback = () => {
+            setAllApplications([...allApps]); // Create a new array reference
+            // Only stop loading when all have been processed at least once
+            if (pendingUserCollections === 0) {
+                setIsLoadingApps(false);
+            }
+        };
+
         usersSnapshot.docs.forEach(userDoc => {
           const appsRef = collection(firestore, `users/${userDoc.id}/applications`);
           const appsListener = onSnapshot(appsRef, 
             (appsSnapshot) => {
-              appsSnapshot.docs.forEach(appDoc => {
-                 const appData = { id: appDoc.id, ...appDoc.data() } as Application & FormValues;
+              appsSnapshot.docChanges().forEach((change) => {
+                const appData = { id: change.doc.id, ...change.doc.data() } as Application & FormValues;
                 const index = allApps.findIndex(a => a.id === appData.id);
-                if (index > -1) {
-                  allApps[index] = appData;
-                } else {
-                  allApps.push(appData);
+
+                if (change.type === "removed") {
+                    if (index > -1) allApps.splice(index, 1);
+                } else { // 'added' or 'modified'
+                    if (index > -1) {
+                      allApps[index] = appData;
+                    } else {
+                      allApps.push(appData);
+                    }
                 }
               });
-              
-              pending--;
-              if (pending <= 0) {
-                 setAllApplications([...allApps]);
-                 setIsLoadingApps(false);
-              }
+
+              if(pendingUserCollections > 0) pendingUserCollections--;
+              appUpdateCallback();
             },
             (err) => {
               const permissionError = new FirestorePermissionError({ path: `users/${userDoc.id}/applications`, operation: 'list' });
-              setError(permissionError);
-              errorEmitter.emit('permission-error', permissionError);
-              setIsLoadingApps(false);
+              setError(permissionError); // Set local error for UI
+              errorEmitter.emit('permission-error', permissionError); // Emit global error
+              if(pendingUserCollections > 0) pendingUserCollections--;
+              if(pendingUserCollections === 0) setIsLoadingApps(false);
             }
           );
           applicationListeners.push(appsListener);
@@ -77,8 +89,8 @@ export default function AdminDashboardPage() {
       },
       (err) => {
         const permissionError = new FirestorePermissionError({ path: 'users', operation: 'list' });
-        setError(permissionError);
-        errorEmitter.emit('permission-error', permissionError);
+        setError(permissionError); // Set local error for UI
+        errorEmitter.emit('permission-error', permissionError); // Emit global error
         setIsLoadingApps(false);
       }
     );
@@ -104,8 +116,8 @@ export default function AdminDashboardPage() {
     if (!allApplications) return [];
     return [...allApplications]
       .sort((a, b) => {
-        const timeA = a.lastUpdated ? (a.lastUpdated as any).toMillis() : 0;
-        const timeB = b.lastUpdated ? (b.lastUpdated as any).toMillis() : 0;
+        const timeA = a.lastUpdated ? (a.lastUpdated as Timestamp).toMillis() : 0;
+        const timeB = b.lastUpdated ? (b.lastUpdated as Timestamp).toMillis() : 0;
         return timeB - timeA;
       })
       .slice(0, 5);

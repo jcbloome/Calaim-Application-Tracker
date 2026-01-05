@@ -65,7 +65,7 @@ export default function AdminStatisticsPage() {
 
   useEffect(() => {
     if (isAdminLoading || !firestore || !isAdmin) {
-        setIsLoading(false);
+        if (!isAdminLoading) setIsLoading(false);
         return;
     };
 
@@ -79,38 +79,50 @@ export default function AdminStatisticsPage() {
         applicationListeners = [];
 
         let allApps: Application[] = [];
-        let pending = usersSnapshot.docs.length;
-        if(pending === 0) {
+        let pendingUserCollections = usersSnapshot.docs.length;
+        
+        if (pendingUserCollections === 0) {
             setApplications([]);
             setIsLoading(false);
             return;
         }
 
+        const appUpdateCallback = () => {
+            setApplications([...allApps]); // Create a new array reference
+            // Only stop loading when all have been processed at least once
+            if (pendingUserCollections === 0) {
+                setIsLoading(false);
+            }
+        };
+
         usersSnapshot.docs.forEach(userDoc => {
           const appsRef = collection(firestore, `users/${userDoc.id}/applications`);
           const appsListener = onSnapshot(appsRef, 
             (appsSnapshot) => {
-              appsSnapshot.docs.forEach(appDoc => {
-                const appData = { id: appDoc.id, ...appDoc.data() } as Application;
+              appsSnapshot.docChanges().forEach((change) => {
+                const appData = { id: change.doc.id, ...change.doc.data() } as Application;
                 const index = allApps.findIndex(a => a.id === appData.id);
-                if (index > -1) {
-                  allApps[index] = appData;
-                } else {
-                  allApps.push(appData);
+
+                if (change.type === "removed") {
+                    if (index > -1) allApps.splice(index, 1);
+                } else { // 'added' or 'modified'
+                    if (index > -1) {
+                      allApps[index] = appData;
+                    } else {
+                      allApps.push(appData);
+                    }
                 }
               });
 
-              pending--;
-              if (pending <= 0) {
-                setApplications([...allApps]);
-                setIsLoading(false);
-              }
+              if(pendingUserCollections > 0) pendingUserCollections--;
+              appUpdateCallback();
             },
             (err) => {
               const permissionError = new FirestorePermissionError({ path: `users/${userDoc.id}/applications`, operation: 'list' });
-              setError(permissionError);
-              errorEmitter.emit('permission-error', permissionError);
-              setIsLoading(false);
+              setError(permissionError); // Set local error for UI
+              errorEmitter.emit('permission-error', permissionError); // Emit global error
+              if(pendingUserCollections > 0) pendingUserCollections--;
+              if(pendingUserCollections === 0) setIsLoading(false);
             }
           );
           applicationListeners.push(appsListener);
@@ -118,8 +130,8 @@ export default function AdminStatisticsPage() {
       },
       (err) => {
         const permissionError = new FirestorePermissionError({ path: 'users', operation: 'list' });
-        setError(permissionError);
-        errorEmitter.emit('permission-error', permissionError);
+        setError(permissionError); // Set local error for UI
+        errorEmitter.emit('permission-error', permissionError); // Emit global error
         setIsLoading(false);
       }
     );

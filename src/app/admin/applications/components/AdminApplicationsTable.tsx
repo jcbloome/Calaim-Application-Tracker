@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -218,7 +219,7 @@ export const AdminApplicationsTable = ({
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={7} className="h-24 text-center">
+              <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
                 Loading applications...
               </TableCell>
             </TableRow>

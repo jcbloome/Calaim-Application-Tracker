@@ -62,7 +62,7 @@ export default function AdminApplicationsPage() {
 
   useEffect(() => {
     if (!firestore || !isAdmin) {
-      setIsLoading(false);
+      if (!isAdminLoading) setIsLoading(false);
       return;
     }
 
@@ -72,45 +72,55 @@ export default function AdminApplicationsPage() {
 
     const usersListener = onSnapshot(usersRef, 
       (usersSnapshot) => {
-        // Unsubscribe from old application listeners
+        // Unsubscribe from old application listeners to prevent leaks
         applicationListeners.forEach(unsub => unsub());
         applicationListeners = [];
         
         let allApps: (Application & FormValues)[] = [];
-        let pending = usersSnapshot.docs.length;
-        if (pending === 0) {
+        let pendingUserCollections = usersSnapshot.docs.length;
+        
+        if (pendingUserCollections === 0) {
             setAllApplications([]);
             setIsLoading(false);
             return;
         }
 
+        const appUpdateCallback = () => {
+            setAllApplications([...allApps]); // Create a new array reference
+            // Only stop loading when all have been processed at least once
+            if (pendingUserCollections === 0) {
+                setIsLoading(false);
+            }
+        };
+
         usersSnapshot.docs.forEach((userDoc) => {
           const appsRef = collection(firestore, `users/${userDoc.id}/applications`);
           const appsListener = onSnapshot(appsRef, 
             (appsSnapshot) => {
-              appsSnapshot.docs.forEach(appDoc => {
-                const appData = { id: appDoc.id, ...appDoc.data() } as Application & FormValues;
-                // Replace or add new app data
+              appsSnapshot.docChanges().forEach((change) => {
+                const appData = { id: change.doc.id, ...change.doc.data() } as Application & FormValues;
                 const index = allApps.findIndex(a => a.id === appData.id);
-                if (index > -1) {
-                  allApps[index] = appData;
-                } else {
-                  allApps.push(appData);
+
+                if (change.type === "removed") {
+                    if (index > -1) allApps.splice(index, 1);
+                } else { // 'added' or 'modified'
+                    if (index > -1) {
+                      allApps[index] = appData;
+                    } else {
+                      allApps.push(appData);
+                    }
                 }
               });
-
-              // When all user application collections have been processed for the first time
-              pending--;
-              if (pending === 0) {
-                  setAllApplications([...allApps]); // Create a new array reference to trigger re-render
-                  setIsLoading(false);
-              }
+              
+              if(pendingUserCollections > 0) pendingUserCollections--;
+              appUpdateCallback();
             },
             (err) => {
                 const permissionError = new FirestorePermissionError({ path: `users/${userDoc.id}/applications`, operation: 'list' });
-                setError(permissionError);
-                errorEmitter.emit('permission-error', permissionError);
-                setIsLoading(false);
+                setError(permissionError); // Set local error for UI
+                errorEmitter.emit('permission-error', permissionError); // Emit global error
+                if(pendingUserCollections > 0) pendingUserCollections--;
+                if (pendingUserCollections === 0) setIsLoading(false);
             }
           );
           applicationListeners.push(appsListener);
@@ -118,8 +128,8 @@ export default function AdminApplicationsPage() {
       },
       (err) => {
         const permissionError = new FirestorePermissionError({ path: 'users', operation: 'list' });
-        setError(permissionError);
-        errorEmitter.emit('permission-error', permissionError);
+        setError(permissionError); // Set local error for UI
+        errorEmitter.emit('permission-error', permissionError); // Emit global error
         setIsLoading(false);
       }
     );
@@ -128,7 +138,7 @@ export default function AdminApplicationsPage() {
       usersListener();
       applicationListeners.forEach(unsub => unsub());
     };
-  }, [firestore, isAdmin]);
+  }, [firestore, isAdmin, isAdminLoading]);
 
 
   const handleSelectionChange = (id: string, checked: boolean) => {
@@ -154,8 +164,7 @@ export default function AdminApplicationsPage() {
         title: 'Applications Deleted',
         description: `${selected.length} application(s) have been successfully deleted.`,
       });
-      setAllApplications(prev => prev.filter(app => !selected.includes(app.id)));
-      setSelected([]);
+      setSelected([]); // This will clear checkboxes, the onSnapshot will update the table
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -175,7 +184,7 @@ export default function AdminApplicationsPage() {
             <CardTitle>All Applications</CardTitle>
             <CardDescription>Browse and manage all applications submitted to the platform.</CardDescription>
           </div>
-           {selected.length > 0 && (
+           {selected.length > 0 && isSuperAdmin && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                     <Button variant="destructive">
@@ -204,8 +213,8 @@ export default function AdminApplicationsPage() {
           <AdminApplicationsTable 
             applications={allApplications || []} 
             isLoading={isLoading || isAdminLoading}
-            onSelectionChange={handleSelectionChange}
-            selected={selected}
+            onSelectionChange={isSuperAdmin ? handleSelectionChange : undefined}
+            selected={isSuperAdmin ? selected : undefined}
           />
         </CardContent>
       </Card>

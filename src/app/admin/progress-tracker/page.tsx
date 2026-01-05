@@ -4,7 +4,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore } from '@/firebase';
-import { collection, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { collection, onSnapshot, Unsubscribe, Timestamp } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -81,7 +81,7 @@ export default function ProgressTrackerPage() {
 
   useEffect(() => {
     if (isAdminLoading || !firestore || !isAdmin) {
-        setIsLoading(false);
+        if (!isAdminLoading) setIsLoading(false);
         return;
     }
 
@@ -95,38 +95,50 @@ export default function ProgressTrackerPage() {
         applicationListeners = [];
 
         let allApps: Application[] = [];
-        let pending = usersSnapshot.docs.length;
-        if (pending === 0) {
+        let pendingUserCollections = usersSnapshot.docs.length;
+        
+        if (pendingUserCollections === 0) {
           setApplications([]);
           setIsLoading(false);
           return;
         }
+
+        const appUpdateCallback = () => {
+            setApplications([...allApps]); // Create a new array reference
+            // Only stop loading when all have been processed at least once
+            if (pendingUserCollections === 0) {
+                setIsLoading(false);
+            }
+        };
         
         usersSnapshot.docs.forEach((userDoc) => {
           const appsRef = collection(firestore, `users/${userDoc.id}/applications`);
           const appsListener = onSnapshot(appsRef,
             (appsSnapshot) => {
-              appsSnapshot.forEach(appDoc => {
-                const appData = { id: appDoc.id, ...appDoc.data() } as Application;
+              appsSnapshot.docChanges().forEach((change) => {
+                const appData = { id: change.doc.id, ...change.doc.data() } as Application;
                 const index = allApps.findIndex(a => a.id === appData.id);
-                if (index > -1) {
-                  allApps[index] = appData;
-                } else {
-                  allApps.push(appData);
+
+                if (change.type === "removed") {
+                    if (index > -1) allApps.splice(index, 1);
+                } else { // 'added' or 'modified'
+                    if (index > -1) {
+                      allApps[index] = appData;
+                    } else {
+                      allApps.push(appData);
+                    }
                 }
               });
 
-              pending--;
-              if (pending <= 0) {
-                setApplications([...allApps]);
-                setIsLoading(false);
-              }
+              if(pendingUserCollections > 0) pendingUserCollections--;
+              appUpdateCallback();
             },
             (err) => {
                 const permissionError = new FirestorePermissionError({ path: `users/${userDoc.id}/applications`, operation: 'list' });
-                setError(permissionError);
-                errorEmitter.emit('permission-error', permissionError);
-                setIsLoading(false);
+                setError(permissionError); // Set local error for UI
+                errorEmitter.emit('permission-error', permissionError); // Emit global error
+                if(pendingUserCollections > 0) pendingUserCollections--;
+                if(pendingUserCollections === 0) setIsLoading(false);
             }
           );
           applicationListeners.push(appsListener);
@@ -134,8 +146,8 @@ export default function ProgressTrackerPage() {
       },
       (err) => {
         const permissionError = new FirestorePermissionError({ path: 'users', operation: 'list' });
-        setError(permissionError);
-        errorEmitter.emit('permission-error', permissionError);
+        setError(permissionError); // Set local error for UI
+        errorEmitter.emit('permission-error', permissionError); // Emit global error
         setIsLoading(false);
       }
     );
@@ -157,8 +169,8 @@ export default function ProgressTrackerPage() {
     if (!applications) return [];
     
     const sorted = [...applications].sort((a, b) => {
-        const timeA = a.lastUpdated ? (a.lastUpdated as any).toMillis() : 0;
-        const timeB = b.lastUpdated ? (b.lastUpdated as any).toMillis() : 0;
+        const timeA = a.lastUpdated ? (a.lastUpdated as Timestamp).toMillis() : 0;
+        const timeB = b.lastUpdated ? (b.lastUpdated as Timestamp).toMillis() : 0;
         return timeB - timeA;
     });
 
