@@ -14,6 +14,10 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
     }
+    
+    function isSuperAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid));
+    }
 
     // --- RULES ---
 
@@ -38,10 +42,9 @@ service cloud.firestore {
     }
     
     // System settings can be read by any signed-in user, but only modified by super admins
-    // (In this setup, super admins will manage this from the UI, so direct writes are restricted).
     match /system_settings/{docId} {
         allow get: if isSignedIn();
-        allow list, write, delete: if false; // Managed via server-side logic if needed.
+        allow list, write, delete: if isSuperAdmin();
     }
 
     // Role documents can only be read by the user they belong to.
@@ -49,13 +52,13 @@ service cloud.firestore {
     match /roles_admin/{userId} {
       allow get: if isOwner(userId);
       // Writes should be managed by a secure backend or super admin UI.
-      allow list, write, create, update, delete: if false;
+      allow list, create, update, delete: if isSuperAdmin();
     }
     
     match /roles_super_admin/{userId} {
       allow get: if isOwner(userId);
       // Writes should be managed by a secure backend or super admin UI.
-      allow list, write, create, update, delete: if false;
+      allow list, create, update, delete: if isSuperAdmin();
     }
   }
 }
