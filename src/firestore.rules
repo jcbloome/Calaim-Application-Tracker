@@ -142,7 +142,7 @@ service cloud.firestore {
 
     // This rule allows collection group queries on 'applications' for admins.
     match /{path=**}/applications/{applicationId} {
-      allow read, write: if isAdmin() || isSuperAdmin();
+      allow get: if isAdmin() || isSuperAdmin();
     }
 
     /**
@@ -236,3 +236,5 @@ service cloud.firestore {
     }
   }
 }
+
+    
