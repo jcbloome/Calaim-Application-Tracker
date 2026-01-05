@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -23,35 +24,36 @@ export function useAdmin(): AdminStatus {
 
   useEffect(() => {
     if (isUserLoading) {
-      // If the user object itself is loading, we must wait.
-      // Set role loading to true as well, as we can't check roles without a user.
       setIsRoleLoading(true);
       return;
     }
 
     if (!user) {
-      // If there is no user, they definitely have no roles. We are done loading.
       setRoles({ isAdmin: false, isSuperAdmin: false });
       setIsRoleLoading(false);
       return;
     }
     
+    // --- TEMPORARY HARDCODE ---
+    if (user.email === 'jason@carehomefinders.com') {
+        setRoles({ isAdmin: true, isSuperAdmin: true });
+        setIsRoleLoading(false);
+        return;
+    }
+    // --- END TEMPORARY HARDCODE ---
+    
     if (!firestore) {
-      // If firestore isn't ready, we also can't proceed.
-      // This might happen on initial load.
-      setIsRoleLoading(false); // Can't load roles, so stop loading.
+      setIsRoleLoading(false); 
       return;
     }
 
     let isMounted = true;
     const checkRoles = async () => {
-      // Start the role checking process, so set loading to true.
       setIsRoleLoading(true);
       try {
         const adminRef = doc(firestore, 'roles_admin', user.uid);
         const superAdminRef = doc(firestore, 'roles_super_admin', user.uid);
 
-        // Fetch both role documents concurrently.
         const [adminSnap, superAdminSnap] = await Promise.all([
           getDoc(adminRef),
           getDoc(superAdminRef),
@@ -59,7 +61,6 @@ export function useAdmin(): AdminStatus {
 
         if (isMounted) {
           const hasSuperAdminRole = superAdminSnap.exists();
-          // An admin is someone in either roles_admin or roles_super_admin.
           const hasAdminRole = adminSnap.exists() || hasSuperAdminRole;
           
           setRoles({
@@ -73,7 +74,6 @@ export function useAdmin(): AdminStatus {
           setRoles({ isAdmin: false, isSuperAdmin: false });
         }
       } finally {
-        // No matter the outcome, role checking is complete.
         if (isMounted) {
           setIsRoleLoading(false);
         }
@@ -83,16 +83,25 @@ export function useAdmin(): AdminStatus {
     checkRoles();
 
     return () => {
-      // Cleanup function to prevent state updates on an unmounted component.
       isMounted = false;
     };
   }, [user, isUserLoading, firestore]);
+
+  // --- TEMPORARY HARDCODE FOR RETURN ---
+  if (user?.email === 'jason@carehomefinders.com') {
+    return {
+        user,
+        isAdmin: true,
+        isSuperAdmin: true,
+        isLoading: false,
+    }
+  }
+  // --- END TEMPORARY HARDCODE ---
 
   return {
     user,
     isAdmin: roles.isAdmin,
     isSuperAdmin: roles.isSuperAdmin,
-    // The overall loading state is true if either the user is loading OR the roles are loading.
     isLoading: isUserLoading || isRoleLoading,
   };
 }
