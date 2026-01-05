@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -10,6 +9,7 @@ import { Header } from '@/components/Header';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Beaker } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { errorEmitter, FirestorePermissionError } from '@/firebase';
 
 export default function TestFirestorePage() {
   const firestore = useFirestore();
@@ -32,35 +32,42 @@ export default function TestFirestorePage() {
     setIsLoading(true);
     setResult(null);
 
-    try {
-      const testCollectionRef = collection(firestore, 'test_writes');
-      const newDocRef = await addDoc(testCollectionRef, {
+    const testCollectionRef = collection(firestore, 'test_writes');
+    const dataToWrite = {
         uid: user.uid,
         email: user.email,
         timestamp: serverTimestamp(),
         message: 'This is a test write from the application.',
-      });
+      };
 
-      const successMessage = `Successfully wrote a document to Firestore with ID: ${newDocRef.id}`;
-      setResult({ type: 'success', message: successMessage });
-      toast({
-        title: 'Write Successful!',
-        description: successMessage,
-      });
+    // Use .catch() for contextual error handling instead of try/catch
+    addDoc(testCollectionRef, dataToWrite)
+      .then((newDocRef) => {
+        const successMessage = `Successfully wrote a document to Firestore with ID: ${newDocRef.id}`;
+        setResult({ type: 'success', message: successMessage });
+        toast({
+          title: 'Write Successful!',
+          description: successMessage,
+        });
+        setIsLoading(false);
+      })
+      .catch((error) => {
+        // This is the crucial part: create and emit the contextual error.
+        const permissionError = new FirestorePermissionError({
+          path: testCollectionRef.path,
+          operation: 'create',
+          requestResourceData: dataToWrite
+        });
 
-    } catch (error: any) {
-      // This will catch any error, including permission errors from security rules
-      const errorMessage = `An error occurred: ${error.message}`;
-      setResult({ type: 'error', message: errorMessage });
-      toast({
-        variant: 'destructive',
-        title: 'Write Failed',
-        description: errorMessage,
+        // The FirebaseErrorListener will throw this error, causing the Next.js
+        // error overlay to appear with detailed information.
+        errorEmitter.emit('permission-error', permissionError);
+
+        // Also update local UI state if needed, though the overlay is the primary feedback
+        const errorMessage = `An error occurred: ${error.message}`;
+        setResult({ type: 'error', message: errorMessage });
+        setIsLoading(false);
       });
-      console.error("Firestore write test failed:", error);
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   return (
