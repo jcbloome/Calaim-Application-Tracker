@@ -24,32 +24,29 @@ export function useAdmin(): AdminStatus {
 
   useEffect(() => {
     if (isUserLoading) {
+      // If user auth state is loading, role loading must also wait.
       setIsRoleLoading(true);
       return;
     }
 
     if (!user) {
+      // No user, so no roles to check. Loading is finished.
       setRoles({ isAdmin: false, isSuperAdmin: false });
       setIsRoleLoading(false);
       return;
     }
     
-    // --- TEMPORARY HARDCODE ---
-    if (user.email === 'jason@carehomefinders.com') {
-        setRoles({ isAdmin: true, isSuperAdmin: true });
-        setIsRoleLoading(false);
-        return;
-    }
-    // --- END TEMPORARY HARDCODE ---
-    
     if (!firestore) {
-      setIsRoleLoading(false); 
+      // Firestore not ready, can't check roles yet.
+      setIsRoleLoading(true);
       return;
     }
 
     let isMounted = true;
     const checkRoles = async () => {
-      setIsRoleLoading(true);
+      // Start loading roles for the current user.
+      if (isMounted) setIsRoleLoading(true);
+
       try {
         const adminRef = doc(firestore, 'roles_admin', user.uid);
         const superAdminRef = doc(firestore, 'roles_super_admin', user.uid);
@@ -61,6 +58,7 @@ export function useAdmin(): AdminStatus {
 
         if (isMounted) {
           const hasSuperAdminRole = superAdminSnap.exists();
+          // An admin is either in the admin role OR the super admin role.
           const hasAdminRole = adminSnap.exists() || hasSuperAdminRole;
           
           setRoles({
@@ -74,6 +72,7 @@ export function useAdmin(): AdminStatus {
           setRoles({ isAdmin: false, isSuperAdmin: false });
         }
       } finally {
+        // Finished checking roles.
         if (isMounted) {
           setIsRoleLoading(false);
         }
@@ -87,21 +86,12 @@ export function useAdmin(): AdminStatus {
     };
   }, [user, isUserLoading, firestore]);
 
-  // --- TEMPORARY HARDCODE FOR RETURN ---
-  if (user?.email === 'jason@carehomefinders.com') {
-    return {
-        user,
-        isAdmin: true,
-        isSuperAdmin: true,
-        isLoading: false,
-    }
-  }
-  // --- END TEMPORARY HARDCODE ---
-
   return {
     user,
+    // Return final role status
     isAdmin: roles.isAdmin,
     isSuperAdmin: roles.isSuperAdmin,
+    // The overall loading state is true if either the user is loading OR role-checking is in progress.
     isLoading: isUserLoading || isRoleLoading,
   };
 }
