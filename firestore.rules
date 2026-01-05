@@ -12,11 +12,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      // Memoize the result of the exists() call for efficiency within a single request
-      return isSignedIn() && (
-        resource.data.get('isAdmin', false) == true || // For future use
-        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid))
-      );
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
     }
 
     function isSuperAdmin() {
@@ -25,15 +21,21 @@ service cloud.firestore {
 
     // --- RULES ---
 
-    // User documents can be read/written by their owner or any admin.
+    // This rule is CRITICAL for the admin dashboard.
+    // It allows a user with an 'admin' role to query the 'applications' collection group.
+    match /{path=**}/applications/{applicationId} {
+      allow list: if isAdmin();
+    }
+
+    // User-specific rules.
     match /users/{userId} {
       allow read, write: if isOwner(userId) || isAdmin();
 
-      // Applications can be read/listed/written by their owner or any admin.
+      // Application rules for owners and admins.
       match /applications/{applicationId} {
-        allow read, list, write, delete: if isOwner(userId) || isAdmin();
+        allow read, write, delete: if isOwner(userId) || isAdmin();
 
-        // Staff trackers are restricted to admins only.
+        // Staff trackers are restricted to admins.
         match /staffTrackers/{trackerId} {
           allow read, list, write, delete: if isAdmin();
         }
@@ -52,16 +54,13 @@ service cloud.firestore {
     }
 
     // Role documents can only be read by the user they belong to, or by a super admin.
-    // This prevents users from listing all admins, but allows the useAdmin hook to function correctly.
     match /roles_admin/{userId} {
       allow get: if isOwner(userId) || isSuperAdmin();
-      // Writes should be managed by a secure backend or the super admin UI.
       allow list, create, update, delete: if isSuperAdmin();
     }
     
     match /roles_super_admin/{userId} {
       allow get: if isOwner(userId) || isSuperAdmin();
-      // Writes should be managed by a secure backend or the super admin UI.
       allow list, create, update, delete: if isSuperAdmin();
     }
   }
