@@ -25,7 +25,7 @@ import {
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useAdmin } from '@/hooks/use-admin';
-import { errorEmitter, FirestorePermissionError } from '@/firebase';
+import { errorEmitter, FirestorePermissionError } from '@/firebase/error-emitter';
 
 
 const StatCard = ({ title, children, borderColor }: { title: string, children: React.ReactNode, borderColor?: string }) => (

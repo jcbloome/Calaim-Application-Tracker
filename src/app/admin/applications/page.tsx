@@ -23,7 +23,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useAdmin } from '@/hooks/use-admin';
-import { errorEmitter, FirestorePermissionError } from '@/firebase';
+import { errorEmitter, FirestorePermissionError } from '@/firebase/error-emitter';
 
 
 function AuthDebugPanel() {

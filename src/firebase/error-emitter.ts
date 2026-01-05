@@ -1,5 +1,6 @@
+
 'use client';
-import { FirestorePermissionError } from '@/firebase/errors';
+import { FirestorePermissionError } from './errors';
 
 /**
  * Defines the shape of all possible events and their corresponding payload types.
