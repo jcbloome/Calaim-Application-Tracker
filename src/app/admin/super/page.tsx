@@ -168,7 +168,7 @@ export default function SuperAdminPage() {
     const { data: allApplications, isLoading: isLoadingApplications } = useCollection<Application & FormValues>(applicationsQuery);
     
     const fetchAllStaff = async () => {
-        if (!firestore) return;
+        if (!firestore || !currentUser) return;
         setIsLoadingStaff(true);
         try {
             const usersCollectionRef = collection(firestore, 'users');
@@ -196,8 +196,28 @@ export default function SuperAdminPage() {
 
             const allStaffIds = new Set([...adminIds, ...superAdminIds]);
             const staff: StaffMember[] = [];
+            
+            // Manually add the hardcoded admin if they are logged in but not yet in the roles collections
+            if (currentUser.email === 'jason@carehomefinders.com' && !allStaffIds.has(currentUser.uid)) {
+                 const isSuper = superAdminIds.has(currentUser.uid);
+                 const userDoc = users.get(currentUser.uid);
+                 staff.push({
+                    uid: currentUser.uid,
+                    firstName: userDoc?.firstName || 'Jason',
+                    lastName: userDoc?.lastName || 'Carefinder',
+                    email: currentUser.email,
+                    role: isSuper ? 'Super Admin' : 'Admin',
+                 });
+                 // Also ensure the hardcoded user is considered an 'adminId' for processing below
+                 allStaffIds.add(currentUser.uid);
+            }
 
             allStaffIds.forEach(uid => {
+                 // Avoid duplicating the hardcoded admin user
+                if (uid === currentUser.uid && currentUser.email === 'jason@carehomefinders.com' && staff.some(s => s.uid === uid)) {
+                    return;
+                }
+
                 const userData = users.get(uid);
                 if (userData && (adminIds.has(uid) || superAdminIds.has(uid))) {
                     staff.push({
@@ -241,7 +261,7 @@ export default function SuperAdminPage() {
             fetchAllStaff();
             fetchNotificationRecipients();
         }
-    }, [firestore, isSuperAdmin, isAdmin, isAdminLoading]);
+    }, [firestore, isSuperAdmin, isAdmin, isAdminLoading, currentUser]);
 
     const handleAddStaff = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -709,3 +729,5 @@ export default function SuperAdminPage() {
         </div>
     );
 }
+
+    
