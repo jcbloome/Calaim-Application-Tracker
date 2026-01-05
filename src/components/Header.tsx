@@ -91,11 +91,8 @@ export function Header() {
             </div>
           ) : (
             <div className="flex items-center gap-2">
-                <Button variant="ghost" asChild>
-                    <Link href="/login"><LogIn className="mr-2 h-4 w-4" />Login</Link>
-                </Button>
                 <Button asChild>
-                    <Link href="/signup"><UserPlus className="mr-2 h-4 w-4" />Sign Up</Link>
+                    <Link href="/login"><LogIn className="mr-2 h-4 w-4" />Login</Link>
                 </Button>
             </div>
           )}
@@ -140,9 +137,6 @@ export function Header() {
                                 <div className="flex flex-col gap-4">
                                     <Button asChild className="w-full">
                                         <Link href="/login" onClick={() => setSheetOpen(false)}><LogIn className="mr-2 h-4 w-4" />Login</Link>
-                                    </Button>
-                                    <Button asChild variant="outline" className="w-full">
-                                        <Link href="/signup" onClick={() => setSheetOpen(false)}><UserPlus className="mr-2 h-4 w-4" />Sign Up</Link>
                                     </Button>
                                 </div>
                             )}

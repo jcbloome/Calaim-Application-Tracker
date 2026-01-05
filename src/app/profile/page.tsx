@@ -30,26 +30,28 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // This effect handles redirection logic based on user status.
     const loading = isUserLoading || isAdminLoading;
     if (loading) {
-      return; // Do nothing while loading.
+      return; // Wait until all auth checks are done
     }
 
     if (!user) {
-      router.push('/login'); // If no user, send to login.
-    } else if (isAdmin || isSuperAdmin) {
-      router.push('/admin'); // CRITICAL FIX: If user is an admin, redirect them away from this page.
+      router.push('/login'); // Not logged in, go to login
+      return;
     }
-  }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
 
-  useEffect(() => {
+    if (isAdmin || isSuperAdmin) {
+      router.push('/admin'); // If user is admin, redirect them away from user profile
+      return;
+    }
+    
+    // If we are here, user is a regular user, so populate their data
     if (user?.displayName) {
       const nameParts = user.displayName.split(' ');
       setFirstName(nameParts[0] || '');
       setLastName(nameParts.slice(1).join(' ') || '');
     }
-  }, [user]);
+  }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,9 +117,6 @@ export default function ProfilePage() {
       setLastName(value);
   };
 
-  // This is the loading state / redirect guard.
-  // It will show a loader until the user/admin status is confirmed,
-  // at which point the useEffect above will trigger any necessary redirects.
   if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
     return (
         <div className="flex items-center justify-center h-screen">
@@ -127,7 +126,6 @@ export default function ProfilePage() {
     );
   }
 
-  // This JSX will only be rendered if the user is loaded, is not an admin, and exists.
   return (
     <>
       <Header />
