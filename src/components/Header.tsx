@@ -4,7 +4,6 @@
 import Link from 'next/link';
 import { LogOut, User, Menu, UserCog, Shield, LogIn, UserPlus } from 'lucide-react';
 import { Button } from './ui/button';
-import { useUser } from '@/firebase';
 import { useAuth } from '@/firebase/provider';
 import {
   DropdownMenu,
@@ -18,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet';
 import { useState } from 'react';
 import Image from 'next/image';
+import { useAdmin } from '@/hooks/use-admin';
 
 const navLinks = [
     { href: "/info", label: "Program Information" },
@@ -27,7 +27,7 @@ const navLinks = [
 ];
 
 export function Header() {
-  const { user, isUserLoading } = useUser();
+  const { user, isUserLoading, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const auth = useAuth();
   const router = useRouter();
   const [isSheetOpen, setSheetOpen] = useState(false);
@@ -36,8 +36,11 @@ export function Header() {
     if (auth) {
         await auth.signOut();
     }
-    router.push('/');
+    // After signing out, always return to the public home page.
+    window.location.href = '/';
   };
+
+  const showUserSession = !isUserLoading && !isAdminLoading && user && !isAdmin && !isSuperAdmin;
 
   return (
     <header className="bg-card/80 backdrop-blur-sm border-b sticky top-0 z-40">
@@ -54,14 +57,14 @@ export function Header() {
         </Link>
         <nav className="hidden md:flex items-center gap-2">
             {navLinks.map(link => (
-                <Button key={link.href} variant="ghost" asChild>
+                 <Button key={link.href} variant="ghost" asChild>
                     <Link href={link.href}>{link.label}</Link>
                 </Button>
             ))}
 
-           {isUserLoading ? (
+           {(isUserLoading || isAdminLoading) ? (
             <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
-          ) : user ? (
+          ) : showUserSession ? (
             <div className='flex items-center gap-2'>
              <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -118,9 +121,9 @@ export function Header() {
                             ))}
                         </nav>
                         <div className="mt-auto border-t pt-6">
-                             {isUserLoading ? (
+                             {(isUserLoading || isAdminLoading) ? (
                                 <div className="h-10 w-full rounded-md bg-muted animate-pulse" />
-                            ) : user ? (
+                            ) : showUserSession ? (
                                 <div className="flex flex-col gap-4">
                                      <p className="text-sm text-muted-foreground text-center truncate">{user.displayName || user.email}</p>
                                       <Button onClick={() => { router.push('/profile'); setSheetOpen(false); }} variant="outline" className="w-full">

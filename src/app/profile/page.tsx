@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -13,9 +12,12 @@ import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
 import { Loader2, UserCog } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useAdmin } from '@/hooks/use-admin';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function ProfilePage() {
   const { user, isUserLoading } = useUser();
+  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const auth = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -27,10 +29,16 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // If not loading and there is no user, redirect to login.
     if (!isUserLoading && !user) {
       router.push('/login');
     }
-  }, [user, isUserLoading, router]);
+    // If user is determined to be an admin, they should not be on this page.
+    if (!isAdminLoading && (isAdmin || isSuperAdmin)) {
+      // Redirect admins away to avoid confusion. They have their own profile page.
+      router.push('/admin');
+    }
+  }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
 
   useEffect(() => {
     if (user?.displayName) {
@@ -106,7 +114,7 @@ export default function ProfilePage() {
       setLastName(formatted);
   };
 
-  if (isUserLoading || !user) {
+  if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
     return (
         <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin" />
