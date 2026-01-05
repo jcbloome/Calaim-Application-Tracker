@@ -1,5 +1,4 @@
 
-// VERSION 5 - FINAL ADMIN FIX
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -16,11 +15,11 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
     }
-
+    
     // --- COLLECTION GROUP RULES ---
-
-    // 5. Allow Admins to list ALL applications across all users.
-    // This is CRITICAL for the admin dashboard.
+    
+    // Rule to allow Admins to list ALL applications across ALL users.
+    // This is CRITICAL for the admin dashboard to function.
     match /{path=**}/applications/{applicationId} {
       allow list: if isAdmin();
     }
@@ -28,13 +27,15 @@ service cloud.firestore {
 
     // --- STANDARD RULES ---
 
-    // 1. User Documents: Allows owner access immediately to prevent login crashes
+    // 1. User Documents: Allows owner access immediately. Admins can also read/write user profiles.
     match /users/{userId} {
       allow read, write: if isOwner(userId) || isAdmin();
 
-      // 2. Applications: Let users manage their own applications.
+      // 2. Applications: Let users manage their own applications. Admins can also fully manage them.
+      // Note: The 'list' permission here is for listing apps for a SINGLE user.
+      // The collectionGroup rule above handles listing ALL apps.
       match /applications/{applicationId} {
-        allow read, list, write, delete: if isOwner(userId) || isAdmin();
+        allow read, write, delete: if isOwner(userId) || isAdmin();
 
         // 3. Staff Trackers: Restricts sensitive tracking data to admins only
         match /staffTrackers/{trackerId} {
@@ -43,13 +44,13 @@ service cloud.firestore {
       }
     }
 
-    // 4. Admin Role Verification: Managed via Firebase Console
+    // 4. Admin Role Verification: Only allow reading roles. Writing is managed via Firebase Console/server-side.
     match /roles_admin/{userId} {
       allow read: if isSignedIn();
       allow write: if false; 
     }
     
-    // Allow any signed-in user to write to the test collection
+    // Allow any signed-in user to perform all operations on the test collection.
     match /test_writes/{docId} {
         allow read, write: if isSignedIn();
     }
