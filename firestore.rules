@@ -1,5 +1,5 @@
 
-// VERSION 4 - RESTORED JAN 1ST LOGIC
+// VERSION 5 - FINAL ADMIN FIX
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -17,17 +17,24 @@ service cloud.firestore {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
     }
 
-    // --- RULES ---
+    // --- COLLECTION GROUP RULES ---
+
+    // 5. Allow Admins to list ALL applications across all users.
+    // This is CRITICAL for the admin dashboard.
+    match /{path=**}/applications/{applicationId} {
+      allow list: if isAdmin();
+    }
+
+
+    // --- STANDARD RULES ---
 
     // 1. User Documents: Allows owner access immediately to prevent login crashes
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
-      allow read, write: if isAdmin();
+      allow read, write: if isOwner(userId) || isAdmin();
 
-      // 2. Applications: Explicit 'list' permission for dashboard tables
+      // 2. Applications: Let users manage their own applications.
       match /applications/{applicationId} {
-        allow read, list, write, delete: if isOwner(userId);
-        allow read, list, write, delete: if isAdmin();
+        allow read, list, write, delete: if isOwner(userId) || isAdmin();
 
         // 3. Staff Trackers: Restricts sensitive tracking data to admins only
         match /staffTrackers/{trackerId} {
