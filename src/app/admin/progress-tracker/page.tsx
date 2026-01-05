@@ -13,6 +13,7 @@ import { Loader2, CheckCircle2, XCircle, Circle, Filter } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { useAdmin } from '@/hooks/use-admin';
 
 const trackedComponents = [
   { key: 'CS Member Summary', abbreviation: 'CS' },
@@ -69,13 +70,13 @@ const getComponentStatus = (app: Application, componentKey: string): 'Completed'
 
 export default function ProgressTrackerPage() {
   const firestore = useFirestore();
-  const { isUserLoading } = useUser();
+  const { isLoading: isAdminLoading } = useAdmin();
   const [filters, setFilters] = useState<string[]>([]);
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (isUserLoading || !firestore) return null;
+    if (isAdminLoading || !firestore) return null;
     return query(collectionGroup(firestore, 'applications')) as Query<Application>;
-  }, [firestore, isUserLoading]);
+  }, [firestore, isAdminLoading]);
 
   const { data: applications, isLoading, error } = useCollection<Application>(applicationsQuery);
   
@@ -151,7 +152,7 @@ export default function ProgressTrackerPage() {
             </div>
 
           {error && <p className="text-destructive">Error: {error.message}</p>}
-          {isLoading || isUserLoading ? (
+          {isLoading || isAdminLoading ? (
              <div className="flex items-center justify-center h-48">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 <p className="ml-4">Loading application data...</p>

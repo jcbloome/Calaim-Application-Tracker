@@ -14,15 +14,15 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
 export default function AdminDashboardPage() {
-  const { user, isUserLoading } = useAdmin();
+  const { user, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
 
   const applicationsQuery = useMemoFirebase(() => {
-    if (isUserLoading || !firestore) return null;
+    if (isAdminLoading || !firestore) return null;
     return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
-  }, [firestore, isUserLoading]);
+  }, [firestore, isAdminLoading]);
 
-  const { data: applications, isLoading, error } = useCollection<Application & FormValues>(applicationsQuery);
+  const { data: applications, isLoading: isLoadingApps, error } = useCollection<Application & FormValues>(applicationsQuery);
 
   const stats = useMemo(() => {
     if (!applications) {
@@ -46,7 +46,7 @@ export default function AdminDashboardPage() {
       .slice(0, 5);
   }, [applications]);
 
-  if (isLoading || isUserLoading) {
+  if (isAdminLoading || isLoadingApps) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -120,7 +120,7 @@ export default function AdminDashboardPage() {
             </Button>
         </CardHeader>
         <CardContent>
-           <AdminApplicationsTable applications={recentApplications} isLoading={isLoading} />
+           <AdminApplicationsTable applications={recentApplications} isLoading={isLoadingApps} />
         </CardContent>
       </Card>
     </div>
