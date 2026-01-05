@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Header } from '@/components/Header';
-import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useUser, useFirestore, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { collection, doc, Query, Timestamp, writeBatch } from 'firebase/firestore';
 import { format } from 'date-fns';
 import {
@@ -33,6 +33,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useToast } from '@/hooks/use-toast';
 
 
 // Define a type for the application data coming from Firestore
@@ -166,6 +167,7 @@ export default function MyApplicationsPage() {
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
   const router = useRouter();
+  const { toast } = useToast();
   
   const applicationsQuery = useMemoFirebase(() => {
     if (!user || !firestore) {
@@ -214,14 +216,28 @@ export default function MyApplicationsPage() {
     if (!user || !firestore || selected.length === 0) return;
 
     const batch = writeBatch(firestore);
+    const docRefsToDelete = selected.map(appId => doc(firestore, `users/${user.uid}/applications`, appId));
     
-    selected.forEach(appId => {
-      const docRef = doc(firestore, `users/${user.uid}/applications`, appId);
+    docRefsToDelete.forEach(docRef => {
       batch.delete(docRef);
     });
     
-    await batch.commit();
-    setSelected([]);
+    batch.commit().then(() => {
+        toast({
+            title: 'Applications Deleted',
+            description: `${selected.length} application(s) have been successfully deleted.`
+        });
+        setSelected([]);
+    }).catch(error => {
+        // Create and emit a contextual error for each failed deletion.
+        docRefsToDelete.forEach(docRef => {
+            const permissionError = new FirestorePermissionError({
+                path: docRef.path,
+                operation: 'delete'
+            });
+            errorEmitter.emit('permission-error', permissionError);
+        });
+    });
   }
 
   return (
