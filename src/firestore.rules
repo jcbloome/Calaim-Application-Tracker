@@ -1,5 +1,4 @@
 
-// Force re-deploy: 2024-07-25 10:00:00
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -27,15 +26,10 @@ service cloud.firestore {
     // =================================
     //         Collection Rules
     // =================================
-
-    // This rule allows admins to perform collection group queries on 'applications'.
-    // This is needed for the "All Applications" view in the admin dashboard.
-    match /{path=**}/applications/{applicationId} {
-      allow get: if isAdmin() || isSuperAdmin();
-    }
-
+    
     // A user can read/write anything within their own data path.
-    // Admins can read/write anything in any user's data path.
+    // Admins and Super Admins can read/write anything in any user's data path.
+    // This rule allows users to list their own applications.
     match /users/{userId}/{document=**} {
       allow read, write: if isOwner(userId) || isAdmin() || isSuperAdmin();
     }
@@ -43,6 +37,12 @@ service cloud.firestore {
     // Explicitly deny anyone from listing all users to prevent user enumeration.
     match /users/{userId} {
         allow list: if false;
+    }
+
+    // Admins and Super Admins can perform collection group queries on 'applications'.
+    // This is needed for the "All Applications" view in the admin dashboard.
+    match /{path=**}/applications/{applicationId} {
+      allow get: if isAdmin() || isSuperAdmin();
     }
 
     // Only Super Admins can manage admin roles.
