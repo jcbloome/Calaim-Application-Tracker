@@ -206,7 +206,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    // The /admin/login page has its own layout and does not need the auth guard
+    // The login page does not need the auth guard.
     if (pathname === '/admin/login') {
       return;
     }
@@ -223,12 +223,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }, [isLoading, isAdmin, isSuperAdmin, router, pathname]);
 
 
-  // The /admin/login page has its own layout and does not need the auth guard
+  // The login page has its own minimal layout.
   if (pathname === '/admin/login') {
     return <>{children}</>;
   }
 
-  // While loading, show a full-page loader to prevent content flash
+  // While loading, show a full-page loader to prevent content flash.
   if (isLoading) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-background">
@@ -238,7 +238,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  // If the user is an admin, show the admin layout
+  // If the user is an admin, show the full admin layout.
   if (isAdmin || isSuperAdmin) {
     return (
       <div className="flex flex-col min-h-screen">

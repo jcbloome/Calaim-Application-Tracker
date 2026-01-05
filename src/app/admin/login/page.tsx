@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAuth, useUser } from '@/firebase';
+import { useAuth } from '@/firebase';
 import { signInWithEmailAndPassword, setPersistence, browserSessionPersistence, signOut } from 'firebase/auth';
 import type { AuthError } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,7 @@ export default function AdminLoginPage() {
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+  const { user, isAdmin, isSuperAdmin, isLoading: isAuthLoading } = useAdmin();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -29,16 +29,14 @@ export default function AdminLoginPage() {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // This effect will redirect a user if they are ALREADY an admin
+  // Effect to redirect an already logged-in admin away from the login page.
   useEffect(() => {
-    // Don't redirect while auth state is loading
-    if (isAdminLoading) return;
+    if (isAuthLoading) return;
     
-    // If user is determined to be an admin, send to dashboard.
     if (isAdmin || isSuperAdmin) {
       router.push('/admin');
     }
-  }, [isAdmin, isSuperAdmin, isAdminLoading, router]);
+  }, [isAdmin, isSuperAdmin, isAuthLoading, router]);
 
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -61,24 +59,24 @@ export default function AdminLoginPage() {
     try {
       await setPersistence(auth, browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
-      
-      // The `useAdmin` hook will now re-evaluate with the new user.
-      // The `useEffect` hook will then catch the role change and redirect if the user is an admin.
-      // If they are not, the component will re-render and show the 'Access Denied' message.
-      // A success toast can be shown if desired, but redirection is the primary goal.
-
+      // The `useAdmin` hook will re-evaluate with the new user.
+      // The `useEffect` will then catch the role change and redirect if the user is an admin.
     } catch (err) {
       const authError = err as AuthError;
       let errorMessage = 'An unexpected error occurred during sign-in.';
 
-      // Provide more specific feedback for common auth errors
-      if (authError.code === 'auth/user-not-found' || authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
-        errorMessage = 'Invalid email or password. Please check your credentials and try again.';
-      } else if (authError.code === 'auth/too-many-requests') {
-        errorMessage = 'Access to this account has been temporarily disabled due to many failed login attempts. You can immediately restore it by resetting your password or you can try again later.';
-      } else {
-        // For any other errors, display the actual message from Firebase
-        errorMessage = `Login failed: ${authError.message} (Code: ${authError.code})`;
+      switch (authError.code) {
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
+        case 'auth/invalid-credential':
+          errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Access to this account has been temporarily disabled due to many failed login attempts. You can try again later.';
+          break;
+        default:
+          errorMessage = `Login failed: ${authError.message} (Code: ${authError.code})`;
+          break;
       }
       
       setError(errorMessage);
@@ -95,8 +93,8 @@ export default function AdminLoginPage() {
     window.location.href = '/admin/login';
   };
   
-  // While loading auth state, show a loader
-  if (isAdminLoading) {
+  // While loading auth state, show a full-screen loader.
+  if (isAuthLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -130,7 +128,7 @@ export default function AdminLoginPage() {
      );
   }
 
-  // If no user is logged in show the login form.
+  // If no user is logged in, show the login form.
   // The case where an admin *is* logged in is handled by the useEffect redirect.
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
