@@ -206,6 +206,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
+    // The /admin/login page has its own layout and does not need the auth guard
+    if (pathname === '/admin/login') {
+      return;
+    }
+
     // Wait until the loading is complete before checking roles.
     if (isLoading) {
       return;
@@ -215,7 +220,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     if (!isAdmin && !isSuperAdmin) {
       router.push('/admin/login');
     }
-  }, [isLoading, isAdmin, isSuperAdmin, router]);
+  }, [isLoading, isAdmin, isSuperAdmin, router, pathname]);
 
 
   // The /admin/login page has its own layout and does not need the auth guard
