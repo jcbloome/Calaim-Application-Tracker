@@ -9,7 +9,7 @@ import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { useUser, useFirestore } from '@/firebase';
+import { useUser, useFirestore, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { doc, setDoc, getDoc, serverTimestamp, collection, Timestamp, query, where, getDocs, FieldValue } from 'firebase/firestore';
 import Link from 'next/link';
 
@@ -126,54 +126,64 @@ function CsSummaryFormComponent() {
   }, [errors, currentStep]);
 
 
-  const saveProgress = async (isNavigating: boolean = false): Promise<string | null> => {
-    if (!targetUserId || !firestore) {
-        return null;
-    }
-  
-    const currentData = getValues();
-    let docId = internalApplicationId;
-    let isNewDoc = false;
-  
-    if (!docId) {
-      docId = doc(collection(firestore, `users/${targetUserId}/applications`)).id;
-      setInternalApplicationId(docId);
-      isNewDoc = true;
-      const newUrl = `/forms/cs-summary-form?applicationId=${docId}&step=${currentStep}${appUserId ? `&userId=${appUserId}`: ''}`;
-      router.replace(newUrl, { scroll: false });
-    }
-  
-    const docRef = doc(firestore, `users/${targetUserId}/applications`, docId);
-  
-    const sanitizedData = Object.fromEntries(
-      Object.entries(currentData).map(([key, value]) => [key, value === undefined ? null : value])
-    );
-  
-    const dataToSave: Partial<Application> = {
-      ...sanitizedData,
-      id: docId,
-      userId: targetUserId,
-      status: 'In Progress',
-      lastUpdated: serverTimestamp(),
-      referrerName: `${currentData.referrerFirstName} ${currentData.referrerLastName}`.trim(),
-    };
+  const saveProgress = (isNavigating: boolean = false): Promise<string | null> => {
+    return new Promise((resolve, reject) => {
+        if (!targetUserId || !firestore) {
+            return resolve(null);
+        }
 
-    if (isNewDoc) {
-      dataToSave.submissionDate = serverTimestamp();
-    }
-  
-    try {
-      await setDoc(docRef, dataToSave, { merge: true });
-       if (!isNavigating) {
-         toast({ title: 'Progress Saved', description: 'Your changes have been saved.' });
-       }
-       return docId;
-    } catch (error: any) {
-      if (!isNavigating) {
-        toast({ variant: "destructive", title: "Save Error", description: `Could not save your progress: ${error.message}` });
-      }
-    }
-    return null;
+        const currentData = getValues();
+        let docId = internalApplicationId;
+        let isNewDoc = false;
+
+        if (!docId) {
+            docId = doc(collection(firestore, `users/${targetUserId}/applications`)).id;
+            setInternalApplicationId(docId);
+            isNewDoc = true;
+            const newUrl = `/forms/cs-summary-form?applicationId=${docId}&step=${currentStep}${appUserId ? `&userId=${appUserId}` : ''}`;
+            router.replace(newUrl, { scroll: false });
+        }
+
+        const docRef = doc(firestore, `users/${targetUserId}/applications`, docId);
+
+        const sanitizedData = Object.fromEntries(
+            Object.entries(currentData).map(([key, value]) => [key, value === undefined ? null : value])
+        );
+
+        const dataToSave: Partial<Application> = {
+            ...sanitizedData,
+            id: docId,
+            userId: targetUserId,
+            status: 'In Progress',
+            lastUpdated: serverTimestamp(),
+            referrerName: `${currentData.referrerFirstName} ${currentData.referrerLastName}`.trim(),
+        };
+
+        if (isNewDoc) {
+            dataToSave.submissionDate = serverTimestamp();
+        }
+
+        setDoc(docRef, dataToSave, { merge: true })
+            .then(() => {
+                if (!isNavigating) {
+                    toast({ title: 'Progress Saved', description: 'Your changes have been saved.' });
+                }
+                resolve(docId);
+            })
+            .catch((error) => {
+                const permissionError = new FirestorePermissionError({
+                    path: docRef.path,
+                    operation: isNewDoc ? 'create' : 'update',
+                    requestResourceData: dataToSave,
+                });
+                errorEmitter.emit('permission-error', permissionError);
+
+                if (!isNavigating) {
+                    toast({ variant: "destructive", title: "Save Error", description: `Could not save your progress: ${error.message}` });
+                }
+                reject(error);
+            });
+    });
   };
 
   const nextStep = async () => {
@@ -266,36 +276,19 @@ function CsSummaryFormComponent() {
       return;
     }
   
-    const finalAppId = await saveProgress(true);
-
-    if (!finalAppId) {
-         toast({ variant: "destructive", title: "Error", description: "Could not get an application ID to finalize submission." });
-         setIsProcessing(false);
-         return;
-    }
-  
-    const docRef = doc(firestore, `users/${targetUserId}/applications`, finalAppId);
-    
-    const sanitizedData = Object.fromEntries(
-      Object.entries(data).map(([key, value]) => [key, value === undefined ? null : value])
-    );
-    
-    const finalData = {
-      ...sanitizedData,
-      lastUpdated: serverTimestamp(),
-      referrerName: `${data.referrerFirstName} ${data.referrerLastName}`.trim(),
-    };
-  
     try {
-      await setDoc(docRef, finalData, { merge: true });
-      const reviewUrl = `${appUserId ? '/admin' : ''}/forms/cs-summary-form/review?applicationId=${finalAppId}${appUserId ? `&userId=${appUserId}`: ''}`;
-      router.push(reviewUrl);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Submission Error",
-        description: `Could not submit your application: ${error.message}`,
-      });
+        const finalAppId = await saveProgress(true);
+        if (!finalAppId) {
+             toast({ variant: "destructive", title: "Error", description: "Could not get an application ID to finalize submission." });
+             setIsProcessing(false);
+             return;
+        }
+        
+        const reviewUrl = `${appUserId ? '/admin' : ''}/forms/cs-summary-form/review?applicationId=${finalAppId}${appUserId ? `&userId=${appUserId}`: ''}`;
+        router.push(reviewUrl);
+        
+    } catch (error) {
+        // Error is already handled and emitted by saveProgress
     } finally {
         setIsProcessing(false);
     }
@@ -396,3 +389,5 @@ export default function CsSummaryFormCorePage() {
     </React.Suspense>
   );
 }
+
+    
