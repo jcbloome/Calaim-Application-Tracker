@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
@@ -40,6 +40,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isUserLoading && user) {
+      console.log('[Login Page] User already logged in, redirecting...', user);
       router.push('/applications');
     }
   }, [user, isUserLoading, router]);
@@ -48,17 +49,21 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
+    console.log(`[Login Page] Attempting to sign in user: ${email}`);
 
     if (!auth) {
       const errorMsg = 'Firebase services are not available.';
       setError(errorMsg);
       setIsLoading(false);
+      console.error('[Login Page] Firebase auth instance is not available.');
       return;
     }
 
     try {
       await setPersistence(auth, browserSessionPersistence);
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      console.log('[Login Page] Sign-in successful. User object:', userCredential.user);
 
       toast({
         title: 'Successfully signed in!',
@@ -69,6 +74,7 @@ export default function LoginPage() {
 
     } catch (err) {
       const authError = err as AuthError;
+      console.error('[Login Page] Sign-in failed. Error:', authError);
       let errorMessage = 'Invalid email or password. Please try again.';
       if (authError.code === 'auth/user-not-found' || authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
         errorMessage = 'Invalid email or password. Please check your credentials and try again.';
@@ -143,7 +149,7 @@ export default function LoginPage() {
                 </Alert>
               }
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Signing In...</> : 'Sign In'}
+                {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Signing In...</> : <><LogIn className="mr-2 h-4 w-4" />Sign In</>}
               </Button>
             </form>
              <div className="mt-4 text-center text-sm">
