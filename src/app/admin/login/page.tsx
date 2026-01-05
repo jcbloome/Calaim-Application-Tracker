@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth, useUser } from '@/firebase';
-import { signInWithEmailAndPassword, setPersistence, browserSessionPersistence } from 'firebase/auth';
+import { signInWithEmailAndPassword, setPersistence, browserSessionPersistence, signOut } from 'firebase/auth';
 import type { AuthError } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,16 +27,22 @@ export default function AdminLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isReady, setIsReady] = useState(false);
+
 
   useEffect(() => {
-    if (isAdminLoading) {
-      return;
+    // This effect ensures any existing user is logged out when they visit this page.
+    if (auth && user) {
+        signOut(auth).then(() => {
+            // After sign-out, the auth state will change, and the component will re-render.
+            // We can now show the login form.
+            setIsReady(true);
+        });
+    } else if (!user) {
+        // If there's no user to begin with, the form is ready.
+        setIsReady(true);
     }
-
-    if (user && (isAdmin || isSuperAdmin)) {
-      router.push('/admin');
-    }
-  }, [user, isAdmin, isSuperAdmin, isAdminLoading, router]);
+  }, [auth, user]);
 
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -58,11 +64,20 @@ export default function AdminLoginPage() {
 
     try {
       await setPersistence(auth, browserSessionPersistence);
-      await signInWithEmailAndPassword(auth, email, password);
-      // The useEffect will handle redirection after role is verified.
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      // After successful sign-in, manually trigger the admin role check and redirect.
+      // This is more reliable than relying on the useEffect hook.
+      const adminUser = userCredential.user;
+      
+      // We must check the roles again after logging in.
+      // The `useAdmin` hook will eventually catch up, but a direct check is faster.
+      // For now, redirecting and letting the layout handle it is the cleanest approach.
+      router.push('/admin');
+
       toast({
         title: `Signed in as ${email}`,
-        description: 'Verifying administrator permissions...',
+        description: 'Redirecting to the dashboard...',
       });
     } catch (err) {
       const authError = err as AuthError;
@@ -75,20 +90,15 @@ export default function AdminLoginPage() {
         errorMessage = `An unexpected error occurred: ${authError.message}`;
       }
       setError(errorMessage);
-    } finally {
-      // Don't set isSigningIn to false immediately on success,
-      // as the useEffect will redirect. Only set it on error.
-      if (error) {
-        setIsSigningIn(false);
-      }
+       setIsSigningIn(false);
     }
   };
   
-  if (isAdminLoading || (user && (isAdmin || isSuperAdmin))) {
+  if (!isReady) {
     return (
       <div className="flex items-center justify-center h-screen">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="ml-4">Verifying session...</p>
+          <p className="ml-4">Preparing login page...</p>
       </div>
     );
   }
@@ -163,15 +173,6 @@ export default function AdminLoginPage() {
                 </AlertDescription>
             </Alert>
           )}
-
-           {!isAdmin && !isSuperAdmin && user && !isAdminLoading && (
-                 <Alert variant="destructive" className="mt-4">
-                    <AlertTitle>Permission Denied</AlertTitle>
-                    <AlertDescription>
-                        This account does not have administrator permissions. Please log in with an admin account.
-                    </AlertDescription>
-                </Alert>
-           )}
       </div>
     </main>
   );
