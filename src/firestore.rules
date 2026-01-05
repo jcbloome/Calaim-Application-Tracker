@@ -26,18 +26,20 @@ service cloud.firestore {
     // =================================
     //         Collection Rules
     // =================================
+
+    // Rule for the user's own document.
+    // Allows a user to read/write their profile info.
+    match /users/{userId} {
+      allow read, update, delete: if isOwner(userId) || isAdmin() || isSuperAdmin();
+      allow create: if isSignedIn();
+    }
     
-    // A user can read/write anything within their own data path.
-    // Admins and Super Admins can read/write anything in any user's data path.
-    match /users/{userId}/{documents=**} {
+    // CRITICAL FIX: Explicitly allow all operations on the applications subcollection for the owner.
+    // This is required for `list` (collection query) to work.
+    match /users/{userId}/applications/{applicationId} {
       allow read, write: if isOwner(userId) || isAdmin() || isSuperAdmin();
     }
     
-    // Explicitly deny anyone from listing all users to prevent user enumeration.
-    match /users/{userId} {
-        allow list: if false;
-    }
-
     // This rule allows collection group queries on 'applications' for admins.
     // This is needed for the "All Applications" view in the admin dashboard.
     match /{path=**}/applications/{applicationId} {
