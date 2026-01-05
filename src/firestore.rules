@@ -3,49 +3,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    /**
-     * Core Philosophy:
-     * This ruleset enforces a strict user-ownership model. All user-generated data,
-     * such as applications and their related documents, is stored in a hierarchical
-     * structure under the user's unique ID (`/users/{userId}`). This ensures that
-     * by default, users can only access their own data. An administrative role
-     * (`/roles_admin`) is defined to grant privileged read/write access across all
-     * user data for administrative purposes.
-     *
-     * Data Structure:
-     * The data is organized hierarchically starting from `/users/{userId}`. Each user
-     * document contains a subcollection for their `applications`. All other data
-     * points, like contacts, locations, and form statuses, are nested as subcollections
-     * under the specific application they relate to. This structure simplifies
-     * ownership-based security rules.
-     *
-     * Key Security Decisions:
-     * - Default Deny: All paths are closed by default. Access is granted explicitly.
-     * - User Data Isolation: All access controls for the `/users/{userId}` data tree
-     *   are based on the `userId` from the path, ensuring a user can only interact
-     *   with their own data branch.
-     * - No User Enumeration: Listing documents in the top-level `/users` collection is
-     *   explicitly forbidden to prevent enumeration of all users.
-     * - Admin Privileges: Users whose UID exists in the `/roles_admin` collection are
-     *   granted full read/write access to all user data for moderation and support.
-     * - Admin Role Management: The `/roles_admin` and `/roles_super_admin` collections
-     *   are secured to prevent unauthorized modifications by clients.
-     *
-     * Denormalization for Authorization:
-     * To ensure fast and secure authorization, documents contain fields that simplify
-     * rule logic. For example, an `Application` document contains a `userId` field,
-     * which is validated against the path on creation to ensure relational integrity.
-     * This avoids costly and slow `get()` calls in security rules. The admin role is
-     * managed through the existence of a document in `/roles_admin`, which is a
-     * simple and performant lookup.
-     *
-     * Structural Segregation:
-     * User data and administrative roles are stored in separate top-level collections
-     * (`/users` and `/roles_admin`). This clear separation ensures that security rules
-     * for application data do not get mixed with rules for administrative access control,
-     * leading to a more secure and maintainable ruleset.
-     */
-
     // =================================
     //         Helper Functions
     // =================================
@@ -66,78 +23,40 @@ service cloud.firestore {
       return isSignedIn() && exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid));
     }
 
-    function isOwnerOrAdmin(userId) {
-      return isOwner(userId) || isAdmin() || isSuperAdmin();
-    }
-
-    function isExistingOwnerOrAdmin(userId) {
-      return isOwnerOrAdmin(userId) && resource != null;
-    }
-
-    function hasValidApplicationDataOnCreate(userId) {
-      return request.resource.data.userId == userId;
-    }
-
-    function hasValidApplicationDataOnUpdate() {
-      return request.resource.data.userId == resource.data.userId;
-    }
-
-    function hasValidSubcollectionDataOnCreate(applicationId) {
-      return request.resource.data.applicationId == applicationId;
-    }
-
-    function hasValidSubcollectionDataOnUpdate() {
-      return request.resource.data.applicationId == resource.data.applicationId;
-    }
-
     // =================================
     //         Collection Rules
     // =================================
 
-    // This rule allows collection group queries on 'applications' for admins.
+    // This rule allows admins to perform collection group queries on 'applications'.
+    // This is needed for the "All Applications" view in the admin dashboard.
     match /{path=**}/applications/{applicationId} {
       allow get: if isAdmin() || isSuperAdmin();
     }
 
+    // A user can read/write anything within their own data path.
+    // Admins can read/write anything in any user's data path.
+    match /users/{userId}/{document=**} {
+      allow read, write: if isOwner(userId) || isAdmin() || isSuperAdmin();
+    }
+    
+    // Explicitly deny anyone from listing all users to prevent user enumeration.
     match /users/{userId} {
-      allow get: if isOwnerOrAdmin(userId);
-      allow create, update: if isOwner(userId) || isSuperAdmin();
-      allow delete: if isOwnerOrAdmin(userId);
-      // Deny listing users to prevent user enumeration
-      allow list: if false;
-
-      match /applications/{applicationId} {
-        allow get, list: if isOwnerOrAdmin(userId);
-        allow create: if isOwnerOrAdmin(userId) && hasValidApplicationDataOnCreate(userId);
-        allow update: if isExistingOwnerOrAdmin(userId) && hasValidApplicationDataOnUpdate();
-        allow delete: if isExistingOwnerOrAdmin(userId);
-
-        match /staffTrackers/{trackerId} {
-          allow read, write: if isAdmin() || isSuperAdmin();
-        }
-
-        match /{subcollection}/{docId} {
-          allow get, list: if isOwnerOrAdmin(userId);
-          allow create: if isOwnerOrAdmin(userId) && hasValidSubcollectionDataOnCreate(applicationId);
-          allow update: if isExistingOwnerOrAdmin(userId) && hasValidSubcollectionDataOnUpdate();
-          allow delete: if isExistingOwnerOrAdmin(userId);
-        }
-      }
+        allow list: if false;
     }
 
+    // Only Super Admins can manage admin roles.
     match /roles_admin/{userId} {
-      allow get: if isSignedIn();
-      allow write: if isSuperAdmin();
-      allow list: if isAdmin() || isSuperAdmin();
-      allow delete: if isSuperAdmin();
-    }
-
-    match /roles_super_admin/{userId} {
-      allow get: if isSignedIn();
-      allow write: if isSuperAdmin();
+      allow read, write: if isSuperAdmin();
       allow list: if isSuperAdmin();
     }
 
+    // Only Super Admins can manage super admin roles.
+    match /roles_super_admin/{userId} {
+      allow read, write: if isSuperAdmin();
+      allow list: if isSuperAdmin();
+    }
+
+    // System settings can be read by any user but only written by Super Admins.
     match /system_settings/{settingId} {
       allow read: if isSignedIn();
       allow write: if isSuperAdmin();
