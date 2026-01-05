@@ -26,10 +26,9 @@ service cloud.firestore {
       allow read, write: if isOwner(userId) || isAdmin();
 
       // Rules for the 'applications' subcollection.
-      // This grants permission for collection-level operations (list) and
-      // document-level operations (read, write, delete).
       match /applications/{applicationId} {
-        allow read, list, write, delete: if isOwner(userId) || isAdmin();
+        // Grant permissions for collection-level (list) and document-level operations.
+        allow list, read, write, delete: if isOwner(userId) || isAdmin();
 
          match /staffTrackers/{trackerId} {
           allow read, write, list: if isAdmin();
