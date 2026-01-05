@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, useEffect, useState } from 'react';
@@ -271,7 +270,7 @@ export default function MyApplicationsPage() {
             <Alert variant="destructive" className="mb-4">
                 <AlertTitle>Data Fetching Error</AlertTitle>
                 <AlertDescription>
-                    <p>There was an error loading your applications:</p>
+                    <p>There was an error loading your applications. This is likely a security rule issue. The detailed error is below:</p>
                     <pre className="mt-2 whitespace-pre-wrap text-xs font-mono bg-destructive/10 p-2 rounded">
                         {error.message}
                     </pre>
