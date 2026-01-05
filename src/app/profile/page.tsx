@@ -108,13 +108,11 @@ export default function ProfilePage() {
   };
 
   const formatAndSetFirstName = (value: string) => {
-      const formatted = value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
-      setFirstName(formatted);
+      setFirstName(value);
   };
 
   const formatAndSetLastName = (value: string) => {
-      const formatted = value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
-      setLastName(formatted);
+      setLastName(value);
   };
 
   // This is the loading state / redirect guard.

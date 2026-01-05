@@ -40,6 +40,7 @@ export function Header() {
     window.location.href = '/';
   };
 
+  // CRITICAL FIX: Only show the user session if the user is loaded, exists, AND is NOT an admin.
   const showUserSession = !isUserLoading && !isAdminLoading && user && !isAdmin && !isSuperAdmin;
 
   return (
