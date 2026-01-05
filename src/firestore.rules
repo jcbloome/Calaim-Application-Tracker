@@ -29,7 +29,7 @@ service cloud.firestore {
     
     // A user can read/write anything within their own data path.
     // Admins and Super Admins can read/write anything in any user's data path.
-    match /users/{userId}/{document=**} {
+    match /users/{userId}/{documents=**} {
       allow read, write: if isOwner(userId) || isAdmin() || isSuperAdmin();
     }
     
@@ -41,7 +41,7 @@ service cloud.firestore {
     // This rule allows collection group queries on 'applications' for admins.
     // This is needed for the "All Applications" view in the admin dashboard.
     match /{path=**}/applications/{applicationId} {
-      allow get: if isAdmin() || isSuperAdmin();
+      allow get, list: if isAdmin() || isSuperAdmin();
     }
 
     // Only Super Admins can manage admin and super admin roles.
