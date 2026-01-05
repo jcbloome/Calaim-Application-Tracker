@@ -113,7 +113,7 @@ const ApplicationsTable = ({
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={onSelectionChange ? 6 : 5} className="h-24 text-center">
-                    Loading applications...
+                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
                   </TableCell>
                 </TableRow>
               ) : applications.length > 0 ? (
@@ -194,7 +194,6 @@ export default function MyApplicationsPage() {
   const router = useRouter();
   
   const applicationsQuery = useMemoFirebase(() => {
-    // This query should only run when we have a confirmed, non-admin user.
     if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
       return null;
     }
