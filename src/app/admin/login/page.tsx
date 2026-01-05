@@ -89,10 +89,10 @@ export default function AdminLoginPage() {
 
   const handleSignOut = async () => {
     if (auth) {
-      await signOut(auth);
-      // The useAdmin hook will update and the component will re-render to show the login form.
-      setError(null);
+      await auth.signOut();
     }
+    // Force a full page reload to the login page to ensure all state is cleared.
+    window.location.href = '/admin/login';
   };
   
   // While loading auth state, show a loader
