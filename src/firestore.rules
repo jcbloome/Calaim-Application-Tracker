@@ -38,25 +38,21 @@ service cloud.firestore {
         allow list: if false;
     }
 
-    // Admins and Super Admins can perform collection group queries on 'applications'.
+    // This rule allows collection group queries on 'applications' for admins.
     // This is needed for the "All Applications" view in the admin dashboard.
     match /{path=**}/applications/{applicationId} {
       allow get: if isAdmin() || isSuperAdmin();
     }
 
-    // Only Super Admins can manage admin roles.
+    // Only Super Admins can manage admin and super admin roles.
     match /roles_admin/{userId} {
       allow read, write: if isSuperAdmin();
-      allow list: if isSuperAdmin();
     }
-
-    // Only Super Admins can manage super admin roles.
     match /roles_super_admin/{userId} {
-      allow read, write: if isSuperAdmin();
-      allow list: if isSuperAdmin();
+        allow read, write: if isSuperAdmin();
     }
 
-    // System settings can be read by any user but only written by Super Admins.
+    // System settings can be read by any signed-in user but only written by Super Admins.
     match /system_settings/{settingId} {
       allow read: if isSignedIn();
       allow write: if isSuperAdmin();
