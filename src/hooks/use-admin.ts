@@ -40,14 +40,6 @@ export function useAdmin(): AdminStatus {
       setIsRoleLoading(true);
       return;
     }
-
-    // Special hardcoded case to unblock you immediately.
-    if (user.email === 'jason@carehomefinders.com') {
-      setIsAdmin(true);
-      setIsSuperAdmin(true);
-      setIsRoleLoading(false);
-      return;
-    }
     
     // For all other users, check Firestore.
     const checkRoles = async () => {

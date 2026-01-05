@@ -19,7 +19,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Header } from '@/components/Header';
 import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, doc, deleteDoc, Query, Timestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc, deleteDoc, Query, Timestamp, writeBatch, collectionGroup } from 'firebase/firestore';
 import { format } from 'date-fns';
 import {
   AlertDialog,
@@ -194,13 +194,18 @@ export default function MyApplicationsPage() {
   const router = useRouter();
   
   const applicationsQuery = useMemoFirebase(() => {
-    if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
+    if (isUserLoading || isAdminLoading || !user) {
       return null;
     }
+    // Admins get a collection group query to see ALL applications
+    if (isAdmin || isSuperAdmin) {
+      return collectionGroup(firestore, 'applications') as Query<ApplicationData>;
+    }
+    // Regular users only see their own applications
     return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
   }, [firestore, user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading]);
   
-  const { data: applications = [], isLoading: isLoadingApplications } = useCollection<ApplicationData>(applicationsQuery);
+  const { data: applications = [], isLoading: isLoadingApplications, error } = useCollection<ApplicationData>(applicationsQuery);
 
   const [selected, setSelected] = useState<string[]>([]);
   
