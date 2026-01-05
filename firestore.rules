@@ -52,7 +52,7 @@ service cloud.firestore {
     
     // Allow any signed-in user to perform all operations on the test collection.
     match /test_writes/{docId} {
-        allow read, write: if isSignedIn();
+        allow write: if isSignedIn();
     }
   }
 }
