@@ -22,16 +22,15 @@ export function useAdmin(): AdminStatus {
   const [isRoleLoading, setIsRoleLoading] = useState(true);
 
   useEffect(() => {
-    // Reset loading state whenever the user changes.
-    setIsRoleLoading(true);
-
     if (isUserLoading) {
-      // If the user object is still loading, we can't proceed.
+      // If the user object itself is loading, we must wait.
+      // Set role loading to true as well, as we can't check roles without a user.
+      setIsRoleLoading(true);
       return;
     }
 
     if (!user) {
-      // If there is no user, they have no roles. Loading is complete.
+      // If there is no user, they definitely have no roles. We are done loading.
       setRoles({ isAdmin: false, isSuperAdmin: false });
       setIsRoleLoading(false);
       return;
@@ -39,16 +38,20 @@ export function useAdmin(): AdminStatus {
     
     if (!firestore) {
       // If firestore isn't ready, we also can't proceed.
-      setIsRoleLoading(false);
+      // This might happen on initial load.
+      setIsRoleLoading(false); // Can't load roles, so stop loading.
       return;
     }
 
     let isMounted = true;
     const checkRoles = async () => {
+      // Start the role checking process, so set loading to true.
+      setIsRoleLoading(true);
       try {
         const adminRef = doc(firestore, 'roles_admin', user.uid);
         const superAdminRef = doc(firestore, 'roles_super_admin', user.uid);
 
+        // Fetch both role documents concurrently.
         const [adminSnap, superAdminSnap] = await Promise.all([
           getDoc(adminRef),
           getDoc(superAdminRef),
@@ -70,6 +73,7 @@ export function useAdmin(): AdminStatus {
           setRoles({ isAdmin: false, isSuperAdmin: false });
         }
       } finally {
+        // No matter the outcome, role checking is complete.
         if (isMounted) {
           setIsRoleLoading(false);
         }
@@ -79,6 +83,7 @@ export function useAdmin(): AdminStatus {
     checkRoles();
 
     return () => {
+      // Cleanup function to prevent state updates on an unmounted component.
       isMounted = false;
     };
   }, [user, isUserLoading, firestore]);
@@ -87,6 +92,7 @@ export function useAdmin(): AdminStatus {
     user,
     isAdmin: roles.isAdmin,
     isSuperAdmin: roles.isSuperAdmin,
+    // The overall loading state is true if either the user is loading OR the roles are loading.
     isLoading: isUserLoading || isRoleLoading,
   };
 }
