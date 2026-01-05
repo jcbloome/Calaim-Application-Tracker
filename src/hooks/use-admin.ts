@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -23,30 +22,28 @@ export function useAdmin(): AdminStatus {
   const [isRoleLoading, setIsRoleLoading] = useState(true);
 
   useEffect(() => {
-    // If the main user hook is loading, we can't check roles yet.
-    if (isUserLoading) {
-      return;
-    }
-
-    // If there's no user, roles are definitively false and role loading is done.
-    if (!user) {
-      setRoles({ isAdmin: false, isSuperAdmin: false });
-      setIsRoleLoading(false);
-      return;
-    }
-
-    // If firestore isn't ready, we can't check.
-    if (!firestore) {
-      console.warn("useAdmin: Firestore service not available, cannot check roles.");
-      setRoles({ isAdmin: false, isSuperAdmin: false });
-      setIsRoleLoading(false);
-      return;
-    }
-
-    // User and Firestore are ready, start the role check.
+    // Reset loading state whenever the user changes.
     setIsRoleLoading(true);
-    let isMounted = true;
 
+    if (isUserLoading) {
+      // If the user object is still loading, we can't proceed.
+      return;
+    }
+
+    if (!user) {
+      // If there is no user, they have no roles. Loading is complete.
+      setRoles({ isAdmin: false, isSuperAdmin: false });
+      setIsRoleLoading(false);
+      return;
+    }
+    
+    if (!firestore) {
+      // If firestore isn't ready, we also can't proceed.
+      setIsRoleLoading(false);
+      return;
+    }
+
+    let isMounted = true;
     const checkRoles = async () => {
       try {
         const adminRef = doc(firestore, 'roles_admin', user.uid);
@@ -56,13 +53,15 @@ export function useAdmin(): AdminStatus {
           getDoc(adminRef),
           getDoc(superAdminRef),
         ]);
-        
+
         if (isMounted) {
           const hasSuperAdminRole = superAdminSnap.exists();
+          // An admin is someone in either roles_admin or roles_super_admin.
           const hasAdminRole = adminSnap.exists() || hasSuperAdminRole;
+          
           setRoles({
-              isAdmin: hasAdminRole,
-              isSuperAdmin: hasSuperAdminRole,
+            isAdmin: hasAdminRole,
+            isSuperAdmin: hasSuperAdminRole,
           });
         }
       } catch (error) {
@@ -78,19 +77,16 @@ export function useAdmin(): AdminStatus {
     };
 
     checkRoles();
-    
+
     return () => {
       isMounted = false;
     };
   }, [user, isUserLoading, firestore]);
 
-  // The final, consolidated loading state. It's loading if the user is loading OR the roles are loading.
-  const isLoading = isUserLoading || isRoleLoading;
-
-  return { 
-    user, 
-    isLoading,
+  return {
+    user,
     isAdmin: roles.isAdmin,
     isSuperAdmin: roles.isSuperAdmin,
+    isLoading: isUserLoading || isRoleLoading,
   };
 }
