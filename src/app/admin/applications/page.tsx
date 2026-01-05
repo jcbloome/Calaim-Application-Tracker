@@ -4,7 +4,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, Query, where, doc, writeBatch, getDocs } from 'firebase/firestore';
+import { collection, query, Query, where, doc, writeBatch, getDocs, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
@@ -23,6 +23,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useAdmin } from '@/hooks/use-admin';
+import { errorEmitter, FirestorePermissionError } from '@/firebase';
 
 
 function AuthDebugPanel() {
@@ -61,30 +62,72 @@ export default function AdminApplicationsPage() {
 
   useEffect(() => {
     if (!firestore || !isAdmin) {
-        setIsLoading(false);
-        return;
-    };
-
-    const fetchAllApplications = async () => {
-        setIsLoading(true);
-        try {
-            const usersSnapshot = await getDocs(collection(firestore, 'users'));
-            let apps: (Application & FormValues)[] = [];
-            for (const userDoc of usersSnapshot.docs) {
-                const appsCollectionRef = collection(firestore, `users/${userDoc.id}/applications`);
-                const appsSnapshot = await getDocs(appsCollectionRef);
-                appsSnapshot.forEach(appDoc => {
-                    apps.push({ id: appDoc.id, ...appDoc.data() } as Application & FormValues);
-                });
-            }
-            setAllApplications(apps);
-        } catch (err: any) {
-            setError(err);
-        } finally {
-            setIsLoading(false);
-        }
+      setIsLoading(false);
+      return;
     }
-    fetchAllApplications();
+
+    setIsLoading(true);
+    const usersRef = collection(firestore, 'users');
+    let applicationListeners: Unsubscribe[] = [];
+
+    const usersListener = onSnapshot(usersRef, 
+      (usersSnapshot) => {
+        // Unsubscribe from old application listeners
+        applicationListeners.forEach(unsub => unsub());
+        applicationListeners = [];
+        
+        let allApps: (Application & FormValues)[] = [];
+        let pending = usersSnapshot.docs.length;
+        if (pending === 0) {
+            setAllApplications([]);
+            setIsLoading(false);
+            return;
+        }
+
+        usersSnapshot.docs.forEach((userDoc) => {
+          const appsRef = collection(firestore, `users/${userDoc.id}/applications`);
+          const appsListener = onSnapshot(appsRef, 
+            (appsSnapshot) => {
+              appsSnapshot.docs.forEach(appDoc => {
+                const appData = { id: appDoc.id, ...appDoc.data() } as Application & FormValues;
+                // Replace or add new app data
+                const index = allApps.findIndex(a => a.id === appData.id);
+                if (index > -1) {
+                  allApps[index] = appData;
+                } else {
+                  allApps.push(appData);
+                }
+              });
+
+              // When all user application collections have been processed for the first time
+              pending--;
+              if (pending === 0) {
+                  setAllApplications([...allApps]); // Create a new array reference to trigger re-render
+                  setIsLoading(false);
+              }
+            },
+            (err) => {
+                const permissionError = new FirestorePermissionError({ path: `users/${userDoc.id}/applications`, operation: 'list' });
+                setError(permissionError);
+                errorEmitter.emit('permission-error', permissionError);
+                setIsLoading(false);
+            }
+          );
+          applicationListeners.push(appsListener);
+        });
+      },
+      (err) => {
+        const permissionError = new FirestorePermissionError({ path: 'users', operation: 'list' });
+        setError(permissionError);
+        errorEmitter.emit('permission-error', permissionError);
+        setIsLoading(false);
+      }
+    );
+
+    return () => {
+      usersListener();
+      applicationListeners.forEach(unsub => unsub());
+    };
   }, [firestore, isAdmin]);
 
 
@@ -157,7 +200,7 @@ export default function AdminApplicationsPage() {
           )}
         </CardHeader>
         <CardContent>
-          {error && <p className="text-destructive">Error loading applications: {error.message}</p>}
+          {error && <p className="text-destructive">Error loading applications: A permission error occurred while fetching data.</p>}
           <AdminApplicationsTable 
             applications={allApplications || []} 
             isLoading={isLoading || isAdminLoading}

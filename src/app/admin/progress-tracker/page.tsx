@@ -3,8 +3,8 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, Query, where, getDocs } from 'firebase/firestore';
+import { useFirestore } from '@/firebase';
+import { collection, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { useAdmin } from '@/hooks/use-admin';
+import { errorEmitter, FirestorePermissionError } from '@/firebase';
+
 
 const trackedComponents = [
   { key: 'CS Member Summary', abbreviation: 'CS' },
@@ -70,7 +72,7 @@ const getComponentStatus = (app: Application, componentKey: string): 'Completed'
 
 export default function ProgressTrackerPage() {
   const firestore = useFirestore();
-  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading, user } = useAdmin();
+  const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const [filters, setFilters] = useState<string[]>([]);
 
   const [applications, setApplications] = useState<Application[]>([]);
@@ -83,27 +85,65 @@ export default function ProgressTrackerPage() {
         return;
     }
 
-    const fetchAllApplications = async () => {
-        setIsLoading(true);
-        try {
-            const usersSnapshot = await getDocs(collection(firestore, 'users'));
-            let apps: Application[] = [];
-            for (const userDoc of usersSnapshot.docs) {
-                const appsCollectionRef = collection(firestore, `users/${userDoc.id}/applications`);
-                const appsSnapshot = await getDocs(appsCollectionRef);
-                appsSnapshot.forEach(appDoc => {
-                    apps.push({ id: appDoc.id, ...appDoc.data() } as Application);
-                });
-            }
-            setApplications(apps);
-        } catch (err: any) {
-            setError(err);
-        } finally {
-            setIsLoading(false);
+    setIsLoading(true);
+    const usersRef = collection(firestore, 'users');
+    let applicationListeners: Unsubscribe[] = [];
+
+    const usersListener = onSnapshot(usersRef, 
+      (usersSnapshot) => {
+        applicationListeners.forEach(unsub => unsub());
+        applicationListeners = [];
+
+        let allApps: Application[] = [];
+        let pending = usersSnapshot.docs.length;
+        if (pending === 0) {
+          setApplications([]);
+          setIsLoading(false);
+          return;
         }
-    }
+        
+        usersSnapshot.docs.forEach((userDoc) => {
+          const appsRef = collection(firestore, `users/${userDoc.id}/applications`);
+          const appsListener = onSnapshot(appsRef,
+            (appsSnapshot) => {
+              appsSnapshot.forEach(appDoc => {
+                const appData = { id: appDoc.id, ...appDoc.data() } as Application;
+                const index = allApps.findIndex(a => a.id === appData.id);
+                if (index > -1) {
+                  allApps[index] = appData;
+                } else {
+                  allApps.push(appData);
+                }
+              });
+
+              pending--;
+              if (pending <= 0) {
+                setApplications([...allApps]);
+                setIsLoading(false);
+              }
+            },
+            (err) => {
+                const permissionError = new FirestorePermissionError({ path: `users/${userDoc.id}/applications`, operation: 'list' });
+                setError(permissionError);
+                errorEmitter.emit('permission-error', permissionError);
+                setIsLoading(false);
+            }
+          );
+          applicationListeners.push(appsListener);
+        });
+      },
+      (err) => {
+        const permissionError = new FirestorePermissionError({ path: 'users', operation: 'list' });
+        setError(permissionError);
+        errorEmitter.emit('permission-error', permissionError);
+        setIsLoading(false);
+      }
+    );
     
-    fetchAllApplications();
+    return () => {
+      usersListener();
+      applicationListeners.forEach(unsub => unsub());
+    };
 
   }, [firestore, isAdmin, isAdminLoading]);
   
@@ -178,7 +218,7 @@ export default function ProgressTrackerPage() {
                 </div>
             </div>
 
-          {error && <p className="text-destructive">Error: {error.message}</p>}
+          {error && <p className="text-destructive">Error: A permission error occurred while fetching data.</p>}
           {isLoading || isAdminLoading ? (
              <div className="flex items-center justify-center h-48">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />

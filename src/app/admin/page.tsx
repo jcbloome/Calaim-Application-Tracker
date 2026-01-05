@@ -6,12 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2, FolderKanban, Users, Activity, FileCheck2 } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore, type WithId } from '@/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './applications/components/AdminApplicationsTable';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { errorEmitter, FirestorePermissionError } from '@/firebase';
 
 export default function AdminDashboardPage() {
   const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -26,28 +27,66 @@ export default function AdminDashboardPage() {
       setIsLoadingApps(false);
       return;
     }
+    
+    setIsLoadingApps(true);
+    const usersRef = collection(firestore, 'users');
+    let applicationListeners: Unsubscribe[] = [];
 
-    const fetchAllApplications = async () => {
-      setIsLoadingApps(true);
-      try {
-        const usersSnapshot = await getDocs(collection(firestore, 'users'));
-        let apps: (Application & FormValues)[] = [];
-        for (const userDoc of usersSnapshot.docs) {
-          const appsCollectionRef = collection(firestore, `users/${userDoc.id}/applications`);
-          const appsSnapshot = await getDocs(appsCollectionRef);
-          appsSnapshot.forEach(appDoc => {
-            apps.push({ id: appDoc.id, ...appDoc.data() } as Application & FormValues);
-          });
+    const usersListener = onSnapshot(usersRef,
+      (usersSnapshot) => {
+        applicationListeners.forEach(unsub => unsub());
+        applicationListeners = [];
+
+        let allApps: (Application & FormValues)[] = [];
+        let pending = usersSnapshot.docs.length;
+        if(pending === 0) {
+          setAllApplications([]);
+          setIsLoadingApps(false);
+          return;
         }
-        setAllApplications(apps);
-      } catch (err: any) {
-        setError(err);
-      } finally {
+
+        usersSnapshot.docs.forEach(userDoc => {
+          const appsRef = collection(firestore, `users/${userDoc.id}/applications`);
+          const appsListener = onSnapshot(appsRef, 
+            (appsSnapshot) => {
+              appsSnapshot.docs.forEach(appDoc => {
+                 const appData = { id: appDoc.id, ...appDoc.data() } as Application & FormValues;
+                const index = allApps.findIndex(a => a.id === appData.id);
+                if (index > -1) {
+                  allApps[index] = appData;
+                } else {
+                  allApps.push(appData);
+                }
+              });
+              
+              pending--;
+              if (pending <= 0) {
+                 setAllApplications([...allApps]);
+                 setIsLoadingApps(false);
+              }
+            },
+            (err) => {
+              const permissionError = new FirestorePermissionError({ path: `users/${userDoc.id}/applications`, operation: 'list' });
+              setError(permissionError);
+              errorEmitter.emit('permission-error', permissionError);
+              setIsLoadingApps(false);
+            }
+          );
+          applicationListeners.push(appsListener);
+        });
+      },
+      (err) => {
+        const permissionError = new FirestorePermissionError({ path: 'users', operation: 'list' });
+        setError(permissionError);
+        errorEmitter.emit('permission-error', permissionError);
         setIsLoadingApps(false);
       }
-    };
+    );
 
-    fetchAllApplications();
+    return () => {
+      usersListener();
+      applicationListeners.forEach(unsub => unsub());
+    };
   }, [firestore, isAdmin, isAdminLoading]);
 
   const stats = React.useMemo(() => {
@@ -88,7 +127,7 @@ export default function AdminDashboardPage() {
           <CardTitle>Error</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-destructive">Failed to load application data: {error.message}</p>
+          <p className="text-destructive">Failed to load application data: A permission error occurred.</p>
         </CardContent>
       </Card>
     );
