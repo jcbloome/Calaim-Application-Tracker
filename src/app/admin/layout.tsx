@@ -200,64 +200,6 @@ function AdminHeader() {
   );
 }
 
-// function AdminAuthGuard({ children }: { children: React.ReactNode }) {
-//   const { isAdmin, isSuperAdmin, isLoading, user } = useAdmin();
-//   const router = useRouter();
-
-//   useEffect(() => {
-//     // Wait until the loading state is definitively false.
-//     if (isLoading) {
-//       return;
-//     }
-
-//     // Once loading is complete, check the conditions.
-//     // If no user is logged in, redirect to the login page.
-//     if (!user) {
-//       router.push('/admin/login');
-//       return;
-//     }
-
-//     // If a user is logged in but is not an admin, they should not be here.
-//     if (user && !isAdmin && !isSuperAdmin) {
-//       router.push('/admin/login');
-//     }
-//   }, [isLoading, user, isAdmin, isSuperAdmin, router]);
-
-//   // While the initial user authentication OR the role check is in progress, show a loading screen.
-//   // This prevents the flicker and the premature redirect.
-//   if (isLoading) {
-//     return (
-//       <div className="flex items-center justify-center h-screen">
-//         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-//         <p className="ml-4">Verifying access...</p>
-//       </div>
-//     );
-//   }
-  
-//   // If we're done loading and the user is an admin, show the content.
-//   // Otherwise, the effect above will have already initiated a redirect, so we can
-//   // show a "Redirecting" message to prevent content from flashing.
-//   if (isAdmin || isSuperAdmin) {
-//     return (
-//       <div className="flex flex-col min-h-screen">
-//         <AdminHeader />
-//         <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
-//           {children}
-//         </main>
-//       </div>
-//     );
-//   }
-
-//   // Fallback loading state for the brief moment before the redirect completes.
-//   return (
-//     <div className="flex items-center justify-center h-screen">
-//       <Loader2 className="h-8 w-8 animate-spin text-primary" />
-//       <p className="ml-4">Redirecting...</p>
-//     </div>
-//   );
-// }
-
-
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
@@ -266,9 +208,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  // --- TEMPORARILY DISABLED AUTH GUARD ---
-  // All other /admin pages are protected by the auth guard
-  // return <AdminAuthGuard>{children}</AdminAuthGuard>;
+  // --- TEMPORARILY DISABLED AUTH GUARD for debugging ---
   return (
     <div className="flex flex-col min-h-screen">
       <AdminHeader />

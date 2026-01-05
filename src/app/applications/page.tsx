@@ -161,13 +161,38 @@ const ApplicationsTable = ({
   );
 };
 
+
+function AuthDebugPanel() {
+    const { user, isUserLoading, userError } = useUser();
+
+    const getStatus = () => {
+        if (isUserLoading) return <span className="text-yellow-500">Loading...</span>;
+        if (user) return <span className="text-green-500">Authenticated</span>;
+        return <span className="text-red-500">Not Authenticated</span>;
+    }
+
+    return (
+        <Card className="mt-6 bg-gray-800 text-white">
+            <CardHeader>
+                <CardTitle className="text-lg text-gray-300">Auth Debug Panel (User)</CardTitle>
+            </CardHeader>
+            <CardContent className="font-mono text-xs space-y-2">
+                <p><strong>Status:</strong> {getStatus()}</p>
+                <p><strong>isUserLoading:</strong> {String(isUserLoading)}</p>
+                <p><strong>User:</strong> {user ? user.email : 'null'}</p>
+                 <p><strong>Error:</strong> {userError ? userError.message : 'null'}</p>
+            </CardContent>
+        </Card>
+    )
+}
+
+
 export default function MyApplicationsPage() {
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
   const router = useRouter();
 
   const applicationsQuery = useMemoFirebase(() => {
-    // Wait until the user is loaded and authenticated
     if (isUserLoading || !user || !firestore) {
       return null;
     }
@@ -178,16 +203,17 @@ export default function MyApplicationsPage() {
 
   const [selected, setSelected] = useState<string[]>([]);
   
-  useEffect(() => {
-    if (isUserLoading) return;
+  // NOTE: This effect is now disabled for debugging.
+  // useEffect(() => {
+  //   if (isUserLoading) return;
 
-    if (!user) {
-        router.push('/login');
-        return;
-    }
-  }, [user, isUserLoading, router]);
+  //   if (!user) {
+  //       router.push('/login');
+  //       return;
+  //   }
+  // }, [user, isUserLoading, router]);
 
-  if (isUserLoading || !user) {
+  if (isUserLoading) {
     return (
         <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin" />
@@ -230,7 +256,7 @@ export default function MyApplicationsPage() {
                 <div className="flex-1">
                     <h1 className="text-3xl font-bold">My Applications</h1>
                     <p className="text-muted-foreground mt-1">
-                        Welcome, <strong>{user.displayName || user.email}</strong>.
+                        Welcome, <strong>{user?.displayName || user?.email || 'Guest'}</strong>.
                     </p>
                 </div>
                 <div className="flex items-center gap-2 self-stretch sm:self-center flex-wrap">
@@ -262,6 +288,7 @@ export default function MyApplicationsPage() {
                     </Button>
                 </div>
             </div>
+             <AuthDebugPanel />
         </div>
 
 

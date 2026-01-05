@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, useState } from 'react';
@@ -23,6 +24,32 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useAdmin } from '@/hooks/use-admin';
 
+
+function AuthDebugPanel() {
+    const { user, isAdmin, isSuperAdmin, isLoading } = useAdmin();
+
+    const getStatus = () => {
+        if (isLoading) return <span className="text-yellow-500">Loading...</span>;
+        if (user) return <span className="text-green-500">Authenticated</span>;
+        return <span className="text-red-500">Not Authenticated</span>;
+    }
+
+    return (
+        <Card className="mt-6 bg-gray-900 text-white">
+            <CardHeader>
+                <CardTitle className="text-lg text-gray-300">Auth Debug Panel (Admin)</CardTitle>
+            </CardHeader>
+            <CardContent className="font-mono text-xs space-y-2">
+                <p><strong>Status:</strong> {getStatus()}</p>
+                <p><strong>isLoading:</strong> {String(isLoading)}</p>
+                <p><strong>User:</strong> {user ? user.email : 'null'}</p>
+                <p><strong>isAdmin:</strong> {String(isAdmin)}</p>
+                <p><strong>isSuperAdmin:</strong> {String(isSuperAdmin)}</p>
+            </CardContent>
+        </Card>
+    )
+}
+
 export default function AdminApplicationsPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -30,7 +57,6 @@ export default function AdminApplicationsPage() {
   const [selected, setSelected] = useState<string[]>([]);
 
   const applicationsQuery = useMemoFirebase(() => {
-    // CRITICAL: Do not create the query until auth/admin state and user is fully resolved.
     if (isAdminLoading || !firestore || !user) {
       return null;
     }
@@ -75,6 +101,7 @@ export default function AdminApplicationsPage() {
 
   return (
     <div className="space-y-6">
+       <AuthDebugPanel />
       <Card>
         <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>

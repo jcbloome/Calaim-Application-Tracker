@@ -40,7 +40,6 @@ export function Header() {
     window.location.href = '/';
   };
 
-  // CRITICAL FIX: Only show the user session if the user is loaded, exists, AND is NOT an admin.
   const showUserSession = !isUserLoading && !isAdminLoading && user && !isAdmin && !isSuperAdmin;
 
   return (
@@ -65,7 +64,7 @@ export function Header() {
 
            {(isUserLoading || isAdminLoading) ? (
             <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
-          ) : showUserSession ? (
+          ) : user ? ( // Show dropdown if ANY user is logged in
             <div className='flex items-center gap-2'>
              <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -121,7 +120,7 @@ export function Header() {
                         <div className="mt-auto border-t pt-6">
                              {(isUserLoading || isAdminLoading) ? (
                                 <div className="h-10 w-full rounded-md bg-muted animate-pulse" />
-                            ) : showUserSession ? (
+                            ) : user ? (
                                 <div className="flex flex-col gap-4">
                                      <p className="text-sm text-muted-foreground text-center truncate">{user.displayName || user.email}</p>
                                       <Button onClick={() => { router.push('/profile'); setSheetOpen(false); }} variant="outline" className="w-full">
