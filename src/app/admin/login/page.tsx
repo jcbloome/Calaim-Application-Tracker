@@ -65,20 +65,25 @@ export default function AdminLoginPage() {
       // The `useAdmin` hook will now re-evaluate with the new user.
       // The `useEffect` hook will then catch the role change and redirect if the user is an admin.
       // If they are not, the component will re-render and show the 'Access Denied' message.
-      // No toast is needed here as the UI will update naturally.
+      // A success toast can be shown if desired, but redirection is the primary goal.
 
     } catch (err) {
       const authError = err as AuthError;
-      let errorMessage = 'An error occurred. Please try again.';
+      let errorMessage = 'An unexpected error occurred during sign-in.';
+
+      // Provide more specific feedback for common auth errors
       if (authError.code === 'auth/user-not-found' || authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
         errorMessage = 'Invalid email or password. Please check your credentials and try again.';
       } else if (authError.code === 'auth/too-many-requests') {
         errorMessage = 'Access to this account has been temporarily disabled due to many failed login attempts. You can immediately restore it by resetting your password or you can try again later.';
       } else {
-        errorMessage = `An unexpected error occurred: ${authError.message}`;
+        // For any other errors, display the actual message from Firebase
+        errorMessage = `Login failed: ${authError.message} (Code: ${authError.code})`;
       }
+      
       setError(errorMessage);
-       setIsSigningIn(false);
+    } finally {
+        setIsSigningIn(false);
     }
   };
 

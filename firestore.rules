@@ -21,17 +21,13 @@ service cloud.firestore {
       // An admin is either the hardcoded user 'jason' OR a user whose UID is in the admin roles collection.
       return isSignedIn() && (
         isJason() ||
-        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) ||
-        exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid))
+        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid))
       );
     }
     
     function isSuperAdmin() {
-       // A super admin is either the hardcoded user 'jason' OR a user whose UID is in the super admin roles collection.
-       return isSignedIn() && (
-         isJason() ||
-         exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid))
-       );
+       // A super admin is anyone who qualifies as a regular admin.
+       return isAdmin();
     }
 
     // --- USER-SPECIFIC RULES ---
