@@ -36,9 +36,9 @@ service cloud.firestore {
       }
     }
     
-    // Test collection is writable by any signed-in user.
+    // Test collection is writable by any signed-in user or any admin.
     match /test_writes/{docId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isSignedIn() || isAdmin();
     }
     
     // System settings can be read by any signed-in user, but only modified by super admins
