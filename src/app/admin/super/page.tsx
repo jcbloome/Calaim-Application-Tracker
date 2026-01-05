@@ -226,17 +226,16 @@ export default function SuperAdminPage() {
     };
 
     useEffect(() => {
-        if (!isAdminLoading && !isSuperAdmin) {
-            // Keep the user on the page if they aren't an admin yet, but show a special message
-        } else if (isSuperAdmin && firestore) {
+        // Fetch staff and notification data when the component mounts if firestore is available
+        if (firestore) {
             fetchAllStaff();
             fetchNotificationRecipients();
         }
-    }, [isSuperAdmin, isAdminLoading, router, firestore]);
+    }, [firestore]);
     
      const handleBootstrap = async () => {
         if (!firestore || !currentUser) {
-            toast({ variant: 'destructive', title: 'Error', description: 'User or Firestore not available.' });
+            toast({ variant: 'destructive', title: 'Error', description: 'You must be logged in to grant yourself permissions.' });
             return;
         }
         setIsBootstrapping(true);
@@ -252,10 +251,10 @@ export default function SuperAdminPage() {
 
             toast({
                 title: "You are now a Super Admin!",
-                description: "Please refresh the page for the changes to take full effect.",
+                description: "The page will refresh for the changes to take effect.",
                 className: 'bg-green-100 text-green-900 border-green-200',
             });
-            await fetchAllStaff(); // Re-fetch staff to update the UI
+            setTimeout(() => window.location.reload(), 2000);
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Bootstrap Failed', description: error.message });
         } finally {
@@ -530,18 +529,21 @@ export default function SuperAdminPage() {
              <div className="space-y-6">
                 <Alert variant="destructive">
                     <ShieldAlert className="h-4 w-4" />
-                    <AlertTitle>Admin Access Required</AlertTitle>
-                    <AlertDescription>Your account does not have admin permissions. Click the button below to grant yourself Super Admin access.</AlertDescription>
+                    <AlertTitle>Super Admin Access Required</AlertTitle>
+                    <AlertDescription>
+                        This page is for managing staff and system settings. If you believe you should have access, please contact the main administrator.
+                        If you are the main administrator and this is your first time setting up the application, please log in and use the button below to grant yourself Super Admin rights.
+                    </AlertDescription>
                 </Alert>
                  <Card>
                     <CardHeader>
-                        <CardTitle>Bootstrap Super Admin</CardTitle>
+                        <CardTitle>Bootstrap Super Admin Role</CardTitle>
                         <CardDescription>
-                            If this is the first time setting up the app, click this button to make your current user ({currentUser?.email}) a Super Admin.
+                            Click this button to make your current user ({currentUser?.email || '...loading'}) a Super Admin. You only need to do this once.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <Button onClick={handleBootstrap} disabled={isBootstrapping}>
+                        <Button onClick={handleBootstrap} disabled={isBootstrapping || !currentUser}>
                             {isBootstrapping ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Granting Access...</> : 'Make Me Super Admin'}
                         </Button>
                     </CardContent>
