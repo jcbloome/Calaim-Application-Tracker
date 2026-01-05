@@ -25,15 +25,12 @@ import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
-import { useAdmin } from '@/hooks/use-admin';
-
 
 export default function LoginPage() {
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   const { user, isUserLoading } = useUser();
-  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,19 +40,16 @@ export default function LoginPage() {
 
   useEffect(() => {
     // This effect handles redirection for already logged-in users.
-    const isAuthLoading = isUserLoading || isAdminLoading;
-    if (isAuthLoading) {
-      return; // Wait for auth state and roles to be determined.
+    if (isUserLoading) {
+      return; // Wait for auth state to be determined.
     }
 
     if (user) {
-      if (isAdmin || isSuperAdmin) {
-        router.push('/admin');
-      } else {
-        router.push('/applications');
-      }
+      // If a user is logged in, always take them to their applications page.
+      // We no longer check for admin roles here.
+      router.push('/applications');
     }
-  }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
+  }, [user, isUserLoading, router]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,7 +88,7 @@ export default function LoginPage() {
     }
   };
   
-  if (isUserLoading || isAdminLoading || user) {
+  if (isUserLoading || user) {
       // Show a loading screen while checking auth state or if a user is found (before redirect).
       return (
           <div className="flex items-center justify-center h-screen">
