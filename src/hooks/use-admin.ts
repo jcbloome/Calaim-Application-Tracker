@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
-import { useUser, useFirestore } from '@/firebase';
+import { useUser, useFirestore, errorEmitter, FirestorePermissionError } from '@/firebase';
 import type { User } from 'firebase/auth';
 
 interface AdminStatus {
@@ -48,19 +48,36 @@ export function useAdmin(): AdminStatus {
         const superAdminRef = doc(firestore, 'roles_super_admin', user.uid);
 
         const [adminSnap, superAdminSnap] = await Promise.all([
-          getDoc(adminRef),
-          getDoc(superAdminRef),
+          getDoc(adminRef).catch(err => {
+            // If we get a permission error reading the admin role, it means the user is not an admin.
+            // We can treat this as a non-fatal condition and assume the document doesn't exist for this user.
+            if (err.code === 'permission-denied') {
+              return null; // Return null to indicate non-existence due to permissions
+            }
+            // For other errors, re-throw them.
+            throw err;
+          }),
+          getDoc(superAdminRef).catch(err => {
+            // Same logic for super admin role
+            if (err.code === 'permission-denied') {
+              return null;
+            }
+            throw err;
+          })
         ]);
         
-        const hasSuperAdminRole = superAdminSnap.exists();
+        const hasSuperAdminRole = superAdminSnap?.exists() ?? false;
         // A super admin is also an admin.
-        const hasAdminRole = adminSnap.exists() || hasSuperAdminRole;
+        const hasAdminRole = (adminSnap?.exists() ?? false) || hasSuperAdminRole;
         
         setIsAdmin(hasAdminRole);
         setIsSuperAdmin(hasSuperAdminRole);
 
-      } catch (error) {
+      } catch (error: any) {
+        // This will now only catch unexpected errors, not permission-denied ones.
+        // If a real error happens (e.g., network), we should log it but not necessarily block the UI.
         console.error("useAdmin: Error checking roles:", error);
+        // We can still create a contextual error if needed, but for now, we'll just fail gracefully.
         setIsAdmin(false);
         setIsSuperAdmin(false);
       } finally {
