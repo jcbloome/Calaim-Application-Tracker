@@ -33,12 +33,12 @@ service cloud.firestore {
       allow list: if isAdmin();
     }
 
-    // Admins need to read these roles collections
+    // Allow authenticated users to check their own roles.
     match /roles_admin/{uid} {
-        allow get: if isAdmin();
+        allow get: if isSignedIn() && request.auth.uid == uid;
     }
      match /roles_super_admin/{uid} {
-        allow get: if isAdmin();
+        allow get: if isSignedIn() && request.auth.uid == uid;
     }
 
     // Allow admins to read system settings
