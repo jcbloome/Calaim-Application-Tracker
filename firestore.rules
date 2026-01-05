@@ -1,69 +1,51 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // --- HELPER FUNCTIONS ---
     function isSignedIn() {
       return request.auth != null;
     }
-    
+
     function isOwner(userId) {
-      return request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function isAdmin() {
-      return exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+    }
+
+    // --- VERSION 4 RULES ---
+
+    // 1. User Documents: Allows immediate access for the owner
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+      allow read, write: if isAdmin();
+
+      // 2. Applications: Grants 'list' permission so your dashboard can load tables
+      match /applications/{applicationId} {
+        allow read, list, write, delete: if isOwner(userId);
+        allow read, list, write, delete: if isAdmin();
+
+        // 3. Nested Staff Trackers: Restricts sensitive data to admins
+        match /staffTrackers/{trackerId} {
+          allow read, list, write: if isAdmin();
+        }
+      }
     }
     
     match /test_writes/{docId} {
       allow read, write: if isSignedIn();
     }
-    
-    match /users/{userId} {
-      allow read, write: if isOwner(userId);
-      // Admins can read user profiles
-      allow get: if isAdmin();
-      allow list: if isAdmin();
+
+    // 4. Admin Role Verification: Restricts who can grant admin status
+    match /roles_admin/{userId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Must be managed via Firebase Console
     }
 
-    match /users/{userId}/applications/{appId} {
-      allow read, write: if isOwner(userId);
-      // Admins can read any application
-      allow get: if isAdmin();
-      allow list: if isAdmin();
-    }
-
-    // Allow authenticated users to check their own roles.
-    match /roles_admin/{uid} {
-        allow get: if isSignedIn() && request.auth.uid == uid;
-    }
      match /roles_super_admin/{uid} {
         allow get: if isSignedIn() && request.auth.uid == uid;
     }
-
-    // Allow admins to read system settings
-    match /system_settings/notifications {
-        allow get: if isAdmin();
-    }
-    
-    // The following rules are from the original file and are not currently used by the app,
-    // but are kept to avoid breaking changes if they become needed.
-    match /gitCommits/{commitId} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if false;
-
-      match /projectFiles/{fileId} {
-        allow get, list: if isSignedIn();
-        allow create, update, delete: if false;
-      }
-
-      match /restoreLogs/{logId} {
-        allow get, list: if isSignedIn();
-        allow create, update, delete: if false;
-      }
-    }
-     match /applications/{appId} {
-        allow list, get: if isAdmin();
-     }
   }
 }
