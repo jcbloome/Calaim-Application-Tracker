@@ -203,7 +203,7 @@ export default function SuperAdminPage() {
                  const userDoc = users.get(currentUser.uid);
                  staff.push({
                     uid: currentUser.uid,
-                    firstName: userDoc?.firstName || 'JC',
+                    firstName: userDoc?.firstName || 'Jason',
                     lastName: userDoc?.lastName || 'Bloome',
                     email: currentUser.email,
                     role: isSuper ? 'Super Admin' : 'Admin',
@@ -729,7 +729,3 @@ export default function SuperAdminPage() {
         </div>
     );
 }
-
-    
-
-    
