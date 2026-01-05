@@ -25,7 +25,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if isOwner(userId) || isAdmin();
 
-      // Applications can be read/written by their owner or any admin.
+      // Applications can be read/listed/written by their owner or any admin.
       match /applications/{applicationId} {
         allow read, list, write, delete: if isOwner(userId) || isAdmin();
 
@@ -36,12 +36,12 @@ service cloud.firestore {
       }
     }
     
-    // Test collection is writable by any signed-in user or any admin.
+    // Test collection is writable by any signed-in user.
     match /test_writes/{docId} {
-      allow read, write: if isSignedIn() || isAdmin();
+      allow read, write: if isSignedIn();
     }
     
-    // System settings can be read by any signed-in user, but only modified by super admins
+    // System settings can be read by any signed-in user, but only modified by super admins.
     match /system_settings/{docId} {
         allow get: if isSignedIn();
         allow list, write, delete: if isSuperAdmin();
