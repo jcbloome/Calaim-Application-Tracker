@@ -49,17 +49,12 @@ export default function LoginPage() {
     }
 
     if (user) {
-      // If a user is logged in, decide where they should go.
       if (isAdmin || isSuperAdmin) {
-        // If they are an admin, they should not be on the public login page.
-        // Send them to the admin dashboard.
         router.push('/admin');
       } else {
-        // If they are a regular user, send them to their applications.
         router.push('/applications');
       }
     }
-    // If no user, do nothing and just show the login form.
   }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -80,23 +75,23 @@ export default function LoginPage() {
       
       toast({
         title: 'Successfully signed in!',
-        description: 'Redirecting to your applications...',
+        description: 'Redirecting to your dashboard...',
       });
-      
-      // The useEffect will handle the redirection.
-      // A manual push here could cause race conditions if the role isn't loaded yet.
-
+      // The useEffect hook will now handle redirection once the auth state is updated.
     } catch (err) {
       const authError = err as AuthError;
       let errorMessage = 'Invalid email or password. Please try again.';
       if (authError.code === 'auth/user-not-found' || authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
         errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+      } else if (authError.code === 'auth/too-many-requests') {
+          errorMessage = 'Access to this account has been temporarily disabled due to many failed login attempts. You can immediately restore it by resetting your password or you can try again later.';
       } else {
         errorMessage = `An unexpected error occurred: ${authError.message}`;
       }
       setError(errorMessage);
+    } finally {
       setIsLoading(false);
-    } 
+    }
   };
   
   if (isUserLoading || isAdminLoading || user) {

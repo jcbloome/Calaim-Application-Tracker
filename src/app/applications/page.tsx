@@ -19,7 +19,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Header } from '@/components/Header';
 import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, doc, deleteDoc, Query, Timestamp, writeBatch, collectionGroup } from 'firebase/firestore';
+import { collection, doc, deleteDoc, Query, Timestamp, writeBatch } from 'firebase/firestore';
 import { format } from 'date-fns';
 import {
   AlertDialog,
@@ -32,8 +32,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { useAdmin } from '@/hooks/use-admin';
-
 
 // Define a type for the application data coming from Firestore
 interface ApplicationData {
@@ -69,19 +67,14 @@ const ApplicationsTable = ({
   onSelectionChange,
   selection,
   isLoading,
-  isAdmin,
 }: {
   title: string;
   applications: ApplicationData[];
   onSelectionChange?: (id: string, isSelected: boolean) => void;
   selection?: string[];
   isLoading: boolean;
-  isAdmin?: boolean;
 }) => {
   const getActionLink = (app: ApplicationData) => {
-    if(isAdmin) {
-        return `/admin/applications/${app.id}?userId=${app.userId}`;
-    }
     // If the application is still being worked on, send the user back to the form to continue editing.
     if (app.status === 'In Progress' || app.status === 'Requires Revision') {
       return `/forms/cs-summary-form?applicationId=${app.id}`;
@@ -91,7 +84,6 @@ const ApplicationsTable = ({
   };
 
   const getActionText = (app: ApplicationData) => {
-    if (isAdmin) return 'Details';
      if (app.status === 'In Progress' || app.status === 'Requires Revision') {
       return 'Continue';
     }
@@ -168,84 +160,35 @@ const ApplicationsTable = ({
   );
 };
 
-
-function AuthDebugPanel() {
-    const { user, isUserLoading, userError } = useUser();
-
-    const getStatus = () => {
-        if (isUserLoading) return <span className="text-yellow-500">Loading...</span>;
-        if (user) return <span className="text-green-500">Authenticated</span>;
-        return <span className="text-red-500">Not Authenticated</span>;
-    }
-
-    return (
-        <Card className="mt-6 bg-gray-800 text-white">
-            <CardHeader>
-                <CardTitle className="text-lg text-gray-300">Auth Debug Panel (User)</CardTitle>
-            </CardHeader>
-            <CardContent className="font-mono text-xs space-y-2">
-                <p><strong>Status:</strong> {getStatus()}</p>
-                <p><strong>isUserLoading:</strong> {String(isUserLoading)}</p>
-                <p><strong>User:</strong> {user ? user.email : 'null'}</p>
-                 <p><strong>Error:</strong> {userError ? userError.message : 'null'}</p>
-            </CardContent>
-        </Card>
-    )
-}
-
-
 export default function MyApplicationsPage() {
   const { user, isUserLoading } = useUser();
-  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
   const router = useRouter();
   
   const applicationsQuery = useMemoFirebase(() => {
-    // Crucially, wait for both user and admin status to be determined.
-    if (isUserLoading || isAdminLoading) {
+    if (isUserLoading || !user) {
       return null;
     }
-
-    // No user, no query.
-    if (!user) {
-      return null;
-    }
-    
-    // Admins get a collection group query to see ALL applications
-    if (isAdmin || isSuperAdmin) {
-      return collectionGroup(firestore, 'applications') as Query<ApplicationData>;
-    }
-
-    // Regular users only see their own applications
+    // This query is now only for the logged-in user.
     return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
-  }, [firestore, user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading]);
+  }, [firestore, user, isUserLoading]);
   
   const { data: applications = [], isLoading: isLoadingApplications, error } = useCollection<ApplicationData>(applicationsQuery);
 
   const [selected, setSelected] = useState<string[]>([]);
   
   useEffect(() => {
-    const loading = isUserLoading || isAdminLoading;
-    if (loading) return; 
+    if (isUserLoading) return; 
 
     // If loading is finished and there's no user, redirect to login.
     if (!user) {
         router.push('/login');
-        return;
     }
+  }, [user, isUserLoading, router]);
 
-    // If user is an admin, redirect them to the admin dashboard.
-    if (isAdmin || isSuperAdmin) {
-        router.push('/admin');
-        return;
-    }
+  const isPageLoading = isUserLoading || isLoadingApplications;
 
-  }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
-
-  // Combined loading state for the main page content.
-  const isPageLoading = isUserLoading || isAdminLoading || isLoadingApplications;
-
-  if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
+  if (isUserLoading || !user) {
     // This renders a full-page spinner during initial auth checks and redirection.
     return (
         <div className="flex items-center justify-center h-screen">
@@ -272,15 +215,9 @@ export default function MyApplicationsPage() {
 
     const batch = writeBatch(firestore);
     
-    // Admins delete from a collection group, regular users from a subcollection.
-    const appsToDelete = applications.filter(app => selected.includes(app.id));
-
-    appsToDelete.forEach(app => {
-        // The path must be constructed based on the app's own userId property
-        if(app.userId) {
-             const docRef = doc(firestore, `users/${app.userId}/applications`, app.id);
-             batch.delete(docRef);
-        }
+    selected.forEach(appId => {
+      const docRef = doc(firestore, `users/${user.uid}/applications`, appId);
+      batch.delete(docRef);
     });
     
     await batch.commit();
@@ -328,9 +265,9 @@ export default function MyApplicationsPage() {
                     </Button>
                 </div>
             </div>
-             <AuthDebugPanel />
         </div>
 
+        {error && <p className="text-destructive mb-4">Error loading applications: {error.message}</p>}
 
         <div className="space-y-8">
           <ApplicationsTable

@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -10,14 +11,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
-import { Loader2, UserCog, ShieldAlert } from 'lucide-react';
+import { Loader2, UserCog } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useAdmin } from '@/hooks/use-admin';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function ProfilePage() {
   const { user, isUserLoading } = useUser();
-  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const auth = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -29,8 +27,7 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const loading = isUserLoading || isAdminLoading;
-    if (loading) {
+    if (isUserLoading) {
       return; // Wait until all auth checks are done
     }
 
@@ -38,20 +35,13 @@ export default function ProfilePage() {
       router.push('/login'); // Not logged in, go to login
       return;
     }
-
-    // NEW: Redirect admins away from the user profile page
-    if (isAdmin || isSuperAdmin) {
-      router.push('/admin');
-      return;
-    }
     
-    // If we are here, user is a regular user, so populate their data
     if (user?.displayName) {
       const nameParts = user.displayName.split(' ');
       setFirstName(nameParts[0] || '');
       setLastName(nameParts.slice(1).join(' ') || '');
     }
-  }, [user, isUserLoading, isAdmin, isSuperAdmin, isAdminLoading, router]);
+  }, [user, isUserLoading, router]);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,7 +107,7 @@ export default function ProfilePage() {
       setLastName(value);
   };
 
-  if (isUserLoading || isAdminLoading || !user || isAdmin || isSuperAdmin) {
+  if (isUserLoading || !user) {
     return (
         <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin" />

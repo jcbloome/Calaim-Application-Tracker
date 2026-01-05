@@ -16,33 +16,6 @@ import Image from 'next/image';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useAdmin } from '@/hooks/use-admin';
 
-
-function AuthDebugPanel() {
-    const { user, isAdmin, isSuperAdmin, isLoading } = useAdmin();
-
-    const getStatus = () => {
-        if (isLoading) return <span className="text-yellow-500">Loading...</span>;
-        if (user) return <span className="text-green-500">Authenticated</span>;
-        return <span className="text-red-500">Not Authenticated</span>;
-    }
-
-    return (
-        <Card className="mt-6 bg-gray-900 text-white">
-            <CardHeader>
-                <CardTitle className="text-lg text-gray-300">Auth State Debugger</CardTitle>
-            </CardHeader>
-            <CardContent className="font-mono text-xs space-y-2">
-                <p><strong>Status:</strong> {getStatus()}</p>
-                <p><strong>isLoading:</strong> {String(isLoading)}</p>
-                <p><strong>User:</strong> {user ? user.email : 'null'}</p>
-                <p><strong>isAdmin:</strong> {String(isAdmin)}</p>
-                <p><strong>isSuperAdmin:</strong> {String(isSuperAdmin)}</p>
-            </CardContent>
-        </Card>
-    )
-}
-
-
 export default function AdminLoginPage() {
   const auth = useAuth();
   const router = useRouter();
@@ -55,18 +28,14 @@ export default function AdminLoginPage() {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // This effect handles redirection AFTER a user is successfully logged in and their role is determined.
   useEffect(() => {
-    // Wait until loading is fully complete.
     if (isAdminLoading) {
       return;
     }
 
-    // If loading is done, and we have a user with the correct role, redirect to the dashboard.
     if (user && (isAdmin || isSuperAdmin)) {
       router.push('/admin');
     }
-
   }, [user, isAdmin, isSuperAdmin, isAdminLoading, router]);
 
 
@@ -89,28 +58,33 @@ export default function AdminLoginPage() {
 
     try {
       await setPersistence(auth, browserSessionPersistence);
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      // After sign-in, the useEffect will handle the redirection once the admin role is confirmed.
+      await signInWithEmailAndPassword(auth, email, password);
+      // The useEffect will handle redirection after role is verified.
       toast({
-        title: `Signed in as ${userCredential.user.email}`,
-        description: 'Verifying permissions and redirecting...',
+        title: `Signed in as ${email}`,
+        description: 'Verifying administrator permissions...',
       });
     } catch (err) {
       const authError = err as AuthError;
-      let errorMessage = 'Invalid email or password. Please try again.';
+      let errorMessage = 'An error occurred. Please try again.';
       if (authError.code === 'auth/user-not-found' || authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
         errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+      } else if (authError.code === 'auth/too-many-requests') {
+        errorMessage = 'Access to this account has been temporarily disabled due to many failed login attempts. You can immediately restore it by resetting your password or you can try again later.';
       } else {
         errorMessage = `An unexpected error occurred: ${authError.message}`;
       }
       setError(errorMessage);
     } finally {
-      setIsSigningIn(false); // Stop loading indicator after attempt
+      // Don't set isSigningIn to false immediately on success,
+      // as the useEffect will redirect. Only set it on error.
+      if (error) {
+        setIsSigningIn(false);
+      }
     }
   };
   
-  // Show a loading spinner if the initial auth state is loading or if we are in the process of signing in.
-  if (isAdminLoading && !isSigningIn) {
+  if (isAdminLoading || (user && (isAdmin || isSuperAdmin))) {
     return (
       <div className="flex items-center justify-center h-screen">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -190,7 +164,14 @@ export default function AdminLoginPage() {
             </Alert>
           )}
 
-          <AuthDebugPanel />
+           {!isAdmin && !isSuperAdmin && user && !isAdminLoading && (
+                 <Alert variant="destructive" className="mt-4">
+                    <AlertTitle>Permission Denied</AlertTitle>
+                    <AlertDescription>
+                        This account does not have administrator permissions. Please log in with an admin account.
+                    </AlertDescription>
+                </Alert>
+           )}
       </div>
     </main>
   );
