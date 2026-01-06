@@ -177,7 +177,7 @@ export default function SuperAdminPage() {
     const { data: allApplications, isLoading: isLoadingApplications } = useCollection<Application & FormValues>(applicationsQuery);
     
     const fetchAllStaff = async () => {
-        if (!firestore) return;
+        if (!firestore || !currentUser) return;
         setIsLoadingStaff(true);
         try {
             const usersCollectionRef = collection(firestore, 'users');
@@ -203,7 +203,7 @@ export default function SuperAdminPage() {
             const allStaffIds = new Set([...adminIds, ...superAdminIds]);
             
             // Always ensure the hardcoded admin is in the set to be processed.
-            if (currentUser?.email === 'jason@carehomefinders.com' && !allStaffIds.has(currentUser.uid)) {
+            if (currentUser.email === 'jason@carehomefinders.com' && !allStaffIds.has(currentUser.uid)) {
               allStaffIds.add(currentUser.uid);
             }
 
@@ -279,7 +279,7 @@ export default function SuperAdminPage() {
             // 2. Sign out the temporary user immediately
             await signOut(tempAuth);
 
-            // 3. As the logged-in admin, create the necessary Firestore documents and send password reset
+            // 3. As the logged-in admin, create the necessary Firestore documents
             const batch = writeBatch(firestore);
             
             // User document
@@ -300,12 +300,9 @@ export default function SuperAdminPage() {
             // 4. Commit the batch
             await batch.commit();
 
-            // 5. Send password reset email
-            await sendPasswordResetEmail(tempAuth, newStaffEmail);
-
             toast({
                 title: "Staff Member Added!",
-                description: `${newStaffEmail} has been created and granted Admin permissions. A password setup email has been sent.`,
+                description: `${newStaffEmail} has been created and granted Admin permissions. They will need to reset their password to log in.`,
                 duration: 7000,
                 className: 'bg-green-100 text-green-900 border-green-200',
             });
@@ -723,7 +720,7 @@ export default function SuperAdminPage() {
                                                 <ShieldCheck className={`h-4 w-4 ${staff.role === 'Super Admin' ? 'text-primary' : 'text-muted-foreground'}`}/>
                                                 <Label htmlFor={`superadmin-switch-${staff.uid}`} className="text-sm font-medium">Super Admin</Label>
                                             </div>
-                                            <Switch id={`superadmin-switch-${staff.uid}`} checked={staff.role === 'Super Admin'} onCheckedChange={(checked) => handleRoleToggle(staff.uid, checked)} aria-label={`Toggle Super Admin for ${staff.email}`} />
+                                            <Switch id={`superadmin-switch-${staff.uid}`} checked={staff.role === 'Super Admin'} onCheckedChange={(checked) => handleRoleToggle(staff.uid, checked)} aria-label={`Toggle Super Admin for ${staff.email}`} disabled={staff.email === 'jason@carehomefinders.com'} />
                                         </div>
                                         <div className="flex items-center justify-between gap-4">
                                             <div className="flex items-center gap-2">
