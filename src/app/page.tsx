@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -21,17 +20,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, Loader2, LogIn, LogOut } from 'lucide-react';
+import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 
-export default function LoginPage() {
+export default function HomePage() {
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+  const { user, isAdmin, isSuperAdmin, isUserLoading } = useAdmin();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,22 +39,13 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // This effect handles redirection and session management.
-    if (isAdminLoading) {
-      return; // Wait for auth state to be determined.
+    if (isUserLoading) {
+      return; 
     }
-
-    if (user && (isAdmin || isSuperAdmin)) {
-      // If an admin is logged in, log them out before they can use the user portal.
-      auth?.signOut();
-      return; // The auth state will change, and this effect will re-run.
-    }
-
     if (user) {
-      // If a non-admin user is logged in, send them to their applications.
       router.push('/applications');
     }
-  }, [user, isAdminLoading, isAdmin, isSuperAdmin, auth, router]);
+  }, [user, isUserLoading, router]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,8 +84,7 @@ export default function LoginPage() {
     }
   };
   
-  if (isAdminLoading || (user && (isAdmin || isSuperAdmin))) {
-      // Show a loading screen while checking auth state or while the admin is being logged out.
+  if (isUserLoading || user) {
       return (
           <div className="flex items-center justify-center h-screen">
               <Loader2 className="h-8 w-8 animate-spin" />
@@ -104,8 +93,6 @@ export default function LoginPage() {
       );
   }
 
-  // If a user exists and they are NOT an admin, they will be redirected by the useEffect.
-  // This form will only be visible to truly logged-out users.
   return (
     <>
       <Header />
