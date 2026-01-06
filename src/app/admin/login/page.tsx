@@ -73,8 +73,7 @@ export default function AdminLoginPage() {
         description: 'Redirecting to the admin dashboard...',
       });
       
-      // Directly navigate to the dashboard on successful sign-in
-      router.push('/admin');
+      // The useEffect hook will handle redirection once useAdmin confirms the user's status.
 
     } catch (err) {
       const authError = err as AuthError;
