@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, FolderKanban, Users, Activity, FileCheck2 } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
@@ -22,33 +22,32 @@ export default function AdminDashboardPage() {
   const [isLoadingApps, setIsLoadingApps] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  useEffect(() => {
+  const fetchApps = useCallback(async () => {
     if (isAdminLoading || !firestore || !isAdmin) {
-      if (!isAdminLoading) setIsLoadingApps(false);
-      return;
+        if (!isAdminLoading) setIsLoadingApps(false);
+        return;
+      }
+      
+    setIsLoadingApps(true);
+    setError(null);
+    try {
+        const appsQuery = collectionGroup(firestore, 'applications');
+        const snapshot = await getDocs(appsQuery).catch(e => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' }));
+            throw e;
+        });
+        const apps = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as WithId<Application & FormValues>[];
+        setAllApplications(apps);
+    } catch (err: any) {
+        setError(err);
+    } finally {
+        setIsLoadingApps(false);
     }
-    
-    const fetchApps = async () => {
-        setIsLoadingApps(true);
-        setError(null);
-        try {
-            const appsQuery = collectionGroup(firestore, 'applications');
-            const snapshot = await getDocs(appsQuery).catch(e => {
-                errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' }));
-                throw e;
-            });
-            const apps = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as WithId<Application & FormValues>[];
-            setAllApplications(apps);
-        } catch (err: any) {
-            setError(err);
-        } finally {
-            setIsLoadingApps(false);
-        }
-    };
-
-    fetchApps();
-
   }, [firestore, isAdmin, isAdminLoading]);
+
+  useEffect(() => {
+    fetchApps();
+  }, [fetchApps]);
 
   const stats = React.useMemo(() => {
     if (!allApplications) {

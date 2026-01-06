@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore } from '@/firebase';
 import { collection, query, Timestamp, onSnapshot, Unsubscribe, getDocs, collectionGroup } from 'firebase/firestore';
@@ -63,32 +63,32 @@ export default function AdminStatisticsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  useEffect(() => {
+  const fetchApps = useCallback(async () => {
     if (isAdminLoading || !firestore || !isAdmin) {
         if (!isAdminLoading) setIsLoading(false);
         return;
     };
 
-    const fetchApps = async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            const appsQuery = collectionGroup(firestore, 'applications');
-            const snapshot = await getDocs(appsQuery).catch(e => {
-                errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' }));
-                throw e;
-            });
-            const apps = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Application[];
-            setApplications(apps);
-        } catch (err: any) {
-            setError(err);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-    fetchApps();
-
+    setIsLoading(true);
+    setError(null);
+    try {
+        const appsQuery = collectionGroup(firestore, 'applications');
+        const snapshot = await getDocs(appsQuery).catch(e => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' }));
+            throw e;
+        });
+        const apps = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Application[];
+        setApplications(apps);
+    } catch (err: any) {
+        setError(err);
+    } finally {
+        setIsLoading(false);
+    }
   }, [firestore, isAdmin, isAdminLoading]);
+
+  useEffect(() => {
+    fetchApps();
+  }, [fetchApps]);
 
   const { stats, availableYears } = useMemo(() => {
     const defaultHealthPlans = new Map<string, number>([['Kaiser', 0], ['Health Net', 0]]);
