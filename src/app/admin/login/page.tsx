@@ -67,11 +67,15 @@ export default function AdminLoginPage() {
     try {
       await setPersistence(auth, browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
-      // The useEffect will handle redirection.
+      
       toast({
         title: 'Sign In Successful!',
         description: 'Redirecting to the admin dashboard...',
       });
+      
+      // Directly navigate to the dashboard on successful sign-in
+      router.push('/admin');
+
     } catch (err) {
       const authError = err as AuthError;
       let errorMessage = 'An unexpected error occurred.';
