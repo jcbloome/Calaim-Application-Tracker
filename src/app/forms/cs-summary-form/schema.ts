@@ -70,8 +70,7 @@ export const formSchema = z.object({
     secondaryContactLanguage: optionalString,
 
     // Step 1 - Legal Rep
-    hasCapacity: z.enum(['Yes', 'No'], { errorMap: () => ({ message: ' ' }) }),
-    hasLegalRep: z.enum(['sameAsPrimary', 'different', 'no', 'notApplicable'], { errorMap: () => ({ message: "Please make a selection."})}).optional().nullable(),
+    hasLegalRep: z.enum(['no_has_capacity', 'same_as_primary', 'different', 'no_has_rep'], { errorMap: () => ({ message: "Please make a selection."})}).optional().nullable(),
     repFirstName: optionalString,
     repLastName: optionalString,
     repRelationship: optionalString,
@@ -141,12 +140,12 @@ export const formSchema = z.object({
       });
     }
 
-    if (data.hasCapacity === 'No' && !data.hasLegalRep) {
-        ctx.addIssue({
-            code: 'custom',
-            message: ' ',
-            path: ['hasLegalRep'],
-        });
+    if (data.hasLegalRep === 'different') {
+        if (!data.repFirstName) ctx.addIssue({ code: 'custom', message: ' ', path: ['repFirstName'] });
+        if (!data.repLastName) ctx.addIssue({ code: 'custom', message: ' ', path: ['repLastName'] });
+        if (!data.repRelationship) ctx.addIssue({ code: 'custom', message: ' ', path: ['repRelationship'] });
+        if (!data.repPhone) ctx.addIssue({ code: 'custom', message: ' ', path: ['repPhone'] });
+        if (!data.repEmail) ctx.addIssue({ code: 'custom', message: ' ', path: ['repEmail'] });
     }
   });
 

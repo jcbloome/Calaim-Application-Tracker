@@ -15,7 +15,6 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
   const { control, watch, setValue, getValues, clearErrors } = useFormContext<FormValues>();
   
   const memberDob = watch('memberDob');
-  const hasCapacity = watch('hasCapacity');
   const hasLegalRep = watch('hasLegalRep');
 
   useEffect(() => {
@@ -36,7 +35,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
   }, [memberDob, setValue]);
   
   useEffect(() => {
-    const isSameAsPrimary = hasLegalRep === 'sameAsPrimary';
+    const isSameAsPrimary = hasLegalRep === 'same_as_primary';
     
     if (isSameAsPrimary) {
         setValue('repFirstName', getValues('bestContactFirstName'));
@@ -45,7 +44,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
         setValue('repPhone', getValues('bestContactPhone'));
         setValue('repEmail', getValues('bestContactEmail'));
         clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
-    } else if (hasLegalRep === 'no' || hasCapacity === 'Yes' || hasLegalRep === 'different' || hasLegalRep === 'notApplicable') {
+    } else {
         const currentRepValues = {
             repFirstName: getValues('repFirstName'),
             repLastName: getValues('repLastName'),
@@ -70,10 +69,15 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
             setValue('repEmail', '');
         }
         
-        clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
+        if (hasLegalRep === 'different') {
+          // You might want to trigger validation here if needed, but the main validation happens on submit
+        } else {
+          // Clear errors for other states
+          clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
+        }
     }
 
-  }, [hasLegalRep, hasCapacity, setValue, getValues, clearErrors]);
+  }, [hasLegalRep, setValue, getValues, clearErrors]);
 
 
   return (
@@ -434,79 +438,57 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
         <CardContent className="space-y-6">
             <FormField
                 control={control}
-                name="hasCapacity"
+                name="hasLegalRep"
                 render={({ field }) => (
                     <FormItem className="space-y-3">
-                    <FormLabel>Does member have capacity to make their own decisions? <span className="text-destructive">*</span></FormLabel>
+                    <FormLabel>Does member have a legal representative? <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
-                        <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-4">
-                        <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Yes" /></FormControl><FormLabel className="font-normal">Yes</FormLabel></FormItem>
-                        <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="No" /></FormControl><FormLabel className="font-normal">No</FormLabel></FormItem>
+                        <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col space-y-2">
+                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="no_has_capacity" /></FormControl><FormLabel className="font-normal">No, member has capacity and does not need legal representative</FormLabel></FormItem>
+                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="same_as_primary" /></FormControl><FormLabel className="font-normal">Yes, same as primary contact</FormLabel></FormItem>
+                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="different" /></FormControl><FormLabel className="font-normal">Yes, not same as primary contact (fill out below fields)</FormLabel></FormItem>
+                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="no_has_rep" /></FormControl><FormLabel className="font-normal">Member does not have capacity and does not have legal representative</FormLabel></FormItem>
                         </RadioGroup>
                     </FormControl>
                     <FormMessage />
                     </FormItem>
                 )}
             />
-
+            
             <div className="p-4 border rounded-md space-y-4">
-                <FormField
-                    control={control}
-                    name="hasLegalRep"
-                    render={({ field }) => (
-                        <FormItem className="space-y-2">
-                        <FormLabel>
-                            If member does not have capacity do they have a legal representative
-                        </FormLabel>
-                        <FormControl>
-                            <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col space-y-2">
-                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="sameAsPrimary" /></FormControl><FormLabel className="font-normal">Yes, same as primary contact</FormLabel></FormItem>
-                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="different" /></FormControl><FormLabel className="font-normal">Yes, not same as primary contact (fill out fields below)</FormLabel></FormItem>
-                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="no" /></FormControl><FormLabel className="font-normal">No, member does not have capacity and does not have legal representative</FormLabel></FormItem>
-                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="notApplicable" /></FormControl><FormLabel className="font-normal">N/A, member has capacity and does not need legal representative</FormLabel></FormItem>
-                            </RadioGroup>
-                        </FormControl>
-                        <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                
                 <h3 className="font-medium">Representative's Contact Info</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repFirstName" render={({ field }) => (
-                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>First Name {hasLegalRep === 'different' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="repLastName" render={({ field }) => (
-                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Last Name {hasLegalRep === 'different' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
                 <FormField control={control} name="repRelationship" render={({ field }) => (
-                    <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Relationship {hasLegalRep === 'different' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repPhone" render={({ field }) => (
                         <FormItem>
-                            <FormLabel>Phone</FormLabel>
-                            <FormControl><PhoneInput {...field} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl>
+                            <FormLabel>Phone {hasLegalRep === 'different' && <span className="text-destructive">*</span>}</FormLabel>
+                            <FormControl><PhoneInput {...field} disabled={hasLegalRep === 'same_as_primary'} /></FormControl>
                             <FormDescription>(xxx) xxx-xxxx</FormDescription>
                             <FormMessage />
                         </FormItem>
                     )} />
                     <FormField control={control} name="repEmail" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <FormControl><Input type="email" {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl>
+                          <FormLabel>Email {hasLegalRep === 'different' && <span className="text-destructive">*</span>}</FormLabel>
+                          <FormControl><Input type="email" {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl>
                           <FormDescription>If no email, enter "N/A".</FormDescription>
                           <FormMessage />
                         </FormItem>
                     )} />
                 </div>
-
             </div>
         </CardContent>
       </Card>
     </div>
   );
 }
-
-    

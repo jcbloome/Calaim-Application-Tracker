@@ -439,7 +439,7 @@ function ApplicationDetailPageContent() {
   const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
   const servicesDeclined = waiverFormStatus?.choice === 'decline';
 
-  const needsUrgentAttention = application.hasCapacity === 'No' && application.hasLegalRep === 'No';
+  const needsUrgentAttention = application.hasLegalRep === 'no_has_rep';
 
   const waiverSubTasks = [
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },

@@ -8,7 +8,6 @@ export type Application = {
   userId?: string;
   memberFirstName: string;
   memberLastName: string;
-  memberCounty: string;
   memberMrn: string;
   memberDob?: any;
   sex?: 'Male' | 'Female';
@@ -44,8 +43,7 @@ export type Application = {
   secondaryContactPhone?: string;
   secondaryContactEmail?: string;
   secondaryContactLanguage?: string;
-  hasCapacity?: 'Yes' | 'No';
-  hasLegalRep?: 'Yes' | 'No' | null;
+  hasLegalRep?: 'no_has_capacity' | 'same_as_primary' | 'different' | 'no_has_rep' | null;
   repFirstName?: string | null;
   repLastName?: string | null;
   repRelationship?: string | null;
