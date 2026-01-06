@@ -39,20 +39,12 @@ export default function AdminLoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // This effect ONLY handles redirecting an already logged-in admin
-  // or logging out an invalid user. The post-login redirect is handled here too.
+  // This effect will redirect a logged-in admin away from the login page.
   useEffect(() => {
-    if (isAdminLoading) {
-      return;
-    }
-    
-    if (user && (isAdmin || isSuperAdmin)) {
+    if (!isAdminLoading && (isAdmin || isSuperAdmin)) {
       router.push('/admin');
-    } else if (user && !isAdmin && !isSuperAdmin) {
-      // If a non-admin user somehow gets here, log them out.
-      auth?.signOut();
     }
-  }, [user, isAdmin, isSuperAdmin, isAdminLoading, router, auth]);
+  }, [isAdmin, isSuperAdmin, isAdminLoading, router]);
 
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -70,15 +62,14 @@ export default function AdminLoginPage() {
       await setPersistence(auth, browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
       
-      // The `onAuthStateChanged` listener and the `useAdmin` hook will now
-      // automatically trigger the redirection via the useEffect hook above.
+      // On successful sign-in, the `useAdmin` hook will update,
+      // and the useEffect hook above will handle the redirection.
       // We just need to show a pending state to the user.
       toast({
         title: 'Sign In Successful!',
         description: 'Verifying admin status and redirecting...',
       });
-      // On success, we don't set loading to false. We let the redirect happen.
-      // If the redirect fails for some reason, the user can try again.
+      // The loading state will be managed by the redirection in the layout.
 
     } catch (err) {
       const authError = err as AuthError;
@@ -93,16 +84,8 @@ export default function AdminLoginPage() {
     }
   };
 
-  const handleSignOut = async () => {
-    if (auth) {
-      await auth.signOut();
-      // Force a full reload to clear all state
-      window.location.reload();
-    }
-  };
-
-  // While checking auth state or logging out a non-admin, show a loader
-  if (isAdminLoading || (user && !isAdmin && !isSuperAdmin && !window.location.pathname.endsWith('/admin/login'))) {
+  // While checking auth state, show a loader
+  if (isAdminLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />
