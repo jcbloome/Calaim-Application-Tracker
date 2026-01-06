@@ -39,9 +39,8 @@ export default function AdminLoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // This effect now ONLY handles redirecting an already logged-in admin
-  // or logging out an invalid user. The post-login redirect is handled
-  // in the signIn function.
+  // This effect ONLY handles redirecting an already logged-in admin
+  // or logging out an invalid user. The post-login redirect is handled here too.
   useEffect(() => {
     if (isAdminLoading) {
       return;
@@ -50,6 +49,7 @@ export default function AdminLoginPage() {
     if (user && (isAdmin || isSuperAdmin)) {
       router.push('/admin');
     } else if (user && !isAdmin && !isSuperAdmin) {
+      // If a non-admin user somehow gets here, log them out.
       auth?.signOut();
     }
   }, [user, isAdmin, isSuperAdmin, isAdminLoading, router, auth]);
@@ -77,7 +77,8 @@ export default function AdminLoginPage() {
         title: 'Sign In Successful!',
         description: 'Verifying admin status and redirecting...',
       });
-      // The component will now wait for the useEffect to react to the new auth state.
+      // On success, we don't set loading to false. We let the redirect happen.
+      // If the redirect fails for some reason, the user can try again.
 
     } catch (err) {
       const authError = err as AuthError;
@@ -88,7 +89,7 @@ export default function AdminLoginPage() {
           errorMessage = 'Access to this account has been temporarily disabled due to many failed login attempts. You can immediately restore it by resetting your password or you can try again later.';
       }
       setError(errorMessage);
-      setIsLoading(false); // Only set loading to false on error. On success, let the redirect handle it.
+      setIsLoading(false); // Only set loading to false on error.
     }
   };
 
@@ -101,7 +102,7 @@ export default function AdminLoginPage() {
   };
 
   // While checking auth state or logging out a non-admin, show a loader
-  if (isAdminLoading || (user && !isAdmin && !isSuperAdmin)) {
+  if (isAdminLoading || (user && !isAdmin && !isSuperAdmin && !window.location.pathname.endsWith('/admin/login'))) {
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -110,8 +111,6 @@ export default function AdminLoginPage() {
     );
   }
 
-  // If a user is logged in but is NOT an admin, they are logged out by the useEffect.
-  // This login form is only shown to users who are truly logged out.
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
       <div className="w-full max-w-md">
