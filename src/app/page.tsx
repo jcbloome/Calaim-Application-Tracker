@@ -4,8 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/firebase';
 import {
   signInWithEmailAndPassword,
-  setPersistence,
   browserLocalPersistence,
+  setPersistence,
 } from 'firebase/auth';
 import type { AuthError } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -30,7 +30,7 @@ export default function HomePage() {
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const { user, isAdmin, isSuperAdmin, isUserLoading } = useAdmin();
+  const { user, isUserLoading } = useAdmin();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -60,6 +60,7 @@ export default function HomePage() {
     }
 
     try {
+      // Set persistence to be local across browser windows
       await setPersistence(auth, browserLocalPersistence);
       await signInWithEmailAndPassword(auth, email, password);
       
