@@ -11,7 +11,7 @@ interface AdminStatus {
   isSuperAdmin: boolean;
   isLoading: boolean;
   user: User | null;
-  isUserLoading: boolean; // Add the missing property
+  isUserLoading: boolean;
 }
 
 export function useAdmin(): AdminStatus {
@@ -78,6 +78,6 @@ export function useAdmin(): AdminStatus {
     isAdmin,
     isSuperAdmin,
     isLoading: isUserLoading || isLoading,
-    isUserLoading: isUserLoading, // Return the property
+    isUserLoading: isUserLoading,
   };
 }

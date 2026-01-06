@@ -4,7 +4,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, Query, where, doc, writeBatch, getDocs, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { collection, query, Query, where, doc, writeBatch, getDocs, onSnapshot, Unsubscribe, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
@@ -62,83 +62,32 @@ export default function AdminApplicationsPage() {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    if (!firestore || !isAdmin) {
+    if (isAdminLoading || !firestore || !isAdmin) {
       if (!isAdminLoading) setIsLoading(false);
       return;
     }
 
-    setIsLoading(true);
-    const usersRef = collection(firestore, 'users');
-    let applicationListeners: Unsubscribe[] = [];
-
-    const usersListener = onSnapshot(usersRef, 
-      (usersSnapshot) => {
-        // Unsubscribe from old application listeners to prevent leaks
-        applicationListeners.forEach(unsub => unsub());
-        applicationListeners = [];
-        
-        let allApps: (Application & FormValues)[] = [];
-        let pendingUserCollections = usersSnapshot.docs.length;
-        
-        if (pendingUserCollections === 0) {
-            setAllApplications([]);
-            setIsLoading(false);
-            return;
-        }
-
-        const appUpdateCallback = () => {
-            setAllApplications([...allApps]); // Create a new array reference
-            // Only stop loading when all have been processed at least once
-            if (pendingUserCollections === 0) {
-                setIsLoading(false);
-            }
-        };
-
-        usersSnapshot.docs.forEach((userDoc) => {
-          const appsRef = collection(firestore, `users/${userDoc.id}/applications`);
-          const appsListener = onSnapshot(appsRef, 
-            (appsSnapshot) => {
-              appsSnapshot.docChanges().forEach((change) => {
-                const appData = { id: change.doc.id, ...change.doc.data() } as Application & FormValues;
-                const index = allApps.findIndex(a => a.id === appData.id);
-
-                if (change.type === "removed") {
-                    if (index > -1) allApps.splice(index, 1);
-                } else { // 'added' or 'modified'
-                    if (index > -1) {
-                      allApps[index] = appData;
-                    } else {
-                      allApps.push(appData);
-                    }
-                }
-              });
-              
-              if(pendingUserCollections > 0) pendingUserCollections--;
-              appUpdateCallback();
-            },
-            (err) => {
-                const permissionError = new FirestorePermissionError({ path: `users/${userDoc.id}/applications`, operation: 'list' });
-                setError(permissionError); // Set local error for UI
-                errorEmitter.emit('permission-error', permissionError); // Emit global error
-                if(pendingUserCollections > 0) pendingUserCollections--;
-                if (pendingUserCollections === 0) setIsLoading(false);
-            }
-          );
-          applicationListeners.push(appsListener);
+    const fetchAllApplications = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const appsQuery = collectionGroup(firestore, 'applications');
+        const snapshot = await getDocs(appsQuery).catch(e => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' }));
+            throw e;
         });
-      },
-      (err) => {
-        const permissionError = new FirestorePermissionError({ path: 'users', operation: 'list' });
-        setError(permissionError); // Set local error for UI
-        errorEmitter.emit('permission-error', permissionError); // Emit global error
+
+        const apps = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as (Application & FormValues)[];
+        setAllApplications(apps);
+        
+      } catch (err: any) {
+        setError(err);
+      } finally {
         setIsLoading(false);
       }
-    );
-
-    return () => {
-      usersListener();
-      applicationListeners.forEach(unsub => unsub());
     };
+
+    fetchAllApplications();
   }, [firestore, isAdmin, isAdminLoading]);
 
 
@@ -165,7 +114,9 @@ export default function AdminApplicationsPage() {
         title: 'Applications Deleted',
         description: `${selected.length} application(s) have been successfully deleted.`,
       });
-      setSelected([]); // This will clear checkboxes, the onSnapshot will update the table
+      // Refetch data
+       setAllApplications(prev => prev.filter(app => !selected.includes(app.id)));
+      setSelected([]);
     } catch (error: any) {
       toast({
         variant: 'destructive',

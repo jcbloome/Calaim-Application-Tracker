@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2, FolderKanban, Users, Activity, FileCheck2 } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore, type WithId } from '@/firebase';
-import { collection, onSnapshot, Unsubscribe, Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, Unsubscribe, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './applications/components/AdminApplicationsTable';
@@ -18,7 +18,7 @@ export default function AdminDashboardPage() {
   const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
 
-  const [allApplications, setAllApplications] = useState<(Application & FormValues)[]>([]);
+  const [allApplications, setAllApplications] = useState<WithId<Application & FormValues>[]>([]);
   const [isLoadingApps, setIsLoadingApps] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -28,77 +28,26 @@ export default function AdminDashboardPage() {
       return;
     }
     
-    setIsLoadingApps(true);
-    const usersRef = collection(firestore, 'users');
-    let applicationListeners: Unsubscribe[] = [];
-
-    const usersListener = onSnapshot(usersRef,
-      (usersSnapshot) => {
-        applicationListeners.forEach(unsub => unsub());
-        applicationListeners = [];
-
-        let allApps: (Application & FormValues)[] = [];
-        let pendingUserCollections = usersSnapshot.docs.length;
-        
-        if (pendingUserCollections === 0) {
-          setAllApplications([]);
-          setIsLoadingApps(false);
-          return;
+    const fetchApps = async () => {
+        setIsLoadingApps(true);
+        setError(null);
+        try {
+            const appsQuery = collectionGroup(firestore, 'applications');
+            const snapshot = await getDocs(appsQuery).catch(e => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' }));
+                throw e;
+            });
+            const apps = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as WithId<Application & FormValues>[];
+            setAllApplications(apps);
+        } catch (err: any) {
+            setError(err);
+        } finally {
+            setIsLoadingApps(false);
         }
-
-        const appUpdateCallback = () => {
-            setAllApplications([...allApps]); // Create a new array reference
-            // Only stop loading when all have been processed at least once
-            if (pendingUserCollections === 0) {
-                setIsLoadingApps(false);
-            }
-        };
-
-        usersSnapshot.docs.forEach(userDoc => {
-          const appsRef = collection(firestore, `users/${userDoc.id}/applications`);
-          const appsListener = onSnapshot(appsRef, 
-            (appsSnapshot) => {
-              appsSnapshot.docChanges().forEach((change) => {
-                const appData = { id: change.doc.id, ...change.doc.data() } as Application & FormValues;
-                const index = allApps.findIndex(a => a.id === appData.id);
-
-                if (change.type === "removed") {
-                    if (index > -1) allApps.splice(index, 1);
-                } else { // 'added' or 'modified'
-                    if (index > -1) {
-                      allApps[index] = appData;
-                    } else {
-                      allApps.push(appData);
-                    }
-                }
-              });
-
-              if(pendingUserCollections > 0) pendingUserCollections--;
-              appUpdateCallback();
-            },
-            (err) => {
-              const permissionError = new FirestorePermissionError({ path: `users/${userDoc.id}/applications`, operation: 'list' });
-              setError(permissionError); // Set local error for UI
-              errorEmitter.emit('permission-error', permissionError); // Emit global error
-              if(pendingUserCollections > 0) pendingUserCollections--;
-              if(pendingUserCollections === 0) setIsLoadingApps(false);
-            }
-          );
-          applicationListeners.push(appsListener);
-        });
-      },
-      (err) => {
-        const permissionError = new FirestorePermissionError({ path: 'users', operation: 'list' });
-        setError(permissionError); // Set local error for UI
-        errorEmitter.emit('permission-error', permissionError); // Emit global error
-        setIsLoadingApps(false);
-      }
-    );
-
-    return () => {
-      usersListener();
-      applicationListeners.forEach(unsub => unsub());
     };
+
+    fetchApps();
+
   }, [firestore, isAdmin, isAdminLoading]);
 
   const stats = React.useMemo(() => {

@@ -4,7 +4,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore } from '@/firebase';
-import { collection, query, Timestamp, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { collection, query, Timestamp, onSnapshot, Unsubscribe, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import { Loader2 } from 'lucide-react';
 import {
@@ -69,77 +69,24 @@ export default function AdminStatisticsPage() {
         return;
     };
 
-    setIsLoading(true);
-    const usersRef = collection(firestore, 'users');
-    let applicationListeners: Unsubscribe[] = [];
-
-    const usersListener = onSnapshot(usersRef,
-      (usersSnapshot) => {
-        applicationListeners.forEach(unsub => unsub());
-        applicationListeners = [];
-
-        let allApps: Application[] = [];
-        let pendingUserCollections = usersSnapshot.docs.length;
-        
-        if (pendingUserCollections === 0) {
-            setApplications([]);
+    const fetchApps = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const appsQuery = collectionGroup(firestore, 'applications');
+            const snapshot = await getDocs(appsQuery).catch(e => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' }));
+                throw e;
+            });
+            const apps = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Application[];
+            setApplications(apps);
+        } catch (err: any) {
+            setError(err);
+        } finally {
             setIsLoading(false);
-            return;
         }
-
-        const appUpdateCallback = () => {
-            setApplications([...allApps]); // Create a new array reference
-            // Only stop loading when all have been processed at least once
-            if (pendingUserCollections === 0) {
-                setIsLoading(false);
-            }
-        };
-
-        usersSnapshot.docs.forEach(userDoc => {
-          const appsRef = collection(firestore, `users/${userDoc.id}/applications`);
-          const appsListener = onSnapshot(appsRef, 
-            (appsSnapshot) => {
-              appsSnapshot.docChanges().forEach((change) => {
-                const appData = { id: change.doc.id, ...change.doc.data() } as Application;
-                const index = allApps.findIndex(a => a.id === appData.id);
-
-                if (change.type === "removed") {
-                    if (index > -1) allApps.splice(index, 1);
-                } else { // 'added' or 'modified'
-                    if (index > -1) {
-                      allApps[index] = appData;
-                    } else {
-                      allApps.push(appData);
-                    }
-                }
-              });
-
-              if(pendingUserCollections > 0) pendingUserCollections--;
-              appUpdateCallback();
-            },
-            (err) => {
-              const permissionError = new FirestorePermissionError({ path: `users/${userDoc.id}/applications`, operation: 'list' });
-              setError(permissionError); // Set local error for UI
-              errorEmitter.emit('permission-error', permissionError); // Emit global error
-              if(pendingUserCollections > 0) pendingUserCollections--;
-              if(pendingUserCollections === 0) setIsLoading(false);
-            }
-          );
-          applicationListeners.push(appsListener);
-        });
-      },
-      (err) => {
-        const permissionError = new FirestorePermissionError({ path: 'users', operation: 'list' });
-        setError(permissionError); // Set local error for UI
-        errorEmitter.emit('permission-error', permissionError); // Emit global error
-        setIsLoading(false);
-      }
-    );
-
-    return () => {
-      usersListener();
-      applicationListeners.forEach(unsub => unsub());
     };
+    fetchApps();
 
   }, [firestore, isAdmin, isAdminLoading]);
 
