@@ -28,7 +28,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 // CLIENT-SIDE LOGIC - Replaces the need for server-side AI flows for UI data.
-import { getAuth, createUserWithEmailAndPassword, initializeApp, type FirebaseApp, signOut } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, type FirebaseApp, signOut } from 'firebase/auth';
+import { initializeApp } from 'firebase/app';
 import { firebaseConfig } from '@/firebase/config';
 import { triggerMakeWebhook } from '@/ai/flows/send-to-make-flow';
 import { sendReminderEmails } from '@/ai/flows/manage-reminders';
@@ -185,8 +186,14 @@ export default function SuperAdminPage() {
 
             const [usersSnap, adminRolesSnap, superAdminRolesSnap] = await Promise.all([
                 getDocs(usersCollectionRef),
-                getDocs(adminRolesCollectionRef),
-                getDocs(superAdminRolesCollectionRef),
+                getDocs(adminRolesCollectionRef).catch(e => {
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: adminRolesCollectionRef.path, operation: 'list' }));
+                    throw e;
+                }),
+                getDocs(superAdminRolesCollectionRef).catch(e => {
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: superAdminRolesCollectionRef.path, operation: 'list' }));
+                    throw e;
+                }),
             ]);
 
             const users = new Map(usersSnap.docs.map(doc => [doc.id, doc.data() as Omit<UserData, 'id'>]));
@@ -229,8 +236,6 @@ export default function SuperAdminPage() {
             setStaffList(staff);
         } catch (error) {
             console.error("[fetchAllStaff] Error:", error);
-            const permissionError = new FirestorePermissionError({ path: 'users or roles', operation: 'list' });
-            errorEmitter.emit('permission-error', permissionError);
         } finally {
             setIsLoadingStaff(false);
         }
