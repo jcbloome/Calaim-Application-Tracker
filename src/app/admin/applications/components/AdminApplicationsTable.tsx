@@ -97,6 +97,15 @@ const Section = ({ title, children }: { title: string; children: React.ReactNode
 );
 
 const QuickViewDialog = ({ application }: { application: WithId<Application & FormValues> }) => {
+    
+    const getCapacityStatus = (hasLegalRepValue: Application['hasLegalRep']) => {
+        switch(hasLegalRepValue) {
+            case 'notApplicable': return 'Yes, member has capacity';
+            case 'no_has_rep': return 'No, member lacks capacity';
+            default: return 'Yes, member has capacity';
+        }
+    }
+    
     return (
          <Dialog>
             <DialogTrigger asChild>
@@ -135,9 +144,9 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
                     </Section>
 
                     <Section title="Legal Representative">
-                        <QuickViewField label="Member Has Capacity" value={application.hasCapacity} />
+                        <QuickViewField label="Member Has Capacity" value={getCapacityStatus(application.hasLegalRep)} />
                         <QuickViewField label="Has Legal Representative" value={application.hasLegalRep} />
-                        <QuickViewField label="Rep Name" value={`${application.repFirstName} ${application.repLastName}`} />
+                        <QuickViewField label="Rep Name" value={`${application.repFirstName || ''} ${application.repLastName || ''}`.trim() || 'N/A'} />
                         <QuickViewField label="Rep Relationship" value={application.repRelationship} />
                         <QuickViewField label="Rep Phone" value={application.repPhone} />
                         <QuickViewField label="Rep Email" value={application.repEmail} />
@@ -298,3 +307,5 @@ export const AdminApplicationsTable = ({
     </div>
   );
 };
+
+    
