@@ -71,7 +71,7 @@ export const formSchema = z.object({
 
     // Step 1 - Legal Rep
     hasCapacity: z.enum(['Yes', 'No'], { errorMap: () => ({ message: ' ' }) }),
-    hasLegalRep: z.enum(['sameAsPrimary', 'different', 'No'], { errorMap: () => ({ message: "Please make a selection."})}).optional().nullable(),
+    hasLegalRep: z.enum(['sameAsPrimary', 'different', 'no', 'notApplicable'], { errorMap: () => ({ message: "Please make a selection."})}).optional().nullable(),
     repFirstName: optionalString,
     repLastName: optionalString,
     repRelationship: optionalString,
@@ -147,16 +147,6 @@ export const formSchema = z.object({
             message: ' ',
             path: ['hasLegalRep'],
         });
-    }
-
-    if (data.hasPrefRCFE === 'Yes') {
-        if (!data.rcfeName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["rcfeName"] });
-        if (!data.rcfeAddress) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["rcfeAddress"] });
-        if (!data.rcfeAdminName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["rcfeAdminName"] });
-        if (!data.rcfeAdminPhone || !phoneRegex.test(data.rcfeAdminPhone)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["rcfeAdminPhone"] });
-        
-        const rcfeEmailCheck = requiredEmail.safeParse(data.rcfeAdminEmail);
-        if (!rcfeEmailCheck.success) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["rcfeAdminEmail"] });
     }
   });
 

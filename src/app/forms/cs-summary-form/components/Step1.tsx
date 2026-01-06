@@ -45,7 +45,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
         setValue('repPhone', getValues('bestContactPhone'));
         setValue('repEmail', getValues('bestContactEmail'));
         clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
-    } else if (hasLegalRep === 'No' || hasCapacity === 'Yes' || hasLegalRep === 'different') {
+    } else if (hasLegalRep === 'no' || hasCapacity === 'Yes' || hasLegalRep === 'different' || hasLegalRep === 'notApplicable') {
         const currentRepValues = {
             repFirstName: getValues('repFirstName'),
             repLastName: getValues('repLastName'),
@@ -462,7 +462,8 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                             <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col space-y-2">
                                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="sameAsPrimary" /></FormControl><FormLabel className="font-normal">Yes, same as primary contact</FormLabel></FormItem>
                                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="different" /></FormControl><FormLabel className="font-normal">Yes, not same as primary contact (fill out fields below)</FormLabel></FormItem>
-                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="No" /></FormControl><FormLabel className="font-normal">No</FormLabel></FormItem>
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="no" /></FormControl><FormLabel className="font-normal">No, member does not have capacity and does not have legal representative</FormLabel></FormItem>
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="notApplicable" /></FormControl><FormLabel className="font-normal">N/A, member has capacity and does not need legal representative</FormLabel></FormItem>
                             </RadioGroup>
                         </FormControl>
                         <FormMessage />
