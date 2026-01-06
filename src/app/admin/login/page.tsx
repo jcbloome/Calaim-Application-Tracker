@@ -6,7 +6,7 @@ import { useAuth } from '@/firebase';
 import {
   signInWithEmailAndPassword,
   setPersistence,
-  browserSessionPersistence,
+  browserLocalPersistence,
 } from 'firebase/auth';
 import type { AuthError } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -59,7 +59,7 @@ export default function AdminLoginPage() {
     }
 
     try {
-      await setPersistence(auth, browserSessionPersistence);
+      await setPersistence(auth, browserLocalPersistence);
       await signInWithEmailAndPassword(auth, email, password);
       
       // On successful sign-in, the `useAdmin` hook will update,
