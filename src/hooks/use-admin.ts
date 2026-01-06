@@ -10,6 +10,7 @@ interface AdminStatus {
   isAdmin: boolean;
   isSuperAdmin: boolean;
   isLoading: boolean;
+  isUserLoading: boolean;
   user: User | null;
 }
 
@@ -77,5 +78,6 @@ export function useAdmin(): AdminStatus {
     isAdmin,
     isSuperAdmin,
     isLoading: isUserLoading || isLoading,
+    isUserLoading,
   };
 }

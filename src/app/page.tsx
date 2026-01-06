@@ -1,7 +1,8 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAuth, useUser } from '@/firebase';
+import { useAuth } from '@/firebase';
 import {
   signInWithEmailAndPassword,
   setPersistence,
@@ -30,7 +31,7 @@ export default function LoginPage() {
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const { user, isUserLoading, isAdmin, isSuperAdmin } = useAdmin();
+  const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,7 +41,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     // This effect handles redirection and session management.
-    if (isUserLoading) {
+    if (isAdminLoading) {
       return; // Wait for auth state to be determined.
     }
 
@@ -54,7 +55,7 @@ export default function LoginPage() {
       // If a non-admin user is logged in, send them to their applications.
       router.push('/applications');
     }
-  }, [user, isUserLoading, isAdmin, isSuperAdmin, auth, router]);
+  }, [user, isAdminLoading, isAdmin, isSuperAdmin, auth, router]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,7 +94,7 @@ export default function LoginPage() {
     }
   };
   
-  if (isUserLoading || (user && (isAdmin || isSuperAdmin))) {
+  if (isAdminLoading || (user && (isAdmin || isSuperAdmin))) {
       // Show a loading screen while checking auth state or while the admin is being logged out.
       return (
           <div className="flex items-center justify-center h-screen">

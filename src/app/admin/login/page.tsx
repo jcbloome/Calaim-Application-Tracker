@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAuth, useUser } from '@/firebase';
+import { useAuth } from '@/firebase';
 import {
   signInWithEmailAndPassword,
   setPersistence,
@@ -31,7 +31,7 @@ export default function AdminLoginPage() {
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const { user, isUserLoading, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+  const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -41,7 +41,7 @@ export default function AdminLoginPage() {
 
   // Redirect already logged-in admins, and log out non-admins
   useEffect(() => {
-    if (isUserLoading || isAdminLoading) {
+    if (isAdminLoading) {
       return; // Wait for auth and admin state to be determined.
     }
     
@@ -51,7 +51,7 @@ export default function AdminLoginPage() {
       // If a non-admin user is logged in, sign them out before showing the admin login.
       auth?.signOut();
     }
-  }, [user, isAdmin, isSuperAdmin, isUserLoading, isAdminLoading, router, auth]);
+  }, [user, isAdmin, isSuperAdmin, isAdminLoading, router, auth]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,7 +95,7 @@ export default function AdminLoginPage() {
   };
 
   // While checking auth state or logging out a non-admin, show a loader
-  if (isUserLoading || isAdminLoading || (user && !isAdmin && !isSuperAdmin)) {
+  if (isAdminLoading || (user && !isAdmin && !isSuperAdmin)) {
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />
