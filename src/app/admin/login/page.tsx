@@ -39,19 +39,21 @@ export default function AdminLoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Redirect already logged-in admins, and log out non-admins
+  // This effect now ONLY handles redirecting an already logged-in admin
+  // or logging out an invalid user. The post-login redirect is handled
+  // in the signIn function.
   useEffect(() => {
     if (isAdminLoading) {
-      return; // Wait for auth and admin state to be determined.
+      return;
     }
     
     if (user && (isAdmin || isSuperAdmin)) {
       router.push('/admin');
     } else if (user && !isAdmin && !isSuperAdmin) {
-      // If a non-admin user is logged in, sign them out before showing the admin login.
       auth?.signOut();
     }
   }, [user, isAdmin, isSuperAdmin, isAdminLoading, router, auth]);
+
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,12 +70,14 @@ export default function AdminLoginPage() {
       await setPersistence(auth, browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
       
+      // The `onAuthStateChanged` listener and the `useAdmin` hook will now
+      // automatically trigger the redirection via the useEffect hook above.
+      // We just need to show a pending state to the user.
       toast({
         title: 'Sign In Successful!',
-        description: 'Redirecting to the admin dashboard...',
+        description: 'Verifying admin status and redirecting...',
       });
-      
-      // The useEffect hook will handle redirection once useAdmin confirms the user's status.
+      // The component will now wait for the useEffect to react to the new auth state.
 
     } catch (err) {
       const authError = err as AuthError;
@@ -84,8 +88,7 @@ export default function AdminLoginPage() {
           errorMessage = 'Access to this account has been temporarily disabled due to many failed login attempts. You can immediately restore it by resetting your password or you can try again later.';
       }
       setError(errorMessage);
-    } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Only set loading to false on error. On success, let the redirect handle it.
     }
   };
 
