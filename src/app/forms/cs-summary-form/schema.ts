@@ -132,7 +132,6 @@ export const formSchema = z.object({
       });
     }
 
-    // If hasCapacity is 'No', hasLegalRep must be selected.
     if (data.hasCapacity === 'No' && !data.hasLegalRep) {
         ctx.addIssue({
             code: 'custom',
@@ -141,7 +140,7 @@ export const formSchema = z.object({
         });
     }
 
-    if (data.hasLegalRep === 'different') {
+    if (data.hasCapacity === 'No' && data.hasLegalRep === 'different') {
       if (!data.repFirstName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repFirstName"] });
       if (!data.repLastName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repLastName"] });
       if (!data.repRelationship) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repRelationship"] });

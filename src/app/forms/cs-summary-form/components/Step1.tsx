@@ -45,7 +45,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
         setValue('repPhone', getValues('bestContactPhone'));
         setValue('repEmail', getValues('bestContactEmail'));
         clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
-    } else if (hasLegalRep === 'No' || hasCapacity === 'Yes') {
+    } else if (hasLegalRep === 'No' || hasCapacity === 'Yes' || hasLegalRep === 'different') {
         setValue('repFirstName', '');
         setValue('repLastName', '');
         setValue('repRelationship', '');
@@ -453,8 +453,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                         </FormItem>
                     )}
                 />
-                {(hasLegalRep === 'different' || hasLegalRep === 'sameAsPrimary') && (
-                <>
+                
                 <h3 className="font-medium">Representative's Contact Info</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repFirstName" render={({ field }) => (
@@ -480,8 +479,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                         <FormItem><FormLabel>Email <span className="text-destructive">*</span></FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
-                </>
-                )}
+
             </div>
         </CardContent>
       </Card>
@@ -489,4 +487,3 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
   );
 }
 
-    
