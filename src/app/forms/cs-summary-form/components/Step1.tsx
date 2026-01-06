@@ -428,7 +428,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
         <CardHeader>
           <CardTitle>Legal Representative</CardTitle>
           <CardDescription>
-            A legal representative might be distinct...
+            A legal representative (e.g., with Power of Attorney) might be distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -507,3 +507,5 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
     </div>
   );
 }
+
+    
