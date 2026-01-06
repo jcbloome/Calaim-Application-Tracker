@@ -3,8 +3,8 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, Query, where, doc, writeBatch, getDocs, onSnapshot, Unsubscribe, collectionGroup } from 'firebase/firestore';
+import { useFirestore } from '@/firebase';
+import { collection, query, where, doc, writeBatch, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
