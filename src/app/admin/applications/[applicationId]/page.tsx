@@ -439,6 +439,8 @@ function ApplicationDetailPageContent() {
   const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
   const servicesDeclined = waiverFormStatus?.choice === 'decline';
 
+  const needsUrgentAttention = application.hasCapacity === 'No' && application.hasLegalRep === 'No';
+
   const waiverSubTasks = [
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
       { id: 'liability', label: 'Liability Waiver', completed: !!waiverFormStatus?.ackLiability },
@@ -537,6 +539,15 @@ function ApplicationDetailPageContent() {
                 <AlertTitle>Services Declined</AlertTitle>
                 <AlertDescription>
                     The member or their representative has declined Community Support services in the Freedom of Choice waiver. Immediate follow-up may be required.
+                </AlertDescription>
+            </Alert>
+        )}
+        {needsUrgentAttention && (
+             <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Urgent Attention Required</AlertTitle>
+                <AlertDescription>
+                    The member has been identified as not having the capacity to make their own decisions, and no legal representative has been assigned. This requires immediate administrative review.
                 </AlertDescription>
             </Alert>
         )}

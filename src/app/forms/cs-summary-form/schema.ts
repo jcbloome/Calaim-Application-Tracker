@@ -62,7 +62,7 @@ export const formSchema = z.object({
 
     // Step 1 - Legal Rep
     hasCapacity: z.enum(['Yes', 'No'], { errorMap: () => ({ message: ' ' }) }),
-    hasLegalRep: z.enum(['Yes', 'No']).optional().nullable(),
+    hasLegalRep: z.enum(['sameAsPrimary', 'different', 'No'], { errorMap: () => ({ message: "Please make a selection."})}).optional().nullable(),
     repFirstName: optionalString,
     repLastName: optionalString,
     repRelationship: optionalString,
@@ -130,6 +130,23 @@ export const formSchema = z.object({
         message: ' ',
         path: ['snfDiversionReason'],
       });
+    }
+
+    // If hasCapacity is 'No', hasLegalRep must be selected.
+    if (data.hasCapacity === 'No' && !data.hasLegalRep) {
+        ctx.addIssue({
+            code: 'custom',
+            message: ' ',
+            path: ['hasLegalRep'],
+        });
+    }
+
+    if (data.hasLegalRep === 'different') {
+      if (!data.repFirstName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repFirstName"] });
+      if (!data.repLastName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repLastName"] });
+      if (!data.repRelationship) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repRelationship"] });
+      if (!data.repPhone || !phoneRegex.test(data.repPhone)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repPhone"] });
+      if (!data.repEmail || !z.string().email().safeParse(data.repEmail).success) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repEmail"] });
     }
 
     if (data.hasPrefRCFE === 'Yes') {

@@ -12,9 +12,11 @@ import { PhoneInput } from '@/components/ui/phone-input';
 
 
 export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
-  const { control, watch, setValue } = useFormContext<FormValues>();
+  const { control, watch, setValue, getValues, clearErrors } = useFormContext<FormValues>();
   
   const memberDob = watch('memberDob');
+  const hasCapacity = watch('hasCapacity');
+  const hasLegalRep = watch('hasLegalRep');
 
   useEffect(() => {
     if (memberDob && /^\d{2}\/\d{2}\/\d{4}$/.test(memberDob)) {
@@ -32,6 +34,29 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
       }
     }
   }, [memberDob, setValue]);
+  
+  useEffect(() => {
+    const isSameAsPrimary = hasLegalRep === 'sameAsPrimary';
+    const isDifferent = hasLegalRep === 'different';
+    
+    if (isSameAsPrimary) {
+        setValue('repFirstName', getValues('bestContactFirstName'));
+        setValue('repLastName', getValues('bestContactLastName'));
+        setValue('repRelationship', getValues('bestContactRelationship'));
+        setValue('repPhone', getValues('bestContactPhone'));
+        setValue('repEmail', getValues('bestContactEmail'));
+        clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
+    } else if (hasLegalRep === 'No' || hasCapacity === 'Yes') {
+        setValue('repFirstName', '');
+        setValue('repLastName', '');
+        setValue('repRelationship', '');
+        setValue('repPhone', '');
+        setValue('repEmail', '');
+        clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
+    }
+
+  }, [hasLegalRep, hasCapacity, setValue, getValues, clearErrors]);
+
 
   return (
     <div className="space-y-6">
@@ -399,7 +424,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     <FormItem className="space-y-3">
                     <FormLabel>Does member have capacity to make their own decisions? <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
-                        <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-4">
+                        <RadioGroup onValuechange={field.onChange} value={field.value ?? ''} className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-4">
                         <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Yes" /></FormControl><FormLabel className="font-normal">Yes</FormLabel></FormItem>
                         <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="No" /></FormControl><FormLabel className="font-normal">No</FormLabel></FormItem>
                         </RadioGroup>
@@ -408,53 +433,58 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     </FormItem>
                 )}
             />
-
+            {hasCapacity === 'No' && (
             <div className="p-4 border rounded-md space-y-4">
-                <h3 className="font-medium">Representative's Contact Info</h3>
-                 <FormField
+                <FormField
                     control={control}
                     name="hasLegalRep"
                     render={({ field }) => (
                         <FormItem className="space-y-2">
                         <FormLabel>
-                            Does member have a legal representative? (e.g., power of attorney)
+                            If member does not have capacity, do they have a legal representative? <span className="text-destructive">*</span>
                         </FormLabel>
                         <FormControl>
-                            <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex items-center space-x-4">
-                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Yes" /></FormControl><FormLabel className="font-normal">Yes</FormLabel></FormItem>
+                            <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col space-y-2">
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="sameAsPrimary" /></FormControl><FormLabel className="font-normal">Yes, same as primary contact</FormLabel></FormItem>
+                                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="different" /></FormControl><FormLabel className="font-normal">Yes, not same as primary contact (fill out fields below)</FormLabel></FormItem>
                                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="No" /></FormControl><FormLabel className="font-normal">No</FormLabel></FormItem>
                             </RadioGroup>
                         </FormControl>
-                        <FormDescription>If yes, fill in below fields.</FormDescription>
                         <FormMessage />
                         </FormItem>
                     )}
                 />
+                {(hasLegalRep === 'different' || hasLegalRep === 'sameAsPrimary') && (
+                <>
+                <h3 className="font-medium">Representative's Contact Info</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repFirstName" render={({ field }) => (
-                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="repLastName" render={({ field }) => (
-                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
                 <FormField control={control} name="repRelationship" render={({ field }) => (
-                    <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Relationship <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repPhone" render={({ field }) => (
                         <FormItem>
-                            <FormLabel>Phone</FormLabel>
-                            <FormControl><PhoneInput {...field} /></FormControl>
+                            <FormLabel>Phone <span className="text-destructive">*</span></FormLabel>
+                            <FormControl><PhoneInput {...field} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl>
                             <FormDescription>(xxx) xxx-xxxx</FormDescription>
                             <FormMessage />
                         </FormItem>
                     )} />
                     <FormField control={control} name="repEmail" render={({ field }) => (
-                        <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Email <span className="text-destructive">*</span></FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
+                </>
+                )}
             </div>
+            )}
         </CardContent>
       </Card>
     </div>
