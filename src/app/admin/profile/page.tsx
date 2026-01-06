@@ -90,6 +90,11 @@ export default function AdminProfilePage() {
     }
   };
 
+  const formatName = (value: string) => {
+    if (!value) return '';
+    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+  };
+
   if (isAdminLoading || !user) {
     return (
         <div className="flex items-center justify-center h-full">
@@ -121,7 +126,7 @@ export default function AdminProfilePage() {
                   type="text"
                   required
                   value={firstName}
-                  onChange={e => setFirstName(e.target.value)}
+                  onChange={e => setFirstName(formatName(e.target.value))}
                 />
               </div>
               <div className="space-y-2">
@@ -131,7 +136,7 @@ export default function AdminProfilePage() {
                   type="text"
                   required
                   value={lastName}
-                  onChange={e => setLastName(e.target.value)}
+                  onChange={e => setLastName(formatName(e.target.value))}
                 />
               </div>
             </div>

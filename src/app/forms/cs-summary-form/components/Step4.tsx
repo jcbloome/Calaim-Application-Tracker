@@ -21,7 +21,10 @@ export default function Step4() {
   
   const hasPrefRCFE = watch('hasPrefRCFE');
   
-  const formatName = (value: string) => value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+  const formatName = (value: string) => {
+    if (!value) return '';
+    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+  };
 
   return (
     <div className="space-y-6">
@@ -47,7 +50,7 @@ export default function Step4() {
                 <FormField control={control} name="ispRelationship" render={({ field }) => (
                     <FormItem>
                         <FormLabel>Relationship to Member <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input {...field} value={field.value ?? ''} /></FormControl>
+                        <FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl>
                         <FormDescription>e.g., social worker, RN, family member, etc.</FormDescription>
                         <FormMessage />
                     </FormItem>
@@ -93,7 +96,7 @@ export default function Step4() {
                     <FormField control={control} name="ispFacilityName" render={({ field }) => (
                       <FormItem>
                           <FormLabel>Facility Name <span className="text-destructive">*</span></FormLabel>
-                          <FormControl><Input {...field} value={field.value ?? ''} /></FormControl>
+                          <FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl>
                           <FormDescription>If not applicable, enter N/A.</FormDescription>
                           <FormMessage />
                       </FormItem>
@@ -102,7 +105,7 @@ export default function Step4() {
                  <FormField control={control} name="ispAddress" render={({ field }) => (
                     <FormItem>
                         <FormLabel>Street Address <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input {...field} value={field.value ?? ''} /></FormControl>
+                        <FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl>
                         <FormDescription>Street Address, City, State, ZIP</FormDescription>
                         <FormMessage />
                     </FormItem>
@@ -232,10 +235,10 @@ export default function Step4() {
                 <p className="text-sm text-muted-foreground">If a facility has not been chosen, you can leave these fields blank. If "Yes" is selected above, all fields are required.</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="rcfeName" render={({ field }) => (
-                        <FormItem><FormLabel>Facility Name {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Facility Name {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="rcfeAddress" render={({ field }) => (
-                        <FormItem><FormLabel>Facility Address {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Facility Address {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
                 <FormField control={control} name="rcfeAdminName" render={({ field }) => (

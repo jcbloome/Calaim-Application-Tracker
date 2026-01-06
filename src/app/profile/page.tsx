@@ -98,13 +98,18 @@ export default function ProfilePage() {
       setIsLoading(false);
     }
   };
+  
+  const formatName = (value: string) => {
+    if (!value) return '';
+    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+  };
 
   const formatAndSetFirstName = (value: string) => {
-      setFirstName(value);
+      setFirstName(formatName(value));
   };
 
   const formatAndSetLastName = (value: string) => {
-      setLastName(value);
+      setLastName(formatName(value));
   };
 
   if (isUserLoading || !user) {
