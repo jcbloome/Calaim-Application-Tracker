@@ -81,7 +81,10 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
   
   const formatName = (value: string) => {
     if (!value) return '';
-    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+    return value
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
   };
 
 
@@ -310,7 +313,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
               )}
             />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
             <FormField
               control={control}
               name="referrerRelationship"
