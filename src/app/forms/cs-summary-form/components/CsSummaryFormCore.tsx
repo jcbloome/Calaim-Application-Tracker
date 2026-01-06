@@ -9,7 +9,7 @@ import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { useUser, useFirestore, errorEmitter, FirestorePermissionError } from '@/firebase';
+import { useUser, useFirestore, errorEmitter, FirestorePermissionError, useMemoFirebase } from '@/firebase';
 import { doc, setDoc, getDoc, serverTimestamp, collection, Timestamp, query, where, getDocs, FieldValue } from 'firebase/firestore';
 import Link from 'next/link';
 
@@ -29,7 +29,7 @@ const steps = [
       'referrerFirstName', 'referrerLastName', 'referrerPhone', 'referrerRelationship', 'agency',
       'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
       'secondaryContactFirstName', 'secondaryContactLastName', 'secondaryContactRelationship', 'secondaryContactPhone', 'secondaryContactEmail', 'secondaryContactLanguage',
-      'hasCapacity', 'hasLegalRep', 'repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail'
+      'hasLegalRep', 'repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail'
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty', 'customaryLocationType', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty'] },
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'meetsPathwayCriteria', 'switchingHealthPlan', 'existingHealthPlan', 'snfDiversionReason'] },
@@ -71,11 +71,16 @@ function CsSummaryFormComponent() {
   const targetUserId = appUserId || user?.uid;
   const isAdminView = !!appUserId;
   const backLink = isAdminView ? `/admin/applications/${internalApplicationId}?userId=${appUserId}` : `/applications`;
+  
+  const docRef = useMemoFirebase(() => {
+    if (!firestore || !targetUserId || !internalApplicationId) return null;
+    return doc(firestore, `users/${targetUserId}/applications`, internalApplicationId);
+  }, [firestore, targetUserId, internalApplicationId]);
+
 
   useEffect(() => {
     const fetchApplicationData = async () => {
-      if (internalApplicationId && targetUserId && firestore) {
-        const docRef = doc(firestore, `users/${targetUserId}/applications`, internalApplicationId);
+      if (docRef) {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data() as Application;
@@ -112,7 +117,7 @@ function CsSummaryFormComponent() {
       }
     };
     fetchApplicationData();
-  }, [internalApplicationId, targetUserId, user, firestore, reset, isAdminView, getValues]);
+  }, [docRef, user, firestore, reset, isAdminView, getValues, internalApplicationId]);
 
 
   useEffect(() => {
