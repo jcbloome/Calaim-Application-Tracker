@@ -428,7 +428,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
         <CardHeader>
           <CardTitle>Legal Representative</CardTitle>
           <CardDescription>
-            Information about legal capacity and representation. A legal representative (e.g., with Power of Attorney) is distinct from a contact person.
+            A legal representative might be distinct...
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -456,7 +456,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     render={({ field }) => (
                         <FormItem className="space-y-2">
                         <FormLabel>
-                            If member does not have capacity, do they have a legal representative? <span className="text-destructive">*</span>
+                            If member does not have capacity do they have a legal representative
                         </FormLabel>
                         <FormControl>
                             <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col space-y-2">
@@ -473,19 +473,19 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 <h3 className="font-medium">Representative's Contact Info</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repFirstName" render={({ field }) => (
-                        <FormItem><FormLabel>First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="repLastName" render={({ field }) => (
-                        <FormItem><FormLabel>Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
                 <FormField control={control} name="repRelationship" render={({ field }) => (
-                    <FormItem><FormLabel>Relationship <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repPhone" render={({ field }) => (
                         <FormItem>
-                            <FormLabel>Phone <span className="text-destructive">*</span></FormLabel>
+                            <FormLabel>Phone</FormLabel>
                             <FormControl><PhoneInput {...field} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl>
                             <FormDescription>(xxx) xxx-xxxx</FormDescription>
                             <FormMessage />
@@ -493,7 +493,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     )} />
                     <FormField control={control} name="repEmail" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
+                          <FormLabel>Email</FormLabel>
                           <FormControl><Input type="email" {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl>
                           <FormDescription>If no email, enter "N/A".</FormDescription>
                           <FormMessage />
