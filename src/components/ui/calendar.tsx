@@ -58,32 +58,35 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        Dropdown: ({ value, onChange, options, ...props }: DropdownProps) => {
-          const selectedOption = options?.find((option) => option.value === value)
-          const handleChange = (newValue: string) => {
+        Dropdown: ({ value, onChange, children, ...props }: DropdownProps) => {
+          const options = React.Children.toArray(
+            children
+          ) as React.ReactElement<React.HTMLProps<HTMLOptionElement>>[]
+          const selected = options.find((child) => child.props.value === value)
+          const handleChange = (value: string) => {
             const changeEvent = {
-              target: { value: newValue },
+              target: { value },
             } as React.ChangeEvent<HTMLSelectElement>
             onChange?.(changeEvent)
           }
           return (
             <Select
               value={value?.toString()}
-              onValueChange={(newValue) => {
-                handleChange(newValue)
+              onValueChange={(value) => {
+                handleChange(value)
               }}
             >
               <SelectTrigger className="pr-1.5 focus:ring-0">
-                <SelectValue>{selectedOption?.label}</SelectValue>
+                <SelectValue>{selected?.props?.children}</SelectValue>
               </SelectTrigger>
               <SelectContent position="popper">
                 <ScrollArea className="h-80">
-                  {options?.map((option, id: number) => (
+                  {options.map((option, id: number) => (
                     <SelectItem
-                      key={`${option.value}-${id}`}
-                      value={option.value?.toString() ?? ""}
+                      key={`${option.props.value}-${id}`}
+                      value={option.props.value?.toString() ?? ""}
                     >
-                      {option.label}
+                      {option.props.children}
                     </SelectItem>
                   ))}
                 </ScrollArea>
