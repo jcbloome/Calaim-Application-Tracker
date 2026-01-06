@@ -43,7 +43,7 @@ export type Application = {
   secondaryContactPhone?: string;
   secondaryContactEmail?: string;
   secondaryContactLanguage?: string;
-  hasLegalRep?: 'no_has_capacity' | 'same_as_primary' | 'different' | 'no_has_rep' | null;
+  hasLegalRep?: 'notApplicable' | 'same_as_primary' | 'different' | 'no_has_rep' | null;
   repFirstName?: string | null;
   repLastName?: string | null;
   repRelationship?: string | null;
