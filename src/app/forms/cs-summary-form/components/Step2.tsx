@@ -41,6 +41,15 @@ export default function Step2() {
     if (!value) return '';
     return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
   };
+  
+  const formatAddress = (value: string) => {
+    if (!value) return '';
+    // Only capitalize if the first character is a letter
+    if (/[a-zA-Z]/.test(value.charAt(0))) {
+      return value.charAt(0).toUpperCase() + value.slice(1);
+    }
+    return value;
+  };
 
 
   return (
@@ -77,7 +86,7 @@ export default function Step2() {
                   )}
                 />
                 <FormField control={control} name="currentAddress" render={({ field }) => (
-                  <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
                 )} />
              </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -140,7 +149,7 @@ export default function Step2() {
                           )}
                         />
                         <FormField control={control} name="customaryAddress" render={({ field }) => (
-                            <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                            <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} onChange={e => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
                         )} />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

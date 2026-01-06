@@ -25,6 +25,15 @@ export default function Step4() {
     if (!value) return '';
     return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
   };
+  
+  const formatAddress = (value: string) => {
+    if (!value) return '';
+    // Only capitalize if the first character is a letter
+    if (/[a-zA-Z]/.test(value.charAt(0))) {
+      return value.charAt(0).toUpperCase() + value.slice(1);
+    }
+    return value;
+  };
 
   return (
     <div className="space-y-6">
@@ -105,7 +114,7 @@ export default function Step4() {
                  <FormField control={control} name="ispAddress" render={({ field }) => (
                     <FormItem>
                         <FormLabel>Street Address <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl>
+                        <FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatAddress(e.target.value))} /></FormControl>
                         <FormDescription>Street Address, City, State, ZIP</FormDescription>
                         <FormMessage />
                     </FormItem>
@@ -238,7 +247,7 @@ export default function Step4() {
                         <FormItem><FormLabel>Facility Name {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="rcfeAddress" render={({ field }) => (
-                        <FormItem><FormLabel>Facility Address {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Facility Address {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
                 <FormField control={control} name="rcfeAdminName" render={({ field }) => (
