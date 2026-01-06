@@ -104,7 +104,7 @@ const ApplicationsTable = ({
             <TableHeader>
               <TableRow>
                 {onSelectionChange && <TableHead className="w-[50px] pl-4"></TableHead>}
-                <TableHead>Member / App ID</TableHead>
+                <TableHead>Member</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="hidden md:table-cell">Plan &amp; Pathway</TableHead>
                 <TableHead className="hidden sm:table-cell">Last Updated</TableHead>
@@ -313,3 +313,5 @@ export default function MyApplicationsPage() {
     </>
   );
 }
+
+    

@@ -57,12 +57,13 @@ export function PrintableCsSummaryFormContent() {
                     />
                     <Field label="Confirm Medical Record Number (MRN)" />
                     <Field label="Preferred Language" description="e.g., English, Spanish"/>
-                    <Field label="County" />
+                    <Field label="Sex" />
                 </div>
                 </div>
 
                 <div>
                 <SectionTitle>Your Information (Person Filling Out Form)</SectionTitle>
+                 <p className="text-xs text-gray-600 my-2">This is the person that will receive email updates as to the application status, including any missing documents, etc.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                     <Field label="First Name" />
                     <Field label="Last Name" />
@@ -81,7 +82,7 @@ export function PrintableCsSummaryFormContent() {
                     <Field label="Relationship to Member" />
                     <Field label="Preferred Language" />
                     <Field label="Phone" description="(xxx) xxx-xxxx" />
-                    <Field label="Email" />
+                    <Field label="Email" description='If no email, enter "N/A".' />
                     </div>
                 </div>
                 
@@ -93,26 +94,21 @@ export function PrintableCsSummaryFormContent() {
                     <Field label="Relationship to Member" />
                     <Field label="Preferred Language" />
                     <Field label="Phone" description="(xxx) xxx-xxxx" />
-                    <Field label="Email" />
+                    <Field label="Email" description='If no email, enter "N/A".'/>
                     </div>
                 </div>
 
                 <div>
                 <SectionTitle>Legal Representative</SectionTitle>
-                    <p className="text-xs text-gray-600 my-2">A legal representative (e.g., with Power of Attorney) is distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role.</p>
-                    <div className="space-y-2">
-                    <p className="text-xs font-medium text-gray-700">Does member have capacity to make their own decisions?</p>
-                    <div className="flex gap-6">
-                        <CheckboxField label="Yes" />
-                        <CheckboxField label="No" />
-                    </div>
-                    </div>
+                    <p className="text-xs text-gray-600 my-2">A legal representative (e.g., with Power of Attorney) might be distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role.</p>
                     <div className="space-y-2 mt-3">
-                    <p className="text-xs font-medium text-gray-700">Does member have a legal representative? (e.g., power of attorney)</p>
-                    <div className="flex gap-6">
-                        <CheckboxField label="Yes" />
-                        <CheckboxField label="No" />
-                    </div>
+                        <p className="text-xs font-medium text-gray-700">Does member have a legal representative?</p>
+                        <div className="flex flex-col space-y-1">
+                            <CheckboxField label="N/A, member has capacity and does not need legal representative" />
+                            <CheckboxField label="Yes, same as primary contact" />
+                            <CheckboxField label="Yes, not same as primary contact (fill out below fields)" />
+                            <CheckboxField label="Member does not have capacity and does not have legal representative" />
+                        </div>
                     </div>
                     <h3 className="text-sm font-medium text-gray-800 mt-4">Representative's Contact Info</h3>
                     <p className="text-xs text-gray-500 pt-1">If the member does not have a legal representative, you can leave these fields blank.</p>
@@ -121,7 +117,7 @@ export function PrintableCsSummaryFormContent() {
                     <Field label="Last Name" />
                     <Field label="Relationship to Member" />
                     <Field label="Phone" description="(xxx) xxx-xxxx" />
-                    <Field label="Email" />
+                    <Field label="Email" description='If no email, enter "N/A".'/>
                     </div>
                 </div>
             </div>
@@ -228,7 +224,7 @@ export function PrintableCsSummaryFormContent() {
                     <Field label="Last Name" />
                     <Field label="Relationship to Member" />
                     <Field label="Phone" description="(xxx) xxx-xxxx"/>
-                    <Field label="Email" className="sm:col-span-2" />
+                    <Field label="Email" className="sm:col-span-2" description='If no email, enter "N/A".'/>
                     </div>
                     
                     <h3 className="text-sm font-medium text-gray-800 mt-4">ISP Assessment Location</h3>
@@ -263,7 +259,7 @@ export function PrintableCsSummaryFormContent() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Administrator Name" />
                     <Field label="Administrator Phone" description="(xxx) xxx-xxxx" />
-                    <Field label="Administrator Email" className="sm:col-span-2" />
+                    <Field label="Administrator Email" className="sm:col-span-2" description='If no email, enter "N/A".'/>
                 </div>
                 </div>
 
@@ -286,3 +282,5 @@ export function PrintableCsSummaryFormContent() {
     </form>
   )
 }
+
+    

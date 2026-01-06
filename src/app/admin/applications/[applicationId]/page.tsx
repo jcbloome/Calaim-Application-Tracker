@@ -486,7 +486,7 @@ function ApplicationDetailPageContent() {
                 );
             }
             return (
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                     <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100 flex-1">
                         <Link href={viewHref}>View</Link>
                     </Button>
@@ -563,7 +563,7 @@ function ApplicationDetailPageContent() {
             </div>
             </CardHeader>
             <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-2 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
                 <div className="truncate"><strong>Application ID:</strong> <span className="font-mono text-xs">{application.id}</span></div>
                 <div><strong>Status:</strong> <span className="font-semibold">{application.status}</span></div>
             </div>
@@ -621,3 +621,5 @@ export default function AdminApplicationDetailPage() {
     </Suspense>
   );
 }
+
+    

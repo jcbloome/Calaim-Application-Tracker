@@ -109,8 +109,8 @@ export default function AdminStatisticsPage() {
 
     applications.forEach(app => {
         // County
-        if (app.memberCounty) {
-            counts.byCounty.set(app.memberCounty, (counts.byCounty.get(app.memberCounty) || 0) + 1);
+        if (app.currentCounty) {
+            counts.byCounty.set(app.currentCounty, (counts.byCounty.get(app.currentCounty) || 0) + 1);
         }
         
         // Health Plan - Consolidate Kaiser & Kaiser Permanente
@@ -182,7 +182,7 @@ export default function AdminStatisticsPage() {
                 A visual breakdown of all applications in the system.
             </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             <StatCard title="Applications by County" borderColor="border-blue-500">
                 <DataList data={stats.byCounty} />
             </StatCard>
@@ -195,7 +195,7 @@ export default function AdminStatisticsPage() {
                 <DataList data={stats.byPathway} />
             </StatCard>
             
-             <Card className="border-t-4 border-yellow-500">
+             <Card className="border-t-4 border-yellow-500 md:col-span-1">
                 <CardHeader className="pb-2">
                     <div className="flex justify-between items-start">
                         <div className="space-y-0">
@@ -229,12 +229,13 @@ export default function AdminStatisticsPage() {
                 </CardContent>
             </Card>
 
-             <Card className="border-t-4 border-purple-500">
+             <Card className="border-t-4 border-purple-500 md:col-span-2">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Top 10 Referrers</CardTitle>
                 </CardHeader>
                 <CardContent>
                      {stats.topReferrers.length > 0 ? (
+                        <div className="overflow-x-auto">
                         <Table>
                             <TableHeader>
                                 <TableRow>
@@ -257,6 +258,7 @@ export default function AdminStatisticsPage() {
                                 ))}
                             </TableBody>
                         </Table>
+                        </div>
                      ) : (
                         <p className="text-sm text-muted-foreground pt-4">No referrer data available.</p>
                      )}
@@ -267,3 +269,5 @@ export default function AdminStatisticsPage() {
     </div>
   );
 }
+
+    
