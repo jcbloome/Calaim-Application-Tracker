@@ -37,7 +37,6 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
   
   useEffect(() => {
     const isSameAsPrimary = hasLegalRep === 'sameAsPrimary';
-    const isDifferent = hasLegalRep === 'different';
     
     if (isSameAsPrimary) {
         setValue('repFirstName', getValues('bestContactFirstName'));
@@ -424,7 +423,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     <FormItem className="space-y-3">
                     <FormLabel>Does member have capacity to make their own decisions? <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
-                        <RadioGroup onValuechange={field.onChange} value={field.value ?? ''} className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-4">
+                        <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-4">
                         <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="Yes" /></FormControl><FormLabel className="font-normal">Yes</FormLabel></FormItem>
                         <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="No" /></FormControl><FormLabel className="font-normal">No</FormLabel></FormItem>
                         </RadioGroup>
@@ -433,7 +432,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     </FormItem>
                 )}
             />
-            {hasCapacity === 'No' && (
+
             <div className="p-4 border rounded-md space-y-4">
                 <FormField
                     control={control}
@@ -484,9 +483,10 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 </>
                 )}
             </div>
-            )}
         </CardContent>
       </Card>
     </div>
   );
 }
+
+    
