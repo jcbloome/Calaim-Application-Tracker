@@ -39,12 +39,19 @@ export default function AdminLoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Redirect already logged-in admins
+  // Redirect already logged-in admins, and log out non-admins
   useEffect(() => {
-    if (!isAdminLoading && user && (isAdmin || isSuperAdmin)) {
-      router.push('/admin');
+    if (isUserLoading || isAdminLoading) {
+      return; // Wait for auth and admin state to be determined.
     }
-  }, [user, isAdmin, isSuperAdmin, isAdminLoading, router]);
+    
+    if (user && (isAdmin || isSuperAdmin)) {
+      router.push('/admin');
+    } else if (user && !isAdmin && !isSuperAdmin) {
+      // If a non-admin user is logged in, sign them out before showing the admin login.
+      auth?.signOut();
+    }
+  }, [user, isAdmin, isSuperAdmin, isUserLoading, isAdminLoading, router, auth]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,41 +94,18 @@ export default function AdminLoginPage() {
     }
   };
 
-  // While checking auth state, show a loader
-  if (isUserLoading || isAdminLoading) {
+  // While checking auth state or logging out a non-admin, show a loader
+  if (isUserLoading || isAdminLoading || (user && !isAdmin && !isSuperAdmin)) {
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />
+        <p className="ml-2">Loading session...</p>
       </div>
     );
   }
 
-  // If a user is logged in but is NOT an admin, show Access Denied
-  if (user && !isAdmin && !isSuperAdmin) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
-        <Card className="w-full max-w-md shadow-2xl">
-          <CardHeader className="items-center text-center p-6">
-             <ShieldAlert className="h-12 w-12 text-destructive" />
-            <CardTitle className="text-2xl font-bold mt-4">Access Denied</CardTitle>
-            <CardDescription>
-              The account <span className="font-semibold">{user.email}</span> does not have admin privileges.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-center space-y-4">
-            <Button onClick={handleSignOut} className="w-full">
-                <LogOut className="mr-2 h-4 w-4" /> Sign Out and Try Again
-            </Button>
-            <Link href="/" className="text-sm text-primary hover:underline">
-                Go to Home Page
-            </Link>
-          </CardContent>
-        </Card>
-      </main>
-    );
-  }
-
-  // If no user is logged in, or the user is an admin but somehow on this page, show login form.
+  // If a user is logged in but is NOT an admin, they are logged out by the useEffect.
+  // This login form is only shown to users who are truly logged out.
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
       <div className="w-full max-w-md">
