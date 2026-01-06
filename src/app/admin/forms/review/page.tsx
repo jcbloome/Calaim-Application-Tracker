@@ -127,7 +127,7 @@ function ReviewPageComponent() {
                             <Field label="Medi-Cal Number" value={application.memberMediCalNum} />
                             <Field label="Medical Record Number (MRN)" value={application.memberMrn} />
                             <Field label="Preferred Language" value={application.memberLanguage} />
-                            <Field label="County" value={application.memberCounty} />
+                            <Field label="County" value={application.currentCounty} />
                         </Section>
 
                         <Separator />
@@ -212,3 +212,5 @@ export default function AdminReviewFormPage() {
         </Suspense>
     );
 }
+
+    
