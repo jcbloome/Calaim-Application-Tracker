@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useFormContext } from 'react-hook-form';
@@ -248,7 +247,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
       <Card className="border-l-4 border-accent">
         <CardHeader>
           <CardTitle>Your Information (Person Filling Form)</CardTitle>
-           <CardDescription>This section shows the original submitter of the application.</CardDescription>
+           <CardDescription>This is the person that will receive email updates as to the application status, including any missing documents, etc.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -459,19 +458,19 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 <h3 className="font-medium">Representative's Contact Info</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repFirstName" render={({ field }) => (
-                        <FormItem><FormLabel>First Name {hasLegalRep === 'different' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="repLastName" render={({ field }) => (
-                        <FormItem><FormLabel>Last Name {hasLegalRep === 'different' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
                 <FormField control={control} name="repRelationship" render={({ field }) => (
-                    <FormItem><FormLabel>Relationship {hasLegalRep === 'different' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repPhone" render={({ field }) => (
                         <FormItem>
-                            <FormLabel>Phone {hasLegalRep === 'different' && <span className="text-destructive">*</span>}</FormLabel>
+                            <FormLabel>Phone</FormLabel>
                             <FormControl><PhoneInput {...field} disabled={hasLegalRep === 'same_as_primary'} /></FormControl>
                             <FormDescription>(xxx) xxx-xxxx</FormDescription>
                             <FormMessage />
@@ -479,7 +478,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     )} />
                     <FormField control={control} name="repEmail" render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Email {hasLegalRep === 'different' && <span className="text-destructive">*</span>}</FormLabel>
+                          <FormLabel>Email</FormLabel>
                           <FormControl><Input type="email" {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl>
                           <FormDescription>If no email, enter "N/A".</FormDescription>
                           <FormMessage />
