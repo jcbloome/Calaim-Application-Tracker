@@ -476,9 +476,9 @@ export default function SuperAdminPage() {
             const userDocData = {
                 id: testUserId,
                 email: "jcbloome@gmail.com",
-                firstName: "JC",
+                firstName: "Jason",
                 lastName: "Bloome",
-                displayName: "JC Bloome",
+                displayName: "Jason Bloome",
             };
             batch.set(userDocRef, userDocData);
 
@@ -489,7 +489,7 @@ export default function SuperAdminPage() {
                 memberFirstName: "Testy",
                 memberLastName: "McTesterson",
                 referrerEmail: "jcbloome@gmail.com",
-                referrerName: "JC Bloome",
+                referrerName: "Jason Bloome",
                 status: 'In Progress',
                 pathway: 'SNF Transition',
                 healthPlan: 'Health Net',
