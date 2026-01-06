@@ -115,7 +115,7 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
                         <QuickViewField label="Medi-Cal Number" value={application.memberMediCalNum} />
                         <QuickViewField label="Medical Record Number (MRN)" value={application.memberMrn} />
                         <QuickViewField label="Preferred Language" value={application.memberLanguage} />
-                        <QuickViewField label="County" value={application.memberCounty} />
+                        <QuickViewField label="County" value={application.currentCounty} />
                     </Section>
 
                     <Section title="Referrer Information">
