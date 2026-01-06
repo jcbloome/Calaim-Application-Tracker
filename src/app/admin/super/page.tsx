@@ -28,7 +28,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 // CLIENT-SIDE LOGIC - Replaces the need for server-side AI flows for UI data.
-import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, initializeApp, type FirebaseApp, signOut } from 'firebase/auth';
+import { firebaseConfig } from '@/firebase/config';
 import { triggerMakeWebhook } from '@/ai/flows/send-to-make-flow';
 import { sendReminderEmails } from '@/ai/flows/manage-reminders';
 import type { Application } from '@/lib/definitions';
@@ -135,6 +136,14 @@ const sampleApplicationData = {
   rcfeAdminEmail: "emily@sunshinemeadows.com",
 };
 
+// Helper function to create a temporary, secondary Firebase instance
+const createTempAuth = () => {
+    const tempAppName = `temp-auth-app-${Date.now()}`;
+    const tempApp = initializeApp(firebaseConfig, tempAppName);
+    return getAuth(tempApp);
+};
+
+
 export default function SuperAdminPage() {
     const { isSuperAdmin, isAdmin, isLoading: isAdminLoading, user: currentUser } = useAdmin();
     const router = useRouter();
@@ -167,7 +176,7 @@ export default function SuperAdminPage() {
     const { data: allApplications, isLoading: isLoadingApplications } = useCollection<Application & FormValues>(applicationsQuery);
     
     const fetchAllStaff = async () => {
-        if (!firestore || !currentUser) return;
+        if (!firestore) return;
         setIsLoadingStaff(true);
         try {
             const usersCollectionRef = collection(firestore, 'users');
@@ -175,18 +184,9 @@ export default function SuperAdminPage() {
             const superAdminRolesCollectionRef = collection(firestore, 'roles_super_admin');
 
             const [usersSnap, adminRolesSnap, superAdminRolesSnap] = await Promise.all([
-                getDocs(usersCollectionRef).catch(e => {
-                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: usersCollectionRef.path, operation: 'list' }));
-                    throw e;
-                }),
-                getDocs(adminRolesCollectionRef).catch(e => {
-                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: adminRolesCollectionRef.path, operation: 'list' }));
-                    throw e;
-                }),
-                getDocs(superAdminRolesCollectionRef).catch(e => {
-                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: superAdminRolesCollectionRef.path, operation: 'list' }));
-                    throw e;
-                }),
+                getDocs(usersCollectionRef),
+                getDocs(adminRolesCollectionRef),
+                getDocs(superAdminRolesCollectionRef),
             ]);
 
             const users = new Map(usersSnap.docs.map(doc => [doc.id, doc.data() as Omit<UserData, 'id'>]));
@@ -194,9 +194,9 @@ export default function SuperAdminPage() {
             const superAdminIds = new Set(superAdminRolesSnap.docs.map(doc => doc.id));
             
             const allStaffIds = new Set([...adminIds, ...superAdminIds]);
-
+            
             // Always ensure the hardcoded admin is in the set to be processed.
-            if (currentUser.email === 'jason@carehomefinders.com') {
+            if (currentUser?.email === 'jason@carehomefinders.com') {
               allStaffIds.add(currentUser.uid);
             }
 
@@ -204,32 +204,33 @@ export default function SuperAdminPage() {
             
             allStaffIds.forEach(uid => {
                 const userData = users.get(uid);
-                const isSuper = superAdminIds.has(uid);
+                const isSuper = superAdminIds.has(uid) || (uid === currentUser?.uid && currentUser?.email === 'jason@carehomefinders.com');
                 
-                // Special handling for the hardcoded admin user to ensure correct name is displayed.
-                if (uid === currentUser.uid && currentUser.email === 'jason@carehomefinders.com') {
-                    staff.push({
-                        uid,
-                        firstName: userData?.firstName || 'Jason',
-                        lastName: userData?.lastName || 'Bloome',
-                        email: currentUser.email,
-                        role: isSuper ? 'Super Admin' : 'Admin',
-                    });
-                } else if (userData) {
-                     staff.push({
-                        uid,
-                        firstName: userData.firstName,
-                        lastName: userData.lastName,
-                        email: userData.email,
-                        role: isSuper ? 'Super Admin' : 'Admin',
-                    });
+                let firstName = 'Jason';
+                let lastName = 'Bloome';
+                let email = 'jason@carehomefinders.com';
+
+                if (userData) {
+                    firstName = userData.firstName;
+                    lastName = userData.lastName;
+                    email = userData.email;
                 }
+                
+                staff.push({
+                    uid,
+                    firstName,
+                    lastName,
+                    email,
+                    role: isSuper ? 'Super Admin' : 'Admin',
+                });
             });
             
             staff.sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
             setStaffList(staff);
         } catch (error) {
             console.error("[fetchAllStaff] Error:", error);
+            const permissionError = new FirestorePermissionError({ path: 'users or roles', operation: 'list' });
+            errorEmitter.emit('permission-error', permissionError);
         } finally {
             setIsLoadingStaff(false);
         }
@@ -261,37 +262,49 @@ export default function SuperAdminPage() {
 
     const handleAddStaff = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!firestore) return;
+        if (!firestore || !currentUser) return;
         if (!newStaffEmail || !newStaffFirstName || !newStaffLastName) {
             toast({ variant: 'destructive', title: 'Missing Information', description: 'Please fill out all fields.' });
             return;
         }
         setIsAddingStaff(true);
+
+        const tempAuth = createTempAuth();
+        const tempPassword = Math.random().toString(36).slice(-8);
+
         try {
-            const tempPassword = Math.random().toString(36).slice(-8);
+            // 1. Create user in the temporary auth instance
+            const userCredential = await createUserWithEmailAndPassword(tempAuth, newStaffEmail, tempPassword);
+            const newUid = userCredential.user.uid;
             
-            // This is a placeholder for a secure server-side function
-            // In a real app, this would be an API call to a Cloud Function
-            const response = await fetch('/api/create-user', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    email: newStaffEmail,
-                    password: tempPassword,
-                    firstName: newStaffFirstName,
-                    lastName: newStaffLastName,
-                }),
+            // 2. Sign out the temporary user immediately
+            await signOut(tempAuth);
+
+            // 3. As the logged-in admin, create the necessary Firestore documents
+            const batch = writeBatch(firestore);
+            
+            // User document
+            const userDocRef = doc(firestore, 'users', newUid);
+            const displayName = `${newStaffFirstName} ${newStaffLastName}`.trim();
+            batch.set(userDocRef, {
+                id: newUid,
+                email: newStaffEmail,
+                firstName: newStaffFirstName,
+                lastName: newStaffLastName,
+                displayName: displayName,
             });
 
-            const result = await response.json();
-
-            if (!response.ok) {
-                throw new Error(result.error || 'Failed to create user.');
-            }
+            // Admin role document
+            const adminRoleRef = doc(firestore, 'roles_admin', newUid);
+            batch.set(adminRoleRef, { grantedAt: serverTimestamp() });
+            
+            // 4. Commit the batch
+            await batch.commit();
 
             toast({
                 title: "Staff Member Added!",
-                description: `${newStaffEmail} has been created and granted Admin permissions. They will need to reset their password.`,
+                description: `${newStaffEmail} has been created and granted Admin permissions. They will need to reset their password to log in.`,
+                duration: 7000,
                 className: 'bg-green-100 text-green-900 border-green-200',
             });
             
@@ -301,7 +314,17 @@ export default function SuperAdminPage() {
             setNewStaffEmail('');
 
         } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Error Adding Staff', description: error.message });
+            let errorMessage = "An unexpected error occurred.";
+            if (error.code === 'auth/email-already-in-use') {
+                errorMessage = "A user with this email already exists.";
+            } else if (error.code === 'auth/weak-password') {
+                errorMessage = "The temporary password generated was too weak. Please try again.";
+            }
+             else if (error.code === 'permission-denied') {
+                errorMessage = "Permission denied. Your account may not have the rights to create new user roles.";
+                errorEmitter.emit('permission-error', new FirestorePermissionError({path: 'users or roles_admin', operation: 'create'}));
+            }
+            toast({ variant: 'destructive', title: 'Error Adding Staff', description: errorMessage });
         } finally {
             setIsAddingStaff(false);
         }
@@ -310,7 +333,7 @@ export default function SuperAdminPage() {
     const handleRoleToggle = async (uid: string, isSuperAdminRole: boolean) => {
         if (!firestore) return;
         const superAdminRoleRef = doc(firestore, 'roles_super_admin', uid);
-        const data = { grantedAt: new Date() };
+        const data = { grantedAt: serverTimestamp() };
         try {
             if (isSuperAdminRole) {
                 await setDoc(superAdminRoleRef, data).catch(e => {
