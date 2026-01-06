@@ -170,6 +170,19 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
       ? `/admin/applications/${applicationId}?userId=${appUserId}`
       : `/forms/cs-summary-form?applicationId=${applicationId}&step=4`;
 
+    const getCapacityStatus = (hasLegalRepValue: Application['hasLegalRep']) => {
+        switch(hasLegalRepValue) {
+            case 'notApplicable':
+            case 'same_as_primary':
+            case 'different':
+                return 'Yes, member has capacity';
+            case 'no_has_rep': 
+                return 'No, member lacks capacity';
+            default: 
+                return 'Yes, member has capacity';
+        }
+    }
+
 
     return (
         <div className="flex-grow py-8 sm:py-12">
@@ -229,7 +242,8 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                         <Separator />
                         
                          <Section title="Legal Representative" editLink={getEditLink(1)} isReadOnly={isReadOnly} isAdminView={isAdminView}>
-                            <Field label="Does member have a legal representative?" value={application.hasLegalRep} />
+                            <Field label="Member Capacity Status" value={getCapacityStatus(application.hasLegalRep)} />
+                            <Field label="Legal Representative Selection" value={application.hasLegalRep} />
                             <Field label="Representative First Name" value={application.repFirstName} />
                             <Field label="Representative Last Name" value={application.repLastName} />
                             <Field label="Representative Relationship" value={application.repRelationship} />
@@ -306,5 +320,3 @@ export default function ReviewPage() {
     </Suspense>
   );
 }
-
-    
