@@ -24,7 +24,7 @@ const optionalEmail = z.string().optional().nullable().refine(value => {
 
 
 const dateSchema = z.string().refine(val => {
-    if (!/^\d{2}\/\d{2}\/\d{4044}$/.test(val)) return false;
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(val)) return false;
     const [month, day, year] = val.split('/').map(Number);
     if (month < 1 || month > 12 || day < 1 || day > 31) return false;
     const date = new Date(year, month - 1, day);
@@ -148,16 +148,6 @@ export const formSchema = z.object({
             message: ' ',
             path: ['hasLegalRep'],
         });
-    }
-
-    if (data.hasCapacity === 'No' && data.hasLegalRep === 'different') {
-      if (!data.repFirstName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repFirstName"] });
-      if (!data.repLastName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repLastName"] });
-      if (!data.repRelationship) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repRelationship"] });
-      if (!data.repPhone || !phoneRegex.test(data.repPhone)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repPhone"] });
-      
-      const repEmailCheck = requiredEmail.safeParse(data.repEmail);
-      if (!repEmailCheck.success) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repEmail"] });
     }
 
     if (data.hasPrefRCFE === 'Yes') {
