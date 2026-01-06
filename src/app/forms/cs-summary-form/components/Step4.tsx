@@ -20,6 +20,8 @@ export default function Step4() {
   const { control, watch } = useFormContext<FormValues>();
   
   const hasPrefRCFE = watch('hasPrefRCFE');
+  
+  const formatName = (value: string) => value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 
   return (
     <div className="space-y-6">
@@ -35,10 +37,10 @@ export default function Step4() {
           <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={control} name="ispFirstName" render={({ field }) => (
-                    <FormItem><FormLabel>First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                 )} />
                  <FormField control={control} name="ispLastName" render={({ field }) => (
-                    <FormItem><FormLabel>Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -237,7 +239,7 @@ export default function Step4() {
                     )} />
                 </div>
                 <FormField control={control} name="rcfeAdminName" render={({ field }) => (
-                    <FormItem><FormLabel>Administrator Name {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Administrator Name {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="rcfeAdminPhone" render={({ field }) => (
@@ -258,5 +260,3 @@ export default function Step4() {
     </div>
   );
 }
-
-    

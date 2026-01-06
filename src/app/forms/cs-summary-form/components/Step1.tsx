@@ -78,6 +78,8 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
     }
 
   }, [hasLegalRep, setValue, getValues, clearErrors]);
+  
+  const formatName = (value: string) => value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 
 
   return (
@@ -95,7 +97,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 <FormItem>
                   <FormLabel>First Name <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
+                    <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -108,7 +110,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 <FormItem>
                   <FormLabel>Last Name <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
+                    <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -259,7 +261,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 <FormItem>
                   <FormLabel>First Name</FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} />
+                    <Input {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} onChange={e => field.onChange(formatName(e.target.value))}/>
                   </FormControl>
                 </FormItem>
               )}
@@ -271,7 +273,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 <FormItem>
                   <FormLabel>Last Name</FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} />
+                    <Input {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} onChange={e => field.onChange(formatName(e.target.value))}/>
                   </FormControl>
                 </FormItem>
               )}
@@ -347,10 +349,10 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
           <div className="p-4 border rounded-md space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={control} name="bestContactFirstName" render={({ field }) => (
-                      <FormItem><FormLabel>First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                   )} />
                   <FormField control={control} name="bestContactLastName" render={({ field }) => (
-                      <FormItem><FormLabel>Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                   )} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -392,10 +394,10 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
              <div className="p-4 border rounded-md space-y-4 mt-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="secondaryContactFirstName" render={({ field }) => (
-                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="secondaryContactLastName" render={({ field }) => (
-                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -444,7 +446,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     <FormLabel>Does member have a legal representative? <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
                         <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col space-y-2">
-                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="notApplicable" /></FormControl><FormLabel className="font-normal">N/A, member has capacity and does not need legal representative</FormLabel></FormItem>
+                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="notApplicable" /></FormControl><FormLabel className="font-normal">No, member has capacity and does not need legal representative</FormLabel></FormItem>
                             <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="same_as_primary" /></FormControl><FormLabel className="font-normal">Yes, same as primary contact</FormLabel></FormItem>
                             <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="different" /></FormControl><FormLabel className="font-normal">Yes, not same as primary contact (fill out below fields)</FormLabel></FormItem>
                             <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="no_has_rep" /></FormControl><FormLabel className="font-normal">Member does not have capacity and does not have legal representative</FormLabel></FormItem>
@@ -459,10 +461,10 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 <h3 className="font-medium">Representative's Contact Info</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repFirstName" render={({ field }) => (
-                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="repLastName" render={({ field }) => (
-                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
                 <FormField control={control} name="repRelationship" render={({ field }) => (
@@ -492,5 +494,3 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
     </div>
   );
 }
-
-    

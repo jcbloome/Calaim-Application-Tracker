@@ -89,8 +89,7 @@ const sampleApplicationData = {
   secondaryContactLanguage: "English",
 
   // Legal Rep
-  hasCapacity: "Yes",
-  hasLegalRep: "No",
+  hasLegalRep: "Yes",
   repFirstName: null,
   repLastName: null,
   repRelationship: null,
