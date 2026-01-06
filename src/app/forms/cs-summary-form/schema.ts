@@ -44,7 +44,6 @@ export const formSchema = z.object({
     memberMrn: requiredString,
     confirmMemberMrn: requiredString,
     memberLanguage: requiredString,
-    memberCounty: requiredString,
     
     // Step 1 - Referrer Info
     referrerFirstName: optionalString,

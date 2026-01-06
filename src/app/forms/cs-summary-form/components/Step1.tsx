@@ -237,19 +237,6 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 </FormItem>
                 )}
             />
-            <FormField
-                control={control}
-                name="memberCounty"
-                render={({ field }) => (
-                <FormItem>
-                    <FormLabel>County <span className="text-destructive">*</span></FormLabel>
-                    <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
-                    </FormControl>
-                    <FormMessage />
-                </FormItem>
-                )}
-            />
           </div>
         </CardContent>
       </Card>
