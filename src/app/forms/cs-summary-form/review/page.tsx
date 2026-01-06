@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, Suspense } from 'react';
@@ -202,7 +201,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                             <Field label="Medi-Cal Number" value={application.memberMediCalNum} />
                             <Field label="Medical Record Number (MRN)" value={application.memberMrn} />
                             <Field label="Preferred Language" value={application.memberLanguage} />
-                            <Field label="County" value={application.memberCounty} />
+                            <Field label="County" value={application.currentCounty} />
                         </Section>
 
                         <Separator />
@@ -229,8 +228,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                         <Separator />
                         
                          <Section title="Legal Representative" editLink={getEditLink(1)} isReadOnly={isReadOnly} isAdminView={isAdminView}>
-                            <Field label="Member Has Capacity" value={application.hasCapacity} />
-                            <Field label="Has Legal Representative" value={application.hasLegalRep} />
+                            <Field label="Does member have a legal representative?" value={application.hasLegalRep} />
                             <Field label="Representative First Name" value={application.repFirstName} />
                             <Field label="Representative Last Name" value={application.repLastName} />
                             <Field label="Representative Relationship" value={application.repRelationship} />

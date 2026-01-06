@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, useEffect, useState } from 'react';
@@ -313,5 +312,3 @@ export default function MyApplicationsPage() {
     </>
   );
 }
-
-    
