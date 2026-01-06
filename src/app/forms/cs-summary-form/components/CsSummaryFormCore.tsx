@@ -145,8 +145,10 @@ function CsSummaryFormComponent() {
             docId = doc(collection(firestore, `users/${targetUserId}/applications`)).id;
             setInternalApplicationId(docId);
             isNewDoc = true;
-            const newUrl = `/forms/cs-summary-form?applicationId=${docId}&step=${currentStep}${appUserId ? `&userId=${appUserId}` : ''}`;
-            router.replace(newUrl, { scroll: false });
+            // The router.replace call was causing an infinite loop. It is not strictly necessary.
+            // The internalApplicationId state handles tracking the new ID.
+            // const newUrl = `/forms/cs-summary-form?applicationId=${docId}&step=${currentStep}${appUserId ? `&userId=${appUserId}` : ''}`;
+            // router.replace(newUrl, { scroll: false });
         }
 
         const docRef = doc(firestore, `users/${targetUserId}/applications`, docId);
@@ -394,5 +396,3 @@ export default function CsSummaryFormCorePage() {
     </React.Suspense>
   );
 }
-
-    
