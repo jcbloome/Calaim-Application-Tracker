@@ -145,10 +145,6 @@ function CsSummaryFormComponent() {
             docId = doc(collection(firestore, `users/${targetUserId}/applications`)).id;
             setInternalApplicationId(docId);
             isNewDoc = true;
-            // The router.replace call was causing an infinite loop. It is not strictly necessary.
-            // The internalApplicationId state handles tracking the new ID.
-            // const newUrl = `/forms/cs-summary-form?applicationId=${docId}&step=${currentStep}${appUserId ? `&userId=${appUserId}` : ''}`;
-            // router.replace(newUrl, { scroll: false });
         }
 
         const docRef = doc(firestore, `users/${targetUserId}/applications`, docId);
@@ -328,9 +324,9 @@ function CsSummaryFormComponent() {
                 </div>
             )}
             <div className="mb-8">
-              <div className="mb-2">
+              <div className="mb-4">
                   <h1 className="text-2xl font-bold">CS Member Summary</h1>
-                  {!isAdminView && <GlossaryDialog className="p-0 h-auto" />}
+                  {!isAdminView && <GlossaryDialog className="p-0 h-auto mt-2" />}
               </div>
                <div className="flex items-center justify-between mb-4">
                    <Button type="button" variant="outline" onClick={prevStep} disabled={currentStep === 1}>

@@ -15,9 +15,7 @@ let firebaseSdks: FirebaseSdks | null = null;
 
 function getSdks(firebaseApp: FirebaseApp): FirebaseSdks {
   const auth = getAuth(firebaseApp);
-  // Set persistence at the time of initialization
-  auth.setPersistence(browserLocalPersistence);
-  
+  // Persistence is now handled at login time to ensure it completes before sign-in.
   return {
     firebaseApp,
     auth: auth,
