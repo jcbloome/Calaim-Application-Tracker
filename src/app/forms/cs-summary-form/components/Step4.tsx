@@ -55,7 +55,12 @@ export default function Step4() {
                 )} />
               </div>
               <FormField control={control} name="ispEmail" render={({ field }) => (
-                <FormItem><FormLabel>Email <span className="text-destructive">*</span></FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                <FormItem>
+                  <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
+                  <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
+                  <FormDescription>If no email, enter "N/A".</FormDescription>
+                  <FormMessage />
+                </FormItem>
               )} />
 
                <div className="space-y-4 p-4 border rounded-md mt-4">
@@ -239,7 +244,12 @@ export default function Step4() {
                         <FormItem><FormLabel>Administrator Phone {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><PhoneInput placeholder="(xxx) xxx-xxxx" {...field} /></FormControl><FormDescription>Format: (xxx) xxx-xxxx</FormDescription><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="rcfeAdminEmail" render={({ field }) => (
-                        <FormItem><FormLabel>Administrator Email {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                        <FormItem>
+                          <FormLabel>Administrator Email {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel>
+                          <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
+                          <FormDescription>If no email, enter "N/A".</FormDescription>
+                          <FormMessage />
+                        </FormItem>
                     )} />
                 </div>
             </div>

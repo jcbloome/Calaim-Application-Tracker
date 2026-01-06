@@ -10,11 +10,21 @@ const optionalPhone = z.string().optional().nullable().transform(val => val ?? '
   message: " ",
 });
 
-const requiredEmail = z.string().email({ message: " " }).min(1, { message: ' ' });
-const optionalEmail = z.string().email({ message: " " }).optional().nullable().or(z.literal(''));
+const requiredEmail = z.string().refine(value => {
+    if (!value) return false; // Must not be empty
+    if (value.trim().toUpperCase() === 'N/A') return true; // Allow 'N/A'
+    return z.string().email().safeParse(value).success; // Check for valid email format
+}, { message: " " });
+
+const optionalEmail = z.string().optional().nullable().refine(value => {
+    if (!value) return true; // Allow empty, null, or undefined
+    if (value.trim().toUpperCase() === 'N/A') return true; // Allow 'N/A'
+    return z.string().email().safeParse(value).success; // Check for valid email format
+}, { message: " " });
+
 
 const dateSchema = z.string().refine(val => {
-    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(val)) return false;
+    if (!/^\d{2}\/\d{2}\/\d{4044}$/.test(val)) return false;
     const [month, day, year] = val.split('/').map(Number);
     if (month < 1 || month > 12 || day < 1 || day > 31) return false;
     const date = new Date(year, month - 1, day);
@@ -145,7 +155,9 @@ export const formSchema = z.object({
       if (!data.repLastName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repLastName"] });
       if (!data.repRelationship) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repRelationship"] });
       if (!data.repPhone || !phoneRegex.test(data.repPhone)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repPhone"] });
-      if (!data.repEmail || !z.string().email().safeParse(data.repEmail).success) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repEmail"] });
+      
+      const repEmailCheck = requiredEmail.safeParse(data.repEmail);
+      if (!repEmailCheck.success) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["repEmail"] });
     }
 
     if (data.hasPrefRCFE === 'Yes') {
@@ -153,7 +165,9 @@ export const formSchema = z.object({
         if (!data.rcfeAddress) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["rcfeAddress"] });
         if (!data.rcfeAdminName) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["rcfeAdminName"] });
         if (!data.rcfeAdminPhone || !phoneRegex.test(data.rcfeAdminPhone)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["rcfeAdminPhone"] });
-        if (!data.rcfeAdminEmail || !z.string().email().safeParse(data.rcfeAdminEmail).success) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["rcfeAdminEmail"] });
+        
+        const rcfeEmailCheck = requiredEmail.safeParse(data.rcfeAdminEmail);
+        if (!rcfeEmailCheck.success) ctx.addIssue({ code: z.ZodIssueCode.custom, message: " ", path: ["rcfeAdminEmail"] });
     }
   });
 

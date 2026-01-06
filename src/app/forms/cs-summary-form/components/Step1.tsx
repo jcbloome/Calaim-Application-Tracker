@@ -46,11 +46,30 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
         setValue('repEmail', getValues('bestContactEmail'));
         clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
     } else if (hasLegalRep === 'No' || hasCapacity === 'Yes' || hasLegalRep === 'different') {
-        setValue('repFirstName', '');
-        setValue('repLastName', '');
-        setValue('repRelationship', '');
-        setValue('repPhone', '');
-        setValue('repEmail', '');
+        const currentRepValues = {
+            repFirstName: getValues('repFirstName'),
+            repLastName: getValues('repLastName'),
+            repRelationship: getValues('repRelationship'),
+            repPhone: getValues('repPhone'),
+            repEmail: getValues('repEmail'),
+        };
+        const bestContactValues = {
+            repFirstName: getValues('bestContactFirstName'),
+            repLastName: getValues('bestContactLastName'),
+            repRelationship: getValues('bestContactRelationship'),
+            repPhone: getValues('bestContactPhone'),
+            repEmail: getValues('bestContactEmail'),
+        };
+
+        // Only clear if the values were previously auto-filled
+        if (JSON.stringify(currentRepValues) === JSON.stringify(bestContactValues)) {
+            setValue('repFirstName', '');
+            setValue('repLastName', '');
+            setValue('repRelationship', '');
+            setValue('repPhone', '');
+            setValue('repEmail', '');
+        }
+        
         clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
     }
 
@@ -361,7 +380,12 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                       </FormItem>
                   )} />
                   <FormField control={control} name="bestContactEmail" render={({ field }) => (
-                      <FormItem><FormLabel>Email <span className="text-destructive">*</span></FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                      <FormItem>
+                        <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
+                        <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
+                        <FormDescription>If no email, enter "N/A".</FormDescription>
+                        <FormMessage />
+                      </FormItem>
                   )} />
               </div>
           </div>
@@ -401,7 +425,12 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                         </FormItem>
                     )} />
                     <FormField control={control} name="secondaryContactEmail" render={({ field }) => (
-                        <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
+                       <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
+                          <FormDescription>If no email, enter "N/A".</FormDescription>
+                          <FormMessage />
+                        </FormItem>
                     )} />
                 </div>
             </div>
@@ -476,7 +505,12 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                         </FormItem>
                     )} />
                     <FormField control={control} name="repEmail" render={({ field }) => (
-                        <FormItem><FormLabel>Email <span className="text-destructive">*</span></FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl><FormMessage /></FormItem>
+                        <FormItem>
+                          <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
+                          <FormControl><Input type="email" {...field} value={field.value ?? ''} disabled={hasLegalRep === 'sameAsPrimary'} /></FormControl>
+                          <FormDescription>If no email, enter "N/A".</FormDescription>
+                          <FormMessage />
+                        </FormItem>
                     )} />
                 </div>
 
@@ -486,4 +520,3 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
     </div>
   );
 }
-
