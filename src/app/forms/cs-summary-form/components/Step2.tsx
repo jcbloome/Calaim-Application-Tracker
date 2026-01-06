@@ -14,7 +14,16 @@ const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub
 
 export default function Step2() {
   const { control, watch, setValue, getValues, clearErrors } = useFormContext<FormValues>();
+  
   const copyAddress = watch('copyAddress');
+  const currentAddressFields = watch([
+    'currentLocation',
+    'currentAddress',
+    'currentCity',
+    'currentState',
+    'currentZip',
+    'currentCounty'
+  ]);
 
   useEffect(() => {
     if (copyAddress) {
@@ -24,10 +33,8 @@ export default function Step2() {
       setValue('customaryState', getValues('currentState'));
       setValue('customaryZip', getValues('currentZip'));
       setValue('customaryCounty', getValues('currentCounty'));
-      // Clear any validation errors on these fields when the box is checked
       clearErrors(['customaryLocationType', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty']);
     } else {
-        // Optionally clear fields when unchecked
         setValue('customaryLocationType', '');
         setValue('customaryAddress', '');
         setValue('customaryCity', '');
@@ -35,7 +42,7 @@ export default function Step2() {
         setValue('customaryZip', '');
         setValue('customaryCounty', '');
     }
-  }, [copyAddress, getValues, setValue, clearErrors]);
+  }, [copyAddress, ...currentAddressFields, getValues, setValue, clearErrors]);
   
   const formatName = (value: string) => {
     if (!value) return '';
@@ -47,7 +54,6 @@ export default function Step2() {
   
   const formatAddress = (value: string) => {
     if (!value) return '';
-    // Only capitalize if the first character is a letter
     if (/[a-zA-Z]/.test(value.charAt(0))) {
       return value.charAt(0).toUpperCase() + value.slice(1);
     }
@@ -123,6 +129,9 @@ export default function Step2() {
                         </FormControl>
                         <div className="space-y-1 leading-none">
                             <FormLabel>Same as current location</FormLabel>
+                            <FormDescription>
+                                If the location type does not update when this is selected, please uncheck and recheck this box to update it.
+                            </FormDescription>
                         </div>
                         </FormItem>
                     )}
