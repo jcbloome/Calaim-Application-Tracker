@@ -512,5 +512,3 @@ export default function ManagerialOverviewPage() {
     </Dialog>
   );
 }
-
-    
