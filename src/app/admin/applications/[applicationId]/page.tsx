@@ -28,11 +28,13 @@ import {
   Edit,
   Mail,
   AlertTriangle,
+  User,
+  Calendar as CalendarIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Application, FormStatus as FormStatusType, StaffTracker } from '@/lib/definitions';
+import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase } from '@/firebase';
-import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot, collection } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot, collection, getDocs } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -53,6 +55,9 @@ import { sendApplicationStatusEmail } from '@/app/actions/send-email';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format } from 'date-fns';
 
 const healthNetSteps = [
   "Application Being Reviewed",
@@ -121,46 +126,93 @@ function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
 function StaffApplicationTracker({ application }: { application: Application }) {
     const firestore = useFirestore();
     const { user } = useUser();
-    
+    const { toast } = useToast();
+
+    const [staffList, setStaffList] = useState<StaffMember[]>([]);
+    const [isLoadingStaff, setIsLoadingStaff] = useState(true);
+
     const trackerDocRef = useMemoFirebase(() => {
         if (!firestore || !application.userId || !application.id) return null;
         return doc(firestore, `users/${application.userId}/applications/${application.id}/staffTrackers`, application.id);
     }, [firestore, application.id, application.userId]);
 
-    const { data: tracker, isLoading } = useDoc<StaffTracker>(trackerDocRef);
-    const { toast } = useToast();
+    const { data: tracker, isLoading: isLoadingTracker } = useDoc<StaffTracker>(trackerDocRef);
 
     const steps = application.healthPlan?.toLowerCase().includes('kaiser') ? kaiserSteps : healthNetSteps;
 
-    const handleStatusChange = async (newStatus: string) => {
+    useEffect(() => {
+        const fetchStaff = async () => {
+            if (!firestore) return;
+            setIsLoadingStaff(true);
+             try {
+                const adminRolesSnap = await getDocs(collection(firestore, 'roles_admin'));
+                const superAdminRolesSnap = await getDocs(collection(firestore, 'roles_super_admin'));
+                const adminIds = new Set(adminRolesSnap.docs.map(d => d.id));
+                const superAdminIds = new Set(superAdminRolesSnap.docs.map(d => d.id));
+                const allStaffIds = Array.from(new Set([...adminIds, ...superAdminIds]));
+
+                if (allStaffIds.length === 0) {
+                    setStaffList([]);
+                    return;
+                }
+                
+                const usersSnap = await getDocs(collection(firestore, 'users'));
+                const usersData = new Map(usersSnap.docs.map(d => [d.id, d.data()]));
+
+                const staff: StaffMember[] = allStaffIds.map(id => {
+                    const userData = usersData.get(id) || {};
+                    return {
+                        uid: id,
+                        firstName: userData.firstName || 'Unknown',
+                        lastName: userData.lastName || 'User',
+                        email: userData.email || 'N/A',
+                        role: superAdminIds.has(id) ? 'Super Admin' : 'Admin',
+                    };
+                }).sort((a,b) => a.lastName.localeCompare(b.lastName));
+                setStaffList(staff);
+            } catch (error) {
+                console.error("Error fetching staff list:", error);
+            } finally {
+                setIsLoadingStaff(false);
+            }
+        };
+        fetchStaff();
+    }, [firestore]);
+
+
+    const handleTrackerUpdate = async (field: keyof StaffTracker, value: any) => {
         if (!trackerDocRef || !user || !application.userId) return;
-        
-        const dataToSave: StaffTracker = {
-            id: application.id,
-            applicationId: application.id,
-            userId: application.userId,
-            healthPlan: application.healthPlan as 'Kaiser' | 'Health Net',
-            status: newStatus,
+
+        const dataToUpdate: Partial<StaffTracker> = {
+            [field]: value,
             lastUpdated: Timestamp.now(),
         };
 
+        // Ensure base data exists if creating a new tracker
+        if (!tracker) {
+            dataToUpdate.id = application.id;
+            dataToUpdate.applicationId = application.id;
+            dataToUpdate.userId = application.userId;
+            dataToUpdate.healthPlan = application.healthPlan as any;
+        }
+        
         try {
-            await setDoc(trackerDocRef, dataToSave, { merge: true });
+            await setDoc(trackerDocRef, dataToUpdate, { merge: true });
             toast({
                 title: "Tracker Updated",
-                description: `Status changed to "${newStatus}".`,
+                description: "The application tracker has been updated.",
             });
         } catch (error: any) {
             toast({
                 variant: "destructive",
                 title: "Error",
-                description: "Could not update tracker status.",
+                description: "Could not update tracker.",
             });
             console.error("Error updating tracker:", error);
         }
     };
     
-    if (isLoading) {
+    if (isLoadingTracker || isLoadingStaff) {
         return <div className="p-4 text-center"><Loader2 className="h-5 w-5 animate-spin inline-block" /></div>
     }
 
@@ -170,10 +222,72 @@ function StaffApplicationTracker({ application }: { application: Application }) 
                 <CardTitle>Staff Application Tracker</CardTitle>
                 <CardDescription>Internal progress for the {application.healthPlan} pathway.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-6">
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="staff-assignment">Assigned Staff</Label>
+                        <Select
+                            value={tracker?.assignedStaffId}
+                            onValueChange={(value) => handleTrackerUpdate('assignedStaffId', value)}
+                        >
+                            <SelectTrigger id="staff-assignment">
+                                <SelectValue placeholder="Assign a staff member..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {staffList.map(staff => (
+                                    <SelectItem key={staff.uid} value={staff.uid}>
+                                        {staff.firstName} {staff.lastName}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="next-step">Next Step</Label>
+                         <Select
+                            value={tracker?.nextStep}
+                            onValueChange={(value) => handleTrackerUpdate('nextStep', value)}
+                        >
+                            <SelectTrigger id="next-step">
+                                <SelectValue placeholder="Select next step..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="contact-referrer">Contact Referrer</SelectItem>
+                                <SelectItem value="review-documents">Review Documents</SelectItem>
+                                <SelectItem value="schedule-isp">Schedule ISP</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                        <Label htmlFor="next-step-date">Next Step Date</Label>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    id="next-step-date"
+                                    variant={"outline"}
+                                    className={cn("w-full justify-start text-left font-normal", !tracker?.nextStepDate && "text-muted-foreground")}
+                                >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {tracker?.nextStepDate ? format(tracker.nextStepDate.toDate(), "PPP") : <span>Pick a date</span>}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <Calendar
+                                    mode="single"
+                                    selected={tracker?.nextStepDate?.toDate()}
+                                    onSelect={(date) => handleTrackerUpdate('nextStepDate', date ? Timestamp.fromDate(date) : null)}
+                                    initialFocus
+                                />
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+                </div>
+                <Separator />
                 <RadioGroup
                     value={tracker?.status}
-                    onValueChange={handleStatusChange}
+                    onValueChange={(value) => handleTrackerUpdate('status', value)}
                     className="space-y-2"
                 >
                     {steps.map((step, index) => (

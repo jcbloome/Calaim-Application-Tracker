@@ -134,6 +134,19 @@
           "type": "string",
           "description": "The current internal status of the application, e.g., 'Scheduling ISP'."
         },
+        "assignedStaffId": {
+          "type": "string",
+          "description": "The UID of the staff member assigned to this application."
+        },
+        "nextStep": {
+          "type": "string",
+          "description": "The next specific action to be taken."
+        },
+        "nextStepDate": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The due date for the next step."
+        },
         "lastUpdated": {
           "type": "string",
           "format": "date-time"

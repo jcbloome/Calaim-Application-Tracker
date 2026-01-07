@@ -124,4 +124,15 @@ export type StaffTracker = {
   healthPlan: 'Kaiser' | 'Health Net' | 'Other';
   status: string;
   lastUpdated: Timestamp;
+  assignedStaffId?: string;
+  nextStep?: string;
+  nextStepDate?: Timestamp;
 };
+
+export interface StaffMember {
+    uid: string;
+    role: 'Admin' | 'Super Admin';
+    firstName: string;
+    lastName: string;
+    email: string;
+}

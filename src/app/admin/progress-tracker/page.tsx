@@ -5,17 +5,17 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore } from '@/firebase';
 import { collection, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
-import type { Application } from '@/lib/definitions';
+import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, CheckCircle2, XCircle, Circle, Filter } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Circle, Filter, Calendar, User } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { useAdmin } from '@/hooks/use-admin';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
-
+import { format } from 'date-fns';
 
 const trackedComponents = [
   { key: 'CS Member Summary', abbreviation: 'CS' },
@@ -53,11 +53,9 @@ const StatusIndicator = ({ status, formName }: { status: 'Completed' | 'Pending'
 const getComponentStatus = (app: Application, componentKey: string): 'Completed' | 'Pending' | 'Not Applicable' => {
     const form = app.forms?.find(f => f.name === componentKey);
     
-    // SNF Diversion specific form
     if (componentKey === 'Declaration of Eligibility' && app.pathway !== 'SNF Diversion') {
         return 'Not Applicable';
     }
-    // SNF Transition specific form
     if (componentKey === 'SNF Facesheet' && app.pathway !== 'SNF Transition') {
         return 'Not Applicable';
     }
@@ -76,10 +74,12 @@ export default function ProgressTrackerPage() {
   const [filters, setFilters] = useState<string[]>([]);
 
   const [applications, setApplications] = useState<Application[]>([]);
+  const [trackers, setTrackers] = useState<Map<string, StaffTracker>>(new Map());
+  const [staff, setStaff] = useState<Map<string, StaffMember>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchApps = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     if (isAdminLoading || !firestore || !isAdmin) {
         if (!isAdminLoading) setIsLoading(false);
         return;
@@ -89,12 +89,36 @@ export default function ProgressTrackerPage() {
     setError(null);
     try {
         const appsQuery = collectionGroup(firestore, 'applications');
-        const snapshot = await getDocs(appsQuery).catch(e => {
-            errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' }));
-            throw e;
+        const trackersQuery = collectionGroup(firestore, 'staffTrackers');
+        const adminRolesQuery = collection(firestore, 'roles_admin');
+        const superAdminRolesQuery = collection(firestore, 'roles_super_admin');
+        const usersQuery = collection(firestore, 'users');
+
+        const [appsSnap, trackersSnap, adminRolesSnap, superAdminRolesSnap, usersSnap] = await Promise.all([
+            getDocs(appsQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' })); throw e; }),
+            getDocs(trackersQuery),
+            getDocs(adminRolesQuery),
+            getDocs(superAdminRolesQuery),
+            getDocs(usersQuery),
+        ]);
+
+        const apps = appsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Application[];
+        const trackersMap = new Map(trackersSnap.docs.map(doc => [doc.data().applicationId, doc.data() as StaffTracker]));
+        
+        const adminIds = new Set(adminRolesSnap.docs.map(d => d.id));
+        const superAdminIds = new Set(superAdminRolesSnap.docs.map(d => d.id));
+        const staffMap = new Map();
+        usersSnap.docs.forEach(doc => {
+            const uid = doc.id;
+            if (adminIds.has(uid) || superAdminIds.has(uid)) {
+                 staffMap.set(uid, { uid, ...doc.data() } as StaffMember);
+            }
         });
-        const apps = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Application[];
+
         setApplications(apps);
+        setTrackers(trackersMap);
+        setStaff(staffMap);
+
     } catch (err: any) {
         setError(err);
     } finally {
@@ -103,8 +127,8 @@ export default function ProgressTrackerPage() {
   }, [firestore, isAdmin, isAdminLoading]);
 
   useEffect(() => {
-    fetchApps();
-  }, [fetchApps]);
+    fetchData();
+  }, [fetchData]);
   
   const handleFilterChange = (componentKey: string, checked: boolean) => {
     setFilters(prev => 
@@ -126,7 +150,6 @@ export default function ProgressTrackerPage() {
     }
 
     return sorted.filter(app => {
-        // Show app if it is missing ALL of the selected components
         return filters.every(filterKey => getComponentStatus(app, filterKey) === 'Pending');
     });
 
@@ -203,29 +226,46 @@ export default function ProgressTrackerPage() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {filteredApplications.length > 0 ? filteredApplications.map(app => (
-                            <TableRow key={app.id}>
-                                <TableCell>
-                                    <div className="font-medium">{`${app.memberFirstName} ${app.memberLastName}`}</div>
-                                    <div className="text-xs text-muted-foreground">
-                                        {app.healthPlan} / {app.pathway}
-                                    </div>
-                                </TableCell>
-                                {trackedComponents.map(c => (
-                                    <TableCell key={c.key} className="text-center">
-                                        <StatusIndicator 
-                                            status={getComponentStatus(app, c.key)}
-                                            formName={c.key}
-                                        />
+                        {filteredApplications.length > 0 ? filteredApplications.map(app => {
+                            const tracker = trackers.get(app.id);
+                            const assignedStaff = tracker?.assignedStaffId ? staff.get(tracker.assignedStaffId) : null;
+                            
+                            return (
+                                <TableRow key={app.id}>
+                                    <TableCell>
+                                        <div className="font-medium">{`${app.memberFirstName} ${app.memberLastName}`}</div>
+                                        <div className="text-xs text-muted-foreground">
+                                            {app.healthPlan} / {app.pathway}
+                                        </div>
+                                        {assignedStaff && (
+                                            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                                                <User className="h-3 w-3" /> 
+                                                <span>{assignedStaff.firstName} {assignedStaff.lastName}</span>
+                                            </div>
+                                        )}
+                                        {tracker?.nextStepDate && (
+                                            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                                                <Calendar className="h-3 w-3" />
+                                                <span>{format(tracker.nextStepDate.toDate(), 'MMM dd, yyyy')}</span>
+                                            </div>
+                                        )}
                                     </TableCell>
-                                ))}
-                                <TableCell className="text-right">
-                                    <Button asChild variant="outline" size="sm">
-                                        <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View</Link>
-                                    </Button>
-                                </TableCell>
-                            </TableRow>
-                        )) : (
+                                    {trackedComponents.map(c => (
+                                        <TableCell key={c.key} className="text-center">
+                                            <StatusIndicator 
+                                                status={getComponentStatus(app, c.key)}
+                                                formName={c.key}
+                                            />
+                                        </TableCell>
+                                    ))}
+                                    <TableCell className="text-right">
+                                        <Button asChild variant="outline" size="sm">
+                                            <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View</Link>
+                                        </Button>
+                                    </TableCell>
+                                </TableRow>
+                            )
+                        }) : (
                              <TableRow>
                                 <TableCell colSpan={trackedComponents.length + 2} className="h-24 text-center">
                                     No applications match the current filter.
