@@ -47,7 +47,6 @@ const adminNavLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
   { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
-  { href: '/admin/my-tasks', label: 'My Tasks', icon: ClipboardList },
   { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
 ];
 
