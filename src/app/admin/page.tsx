@@ -6,7 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2, FolderKanban, Users, Activity, FileCheck2, List } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore, type WithId } from '@/firebase';
-import { collection, Timestamp, getDocs, collectionGroup, format } from 'firebase/firestore';
+import { collection, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
+import { format } from 'date-fns';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './applications/components/AdminApplicationsTable';
