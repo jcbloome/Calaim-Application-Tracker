@@ -215,6 +215,7 @@ export default function ManagerialOverviewPage() {
   const [memberFilter, setMemberFilter] = useState('');
   const [staffFilter, setStaffFilter] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'ascending' | 'descending' }>({ key: 'taskStatus', direction: 'ascending' });
+  const [currentDialogItem, setCurrentDialogItem] = useState<CombinedData | null>(null);
 
   const fetchData = useCallback(async () => {
     if (isAdminLoading || !firestore || !isSuperAdmin) {
@@ -344,7 +345,7 @@ export default function ManagerialOverviewPage() {
   }
 
   return (
-    <Dialog>
+    <Dialog onOpenChange={(open) => !open && setCurrentDialogItem(null)}>
         <div className="space-y-6">
         <Card>
             <CardHeader>
@@ -411,15 +412,9 @@ export default function ManagerialOverviewPage() {
                                     <TableCell>{item.tracker?.status || 'N/A'}</TableCell>
                                     <TableCell className="text-right space-x-2">
                                         <DialogTrigger asChild>
-                                            <Button variant="outline" size="sm">View Progress</Button>
+                                            <Button variant="outline" size="sm" onClick={() => setCurrentDialogItem(item)}>View Progress</Button>
                                         </DialogTrigger>
                                         <Button asChild variant="secondary" size="sm"><Link href={`/admin/applications/${item.id}?userId=${item.userId}`}>Details</Link></Button>
-                                         <StaffApplicationTrackerDialog 
-                                            application={item}
-                                            initialTracker={item.tracker}
-                                            staffList={staffList}
-                                            onUpdate={fetchData}
-                                        />
                                     </TableCell>
                                 </TableRow>
                                 )}) : (
@@ -435,6 +430,14 @@ export default function ManagerialOverviewPage() {
             </CardContent>
         </Card>
         </div>
+        {currentDialogItem && (
+            <StaffApplicationTrackerDialog 
+                application={currentDialogItem}
+                initialTracker={currentDialogItem.tracker}
+                staffList={staffList}
+                onUpdate={fetchData}
+            />
+        )}
     </Dialog>
   );
 }
