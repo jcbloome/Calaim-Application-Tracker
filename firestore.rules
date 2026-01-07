@@ -46,6 +46,11 @@ service cloud.firestore {
             // Only admins can read/write internal staff trackers.
             allow read, list, write: if isAdmin();
         }
+
+        // Tasks sub-subcollection rules
+        match /tasks/{taskId} {
+            allow read, list, write: if isAdmin() || isOwner(userId);
+        }
       }
     }
     
@@ -63,6 +68,11 @@ service cloud.firestore {
     match /{path=**}/staffTrackers/{trackerId} {
       allow list: if isAdmin() || (isSignedIn() && request.query.where[0][2] == request.auth.uid);
     }
+
+    match /{path=**}/tasks/{taskId} {
+        allow list: if isAdmin() || (isSignedIn() && request.query.where[0][2] == request.auth.uid);
+    }
+
 
     // --- GLOBAL/SYSTEM RULES ---
 
