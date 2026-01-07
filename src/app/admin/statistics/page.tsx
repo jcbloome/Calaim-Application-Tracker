@@ -113,14 +113,10 @@ export default function AdminStatisticsPage() {
             counts.byCounty.set(app.currentCounty, (counts.byCounty.get(app.currentCounty) || 0) + 1);
         }
         
-        // Health Plan - Consolidate Kaiser & Kaiser Permanente
+        // Health Plan
         if (app.healthPlan) {
-            let plan = app.healthPlan;
-            if (plan === 'Kaiser Permanente') {
-                plan = 'Kaiser';
-            }
-            if (counts.byHealthPlan.has(plan)) {
-                counts.byHealthPlan.set(plan, (counts.byHealthPlan.get(plan) || 0) + 1);
+            if (counts.byHealthPlan.has(app.healthPlan)) {
+                counts.byHealthPlan.set(app.healthPlan, (counts.byHealthPlan.get(app.healthPlan) || 0) + 1);
             }
         }
 
