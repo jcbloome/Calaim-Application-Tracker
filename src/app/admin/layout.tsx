@@ -165,8 +165,8 @@ function AdminHeader() {
                             {link.label}
                           </Link>
                         </SheetClose>
-                      )}
-                    )}
+                      );
+                    })}
                   </nav>
                    <div className="mt-auto border-t pt-6">
                      {user ? (
