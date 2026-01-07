@@ -39,6 +39,31 @@ const infoSections = [
         "An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP) clinical team to determine the member's care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the 'assisted living' portion). For Health Net, the tiered level is determined by Connections. For Kaiser, the tiered level is determined by Kaiser.",
     ],
   },
+   {
+    title: 'CalAIM Turnaround Time',
+    content: [
+      <>
+        <strong>For Health Net (5-7 business days):</strong>
+        <ol className="list-decimal pl-5 mt-2 space-y-1">
+          <li>We compile all the required documents, have a RN do a virtual ISP visit with appropriate party.</li>
+          <li>We determine the tiered rate.</li>
+          <li>We recommend RCFEs to the family (in many cases, the family already knows the RCFE they would like for their relative).</li>
+          <li>We submit the authorization request and receive the determination (approval or denial) within 5-7 business days.</li>
+        </ol>
+      </>,
+      <>
+        <strong className="mt-4 block">For Kaiser (2-4 weeks):</strong>
+        <ol className="list-decimal pl-5 mt-2 space-y-1">
+            <li>Compile required documents & Request Authorization.</li>
+            <li>Receive authorization determination.</li>
+            <li>If approved, send RN (or MSW with RN sign off) to do in-person visit with ISP tool.</li>
+            <li>Send ISP tool to Kaiser for tier level.</li>
+            <li>Receive tier level and recommend RCFEs to family.</li>
+            <li>Once RCFE is selected sent RCFE to Kaiser for contracting and when RCFE receives Kaiser contract member can move into the RCFE.</li>
+        </ol>
+      </>
+    ],
+  },
   {
     title: 'Next Steps: The Application',
     content: [
