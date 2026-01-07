@@ -244,12 +244,13 @@ export default function ManagerialOverviewPage() {
         const usersData = new Map(usersSnap.docs.map(d => [d.id, d.data()]));
         const staffResult: StaffMember[] = allStaffIds.map(id => {
             const userData = usersData.get(id) || {};
+            const role: 'Admin' | 'Super Admin' = superAdminIds.has(id) ? 'Super Admin' : 'Admin';
             return {
                 uid: id,
                 firstName: userData.firstName || 'Unknown',
                 lastName: userData.lastName || 'User',
                 email: userData.email || 'N/A',
-                role: superAdminIds.has(id) ? 'Super Admin' : 'Admin',
+                role: role,
             };
         }).sort((a,b) => a.lastName.localeCompare(b.lastName));
 
