@@ -60,19 +60,17 @@ export default function Step4() {
                     <FormItem>
                         <FormLabel>Relationship to Member <span className="text-destructive">*</span></FormLabel>
                         <FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl>
-                        <FormDescription>e.g., social worker, RN, family member, etc.</FormDescription>
                         <FormMessage />
                     </FormItem>
                 )} />
                  <FormField control={control} name="ispPhone" render={({ field }) => (
-                    <FormItem><FormLabel>Phone <span className="text-destructive">*</span></FormLabel><FormControl><PhoneInput placeholder="(xxx) xxx-xxxx" {...field} /></FormControl><FormDescription>Format: (xxx) xxx-xxxx</FormDescription><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Phone <span className="text-destructive">*</span></FormLabel><FormControl><PhoneInput placeholder="(xxx) xxx-xxxx" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
               <FormField control={control} name="ispEmail" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
                   <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
-                  <FormDescription>If no email, enter "N/A".</FormDescription>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -106,7 +104,6 @@ export default function Step4() {
                       <FormItem>
                           <FormLabel>Facility Name <span className="text-destructive">*</span></FormLabel>
                           <FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl>
-                          <FormDescription>If not applicable, enter N/A.</FormDescription>
                           <FormMessage />
                       </FormItem>
                   )} />
@@ -115,7 +112,6 @@ export default function Step4() {
                     <FormItem>
                         <FormLabel>Street Address <span className="text-destructive">*</span></FormLabel>
                         <FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatAddress(e.target.value))} /></FormControl>
-                        <FormDescription>Street Address, City, State, ZIP</FormDescription>
                         <FormMessage />
                     </FormItem>
                 )} />
@@ -190,7 +186,6 @@ export default function Step4() {
                       />
                     </div>
                   </FormControl>
-                  <FormDescription>Please note that proof of income (e.g., Social Security award letter) will need to be submitted later.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -255,13 +250,12 @@ export default function Step4() {
                 )} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="rcfeAdminPhone" render={({ field }) => (
-                        <FormItem><FormLabel>Administrator Phone {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><PhoneInput placeholder="(xxx) xxx-xxxx" {...field} /></FormControl><FormDescription>Format: (xxx) xxx-xxxx</FormDescription><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Administrator Phone {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><PhoneInput placeholder="(xxx) xxx-xxxx" {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="rcfeAdminEmail" render={({ field }) => (
                         <FormItem>
                           <FormLabel>Administrator Email {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel>
                           <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
-                          <FormDescription>If no email, enter "N/A".</FormDescription>
                           <FormMessage />
                         </FormItem>
                     )} />
@@ -273,4 +267,5 @@ export default function Step4() {
   );
 }
 
+    
     

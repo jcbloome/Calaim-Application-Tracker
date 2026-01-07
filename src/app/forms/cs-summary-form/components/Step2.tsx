@@ -129,9 +129,6 @@ export default function Step2() {
                         </FormControl>
                         <div className="space-y-1 leading-none">
                             <FormLabel>Same as current location</FormLabel>
-                            <FormDescription>
-                                If the location type does not update when this is selected, please uncheck and recheck this box to update it.
-                            </FormDescription>
                         </div>
                         </FormItem>
                     )}
@@ -188,3 +185,5 @@ export default function Step2() {
     </div>
   );
 }
+
+    
