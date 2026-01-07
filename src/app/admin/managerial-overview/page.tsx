@@ -339,12 +339,15 @@ export default function ManagerialOverviewPage() {
                     </div>
                     <div className="flex-1 space-y-2">
                         <Label htmlFor="staff-filter">Filter by Staff</Label>
-                        <Select value={staffFilter} onValueChange={setStaffFilter}>
+                        <Select
+                          value={staffFilter}
+                          onValueChange={(value) => setStaffFilter(value === 'all-staff' ? '' : value)}
+                        >
                             <SelectTrigger id="staff-filter">
                                 <SelectValue placeholder="All Staff" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="">All Staff</SelectItem>
+                                <SelectItem value="all-staff">All Staff</SelectItem>
                                 {staffList.map(staff => (
                                     <SelectItem key={staff.uid} value={staff.uid}>
                                         {staff.firstName} {staff.lastName}
@@ -404,5 +407,3 @@ export default function ManagerialOverviewPage() {
     </Dialog>
   );
 }
-
-    
