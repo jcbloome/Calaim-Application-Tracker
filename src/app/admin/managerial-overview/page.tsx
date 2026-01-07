@@ -9,7 +9,7 @@ import { collection, Timestamp, getDocs, collectionGroup, Query, query, orderBy,
 import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, User, Calendar as CalendarIcon, Package, ChevronsUpDown } from 'lucide-react';
+import { Loader2, User, Calendar as CalendarIcon, Package, ChevronsUpDown, Filter, ArrowUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
@@ -18,7 +18,9 @@ import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 const healthNetSteps = [
   "Application Being Reviewed",
@@ -42,7 +44,7 @@ const kaiserSteps = [
 ];
 
 
-function StaffApplicationTracker({ application, initialTracker, staffList, onUpdate }: { application: Application, initialTracker?: StaffTracker, staffList: StaffMember[], onUpdate: () => void }) {
+function StaffApplicationTrackerDialog({ application, initialTracker, staffList, onUpdate }: { application: Application, initialTracker?: StaffTracker, staffList: StaffMember[], onUpdate: () => void }) {
     const firestore = useFirestore();
     const { toast } = useToast();
     const [tracker, setTracker] = useState<StaffTracker | undefined>(initialTracker);
@@ -76,7 +78,7 @@ function StaffApplicationTracker({ application, initialTracker, staffList, onUpd
                 title: "Tracker Updated",
                 description: `Progress for ${application.memberFirstName} ${application.memberLastName} has been saved.`,
             });
-            onUpdate(); // Trigger refetch in parent
+            onUpdate();
         } catch (error: any) {
             toast({
                 variant: "destructive",
@@ -88,14 +90,14 @@ function StaffApplicationTracker({ application, initialTracker, staffList, onUpd
     };
     
     return (
-        <Card className="bg-muted/30">
-            <CardHeader className="p-4">
-                <CardTitle className="text-base">Internal Progress Tracker</CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-0 space-y-6">
-                <div className="space-y-4">
+        <DialogContent className="max-w-2xl">
+            <DialogHeader>
+                <DialogTitle>Progress for {application.memberFirstName} {application.memberLastName}</DialogTitle>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4 max-h-[70vh] overflow-y-auto px-2">
+                <div className="space-y-6">
                     <div className="space-y-2">
-                        <Label htmlFor={`staff-assignment-${application.id}`} className="text-xs">Assigned Staff</Label>
+                        <Label htmlFor={`staff-assignment-${application.id}`} className="text-sm">Assigned Staff</Label>
                         <Select
                             value={tracker?.assignedStaffId}
                             onValueChange={(value) => handleTrackerUpdate('assignedStaffId', value)}
@@ -114,7 +116,7 @@ function StaffApplicationTracker({ application, initialTracker, staffList, onUpd
                     </div>
 
                     <div className="space-y-2">
-                        <Label htmlFor={`next-step-${application.id}`} className="text-xs">Next Step</Label>
+                        <Label htmlFor={`next-step-${application.id}`} className="text-sm">Next Step</Label>
                          <Select
                             value={tracker?.nextStep}
                             onValueChange={(value) => handleTrackerUpdate('nextStep', value)}
@@ -131,7 +133,7 @@ function StaffApplicationTracker({ application, initialTracker, staffList, onUpd
                     </div>
                     
                     <div className="space-y-2">
-                        <Label htmlFor={`next-step-date-${application.id}`} className="text-xs">Next Step Date</Label>
+                        <Label htmlFor={`next-step-date-${application.id}`} className="text-sm">Next Step Date</Label>
                         <Popover>
                             <PopoverTrigger asChild>
                                 <Button
@@ -155,12 +157,12 @@ function StaffApplicationTracker({ application, initialTracker, staffList, onUpd
                     </div>
                 </div>
                 
-                <RadioGroup
+                 <RadioGroup
                     value={tracker?.status}
                     onValueChange={(value) => handleTrackerUpdate('status', value)}
-                    className="space-y-2 pt-4 border-t"
+                    className="space-y-2 pt-6 border-t md:border-t-0 md:pt-0 md:pl-6 md:border-l"
                 >
-                    <Label className="text-xs">Current Status</Label>
+                    <Label className="text-sm">Current Status</Label>
                     {steps.map((step, index) => (
                         <div key={step} className="flex items-center space-x-2">
                              <RadioGroupItem value={step} id={`step-${application.id}-${index}`} />
@@ -168,10 +170,16 @@ function StaffApplicationTracker({ application, initialTracker, staffList, onUpd
                         </div>
                     ))}
                 </RadioGroup>
-            </CardContent>
-        </Card>
+            </div>
+        </DialogContent>
     );
 }
+
+type CombinedData = Application & {
+    tracker?: StaffTracker;
+    assignedStaff?: StaffMember;
+};
+type SortKey = 'memberName' | 'assignedStaff' | 'status' | 'nextStep' | 'nextStepDate';
 
 export default function ManagerialOverviewPage() {
   const firestore = useFirestore();
@@ -182,14 +190,10 @@ export default function ManagerialOverviewPage() {
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  
-  const sortedApplications = useMemo(() => {
-    return [...applications].sort((a, b) => {
-        const timeA = a.lastUpdated ? (a.lastUpdated as Timestamp).toMillis() : 0;
-        const timeB = b.lastUpdated ? (b.lastUpdated as Timestamp).toMillis() : 0;
-        return timeB - timeA;
-    });
-  }, [applications]);
+
+  const [memberFilter, setMemberFilter] = useState('');
+  const [staffFilter, setStaffFilter] = useState('');
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'ascending' | 'descending' }>({ key: 'nextStepDate', direction: 'ascending' });
 
   const fetchData = useCallback(async () => {
     if (isAdminLoading || !firestore || !isSuperAdmin) {
@@ -242,6 +246,62 @@ export default function ManagerialOverviewPage() {
     fetchData();
   }, [fetchData]);
 
+  const requestSort = (key: SortKey) => {
+    let direction: 'ascending' | 'descending' = 'ascending';
+    if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+      direction = 'descending';
+    }
+    setSortConfig({ key, direction });
+  };
+  
+  const sortedAndFilteredData: CombinedData[] = useMemo(() => {
+      const staffMap = new Map(staffList.map(s => [s.uid, s]));
+      
+      let combined = applications.map(app => {
+          const tracker = trackers.get(app.id);
+          const assignedStaff = tracker?.assignedStaffId ? staffMap.get(tracker.assignedStaffId) : undefined;
+          return { ...app, tracker, assignedStaff };
+      });
+
+      if (memberFilter) {
+          combined = combined.filter(item => 
+              `${item.memberFirstName} ${item.memberLastName}`.toLowerCase().includes(memberFilter.toLowerCase())
+          );
+      }
+
+      if (staffFilter) {
+          combined = combined.filter(item => item.tracker?.assignedStaffId === staffFilter);
+      }
+
+      return [...combined].sort((a, b) => {
+          let aValue: any = '';
+          let bValue: any = '';
+
+          switch (sortConfig.key) {
+              case 'memberName':
+                  aValue = `${a.memberFirstName} ${a.memberLastName}`;
+                  bValue = `${b.memberFirstName} ${b.memberLastName}`;
+                  break;
+              case 'assignedStaff':
+                  aValue = a.assignedStaff ? `${a.assignedStaff.firstName} ${a.assignedStaff.lastName}` : 'Z'; // Unassigned at the end
+                  bValue = b.assignedStaff ? `${b.assignedStaff.firstName} ${b.assignedStaff.lastName}` : 'Z';
+                  break;
+              case 'nextStepDate':
+                  aValue = a.tracker?.nextStepDate?.toMillis() || 0;
+                  bValue = b.tracker?.nextStepDate?.toMillis() || 0;
+                  break;
+              default:
+                  aValue = a.tracker?.[sortConfig.key] || '';
+                  bValue = b.tracker?.[sortConfig.key] || '';
+          }
+
+          if (aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
+          if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
+          return 0;
+      });
+
+  }, [applications, trackers, staffList, memberFilter, staffFilter, sortConfig]);
+
 
   if (isLoading || isAdminLoading) {
     return (
@@ -257,55 +317,92 @@ export default function ManagerialOverviewPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Managerial Overview</CardTitle>
-          <CardDescription>
-            An overview of all applications and their internal progress. Click on an application to expand its tracker.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+    <Dialog>
+        <div className="space-y-6">
+        <Card>
+            <CardHeader>
+            <CardTitle>Managerial Overview</CardTitle>
+            <CardDescription>
+                A filterable and sortable overview of all applications and their internal progress.
+            </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                    <div className="flex-1 space-y-2">
+                        <Label htmlFor="member-filter">Filter by Member</Label>
+                        <Input 
+                            id="member-filter"
+                            placeholder="Type member name..."
+                            value={memberFilter}
+                            onChange={(e) => setMemberFilter(e.target.value)}
+                        />
+                    </div>
+                    <div className="flex-1 space-y-2">
+                        <Label htmlFor="staff-filter">Filter by Staff</Label>
+                        <Select value={staffFilter} onValueChange={setStaffFilter}>
+                            <SelectTrigger id="staff-filter">
+                                <SelectValue placeholder="All Staff" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="">All Staff</SelectItem>
+                                {staffList.map(staff => (
+                                    <SelectItem key={staff.uid} value={staff.uid}>
+                                        {staff.firstName} {staff.lastName}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
 
-      <div className="space-y-4">
-        {sortedApplications.length > 0 ? sortedApplications.map(app => (
-            <Collapsible key={app.id} asChild>
-                 <Card>
-                    <CollapsibleTrigger asChild>
-                        <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/50 rounded-lg">
-                           <div className="flex-1">
-                             <p className="font-semibold">{app.memberFirstName} {app.memberLastName}</p>
-                             <p className="text-sm text-muted-foreground">{app.healthPlan} / {app.pathway}</p>
-                           </div>
-                           <Button variant="ghost" size="sm" className="w-9 p-0">
-                                <ChevronsUpDown className="h-4 w-4" />
-                                <span className="sr-only">Toggle</span>
-                            </Button>
-                        </div>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                        <div className="p-4 border-t">
-                            <StaffApplicationTracker 
-                                application={app}
-                                initialTracker={trackers.get(app.id)}
-                                staffList={staffList}
-                                onUpdate={fetchData}
-                            />
-                        </div>
-                    </CollapsibleContent>
-                </Card>
-            </Collapsible>
-        )) : (
-            <Card>
-                <CardContent className="p-8 text-center text-muted-foreground">
-                    No applications found.
-                </CardContent>
-            </Card>
-        )}
-      </div>
-    </div>
+                <div className="overflow-x-auto">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead><Button variant="ghost" onClick={() => requestSort('memberName')}>Member <ArrowUpDown className="ml-2 h-4 w-4" /></Button></TableHead>
+                                <TableHead><Button variant="ghost" onClick={() => requestSort('assignedStaff')}>Assigned To <ArrowUpDown className="ml-2 h-4 w-4" /></Button></TableHead>
+                                <TableHead><Button variant="ghost" onClick={() => requestSort('status')}>Current Status <ArrowUpDown className="ml-2 h-4 w-4" /></Button></TableHead>
+                                <TableHead><Button variant="ghost" onClick={() => requestSort('nextStep')}>Next Step <ArrowUpDown className="ml-2 h-4 w-4" /></Button></TableHead>
+                                <TableHead><Button variant="ghost" onClick={() => requestSort('nextStepDate')}>Due Date <ArrowUpDown className="ml-2 h-4 w-4" /></Button></TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {sortedAndFilteredData.length > 0 ? sortedAndFilteredData.map(item => (
+                                <TableRow key={item.id}>
+                                    <TableCell className="font-medium">{item.memberFirstName} {item.memberLastName}</TableCell>
+                                    <TableCell>{item.assignedStaff ? `${item.assignedStaff.firstName} ${item.assignedStaff.lastName}` : <span className="text-muted-foreground">Unassigned</span>}</TableCell>
+                                    <TableCell>{item.tracker?.status || 'N/A'}</TableCell>
+                                    <TableCell>{item.tracker?.nextStep || 'N/A'}</TableCell>
+                                    <TableCell>{item.tracker?.nextStepDate ? format(item.tracker.nextStepDate.toDate(), 'PPP') : 'N/A'}</TableCell>
+                                    <TableCell className="text-right space-x-2">
+                                        <DialogTrigger asChild>
+                                            <Button variant="outline" size="sm">View Progress</Button>
+                                        </DialogTrigger>
+                                        <Button asChild variant="secondary" size="sm"><Link href={`/admin/applications/${item.id}?userId=${item.userId}`}>Details</Link></Button>
+                                         <StaffApplicationTrackerDialog 
+                                            application={item}
+                                            initialTracker={item.tracker}
+                                            staffList={staffList}
+                                            onUpdate={fetchData}
+                                        />
+                                    </TableCell>
+                                </TableRow>
+                            )) : (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="h-24 text-center">
+                                        No applications match the current filters.
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </div>
+            </CardContent>
+        </Card>
+        </div>
+    </Dialog>
   );
 }
-    
 
     
