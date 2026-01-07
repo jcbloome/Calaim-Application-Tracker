@@ -56,6 +56,12 @@ service cloud.firestore {
     match /{path=**}/applications/{applicationId} {
       allow list: if isAdmin();
     }
+    
+    // This rule is CRITICAL for the progress tracker page.
+    // It allows any user identified as an admin to list all staff trackers across all applications.
+    match /{path=**}/staffTrackers/{trackerId} {
+      allow list: if isAdmin();
+    }
 
     // --- GLOBAL/SYSTEM RULES ---
 

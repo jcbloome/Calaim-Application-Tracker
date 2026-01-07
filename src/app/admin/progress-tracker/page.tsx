@@ -96,10 +96,10 @@ export default function ProgressTrackerPage() {
 
         const [appsSnap, trackersSnap, adminRolesSnap, superAdminRolesSnap, usersSnap] = await Promise.all([
             getDocs(appsQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' })); throw e; }),
-            getDocs(trackersQuery),
-            getDocs(adminRolesQuery),
-            getDocs(superAdminRolesQuery),
-            getDocs(usersQuery),
+            getDocs(trackersQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'staffTrackers (collection group)', operation: 'list' })); throw e; }),
+            getDocs(adminRolesQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'roles_admin (collection)', operation: 'list' })); throw e; }),
+            getDocs(superAdminRolesQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'roles_super_admin (collection)', operation: 'list' })); throw e; }),
+            getDocs(usersQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'users (collection)', operation: 'list' })); throw e; }),
         ]);
 
         const apps = appsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Application[];
@@ -200,7 +200,7 @@ export default function ProgressTrackerPage() {
                 </div>
             </div>
 
-          {error && <p className="text-destructive">Error: A permission error occurred while fetching data.</p>}
+          {error && <p className="text-destructive">Error: A permission error occurred while fetching data. Please ensure your account has the necessary roles.</p>}
           {isLoading || isAdminLoading ? (
              <div className="flex items-center justify-center h-48">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
