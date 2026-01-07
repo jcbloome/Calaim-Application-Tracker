@@ -36,7 +36,7 @@ const infoSections = [
    {
     title: 'Applying for Health Net (and being assigned to Molina)',
     content: [
-        "When applying for Medi-Cal with Health Net sometimes people are automatically assigned to Molina instead. Since we are not contracted with Molina for this specific program, you will need to switch to either Health Net or Kaiser to work with us. You can do this by contacting Health Care Options at the number provided above.",
+        "When applying for Medi-Cal with Health Net sometimes people are automatically assigned to Molina instead, you will need to call Health Net (800-675-6110) and request to be switched to Health Net.",
     ],
   },
 ];
