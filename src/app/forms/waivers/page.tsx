@@ -224,7 +224,7 @@ function WaiversFormComponent() {
                                 </ul>
 
                                 <p><strong>Expiration:</strong> This authorization expires one year from the date of signature.</p>
-                                <p><strong>My Rights:</strong> Under my rights member must sign document to move forward with the CS but can revoke this authorization at any time.</p>
+                                <p><strong>My Rights:</strong> Under my rights member (or POA) must sign document to move forward with the CS but can revoke this authorization at any time.</p>
                                 <Alert variant="warning" className="mt-4">
                                     <AlertCircle className="h-4 w-4" />
                                     <AlertTitle>Acknowledgment</AlertTitle>
@@ -240,10 +240,10 @@ function WaiversFormComponent() {
                             </Section>
 
                             <Section title="Liability Waiver & Hold Harmless Agreement" icon={FileText}>
-                                <p><strong>Intention.</strong> The purpose of this agreement ('Agreement') is to forever release and discharge Connections Care Home Consultants, LLC (the 'Company') and all its agents, officers, and employees (collectively referred to as 'Releasees') from all liability for injury or damages that may arise out of the resident/client's ('Resident') participation in the Community Supports program ('Program'). Resident understands that this Agreement covers liability, claims, and actions caused in whole or in part by any acts or failures to act of the Releasees, including, but not to, negligence, fault, or breach of contract.</p>
-                                <p><strong>Assumption of Risk.</strong> Resident understands that their participation in the Program may involve a risk of injury or even death from various causes. Resident assumes all possible risks, both known and unknown, of participating in the Program and agrees to release, defend, indemnify, and hold harmless the Releasees from any injury, loss, liability, damage, or cost they may incur due to their participation in the Program.</p>
-                                <p><strong>No Insurance.</strong> Resident understands that the Company does not assume any responsibility for or obligation to provide financial assistance or other assistance, including but not to medical, health, or disability insurance, in the event of injury or illness. Resident understands that they are not covered by any medical, health, accident, or life insurance provided by the Company and is responsible for providing their own insurance.</p>
-                                <p><strong>Acknowledgment.</strong> Resident acknowledges that they have read this Agreement in its entirety and understands its content. Resident is aware that this is a release of liability and a contract of indemnity, and they sign it of their own free will.</p>
+                                <p><strong>Intention.</strong> The purpose of this agreement ('Agreement') is to forever release and discharge Connections Care Home Consultants, LLC (the 'Company') and all its agents, officers, and employees (collectively referred to as 'Releasees') from all liability for injury or damages that may arise out of the resident/client's ('Resident') participation in the Community Supports program ('Program'). Resident (or POA) understands that this Agreement covers liability, claims, and actions caused in whole or in part by any acts or failures to act of the Releasees, including, but not to, negligence, fault, or breach of contract.</p>
+                                <p><strong>Assumption of Risk.</strong> Resident (or POA) understands that their participation in the Program may involve a risk of injury or even death from various causes. Resident (or POA) assumes all possible risks, both known and unknown, of participating in the Program and agrees to release, defend, indemnify, and hold harmless the Releasees from any injury, loss, liability, damage, or cost they may incur due to their participation in the Program.</p>
+                                <p><strong>No Insurance.</strong> Resident (or POA) understands that the Company does not assume any responsibility for or obligation to provide financial assistance or other assistance, including but not to medical, health, or disability insurance, in the event of injury or illness. Resident (or POA) understands that they are not covered by any medical, health, accident, or life insurance provided by the Company and is responsible for providing their own insurance.</p>
+                                <p><strong>Acknowledgment.</strong> Resident (or POA) acknowledges that they have read this Agreement in its entirety and understands its content. Resident (or POA) is aware that this is a release of liability and a contract of indemnity, and they sign it of their own free will.</p>
                                  <Alert variant="warning" className="mt-4">
                                     <AlertCircle className="h-4 w-4" />
                                     <AlertTitle>Acknowledgment</AlertTitle>
@@ -259,7 +259,7 @@ function WaiversFormComponent() {
                             </Section>
 
                             <Section title="Freedom of Choice Waiver" icon={HeartHandshake}>
-                                <p>I understand I have a choice to receive services in the community. Community Supports for Community Transition are available to help me. I can choose to accept or decline these services.</p>
+                                <p>I (or my POA) understand I have a choice to receive services in the community. Community Supports for Community Transition are available to help me. I (or my POA) can choose to accept or decline these services.</p>
                                 <p>If I accept these services, I will receive assistance from Connections Care Home Consultants to move into a community-based setting like an assisted living facility. They will help me find a place, coordinate paperwork, and ensure I am settled in. This will be authorized and paid for by my Managed Care Plan.</p>
                                 <p>If I decline these services, I am choosing to remain where I am, and I will not receive the transition support services offered by this program at this time.</p>
                                 <div className="p-4 border rounded-md space-y-3 mt-4 bg-background">
@@ -303,7 +303,7 @@ function WaiversFormComponent() {
                                         <div className="flex items-start space-x-2 mt-2">
                                             <Checkbox id="ack-room-and-board" checked={ackRoomAndBoard} onCheckedChange={(c) => setAckRoomAndBoard(!!c)} disabled={isReadOnly} />
                                             <label htmlFor="ack-room-and-board" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                               I have read and understood that the member is required to pay a "Room and Board" portion to the care facility. This was explained in the application form.
+                                               I have read and understood that the member (or POA) is required to pay a "Room and Board" portion to the care facility. This was explained in the application form.
                                             </label>
                                         </div>
                                     </AlertDescription>
@@ -322,7 +322,7 @@ function WaiversFormComponent() {
                                             </div>
                                             <div className="flex items-center space-x-2">
                                                 <RadioGroupItem value="representative" id="signer-rep" />
-                                                <Label htmlFor="signer-rep">Authorized Representative</Label>
+                                                <Label htmlFor="signer-rep">Authorized Representative (POA)</Label>
                                             </div>
                                         </div>
                                     </RadioGroup>
@@ -350,7 +350,7 @@ function WaiversFormComponent() {
                                         <AlertCircle className="h-4 w-4" />
                                         <AlertTitle>Legal Attestation</AlertTitle>
                                         <AlertDescription>
-                                            By clicking the button below, I acknowledge that under penalty of perjury, I am the member or an authorized representative legally empowered to sign on behalf of the member.
+                                            By clicking the button below, I acknowledge that under penalty of perjury, I am the member or an authorized representative (POA) legally empowered to sign on behalf of the member.
                                         </AlertDescription>
                                     </Alert>
                                 </div>
