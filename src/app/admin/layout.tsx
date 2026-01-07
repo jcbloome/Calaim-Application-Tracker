@@ -98,7 +98,7 @@ function AdminHeader() {
                   <NavigationMenuItem key={link.href}>
                     <NavigationMenuLink asChild active={isActive} className={navigationMenuTriggerStyle()}>
                       <Link href={link.href}>
-                        <Icon className="mr-2 h-4 w-4" />
+                        {Icon && <Icon className="mr-2 h-4 w-4" />}
                         {link.label}
                       </Link>
                     </NavigationMenuLink>
@@ -161,7 +161,7 @@ function AdminHeader() {
                        return (
                         <SheetClose asChild key={link.href}>
                           <Link href={link.href} className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary">
-                            <Icon className="h-4 w-4" />
+                            {Icon && <Icon className="h-4 w-4" />}
                             {link.label}
                           </Link>
                         </SheetClose>
