@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Suspense, useMemo, useState, useEffect } from 'react';
@@ -159,12 +160,13 @@ function StaffApplicationTracker({ application }: { application: Application }) 
 
                 const staff: StaffMember[] = allStaffIds.map(id => {
                     const userData = usersData.get(id) || {};
+                    const role: 'Admin' | 'Super Admin' = superAdminIds.has(id) ? 'Super Admin' : 'Admin';
                     return {
                         uid: id,
                         firstName: userData.firstName || 'Unknown',
                         lastName: userData.lastName || 'User',
                         email: userData.email || 'N/A',
-                        role: superAdminIds.has(id) ? 'Super Admin' : 'Admin',
+                        role: role,
                     };
                 }).sort((a,b) => a.lastName.localeCompare(b.lastName));
                 setStaffList(staff);
@@ -733,5 +735,7 @@ export default function AdminApplicationDetailPage() {
     </Suspense>
   );
 }
+
+    
 
     
