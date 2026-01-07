@@ -3,7 +3,8 @@
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useFirestore, useAdmin, errorEmitter, FirestorePermissionError } from '@/firebase';
+import { useFirestore, errorEmitter, FirestorePermissionError } from '@/firebase';
+import { useAdmin } from '@/hooks/use-admin';
 import { collection, Timestamp, getDocs, collectionGroup, Query, query, orderBy, setDoc, doc } from 'firebase/firestore';
 import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
 import { Button } from '@/components/ui/button';
