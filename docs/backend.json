@@ -160,6 +160,64 @@
         "status",
         "lastUpdated"
       ]
+    },
+    "Task": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Task",
+      "description": "Represents a single task or to-do item related to an application.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "applicationId": {
+          "type": "string"
+        },
+        "assignedTo": {
+          "type": "string",
+          "description": "The UID of the staff member this task is assigned to."
+        },
+        "title": {
+          "type": "string",
+          "description": "A short title for the task."
+        },
+        "description": {
+          "type": "string",
+          "description": "A more detailed description of the task."
+        },
+        "dueDate": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The date the task is due."
+        },
+        "isCompleted": {
+          "type": "boolean",
+          "description": "Whether the task has been completed."
+        },
+        "completedDate": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The date the task was completed."
+        },
+        "createdDate": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastUpdated": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "applicationId",
+        "assignedTo",
+        "title",
+        "dueDate",
+        "isCompleted",
+        "createdDate",
+        "lastUpdated"
+      ]
     }
   },
   "auth": {
@@ -235,8 +293,18 @@
           },
           "description": "Subcollection to track internal staff progress for an application."
         }
+      },
+      {
+        "path": "/users/{userId}/applications/{applicationId}/tasks/{taskId}",
+        "definition": {
+          "entityName": "Task",
+          "schema": {
+            "$ref": "#/backend/entities/Task"
+          },
+          "description": "Subcollection for tasks related to a specific application."
+        }
       }
     ],
-    "reasoning": "The Firestore structure is designed to support the Git State Restorer application's core features: accessing project files by commit hash, replacing file content, and restoring the project state to a specific commit. The structure emphasizes authorization independence and efficient querying.\n\n1.  **Git Commits Collection (`/gitCommits/{commitId}`):** Stores information about each Git commit. No specific authorization concerns beyond ensuring data integrity (e.g., preventing unauthorized modifications). Indexes are important here to filter by commit date and author.\n\n2.  **Project Files Subcollection (`/gitCommits/{commitId}/projectFiles/{fileId}`):** Stores the state of each project file for a given commit. The `commitId` is denormalized into the `ProjectFile` document, enabling direct querying of files for a specific commit without needing to traverse the parent `GitCommit` document (Authorization Independence). This design supports QAPs by enabling secure listing of files associated with a particular commit.\n\n3.  **Restore Logs Subcollection (`/gitCommits/{commitId}/restoreLogs/{logId}`):** Stores logs of file restoration attempts.  Similar to `ProjectFile`, it's a subcollection of `gitCommits`. The design supports QAPs by enabling secure listing of logs associated with a particular commit.\n\nThis structure facilitates clear, predictable security rules. Authorization Independence is achieved by denormalizing the `commitId` in the `ProjectFile` and `RestoreLog` documents, eliminating the need for `get()` calls in security rules. Homogeneous security posture is maintained within each collection, and the structure supports the application's core features and desired access patterns."
+    "reasoning": "The Firestore structure is designed to support the Git State Restorer application's core features: accessing project files by commit hash, replacing file content, and restoring the project state to a specific commit. The structure emphasizes authorization independence and efficient querying.\n\n1.  **Git Commits Collection (`/gitCommits/{commitId}`):** Stores information about each Git commit. No specific authorization concerns beyond ensuring data integrity (e.g., preventing unauthorized modifications). Indexes are important here to filter by commit date and author.\n\n2.  **Project Files Subcollection (`/gitCommits/{commitId}/projectFiles/{fileId}`):** Stores the state of each project file for a given commit. The `commitId` is denormalized into the `ProjectFile` document, enabling direct querying of files for a specific commit without needing to traverse the parent `GitCommit` document (Authorization Independence). This design supports QAPs by enabling secure listing of files associated with a particular commit.\n\n3.  **Restore Logs Subcollection (`/gitCommits/{commitId}/restoreLogs/{logId}`):** Stores logs of file restoration attempts.  Similar to `ProjectFile`, it's a subcollection of `gitCommits`. The design supports QAPs by enabling secure listing of logs associated with a particular commit.\n\n4. **Task Management**: Added a `Task` entity and a corresponding subcollection `/users/{userId}/applications/{applicationId}/tasks/{taskId}`. This allows for granular task tracking per application, which can be assigned to specific staff members. Security rules can be structured to allow admins to manage all tasks, while individual staff members can only manage tasks assigned to them."
   }
 }

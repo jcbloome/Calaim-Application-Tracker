@@ -1,4 +1,3 @@
-
 'use client';
 
 import { ReactNode, useEffect, useState } from 'react';
@@ -18,6 +17,8 @@ import {
   ListChecks,
   Menu,
   ShieldAlert,
+  ClipboardUser,
+  Kanban,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -45,7 +46,13 @@ const adminNavLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, super: false },
   { href: '/admin/applications', label: 'Applications', icon: FolderKanban, super: false },
   { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks, super: false },
+  { href: '/admin/my-tasks', label: 'My Tasks', icon: ClipboardUser, super: false },
   { href: '/admin/statistics', label: 'Statistics', icon: BarChart3, super: false },
+];
+
+const superAdminNavLinks = [
+    { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban, super: true },
+    { href: '/admin/super', label: 'Super Admin', icon: Shield, super: true },
 ];
 
 
@@ -64,7 +71,7 @@ function AdminHeader() {
 
   const combinedNavLinks = [
     ...adminNavLinks,
-    ...(isSuperAdmin ? [{ href: '/admin/super', label: 'Super Admin', icon: Shield, super: true }] : []),
+    ...(isSuperAdmin ? superAdminNavLinks : []),
   ];
 
   return (
@@ -97,14 +104,16 @@ function AdminHeader() {
                 );
               })}
               {isSuperAdmin && (
-                 <NavigationMenuItem key='/admin/super'>
-                    <NavigationMenuLink asChild active={pathname.startsWith('/admin/super')} className={navigationMenuTriggerStyle()}>
-                      <Link href='/admin/super'>
-                        <Shield className="mr-2 h-4 w-4" />
-                        Super Admin
-                      </Link>
-                    </NavigationMenuLink>
-                  </NavigationMenuItem>
+                 superAdminNavLinks.map(link => (
+                    <NavigationMenuItem key={link.href}>
+                        <NavigationMenuLink asChild active={pathname.startsWith(link.href)} className={navigationMenuTriggerStyle()}>
+                        <Link href={link.href}>
+                            <link.icon className="mr-2 h-4 w-4" />
+                            {link.label}
+                        </Link>
+                        </NavigationMenuLink>
+                    </NavigationMenuItem>
+                 ))
               )}
             </NavigationMenuList>
           </NavigationMenu>
