@@ -88,7 +88,7 @@ export function PrintableProgramInfo() {
 
             <SubTitle>For Kaiser: 2-4 weeks</SubTitle>
             <ol className="list-decimal pl-5 space-y-1">
-                <li>Compile required documents & Request Authorization.</li>
+                <li>Compile required documents &amp; Request Authorization.</li>
                 <li>Receive authorization determination.</li>
                 <li>If approved, send RN (or MSW with RN sign off) to do in-person visit with ISP tool.</li>
                 <li>Send ISP tool to Kaiser for tier level.</li>

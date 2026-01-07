@@ -42,7 +42,7 @@ const infoSections = [
    {
     title: 'CalAIM Turnaround Time',
     content: [
-      <>
+      <div>
         <strong>For Health Net (5-7 business days):</strong>
         <ol className="list-decimal pl-5 mt-2 space-y-1">
           <li>We compile all the required documents, have a RN do a virtual ISP visit with appropriate party.</li>
@@ -50,18 +50,18 @@ const infoSections = [
           <li>We recommend RCFEs to the family (in many cases, the family already knows the RCFE they would like for their relative).</li>
           <li>We submit the authorization request and receive the determination (approval or denial) within 5-7 business days.</li>
         </ol>
-      </>,
-      <>
-        <strong className="mt-4 block">For Kaiser (2-4 weeks):</strong>
+      </div>,
+      <div className="mt-4">
+        <strong>For Kaiser (2-4 weeks):</strong>
         <ol className="list-decimal pl-5 mt-2 space-y-1">
-            <li>Compile required documents & Request Authorization.</li>
+            <li>Compile required documents &amp; Request Authorization.</li>
             <li>Receive authorization determination.</li>
             <li>If approved, send RN (or MSW with RN sign off) to do in-person visit with ISP tool.</li>
             <li>Send ISP tool to Kaiser for tier level.</li>
             <li>Receive tier level and recommend RCFEs to family.</li>
             <li>Once RCFE is selected sent RCFE to Kaiser for contracting and when RCFE receives Kaiser contract member can move into the RCFE.</li>
         </ol>
-      </>
+      </div>
     ],
   },
   {
@@ -96,9 +96,9 @@ export default function InfoEligibilityPage() {
               </CardHeader>
                 <CardContent className="prose prose-sm max-w-none text-gray-700">
                     {section.content.map((paragraph, pIndex) => (
-                    <p key={pIndex} className="mb-4 last:mb-0">
+                    <div key={pIndex} className="mb-4 last:mb-0">
                         {paragraph}
-                    </p>
+                    </div>
                     ))}
                 </CardContent>
             </Card>
