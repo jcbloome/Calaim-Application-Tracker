@@ -13,7 +13,6 @@ import { AdminApplicationsTable } from './applications/components/AdminApplicati
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
-import { format } from 'date-fns';
 
 export default function AdminDashboardPage() {
   const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -71,28 +70,6 @@ export default function AdminDashboardPage() {
       })
       .slice(0, 5);
   }, [allApplications]);
-  
-  const activityLog = useMemo(() => {
-    if (!allApplications) return [];
-    
-    const allActivities = allApplications.flatMap(app => 
-        app.forms
-            ?.filter(form => form.status === 'Completed' && form.dateCompleted)
-            .map(form => ({
-                appId: app.id,
-                userId: app.userId,
-                appName: `${app.memberFirstName} ${app.memberLastName}`,
-                formName: form.name,
-                date: form.dateCompleted!.toDate(),
-                action: form.type === 'Upload' ? 'Uploaded' : 'Completed',
-            })) || []
-    );
-
-    return allActivities
-      .sort((a, b) => b.date.getTime() - a.date.getTime())
-      .slice(0, 10);
-  }, [allApplications]);
-
 
   if (isAdminLoading || isLoadingApps) {
     return (
@@ -158,54 +135,20 @@ export default function AdminDashboardPage() {
         </Card>
       </div>
 
-       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <Card className="xl:col-span-2">
-            <CardHeader className="flex items-center justify-between flex-row">
-                <div>
-                  <CardTitle>Recent Applications</CardTitle>
-                  <CardDescription>A list of the 5 most recently updated applications.</CardDescription>
-                </div>
-                <Button asChild variant="outline">
-                    <Link href="/admin/applications">View All</Link>
-                </Button>
-            </CardHeader>
-            <CardContent>
-              <AdminApplicationsTable applications={recentApplications} isLoading={isLoadingApps} />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2"><List className="h-5 w-5" /> Recent Activity</CardTitle>
-                <CardDescription>The latest documents completed across all applications.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                {activityLog.length > 0 ? (
-                    <ul className="space-y-4">
-                        {activityLog.map((activity, index) => (
-                            <li key={`${activity.appId}-${activity.formName}-${index}`} className="flex gap-4">
-                                <div className="flex-shrink-0">
-                                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-                                        <FileCheck2 className="h-5 w-5 text-muted-foreground" />
-                                    </span>
-                                </div>
-                                <div className="flex-grow">
-                                    <p className="text-sm font-medium">
-                                        <Link href={`/admin/applications/${activity.appId}?userId=${activity.userId}`} className="hover:underline">
-                                            {activity.appName}
-                                        </Link>
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">{activity.action} "{activity.formName}"</p>
-                                    <p className="text-xs text-muted-foreground">{format(activity.date, 'PPP p')}</p>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                ) : (
-                    <p className="text-sm text-center text-muted-foreground py-4">No activity yet.</p>
-                )}
-            </CardContent>
-          </Card>
-       </div>
+       <Card>
+        <CardHeader className="flex items-center justify-between flex-row">
+            <div>
+              <CardTitle>Recent Applications</CardTitle>
+              <CardDescription>A list of the 5 most recently updated applications.</CardDescription>
+            </div>
+            <Button asChild variant="outline">
+                <Link href="/admin/applications">View All</Link>
+            </Button>
+        </CardHeader>
+        <CardContent>
+          <AdminApplicationsTable applications={recentApplications} isLoading={isLoadingApps} />
+        </CardContent>
+      </Card>
     </div>
   );
 }
