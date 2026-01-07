@@ -292,19 +292,25 @@ export default function ManagerialOverviewPage() {
       return staffList.map(staff => {
           let openCount = 0;
           let overdueCount = 0;
+          let dueTodayCount = 0;
 
           for (const tracker of trackers.values()) {
               if (tracker.assignedStaffId === staff.uid) {
                   const app = appMap.get(tracker.applicationId);
                   if (app && getApplicationStatus(app) === 'Open') {
                       openCount++;
-                      if (getTaskStatus(tracker) === 'Overdue') {
-                          overdueCount++;
+                      if (tracker.nextStepDate) {
+                        const dueDate = tracker.nextStepDate.toDate();
+                        if (isPast(dueDate) && !isToday(dueDate)) {
+                            overdueCount++;
+                        } else if (isToday(dueDate)) {
+                            dueTodayCount++;
+                        }
                       }
                   }
               }
           }
-          return { ...staff, openCount, overdueCount };
+          return { ...staff, openCount, overdueCount, dueTodayCount };
       });
   }, [staffList, applications, trackers]);
   
@@ -398,15 +404,23 @@ export default function ManagerialOverviewPage() {
                                 <CardHeader className="pb-2">
                                     <CardTitle className="text-base">{staff.firstName} {staff.lastName}</CardTitle>
                                 </CardHeader>
-                                <CardContent className="flex justify-between items-baseline">
-                                     <div className="space-y-1">
-                                        <p className="text-2xl font-bold">{staff.openCount}</p>
-                                        <p className="text-xs text-muted-foreground">Open Applications</p>
+                                <CardContent className="space-y-2">
+                                     <div className="flex justify-between items-baseline">
+                                        <div className="space-y-1">
+                                            <p className="text-2xl font-bold">{staff.openCount}</p>
+                                            <p className="text-xs text-muted-foreground">Open Applications</p>
+                                        </div>
+                                        {staff.overdueCount > 0 && (
+                                            <div className="flex items-center gap-2 text-destructive">
+                                                <AlertCircle className="h-4 w-4" />
+                                                <span className="font-semibold">{staff.overdueCount} Overdue</span>
+                                            </div>
+                                        )}
                                     </div>
-                                    {staff.overdueCount > 0 && (
-                                        <div className="flex items-center gap-2 text-destructive">
-                                            <AlertCircle className="h-4 w-4" />
-                                            <span className="font-semibold">{staff.overdueCount} Overdue</span>
+                                    {staff.dueTodayCount > 0 && (
+                                        <div className="flex items-center gap-2 text-yellow-600">
+                                            <CalendarIcon className="h-4 w-4" />
+                                            <span className="font-semibold">{staff.dueTodayCount} Due Today</span>
                                         </div>
                                     )}
                                 </CardContent>

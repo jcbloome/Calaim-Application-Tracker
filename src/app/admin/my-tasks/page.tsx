@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
@@ -5,10 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { collectionGroup, getDocs, Timestamp } from 'firebase/firestore';
-import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
+import type { Application, StaffTracker } from '@/lib/definitions';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, ArrowUpDown } from 'lucide-react';
+import { Loader2, ArrowUpDown, Calendar, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, isToday, isPast, differenceInDays } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -80,14 +81,15 @@ export default function MyTasksPage() {
     setSortConfig({ key, direction });
   };
 
-  const sortedMyTasks: CombinedData[] = useMemo(() => {
+  const myTasks = useMemo(() => {
       if (!user) return [];
-
-      let filteredTasks = applications
+      return applications
         .map(app => ({ ...app, tracker: trackers.get(app.id) }))
         .filter(item => item.tracker?.assignedStaffId === user.uid);
-      
-      return [...filteredTasks].sort((a, b) => {
+  }, [applications, trackers, user]);
+
+  const sortedMyTasks: CombinedData[] = useMemo(() => {
+      return [...myTasks].sort((a, b) => {
           let aValue: any;
           let bValue: any;
 
@@ -114,7 +116,12 @@ export default function MyTasksPage() {
           return 0;
       });
 
-  }, [applications, trackers, user, sortConfig]);
+  }, [myTasks, sortConfig]);
+
+  const tasksDueTodayCount = useMemo(() => {
+    return myTasks.filter(item => item.tracker?.nextStepDate && isToday(item.tracker.nextStepDate.toDate())).length;
+  }, [myTasks]);
+
 
   if (isLoading || isAdminLoading) {
     return (
@@ -131,6 +138,32 @@ export default function MyTasksPage() {
 
   return (
     <div className="space-y-6">
+       <Card>
+        <CardHeader>
+            <CardTitle>My Tasks Summary</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+             <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Tasks Due Today</CardTitle>
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                    <div className="text-2xl font-bold">{tasksDueTodayCount}</div>
+                </CardContent>
+            </Card>
+             <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Open Tasks</CardTitle>
+                    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                    <div className="text-2xl font-bold">{myTasks.filter(t => getTaskStatus(t) === 'Open').length}</div>
+                </CardContent>
+            </Card>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>My Assigned Tasks</CardTitle>
