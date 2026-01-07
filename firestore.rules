@@ -57,10 +57,14 @@ service cloud.firestore {
       allow list: if isAdmin();
     }
     
-    // This rule is CRITICAL for the progress tracker page.
+    // This rule is CRITICAL for the progress tracker and managerial pages.
     // It allows any user identified as an admin to list all staff trackers across all applications.
     match /{path=**}/staffTrackers/{trackerId} {
       allow list: if isAdmin();
+      
+      // NEW RULE: Allow any signed-in user to query for trackers assigned to THEM.
+      // This is required for the "My Tasks" page to work for all staff.
+      allow list: if isSignedIn() && request.query.where[0][2] == request.auth.uid;
     }
 
     // --- GLOBAL/SYSTEM RULES ---
