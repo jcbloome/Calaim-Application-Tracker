@@ -57,7 +57,7 @@ const DataList = ({ data, emptyText = "No data available." }: { data: { name: st
 export default function AdminStatisticsPage() {
   const firestore = useFirestore();
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
 
   const [applications, setApplications] = useState<Application[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -138,7 +138,7 @@ export default function AdminStatisticsPage() {
         if (app.lastUpdated) {
             const date = (app.lastUpdated as Timestamp).toDate();
             years.add(date.getFullYear());
-            if (date.getFullYear() === selectedYear) {
+            if (date.getFullYear() === Number(selectedYear)) {
                 const month = date.getMonth();
                 submissionsByMonth[month].value++;
             }
@@ -204,8 +204,8 @@ export default function AdminStatisticsPage() {
                     </div>
                     <div className="pt-2">
                          <Select 
-                            value={selectedYear.toString()} 
-                            onValueChange={(value) => setSelectedYear(Number(value))}
+                            value={selectedYear} 
+                            onValueChange={setSelectedYear}
                         >
                             <SelectTrigger className="w-[180px]">
                                 <SelectValue placeholder="Select Year" />
@@ -269,5 +269,3 @@ export default function AdminStatisticsPage() {
     </div>
   );
 }
-
-    

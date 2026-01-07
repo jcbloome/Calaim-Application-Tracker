@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
@@ -215,7 +216,7 @@ export default function ManagerialOverviewPage() {
   const [error, setError] = useState<Error | null>(null);
 
   const [memberFilter, setMemberFilter] = useState('');
-  const [staffFilter, setStaffFilter] = useState('');
+  const [staffFilter, setStaffFilter] = useState('all');
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'ascending' | 'descending' }>({ key: 'taskStatus', direction: 'ascending' });
   const [currentDialogItem, setCurrentDialogItem] = useState<CombinedData | null>(null);
 
@@ -331,7 +332,7 @@ export default function ManagerialOverviewPage() {
           );
       }
 
-      if (staffFilter) {
+      if (staffFilter !== 'all') {
           combined = combined.filter(item => item.tracker?.assignedStaffId === staffFilter);
       }
       
@@ -442,13 +443,13 @@ export default function ManagerialOverviewPage() {
                         <Label htmlFor="staff-filter">Filter by Staff</Label>
                         <Select
                           value={staffFilter}
-                          onValueChange={(value) => setStaffFilter(value === 'all-staff' ? '' : value)}
+                          onValueChange={(value) => setStaffFilter(value)}
                         >
                             <SelectTrigger id="staff-filter">
                                 <SelectValue placeholder="All Staff" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all-staff">All Staff</SelectItem>
+                                <SelectItem value="all">All Staff</SelectItem>
                                 {staffList.map(staff => (
                                     <SelectItem key={staff.uid} value={staff.uid}>
                                         {staff.firstName} {staff.lastName}

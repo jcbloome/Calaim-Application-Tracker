@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
@@ -37,9 +38,9 @@ export default function AdminApplicationsPage() {
   const [error, setError] = useState<Error | null>(null);
 
   // Filter states
-  const [healthPlanFilter, setHealthPlanFilter] = useState('');
-  const [pathwayFilter, setPathwayFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [healthPlanFilter, setHealthPlanFilter] = useState('all');
+  const [pathwayFilter, setPathwayFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [memberFilter, setMemberFilter] = useState('');
 
   const fetchAllApplications = useCallback(async () => {
@@ -75,9 +76,9 @@ export default function AdminApplicationsPage() {
     return allApplications.filter(app => {
       const plan = app.healthPlan === 'Kaiser Permanente' ? 'Kaiser' : app.healthPlan;
       
-      const healthPlanMatch = !healthPlanFilter || plan === healthPlanFilter;
-      const pathwayMatch = !pathwayFilter || app.pathway === pathwayFilter;
-      const statusMatch = !statusFilter || app.status === statusFilter;
+      const healthPlanMatch = healthPlanFilter === 'all' || plan === healthPlanFilter;
+      const pathwayMatch = pathwayFilter === 'all' || app.pathway === pathwayFilter;
+      const statusMatch = statusFilter === 'all' || app.status === statusFilter;
       const memberMatch = !memberFilter || `${app.memberFirstName} ${app.memberLastName}`.toLowerCase().includes(memberFilter.toLowerCase());
 
       return healthPlanMatch && pathwayMatch && statusMatch && memberMatch;
@@ -121,9 +122,9 @@ export default function AdminApplicationsPage() {
   };
 
   const clearFilters = () => {
-    setHealthPlanFilter('');
-    setPathwayFilter('');
-    setStatusFilter('');
+    setHealthPlanFilter('all');
+    setPathwayFilter('all');
+    setStatusFilter('all');
     setMemberFilter('');
   };
 
@@ -173,7 +174,7 @@ export default function AdminApplicationsPage() {
               <Select value={healthPlanFilter} onValueChange={setHealthPlanFilter}>
                 <SelectTrigger><SelectValue placeholder="Filter by Health Plan" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Health Plans</SelectItem>
+                  <SelectItem value="all">All Health Plans</SelectItem>
                   <SelectItem value="Kaiser">Kaiser</SelectItem>
                   <SelectItem value="Health Net">Health Net</SelectItem>
                   <SelectItem value="Other">Other</SelectItem>
@@ -184,7 +185,7 @@ export default function AdminApplicationsPage() {
               <Select value={pathwayFilter} onValueChange={setPathwayFilter}>
                 <SelectTrigger><SelectValue placeholder="Filter by Pathway" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Pathways</SelectItem>
+                  <SelectItem value="all">All Pathways</SelectItem>
                   <SelectItem value="SNF Transition">SNF Transition</SelectItem>
                   <SelectItem value="SNF Diversion">SNF Diversion</SelectItem>
                 </SelectContent>
@@ -194,7 +195,7 @@ export default function AdminApplicationsPage() {
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger><SelectValue placeholder="Filter by Status" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Statuses</SelectItem>
+                  <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="In Progress">In Progress</SelectItem>
                   <SelectItem value="Requires Revision">Requires Revision</SelectItem>
                   <SelectItem value="Approved">Approved</SelectItem>
