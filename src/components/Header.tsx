@@ -23,7 +23,6 @@ const navLinks = [
     { href: "/faq", label: "FAQ & Glossary" },
     { href: "/applications", label: "My Applications" },
     { href: "/forms/printable-package", label: "Printable Forms" },
-    { href: "/test-firestore", label: "Firestore Test" },
 ];
 
 export function Header() {

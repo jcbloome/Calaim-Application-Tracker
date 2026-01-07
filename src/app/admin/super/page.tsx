@@ -5,10 +5,10 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, ShieldCheck, Bell, PlusCircle } from 'lucide-react';
+import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, ShieldCheck, Bell, PlusCircle, Beaker, FileWarning, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp, addDoc } from 'firebase/firestore';
 import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -52,6 +52,13 @@ interface UserData {
     lastName: string;
     email: string;
 }
+
+interface TestResult {
+    testName: string;
+    status: 'success' | 'error';
+    message: string;
+}
+
 
 const sampleApplicationData = {
   // Member Info
@@ -165,6 +172,11 @@ export default function SuperAdminPage() {
 
     const [testEmail, setTestEmail] = useState('jcbloome@gmail.com');
     const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+
+    // Firestore test suite state
+    const [isLoadingTest, setIsLoadingTest] = useState<string | null>(null);
+    const [testResults, setTestResults] = useState<TestResult[]>([]);
+    const [testDocId, setTestDocId] = useState<string | null>(null);
 
     const applicationsQuery = useMemoFirebase(() => {
         if (isAdminLoading || !firestore || !currentUser) {
@@ -543,6 +555,131 @@ export default function SuperAdminPage() {
 
     const formatAndSetFirstName = (value: string) => setNewStaffFirstName(value.charAt(0).toUpperCase() + value.slice(1).toLowerCase());
     const formatAndSetLastName = (value: string) => setNewStaffLastName(value.charAt(0).toUpperCase() + value.slice(1).toLowerCase());
+    
+    // --- Firestore Test Suite Logic ---
+    const addTestResult = (result: TestResult) => {
+        setTestResults(prev => [result, ...prev]);
+    };
+
+    const runTest = async (testName: string, testFn: () => Promise<string>) => {
+        if (!firestore || !currentUser) {
+            toast({ variant: 'destructive', title: 'Not Ready', description: 'Please wait for user and Firestore to be initialized.' });
+            return;
+        }
+        setIsLoadingTest(testName);
+        try {
+            const successMessage = await testFn();
+            addTestResult({ testName, status: 'success', message: successMessage });
+        } catch (error: any) {
+           addTestResult({ testName, status: 'error', message: `Test failed. Check the error overlay for details. Generic message: ${error.message}` });
+        } finally {
+            setIsLoadingTest(null);
+        }
+    };
+
+    const testCreate = async (): Promise<string> => {
+        const testCollectionRef = collection(firestore!, 'test_writes');
+        const dataToWrite = {
+          uid: currentUser!.uid,
+          email: currentUser!.email,
+          timestamp: serverTimestamp(),
+          message: `Test write by ${currentUser!.uid}`,
+        };
+    
+        return new Promise((resolve, reject) => {
+            addDoc(testCollectionRef, dataToWrite)
+                .then(newDocRef => {
+                    setTestDocId(newDocRef.id);
+                    resolve(`Document created successfully in 'test_writes' with ID: ${newDocRef.id}`);
+                })
+                .catch(error => {
+                    const permissionError = new FirestorePermissionError({
+                        path: testCollectionRef.path,
+                        operation: 'create',
+                        requestResourceData: dataToWrite
+                    });
+                    errorEmitter.emit('permission-error', permissionError);
+                    reject(permissionError);
+                });
+        });
+    };
+
+    const testRead = async (): Promise<string> => {
+        if (!testDocId) return "Skipped: Create a document first.";
+        const docRef = doc(firestore!, 'test_writes', testDocId);
+        return new Promise((resolve, reject) => {
+           getDoc(docRef)
+               .then(docSnap => {
+                   if (docSnap.exists()) {
+                       resolve(`Successfully read document ${testDocId}.`);
+                   } else {
+                       reject(new Error(`Document ${testDocId} does not exist.`));
+                   }
+               })
+               .catch(error => {
+                   const permissionError = new FirestorePermissionError({ path: docRef.path, operation: 'get' });
+                   errorEmitter.emit('permission-error', permissionError);
+                   reject(permissionError);
+               });
+        });
+    };
+
+    const testUpdate = async (): Promise<string> => {
+        if (!testDocId) return "Skipped: Create a document first.";
+        const docRef = doc(firestore!, 'test_writes', testDocId);
+        const dataToUpdate = { message: 'This document was updated.' };
+  
+        return new Promise((resolve, reject) => {
+           setDoc(docRef, dataToUpdate, { merge: true })
+              .then(() => resolve(`Document ${testDocId} updated successfully.`))
+              .catch(error => {
+                   const permissionError = new FirestorePermissionError({ path: docRef.path, operation: 'update', requestResourceData: dataToUpdate });
+                   errorEmitter.emit('permission-error', permissionError);
+                   reject(permissionError);
+              });
+        });
+    };
+
+    const testDelete = async (): Promise<string> => {
+        if (!testDocId) return "Skipped: Create a document first.";
+        const docRef = doc(firestore!, 'test_writes', testDocId);
+  
+        return new Promise((resolve, reject) => {
+           deleteDoc(docRef)
+              .then(() => {
+                  const deletedId = testDocId;
+                  setTestDocId(null);
+                  resolve(`Document ${deletedId} deleted successfully.`);
+              })
+              .catch(error => {
+                  const permissionError = new FirestorePermissionError({ path: docRef.path, operation: 'delete' });
+                  errorEmitter.emit('permission-error', permissionError);
+                  reject(permissionError);
+              });
+        });
+    };
+
+    const testListUser = async (): Promise<string> => {
+        const appsRef = collection(firestore!, `users/${currentUser!.uid}/applications`);
+        return new Promise((resolve, reject) => {
+          getDocs(appsRef)
+              .then(snapshot => resolve(`Successfully listed ${snapshot.size} documents from your 'applications' collection.`))
+              .catch(error => {
+                  const permissionError = new FirestorePermissionError({ path: appsRef.path, operation: 'list' });
+                  errorEmitter.emit('permission-error', permissionError);
+                  reject(permissionError);
+              });
+        });
+    };
+
+    const firestoreTests = [
+        { name: '1. Create Document', fn: testCreate, description: "Writes to 'test_writes/{new_id}'." },
+        { name: '2. Read Document', fn: testRead, description: "Reads from 'test_writes/{id}'." },
+        { name: '3. Update Document', fn: testUpdate, description: "Updates 'test_writes/{id}'." },
+        { name: '4. Delete Document', fn: testDelete, description: "Deletes 'test_writes/{id}'." },
+        { name: '5. List User Apps', fn: testListUser, description: "Lists from 'users/{my_uid}/applications'." },
+    ];
+
 
     if (isAdminLoading) {
         return <div className="flex justify-center items-center h-full"><Loader2 className="h-8 w-8 animate-spin"/></div>;
@@ -587,6 +724,45 @@ export default function SuperAdminPage() {
                                 <div><Label htmlFor="new-staff-email">Email Address</Label><Input id="new-staff-email" type="email" value={newStaffEmail} onChange={e => setNewStaffEmail(e.target.value)} /></div>
                                 <Button type="submit" disabled={isAddingStaff} className="w-full">{isAddingStaff ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/>Adding...</> : 'Add Staff & Grant Admin Role'}</Button>
                             </form>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-3 text-lg"><Beaker className="h-5 w-5" />Firestore Permissions Test Suite</CardTitle>
+                            <CardDescription>Run tests to diagnose security rule issues.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {firestoreTests.map(test => (
+                                    <div key={test.name} className="flex flex-col gap-2 p-4 border rounded-lg bg-muted/30">
+                                       <h3 className="font-semibold text-sm">{test.name}</h3>
+                                       <p className="text-xs text-muted-foreground flex-grow">{test.description}</p>
+                                        <Button onClick={() => runTest(test.name, test.fn)} disabled={!!isLoadingTest || !currentUser} size="sm">
+                                        {isLoadingTest === test.name ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                        Run Test
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                            <div>
+                                <h4 className="font-semibold text-sm mb-2">Test Results</h4>
+                                <ScrollArea className="h-48 w-full rounded-md border p-4">
+                                     {testResults.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground text-center py-8">No tests run yet.</p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                        {testResults.map((result, index) => (
+                                            <Alert key={index} variant={result.status === 'error' ? 'destructive' : 'default'} className={result.status === 'success' ? 'bg-green-50 border-green-200' : ''}>
+                                                {result.status === 'success' ? <CheckCircle className="h-4 w-4" /> : <FileWarning className="h-4 w-4" />}
+                                                <AlertTitle className="text-xs font-semibold">{result.testName} - {result.status === 'success' ? 'Passed' : 'Failed'}</AlertTitle>
+                                                <AlertDescription className="break-words text-xs">{result.message}</AlertDescription>
+                                            </Alert>
+                                        ))}
+                                        </div>
+                                    )}
+                                </ScrollArea>
+                            </div>
                         </CardContent>
                     </Card>
                     
