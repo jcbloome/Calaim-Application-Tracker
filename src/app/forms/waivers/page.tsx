@@ -200,9 +200,9 @@ function WaiversFormComponent() {
                             </div>
                             
                             <Section title="HIPAA Authorization" icon={ShieldCheck}>
-                                <p>This form, when completed and signed by you, authorizes the use and/or disclosure of your protected health information. The information authorized for release may include information related to HIV/AIDS, mental health, and substance use, unless specified otherwise.</p>
-                                <p><strong>Authorized to disclose:</strong> Any health care related agency or person providing information for the purpose of applying for the CalAIM CS for Assisted Living Transitions.</p>
-                                <p><strong>Authorized to receive:</strong> Connections Care Home Consultants, LLC.</p>
+                                <p>This form, when completed and signed by you (member or POA), authorizes the use and/or disclosure of your protected health information. The information authorized for release may include information related to HIV/AIDS, mental health, and substance use, unless specified otherwise.</p>
+                                <p><strong>Authorized to disclose:</strong> Any health care related agency or person providing information for the purpose of applying for the CalAIM CS for Assisted Living Transitions</p>
+                                <p><strong>Authorized to receive:</strong> Connections Care Home Consultants, LLC</p>
                                 
                                 <p className="font-bold">Description of Information to be Disclosed</p>
                                 <p>The information to be disclosed includes, but is not limited to:</p>
@@ -239,11 +239,28 @@ function WaiversFormComponent() {
                                 </Alert>
                             </Section>
 
-                            <Section title="Liability Waiver & Hold Harmless Agreement" icon={FileText}>
-                                <p><strong>Intention.</strong> The purpose of this agreement ('Agreement') is to forever release and discharge Connections Care Home Consultants, LLC (the 'Company') and all its agents, officers, and employees (collectively referred to as 'Releasees') from all liability for injury or damages that may arise out of the resident/client's ('Resident') participation in the Community Supports program ('Program'). Resident (or POA) understands that this Agreement covers liability, claims, and actions caused in whole or in part by any acts or failures to act of the Releasees, including, but not to, negligence, fault, or breach of contract.</p>
-                                <p><strong>Assumption of Risk.</strong> Resident (or POA) understands that their participation in the Program may involve a risk of injury or even death from various causes. Resident (or POA) assumes all possible risks, both known and unknown, of participating in the Program and agrees to release, defend, indemnify, and hold harmless the Releasees from any injury, loss, liability, damage, or cost they may incur due to their participation in the Program.</p>
-                                <p><strong>No Insurance.</strong> Resident (or POA) understands that the Company does not assume any responsibility for or obligation to provide financial assistance or other assistance, including but not to medical, health, or disability insurance, in the event of injury or illness. Resident (or POA) understands that they are not covered by any medical, health, accident, or life insurance provided by the Company and is responsible for providing their own insurance.</p>
-                                <p><strong>Acknowledgment.</strong> Resident (or POA) acknowledges that they have read this Agreement in its entirety and understands its content. Resident (or POA) is aware that this is a release of liability and a contract of indemnity, and they sign it of their own free will.</p>
+                            <Section title="Member/POA Waiver and Release of Liability" icon={FileText}>
+                                <h4 className="font-bold">1. Acknowledgment of Independent Entities</h4>
+                                <p>The undersigned (Member or Power of Attorney/Legal Authorized Representative) acknowledges that Connections Care Home Consultants LLC ("CONNECTIONS") is a referral and administrative consultant. I understand that the Residential Care Facilities for the Elderly (RCFE) or Adult Residential Facilities (ARF) referred by CONNECTIONS are independent businesses. They are not owned, operated, managed, or supervised by CONNECTIONS.</p>
+
+                                <h4 className="font-bold">2. Assumption of Risk</h4>
+                                <p>I understand that placement in a care facility involves inherent risks, including but not limited to medical emergencies, physical injuries, falls, or complications from care. I voluntarily assume all risks associated with the Member’s residency and care at any facility selected, whether or not referred by CONNECTIONS.</p>
+
+                                <h4 className="font-bold">3. Release and Waiver of Liability</h4>
+                                <p>To the maximum extent permitted by law, I, on behalf of myself, the Member, and our heirs or estate, hereby release, forever discharge, and hold harmless Connections Care Home Consultants LLC, its officers, employees, and agents from any and all liability, claims, and demands of whatever kind or nature, either in law or in equity, which arise or may hereafter arise from the Member’s placement at a facility. This includes, but is not limited to, liability for:</p>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li><strong>Physical Injury or Death:</strong> Any injury caused by the negligence, acts, or omissions of the RCFE/ARF staff.</li>
+                                    <li><strong>Clinical Care:</strong> Errors in medication, treatment, or failure to provide adequate care by the facility.</li>
+                                    <li><strong>Safety Issues:</strong> Abuse, neglect, falls, elopement (wandering), or equipment failure at the facility.</li>
+                                    <li><strong>Infections/Illness:</strong> Exposure to viruses or diseases within the facility environment.</li>
+                                </ul>
+
+                                <h4 className="font-bold">4. Covenant Not to Sue</h4>
+                                <p>I agree that I will not initiate any legal action, lawsuit, or administrative claim against CONNECTIONS for damages, injuries, or losses caused by the acts, omissions, or conditions of a third-party care facility. I acknowledge that my sole legal recourse for matters involving the quality of care or physical safety resides against the facility providing the direct care.</p>
+
+                                <h4 className="font-bold">5. RN Assessment (ISP) Disclosure</h4>
+                                <p>I understand that while a CONNECTIONS RN may perform an Individual Service Plan (ISP) for the purpose of CalAIM tier-level determination, this assessment does not constitute the "management of care." The facility is solely responsible for creating its own care plan and ensuring the Member’s daily needs and safety are met.</p>
+
                                  <Alert variant="warning" className="mt-4">
                                     <AlertCircle className="h-4 w-4" />
                                     <AlertTitle>Acknowledgment</AlertTitle>
@@ -251,7 +268,7 @@ function WaiversFormComponent() {
                                         <div className="flex items-start space-x-2 mt-2">
                                             <Checkbox id="ack-liability" checked={ackLiability} onCheckedChange={(c) => setAckLiability(!!c)} disabled={isReadOnly} />
                                             <label htmlFor="ack-liability" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                               I have read and understood the Liability Waiver section.
+                                               I have read and understood the Waiver and Release of Liability section.
                                             </label>
                                         </div>
                                     </AlertDescription>
