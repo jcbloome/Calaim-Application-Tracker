@@ -60,8 +60,8 @@ export function PrintableProgramInfo() {
             <p>If you are in another Medi-Cal managed care plan and you would like to work with Connections, you will need to switch.</p>
             <p>You can change your health plan by contacting <a href="https://www.healthcareoptions.dhcs.ca.gov/en/enroll" target="_blank" rel="noopener noreferrer">California Health Care Options</a> at 1-800-430-4263 or visiting their website: https://www.healthcareoptions.dhcs.ca.gov/en/enroll. Generally, changes made by the end of the month are effective on the first day of the following month.</p>
             
-            <SectionTitle>What if I am assigned to Molina?</SectionTitle>
-            <p>When applying for Medi-Cal in Los Angeles County, many people are automatically assigned to the Molina health plan. Since we are not contracted with Molina for this specific program, you will need to switch to either Health Net or Kaiser to work with us. You can do this by contacting Health Care Options at the number provided above.</p>
+            <SectionTitle>Applying for Health Net (and being assigned to Molina)</SectionTitle>
+            <p>When applying for Medi-Cal with Health Net sometimes people are automatically assigned to Molina instead. Since we are not contracted with Molina for this specific program, you will need to switch to either Health Net or Kaiser to work with us. You can do this by contacting Health Care Options at the number provided above.</p>
             
             <SectionTitle>Share of Cost (SOC)</SectionTitle>
             <p>A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay. This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.</p>

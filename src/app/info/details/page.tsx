@@ -34,9 +34,9 @@ const infoSections = [
     ],
   },
    {
-    title: 'What if I am assigned to Molina?',
+    title: 'Applying for Health Net (and being assigned to Molina)',
     content: [
-        "When applying for Medi-Cal in Los Angeles County, many people are automatically assigned to the Molina health plan. Since we are not contracted with Molina for this specific program, you will need to switch to either Health Net or Kaiser to work with us. You can do this by contacting Health Care Options at the number provided above.",
+        "When applying for Medi-Cal with Health Net sometimes people are automatically assigned to Molina instead. Since we are not contracted with Molina for this specific program, you will need to switch to either Health Net or Kaiser to work with us. You can do this by contacting Health Care Options at the number provided above.",
     ],
   },
 ];
