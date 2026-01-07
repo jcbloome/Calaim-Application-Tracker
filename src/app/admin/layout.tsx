@@ -44,16 +44,16 @@ import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle,
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 const adminNavLinks = [
-  { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, super: false },
-  { href: '/admin/applications', label: 'Applications', icon: FolderKanban, super: false },
-  { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks, super: false },
-  { href: '/admin/my-tasks', label: 'My Tasks', icon: ClipboardUser, super: false },
-  { href: '/admin/statistics', label: 'Statistics', icon: BarChart3, super: false },
+  { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
+  { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
+  { href: '/admin/my-tasks', label: 'My Tasks', icon: ClipboardUser },
+  { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
 ];
 
 const superAdminNavLinks = [
-    { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban, super: true },
-    { href: '/admin/super', label: 'Super Admin', icon: Shield, super: true },
+    { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
+    { href: '/admin/super', label: 'Super Admin', icon: Shield },
 ];
 
 
