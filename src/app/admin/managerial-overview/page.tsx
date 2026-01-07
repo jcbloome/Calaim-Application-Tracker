@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
@@ -346,6 +347,9 @@ export default function ManagerialOverviewPage() {
 
   return (
     <Dialog onOpenChange={(open) => !open && setCurrentDialogItem(null)}>
+        <DialogHeader>
+          <DialogTitle className="sr-only">Managerial Overview Dialog</DialogTitle>
+        </DialogHeader>
         <div className="space-y-6">
         <Card>
             <CardHeader>
