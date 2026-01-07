@@ -1,3 +1,4 @@
+
 'use client';
 
 import { ReactNode, useEffect, useState } from 'react';
@@ -90,31 +91,20 @@ function AdminHeader() {
           </Link>
            <NavigationMenu className="hidden lg:flex">
             <NavigationMenuList>
-              {adminNavLinks.map(link => {
+              {combinedNavLinks.map(link => {
                 const isActive = pathname === link.href || (link.href !== '/admin' && pathname.startsWith(link.href));
+                const Icon = link.icon;
                 return (
                   <NavigationMenuItem key={link.href}>
                     <NavigationMenuLink asChild active={isActive} className={navigationMenuTriggerStyle()}>
                       <Link href={link.href}>
-                        <link.icon className="mr-2 h-4 w-4" />
+                        <Icon className="mr-2 h-4 w-4" />
                         {link.label}
                       </Link>
                     </NavigationMenuLink>
                   </NavigationMenuItem>
                 );
               })}
-              {isSuperAdmin && (
-                 superAdminNavLinks.map(link => (
-                    <NavigationMenuItem key={link.href}>
-                        <NavigationMenuLink asChild active={pathname.startsWith(link.href)} className={navigationMenuTriggerStyle()}>
-                        <Link href={link.href}>
-                            <link.icon className="mr-2 h-4 w-4" />
-                            {link.label}
-                        </Link>
-                        </NavigationMenuLink>
-                    </NavigationMenuItem>
-                 ))
-              )}
             </NavigationMenuList>
           </NavigationMenu>
         </div>
@@ -166,14 +156,16 @@ function AdminHeader() {
                     </Link>
                   </SheetHeader>
                   <nav className="flex flex-col gap-4 mt-8">
-                    {combinedNavLinks.map((link) => (
+                    {combinedNavLinks.map((link) => {
+                       const Icon = link.icon;
+                       return (
                         <SheetClose asChild key={link.href}>
                           <Link href={link.href} className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary">
-                            <link.icon className="h-4 w-4" />
+                            <Icon className="h-4 w-4" />
                             {link.label}
                           </Link>
                         </SheetClose>
-                      )
+                      )}
                     )}
                   </nav>
                    <div className="mt-auto border-t pt-6">
