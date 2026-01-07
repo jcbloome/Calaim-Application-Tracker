@@ -46,6 +46,7 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 const adminNavLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
+  { href: '/admin/my-tasks', label: 'My Tasks', icon: ClipboardList },
   { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
   { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
 ];
@@ -243,6 +244,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
        <div className="flex h-screen items-center justify-center bg-gray-100 p-4">
          <Card className="w-full max-w-md text-center">
              <CardHeader>
+                <AlertDialog>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Access Denied</AlertDialogTitle>
+                  </AlertDialogHeader>
+                </AlertDialog>
                 <ShieldAlert className="mx-auto h-12 w-12 text-destructive" />
                 <CardTitle className="mt-4">Access Denied</CardTitle>
                 <CardDescription>You do not have permission to view this page.</CardDescription>
