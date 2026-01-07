@@ -349,7 +349,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
       <Card className="border-l-4 border-accent">
         <CardHeader>
           <CardTitle>Primary Contact Person</CardTitle>
-          <CardDescription>Provide contact details for the member's main point of contact.</CardDescription>
+          <CardDescription>Provide contact details for the member's main point of contact. If member is primary contact reinput member name and put N/A in relationship field.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="p-4 border rounded-md space-y-4">
