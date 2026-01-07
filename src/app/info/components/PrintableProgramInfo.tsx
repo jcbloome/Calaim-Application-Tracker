@@ -69,7 +69,7 @@ export function PrintableProgramInfo() {
             <p>Read more about eliminating share of cost at the California Advocates for Nursing Home Reform (CANHR): <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer">https://canhr.org/understanding-the-share-of-cost-for-medi-cal/</a>.</p>
             
             <SectionTitle>Room &amp; Board Payments</SectionTitle>
-            <p>The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is responsible for paying the RCFE the 'assisted living' portion. Some areas in California are quite expensive and impractical for CalAIM. Also, many RCFEs might choose not to work with CalAIM.</p>
+            <p>The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is responsible for paying the RCFE the 'assisted living' portion. Also, many RCFEs might choose not to work with CalAIM.</p>
             <p>For members eligible for the Non-Medical Out-of-Home Care (NMOHC) payment, their SSI/SSP benefit is used to cover the cost of 'room and board' at the facility. From this benefit, the member retains a portion for personal needs, and the remaining balance is paid directly to the RCFE. Members with higher incomes may be required to contribute more, which can also provide access to private rooms or facilities in more expensive areas.</p>
             <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a 'room and board' payment from the member (or their family).</p>
             
