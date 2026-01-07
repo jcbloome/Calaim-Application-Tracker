@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2, FolderKanban, Users, Activity, FileCheck2, List } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore, type WithId } from '@/firebase';
-import { collection, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
+import { collection, Timestamp, getDocs, collectionGroup, format } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './applications/components/AdminApplicationsTable';
@@ -69,6 +69,28 @@ export default function AdminDashboardPage() {
         return timeB - timeA;
       })
       .slice(0, 5);
+  }, [allApplications]);
+  
+  const activityLog = useMemo(() => {
+    if (!allApplications) return [];
+    
+    const allActivities = allApplications.flatMap(app => 
+        app.forms
+            ?.filter(form => form.status === 'Completed' && form.dateCompleted)
+            .map(form => ({
+                appId: app.id,
+                userId: app.userId,
+                appName: `${app.memberFirstName} ${app.memberLastName}`,
+                referrerName: app.referrerName,
+                formName: form.name,
+                date: form.dateCompleted!.toDate(),
+                action: form.type === 'Upload' ? 'Uploaded' : 'Completed',
+            })) || []
+    );
+
+    return allActivities
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, 5); // Get the 5 most recent activities
   }, [allApplications]);
 
   if (isAdminLoading || isLoadingApps) {
@@ -134,21 +156,59 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
       </div>
-
-       <Card>
-        <CardHeader className="flex items-center justify-between flex-row">
-            <div>
-              <CardTitle>Recent Applications</CardTitle>
-              <CardDescription>A list of the 5 most recently updated applications.</CardDescription>
+      
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div className="xl:col-span-2">
+               <Card>
+                <CardHeader className="flex items-center justify-between flex-row">
+                    <div>
+                      <CardTitle>Recent Applications</CardTitle>
+                      <CardDescription>A list of the 5 most recently updated applications.</CardDescription>
+                    </div>
+                    <Button asChild variant="outline">
+                        <Link href="/admin/applications">View All</Link>
+                    </Button>
+                </CardHeader>
+                <CardContent>
+                  <AdminApplicationsTable applications={recentApplications} isLoading={isLoadingApps} />
+                </CardContent>
+              </Card>
             </div>
-            <Button asChild variant="outline">
-                <Link href="/admin/applications">View All</Link>
-            </Button>
-        </CardHeader>
-        <CardContent>
-          <AdminApplicationsTable applications={recentApplications} isLoading={isLoadingApps} />
-        </CardContent>
-      </Card>
+            
+            <Card>
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2"><List className="h-5 w-5" /> Recent Activity</CardTitle>
+                <CardDescription>The latest documents completed across all applications.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                {activityLog.length > 0 ? (
+                    <ul className="space-y-4">
+                        {activityLog.map((activity, index) => (
+                            <li key={`${activity.appId}-${activity.formName}-${index}`} className="flex gap-4">
+                                <div className="flex-shrink-0">
+                                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                                        <FileCheck2 className="h-5 w-5 text-muted-foreground" />
+                                    </span>
+                                </div>
+                                <div className="flex-grow">
+                                    <p className="text-sm font-medium">
+                                        <Link href={`/admin/applications/${activity.appId}?userId=${activity.userId}`} className="hover:underline">
+                                            {activity.appName}
+                                        </Link>
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">{activity.action} "{activity.formName}" by <span className="font-semibold">{activity.referrerName}</span></p>
+                                    <p className="text-xs text-muted-foreground">{format(activity.date, 'PPP p')}</p>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <p className="text-sm text-center text-muted-foreground py-4">No recent activity.</p>
+                )}
+            </CardContent>
+          </Card>
+        </div>
+
     </div>
   );
 }
