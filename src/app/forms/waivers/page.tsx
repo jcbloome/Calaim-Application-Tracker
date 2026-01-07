@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useMemo, Suspense, useEffect } from 'react';
@@ -320,7 +321,7 @@ function WaiversFormComponent() {
                                         <div className="flex items-start space-x-2 mt-2">
                                             <Checkbox id="ack-room-and-board" checked={ackRoomAndBoard} onCheckedChange={(c) => setAckRoomAndBoard(!!c)} disabled={isReadOnly} />
                                             <label htmlFor="ack-room-and-board" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                               I have read and understood that the member (or POA) is required to pay a "Room and Board" portion to the care facility. This was explained in the application form.
+                                               I have read and understood the member is responsible for a "room and board" payment to the facility.
                                             </label>
                                         </div>
                                     </AlertDescription>

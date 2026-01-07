@@ -1,3 +1,4 @@
+
 'use client'; 
 
 import React from 'react';
@@ -141,7 +142,7 @@ export default function WaiverFormPage() {
                         I have read and understood that the member (or POA) is required to pay a "Room and Board" portion to the care facility. This was explained in the application form.
                     </p>
                 </div>
-                 <CheckboxField label="I have read and understood my financial obligation for Room and Board." />
+                 <CheckboxField label='I have read and understood the member is responsible for a "room and board" payment to the facility.' />
             </section>
 
             <div className="mt-12 pt-8 border-t">
