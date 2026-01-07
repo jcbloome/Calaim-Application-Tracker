@@ -9,13 +9,66 @@ import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, ArrowUpDown } from 'lucide-react';
+import { Loader2, ArrowUpDown, CheckCircle2, XCircle, Circle } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 type SortKey = 'memberName' | 'assignedStaff' | 'nextStepDate';
+
+const trackedComponents = [
+  { key: 'CS Member Summary', abbreviation: 'CS' },
+  { key: 'Waivers & Authorizations', abbreviation: 'Waivers' },
+  { key: "LIC 602A - Physician's Report", abbreviation: '602' },
+  { key: 'Medicine List', abbreviation: 'Meds' },
+  { key: 'Proof of Income', abbreviation: 'POI' },
+  { key: 'Declaration of Eligibility', abbreviation: 'DE' },
+  { key: 'SNF Facesheet', abbreviation: 'SNF' },
+];
+
+const StatusIndicator = ({ status, formName }: { status: 'Completed' | 'Pending' | 'Not Applicable', formName: string }) => {
+    const statusConfig = {
+        Completed: { Icon: CheckCircle2, color: 'text-green-500', label: 'Completed' },
+        Pending: { Icon: XCircle, color: 'text-orange-500', label: 'Pending' },
+        'Not Applicable': { Icon: Circle, color: 'text-gray-300', label: 'Not Applicable' },
+    };
+    
+    const { Icon, color, label } = statusConfig[status];
+
+    return (
+        <TooltipProvider>
+            <Tooltip>
+                <TooltipTrigger>
+                    <Icon className={`h-5 w-5 ${color}`} />
+                </TooltipTrigger>
+                <TooltipContent>
+                    <p>{formName}: {label}</p>
+                </TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
+    );
+};
+
+const getComponentStatus = (app: Application, componentKey: string): 'Completed' | 'Pending' | 'Not Applicable' => {
+    const form = app.forms?.find(f => f.name === componentKey);
+    
+    if (componentKey === 'Declaration of Eligibility' && app.pathway !== 'SNF Diversion') {
+        return 'Not Applicable';
+    }
+    if (componentKey === 'SNF Facesheet' && app.pathway !== 'SNF Transition') {
+        return 'Not Applicable';
+    }
+
+    if (form?.status === 'Completed') {
+        return 'Completed';
+    }
+    
+    return 'Pending';
+};
+
 
 export default function ManagerialOverviewPage() {
   const firestore = useFirestore();
@@ -173,6 +226,16 @@ export default function ManagerialOverviewPage() {
                     </Button>
                   </TableHead>
                   <TableHead>Current Status</TableHead>
+                   {trackedComponents.map(c => (
+                        <TableHead key={c.key} className="text-center w-[70px] p-2">
+                                <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger className="cursor-help font-mono text-xs">{c.abbreviation}</TooltipTrigger>
+                                    <TooltipContent><p>{c.key}</p></TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
+                        </TableHead>
+                    ))}
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -187,6 +250,14 @@ export default function ManagerialOverviewPage() {
                             <TableCell>{tracker?.nextStep || 'N/A'}</TableCell>
                             <TableCell>{tracker?.nextStepDate ? format(tracker.nextStepDate.toDate(), 'PPP') : 'N/A'}</TableCell>
                             <TableCell>{tracker?.status || 'N/A'}</TableCell>
+                            {trackedComponents.map(c => (
+                                <TableCell key={c.key} className="text-center">
+                                    <StatusIndicator 
+                                        status={getComponentStatus(app, c.key)}
+                                        formName={c.key}
+                                    />
+                                </TableCell>
+                            ))}
                             <TableCell className="text-right">
                                 <Button asChild variant="outline" size="sm">
                                     <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View</Link>
@@ -196,7 +267,7 @@ export default function ManagerialOverviewPage() {
                     )
                 }) : (
                     <TableRow>
-                        <TableCell colSpan={6} className="h-24 text-center">
+                        <TableCell colSpan={6 + trackedComponents.length} className="h-24 text-center">
                             No application data available.
                         </TableCell>
                     </TableRow>
@@ -209,3 +280,5 @@ export default function ManagerialOverviewPage() {
     </div>
   );
 }
+
+    
