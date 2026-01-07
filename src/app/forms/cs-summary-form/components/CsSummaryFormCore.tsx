@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
@@ -76,6 +77,14 @@ function CsSummaryFormComponent() {
     if (!firestore || !targetUserId || !internalApplicationId) return null;
     return doc(firestore, `users/${targetUserId}/applications`, internalApplicationId);
   }, [firestore, targetUserId, internalApplicationId]);
+
+  useEffect(() => {
+    // This is the fix. If auth has loaded and there's no user, and it's not an admin view,
+    // redirect to the main login page.
+    if (!isUserLoading && !user && !isAdminView) {
+        router.push('/');
+    }
+  }, [isUserLoading, user, isAdminView, router]);
 
 
   useEffect(() => {
@@ -297,7 +306,7 @@ function CsSummaryFormComponent() {
     }
   };
 
-  if (isUserLoading || (!targetUserId && !isUserLoading)) {
+  if (isUserLoading || (!targetUserId && !isUserLoading && !isAdminView)) {
     return (
       <div className="flex-grow flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
