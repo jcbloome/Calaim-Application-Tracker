@@ -60,6 +60,11 @@ export default function HomePage() {
     }
 
     try {
+      // Explicitly sign out any existing user to ensure a clean session.
+      if (auth.currentUser) {
+        await auth.signOut();
+      }
+      
       // Set persistence to be local across browser windows
       await setPersistence(auth, browserLocalPersistence);
       await signInWithEmailAndPassword(auth, email, password);

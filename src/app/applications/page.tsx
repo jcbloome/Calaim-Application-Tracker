@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
+import { useAdmin } from '@/hooks/use-admin';
 
 
 // Define a type for the application data coming from Firestore
@@ -164,6 +165,7 @@ const ApplicationsTable = ({
 
 export default function MyApplicationsPage() {
   const { user, isUserLoading } = useUser();
+  const { isAdmin, isSuperAdmin } = useAdmin();
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
@@ -185,11 +187,15 @@ export default function MyApplicationsPage() {
     if (!user) {
         router.push('/login');
     }
-  }, [user, isUserLoading, router]);
+    // If an admin user lands here, redirect them to the admin dashboard
+    if (user && (isAdmin || isSuperAdmin)) {
+        router.push('/admin');
+    }
+  }, [user, isUserLoading, router, isAdmin, isSuperAdmin]);
 
   const isPageLoading = isUserLoading || isLoadingApplications;
 
-  if (isUserLoading || !user) {
+  if (isUserLoading || !user || isAdmin || isSuperAdmin) {
     return (
         <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin" />

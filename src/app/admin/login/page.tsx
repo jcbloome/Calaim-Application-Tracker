@@ -59,6 +59,11 @@ export default function AdminLoginPage() {
     }
 
     try {
+      // Explicitly sign out any existing user to ensure a clean session.
+      if (auth.currentUser) {
+        await auth.signOut();
+      }
+      
       await setPersistence(auth, browserLocalPersistence);
       await signInWithEmailAndPassword(auth, email, password);
       
