@@ -9,7 +9,7 @@ import { collection, Timestamp, getDocs, collectionGroup, Query, query, orderBy,
 import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, User, Calendar as CalendarIcon, Package, ChevronsUpDown, Filter, ArrowUpDown, Circle } from 'lucide-react';
+import { Loader2, User, Calendar as CalendarIcon, Package, ChevronsUpDown, Filter, ArrowUpDown, Circle, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
@@ -276,6 +276,37 @@ export default function ManagerialOverviewPage() {
     }
     setSortConfig({ key, direction });
   };
+
+  const getApplicationStatus = (application: Application): 'Open' | 'Closed' => {
+      if (application.status === 'Completed & Submitted' || application.status === 'Approved') {
+          return 'Closed';
+      }
+      return 'Open';
+  };
+  
+  const staffStats = useMemo(() => {
+      if (staffList.length === 0 || applications.length === 0) return [];
+      
+      const appMap = new Map(applications.map(app => [app.id, app]));
+
+      return staffList.map(staff => {
+          let openCount = 0;
+          let overdueCount = 0;
+
+          for (const tracker of trackers.values()) {
+              if (tracker.assignedStaffId === staff.uid) {
+                  const app = appMap.get(tracker.applicationId);
+                  if (app && getApplicationStatus(app) === 'Open') {
+                      openCount++;
+                      if (getTaskStatus(tracker) === 'Overdue') {
+                          overdueCount++;
+                      }
+                  }
+              }
+          }
+          return { ...staff, openCount, overdueCount };
+      });
+  }, [staffList, applications, trackers]);
   
   const sortedAndFilteredData: CombinedData[] = useMemo(() => {
       const staffMap = new Map(staffList.map(s => [s.uid, s]));
@@ -355,11 +386,36 @@ export default function ManagerialOverviewPage() {
             <CardHeader>
             <CardTitle>Managerial Overview</CardTitle>
             <CardDescription>
-                A filterable and sortable overview of all applications and their internal progress.
+                A high-level overview of your team's workload and a detailed, filterable table of all applications.
             </CardDescription>
             </CardHeader>
-            <CardContent>
-                <div className="flex flex-col sm:flex-row gap-4 mb-4">
+            <CardContent className="space-y-8">
+                 <div>
+                    <h3 className="text-lg font-semibold mb-4">Staff Workload Summary</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {staffStats.map(staff => (
+                            <Card key={staff.uid} className="shadow-sm">
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-base">{staff.firstName} {staff.lastName}</CardTitle>
+                                </CardHeader>
+                                <CardContent className="flex justify-between items-baseline">
+                                     <div className="space-y-1">
+                                        <p className="text-2xl font-bold">{staff.openCount}</p>
+                                        <p className="text-xs text-muted-foreground">Open Applications</p>
+                                    </div>
+                                    {staff.overdueCount > 0 && (
+                                        <div className="flex items-center gap-2 text-destructive">
+                                            <AlertCircle className="h-4 w-4" />
+                                            <span className="font-semibold">{staff.overdueCount} Overdue</span>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-4">
                     <div className="flex-1 space-y-2">
                         <Label htmlFor="member-filter">Filter by Member</Label>
                         <Input 
