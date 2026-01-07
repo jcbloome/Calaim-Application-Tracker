@@ -82,8 +82,7 @@ export default function Step3() {
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Important!</AlertTitle>
                 <AlertDescription className="prose prose-sm max-w-none">
-                    <p>To enroll in the CalAIM program through Connections, you must be a member of Health Net or Kaiser. If you are currently in another Medi-Cal managed care plan, you will need to switch. You can change your health plan by contacting <a href="https://www.healthcareoptions.dhcs.ca.gov/" target="_blank" rel="noopener noreferrer">California Health Care Options</a> at <strong>1-800-430-4263</strong>.</p>
-                    <p className="font-semibold">Changes must be made by the end of the month to be effective on the first day of the following month.</p>
+                    <p>To enroll in the CalAIM program through Connections, you must be a member of Health Net or Kaiser. If you are currently in another Medi-Cal managed care plan, you will need to switch. You can change your health plan by contacting <a href="https://www.healthcareoptions.dhcs.ca.gov/" target="_blank" rel="noopener noreferrer">California Health Care Options</a> at 1-800-430-4263. Changes must be made by the end of the month to be effective on the first day of the following month.</p>
                 </AlertDescription>
             </Alert>
         </CardContent>
