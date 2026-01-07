@@ -384,9 +384,6 @@ export default function ManagerialOverviewPage() {
 
   return (
     <Dialog onOpenChange={(open) => !open && setCurrentDialogItem(null)}>
-        <DialogHeader>
-          <DialogTitle className="sr-only">Managerial Overview Dialog</DialogTitle>
-        </DialogHeader>
         <div className="space-y-6">
         <Card>
             <CardHeader>
@@ -515,3 +512,5 @@ export default function ManagerialOverviewPage() {
     </Dialog>
   );
 }
+
+    
