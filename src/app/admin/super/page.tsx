@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -513,19 +514,19 @@ export default function SuperAdminPage() {
                 lastName: "Bloome",
                 displayName: "Jason Bloome",
             };
-            batch.set(userDocRef, userDocData);
+            batch.set(userDocRef, userDocData, { merge: true });
 
-            const appDocRef = doc(firestore, `users/${testUserId}/applications`, "test-application-123");
+            const appDocRef = doc(firestore, `users/${testUserId}/applications`, "kaiser-test-application-456");
             const testAppData: Partial<Application> = {
-                id: "test-application-123",
+                id: "kaiser-test-application-456",
                 userId: testUserId,
-                memberFirstName: "Testy",
-                memberLastName: "McTesterson",
+                memberFirstName: "Kaiser",
+                memberLastName: "Testmember",
                 referrerEmail: "jcbloome@gmail.com",
                 referrerName: "Jason Bloome",
                 status: 'In Progress',
-                pathway: 'SNF Transition',
-                healthPlan: 'Health Net',
+                pathway: 'SNF Diversion',
+                healthPlan: 'Kaiser',
                 lastUpdated: serverTimestamp(),
                 forms: [
                     { name: 'CS Member Summary', status: 'Completed', type: 'online-form', href: '#' },
@@ -541,8 +542,8 @@ export default function SuperAdminPage() {
             });
     
             toast({
-                title: "Test Application Created",
-                description: "A dummy application for jcbloome@gmail.com has been added to Firestore.",
+                title: "Kaiser Test Application Created",
+                description: "A dummy Kaiser application for jcbloome@gmail.com has been added.",
                 className: 'bg-green-100 text-green-900 border-green-200',
             });
     
