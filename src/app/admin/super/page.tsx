@@ -1,5 +1,3 @@
-
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -877,7 +875,7 @@ export default function SuperAdminPage() {
                                             </AlertDialogTrigger>
                                             <AlertDialogContent>
                                                 <AlertDialogHeader>
-                                                    <AlertDialogTitle>Delete Staff Member?</AlertDialogTitle>
+                                                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                                                     <AlertDialogDescription>
                                                         This will revoke all admin permissions for {staff.email}. This action does not delete their auth account but prevents them from accessing admin areas. Are you sure?
                                                     </AlertDialogDescription>
@@ -924,5 +922,3 @@ export default function SuperAdminPage() {
         </div>
     );
 }
-
-    

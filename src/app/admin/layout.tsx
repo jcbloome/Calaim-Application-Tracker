@@ -1,4 +1,3 @@
-
 'use client';
 
 import { ReactNode, useEffect, useState } from 'react';
@@ -10,7 +9,6 @@ import {
   LayoutDashboard,
   Shield,
   Loader2,
-  Lock,
   LogOut,
   User as UserIcon,
   FolderKanban,

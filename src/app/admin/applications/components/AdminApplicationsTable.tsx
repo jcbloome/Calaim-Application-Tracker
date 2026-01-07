@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -35,6 +34,7 @@ import type { WithId } from '@/firebase';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -119,6 +119,9 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
             <DialogContent className="max-w-4xl">
                 <DialogHeader>
                     <DialogTitle>Summary: {application.memberFirstName} {application.memberLastName}</DialogTitle>
+                    <DialogDescription>
+                        A quick overview of the CS Member Summary form data.
+                    </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-6 py-4 max-h-[70vh] overflow-y-auto px-2">
                     <Section title="Member Information">
