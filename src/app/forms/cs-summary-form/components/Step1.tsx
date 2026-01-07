@@ -185,6 +185,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                         <FormControl>
                             <Input {...field} type="text" value={field.value ?? ''} maxLength={9} />
                         </FormControl>
+                        <FormDescription>This is a 9 character number starting with a '9' and ending with a letter.</FormDescription>
                         <FormMessage />
                         </FormItem>
                     )}
@@ -213,6 +214,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
+                  <FormDescription>For Health Net use the same Medi-Cal number. For Kaiser this is not the Medi-Cal number but a distinct number oftentimes starting with some zeros.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -241,6 +243,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     <FormControl>
                     <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
                     </FormControl>
+                    <FormDescription>e.g., English, Spanish</FormDescription>
                     <FormMessage />
                 </FormItem>
                 )}
@@ -319,6 +322,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
                   </FormControl>
+                   <FormDescription>e.g., Son, POA, Self, etc.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -332,6 +336,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
                   </FormControl>
+                   <FormDescription>e.g., Bob's Referral Agency, Hospital Name, etc. If not applicable, leave blank.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -375,6 +380,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                       <FormItem>
                         <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
                         <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
+                        <FormDescription>If no email, enter "N/A".</FormDescription>
                         <FormMessage />
                       </FormItem>
                   )} />
@@ -418,6 +424,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                        <FormItem>
                           <FormLabel>Email</FormLabel>
                           <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
+                           <FormDescription>If no email, enter "N/A".</FormDescription>
                           <FormMessage />
                         </FormItem>
                     )} />
@@ -455,6 +462,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
             
             <div className="p-4 border rounded-md space-y-4">
                 <h3 className="font-medium">Representative's Contact Info</h3>
+                <p className="text-sm text-muted-foreground">If the member does not have a legal representative, you can leave these fields blank.</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repFirstName" render={({ field }) => (
                         <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
@@ -478,6 +486,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                         <FormItem>
                           <FormLabel>Email</FormLabel>
                           <FormControl><Input type="email" {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl>
+                           <FormDescription>If no email, enter "N/A".</FormDescription>
                           <FormMessage />
                         </FormItem>
                     )} />
@@ -489,5 +498,6 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
   );
 }
 
+    
     
     

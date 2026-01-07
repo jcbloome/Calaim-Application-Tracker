@@ -71,6 +71,7 @@ export default function Step4() {
                 <FormItem>
                   <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
                   <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
+                  <FormDescription>If no email, enter "N/A".</FormDescription>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -180,12 +181,12 @@ export default function Step4() {
                       <Input
                         {...field}
                         value={field.value ?? ''}
-                        placeholder="2000"
                         type="number"
                         className="pl-7"
                       />
                     </div>
                   </FormControl>
+                  <FormDescription>Please note that proof of income (e.g., Social Security award letter) will need to be submitted later.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -256,6 +257,7 @@ export default function Step4() {
                         <FormItem>
                           <FormLabel>Administrator Email {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel>
                           <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
+                           <FormDescription>If no email, enter "N/A".</FormDescription>
                           <FormMessage />
                         </FormItem>
                     )} />
@@ -267,5 +269,6 @@ export default function Step4() {
   );
 }
 
+    
     
     

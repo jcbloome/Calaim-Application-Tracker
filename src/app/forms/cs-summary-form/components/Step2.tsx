@@ -90,6 +90,7 @@ export default function Step2() {
                                 ))}
                             </SelectContent>
                         </Select>
+                        <FormDescription>e.g., Home, Hospital, SNF</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -153,6 +154,7 @@ export default function Step2() {
                                         ))}
                                     </SelectContent>
                                 </Select>
+                                 <FormDescription>e.g., Home, Hospital, SNF</FormDescription>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -186,4 +188,5 @@ export default function Step2() {
   );
 }
 
+    
     
