@@ -4,12 +4,12 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore } from '@/firebase';
-import { collection, doc, writeBatch, getDocs, collectionGroup } from 'firebase/firestore';
+import { collection, doc, writeBatch, getDocs, collectionGroup, Timestamp } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
 import { Button } from '@/components/ui/button';
-import { Trash2 } from 'lucide-react';
+import { Filter, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -25,6 +25,8 @@ import {
 import { useAdmin } from '@/hooks/use-admin';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { errorEmitter } from '@/firebase/error-emitter';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 
 export default function AdminApplicationsPage() {
   const firestore = useFirestore();
@@ -34,6 +36,12 @@ export default function AdminApplicationsPage() {
   const [allApplications, setAllApplications] = useState<(Application & FormValues)[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
+  // Filter states
+  const [healthPlanFilter, setHealthPlanFilter] = useState('');
+  const [pathwayFilter, setPathwayFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [memberFilter, setMemberFilter] = useState('');
 
   const fetchAllApplications = useCallback(async () => {
     if (!firestore || !isAdmin) {
@@ -63,6 +71,19 @@ export default function AdminApplicationsPage() {
   useEffect(() => {
     fetchAllApplications();
   }, [fetchAllApplications]);
+
+  const filteredApplications = useMemo(() => {
+    return allApplications.filter(app => {
+      const plan = app.healthPlan === 'Kaiser Permanente' ? 'Kaiser' : app.healthPlan;
+      
+      const healthPlanMatch = !healthPlanFilter || plan === healthPlanFilter;
+      const pathwayMatch = !pathwayFilter || app.pathway === pathwayFilter;
+      const statusMatch = !statusFilter || app.status === statusFilter;
+      const memberMatch = !memberFilter || `${app.memberFirstName} ${app.memberLastName}`.toLowerCase().includes(memberFilter.toLowerCase());
+
+      return healthPlanMatch && pathwayMatch && statusMatch && memberMatch;
+    });
+  }, [allApplications, healthPlanFilter, pathwayFilter, statusFilter, memberFilter]);
 
 
   const handleSelectionChange = (id: string, checked: boolean) => {
@@ -100,6 +121,13 @@ export default function AdminApplicationsPage() {
     }
   };
 
+  const clearFilters = () => {
+    setHealthPlanFilter('');
+    setPathwayFilter('');
+    setStatusFilter('');
+    setMemberFilter('');
+  };
+
 
   return (
     <div className="space-y-6">
@@ -134,9 +162,52 @@ export default function AdminApplicationsPage() {
           )}
         </CardHeader>
         <CardContent>
+          <div className="flex flex-col sm:flex-row gap-4 mb-4 p-4 border rounded-lg bg-muted/50">
+            <div className="flex-1 min-w-[150px]">
+              <Input
+                placeholder="Filter by member name..."
+                value={memberFilter}
+                onChange={(e) => setMemberFilter(e.target.value)}
+              />
+            </div>
+            <div className="flex-1 min-w-[150px]">
+              <Select value={healthPlanFilter} onValueChange={setHealthPlanFilter}>
+                <SelectTrigger><SelectValue placeholder="Filter by Health Plan" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All Health Plans</SelectItem>
+                  <SelectItem value="Kaiser">Kaiser</SelectItem>
+                  <SelectItem value="Health Net">Health Net</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+             <div className="flex-1 min-w-[150px]">
+              <Select value={pathwayFilter} onValueChange={setPathwayFilter}>
+                <SelectTrigger><SelectValue placeholder="Filter by Pathway" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All Pathways</SelectItem>
+                  <SelectItem value="SNF Transition">SNF Transition</SelectItem>
+                  <SelectItem value="SNF Diversion">SNF Diversion</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 min-w-[150px]">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger><SelectValue placeholder="Filter by Status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All Statuses</SelectItem>
+                  <SelectItem value="In Progress">In Progress</SelectItem>
+                  <SelectItem value="Requires Revision">Requires Revision</SelectItem>
+                  <SelectItem value="Approved">Approved</SelectItem>
+                  <SelectItem value="Completed & Submitted">Completed & Submitted</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button variant="ghost" onClick={clearFilters}>Clear</Button>
+          </div>
           {error && <p className="text-destructive">Error loading applications: A permission error occurred while fetching data.</p>}
           <AdminApplicationsTable 
-            applications={allApplications || []} 
+            applications={filteredApplications} 
             isLoading={isLoading || isAdminLoading}
             onSelectionChange={isSuperAdmin ? handleSelectionChange : undefined}
             selected={isSuperAdmin ? selected : undefined}

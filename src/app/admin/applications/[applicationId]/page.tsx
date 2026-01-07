@@ -30,6 +30,7 @@ import {
   AlertTriangle,
   User,
   Calendar as CalendarIcon,
+  List,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
@@ -85,7 +86,7 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/admin/forms/review', editHref: '/admin/forms/edit', icon: FileText },
     { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, and Freedom of Choice waiver form.', type: 'online-form', href: '/admin/forms/waivers', icon: FileText },
-    { id: 'proof-of-income', title: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'Upload', icon: UploadCloud, href: '#' },
+    { id: 'proof-of-income', title: "Proof of Income", description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'Upload', icon: UploadCloud, href: '#' },
     { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'Upload', icon: UploadCloud, href: '#' },
   ];
@@ -543,6 +544,21 @@ function ApplicationDetailPageContent() {
     await handleFormStatusUpdate([requirementTitle], 'Pending', null);
   };
 
+  const activityLog = useMemo(() => {
+    if (!application?.forms) return [];
+    
+    return application.forms
+      .filter(form => form.status === 'Completed' && form.dateCompleted)
+      .map(form => ({
+        id: form.name,
+        component: form.name,
+        user: application.referrerName || 'User', // Placeholder
+        date: form.dateCompleted!.toDate(),
+        action: form.type === 'Upload' ? `Uploaded ${form.fileName}` : 'Completed online form',
+      }))
+      .sort((a, b) => b.date.getTime() - a.date.getTime());
+  }, [application]);
+
 
   if (isLoading || isUserLoading) {
     return (
@@ -749,6 +765,34 @@ function ApplicationDetailPageContent() {
       <aside className="lg:col-span-1 space-y-6">
         <StaffApplicationTracker application={application} />
         <AdminActions application={application} />
+         <Card>
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2"><List className="h-5 w-5" /> Activity Log</CardTitle>
+                <CardDescription>A history of actions taken on this application.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                {activityLog.length > 0 ? (
+                    <ul className="space-y-4">
+                        {activityLog.map(activity => (
+                            <li key={activity.id} className="flex gap-4">
+                                <div className="flex-shrink-0">
+                                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                                        <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
+                                    </span>
+                                </div>
+                                <div className="flex-grow">
+                                    <p className="text-sm font-medium">{activity.component}</p>
+                                    <p className="text-xs text-muted-foreground">{activity.action}</p>
+                                    <p className="text-xs text-muted-foreground">{format(activity.date, 'PPP p')}</p>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <p className="text-sm text-center text-muted-foreground py-4">No activity yet.</p>
+                )}
+            </CardContent>
+        </Card>
       </aside>
     </div>
   );
@@ -766,5 +810,3 @@ export default function AdminApplicationDetailPage() {
     </Suspense>
   );
 }
-
-    

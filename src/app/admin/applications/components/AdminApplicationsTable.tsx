@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -12,7 +13,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { format, parse } from 'date-fns';
+import { format, parse, differenceInHours } from 'date-fns';
 import { useFirestore } from '@/firebase';
 import { doc, deleteDoc, Timestamp } from 'firebase/firestore';
 import {
@@ -27,7 +28,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
-import { Trash2, AlertTriangle } from 'lucide-react';
+import { Trash2, AlertTriangle, Sparkles } from 'lucide-react';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import type { WithId } from '@/firebase';
@@ -242,6 +243,7 @@ export const AdminApplicationsTable = ({
               const submissionDate = app.submissionDate ? (app.submissionDate as Timestamp).toDate() : null;
               const lastUpdatedDate = app.lastUpdated ? (app.lastUpdated as Timestamp).toDate() : null;
               const servicesDeclined = app.forms?.find(f => f.name === 'Waivers & Authorizations')?.choice === 'decline';
+              const isNew = submissionDate && differenceInHours(new Date(), submissionDate) < 24;
 
               return (
               <TableRow key={app.id}>
@@ -255,7 +257,10 @@ export const AdminApplicationsTable = ({
                   </TableCell>
                 )}
                 <TableCell className="font-medium">
-                  {`${app.memberFirstName} ${app.memberLastName}`}
+                  <div className="flex items-center gap-2">
+                    {`${app.memberFirstName} ${app.memberLastName}`}
+                    {isNew && <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200"><Sparkles className="h-3 w-3 mr-1" /> New</Badge>}
+                  </div>
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
                    {referrerName}
