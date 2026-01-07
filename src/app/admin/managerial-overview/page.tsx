@@ -9,18 +9,19 @@ import { collection, Timestamp, getDocs, collectionGroup, Query, query, orderBy,
 import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, User, Calendar as CalendarIcon, Package, ChevronsUpDown, Filter, ArrowUpDown } from 'lucide-react';
+import { Loader2, User, Calendar as CalendarIcon, Package, ChevronsUpDown, Filter, ArrowUpDown, Circle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { format } from 'date-fns';
+import { format, isPast, isToday, differenceInDays } from 'date-fns';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 
 const healthNetSteps = [
   "Application Being Reviewed",
@@ -179,7 +180,27 @@ type CombinedData = Application & {
     tracker?: StaffTracker;
     assignedStaff?: StaffMember;
 };
-type SortKey = 'memberName' | 'assignedStaff' | 'status' | 'nextStep' | 'nextStepDate';
+type SortKey = 'memberName' | 'assignedStaff' | 'status' | 'nextStep' | 'nextStepDate' | 'taskStatus';
+
+type TaskStatus = 'Overdue' | 'Due Soon' | 'On Track' | 'No Action';
+
+const getTaskStatus = (tracker?: StaffTracker): TaskStatus => {
+    if (!tracker?.nextStepDate) return 'No Action';
+    const dueDate = tracker.nextStepDate.toDate();
+    if (isPast(dueDate) && !isToday(dueDate)) return 'Overdue';
+    if (differenceInDays(dueDate, new Date()) <= 7) return 'Due Soon';
+    return 'On Track';
+};
+
+const TaskStatusBadge = ({ status }: { status: TaskStatus }) => {
+    const variants: Record<TaskStatus, string> = {
+        'Overdue': 'bg-red-100 text-red-800 border-red-200',
+        'Due Soon': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+        'On Track': 'bg-blue-100 text-blue-800 border-blue-200',
+        'No Action': 'bg-gray-100 text-gray-800 border-gray-200',
+    };
+    return <Badge variant="outline" className={cn('gap-1.5 pl-1.5', variants[status])}><Circle className="h-2 w-2 -translate-x-1" fill="currentColor" /> {status}</Badge>;
+}
 
 export default function ManagerialOverviewPage() {
   const firestore = useFirestore();
@@ -193,7 +214,7 @@ export default function ManagerialOverviewPage() {
 
   const [memberFilter, setMemberFilter] = useState('');
   const [staffFilter, setStaffFilter] = useState('');
-  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'ascending' | 'descending' }>({ key: 'nextStepDate', direction: 'ascending' });
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'ascending' | 'descending' }>({ key: 'taskStatus', direction: 'ascending' });
 
   const fetchData = useCallback(async () => {
     if (isAdminLoading || !firestore || !isSuperAdmin) {
@@ -272,6 +293,8 @@ export default function ManagerialOverviewPage() {
       if (staffFilter) {
           combined = combined.filter(item => item.tracker?.assignedStaffId === staffFilter);
       }
+      
+      const statusOrder: Record<TaskStatus, number> = { 'Overdue': 1, 'Due Soon': 2, 'On Track': 3, 'No Action': 4 };
 
       return [...combined].sort((a, b) => {
           let aValue: any = '';
@@ -289,6 +312,10 @@ export default function ManagerialOverviewPage() {
               case 'nextStepDate':
                   aValue = a.tracker?.nextStepDate?.toMillis() || 0;
                   bValue = b.tracker?.nextStepDate?.toMillis() || 0;
+                  break;
+              case 'taskStatus':
+                  aValue = statusOrder[getTaskStatus(a.tracker)];
+                  bValue = statusOrder[getTaskStatus(b.tracker)];
                   break;
               default:
                   aValue = a.tracker?.[sortConfig.key] || '';
@@ -364,20 +391,24 @@ export default function ManagerialOverviewPage() {
                             <TableRow>
                                 <TableHead><Button variant="ghost" onClick={() => requestSort('memberName')}>Member <ArrowUpDown className="ml-2 h-4 w-4" /></Button></TableHead>
                                 <TableHead><Button variant="ghost" onClick={() => requestSort('assignedStaff')}>Assigned To <ArrowUpDown className="ml-2 h-4 w-4" /></Button></TableHead>
-                                <TableHead><Button variant="ghost" onClick={() => requestSort('status')}>Current Status <ArrowUpDown className="ml-2 h-4 w-4" /></Button></TableHead>
+                                <TableHead><Button variant="ghost" onClick={() => requestSort('taskStatus')}>Task Status <ArrowUpDown className="ml-2 h-4 w-4" /></Button></TableHead>
                                 <TableHead><Button variant="ghost" onClick={() => requestSort('nextStep')}>Next Step <ArrowUpDown className="ml-2 h-4 w-4" /></Button></TableHead>
                                 <TableHead><Button variant="ghost" onClick={() => requestSort('nextStepDate')}>Due Date <ArrowUpDown className="ml-2 h-4 w-4" /></Button></TableHead>
+                                <TableHead><Button variant="ghost" onClick={() => requestSort('status')}>Progress Status<ArrowUpDown className="ml-2 h-4 w-4" /></Button></TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {sortedAndFilteredData.length > 0 ? sortedAndFilteredData.map(item => (
+                            {sortedAndFilteredData.length > 0 ? sortedAndFilteredData.map(item => {
+                                const taskStatus = getTaskStatus(item.tracker);
+                                return (
                                 <TableRow key={item.id}>
                                     <TableCell className="font-medium">{item.memberFirstName} {item.memberLastName}</TableCell>
                                     <TableCell>{item.assignedStaff ? `${item.assignedStaff.firstName} ${item.assignedStaff.lastName}` : <span className="text-muted-foreground">Unassigned</span>}</TableCell>
-                                    <TableCell>{item.tracker?.status || 'N/A'}</TableCell>
+                                    <TableCell><TaskStatusBadge status={taskStatus} /></TableCell>
                                     <TableCell>{item.tracker?.nextStep || 'N/A'}</TableCell>
                                     <TableCell>{item.tracker?.nextStepDate ? format(item.tracker.nextStepDate.toDate(), 'PPP') : 'N/A'}</TableCell>
+                                    <TableCell>{item.tracker?.status || 'N/A'}</TableCell>
                                     <TableCell className="text-right space-x-2">
                                         <DialogTrigger asChild>
                                             <Button variant="outline" size="sm">View Progress</Button>
@@ -391,9 +422,9 @@ export default function ManagerialOverviewPage() {
                                         />
                                     </TableCell>
                                 </TableRow>
-                            )) : (
+                                )}) : (
                                 <TableRow>
-                                    <TableCell colSpan={6} className="h-24 text-center">
+                                    <TableCell colSpan={7} className="h-24 text-center">
                                         No applications match the current filters.
                                     </TableCell>
                                 </TableRow>
