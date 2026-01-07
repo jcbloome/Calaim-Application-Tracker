@@ -125,8 +125,3 @@ export type StaffTracker = {
   status: string;
   lastUpdated: Timestamp;
 };
-
-
-
-
-    
