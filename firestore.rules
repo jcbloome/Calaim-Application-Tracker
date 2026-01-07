@@ -61,7 +61,7 @@ service cloud.firestore {
     // This rule ALSO allows any signed-in user to query the collection group for trackers
     // assigned to them, which is required for the "My Tasks" page.
     match /{path=**}/staffTrackers/{trackerId} {
-      allow list: if isAdmin() || (isSignedIn() && request.query.limit <= 100);
+      allow list: if isAdmin() || (isSignedIn() && request.query.where[0][2] == request.auth.uid);
     }
 
     // --- GLOBAL/SYSTEM RULES ---

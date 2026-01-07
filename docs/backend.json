@@ -291,7 +291,16 @@
           "schema": {
             "$ref": "#/backend/entities/StaffTracker"
           },
-          "description": "Subcollection to track internal staff progress for an application."
+          "description": "Subcollection to track internal staff progress for an application.",
+          "indexes": [
+            {
+              "collectionGroup": "staffTrackers",
+              "queryScope": "COLLECTION_GROUP",
+              "fields": [
+                { "fieldPath": "assignedStaffId", "order": "ASCENDING" }
+              ]
+            }
+          ]
         }
       },
       {
