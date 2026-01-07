@@ -250,7 +250,7 @@ export default function ManagerialOverviewPage() {
                 firstName: userData.firstName || 'Unknown',
                 lastName: userData.lastName || 'User',
                 email: userData.email || 'N/A',
-                role: role,
+                role,
             };
         }).sort((a,b) => a.lastName.localeCompare(b.lastName));
 

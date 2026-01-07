@@ -735,7 +735,3 @@ export default function AdminApplicationDetailPage() {
     </Suspense>
   );
 }
-
-    
-
-    
