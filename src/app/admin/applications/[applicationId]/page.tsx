@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Suspense, useMemo, useState, useEffect } from 'react';
@@ -45,7 +44,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -735,3 +733,5 @@ export default function AdminApplicationDetailPage() {
     </Suspense>
   );
 }
+
+    
