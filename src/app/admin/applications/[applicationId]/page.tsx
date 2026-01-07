@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Suspense, useMemo, useState, useEffect } from 'react';
@@ -56,6 +57,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
+import { format } from 'date-fns';
 
 const healthNetSteps = [
   "Application Being Reviewed",
@@ -224,98 +226,96 @@ function StaffApplicationTracker({ application }: { application: Application }) 
     return (
         <Dialog>
             <Card>
-                <DialogTrigger asChild>
-                    <div className="cursor-pointer">
-                        <CardHeader>
-                            <CardTitle>Staff Application Tracker</CardTitle>
-                            <CardDescription>Internal progress for the {application.healthPlan} pathway.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <Button variant="outline" className="w-full">View/Edit Progress</Button>
-                        </CardContent>
-                    </div>
-                </DialogTrigger>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Staff Application Tracker</DialogTitle>
-                        <DialogDescription>Internal progress for the {application.healthPlan} pathway.</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-6">
-                        <div className="space-y-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="staff-assignment">Assigned Staff</Label>
-                                <Select
-                                    value={tracker?.assignedStaffId}
-                                    onValueChange={(value) => handleTrackerUpdate('assignedStaffId', value)}
-                                >
-                                    <SelectTrigger id="staff-assignment">
-                                        <SelectValue placeholder="Assign a staff member..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {staffList.map(staff => (
-                                            <SelectItem key={staff.uid} value={staff.uid}>
-                                                {staff.firstName} {staff.lastName}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="next-step">Next Step</Label>
-                                <Select
-                                    value={tracker?.nextStep}
-                                    onValueChange={(value) => handleTrackerUpdate('nextStep', value)}
-                                >
-                                    <SelectTrigger id="next-step">
-                                        <SelectValue placeholder="Select next step..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="contact-referrer">Contact Referrer</SelectItem>
-                                        <SelectItem value="review-documents">Review Documents</SelectItem>
-                                        <SelectItem value="schedule-isp">Schedule ISP</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="next-step-date">Next Step Date</Label>
-                                <Popover>
-                                    <PopoverTrigger asChild>
-                                        <Button
-                                            id="next-step-date"
-                                            variant={"outline"}
-                                            className={cn("w-full justify-start text-left font-normal", !tracker?.nextStepDate && "text-muted-foreground")}
-                                        >
-                                            <CalendarIcon className="mr-2 h-4 w-4" />
-                                            {tracker?.nextStepDate ? format(tracker.nextStepDate.toDate(), "PPP") : <span>Pick a date</span>}
-                                        </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0">
-                                        <Calendar
-                                            mode="single"
-                                            selected={tracker?.nextStepDate?.toDate()}
-                                            onSelect={(date) => handleTrackerUpdate('nextStepDate', date ? Timestamp.fromDate(date) : null)}
-                                            initialFocus
-                                        />
-                                    </PopoverContent>
-                                </Popover>
-                            </div>
-                        </div>
-                        <Separator />
-                        <RadioGroup
-                            value={tracker?.status}
-                            onValueChange={(value) => handleTrackerUpdate('status', value)}
-                            className="space-y-2"
-                        >
-                            {steps.map((step, index) => (
-                                <div key={step} className="flex items-center space-x-2">
-                                    <RadioGroupItem value={step} id={`step-${index}`} />
-                                    <Label htmlFor={`step-${index}`}>{step}</Label>
-                                </div>
-                            ))}
-                        </RadioGroup>
-                    </div>
-                </DialogContent>
+                 <CardHeader>
+                    <CardTitle>Staff Application Tracker</CardTitle>
+                    <CardDescription>Internal progress for the {application.healthPlan} pathway.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                     <DialogTrigger asChild>
+                        <Button variant="outline" className="w-full">View/Edit Progress</Button>
+                    </DialogTrigger>
+                </CardContent>
             </Card>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Staff Application Tracker</DialogTitle>
+                    <DialogDescription>Internal progress for the {application.healthPlan} pathway.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-6">
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="staff-assignment">Assigned Staff</Label>
+                            <Select
+                                value={tracker?.assignedStaffId}
+                                onValueChange={(value) => handleTrackerUpdate('assignedStaffId', value)}
+                            >
+                                <SelectTrigger id="staff-assignment">
+                                    <SelectValue placeholder="Assign a staff member..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {staffList.map(staff => (
+                                        <SelectItem key={staff.uid} value={staff.uid}>
+                                            {staff.firstName} {staff.lastName}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="next-step">Next Step</Label>
+                            <Select
+                                value={tracker?.nextStep}
+                                onValueChange={(value) => handleTrackerUpdate('nextStep', value)}
+                            >
+                                <SelectTrigger id="next-step">
+                                    <SelectValue placeholder="Select next step..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="contact-referrer">Contact Referrer</SelectItem>
+                                    <SelectItem value="review-documents">Review Documents</SelectItem>
+                                    <SelectItem value="schedule-isp">Schedule ISP</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="next-step-date">Next Step Date</Label>
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        id="next-step-date"
+                                        variant={"outline"}
+                                        className={cn("w-full justify-start text-left font-normal", !tracker?.nextStepDate && "text-muted-foreground")}
+                                    >
+                                        <CalendarIcon className="mr-2 h-4 w-4" />
+                                        {tracker?.nextStepDate ? format(tracker.nextStepDate.toDate(), "PPP") : <span>Pick a date</span>}
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0">
+                                    <Calendar
+                                        mode="single"
+                                        selected={tracker?.nextStepDate?.toDate()}
+                                        onSelect={(date) => handleTrackerUpdate('nextStepDate', date ? Timestamp.fromDate(date) : null)}
+                                        initialFocus
+                                    />
+                                </PopoverContent>
+                            </Popover>
+                        </div>
+                    </div>
+                    <Separator />
+                    <RadioGroup
+                        value={tracker?.status}
+                        onValueChange={(value) => handleTrackerUpdate('status', value)}
+                        className="space-y-2"
+                    >
+                        {steps.map((step, index) => (
+                            <div key={step} className="flex items-center space-x-2">
+                                <RadioGroupItem value={step} id={`step-${index}`} />
+                                <Label htmlFor={`step-${index}`}>{step}</Label>
+                            </div>
+                        ))}
+                    </RadioGroup>
+                </div>
+            </DialogContent>
         </Dialog>
     );
 }
@@ -393,55 +393,53 @@ function AdminActions({ application }: { application: Application }) {
     return (
         <Dialog>
             <Card>
-                 <DialogTrigger asChild>
-                    <div className="cursor-pointer">
-                        <CardHeader>
-                            <CardTitle>Admin Actions</CardTitle>
-                            <CardDescription>Update status and notify the referrer.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <Button variant="outline" className="w-full">Update Status</Button>
-                        </CardContent>
-                    </div>
-                </DialogTrigger>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Admin Actions</DialogTitle>
-                        <DialogDescription>Update status and notify the referrer.</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="status-select">Application Status</Label>
-                            <Select value={status} onValueChange={(value) => setStatus(value as Application['status'])}>
-                                <SelectTrigger id="status-select">
-                                    <SelectValue placeholder="Select new status..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="In Progress">In Progress</SelectItem>
-                                    <SelectItem value="Requires Revision">Requires Revision</SelectItem>
-                                    <SelectItem value="Approved">Approved</SelectItem>
-                                    <SelectItem value="Completed & Submitted">Completed & Submitted</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="status-notes">Notes for Referrer (Optional)</Label>
-                            <Textarea
-                                id="status-notes"
-                                placeholder="e.g., 'Congratulations! The application is approved.' or 'Please upload a clearer copy of the Proof of Income document.'"
-                                value={notes}
-                                onChange={(e) => setNotes(e.target.value)}
-                                rows={4}
-                            />
-                            <p className="text-xs text-muted-foreground">This message will be sent in the email to the referrer.</p>
-                        </div>
-                        <Button className="w-full" onClick={sendEmailAndUpdateStatus} disabled={isSending || !status}>
-                            {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-                            Send Status Update
-                        </Button>
-                    </div>
-                </DialogContent>
+                <CardHeader>
+                    <CardTitle>Admin Actions</CardTitle>
+                    <CardDescription>Update status and notify the referrer.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <DialogTrigger asChild>
+                        <Button variant="outline" className="w-full">Update Status</Button>
+                    </DialogTrigger>
+                </CardContent>
             </Card>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Admin Actions</DialogTitle>
+                    <DialogDescription>Update status and notify the referrer.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="status-select">Application Status</Label>
+                        <Select value={status} onValueChange={(value) => setStatus(value as Application['status'])}>
+                            <SelectTrigger id="status-select">
+                                <SelectValue placeholder="Select new status..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="In Progress">In Progress</SelectItem>
+                                <SelectItem value="Requires Revision">Requires Revision</SelectItem>
+                                <SelectItem value="Approved">Approved</SelectItem>
+                                <SelectItem value="Completed & Submitted">Completed & Submitted</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="status-notes">Notes for Referrer (Optional)</Label>
+                        <Textarea
+                            id="status-notes"
+                            placeholder="e.g., 'Congratulations! The application is approved.' or 'Please upload a clearer copy of the Proof of Income document.'"
+                            value={notes}
+                            onChange={(e) => setNotes(e.target.value)}
+                            rows={4}
+                        />
+                        <p className="text-xs text-muted-foreground">This message will be sent in the email to the referrer.</p>
+                    </div>
+                    <Button className="w-full" onClick={sendEmailAndUpdateStatus} disabled={isSending || !status}>
+                        {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                        Send Status Update
+                    </Button>
+                </div>
+            </DialogContent>
         </Dialog>
     )
 }

@@ -20,7 +20,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 
 const healthNetSteps = [
@@ -94,6 +94,9 @@ function StaffApplicationTrackerDialog({ application, initialTracker, staffList,
         <DialogContent className="max-w-2xl">
             <DialogHeader>
                 <DialogTitle>Progress for {application.memberFirstName} {application.memberLastName}</DialogTitle>
+                <DialogDescription>
+                    Update the internal tracking status for this application.
+                </DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4 max-h-[70vh] overflow-y-auto px-2">
                 <div className="space-y-6">
@@ -512,3 +515,5 @@ export default function ManagerialOverviewPage() {
     </Dialog>
   );
 }
+
+    
