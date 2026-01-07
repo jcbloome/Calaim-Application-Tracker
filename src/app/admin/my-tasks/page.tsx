@@ -4,29 +4,42 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
-import { collectionGroup, getDocs } from 'firebase/firestore';
+import { collectionGroup, getDocs, Timestamp } from 'firebase/firestore';
 import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ArrowUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { format, isToday } from 'date-fns';
+import { format, isToday, isPast, differenceInDays } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 
 type CombinedData = Application & {
     tracker?: StaffTracker;
-    assignedStaff?: StaffMember;
+};
+
+type SortKey = 'memberName' | 'nextStepDate' | 'taskStatus';
+type SortDirection = 'ascending' | 'descending';
+
+const getTaskStatus = (application: Application): 'Open' | 'Closed' => {
+    if (application.status === 'Completed & Submitted' || application.status === 'Approved') {
+        return 'Closed';
+    }
+    return 'Open';
 };
 
 export default function MyTasksPage() {
   const firestore = useFirestore();
-  const { user, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+  const { user, isLoading: isAdminLoading } = useAdmin();
 
   const [applications, setApplications] = useState<Application[]>([]);
   const [trackers, setTrackers] = useState<Map<string, StaffTracker>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({
+    key: 'nextStepDate',
+    direction: 'ascending',
+  });
 
   const fetchData = useCallback(async () => {
     if (isAdminLoading || !firestore || !user) {
@@ -37,7 +50,6 @@ export default function MyTasksPage() {
     setIsLoading(true);
     setError(null);
     try {
-        // These queries are allowed for admins, which all staff members are.
         const [appsSnap, trackersSnap] = await Promise.all([
             getDocs(collectionGroup(firestore, 'applications')),
             getDocs(collectionGroup(firestore, 'staffTrackers')),
@@ -60,19 +72,49 @@ export default function MyTasksPage() {
     fetchData();
   }, [fetchData]);
 
-  const myTasks: CombinedData[] = useMemo(() => {
+  const requestSort = (key: SortKey) => {
+    let direction: SortDirection = 'ascending';
+    if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+      direction = 'descending';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const sortedMyTasks: CombinedData[] = useMemo(() => {
       if (!user) return [];
 
-      return applications
+      let filteredTasks = applications
         .map(app => ({ ...app, tracker: trackers.get(app.id) }))
-        .filter(item => item.tracker?.assignedStaffId === user.uid)
-        .sort((a, b) => {
-            const dateA = a.tracker?.nextStepDate?.toMillis() || 0;
-            const dateB = b.tracker?.nextStepDate?.toMillis() || 0;
-            return dateA - dateB; // Sort by due date ascending
-        });
+        .filter(item => item.tracker?.assignedStaffId === user.uid);
+      
+      return [...filteredTasks].sort((a, b) => {
+          let aValue: any;
+          let bValue: any;
 
-  }, [applications, trackers, user]);
+          switch (sortConfig.key) {
+              case 'nextStepDate':
+                  aValue = a.tracker?.nextStepDate?.toMillis() || 0;
+                  bValue = b.tracker?.nextStepDate?.toMillis() || 0;
+                  break;
+              case 'taskStatus':
+                  aValue = getTaskStatus(a);
+                  bValue = getTaskStatus(b);
+                  break;
+              default: // memberName
+                  aValue = `${a.memberFirstName} ${a.memberLastName}`;
+                  bValue = `${b.memberFirstName} ${b.memberLastName}`;
+          }
+
+          if (aValue < bValue) {
+              return sortConfig.direction === 'ascending' ? -1 : 1;
+          }
+          if (aValue > bValue) {
+              return sortConfig.direction === 'ascending' ? 1 : -1;
+          }
+          return 0;
+      });
+
+  }, [applications, trackers, user, sortConfig]);
 
   if (isLoading || isAdminLoading) {
     return (
@@ -101,29 +143,62 @@ export default function MyTasksPage() {
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead>Member</TableHead>
+                            <TableHead>
+                                <Button variant="ghost" onClick={() => requestSort('memberName')}>
+                                    Member <ArrowUpDown className="ml-2 h-4 w-4" />
+                                </Button>
+                            </TableHead>
                             <TableHead>Pathway</TableHead>
+                            <TableHead>
+                                <Button variant="ghost" onClick={() => requestSort('taskStatus')}>
+                                    Task Status <ArrowUpDown className="ml-2 h-4 w-4" />
+                                </Button>
+                            </TableHead>
                             <TableHead>Current Progress</TableHead>
                             <TableHead>Next Step</TableHead>
-                            <TableHead>Next Step Date</TableHead>
+                            <TableHead>
+                                <Button variant="ghost" onClick={() => requestSort('nextStepDate')}>
+                                    Next Step Date <ArrowUpDown className="ml-2 h-4 w-4" />
+                                </Button>
+                            </TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {myTasks.length > 0 ? myTasks.map(item => {
+                        {sortedMyTasks.length > 0 ? sortedMyTasks.map(item => {
                             const dueDate = item.tracker?.nextStepDate?.toDate();
-                            const isDueToday = dueDate && isToday(dueDate);
+                            let dueDateStatus: 'overdue' | 'due-today' | 'due-soon' | null = null;
+                            if (dueDate) {
+                                if (isPast(dueDate) && !isToday(dueDate)) {
+                                    dueDateStatus = 'overdue';
+                                } else if (isToday(dueDate)) {
+                                    dueDateStatus = 'due-today';
+                                } else if (differenceInDays(dueDate, new Date()) <= 7) {
+                                    dueDateStatus = 'due-soon';
+                                }
+                            }
                             
+                            const taskStatus = getTaskStatus(item);
+
                             return (
-                            <TableRow key={item.id} className={cn(isDueToday && 'bg-yellow-50')}>
+                            <TableRow key={item.id} className={cn(dueDateStatus === 'due-today' && 'bg-yellow-50')}>
                                 <TableCell className="font-medium">{item.memberFirstName} {item.memberLastName}</TableCell>
                                 <TableCell>{item.pathway}</TableCell>
+                                <TableCell>
+                                     <Badge variant="outline" className={cn(
+                                         taskStatus === 'Open' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                                     )}>
+                                        {taskStatus}
+                                    </Badge>
+                                </TableCell>
                                 <TableCell>{item.tracker?.status || 'N/A'}</TableCell>
                                 <TableCell>{item.tracker?.nextStep || 'N/A'}</TableCell>
                                 <TableCell>
                                     <div className="flex items-center gap-2">
                                         <span>{dueDate ? format(dueDate, 'PPP') : 'N/A'}</span>
-                                        {isDueToday && <Badge variant="destructive">Due Today</Badge>}
+                                        {dueDateStatus === 'due-today' && <Badge variant="destructive">Due Today</Badge>}
+                                        {dueDateStatus === 'overdue' && <Badge variant="destructive">Overdue</Badge>}
+                                        {dueDateStatus === 'due-soon' && <Badge variant="outline">Due Soon</Badge>}
                                     </div>
                                 </TableCell>
                                 <TableCell className="text-right">
@@ -135,7 +210,7 @@ export default function MyTasksPage() {
                             )
                         }) : (
                             <TableRow>
-                                <TableCell colSpan={6} className="h-24 text-center">
+                                <TableCell colSpan={7} className="h-24 text-center">
                                     You have no assigned tasks.
                                 </TableCell>
                             </TableRow>
