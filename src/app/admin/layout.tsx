@@ -68,7 +68,7 @@ function AdminHeader() {
     if (auth) {
       await auth.signOut();
     }
-    window.location.href = '/admin/login';
+    window.location.href = '/';
   };
 
   const combinedNavLinks = [
