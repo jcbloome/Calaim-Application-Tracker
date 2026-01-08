@@ -70,15 +70,29 @@ const healthNetSteps = [
 ];
 
 const kaiserSteps = [
-  "Initial Authorization Received or Authorization Requested",
-  "Collecting Documents",
-  "RN Visit Scheduled",
-  "RN Visit Completed",
-  "Tiered Level Request to Kaiser",
+  "Pre-T2038, Compiling Docs",
+  "T2038 Requested",
+  "T2038 Received",
+  "T2038 received, Need First Contact",
+  "T2038 received, doc collection",
+  "Needs RN Visit",
+  "RN/MSW Scheduled",
+  "RN Visit Complete",
+  "Need Tier Level",
+  "Tier Level Requested",
   "Tier Level Received",
   "Locating RCFEs",
-  "RCFE Selected",
-  "RCFE Sent to ILS for Contracting/Member Move-In"
+  "Found RCFE",
+  "R&B Requested",
+  "R&B Signed",
+  "RCFE/ILS for Invoicing",
+  "ILS Contracted (Complete)",
+  "Non-active",
+  "Complete",
+  "Tier Level Revision Request",
+  "On-Hold",
+  "Tier Level Appeal",
+  "T2038 email but need auth sheet",
 ];
 
 
@@ -810,3 +824,5 @@ export default function AdminApplicationDetailPage() {
     </Suspense>
   );
 }
+
+    
