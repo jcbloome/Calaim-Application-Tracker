@@ -226,10 +226,10 @@ export const AdminApplicationsTable = ({
               </TableHead>
             )}
             <TableHead>Member</TableHead>
-            <TableHead className="hidden md:table-cell">Submitted By</TableHead>
+            <TableHead className="hidden sm:table-cell">Submitted By</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="hidden lg:table-cell">Plan & Pathway</TableHead>
-            <TableHead className="hidden sm:table-cell">Dates</TableHead>
+            <TableHead className="hidden md:table-cell">Dates</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -265,7 +265,7 @@ export const AdminApplicationsTable = ({
                     {isNew && <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200"><Sparkles className="h-3 w-3 mr-1" /> New</Badge>}
                   </div>
                 </TableCell>
-                <TableCell className="hidden md:table-cell">
+                <TableCell className="hidden sm:table-cell">
                    {referrerName}
                 </TableCell>
                 <TableCell>
@@ -277,7 +277,7 @@ export const AdminApplicationsTable = ({
                     <div>{app.healthPlan}</div>
                     <div className="text-xs text-muted-foreground">{app.pathway}</div>
                 </TableCell>
-                <TableCell className="hidden sm:table-cell">
+                <TableCell className="hidden md:table-cell">
                   <div>
                     {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yyyy')}`: <span>Created: N/A</span>}
                   </div>
