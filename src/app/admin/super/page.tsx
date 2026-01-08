@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -26,6 +27,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 // CLIENT-SIDE LOGIC - Replaces the need for server-side AI flows for UI data.
 import { getAuth, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
@@ -844,9 +846,25 @@ export default function SuperAdminPage() {
                              <div className="space-y-4 pt-6 border-t">
                                 <h4 className="font-semibold">Create Test Application</h4>
                                 <p className="text-sm text-muted-foreground">This creates a sample application assigned to 'jcbloome@gmail.com' with pending forms, perfect for testing the reminder cron job.</p>
-                                <Button onClick={handleCreateTestApplication} disabled={isCreatingTestApp} className="w-full">
-                                    {isCreatingTestApp ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating...</> : <><PlusCircle className="mr-2 h-4 w-4" /> Create Test Application</>}
-                                </Button>
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button className="w-full" disabled={isCreatingTestApp}>
+                                            {isCreatingTestApp ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating...</> : <><PlusCircle className="mr-2 h-4 w-4" /> Create Test Application</>}
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Confirm Test Application</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                This will create a new application for a test user associated with jcbloome@gmail.com. This is useful for testing cron jobs and reminders. Continue?
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={handleCreateTestApplication}>Create</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
                             </div>
                         </CardContent>
                     </Card>
