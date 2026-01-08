@@ -114,7 +114,7 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
     return (
          <Dialog>
             <DialogTrigger asChild>
-                <Link href="#" className="text-sm font-medium text-primary hover:underline">View</Link>
+                <Button variant="link" className="text-sm font-medium text-primary hover:underline p-0 h-auto">View</Button>
             </DialogTrigger>
             <DialogContent className="max-w-4xl">
                 <DialogHeader>
@@ -300,9 +300,9 @@ export const AdminApplicationsTable = ({
                             </Tooltip>
                         </TooltipProvider>
                     )}
-                    <Link href={`/admin/applications/${app.id}?userId=${app.userId}`} className="text-sm font-medium text-primary hover:underline">
-                        Details
-                    </Link>
+                    <Button asChild variant="link" className="text-sm font-medium text-primary hover:underline p-0 h-auto">
+                        <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>Details</Link>
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>
