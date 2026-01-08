@@ -22,6 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 
 const healthNetSteps = [
   "Application Being Reviewed",
@@ -396,38 +397,39 @@ export default function ManagerialOverviewPage() {
             </CardDescription>
             </CardHeader>
             <CardContent className="space-y-8">
-                 <div>
-                    <h3 className="text-lg font-semibold mb-4">Staff Workload Summary</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                        {staffStats.map(staff => (
-                            <Card key={staff.uid} className="shadow-sm">
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="text-base">{staff.firstName} {staff.lastName}</CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-2">
-                                     <div className="flex justify-between items-baseline">
-                                        <div className="space-y-1">
-                                            <p className="text-2xl font-bold">{staff.openCount}</p>
-                                            <p className="text-xs text-muted-foreground">Open Applications</p>
-                                        </div>
-                                        {staff.overdueCount > 0 && (
-                                            <div className="flex items-center gap-2 text-destructive">
-                                                <AlertCircle className="h-4 w-4" />
-                                                <span className="font-semibold">{staff.overdueCount} Overdue</span>
-                                            </div>
-                                        )}
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-lg">Staff Workload Summary</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        {staffStats.map((staff, index) => (
+                           <React.Fragment key={staff.uid}>
+                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                <div className="font-semibold">{staff.firstName} {staff.lastName}</div>
+                                <div className="flex items-center gap-4 text-sm">
+                                    <div>
+                                        <span className="font-bold text-lg">{staff.openCount}</span>
+                                        <span className="text-muted-foreground"> Open</span>
                                     </div>
-                                    {staff.dueTodayCount > 0 && (
-                                        <div className="flex items-center gap-2 text-yellow-600">
+                                    {staff.overdueCount > 0 && (
+                                        <div className="flex items-center gap-1.5 text-destructive">
+                                            <AlertCircle className="h-4 w-4" />
+                                            <span className="font-semibold">{staff.overdueCount} Overdue</span>
+                                        </div>
+                                    )}
+                                     {staff.dueTodayCount > 0 && (
+                                        <div className="flex items-center gap-1.5 text-yellow-600">
                                             <CalendarIcon className="h-4 w-4" />
                                             <span className="font-semibold">{staff.dueTodayCount} Due Today</span>
                                         </div>
                                     )}
-                                </CardContent>
-                            </Card>
+                                </div>
+                            </div>
+                            {index < staffStats.length - 1 && <Separator />}
+                           </React.Fragment>
                         ))}
-                    </div>
-                </div>
+                    </CardContent>
+                </Card>
 
                 <div className="flex flex-col sm:flex-row gap-4">
                     <div className="flex-1 space-y-2">
