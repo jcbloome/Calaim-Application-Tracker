@@ -79,7 +79,7 @@ function AdminHeader() {
     <header className="bg-card border-b sticky top-0 z-40">
       <div className="container mx-auto flex items-center justify-between h-16 px-4 sm:px-6">
         <div className="flex items-center gap-6">
-          <Link href="/admin">
+          <Link href="/admin" className="shrink-0">
             <Image
               src="/calaimlogopdf.png"
               alt="Connect CalAIM Logo"

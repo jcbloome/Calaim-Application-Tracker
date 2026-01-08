@@ -10,6 +10,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  CardFooter
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -61,15 +62,6 @@ import { Calendar } from '@/components/ui/calendar';
 import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
 
-const healthNetSteps = [
-  "Application Being Reviewed",
-  "Scheduling ISP",
-  "ISP Completed",
-  "Locating RCFEs",
-  "Submitted to Health Net",
-  "Authorization Status"
-];
-
 const kaiserSteps = [
   "Pre-T2038, Compiling Docs",
   "T2038 Requested",
@@ -97,6 +89,14 @@ const kaiserSteps = [
   "T2038 email but need auth sheet",
 ];
 
+const healthNetSteps = [
+  "Application Being Reviewed",
+  "Scheduling ISP",
+  "ISP Completed",
+  "Locating RCFEs",
+  "Submitted to Health Net",
+  "Authorization Status"
+];
 
 const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => {
   const commonRequirements = [
@@ -491,6 +491,13 @@ function ApplicationDetailPageContent() {
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  
+  const [consolidatedUploadChecks, setConsolidatedUploadChecks] = useState({
+    'LIC 602A - Physician\'s Report': false,
+    'Medicine List': false,
+    'SNF Facesheet': false,
+    'Declaration of Eligibility': false,
+  });
 
   const docRef = useMemoFirebase(() => {
     if (isUserLoading || !firestore || !applicationId || !appUserId) return null;
@@ -569,6 +576,35 @@ function ApplicationDetailPageContent() {
     event.target.value = '';
   };
   
+    const handleConsolidatedUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files?.length) return;
+
+    const formsToUpdate = Object.entries(consolidatedUploadChecks)
+      .filter(([, isChecked]) => isChecked)
+      .map(([formName]) => formName);
+      
+    if (formsToUpdate.length === 0) return;
+
+    const files = Array.from(event.target.files);
+    const fileNames = files.map(f => f.name).join(', ');
+    const consolidatedId = 'consolidated-medical-upload';
+    
+    setUploading(prev => ({...prev, [consolidatedId]: true}));
+    
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    await handleFormStatusUpdate(formsToUpdate, 'Completed', fileNames);
+
+    setUploading(prev => ({...prev, [consolidatedId]: false}));
+    setConsolidatedUploadChecks({
+        'LIC 602A - Physician\'s Report': false,
+        'Medicine List': false,
+        'SNF Facesheet': false,
+        'Declaration of Eligibility': false,
+    });
+    
+    event.target.value = '';
+  };
+
   const handleFileRemove = async (requirementTitle: string) => {
     await handleFormStatusUpdate([requirementTitle], 'Pending', null);
   };
@@ -637,6 +673,20 @@ function ApplicationDetailPageContent() {
       { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc },
       { id: 'room-board', label: 'Room & Board Acknowledgment', completed: !!waiverFormStatus?.ackRoomAndBoard }
   ];
+  
+    const consolidatedMedicalDocuments = [
+      { id: 'lic-602a-check', name: "LIC 602A - Physician's Report" },
+      { id: 'med-list-check', name: 'Medicine List' },
+      { id: 'facesheet-check', name: 'SNF Facesheet' },
+      { id: 'decl-elig-check', name: 'Declaration of Eligibility' },
+  ].filter(doc => pathwayRequirements.some(req => req.title === doc.name));
+  
+  const uploadedFiles = useMemo(() => {
+    if (!application?.forms) return [];
+    return application.forms.filter(
+        (form) => form.type === 'Upload' && form.status === 'Completed' && form.fileName
+    );
+  }, [application]);
 
 
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
@@ -731,6 +781,9 @@ function ApplicationDetailPageContent() {
     }
 };
 
+  const isConsolidatedUploading = uploading['consolidated-medical-upload'];
+  const isAnyConsolidatedChecked = Object.values(consolidatedUploadChecks).some(v => v);
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
       <div className="lg:col-span-2 space-y-8">
@@ -799,6 +852,40 @@ function ApplicationDetailPageContent() {
                     </Card>
                 )
             })}
+             {consolidatedMedicalDocuments.length > 0 && (
+              <Card key="consolidated-medical" className="flex flex-col shadow-sm hover:shadow-md transition-shadow md:col-span-2">
+                  <CardHeader className="pb-4">
+                      <div className="flex justify-between items-start gap-4">
+                          <CardTitle className="text-lg flex items-center gap-2"><Package className="h-5 w-5 text-muted-foreground"/>Consolidated Medical Documents (Optional)</CardTitle>
+                      </div>
+                      <CardDescription>For convenience, you can upload multiple medical forms at once. Select the documents you are uploading below.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col flex-grow justify-end gap-4">
+                      <div className="space-y-2 rounded-md border p-3">
+                          {consolidatedMedicalDocuments.map(doc => (
+                               <div key={doc.id} className="flex items-center space-x-2">
+                                  <Checkbox
+                                      id={doc.id}
+                                      checked={consolidatedUploadChecks[doc.name as keyof typeof consolidatedUploadChecks]}
+                                      onCheckedChange={(checked) => {
+                                          setConsolidatedUploadChecks(prev => ({ ...prev, [doc.name]: !!checked }))
+                                      }}
+                                      disabled={formStatusMap.get(doc.name)?.status === 'Completed'}
+                                  />
+                                  <label htmlFor={doc.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                      {doc.name}
+                                  </label>
+                              </div>
+                          ))}
+                      </div>
+                      <Label htmlFor="consolidated-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isConsolidatedUploading || !isAnyConsolidatedChecked) && "opacity-50 pointer-events-none")}>
+                          {isConsolidatedUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                          <span>{isConsolidatedUploading ? 'Uploading...' : 'Upload Consolidated Documents'}</span>
+                      </Label>
+                      <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || !isAnyConsolidatedChecked} multiple />
+                  </CardContent>
+              </Card>
+            )}
         </div>
       </div>
 
@@ -807,31 +894,26 @@ function ApplicationDetailPageContent() {
         <AdminActions application={application} />
          <Card>
             <CardHeader>
-                <CardTitle className="flex items-center gap-2"><List className="h-5 w-5" /> Activity Log</CardTitle>
-                <CardDescription>A history of actions taken on this application.</CardDescription>
+                <CardTitle className="flex items-center gap-2"><List className="h-5 w-5" /> Uploaded Files</CardTitle>
+                <CardDescription>A list of all files recorded for this application.</CardDescription>
             </CardHeader>
             <CardContent>
-                {activityLog.length > 0 ? (
-                    <ul className="space-y-4">
-                        {activityLog.map(activity => (
-                            <li key={activity.id} className="flex gap-4">
-                                <div className="flex-shrink-0">
-                                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-                                        <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
-                                    </span>
-                                </div>
-                                <div className="flex-grow">
-                                    <p className="text-sm font-medium">{activity.component}</p>
-                                    <p className="text-xs text-muted-foreground">{activity.action}</p>
-                                    <p className="text-xs text-muted-foreground">{format(activity.date, 'PPP p')}</p>
-                                </div>
+                {uploadedFiles.length > 0 ? (
+                    <ul className="space-y-2">
+                        {uploadedFiles.map(file => (
+                            <li key={file.name} className="flex items-center justify-between text-sm p-2 rounded-md bg-muted/50">
+                                <span className="font-medium">{file.name}</span>
+                                <span className="text-muted-foreground truncate ml-4">{file.fileName}</span>
                             </li>
                         ))}
                     </ul>
                 ) : (
-                    <p className="text-sm text-center text-muted-foreground py-4">No activity yet.</p>
+                    <p className="text-sm text-center text-muted-foreground py-4">No files uploaded yet.</p>
                 )}
             </CardContent>
+             <CardFooter>
+                <p className="text-xs text-muted-foreground italic">Note: File download functionality is pending implementation of a file storage service.</p>
+            </CardFooter>
         </Card>
       </aside>
     </div>
