@@ -418,24 +418,6 @@ function PathwayPageContent() {
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {!isReadOnly && (
-                    <Card key="consolidated-medical" className="flex flex-col shadow-sm hover:shadow-md transition-shadow md:col-span-2 bg-blue-50 border-blue-200">
-                        <CardHeader className="pb-4">
-                            <div className="flex justify-between items-start gap-4">
-                                <CardTitle className="text-lg flex items-center gap-2"><Package className="h-5 w-5 text-blue-700"/>Consolidated Medical Documents (Optional)</CardTitle>
-                            </div>
-                            <CardDescription className="text-blue-900/80">For convenience, you can upload the Physician's Report, Medicine List, and SNF Facesheet all at once here. This will mark all three items as complete.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="flex flex-col flex-grow justify-end gap-4">
-                             <Label htmlFor="consolidated-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isConsolidatedUploading || isReadOnly) && "opacity-50 pointer-events-none")}>
-                                {isConsolidatedUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                                <span>{isConsolidatedUploading ? 'Uploading...' : 'Upload Consolidated Documents'}</span>
-                            </Label>
-                            <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || isReadOnly} multiple />
-                        </CardContent>
-                    </Card>
-                )}
-
                 {pathwayRequirements.map((req) => {
                     const formInfo = formStatusMap.get(req.title);
                     const status = formInfo?.status || 'Pending';
@@ -456,6 +438,24 @@ function PathwayPageContent() {
                         </Card>
                     )
                 })}
+
+                {!isReadOnly && (
+                    <Card key="consolidated-medical" className="flex flex-col shadow-sm hover:shadow-md transition-shadow md:col-span-2">
+                        <CardHeader className="pb-4">
+                            <div className="flex justify-between items-start gap-4">
+                                <CardTitle className="text-lg flex items-center gap-2"><Package className="h-5 w-5 text-muted-foreground"/>Consolidated Medical Documents (Optional)</CardTitle>
+                            </div>
+                            <CardDescription>For convenience, you can upload the Physician's Report, Medicine List, and SNF Facesheet all at once here. This will mark all three items as complete.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex flex-col flex-grow justify-end gap-4">
+                             <Label htmlFor="consolidated-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isConsolidatedUploading || isReadOnly) && "opacity-50 pointer-events-none")}>
+                                {isConsolidatedUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                                <span>{isConsolidatedUploading ? 'Uploading...' : 'Upload Consolidated Documents'}</span>
+                            </Label>
+                            <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || isReadOnly} multiple />
+                        </CardContent>
+                    </Card>
+                )}
             </div>
         </div>
       </main>
@@ -475,3 +475,5 @@ export default function PathwayPage() {
     </Suspense>
   );
 }
+
+    
