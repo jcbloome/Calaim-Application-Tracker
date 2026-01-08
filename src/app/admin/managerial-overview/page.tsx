@@ -52,6 +52,7 @@ const kaiserSteps = [
   "R&B Signed",
   "RCFE/ILS for Invoicing",
   "ILS Contracted (Complete)",
+  "Confirm ILS Contracted",
   "Non-active",
   "Complete",
   "Tier Level Revision Request",
@@ -409,6 +410,24 @@ export default function ManagerialOverviewPage() {
 
   }, [applications, trackers, staffMap, memberFilter, staffFilter, sortConfig]);
 
+  const kaiserPipelineStats = useMemo(() => {
+    const kaiserApps = applications.filter(app => app.healthPlan === 'Kaiser');
+    const pipelineCounts = new Map<string, number>();
+
+    kaiserSteps.forEach(step => pipelineCounts.set(step, 0));
+
+    kaiserApps.forEach(app => {
+        const tracker = trackers.get(app.id);
+        if (tracker?.status) {
+            pipelineCounts.set(tracker.status, (pipelineCounts.get(tracker.status) || 0) + 1);
+        }
+    });
+    
+    return Array.from(pipelineCounts.entries())
+        .map(([name, value]) => ({ name, value }))
+        .filter(item => item.value > 0);
+
+  }, [applications, trackers]);
 
   if (isLoading || isAdminLoading) {
     return (
@@ -501,15 +520,24 @@ export default function ManagerialOverviewPage() {
                 </CardContent>
             </Card>
             
-            <Card className="border-t-4 border-gray-300">
+            <Card className="border-t-4 border-red-500">
                 <CardHeader>
-                    <CardTitle className="text-lg">Placeholder Card</CardTitle>
-                    <CardDescription>This is a placeholder for future content.</CardDescription>
+                    <CardTitle className="text-lg">Kaiser Pipeline Status</CardTitle>
+                    <CardDescription>Member count at each stage.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <div className="flex items-center justify-center h-24 rounded-lg bg-muted">
-                        <p className="text-sm text-muted-foreground">Coming soon</p>
-                    </div>
+                    {kaiserPipelineStats.length > 0 ? (
+                        <div className="space-y-2">
+                        {kaiserPipelineStats.map(item => (
+                             <div key={item.name} className="flex items-center justify-between text-sm p-1">
+                                <span className="text-muted-foreground">{item.name}</span>
+                                <span className="font-semibold">{item.value}</span>
+                            </div>
+                        ))}
+                        </div>
+                    ) : (
+                         <p className="text-sm text-muted-foreground text-center py-4">No members in the Kaiser pipeline.</p>
+                    )}
                 </CardContent>
             </Card>
 

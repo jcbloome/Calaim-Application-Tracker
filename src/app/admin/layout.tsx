@@ -18,6 +18,7 @@ import {
   ShieldAlert,
   Kanban,
   ClipboardList,
+  Printer,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -52,6 +53,7 @@ const adminNavLinks = [
 
 const superAdminNavLinks = [
     { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
+    { href: '/admin/reports/ils', label: 'ILS Report', icon: Printer },
     { href: '/admin/super', label: 'Super Admin', icon: Shield },
 ];
 

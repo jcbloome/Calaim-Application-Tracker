@@ -87,6 +87,7 @@ const kaiserSteps = [
   "R&B Signed",
   "RCFE/ILS for Invoicing",
   "ILS Contracted (Complete)",
+  "Confirm ILS Contracted",
   "Non-active",
   "Complete",
   "Tier Level Revision Request",
