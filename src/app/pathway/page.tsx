@@ -90,6 +90,12 @@ function PathwayPageContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  const [consolidatedUploadChecks, setConsolidatedUploadChecks] = useState({
+    'LIC 602A - Physician\'s Report': false,
+    'Medicine List': false,
+    'SNF Facesheet': false,
+  });
+
   const docRef = useMemoFirebase(() => {
     if (!firestore || !applicationId || !user) return null;
     return doc(firestore, `users/${user.uid}/applications`, applicationId);
@@ -194,24 +200,28 @@ function PathwayPageContent() {
 
   const handleConsolidatedUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files?.length) return;
+
+    const formsToUpdate = Object.entries(consolidatedUploadChecks)
+      .filter(([, isChecked]) => isChecked)
+      .map(([formName]) => formName);
+      
+    if (formsToUpdate.length === 0) return;
+
     const files = Array.from(event.target.files);
-    
-    const consolidatedId = 'consolidated-medical-upload';
-    setUploading(prev => ({...prev, [consolidatedId]: true}));
-
-    const formsToUpdate = [
-      "LIC 602A - Physician's Report",
-      "Medicine List",
-      "SNF Facesheet", // This will be ignored if not in the application's forms array
-    ];
-
-    // Simulate upload time
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
     const fileNames = files.map(f => f.name).join(', ');
+    const consolidatedId = 'consolidated-medical-upload';
+    
+    setUploading(prev => ({...prev, [consolidatedId]: true}));
+    
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await handleFormStatusUpdate(formsToUpdate, 'Completed', fileNames);
 
     setUploading(prev => ({...prev, [consolidatedId]: false}));
+    setConsolidatedUploadChecks({
+        'LIC 602A - Physician\'s Report': false,
+        'Medicine List': false,
+        'SNF Facesheet': false,
+    });
     
     event.target.value = '';
   };
@@ -284,6 +294,13 @@ function PathwayPageContent() {
       { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc },
       { id: 'room-board', label: 'Room & Board Acknowledgment', completed: !!waiverFormStatus?.ackRoomAndBoard }
   ];
+
+  const consolidatedMedicalDocuments = [
+      { id: 'lic-602a-check', name: "LIC 602A - Physician's Report" },
+      { id: 'med-list-check', name: 'Medicine List' },
+      { id: 'facesheet-check', name: 'SNF Facesheet' },
+  ].filter(doc => pathwayRequirements.some(req => req.title === doc.name));
+
 
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
@@ -370,6 +387,8 @@ function PathwayPageContent() {
 };
 
   const isConsolidatedUploading = uploading['consolidated-medical-upload'];
+  const isAnyConsolidatedChecked = Object.values(consolidatedUploadChecks).some(v => v);
+
 
   return (
     <>
@@ -439,20 +458,37 @@ function PathwayPageContent() {
                     )
                 })}
 
-                {!isReadOnly && (
+                {!isReadOnly && consolidatedMedicalDocuments.length > 0 && (
                     <Card key="consolidated-medical" className="flex flex-col shadow-sm hover:shadow-md transition-shadow md:col-span-2">
                         <CardHeader className="pb-4">
                             <div className="flex justify-between items-start gap-4">
                                 <CardTitle className="text-lg flex items-center gap-2"><Package className="h-5 w-5 text-muted-foreground"/>Consolidated Medical Documents (Optional)</CardTitle>
                             </div>
-                            <CardDescription>For convenience, you can upload the Physician's Report, Medicine List, and SNF Facesheet all at once here. This will mark all three items as complete.</CardDescription>
+                            <CardDescription>For convenience, you can upload multiple medical forms at once. Select the documents you are uploading below.</CardDescription>
                         </CardHeader>
                         <CardContent className="flex flex-col flex-grow justify-end gap-4">
-                             <Label htmlFor="consolidated-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isConsolidatedUploading || isReadOnly) && "opacity-50 pointer-events-none")}>
+                            <div className="space-y-2 rounded-md border p-3">
+                                {consolidatedMedicalDocuments.map(doc => (
+                                     <div key={doc.id} className="flex items-center space-x-2">
+                                        <Checkbox
+                                            id={doc.id}
+                                            checked={consolidatedUploadChecks[doc.name as keyof typeof consolidatedUploadChecks]}
+                                            onCheckedChange={(checked) => {
+                                                setConsolidatedUploadChecks(prev => ({ ...prev, [doc.name]: !!checked }))
+                                            }}
+                                            disabled={isReadOnly || formStatusMap.get(doc.name)?.status === 'Completed'}
+                                        />
+                                        <label htmlFor={doc.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                            {doc.name}
+                                        </label>
+                                    </div>
+                                ))}
+                            </div>
+                            <Label htmlFor="consolidated-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isConsolidatedUploading || isReadOnly || !isAnyConsolidatedChecked) && "opacity-50 pointer-events-none")}>
                                 {isConsolidatedUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                                 <span>{isConsolidatedUploading ? 'Uploading...' : 'Upload Consolidated Documents'}</span>
                             </Label>
-                            <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || isReadOnly} multiple />
+                            <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || isReadOnly || !isAnyConsolidatedChecked} multiple />
                         </CardContent>
                     </Card>
                 )}
@@ -475,5 +511,3 @@ export default function PathwayPage() {
     </Suspense>
   );
 }
-
-    
