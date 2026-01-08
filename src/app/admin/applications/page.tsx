@@ -20,6 +20,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useAdmin } from '@/hooks/use-admin';
 import { FirestorePermissionError } from '@/firebase/errors';
