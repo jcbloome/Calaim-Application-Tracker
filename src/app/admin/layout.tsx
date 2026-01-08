@@ -145,6 +145,10 @@ function AdminHeader() {
                 </SheetTrigger>
                 <SheetContent>
                   <SheetHeader>
+                    <SheetTitle className="sr-only">Mobile Navigation Menu</SheetTitle>
+                    <SheetDescription className="sr-only">
+                      Links to navigate through the admin sections of the application.
+                    </SheetDescription>
                      <Link href="/admin" className="mb-4">
                         <Image
                         src="/calaimlogopdf.png"
