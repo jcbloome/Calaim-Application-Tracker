@@ -127,6 +127,7 @@ export type StaffTracker = {
   assignedStaffId?: string;
   nextStep?: string;
   nextStepDate?: Timestamp;
+  isPriority?: boolean;
 };
 
 export interface StaffMember {

@@ -9,7 +9,7 @@ import { collection, Timestamp, getDocs, collectionGroup, Query, query, orderBy,
 import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, User, Calendar as CalendarIcon, Package, ChevronsUpDown, Filter, ArrowUpDown, Circle, AlertCircle } from 'lucide-react';
+import { Loader2, User, Calendar as CalendarIcon, Package, ChevronsUpDown, Filter, ArrowUpDown, Circle, AlertCircle, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 
 const healthNetSteps = [
   "Application Being Reviewed",
@@ -160,6 +161,18 @@ function StaffApplicationTrackerDialog({ application, initialTracker, staffList,
                             </PopoverContent>
                         </Popover>
                     </div>
+
+                    <div className="flex items-center space-x-2 pt-4">
+                        <Switch
+                            id={`priority-switch-${application.id}`}
+                            checked={tracker?.isPriority}
+                            onCheckedChange={(checked) => handleTrackerUpdate('isPriority', checked)}
+                        />
+                        <Label htmlFor={`priority-switch-${application.id}`} className="flex items-center gap-2">
+                            <Star className="h-4 w-4 text-yellow-400"/>
+                            Mark as Priority Task
+                        </Label>
+                    </div>
                 </div>
                 
                  <RadioGroup
@@ -288,6 +301,8 @@ export default function ManagerialOverviewPage() {
       return 'Open';
   };
   
+  const staffMap = useMemo(() => new Map(staffList.map(s => [s.uid, s])), [staffList]);
+
   const staffStats = useMemo(() => {
       if (staffList.length === 0 || applications.length === 0) return [];
       
@@ -317,10 +332,18 @@ export default function ManagerialOverviewPage() {
           return { ...staff, openCount, overdueCount, dueTodayCount };
       });
   }, [staffList, applications, trackers]);
+
+  const priorityTasks = useMemo(() => {
+      return Array.from(trackers.values())
+        .filter(tracker => tracker.isPriority && getApplicationStatus(applications.find(a => a.id === tracker.applicationId)!) === 'Open')
+        .map(tracker => {
+            const application = applications.find(a => a.id === tracker.applicationId);
+            const assignedStaff = tracker.assignedStaffId ? staffMap.get(tracker.assignedStaffId) : null;
+            return { ...application, tracker, assignedStaff };
+        }) as CombinedData[];
+  }, [trackers, applications, staffMap]);
   
   const sortedAndFilteredData: CombinedData[] = useMemo(() => {
-      const staffMap = new Map(staffList.map(s => [s.uid, s]));
-      
       let combined = applications.map(app => {
           const tracker = trackers.get(app.id);
           const assignedStaff = tracker?.assignedStaffId ? staffMap.get(tracker.assignedStaffId) : undefined;
@@ -370,7 +393,7 @@ export default function ManagerialOverviewPage() {
           return 0;
       });
 
-  }, [applications, trackers, staffList, memberFilter, staffFilter, sortConfig]);
+  }, [applications, trackers, staffMap, memberFilter, staffFilter, sortConfig]);
 
 
   if (isLoading || isAdminLoading) {
@@ -396,42 +419,92 @@ export default function ManagerialOverviewPage() {
                 A high-level overview of your team's workload and a detailed, filterable table of all applications.
             </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-8">
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="text-lg">Staff Workload Summary</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        {staffStats.map((staff, index) => (
-                           <React.Fragment key={staff.uid}>
-                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                                <div className="font-semibold">{staff.firstName} {staff.lastName}</div>
-                                <div className="flex items-center gap-4 text-sm">
-                                    <div>
-                                        <span className="font-bold text-lg">{staff.openCount}</span>
-                                        <span className="text-muted-foreground"> Open</span>
-                                    </div>
-                                    {staff.overdueCount > 0 && (
-                                        <div className="flex items-center gap-1.5 text-destructive">
-                                            <AlertCircle className="h-4 w-4" />
-                                            <span className="font-semibold">{staff.overdueCount} Overdue</span>
-                                        </div>
-                                    )}
-                                     {staff.dueTodayCount > 0 && (
-                                        <div className="flex items-center gap-1.5 text-yellow-600">
-                                            <CalendarIcon className="h-4 w-4" />
-                                            <span className="font-semibold">{staff.dueTodayCount} Due Today</span>
-                                        </div>
-                                    )}
+        </Card>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <Card className="lg:col-span-1">
+                <CardHeader>
+                    <CardTitle className="text-lg">Staff Workload Summary</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {staffStats.length > 0 ? staffStats.map((staff, index) => (
+                        <React.Fragment key={staff.uid}>
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                            <div className="font-semibold">{staff.firstName} {staff.lastName}</div>
+                            <div className="flex items-center gap-4 text-sm">
+                                <div>
+                                    <span className="font-bold text-lg">{staff.openCount}</span>
+                                    <span className="text-muted-foreground"> Open</span>
                                 </div>
+                                {staff.overdueCount > 0 && (
+                                    <div className="flex items-center gap-1.5 text-destructive">
+                                        <AlertCircle className="h-4 w-4" />
+                                        <span className="font-semibold">{staff.overdueCount} Overdue</span>
+                                    </div>
+                                )}
+                                    {staff.dueTodayCount > 0 && (
+                                    <div className="flex items-center gap-1.5 text-yellow-600">
+                                        <CalendarIcon className="h-4 w-4" />
+                                        <span className="font-semibold">{staff.dueTodayCount} Due Today</span>
+                                    </div>
+                                )}
                             </div>
-                            {index < staffStats.length - 1 && <Separator />}
-                           </React.Fragment>
-                        ))}
-                    </CardContent>
-                </Card>
+                        </div>
+                        {index < staffStats.length - 1 && <Separator />}
+                        </React.Fragment>
+                    )) : <p className="text-sm text-muted-foreground text-center">No staff found.</p>}
+                </CardContent>
+            </Card>
 
-                <div className="flex flex-col sm:flex-row gap-4">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                        <Star className="h-5 w-5 text-yellow-400" />
+                        Today's Priorities
+                    </CardTitle>
+                    <CardDescription>{format(new Date(), 'eeee, MMMM do')}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {priorityTasks.length > 0 ? (
+                         <div className="space-y-3">
+                            {priorityTasks.map(task => (
+                                <div key={task.id} className="flex items-center justify-between p-2 rounded-md border bg-background">
+                                    <div>
+                                        <p className="font-medium text-sm">{task.memberFirstName} {task.memberLastName}</p>
+                                        <p className="text-xs text-muted-foreground">Assigned to: {task.assignedStaff?.firstName || 'N/A'}</p>
+                                    </div>
+                                    <Button asChild variant="secondary" size="sm">
+                                        <Link href={`/admin/applications/${task.id}?userId=${task.userId}`}>View</Link>
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-sm text-muted-foreground text-center py-4">No priority tasks for today.</p>
+                    )}
+                </CardContent>
+            </Card>
+            
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-lg">Placeholder Card</CardTitle>
+                    <CardDescription>This is a placeholder for future content.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex items-center justify-center h-24 rounded-lg bg-muted">
+                        <p className="text-sm text-muted-foreground">Coming soon</p>
+                    </div>
+                </CardContent>
+            </Card>
+
+        </div>
+
+        <Card>
+            <CardHeader>
+                 <CardTitle>All Application Tasks</CardTitle>
+            </CardHeader>
+             <CardContent>
+                <div className="flex flex-col sm:flex-row gap-4 mb-4">
                     <div className="flex-1 space-y-2">
                         <Label htmlFor="member-filter">Filter by Member</Label>
                         <Input 
@@ -479,8 +552,11 @@ export default function ManagerialOverviewPage() {
                             {sortedAndFilteredData.length > 0 ? sortedAndFilteredData.map(item => {
                                 const taskStatus = getTaskStatus(item.tracker);
                                 return (
-                                <TableRow key={item.id}>
-                                    <TableCell className="font-medium">{item.memberFirstName} {item.memberLastName}</TableCell>
+                                <TableRow key={item.id} className={cn(item.tracker?.isPriority && 'bg-yellow-50')}>
+                                    <TableCell className="font-medium flex items-center gap-2">
+                                        {item.tracker?.isPriority && <Star className="h-4 w-4 text-yellow-400" />}
+                                        {item.memberFirstName} {item.memberLastName}
+                                    </TableCell>
                                     <TableCell>{item.assignedStaff ? `${item.assignedStaff.firstName} ${item.assignedStaff.lastName}` : <span className="text-muted-foreground">Unassigned</span>}</TableCell>
                                     <TableCell><TaskStatusBadge status={taskStatus} /></TableCell>
                                     <TableCell>{item.tracker?.nextStep || 'N/A'}</TableCell>

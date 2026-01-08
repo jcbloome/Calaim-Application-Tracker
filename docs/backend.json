@@ -147,6 +147,10 @@
           "format": "date-time",
           "description": "The due date for the next step."
         },
+        "isPriority": {
+          "type": "boolean",
+          "description": "Whether the task is marked as high priority."
+        },
         "lastUpdated": {
           "type": "string",
           "format": "date-time"
