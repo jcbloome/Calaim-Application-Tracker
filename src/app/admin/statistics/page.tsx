@@ -90,15 +90,29 @@ export default function AdminStatisticsPage() {
     fetchApps();
   }, [fetchApps]);
 
-  const { stats, availableYears } = useMemo(() => {
+  // -- ADDED: Calculation for topCities, below! --
+  const { stats, availableYears, topCities } = useMemo(() => {
     const defaultHealthPlans = new Map<string, number>([['Kaiser', 0], ['Health Net', 0]]);
-    if (!applications) return { stats: { byCounty: [], byHealthPlan: Array.from(defaultHealthPlans.entries()).map(([name, value]) => ({ name, value })), byPathway: [], topReferrers: [], submissionsByMonth: [] }, availableYears: [] };
+    if (!applications) {
+      return {
+        stats: {
+          byCounty: [],
+          byHealthPlan: Array.from(defaultHealthPlans.entries()).map(([name, value]) => ({ name, value })),
+          byPathway: [],
+          topReferrers: [],
+          submissionsByMonth: []
+        },
+        availableYears: [],
+        topCities: []
+      };
+    }
     
     const counts = {
         byCounty: new Map<string, number>(),
         byHealthPlan: new Map<string, number>([['Kaiser', 0], ['Health Net', 0]]),
         byPathway: new Map<string, number>(),
         byReferrer: new Map<string, number>(),
+        byCity: new Map<string, number>(),
     };
     
     const years = new Set<number>();
@@ -111,6 +125,11 @@ export default function AdminStatisticsPage() {
         // County
         if (app.currentCounty) {
             counts.byCounty.set(app.currentCounty, (counts.byCounty.get(app.currentCounty) || 0) + 1);
+        }
+
+        // City
+        if (app.currentCity) {
+            counts.byCity.set(app.currentCity, (counts.byCity.get(app.currentCity) || 0) + 1);
         }
         
         // Health Plan
@@ -154,6 +173,7 @@ export default function AdminStatisticsPage() {
             submissionsByMonth: submissionsByMonth.filter(m => m.value > 0).sort((a, b) => b.value - a.value),
         },
         availableYears: Array.from(years).sort((a, b) => b - a),
+        topCities: toSortedArray(counts.byCity).slice(0, 10),
     };
   }, [applications, selectedYear]);
 
@@ -178,9 +198,20 @@ export default function AdminStatisticsPage() {
                 A visual breakdown of all applications in the system.
             </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {/* 
+            Grid changed from "grid-cols-1 md:grid-cols-2 xl:grid-cols-3" to 
+            "grid-cols-1 md:grid-cols-2 xl:grid-cols-4"
+            to fit both County and City cards side by side on extra-large screens. 
+            If even more responsive styling is required, further adjustment to parent components may be needed.
+        */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
             <StatCard title="Applications by County" borderColor="border-blue-500">
                 <DataList data={stats.byCounty} />
+            </StatCard>
+
+            {/* NEW: Top 10 Cities Card */}
+            <StatCard title="Top 10 Cities" borderColor="border-sky-500">
+                <DataList data={topCities} emptyText="No city data available." />
             </StatCard>
             
             <StatCard title="Applications by Health Plan" borderColor="border-green-500">
