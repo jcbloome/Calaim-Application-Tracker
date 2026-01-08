@@ -422,7 +422,7 @@ export default function ManagerialOverviewPage() {
         </Card>
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card className="lg:col-span-1">
+            <Card className="lg:col-span-1 border-t-4 border-blue-500">
                 <CardHeader>
                     <CardTitle className="text-lg">Staff Workload Summary</CardTitle>
                 </CardHeader>
@@ -456,7 +456,7 @@ export default function ManagerialOverviewPage() {
                 </CardContent>
             </Card>
 
-            <Card>
+            <Card className="border-t-4 border-yellow-500">
                 <CardHeader>
                     <CardTitle className="text-lg flex items-center gap-2">
                         <Star className="h-5 w-5 text-yellow-400" />
@@ -485,7 +485,7 @@ export default function ManagerialOverviewPage() {
                 </CardContent>
             </Card>
             
-            <Card>
+            <Card className="border-t-4 border-gray-300">
                 <CardHeader>
                     <CardTitle className="text-lg">Placeholder Card</CardTitle>
                     <CardDescription>This is a placeholder for future content.</CardDescription>
