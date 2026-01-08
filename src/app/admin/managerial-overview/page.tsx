@@ -2,14 +2,14 @@
 'use client';
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { useFirestore, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { collection, Timestamp, getDocs, collectionGroup, Query, query, orderBy, setDoc, doc } from 'firebase/firestore';
 import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, User, Calendar as CalendarIcon, Package, ChevronsUpDown, Filter, ArrowUpDown, Circle, AlertCircle, Star } from 'lucide-react';
+import { Loader2, User, Calendar as CalendarIcon, Package, ChevronsUpDown, Filter, ArrowUpDown, Circle, AlertCircle, Star, Printer } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
@@ -539,6 +539,14 @@ export default function ManagerialOverviewPage() {
                          <p className="text-sm text-muted-foreground text-center py-4">No members in the Kaiser pipeline.</p>
                     )}
                 </CardContent>
+                <CardFooter>
+                    <Button asChild variant="outline" className="w-full">
+                        <Link href="/admin/reports/ils">
+                            <Printer className="mr-2 h-4 w-4" />
+                            Generate ILS Report
+                        </Link>
+                    </Button>
+                </CardFooter>
             </Card>
 
         </div>

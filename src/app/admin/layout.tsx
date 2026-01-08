@@ -53,7 +53,6 @@ const adminNavLinks = [
 
 const superAdminNavLinks = [
     { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
-    { href: '/admin/reports/ils', label: 'ILS Report', icon: Printer },
     { href: '/admin/super', label: 'Super Admin', icon: Shield },
 ];
 
@@ -144,22 +143,22 @@ function AdminHeader() {
                   </Button>
                 </SheetTrigger>
                 <SheetContent>
-                  <SheetHeader>
-                    <SheetTitle className="sr-only">Mobile Navigation Menu</SheetTitle>
-                    <SheetDescription className="sr-only">
+                  <SheetHeader className="sr-only">
+                    <SheetTitle>Mobile Navigation Menu</SheetTitle>
+                    <SheetDescription>
                       Links to navigate through the admin sections of the application.
                     </SheetDescription>
-                     <Link href="/admin" className="mb-4">
-                        <Image
-                        src="/calaimlogopdf.png"
-                        alt="Connect CalAIM Logo"
-                        width={240}
-                        height={67}
-                        className="w-40 h-auto object-contain"
-                        priority
-                        />
-                    </Link>
                   </SheetHeader>
+                   <Link href="/admin" className="mb-4">
+                      <Image
+                      src="/calaimlogopdf.png"
+                      alt="Connect CalAIM Logo"
+                      width={240}
+                      height={67}
+                      className="w-40 h-auto object-contain"
+                      priority
+                      />
+                  </Link>
                   <nav className="flex flex-col gap-4 mt-8">
                     {combinedNavLinks.map((link) => {
                        const Icon = link.icon;
