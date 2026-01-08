@@ -31,6 +31,7 @@ import {
   User,
   Calendar as CalendarIcon,
   List,
+  Link as LinkIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
@@ -104,6 +105,19 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
     { id: 'proof-of-income', title: "Proof of Income", description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'Upload', icon: UploadCloud, href: '#' },
     { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'Upload', icon: UploadCloud, href: '#' },
+     {
+      id: 'eligibility-screenshot',
+      title: 'Eligibility Screenshot',
+      description: 'Upload one or more screenshots from the provider portal showing member eligibility.',
+      type: 'Upload',
+      icon: LinkIcon,
+      links: [
+        { name: 'Health Net Portal', url: 'https://sso.entrykeyid.com/as/authorization.oauth2?response_type=code&client_id=44eb17c3-cf1e-4479-a811-61d23ae8ffbd&scope=openid%20profile&state=AHTpvDa32bFDvM5ov3mwyNx0K75Gqqp4McPzc6oUgds%3D&redirect_uri=https://provider.healthnetcalifornia.com/careconnect/login/oauth2/code/pingcloud&code_challenge_method=S256&nonce=maCZdZx6F1X7mug7ZQiIcWILmxz29uLnBvZQ6mNj4LE&code_challenge=45qFtSM3GXeNCBHkpyU9vJmOwqtKUwYdcb7VJBbw6YA&app_origin=https://provider.healthnetcalifornia.com/careconnect/login/oauth2/code/pingcloud&brand=healthnet' },
+        { name: 'Kaiser South Portal', url: 'https://healthy.kaiserpermanente.org/southern-california/community-providers/eligibility' },
+        { name: 'Kaiser North Portal', url: 'https://healthy.kaiserpermanente.org/northern-california/community-providers/eligibility' },
+      ],
+      href: '#'
+    },
   ];
   
   if (pathway === 'SNF Diversion') {
@@ -638,7 +652,7 @@ function ApplicationDetailPageContent() {
     }
 
     const isUploading = uploading[req.title];
-    const isMultiple = req.title === 'Proof of Income';
+    const isMultiple = req.title === 'Proof of Income' || req.title === 'Eligibility Screenshot';
 
     switch (req.type) {
         case 'online-form':
@@ -693,6 +707,17 @@ function ApplicationDetailPageContent() {
                                <Printer className="mr-1 h-3 w-3" /> Download/Print Blank Form
                            </Link>
                        </Button>
+                    )}
+                    {req.id === 'eligibility-screenshot' && 'links' in req && req.links && (
+                        <div className="flex flex-col space-y-1">
+                            {(req.links as { name: string; url: string }[]).map(link => (
+                                <Button key={link.name} asChild variant="link" size="sm" className="h-auto justify-start p-0 text-xs">
+                                    <Link href={link.url} target="_blank" rel="noopener noreferrer">
+                                        <LinkIcon className="mr-1 h-3 w-3"/> {link.name}
+                                    </Link>
+                                </Button>
+                            ))}
+                        </div>
                     )}
                     <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isUploading && "opacity-50 pointer-events-none")}>
                         {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
@@ -825,5 +850,3 @@ export default function AdminApplicationDetailPage() {
     </Suspense>
   );
 }
-
-    
