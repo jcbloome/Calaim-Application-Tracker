@@ -94,6 +94,8 @@ export type FormStatus = {
   dateCompleted?: Timestamp;
   choice?: 'accept' | 'decline';
   fileName?: string | null;
+  filePath?: string | null;
+  downloadURL?: string | null;
   signerType?: 'member' | 'representative' | null;
   signerName?: string | null;
   signerRelationship?: string | null;

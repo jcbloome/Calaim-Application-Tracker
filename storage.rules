@@ -1,0 +1,29 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      // Check for hardcoded super admin or role in Firestore
+      return isSignedIn() && (
+        request.auth.token.email == "jason@carehomefinders.com" ||
+        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid))
+      );
+    }
+
+    // Match all files in the `user_uploads` directory
+    match /user_uploads/{userId}/{allPaths=**} {
+      // Allow read and write access only to the user who owns the folder, or any admin.
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+  }
+}

@@ -4,11 +4,13 @@ import { firebaseConfig } from '@/firebase/config';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
+import { getStorage, FirebaseStorage } from 'firebase/storage';
 
 export interface FirebaseSdks {
   firebaseApp: FirebaseApp;
   auth: Auth;
   firestore: Firestore;
+  storage: FirebaseStorage;
 }
 
 let firebaseSdks: FirebaseSdks | null = null;
@@ -20,6 +22,7 @@ function getSdks(firebaseApp: FirebaseApp): FirebaseSdks {
     firebaseApp,
     auth: auth,
     firestore: getFirestore(firebaseApp),
+    storage: getStorage(firebaseApp),
   };
 }
 

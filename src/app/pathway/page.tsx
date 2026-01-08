@@ -28,12 +28,14 @@ import {
 import { Header } from '@/components/Header';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType } from '@/lib/definitions';
-import { useDoc, useUser, useFirestore, useMemoFirebase } from '@/firebase';
+import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
 import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useToast } from '@/hooks/use-toast';
 
 const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => {
   const commonRequirements = [
@@ -83,8 +85,12 @@ function PathwayPageContent() {
   const applicationId = searchParams.get('applicationId');
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
+  const storage = useStorage();
+  const { toast } = useToast();
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
 
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -150,25 +156,19 @@ function PathwayPageContent() {
     }
   }, [application, docRef]);
 
-  const handleFormStatusUpdate = async (formNames: string[], newStatus: 'Completed' | 'Pending', fileName?: string | null) => {
+  const handleFormStatusUpdate = async (updates: Partial<FormStatusType>[]) => {
       if (!docRef || !application) return;
 
-      const existingForms = application.forms || [];
-      const updatedForms = existingForms.map(form => {
-          if (formNames.includes(form.name)) {
-            const update: Partial<FormStatusType> = { status: newStatus };
-             if (newStatus === 'Completed') {
-                update.dateCompleted = Timestamp.now();
-            }
-             if (fileName !== undefined) {
-                update.fileName = fileName;
-            } else if (newStatus === 'Pending') {
-                update.fileName = null;
-            }
-            return { ...form, ...update };
+      const existingForms = new Map(application.forms?.map(f => [f.name, f]) || []);
+      
+      updates.forEach(update => {
+          const existingForm = existingForms.get(update.name!);
+          if (existingForm) {
+              existingForms.set(update.name!, { ...existingForm, ...update });
           }
-          return form;
       });
+
+      const updatedForms = Array.from(existingForms.values());
       
       try {
           await setDoc(docRef, {
@@ -177,29 +177,69 @@ function PathwayPageContent() {
           }, { merge: true });
       } catch (e: any) {
           console.error("Failed to update form status:", e);
+          toast({ variant: 'destructive', title: 'Update Error', description: 'Could not update form status.' });
       }
   };
 
+  const doUpload = async (files: File[], requirementTitle: string) => {
+      if (!user?.uid || !applicationId) return null;
+
+      const file = files[0];
+      const storagePath = `user_uploads/${user.uid}/${applicationId}/${requirementTitle}/${file.name}`;
+      const storageRef = ref(storage, storagePath);
+
+      return new Promise<{ downloadURL: string, path: string }>((resolve, reject) => {
+          const uploadTask = uploadBytesResumable(storageRef, file);
+
+          uploadTask.on('state_changed',
+              (snapshot) => {
+                  const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                  setUploadProgress(prev => ({ ...prev, [requirementTitle]: progress }));
+              },
+              (error) => {
+                  console.error("Upload failed:", error);
+                  reject(error);
+              },
+              async () => {
+                  const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                  resolve({ downloadURL, path: storagePath });
+              }
+          );
+      });
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, requirementTitle: string) => {
-    if (!event.target.files?.length) return;
+    if (!event.target.files?.length || !user?.uid) return;
     const files = Array.from(event.target.files);
     
     setUploading(prev => ({...prev, [requirementTitle]: true}));
+    setUploadProgress(prev => ({ ...prev, [requirementTitle]: 0 }));
     
-    // Simulate upload time
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const fileNames = files.map(f => f.name).join(', ');
-    await handleFormStatusUpdate([requirementTitle], 'Completed', fileNames);
-
-    setUploading(prev => ({...prev, [requirementTitle]: false}));
-    
-    // Clear the input value to allow re-uploading the same file
-    event.target.value = '';
+    try {
+        const uploadResult = await doUpload(files, requirementTitle);
+        if (uploadResult) {
+            await handleFormStatusUpdate([{
+                name: requirementTitle,
+                status: 'Completed',
+                fileName: files.map(f => f.name).join(', '),
+                filePath: uploadResult.path,
+                downloadURL: uploadResult.downloadURL,
+                dateCompleted: Timestamp.now(),
+            }]);
+            toast({ title: 'Upload Successful', description: `${requirementTitle} has been uploaded.` });
+        }
+    } catch (error) {
+        toast({ variant: 'destructive', title: 'Upload Failed', description: 'Could not upload file.' });
+    } finally {
+        setUploading(prev => ({...prev, [requirementTitle]: false}));
+        setUploadProgress(prev => ({ ...prev, [requirementTitle]: 0 }));
+        event.target.value = '';
+    }
   };
 
   const handleConsolidatedUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!event.target.files?.length) return;
+    if (!event.target.files?.length || !user?.uid) return;
+    const files = Array.from(event.target.files);
 
     const formsToUpdate = Object.entries(consolidatedUploadChecks)
       .filter(([, isChecked]) => isChecked)
@@ -207,28 +247,53 @@ function PathwayPageContent() {
       
     if (formsToUpdate.length === 0) return;
 
-    const files = Array.from(event.target.files);
-    const fileNames = files.map(f => f.name).join(', ');
     const consolidatedId = 'consolidated-medical-upload';
-    
-    setUploading(prev => ({...prev, [consolidatedId]: true}));
-    
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    await handleFormStatusUpdate(formsToUpdate, 'Completed', fileNames);
+    setUploading(prev => ({ ...prev, [consolidatedId]: true }));
+    setUploadProgress(prev => ({ ...prev, [consolidatedId]: 0 }));
 
-    setUploading(prev => ({...prev, [consolidatedId]: false}));
-    setConsolidatedUploadChecks({
-        'LIC 602A - Physician\'s Report': false,
-        'Medicine List': false,
-        'SNF Facesheet': false,
-    });
-    
-    event.target.value = '';
+    try {
+        const uploadResult = await doUpload(files, 'consolidated_medical');
+        if (uploadResult) {
+            const updates: Partial<FormStatusType>[] = formsToUpdate.map(formName => ({
+                name: formName,
+                status: 'Completed',
+                fileName: files.map(f => f.name).join(', '),
+                filePath: uploadResult.path,
+                downloadURL: uploadResult.downloadURL,
+                dateCompleted: Timestamp.now(),
+            }));
+            await handleFormStatusUpdate(updates);
+            toast({ title: 'Upload Successful', description: 'Consolidated documents have been uploaded.' });
+        }
+    } catch(error) {
+        toast({ variant: 'destructive', title: 'Upload Failed', description: 'Could not upload consolidated documents.' });
+    } finally {
+        setUploading(prev => ({ ...prev, [consolidatedId]: false }));
+        setUploadProgress(prev => ({ ...prev, [consolidatedId]: 0 }));
+        setConsolidatedUploadChecks({ 'LIC 602A - Physician\'s Report': false, 'Medicine List': false, 'SNF Facesheet': false });
+        event.target.value = '';
+    }
   };
   
-  const handleFileRemove = async (requirementTitle: string) => {
-    await handleFormStatusUpdate([requirementTitle], 'Pending', null);
+  const handleFileRemove = async (form: FormStatusType) => {
+    if (!form.filePath) {
+      await handleFormStatusUpdate([{ name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null }]);
+      return;
+    }
+    
+    const storageRef = ref(storage, form.filePath);
+    try {
+      await deleteObject(storageRef);
+      await handleFormStatusUpdate([{ name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null }]);
+      toast({ title: 'File Removed', description: `${form.fileName} has been removed.`});
+    } catch (error) {
+      console.error("Error removing file:", error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Could not remove file. It may have already been deleted.'});
+      // Force update Firestore record even if storage deletion fails
+      await handleFormStatusUpdate([{ name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null }]);
+    }
   };
+
 
   const handleSubmitApplication = async () => {
     if (!docRef) return;
@@ -323,6 +388,7 @@ function PathwayPageContent() {
     }
 
     const isUploading = uploading[req.title];
+    const currentProgress = uploadProgress[req.title];
     const isMultiple = req.title === 'Proof of Income';
     
     switch (req.type) {
@@ -358,7 +424,7 @@ function PathwayPageContent() {
                  return (
                     <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-green-50 border border-green-200 text-sm">
                         <span className="truncate flex-1 text-green-800 font-medium">{formInfo?.fileName || 'Completed'}</span>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(req.title)}>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(formInfo!)}>
                             <X className="h-4 w-4" />
                             <span className="sr-only">Remove file</span>
                         </Button>
@@ -367,6 +433,9 @@ function PathwayPageContent() {
              }
              return (
                 <div className="space-y-2">
+                    {isUploading && (
+                        <Progress value={currentProgress} className="h-1 w-full" />
+                    )}
                     {req.href && req.href !== '#' && (
                         <Button asChild variant="link" className="w-full text-xs h-auto py-0">
                            <Link href={req.href} target="_blank">
@@ -376,7 +445,7 @@ function PathwayPageContent() {
                     )}
                     <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isReadOnly) && "opacity-50 pointer-events-none")}>
                         {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                        <span>{isUploading ? 'Uploading...' : 'Upload File(s)'}</span>
+                        <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
                     </Label>
                     <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isReadOnly} multiple={isMultiple} />
                 </div>
@@ -387,6 +456,7 @@ function PathwayPageContent() {
 };
 
   const isConsolidatedUploading = uploading['consolidated-medical-upload'];
+  const consolidatedProgress = uploadProgress['consolidated-medical-upload'];
   const isAnyConsolidatedChecked = Object.values(consolidatedUploadChecks).some(v => v);
 
 
@@ -467,6 +537,9 @@ function PathwayPageContent() {
                             <CardDescription>For convenience, you can upload multiple medical forms at once. Select the documents you are uploading below.</CardDescription>
                         </CardHeader>
                         <CardContent className="flex flex-col flex-grow justify-end gap-4">
+                            {isConsolidatedUploading && (
+                                <Progress value={consolidatedProgress} className="h-1 w-full" />
+                            )}
                             <div className="space-y-2 rounded-md border p-3">
                                 {consolidatedMedicalDocuments.map(doc => (
                                      <div key={doc.id} className="flex items-center space-x-2">
@@ -486,7 +559,7 @@ function PathwayPageContent() {
                             </div>
                             <Label htmlFor="consolidated-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isConsolidatedUploading || isReadOnly || !isAnyConsolidatedChecked) && "opacity-50 pointer-events-none")}>
                                 {isConsolidatedUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                                <span>{isConsolidatedUploading ? 'Uploading...' : 'Upload Consolidated Documents'}</span>
+                                <span>{isConsolidatedUploading ? `Uploading... ${consolidatedProgress?.toFixed(0)}%` : 'Upload Consolidated Documents'}</span>
                             </Label>
                             <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || isReadOnly || !isAnyConsolidatedChecked} multiple />
                         </CardContent>
