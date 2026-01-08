@@ -430,7 +430,9 @@ export default function ManagerialOverviewPage() {
                     {staffStats.length > 0 ? staffStats.map((staff, index) => (
                         <React.Fragment key={staff.uid}>
                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                            <div className="font-semibold">{staff.firstName} {staff.lastName}</div>
+                            <Link href={`/admin/my-tasks?userId=${staff.uid}&name=${staff.firstName}%20${staff.lastName}`} className="font-semibold hover:underline">
+                                {staff.firstName} {staff.lastName}
+                            </Link>
                             <div className="flex items-center gap-4 text-sm">
                                 <div>
                                     <span className="font-bold text-lg">{staff.openCount}</span>

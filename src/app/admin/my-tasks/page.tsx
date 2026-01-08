@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, Suspense } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
@@ -9,11 +9,12 @@ import { collectionGroup, getDocs, Timestamp } from 'firebase/firestore';
 import type { Application, StaffTracker } from '@/lib/definitions';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, ArrowUpDown, Calendar, CheckCircle2 } from 'lucide-react';
+import { Loader2, ArrowUpDown, Calendar, CheckCircle2, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, isToday, isPast, differenceInDays } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { useSearchParams } from 'next/navigation';
 
 type CombinedData = Application & {
     tracker?: StaffTracker;
@@ -29,9 +30,19 @@ const getTaskStatus = (application: Application): 'Open' | 'Closed' => {
     return 'Open';
 };
 
-export default function MyTasksPage() {
+function MyTasksPageComponent() {
   const firestore = useFirestore();
   const { user, isLoading: isAdminLoading } = useAdmin();
+  const searchParams = useSearchParams();
+
+  const viewedUserId = searchParams.get('userId');
+  const viewedUserName = searchParams.get('name');
+
+  const targetUserId = viewedUserId || user?.uid;
+  const pageTitle = viewedUserId ? `${viewedUserName}'s Tasks` : 'My Assigned Tasks';
+  const pageDescription = viewedUserId 
+    ? `A list of all tasks assigned to ${viewedUserName}.`
+    : 'A list of all applications and tasks currently assigned to you.';
 
   const [applications, setApplications] = useState<Application[]>([]);
   const [trackers, setTrackers] = useState<Map<string, StaffTracker>>(new Map());
@@ -82,11 +93,11 @@ export default function MyTasksPage() {
   };
 
   const myTasks = useMemo(() => {
-      if (!user) return [];
+      if (!targetUserId) return [];
       return applications
         .map(app => ({ ...app, tracker: trackers.get(app.id) }))
-        .filter(item => item.tracker?.assignedStaffId === user.uid);
-  }, [applications, trackers, user]);
+        .filter(item => item.tracker?.assignedStaffId === targetUserId);
+  }, [applications, trackers, targetUserId]);
 
   const sortedMyTasks: CombinedData[] = useMemo(() => {
       return [...myTasks].sort((a, b) => {
@@ -140,7 +151,7 @@ export default function MyTasksPage() {
     <div className="space-y-6">
        <Card>
         <CardHeader>
-            <CardTitle>My Tasks Summary</CardTitle>
+            <CardTitle>{pageTitle}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
              <Card>
@@ -166,9 +177,9 @@ export default function MyTasksPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>My Assigned Tasks</CardTitle>
+          <CardTitle>Assigned Task List</CardTitle>
           <CardDescription>
-            A list of all applications and tasks currently assigned to you.
+            {pageDescription}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -255,4 +266,12 @@ export default function MyTasksPage() {
       </Card>
     </div>
   );
+}
+
+export default function MyTasksPage() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-4">Loading...</p></div>}>
+            <MyTasksPageComponent />
+        </Suspense>
+    )
 }
