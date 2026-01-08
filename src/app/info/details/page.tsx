@@ -22,7 +22,7 @@ const infoSections = [
     ],
     list: [
       'Health Net: Serving members in Sacramento and Los Ángeles counties.',
-      <><strong>Kaiser Permanente:</strong> Serving members in various counties throughout California. Connections is contracted for the CS for Kaiser through a subcontract with <strong>Independent Living Systems (ILS)</strong>, which manages the program for Kaiser.</>,
+      <>Connections is contracted for the CS for Kaiser Permanente through a subcontract with Independent Living Systems (ILS), which manages the program for Kaiser.</>,
     ],
   },
   {
