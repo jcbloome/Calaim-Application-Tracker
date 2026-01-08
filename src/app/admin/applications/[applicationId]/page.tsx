@@ -81,12 +81,12 @@ const kaiserSteps = [
   "RCFE/ILS for Invoicing",
   "ILS Contracted (Complete)",
   "Confirm ILS Contracted",
-  "Non-active",
   "Complete",
   "Tier Level Revision Request",
   "On-Hold",
   "Tier Level Appeal",
   "T2038 email but need auth sheet",
+  "Non-active",
 ];
 
 const healthNetSteps = [
@@ -504,6 +504,28 @@ function ApplicationDetailPageContent() {
     return doc(firestore, `users/${appUserId}/applications`, applicationId);
   }, [firestore, applicationId, appUserId, isUserLoading]);
 
+  const activityLog = useMemo(() => {
+    if (!application?.forms) return [];
+    
+    return application.forms
+      .filter(form => form.status === 'Completed' && form.dateCompleted)
+      .map(form => ({
+        id: form.name,
+        component: form.name,
+        user: application.referrerName || 'User', // Placeholder
+        date: form.dateCompleted!.toDate(),
+        action: form.type === 'Upload' ? `Uploaded ${form.fileName}` : 'Completed online form',
+      }))
+      .sort((a, b) => b.date.getTime() - a.date.getTime());
+  }, [application]);
+
+  const uploadedFiles = useMemo(() => {
+    if (!application?.forms) return [];
+    return application.forms.filter(
+        (form) => form.type === 'Upload' && form.status === 'Completed' && form.fileName
+    );
+  }, [application]);
+
   useEffect(() => {
     if (!docRef) {
       if (!isUserLoading) setIsLoading(false);
@@ -609,22 +631,6 @@ function ApplicationDetailPageContent() {
     await handleFormStatusUpdate([requirementTitle], 'Pending', null);
   };
 
-  const activityLog = useMemo(() => {
-    if (!application?.forms) return [];
-    
-    return application.forms
-      .filter(form => form.status === 'Completed' && form.dateCompleted)
-      .map(form => ({
-        id: form.name,
-        component: form.name,
-        user: application.referrerName || 'User', // Placeholder
-        date: form.dateCompleted!.toDate(),
-        action: form.type === 'Upload' ? `Uploaded ${form.fileName}` : 'Completed online form',
-      }))
-      .sort((a, b) => b.date.getTime() - a.date.getTime());
-  }, [application]);
-
-
   if (isLoading || isUserLoading) {
     return (
         <div className="flex items-center justify-center h-full">
@@ -681,14 +687,6 @@ function ApplicationDetailPageContent() {
       { id: 'decl-elig-check', name: 'Declaration of Eligibility' },
   ].filter(doc => pathwayRequirements.some(req => req.title === doc.name));
   
-  const uploadedFiles = useMemo(() => {
-    if (!application?.forms) return [];
-    return application.forms.filter(
-        (form) => form.type === 'Upload' && form.status === 'Completed' && form.fileName
-    );
-  }, [application]);
-
-
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
     const isCompleted = formInfo?.status === 'Completed';
