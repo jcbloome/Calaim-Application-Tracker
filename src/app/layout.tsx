@@ -5,6 +5,8 @@ import { Toaster } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { Inter } from 'next/font/google';
+import React from 'react';
+import { Loader2 } from 'lucide-react';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -26,7 +28,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={cn('h-full antialiased', inter.className)}>
       <body className="min-h-screen flex flex-col">
-        <FirebaseClientProvider>{children}</FirebaseClientProvider>
+        <React.Suspense fallback={<div className="flex h-screen w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+          <FirebaseClientProvider>{children}</FirebaseClientProvider>
+        </React.Suspense>
         <Toaster />
       </body>
     </html>
