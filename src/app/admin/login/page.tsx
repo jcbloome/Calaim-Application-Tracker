@@ -2,11 +2,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/firebase';
+import { useAuth, useFirestore } from '@/firebase';
 import {
   signInWithEmailAndPassword,
   setPersistence,
   browserLocalPersistence,
+  type User
 } from 'firebase/auth';
 import type { AuthError } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -26,9 +27,28 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import Image from 'next/image';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+
+
+async function trackLogin(firestore: any, user: User, role: 'Admin' | 'User') {
+    if (!firestore || !user) return;
+    try {
+        await addDoc(collection(firestore, 'loginLogs'), {
+            userId: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+            role: role,
+            timestamp: serverTimestamp(),
+        });
+    } catch (error) {
+        console.error("Error tracking login:", error);
+    }
+}
+
 
 export default function AdminLoginPage() {
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
   const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -52,29 +72,27 @@ export default function AdminLoginPage() {
     setIsLoading(true);
     setError(null);
 
-    if (!auth) {
+    if (!auth || !firestore) {
       setError('Firebase services are not available.');
       setIsLoading(false);
       return;
     }
 
     try {
-      // Explicitly sign out any existing user to ensure a clean session.
       if (auth.currentUser) {
         await auth.signOut();
       }
       
       await setPersistence(auth, browserLocalPersistence);
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+
+      // Track the login event
+      await trackLogin(firestore, userCredential.user, 'Admin');
       
-      // On successful sign-in, the `useAdmin` hook will update,
-      // and the useEffect hook above will handle the redirection.
-      // We just need to show a pending state to the user.
       toast({
         title: 'Sign In Successful!',
         description: 'Verifying admin status and redirecting...',
       });
-      // The loading state will be managed by the redirection in the layout.
 
     } catch (err) {
       const authError = err as AuthError;
@@ -169,3 +187,5 @@ export default function AdminLoginPage() {
     </main>
   );
 }
+
+    

@@ -6,10 +6,10 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, ShieldCheck, Bell, PlusCircle, Beaker, FileWarning, CheckCircle } from 'lucide-react';
+import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, ShieldCheck, Bell, PlusCircle, Beaker, FileWarning, CheckCircle, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp, addDoc } from 'firebase/firestore';
+import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp, addDoc, orderBy } from 'firebase/firestore';
 import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -28,6 +28,9 @@ import {
 } from "@/components/ui/alert-dialog"
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { format } from 'date-fns';
+
 
 // CLIENT-SIDE LOGIC - Replaces the need for server-side AI flows for UI data.
 import { getAuth, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
@@ -59,6 +62,15 @@ interface TestResult {
     testName: string;
     status: 'success' | 'error';
     message: string;
+}
+
+interface LoginLog {
+    id: string;
+    userId: string;
+    email: string;
+    displayName: string;
+    role: 'Admin' | 'User';
+    timestamp: any;
 }
 
 
@@ -187,7 +199,13 @@ export default function SuperAdminPage() {
         return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
     }, [firestore, isAdminLoading, currentUser]);
 
+    const loginLogsQuery = useMemoFirebase(() => {
+        if (isAdminLoading || !firestore || !isSuperAdmin) return null;
+        return query(collection(firestore, 'loginLogs'), orderBy('timestamp', 'desc'));
+    }, [firestore, isAdminLoading, isSuperAdmin]);
+
     const { data: allApplications, isLoading: isLoadingApplications } = useCollection<Application & FormValues>(applicationsQuery);
+    const { data: loginLogs, isLoading: isLoadingLoginLogs } = useCollection<LoginLog>(loginLogsQuery);
     
     const fetchAllStaff = async () => {
         if (!firestore || !currentUser) return;
@@ -731,6 +749,44 @@ export default function SuperAdminPage() {
 
                     <Card>
                         <CardHeader>
+                            <CardTitle className="flex items-center gap-3 text-lg"><Clock className="h-5 w-5" />User Login Log</CardTitle>
+                             <CardDescription>A summary of recent login events across the application.</CardDescription>
+                        </CardHeader>
+                         <CardContent>
+                            <ScrollArea className="h-72 w-full">
+                                {isLoadingLoginLogs ? (
+                                    <div className="flex items-center justify-center h-full"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+                                ) : loginLogs && loginLogs.length > 0 ? (
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>User</TableHead>
+                                                <TableHead>Role</TableHead>
+                                                <TableHead className="text-right">Time</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {loginLogs.map(log => (
+                                                <TableRow key={log.id}>
+                                                    <TableCell>
+                                                        <div className="font-medium">{log.displayName}</div>
+                                                        <div className="text-xs text-muted-foreground">{log.email}</div>
+                                                    </TableCell>
+                                                    <TableCell>{log.role}</TableCell>
+                                                    <TableCell className="text-right text-xs">{log.timestamp ? format(log.timestamp.toDate(), 'P p') : 'N/A'}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                ) : (
+                                    <p className="text-sm text-muted-foreground text-center py-10">No login events recorded.</p>
+                                )}
+                            </ScrollArea>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
                             <CardTitle className="flex items-center gap-3 text-lg"><Beaker className="h-5 w-5" />Firestore Permissions Test Suite</CardTitle>
                             <CardDescription>Run tests to diagnose security rule issues.</CardDescription>
                         </CardHeader>
@@ -940,3 +996,5 @@ export default function SuperAdminPage() {
         </div>
     );
 }
+
+    

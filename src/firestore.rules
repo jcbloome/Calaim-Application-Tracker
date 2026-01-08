@@ -1,0 +1,115 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- HELPER FUNCTIONS ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // New function to identify the hardcoded admin user by email.
+    function isJason() {
+      return request.auth != null && request.auth.token.email == "jason@carehomefinders.com";
+    }
+
+    function isAdmin() {
+      // An admin is either the hardcoded user 'jason' OR a user whose UID is in the admin roles collection.
+      return isSignedIn() && (
+        isJason() ||
+        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid))
+      );
+    }
+    
+    function isSuperAdmin() {
+       // A super admin is anyone who qualifies as a regular admin.
+       return isAdmin();
+    }
+
+    // --- USER-SPECIFIC RULES ---
+    match /users/{userId} {
+      // Admins can manage any user profile. Users can only manage their own.
+      allow read, write: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+
+      // Application subcollection rules
+      match /applications/{applicationId} {
+        // Users can manage their own applications. Admins can manage any application.
+        allow read, write, delete: if isOwner(userId) || isAdmin();
+        
+        // Staff Trackers sub-subcollection rules
+        match /staffTrackers/{trackerId} {
+            // Only admins can read/write internal staff trackers.
+            allow read, list, write: if isAdmin();
+        }
+
+        // Tasks sub-subcollection rules
+        match /tasks/{taskId} {
+            allow read, list, write: if isAdmin() || isOwner(userId);
+        }
+      }
+    }
+    
+    // --- COLLECTION GROUP RULES ---
+    
+    // This rule is CRITICAL for the admin dashboard.
+    // It allows any user identified as an admin to list all applications across all users.
+    match /{path=**}/applications/{applicationId} {
+      allow list: if isAdmin();
+    }
+    
+    // This rule allows any admin to list all trackers, needed for the managerial overview.
+    match /{path=**}/staffTrackers/{trackerId} {
+      allow list: if isAdmin();
+    }
+
+    match /{path=**}/tasks/{taskId} {
+        allow list: if isAdmin() || (isSignedIn() && request.query.where[0][2] == request.auth.uid);
+    }
+
+
+    // --- GLOBAL/SYSTEM RULES ---
+
+    // 1. Role Verification: 
+    // Allows any signed-in user to check their OWN admin status.
+    // This is secure because they can only read documents where the {userId} matches their own UID.
+    // Admins can list/write to manage other users.
+    match /roles_admin/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list, write, create, delete: if isAdmin(); 
+    }
+    
+    match /roles_super_admin/{userId} {
+      allow get: if isOwner(userId) || isSuperAdmin();
+      allow list, write, create, delete: if isSuperAdmin(); 
+    }
+    
+    // 2. System Settings
+    // Only Super Admins can write to system settings.
+    // Regular admins can read them.
+    match /system_settings/{docId} {
+        allow read: if isAdmin();
+        allow write: if isSuperAdmin();
+    }
+    
+    // 3. Test Collection
+    // Allow any signed-in user to perform all operations on the test collection.
+    match /test_writes/{docId} {
+        allow read, write: if isSignedIn();
+    }
+
+    // 4. Login Logs
+    // Any authenticated user can create a log entry for themselves.
+    // Only super admins can read the full log.
+    match /loginLogs/{logId} {
+        allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+        allow list, read: if isSuperAdmin();
+    }
+  }
+}
+
+    

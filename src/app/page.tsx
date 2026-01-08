@@ -1,13 +1,14 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/firebase';
+import { useAuth, useFirestore } from '@/firebase';
 import {
   signInWithEmailAndPassword,
   browserLocalPersistence,
   setPersistence,
 } from 'firebase/auth';
-import type { AuthError } from 'firebase/auth';
+import type { AuthError, User } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -25,9 +26,26 @@ import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+
+async function trackLogin(firestore: any, user: User, role: 'Admin' | 'User') {
+    if (!firestore || !user) return;
+    try {
+        await addDoc(collection(firestore, 'loginLogs'), {
+            userId: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+            role: role,
+            timestamp: serverTimestamp(),
+        });
+    } catch (error) {
+        console.error("Error tracking login:", error);
+    }
+}
 
 export default function HomePage() {
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
   const { user, isUserLoading } = useAdmin();
@@ -52,7 +70,7 @@ export default function HomePage() {
     setIsLoading(true);
     setError(null);
 
-    if (!auth) {
+    if (!auth || !firestore) {
       const errorMsg = 'Firebase services are not available.';
       setError(errorMsg);
       setIsLoading(false);
@@ -60,20 +78,20 @@ export default function HomePage() {
     }
 
     try {
-      // Explicitly sign out any existing user to ensure a clean session.
       if (auth.currentUser) {
         await auth.signOut();
       }
       
-      // Set persistence to be local across browser windows
       await setPersistence(auth, browserLocalPersistence);
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+
+      // Track the login event
+      await trackLogin(firestore, userCredential.user, 'User');
       
       toast({
         title: 'Successfully signed in!',
         description: 'Redirecting to your dashboard...',
       });
-      // The useEffect hook will now handle redirection once the auth state is updated.
     } catch (err) {
       const authError = err as AuthError;
       let errorMessage = 'Invalid email or password. Please try again.';
@@ -163,3 +181,5 @@ export default function HomePage() {
     </>
   );
 }
+
+    

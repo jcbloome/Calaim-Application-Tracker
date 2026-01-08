@@ -3,8 +3,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth, useUser, useFirestore } from '@/firebase';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, updateProfile, type User } from 'firebase/auth';
+import { doc, setDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import type { AuthError } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +16,21 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
+
+async function trackLogin(firestore: any, user: User, role: 'Admin' | 'User') {
+    if (!firestore || !user) return;
+    try {
+        await addDoc(collection(firestore, 'loginLogs'), {
+            userId: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+            role: role,
+            timestamp: serverTimestamp(),
+        });
+    } catch (error) {
+        console.error("Error tracking login:", error);
+    }
+}
 
 export default function SignUpPage() {
   const auth = useAuth();
@@ -50,16 +65,13 @@ export default function SignUpPage() {
     }
 
     try {
-      // 1. Create the user in Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const newUser = userCredential.user;
       
       const displayName = `${firstName} ${lastName}`.trim();
       
-      // 2. Update the user's profile in Firebase Auth
       await updateProfile(newUser, { displayName });
 
-      // 3. Create the user document in Firestore
       const userDocRef = doc(firestore, 'users', newUser.uid);
       await setDoc(userDocRef, {
           id: newUser.uid,
@@ -68,6 +80,9 @@ export default function SignUpPage() {
           displayName,
           email: newUser.email,
       });
+
+      // Track the signup/login event
+      await trackLogin(firestore, newUser, 'User');
 
       toast({
         title: 'Account Created!',
@@ -189,3 +204,5 @@ export default function SignUpPage() {
     </>
   );
 }
+
+    
