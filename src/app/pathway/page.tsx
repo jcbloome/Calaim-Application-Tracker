@@ -23,6 +23,7 @@ import {
   Printer,
   X,
   FileText,
+  Package,
 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { cn } from '@/lib/utils';
@@ -190,6 +191,30 @@ function PathwayPageContent() {
     // Clear the input value to allow re-uploading the same file
     event.target.value = '';
   };
+
+  const handleConsolidatedUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files?.length) return;
+    const files = Array.from(event.target.files);
+    
+    const consolidatedId = 'consolidated-medical-upload';
+    setUploading(prev => ({...prev, [consolidatedId]: true}));
+
+    const formsToUpdate = [
+      "LIC 602A - Physician's Report",
+      "Medicine List",
+      "SNF Facesheet", // This will be ignored if not in the application's forms array
+    ];
+
+    // Simulate upload time
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    const fileNames = files.map(f => f.name).join(', ');
+    await handleFormStatusUpdate(formsToUpdate, 'Completed', fileNames);
+
+    setUploading(prev => ({...prev, [consolidatedId]: false}));
+    
+    event.target.value = '';
+  };
   
   const handleFileRemove = async (requirementTitle: string) => {
     await handleFormStatusUpdate([requirementTitle], 'Pending', null);
@@ -344,6 +369,8 @@ function PathwayPageContent() {
     }
 };
 
+  const isConsolidatedUploading = uploading['consolidated-medical-upload'];
+
   return (
     <>
       <Header />
@@ -391,6 +418,24 @@ function PathwayPageContent() {
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {!isReadOnly && (
+                    <Card key="consolidated-medical" className="flex flex-col shadow-sm hover:shadow-md transition-shadow md:col-span-2 bg-blue-50 border-blue-200">
+                        <CardHeader className="pb-4">
+                            <div className="flex justify-between items-start gap-4">
+                                <CardTitle className="text-lg flex items-center gap-2"><Package className="h-5 w-5 text-blue-700"/>Consolidated Medical Documents (Optional)</CardTitle>
+                            </div>
+                            <CardDescription className="text-blue-900/80">For convenience, you can upload the Physician's Report, Medicine List, and SNF Facesheet all at once here. This will mark all three items as complete.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex flex-col flex-grow justify-end gap-4">
+                             <Label htmlFor="consolidated-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isConsolidatedUploading || isReadOnly) && "opacity-50 pointer-events-none")}>
+                                {isConsolidatedUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                                <span>{isConsolidatedUploading ? 'Uploading...' : 'Upload Consolidated Documents'}</span>
+                            </Label>
+                            <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || isReadOnly} multiple />
+                        </CardContent>
+                    </Card>
+                )}
+
                 {pathwayRequirements.map((req) => {
                     const formInfo = formStatusMap.get(req.title);
                     const status = formInfo?.status || 'Pending';
