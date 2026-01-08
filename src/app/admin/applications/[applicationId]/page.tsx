@@ -803,9 +803,13 @@ function ApplicationDetailPageContent() {
              if (formInfo?.status === 'Completed') {
                  return (
                     <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-green-50 border border-green-200 text-sm">
-                        <a href={formInfo.downloadURL} target="_blank" rel="noopener noreferrer" className="truncate flex-1 text-green-800 font-medium hover:underline">
-                            {formInfo?.fileName || 'Completed'}
-                        </a>
+                        {formInfo.downloadURL ? (
+                            <a href={formInfo.downloadURL} target="_blank" rel="noopener noreferrer" className="truncate flex-1 text-green-800 font-medium hover:underline">
+                                {formInfo?.fileName || 'Completed'}
+                            </a>
+                        ) : (
+                            <span className="truncate flex-1 text-green-800 font-medium">{formInfo?.fileName || 'Completed'}</span>
+                        )}
                          <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(formInfo)}>
                             <X className="h-4 w-4" />
                             <span className="sr-only">Remove file</span>
