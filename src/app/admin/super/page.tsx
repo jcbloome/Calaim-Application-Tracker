@@ -36,7 +36,6 @@ import { format } from 'date-fns';
 import { getAuth, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { firebaseConfig } from '@/firebase/config';
-import { sendReminderEmails } from '@/ai/flows/manage-reminders';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { sendApplicationStatusEmail } from '@/app/actions/send-email';
@@ -454,7 +453,16 @@ export default function SuperAdminPage() {
         const plainApps = JSON.parse(JSON.stringify(appsToRemind));
 
         try {
-            const result = await sendReminderEmails(plainApps);
+            const response = await fetch('/api/reminders/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(plainApps),
+            });
+            
+            const result = await response.json();
+            
             if (result.success) {
                 toast({ title: 'Reminders Sent!', description: `Successfully sent ${result.sentCount} reminder emails.`, className: 'bg-green-100 text-green-900 border-green-200' });
             } else {
