@@ -30,7 +30,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format } from 'date-fns';
-import { AuthDebug } from '@/components/AuthDebug';
 
 
 // CLIENT-SIDE LOGIC - Replaces the need for server-side AI flows for UI data.
@@ -198,8 +197,10 @@ export default function SuperAdminPage() {
     }, [firestore, isAdminLoading, currentUser]);
 
     const loginLogsQuery = useMemoFirebase(() => {
-        if (isAdminLoading || !firestore || !isSuperAdmin) return null;
-        return query(collection(firestore, 'loginLogs'), orderBy('timestamp', 'desc'));
+        // Temporarily disabled to fix permissions issue
+        return null;
+        // if (isAdminLoading || !firestore || !isSuperAdmin) return null;
+        // return query(collection(firestore, 'loginLogs'), orderBy('timestamp', 'desc'));
     }, [firestore, isAdminLoading, isSuperAdmin]);
 
     const { data: allApplications, isLoading: isLoadingApplications } = useCollection<Application & FormValues>(applicationsQuery);
@@ -764,29 +765,18 @@ export default function SuperAdminPage() {
 
 
     if (isAdminLoading) {
-        return (
-            <div className="container mx-auto p-6">
-                <div className="flex justify-center items-center mb-6">
-                    <Loader2 className="h-8 w-8 animate-spin mr-2"/>
-                    <span>Verifying admin access...</span>
-                </div>
-                <AuthDebug />
-            </div>
-        );
+        return <div className="flex justify-center items-center h-full"><Loader2 className="h-8 w-8 animate-spin"/></div>;
     }
     
     if (!isSuperAdmin) {
          return (
-             <div className="container mx-auto p-6">
-                 <Alert variant="destructive" className="mb-6">
-                    <ShieldAlert className="h-4 w-4" />
-                    <AlertTitle>Access Denied</AlertTitle>
-                    <AlertDescription>
-                       This page is restricted to Super Admins. You need to be logged in as jason@carehomefinders.com
-                    </AlertDescription>
-                 </Alert>
-                 <AuthDebug />
-             </div>
+             <Alert variant="destructive">
+                <ShieldAlert className="h-4 w-4" />
+                <AlertTitle>Access Denied</AlertTitle>
+                <AlertDescription>
+                   This page is restricted to Super Admins.
+                </AlertDescription>
+             </Alert>
          );
      }
 

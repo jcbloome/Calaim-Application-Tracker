@@ -101,5 +101,13 @@ service cloud.firestore {
     match /test_writes/{docId} {
         allow read, write: if isSignedIn();
     }
+
+    // 4. Login Logs
+    // Any authenticated user can create a log entry for themselves.
+    // Only super admins can read the full log.
+    match /loginLogs/{logId} {
+        allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+        allow list, read: if isSuperAdmin();
+    }
   }
 }
