@@ -34,12 +34,22 @@ class CaspioApiError extends Error {
 async function getCaspioAccessToken(): Promise<string> {
   const { clientId, clientSecret, baseUrl } = CASPIO_CONFIG;
   
+  // Debug logging
+  console.log('🔍 Caspio Debug Info:');
+  console.log('Base URL:', baseUrl);
+  console.log('Client ID exists:', !!clientId);
+  console.log('Client Secret exists:', !!clientSecret);
+  console.log('Client ID length:', clientId?.length || 0);
+  console.log('Client Secret length:', clientSecret?.length || 0);
+  
   if (!clientId || !clientSecret) {
     throw new CaspioApiError('Caspio credentials not configured. Please set CASPIO_CLIENT_ID and CASPIO_CLIENT_SECRET environment variables.');
   }
   
   const tokenUrl = `${baseUrl}/oauth/token`;
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  
+  console.log('🌐 Making OAuth request to:', tokenUrl);
   
   try {
     const response = await fetch(tokenUrl, {
@@ -51,8 +61,11 @@ async function getCaspioAccessToken(): Promise<string> {
       body: 'grant_type=client_credentials',
     });
     
+    console.log('📡 OAuth Response Status:', response.status, response.statusText);
+    
     if (!response.ok) {
       const errorText = await response.text();
+      console.log('❌ OAuth Error Response:', errorText);
       throw new CaspioApiError(
         `Failed to get Caspio access token: ${response.status} ${response.statusText}`,
         response.status,
@@ -63,9 +76,20 @@ async function getCaspioAccessToken(): Promise<string> {
     const tokenData = await response.json();
     return tokenData.access_token;
   } catch (error) {
+    console.log('🚨 OAuth Request Failed:', error);
     if (error instanceof CaspioApiError) {
       throw error;
     }
+    
+    // More detailed network error logging
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      console.log('🌐 Network Error Details:', {
+        message: error.message,
+        name: error.name,
+        stack: error.stack?.substring(0, 200)
+      });
+    }
+    
     throw new CaspioApiError(`Network error getting Caspio token: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
