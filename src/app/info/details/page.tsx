@@ -39,6 +39,33 @@ const infoSections = [
         "When applying for Medi-Cal with Health Net sometimes people are automatically assigned to Molina instead, you will need to call Health Net (800-675-6110) and request to be switched to Health Net.",
     ],
   },
+  {
+    title: 'Expedited Disenrollment from Molina',
+    content: [
+      'If you were randomly assigned to Molina and need to switch to Health Net urgently (especially for SNF residents needing CalAIM transition services), here are three escalation options:',
+    ],
+    list: [
+      <>
+        <strong>1. Request "Expedited Disenrollment" via Health Care Options (HCO)</strong><br />
+        The standard transfer process takes until the first day of the following month (or the month after that if done late in the 30-day cycle). Families should call Health Care Options and explicitly use the phrase "Expedited Disenrollment due to an urgent medical/social need."<br />
+        <strong>Phone:</strong> 1-800-430-4263 (Mon–Fri, 8 a.m. to 6 p.m.)<br />
+        <strong>The Argument:</strong> Explain that the member is currently in a SNF and the plan they were assigned (Molina) cannot provide the specific CalAIM transition services required for a safe discharge to the community, whereas Health Net can.
+      </>,
+      <>
+        <strong>2. Contact the Medi-Cal Managed Care Ombudsman</strong><br />
+        If HCO says they cannot speed up the process, the Medi-Cal Managed Care Ombudsman is the "escalation" office. They have the authority to investigate enrollment errors and can sometimes manually override an assignment if it is preventing a member from receiving necessary care or a safe discharge.<br />
+        <strong>Phone:</strong> 1-888-452-8609<br />
+        <strong>Email:</strong> MMCDOmbudsmanOffice@dhcs.ca.gov<br />
+        <strong>What to say:</strong> "The member was randomly assigned to Molina despite requesting Health Net. This error is preventing access to CalAIM SNF-to-community transition services, effectively keeping the member institutionalized longer than necessary."
+      </>,
+      <>
+        <strong>3. File an "Expedited Grievance" with Molina</strong><br />
+        Since the member is currently assigned to Molina, Molina is technically responsible for their care. You can call Molina's Member Services and file an Expedited Grievance.<br />
+        <strong>The Goal:</strong> Request that Molina either provide the equivalent CalAIM transition services immediately or, if they cannot, that they "concur" with an immediate plan transfer to Health Net.<br />
+        <strong>Note:</strong> If Molina cannot meet the member's needs (i.e., they don't have the specific CalAIM Enhanced Care Management or Community Supports contract), they are legally required to help resolve the access issue.
+      </>,
+    ],
+  },
 ];
 
 
