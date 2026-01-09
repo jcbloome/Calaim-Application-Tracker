@@ -56,7 +56,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Textarea } from '@/components/ui/textarea';
-import { sendApplicationStatusEmail } from '@/app/actions/send-email';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -391,26 +390,38 @@ function AdminActions({ application }: { application: Application }) {
         setIsSending(true);
 
         try {
-            await sendApplicationStatusEmail({
-                to: application.referrerEmail,
-                subject: `Update on CalAIM Application for ${application.memberFirstName} ${application.memberLastName}`,
-                memberName: application.referrerName || 'there',
-                staffName: "The Connections Team",
-                message: notes || 'Your application status has been updated. Please log in to your dashboard for more details.',
-                status: status as any, // Cast because we know it's valid
+            const response = await fetch('/api/email/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    to: application.referrerEmail,
+                    subject: `Update on CalAIM Application for ${application.memberFirstName} ${application.memberLastName}`,
+                    memberName: application.referrerName || 'there',
+                    staffName: "The Connections Team",
+                    message: notes || 'Your application status has been updated. Please log in to your dashboard for more details.',
+                    status: status as any, // Cast because we know it's valid
+                }),
             });
             
-            if (docRef) {
-                 await setDoc(docRef, { status: status, lastUpdated: serverTimestamp() }, { merge: true });
-            }
+            const result = await response.json();
+            
+            if (result.success) {
+                if (docRef) {
+                     await setDoc(docRef, { status: status, lastUpdated: serverTimestamp() }, { merge: true });
+                }
 
-            toast({
-                title: 'Success!',
-                description: `Application status set to "${status}" and an email has been sent.`,
-                className: 'bg-green-100 text-green-900',
-            });
-            setNotes('');
-            setStatus('');
+                toast({
+                    title: 'Success!',
+                    description: `Application status set to "${status}" and an email has been sent.`,
+                    className: 'bg-green-100 text-green-900',
+                });
+                setNotes('');
+                setStatus('');
+            } else {
+                throw new Error(result.message);
+            }
 
         } catch (error: any) {
             toast({

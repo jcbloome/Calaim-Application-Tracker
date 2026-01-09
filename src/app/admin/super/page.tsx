@@ -38,7 +38,6 @@ import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { firebaseConfig } from '@/firebase/config';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
-import { sendApplicationStatusEmail } from '@/app/actions/send-email';
 
 
 interface StaffMember {
@@ -545,19 +544,32 @@ export default function SuperAdminPage() {
         }
         setIsSendingTestEmail(true);
         try {
-            await sendApplicationStatusEmail({
-                to: testEmail,
-                subject: "Resend Integration Test | CalAIM Pathfinder",
-                memberName: "Test User",
-                staffName: "The Admin Team",
-                message: "This is a test email to confirm that the Resend email service is configured correctly.",
-                status: 'In Progress',
+            const response = await fetch('/api/email/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    to: testEmail,
+                    subject: "Resend Integration Test | CalAIM Pathfinder",
+                    memberName: "Test User",
+                    staffName: "The Admin Team",
+                    message: "This is a test email to confirm that the Resend email service is configured correctly.",
+                    status: 'In Progress',
+                }),
             });
-            toast({
-                title: 'Test Email Sent!',
-                description: `An email has been sent to ${testEmail}. Please check your inbox.`,
-                className: 'bg-green-100 text-green-900 border-green-200',
-            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                toast({
+                    title: 'Test Email Sent!',
+                    description: `An email has been sent to ${testEmail}. Please check your inbox.`,
+                    className: 'bg-green-100 text-green-900 border-green-200',
+                });
+            } else {
+                throw new Error(result.message);
+            }
         } catch (error: any) {
              toast({ variant: 'destructive', title: 'Email Send Failed', description: `Could not send test email: ${error.message}` });
         } finally {
