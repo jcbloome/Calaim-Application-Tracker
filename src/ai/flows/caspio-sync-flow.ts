@@ -44,6 +44,7 @@ export async function testCaspioApiConnection(): Promise<CaspioSyncOutput> {
   return caspioSyncFlow({ 
     userId: 'test', 
     applicationId: 'test', 
+    isUpdate: false,
     testConnection: true 
   });
 }
@@ -160,6 +161,7 @@ export async function batchSyncToCaspio(userId: string, applicationIds: string[]
         userId,
         applicationId,
         isUpdate: true, // Assume updates for batch operations
+        testConnection: false
       });
       results.push(result);
       
