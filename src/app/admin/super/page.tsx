@@ -30,6 +30,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format } from 'date-fns';
+import { AuthDebug } from '@/components/AuthDebug';
 
 
 // CLIENT-SIDE LOGIC - Replaces the need for server-side AI flows for UI data.
@@ -767,6 +768,22 @@ export default function SuperAdminPage() {
     }
     
     if (!isSuperAdmin) {
+         return (
+             <div className="container mx-auto p-6">
+                 <Alert variant="destructive" className="mb-6">
+                    <ShieldAlert className="h-4 w-4" />
+                    <AlertTitle>Access Denied</AlertTitle>
+                    <AlertDescription>
+                       This page is restricted to Super Admins. You need to be logged in as jason@carehomefinders.com
+                    </AlertDescription>
+                 </Alert>
+                 <AuthDebug />
+             </div>
+         );
+     }
+
+     // Original access denied (keeping for fallback)
+     if (false) {
          return (
              <Alert variant="destructive">
                 <ShieldAlert className="h-4 w-4" />
