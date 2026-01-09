@@ -764,7 +764,15 @@ export default function SuperAdminPage() {
 
 
     if (isAdminLoading) {
-        return <div className="flex justify-center items-center h-full"><Loader2 className="h-8 w-8 animate-spin"/></div>;
+        return (
+            <div className="container mx-auto p-6">
+                <div className="flex justify-center items-center mb-6">
+                    <Loader2 className="h-8 w-8 animate-spin mr-2"/>
+                    <span>Verifying admin access...</span>
+                </div>
+                <AuthDebug />
+            </div>
+        );
     }
     
     if (!isSuperAdmin) {
