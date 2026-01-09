@@ -1,5 +1,14 @@
-
 # Settings to manage and configure a Firebase App Hosting backend.
 # https://firebase.google.com/docs/app-hosting/configure
 # The run and build commands are not needed for the standard dev server.
 # The environment will default to using the 'dev' script in package.json.
+
+env:
+  - variable: CASPIO_BASE_URL
+    secret: CASPIO_BASE_URL
+  - variable: CASPIO_CLIENT_ID
+    secret: CASPIO_CLIENT_ID
+  - variable: CASPIO_CLIENT_SECRET
+    secret: CASPIO_CLIENT_SECRET
+  - variable: CASPIO_TABLE_NAME
+    secret: CASPIO_TABLE_NAME

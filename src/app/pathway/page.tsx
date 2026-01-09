@@ -26,6 +26,8 @@ import {
   Package,
 } from 'lucide-react';
 import { Header } from '@/components/Header';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
@@ -87,6 +89,7 @@ function PathwayPageContent() {
   const firestore = useFirestore();
   const storage = useStorage();
   const { toast } = useToast();
+  const enhancedToast = useEnhancedToast();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
@@ -177,7 +180,7 @@ function PathwayPageContent() {
           }, { merge: true });
       } catch (e: any) {
           console.error("Failed to update form status:", e);
-          toast({ variant: 'destructive', title: 'Update Error', description: 'Could not update form status.' });
+          enhancedToast.error('Update Error', 'Could not update form status.');
       }
   };
 

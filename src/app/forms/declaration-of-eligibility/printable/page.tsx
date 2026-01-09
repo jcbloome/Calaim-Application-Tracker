@@ -2,34 +2,24 @@
 'use client';
 
 import React from 'react';
-import { ArrowLeft, Printer } from 'lucide-react';
-import Link from 'next/link';
-import { PrintableDeclarationOfEligibilityContent } from './PrintableDeclarationOfEligibilityContent';
-import { Button } from '@/components/ui/button';
+import { PrintableDeclarationForm } from '@/components/forms/PrintableDeclarationForm';
+import { useSearchParams } from 'next/navigation';
 
 export default function PrintableDeclarationOfEligibilityPage() {
+  const searchParams = useSearchParams();
+  const memberName = searchParams.get('memberName') || '';
+  const memberMrn = searchParams.get('memberMrn') || '';
+  const applicationId = searchParams.get('applicationId') || '';
+
   return (
-    <div className="bg-gray-50 min-h-screen flex flex-col print:bg-white">
-      <header className="print:hidden sticky top-0 bg-white/80 backdrop-blur-sm border-b z-10">
-        <div className="container mx-auto py-4 px-4">
-            <div className="flex justify-between items-center">
-                <Button variant="outline" asChild>
-                    <Link href="/forms/printable-package">
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Return to Printable Forms
-                    </Link>
-                </Button>
-                <Button onClick={() => window.print()}>
-                    <Printer className="mr-2 h-4 w-4" />
-                    Print Form
-                </Button>
-            </div>
-        </div>
-      </header>
-      <main className="flex-grow container mx-auto py-8 px-4 print:p-0">
-        <div className="bg-white p-4 sm:p-8 shadow-lg rounded-lg print:shadow-none print:p-4 print:border-none">
-          <PrintableDeclarationOfEligibilityContent />
-        </div>
+    <div className="min-h-screen bg-gray-50 print:bg-white">
+      <main className="container mx-auto py-8 px-4 print:p-0">
+        <PrintableDeclarationForm
+          memberName={memberName}
+          memberMrn={memberMrn}
+          applicationId={applicationId}
+          showPrintButton={true}
+        />
       </main>
     </div>
   );

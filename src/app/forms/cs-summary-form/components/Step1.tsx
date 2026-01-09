@@ -214,7 +214,18 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
-                  <FormDescription>For Health Net use the same Medi-Cal number. For Kaiser this is not the Medi-Cal number but a distinct number oftentimes starting with some zeros.</FormDescription>
+                  <FormDescription className="text-sm text-muted-foreground bg-blue-50 border border-blue-200 rounded-md p-3 mt-2">
+                    <div className="flex items-start gap-2">
+                      <div className="text-blue-600 mt-0.5">💡</div>
+                      <div>
+                        <div className="font-medium text-blue-900 mb-1">MRN Guidelines:</div>
+                        <ul className="text-xs space-y-1">
+                          <li><strong>Health Net:</strong> Use the same Medi-Cal number</li>
+                          <li><strong>Kaiser:</strong> Use their specific MRN (often starts with zeros)</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

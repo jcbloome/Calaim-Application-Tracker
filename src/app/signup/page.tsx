@@ -12,6 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
+import { useEnhancedToast } from '@/components/ui/enhanced-toast';
+import { AccessibleButton } from '@/components/ui/accessible-button';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -37,6 +39,7 @@ export default function SignUpPage() {
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
+  const enhancedToast = useEnhancedToast();
   const { user, isUserLoading } = useUser();
 
   const [email, setEmail] = useState('');

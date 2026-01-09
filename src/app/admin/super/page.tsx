@@ -6,7 +6,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, ShieldCheck, Bell, PlusCircle, Beaker, FileWarning, CheckCircle, Clock } from 'lucide-react';
+import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, ShieldCheck, Bell, PlusCircle, Beaker, FileWarning, CheckCircle, Clock, Database } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp, addDoc, orderBy } from 'firebase/firestore';
@@ -36,7 +36,6 @@ import { format } from 'date-fns';
 import { getAuth, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { firebaseConfig } from '@/firebase/config';
-import { triggerMakeWebhook } from '@/ai/flows/send-to-make-flow';
 import { sendReminderEmails } from '@/ai/flows/manage-reminders';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
@@ -468,22 +467,64 @@ export default function SuperAdminPage() {
         }
     };
 
-    const handleSendWebhookTest = async () => {
+    const handleTestCaspioConnection = async () => {
+        setIsSendingWebhook(true);
+        setWebhookLog(null);
+        try {
+            const response = await fetch('/api/caspio/test');
+            const result = await response.json();
+            
+            if (result.success) {
+                toast({ title: "Caspio Connection Test", description: result.message, className: 'bg-green-100 text-green-900 border-green-200' });
+                setWebhookLog(`✅ Success: ${result.message}\n\nBoth connect_tbl_clients and CalAIM_tbl_Members tables are accessible.`);
+            } else {
+                setWebhookLog(`❌ Failed: ${result.message}`);
+                toast({ variant: 'destructive', title: 'Caspio Connection Failed', description: "See log on page for details." });
+            }
+        } catch (error: any) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            setWebhookLog(`❌ Error: ${errorMessage}`);
+            toast({ variant: 'destructive', title: 'Caspio Connection Error', description: "See log on page for details." });
+        } finally {
+            setIsSendingWebhook(false);
+        }
+    };
+
+    const handleSendCaspioTest = async () => {
         if (!currentUser?.uid) return;
         setIsSendingWebhook(true);
         setWebhookLog(null);
         try {
-            const result = await triggerMakeWebhook(currentUser.uid, { ...sampleApplicationData, userId: currentUser.uid });
+            // Create a test application ID
+            const testAppId = `test_${Date.now()}`;
+            const testData = { 
+                ...sampleApplicationData, 
+                userId: currentUser.uid,
+                id: testAppId,
+                applicationId: testAppId
+            };
+            
+            const response = await fetch('/api/caspio/publish', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(testData),
+            });
+            
+            const result = await response.json();
+            
             if (result.success) {
-                toast({ title: "Webhook Test Sent", description: result.message, className: 'bg-green-100 text-green-900 border-green-200' });
+                toast({ title: "Caspio Test Data Sent", description: result.message, className: 'bg-green-100 text-green-900 border-green-200' });
+                setWebhookLog(`✅ Success: ${result.message}`);
             } else {
-                 setWebhookLog(result.message);
-                 toast({ variant: 'destructive', title: 'Webhook Error', description: "See log on page for details." });
+                setWebhookLog(`❌ Failed: ${result.message}\n\nError Details: ${JSON.stringify(result.error, null, 2)}`);
+                toast({ variant: 'destructive', title: 'Caspio Sync Error', description: "See log on page for details." });
             }
         } catch (error: any) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            setWebhookLog(errorMessage);
-            toast({ variant: 'destructive', title: 'Webhook Error', description: "See log on page for details." });
+            setWebhookLog(`❌ Error: ${errorMessage}`);
+            toast({ variant: 'destructive', title: 'Caspio Sync Error', description: "See log on page for details." });
         } finally {
             setIsSendingWebhook(false);
         }
@@ -862,17 +903,23 @@ export default function SuperAdminPage() {
                         </CardHeader>
                         <CardContent className="space-y-6">
                             <div className="space-y-4">
-                                <h4 className="font-semibold">Make.com Webhook Test</h4>
-                                <p className="text-sm text-muted-foreground">This action sends a pre-defined sample application to the Make.com webhook URL specified in your environment variables.</p>
+                                <h4 className="font-semibold">Caspio Integration</h4>
+                                <p className="text-sm text-muted-foreground">Test connection to Caspio. Use the "Send CS Summary to Caspio" button on individual application pages to publish data.</p>
                                 <AlertDialog>
                                     <AlertDialogTrigger asChild>
-                                        <Button className="w-full" disabled={isSendingWebhook}>
-                                            {isSendingWebhook ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Sending...</> : 'Send Test Data to Make.com'}
-                                        </Button>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <Button variant="outline" className="w-full" disabled={isSendingWebhook} onClick={handleTestCaspioConnection}>
+                                                {isSendingWebhook ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Testing...</> : <><Database className="mr-2 h-4 w-4"/>Test Connection</>}
+                                            </Button>
+                                            <Button className="w-full" disabled variant="secondary">
+                                                <Send className="mr-2 h-4 w-4"/>
+                                                Use Individual App Pages
+                                            </Button>
+                                        </div>
                                     </AlertDialogTrigger>
                                     <AlertDialogContent className="max-w-2xl">
                                         <AlertDialogHeader>
-                                        <AlertDialogTitle>Confirm Webhook Test Data</AlertDialogTitle>
+                                        <AlertDialogTitle>Confirm Caspio Test Data</AlertDialogTitle>
                                         <AlertDialogDescription>
                                             You are about to send the following sample data to your configured Make.com webhook.
                                         </AlertDialogDescription>
@@ -884,8 +931,8 @@ export default function SuperAdminPage() {
                                         </ScrollArea>
                                         <AlertDialogFooter>
                                         <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={handleSendWebhookTest}>
-                                            Send Test
+                                        <AlertDialogAction onClick={handleSendCaspioTest}>
+                                            Send to Caspio
                                         </AlertDialogAction>
                                         </AlertDialogFooter>
                                     </AlertDialogContent>

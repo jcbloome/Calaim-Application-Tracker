@@ -23,6 +23,7 @@ import {
   Send,
   Printer,
   Package,
+  Database,
   X,
   FileText,
   Lock,
@@ -357,6 +358,7 @@ function AdminActions({ application }: { application: Application }) {
     const [notes, setNotes] = useState('');
     const [status, setStatus] = useState<Application['status'] | ''>('');
     const [isSending, setIsSending] = useState(false);
+    const [isSendingToCaspio, setIsSendingToCaspio] = useState(false);
     const { toast } = useToast();
     const router = useRouter();
 
@@ -421,6 +423,60 @@ function AdminActions({ application }: { application: Application }) {
         }
     };
 
+    const sendToCaspio = async () => {
+        setIsSendingToCaspio(true);
+        
+        try {
+            const response = await fetch('/api/caspio/publish', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(application),
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                toast({
+                    title: 'Success!',
+                    description: result.message,
+                    className: 'bg-green-100 text-green-900 border-green-200',
+                });
+                
+                // Update the application to mark it as sent to Caspio
+                if (docRef) {
+                    await setDoc(docRef, { 
+                        caspioSent: true,
+                        caspioSentDate: serverTimestamp(),
+                        lastUpdated: serverTimestamp() 
+                    }, { merge: true });
+                }
+            } else {
+                if (result.isDuplicate) {
+                    toast({
+                        variant: 'destructive',
+                        title: 'Duplicate Record',
+                        description: result.message,
+                    });
+                } else {
+                    toast({
+                        variant: 'destructive',
+                        title: 'Caspio Error',
+                        description: result.message,
+                    });
+                }
+            }
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: `Failed to send to Caspio: ${error.message}`,
+            });
+        } finally {
+            setIsSendingToCaspio(false);
+        }
+    };
 
     return (
         <Dialog>
@@ -429,10 +485,40 @@ function AdminActions({ application }: { application: Application }) {
                     <CardTitle>Admin Actions</CardTitle>
                     <CardDescription>Update status and notify the referrer.</CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-3">
                     <DialogTrigger asChild>
                         <Button variant="outline" className="w-full">Update Status</Button>
                     </DialogTrigger>
+                    
+                    <Button 
+                        onClick={sendToCaspio}
+                        disabled={isSendingToCaspio || (application as any)?.caspioSent}
+                        className="w-full"
+                        variant={(application as any)?.caspioSent ? "secondary" : "default"}
+                    >
+                        {isSendingToCaspio ? (
+                            <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Sending to Caspio...
+                            </>
+                        ) : (application as any)?.caspioSent ? (
+                            <>
+                                <CheckCircle2 className="mr-2 h-4 w-4" />
+                                Sent to Caspio
+                            </>
+                        ) : (
+                            <>
+                                <Database className="mr-2 h-4 w-4" />
+                                Send CS Summary to Caspio
+                            </>
+                        )}
+                    </Button>
+                    
+                    {(application as any)?.caspioSent && (
+                        <p className="text-xs text-muted-foreground text-center">
+                            CS Summary data has been published to Caspio database
+                        </p>
+                    )}
                 </CardContent>
             </Card>
             <DialogContent>

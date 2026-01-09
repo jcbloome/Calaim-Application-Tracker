@@ -21,6 +21,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
+import { useEnhancedToast } from '@/components/ui/enhanced-toast';
+import { AccessibleButton } from '@/components/ui/accessible-button';
 import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -48,6 +50,7 @@ export default function HomePage() {
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
+  const enhancedToast = useEnhancedToast();
   const { user, isUserLoading } = useAdmin();
 
   const [email, setEmail] = useState('');
@@ -88,10 +91,7 @@ export default function HomePage() {
       // Track the login event
       await trackLogin(firestore, userCredential.user, 'User');
       
-      toast({
-        title: 'Successfully signed in!',
-        description: 'Redirecting to your dashboard...',
-      });
+      enhancedToast.success('Successfully signed in!', 'Redirecting to your dashboard...');
     } catch (err) {
       const authError = err as AuthError;
       let errorMessage = 'Invalid email or password. Please try again.';
@@ -165,9 +165,15 @@ export default function HomePage() {
                     <AlertDescription>{error}</AlertDescription>
                 </Alert>
               }
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Signing In...</> : <><LogIn className="mr-2 h-4 w-4" />Sign In</>}
-              </Button>
+              <AccessibleButton 
+                type="submit" 
+                className="w-full" 
+                loading={isLoading}
+                loadingText="Signing In..."
+                icon={<LogIn className="h-4 w-4" />}
+              >
+                Sign In
+              </AccessibleButton>
             </form>
              <div className="mt-4 text-center text-sm">
               Don't have an account?{' '}

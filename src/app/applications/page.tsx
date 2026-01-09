@@ -17,6 +17,8 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Header } from '@/components/Header';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ApplicationListSkeleton } from '@/components/ui/application-skeleton';
 import { useUser, useFirestore, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { collection, doc, Query, Timestamp, writeBatch } from 'firebase/firestore';
 import { format } from 'date-fns';
@@ -246,7 +248,7 @@ export default function MyApplicationsPage() {
   }
 
   return (
-    <>
+    <ErrorBoundary>
       <Header />
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
         <div className="mb-6 space-y-4">
@@ -315,6 +317,6 @@ export default function MyApplicationsPage() {
           />
         </div>
       </main>
-    </>
+    </ErrorBoundary>
   );
 }
