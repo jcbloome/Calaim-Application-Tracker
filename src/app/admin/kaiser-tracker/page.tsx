@@ -10,16 +10,61 @@ import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar }
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
 
-// Simplified status groupings for dashboard overview
-const statusGroups = {
-  starting: ["Pre-T2038, Compiling Docs", "T2038 Requested"],
-  documentation: ["T2038 Received", "T2038 received, Need First Contact", "T2038 received, doc collection", "T2038 email but need auth sheet"],
-  assessment: ["Needs RN Visit", "RN/MSW Scheduled", "RN Visit Complete"],
-  tierLevel: ["Need Tier Level", "Tier Level Requested", "Tier Level Received"],
-  placement: ["Locating RCFEs", "Found RCFE", "R&B Requested", "R&B Signed"],
-  contracting: ["RCFE/ILS for Invoicing", "ILS Contracted (Complete)", "Confirm ILS Contracted"],
-  completed: ["Complete"],
-  issues: ["Tier Level Revision Request", "Tier Level Appeal", "On-Hold", "Non-active"]
+// All Kaiser status steps for comprehensive tracking
+const kaiserSteps = [
+  "Pre-T2038, Compiling Docs",
+  "T2038 Requested",
+  "T2038 Received",
+  "T2038 received, Need First Contact",
+  "T2038 received, doc collection",
+  "Needs RN Visit",
+  "RN/MSW Scheduled",
+  "RN Visit Complete",
+  "Need Tier Level",
+  "Tier Level Requested",
+  "Tier Level Received",
+  "Locating RCFEs",
+  "Found RCFE",
+  "R&B Requested",
+  "R&B Signed",
+  "RCFE/ILS for Invoicing",
+  "ILS Contracted (Complete)",
+  "Confirm ILS Contracted",
+  "Complete",
+  "Tier Level Revision Request",
+  "On-Hold",
+  "Tier Level Appeal",
+  "T2038 email but need auth sheet",
+  "Non-active",
+];
+
+// Status colors for visual identification
+const statusColors: Record<string, string> = {
+  "Pre-T2038, Compiling Docs": "bg-yellow-100 text-yellow-800 border-yellow-200",
+  "T2038 Requested": "bg-yellow-200 text-yellow-900 border-yellow-300",
+  "T2038 Received": "bg-blue-100 text-blue-800 border-blue-200",
+  "T2038 received, Need First Contact": "bg-blue-200 text-blue-900 border-blue-300",
+  "T2038 received, doc collection": "bg-blue-300 text-blue-900 border-blue-400",
+  "Needs RN Visit": "bg-purple-100 text-purple-800 border-purple-200",
+  "RN/MSW Scheduled": "bg-purple-200 text-purple-900 border-purple-300",
+  "RN Visit Complete": "bg-purple-300 text-purple-900 border-purple-400",
+  "Need Tier Level": "bg-indigo-100 text-indigo-800 border-indigo-200",
+  "Tier Level Requested": "bg-indigo-200 text-indigo-900 border-indigo-300",
+  "Tier Level Received": "bg-indigo-300 text-indigo-900 border-indigo-400",
+  "Locating RCFEs": "bg-cyan-100 text-cyan-800 border-cyan-200",
+  "Found RCFE": "bg-cyan-200 text-cyan-900 border-cyan-300",
+  "R&B Requested": "bg-teal-100 text-teal-800 border-teal-200",
+  "R&B Signed": "bg-teal-200 text-teal-900 border-teal-300",
+  "RCFE/ILS for Invoicing": "bg-emerald-100 text-emerald-800 border-emerald-200",
+  "ILS Contracted (Complete)": "bg-green-100 text-green-800 border-green-200",
+  "Confirm ILS Contracted": "bg-green-200 text-green-900 border-green-300",
+  "Complete": "bg-green-300 text-green-900 border-green-400",
+  "Tier Level Revision Request": "bg-red-100 text-red-800 border-red-200",
+  "On-Hold": "bg-orange-100 text-orange-800 border-orange-200",
+  "Tier Level Appeal": "bg-red-200 text-red-900 border-red-300",
+  "T2038 email but need auth sheet": "bg-amber-100 text-amber-800 border-amber-200",
+  "Non-active": "bg-gray-100 text-gray-800 border-gray-200",
+  "Pending": "bg-slate-100 text-slate-800 border-slate-200"
 };
 
 interface KaiserMember {
@@ -65,11 +110,8 @@ const formatDate = (dateString: string): string => {
   });
 };
 
-const getStatusGroup = (status: string): string => {
-  for (const [group, statuses] of Object.entries(statusGroups)) {
-    if (statuses.includes(status)) return group;
-  }
-  return 'other';
+const getStatusColor = (status: string): string => {
+  return statusColors[status] || 'bg-gray-100 text-gray-800 border-gray-200';
 };
 
 export default function KaiserTrackerPage() {
@@ -228,65 +270,67 @@ export default function KaiserTrackerPage() {
         </Card>
       </div>
 
-      {/* Process Stage Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {Object.entries(statusGroups).map(([groupName, statuses]) => {
-          const groupMembers = members.filter(m => statuses.includes(m.Kaiser_Status || ''));
-          const overdueMembers = groupMembers.filter(m => isOverdue(m.next_steps_date));
+      {/* Comprehensive Kaiser Status Breakdown */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
+        {kaiserSteps.map((status) => {
+          const statusMembers = members.filter(m => m.Kaiser_Status === status);
+          const overdueMembers = statusMembers.filter(m => isOverdue(m.next_steps_date));
+          const assignedStaff = [...new Set(statusMembers.map(m => m.kaiser_user_assignment).filter(Boolean))];
           
-          const groupLabels = {
-            starting: 'Starting Process',
-            documentation: 'Documentation',
-            assessment: 'Assessment Phase',
-            tierLevel: 'Tier Level',
-            placement: 'RCFE Placement',
-            contracting: 'Contracting',
-            completed: 'Completed',
-            issues: 'Issues/Appeals'
-          };
-          
-          const groupColors = {
-            starting: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-            documentation: 'bg-blue-100 text-blue-800 border-blue-200',
-            assessment: 'bg-purple-100 text-purple-800 border-purple-200',
-            tierLevel: 'bg-indigo-100 text-indigo-800 border-indigo-200',
-            placement: 'bg-cyan-100 text-cyan-800 border-cyan-200',
-            contracting: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-            completed: 'bg-green-100 text-green-800 border-green-200',
-            issues: 'bg-red-100 text-red-800 border-red-200'
-          };
+          if (statusMembers.length === 0) return null;
           
           return (
-            <Card key={groupName} className={overdueMembers.length > 0 ? 'border-red-300 bg-red-50' : ''}>
+            <Card key={status} className={`${overdueMembers.length > 0 ? 'border-red-300 bg-red-50' : ''} hover:shadow-md transition-shadow`}>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-medium">
-                    {groupLabels[groupName as keyof typeof groupLabels]}
+                  <CardTitle className="text-xs font-medium leading-tight">
+                    {status}
                   </CardTitle>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {overdueMembers.length > 0 && (
-                      <AlertTriangle className="h-4 w-4 text-red-600" />
+                      <AlertTriangle className="h-3 w-3 text-red-600" />
                     )}
-                    <Badge className={groupColors[groupName as keyof typeof groupColors]}>
-                      {groupMembers.length}
+                    <Badge className={getStatusColor(status)} variant="outline">
+                      {statusMembers.length}
                     </Badge>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-0">
+                {/* Overdue Alert */}
                 {overdueMembers.length > 0 && (
-                  <div className="text-xs text-red-600 font-medium mb-2">
+                  <div className="text-xs text-red-600 font-medium mb-2 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />
                     {overdueMembers.length} overdue
                   </div>
                 )}
-                <div className="text-xs text-muted-foreground">
-                  {groupMembers.length > 0 ? (
-                    `${[...new Set(groupMembers.map(m => m.kaiser_user_assignment || 'Unassigned'))].slice(0, 2).join(', ')}${
-                      [...new Set(groupMembers.map(m => m.kaiser_user_assignment || 'Unassigned'))].length > 2 ? '...' : ''
-                    }`
+                
+                {/* Staff Assignments */}
+                <div className="text-xs text-muted-foreground mb-2">
+                  <div className="font-medium">Staff:</div>
+                  {assignedStaff.length > 0 ? (
+                    <div>{assignedStaff.slice(0, 2).join(', ')}{assignedStaff.length > 2 ? '...' : ''}</div>
                   ) : (
-                    'No members'
+                    <div className="text-orange-600">Unassigned ({statusMembers.filter(m => !m.kaiser_user_assignment).length})</div>
                   )}
+                </div>
+                
+                {/* Member List Preview */}
+                <div className="text-xs text-muted-foreground">
+                  <div className="font-medium">Members:</div>
+                  <div className="space-y-1">
+                    {statusMembers.slice(0, 3).map((member, idx) => (
+                      <div key={idx} className="flex items-center justify-between">
+                        <span className="truncate">{member.memberFirstName} {member.memberLastName}</span>
+                        {isOverdue(member.next_steps_date) && (
+                          <AlertTriangle className="h-2 w-2 text-red-500 ml-1" />
+                        )}
+                      </div>
+                    ))}
+                    {statusMembers.length > 3 && (
+                      <div className="text-gray-500">+{statusMembers.length - 3} more</div>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -321,7 +365,7 @@ export default function KaiserTrackerPage() {
                     <TableHead>Kaiser Status</TableHead>
                     <TableHead>CalAIM Status</TableHead>
                     <TableHead>Assignment</TableHead>
-                    <TableHead>Stage</TableHead>
+                    <TableHead>Kaiser Status</TableHead>
                     <TableHead>Due Date</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -370,8 +414,11 @@ export default function KaiserTrackerPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {getStatusGroup(member.Kaiser_Status || 'Pending')}
+                        <Badge className={getStatusColor(member.Kaiser_Status || 'Pending')} variant="outline">
+                          <div className="flex items-center gap-1">
+                            {getStatusIcon(member.Kaiser_Status || 'Pending')}
+                            <span className="text-xs">{member.Kaiser_Status || 'Pending'}</span>
+                          </div>
                         </Badge>
                       </TableCell>
                       <TableCell>
