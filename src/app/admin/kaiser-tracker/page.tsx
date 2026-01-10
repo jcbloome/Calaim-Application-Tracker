@@ -138,56 +138,70 @@ const getDaysOverdue = (dateString: string): number => {
     return sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
   };
 
-  // Sort members based on current sort settings
-  const sortedMembers = [...members].sort((a, b) => {
-    if (!sortField) return 0;
-    
-    let aValue = '';
-    let bValue = '';
-    
-    switch (sortField) {
-      case 'name':
-        aValue = `${a.memberFirstName} ${a.memberLastName}`.toLowerCase();
-        bValue = `${b.memberFirstName} ${b.memberLastName}`.toLowerCase();
-        break;
-      case 'mrn':
-        aValue = a.memberMrn || '';
-        bValue = b.memberMrn || '';
-        break;
-      case 'county':
-        aValue = a.memberCounty || '';
-        bValue = b.memberCounty || '';
-        break;
-      case 'pathway':
-        aValue = a.pathway || '';
-        bValue = b.pathway || '';
-        break;
-      case 'kaiser_status':
-        aValue = a.Kaiser_Status || '';
-        bValue = b.Kaiser_Status || '';
-        break;
-      case 'calaim_status':
-        aValue = a.CalAIM_Status || '';
-        bValue = b.CalAIM_Status || '';
-        break;
-      case 'assignment':
-        aValue = a.kaiser_user_assignment || '';
-        bValue = b.kaiser_user_assignment || '';
-        break;
-      case 'due_date':
-        aValue = a.next_steps_date || '9999-12-31';
-        bValue = b.next_steps_date || '9999-12-31';
-        break;
-      default:
-        return 0;
+  // Sort members based on current sort settings with error handling
+  const sortedMembers = useMemo(() => {
+    try {
+      if (!members || members.length === 0) return [];
+      
+      return [...members].sort((a, b) => {
+        if (!sortField) return 0;
+        
+        let aValue = '';
+        let bValue = '';
+        
+        try {
+          switch (sortField) {
+            case 'name':
+              aValue = `${a?.memberFirstName || ''} ${a?.memberLastName || ''}`.toLowerCase();
+              bValue = `${b?.memberFirstName || ''} ${b?.memberLastName || ''}`.toLowerCase();
+              break;
+            case 'mrn':
+              aValue = a?.memberMrn || '';
+              bValue = b?.memberMrn || '';
+              break;
+            case 'county':
+              aValue = a?.memberCounty || '';
+              bValue = b?.memberCounty || '';
+              break;
+            case 'pathway':
+              aValue = a?.pathway || '';
+              bValue = b?.pathway || '';
+              break;
+            case 'kaiser_status':
+              aValue = a?.Kaiser_Status || '';
+              bValue = b?.Kaiser_Status || '';
+              break;
+            case 'calaim_status':
+              aValue = a?.CalAIM_Status || '';
+              bValue = b?.CalAIM_Status || '';
+              break;
+            case 'assignment':
+              aValue = a?.kaiser_user_assignment || '';
+              bValue = b?.kaiser_user_assignment || '';
+              break;
+            case 'due_date':
+              aValue = a?.next_steps_date || '9999-12-31';
+              bValue = b?.next_steps_date || '9999-12-31';
+              break;
+            default:
+              return 0;
+          }
+          
+          if (sortDirection === 'asc') {
+            return aValue.localeCompare(bValue);
+          } else {
+            return bValue.localeCompare(aValue);
+          }
+        } catch (error) {
+          console.error('Error sorting individual items:', error);
+          return 0;
+        }
+      });
+    } catch (error) {
+      console.error('Error sorting members:', error);
+      return members || [];
     }
-    
-    if (sortDirection === 'asc') {
-      return aValue.localeCompare(bValue);
-    } else {
-      return bValue.localeCompare(aValue);
-    }
-  });
+  }, [members, sortField, sortDirection]);
 
   // Generate ILS Weekly Report
   const generateILSReport = () => {
@@ -284,10 +298,30 @@ export default function KaiserTrackerPage() {
       const data = result.data as any;
       
       if (data.success) {
-        setMembers(data.members || []);
+        // Ensure members is an array and has proper structure
+        const membersData = Array.isArray(data.members) ? data.members : [];
+        
+        // Validate and clean member data
+        const cleanMembers = membersData.map((member: any, index: number) => ({
+          id: member?.id || `member-${index}`,
+          memberFirstName: member?.memberFirstName || '',
+          memberLastName: member?.memberLastName || '',
+          memberMediCalNum: member?.memberMediCalNum || '',
+          memberMrn: member?.memberMrn || '',
+          memberCounty: member?.memberCounty || '',
+          client_ID2: member?.client_ID2 || '',
+          Kaiser_Status: member?.Kaiser_Status || 'Pending',
+          CalAIM_Status: member?.CalAIM_Status || 'Pending',
+          kaiser_user_assignment: member?.kaiser_user_assignment || '',
+          pathway: member?.pathway || '',
+          next_steps_date: member?.next_steps_date || '',
+          source: member?.source || 'caspio'
+        }));
+        
+        setMembers(cleanMembers);
         toast({
           title: 'Success!',
-          description: `Loaded ${data.total || data.members?.length || 0} Kaiser members from Caspio`,
+          description: `Loaded ${cleanMembers.length} Kaiser members from Caspio`,
           className: 'bg-green-100 text-green-900 border-green-200',
         });
       } else {
@@ -421,16 +455,21 @@ export default function KaiserTrackerPage() {
           <CardContent>
             <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
               {kaiserSteps.map((status) => {
-                const count = members.filter(m => m.Kaiser_Status === status).length;
-                if (count === 0) return null;
-                return (
-                  <div key={status} className="flex items-center justify-between text-xs p-2 rounded border">
-                    <span className="truncate pr-2" title={status}>{status}</span>
-                    <Badge variant="outline" className="text-xs">
-                      {count}
-                    </Badge>
-                  </div>
-                );
+                try {
+                  const count = members?.filter(m => m?.Kaiser_Status === status)?.length || 0;
+                  if (count === 0) return null;
+                  return (
+                    <div key={status} className="flex items-center justify-between text-xs p-2 rounded border">
+                      <span className="truncate pr-2" title={status}>{status}</span>
+                      <Badge variant="outline" className="text-xs">
+                        {count}
+                      </Badge>
+                    </div>
+                  );
+                } catch (error) {
+                  console.error('Error rendering status card:', error);
+                  return null;
+                }
               })}
             </div>
             <div className="mt-4 pt-4 border-t">
@@ -455,27 +494,32 @@ export default function KaiserTrackerPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2 max-h-64 overflow-y-auto">
-              {[...new Set(members.map(m => m.memberCounty).filter(Boolean))]
+              {[...new Set((members || []).map(m => m?.memberCounty).filter(Boolean))]
                 .sort()
                 .map((county) => {
-                  const count = members.filter(m => m.memberCounty === county).length;
-                  const overdue = members.filter(m => m.memberCounty === county && isOverdue(m.next_steps_date)).length;
-                  return (
-                    <div key={county} className="flex items-center justify-between text-sm p-2 rounded border">
-                      <div className="flex flex-col">
-                        <span className="font-medium">{county}</span>
-                        {overdue > 0 && (
-                          <span className="text-xs text-red-600 flex items-center gap-1">
-                            <AlertTriangle className="h-3 w-3" />
-                            {overdue} overdue
-                          </span>
-                        )}
+                  try {
+                    const count = (members || []).filter(m => m?.memberCounty === county).length;
+                    const overdue = (members || []).filter(m => m?.memberCounty === county && isOverdue(m?.next_steps_date)).length;
+                    return (
+                      <div key={county} className="flex items-center justify-between text-sm p-2 rounded border">
+                        <div className="flex flex-col">
+                          <span className="font-medium">{county}</span>
+                          {overdue > 0 && (
+                            <span className="text-xs text-red-600 flex items-center gap-1">
+                              <AlertTriangle className="h-3 w-3" />
+                              {overdue} overdue
+                            </span>
+                          )}
+                        </div>
+                        <Badge variant="outline">
+                          {count}
+                        </Badge>
                       </div>
-                      <Badge variant="outline">
-                        {count}
-                      </Badge>
-                    </div>
-                  );
+                    );
+                  } catch (error) {
+                    console.error('Error rendering county card:', error);
+                    return null;
+                  }
                 })}
               {members.filter(m => !m.memberCounty).length > 0 && (
                 <div className="flex items-center justify-between text-sm p-2 rounded border">

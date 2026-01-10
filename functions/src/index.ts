@@ -457,11 +457,15 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
         Kaiser_Status: kaiserMembers[0].Kaiser_Status,
         Kaiser_User_Assignment: kaiserMembers[0].Kaiser_User_Assignment,
         CalAIM_MCP: kaiserMembers[0].CalAIM_MCP,
-        client_ID2: kaiserMembers[0].client_ID2
+        client_ID2: kaiserMembers[0].client_ID2,
+        Client_ID2: kaiserMembers[0].Client_ID2,
+        CLIENT_ID2: kaiserMembers[0].CLIENT_ID2,
+        clientID2: kaiserMembers[0].clientID2,
+        ClientID2: kaiserMembers[0].ClientID2
       });
     }
     
-    const transformedMembers = kaiserMembers.map((member: any) => ({
+    const transformedMembers = kaiserMembers.map((member: any, index: number) => ({
       // Basic info using EXACT Caspio field names
       memberFirstName: member.Senior_First || '',
       memberLastName: member.Senior_Last || '',
@@ -469,8 +473,8 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
       memberMrn: member.MCP_CIN || '', // MCP_CIN is MRN for Kaiser
       memberCounty: member.Member_County || '',
       
-      // Key linking field
-      client_ID2: member.client_ID2 || '',
+      // Key linking field - try multiple possible field names
+      client_ID2: member.client_ID2 || member.Client_ID2 || member.CLIENT_ID2 || member.clientID2 || member.ClientID2 || '',
       
       // Kaiser specific fields
       MCP_CIN: member.MCP_CIN || '',
@@ -491,8 +495,11 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
       last_updated: member.LastUpdated || member.last_updated || '',
       
       // Caspio record info
-      caspio_id: member.client_ID2 || member.id || '',
-      source: 'caspio'
+      caspio_id: member.client_ID2 || member.Client_ID2 || member.CLIENT_ID2 || member.clientID2 || member.ClientID2 || member.id || `caspio-${index}`,
+      source: 'caspio',
+      
+      // Generate unique ID for frontend
+      id: member.client_ID2 || member.Client_ID2 || member.CLIENT_ID2 || member.clientID2 || member.ClientID2 || `caspio-${index}`
     }));
     
     return {
