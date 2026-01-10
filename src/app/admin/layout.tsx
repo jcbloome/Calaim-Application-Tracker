@@ -18,6 +18,7 @@ import {
   ShieldAlert,
   Kanban,
   ClipboardList,
+  Heart,
   Printer,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -48,6 +49,7 @@ const adminNavLinks = [
   { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
   { href: '/admin/my-tasks', label: 'My Tasks', icon: ClipboardList },
   { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
+  { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
   { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
 ];
 

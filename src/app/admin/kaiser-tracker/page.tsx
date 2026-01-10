@@ -1,0 +1,444 @@
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
+import { useAdmin } from '@/hooks/use-admin';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Calendar, User, MapPin, Clock, AlertCircle, CheckCircle, XCircle, Filter } from 'lucide-react';
+import { useCollection, useFirestore } from '@/firebase';
+import { collection, query, where, orderBy } from 'firebase/firestore';
+
+interface KaiserMember {
+  id: string;
+  memberFirstName: string;
+  memberLastName: string;
+  memberMediCalNum: string;
+  memberMrn?: string;
+  memberCounty: string;
+  healthPlan: string;
+  
+  // Kaiser specific fields
+  MCP_CIN?: string;
+  CalAIM_MCP?: string;
+  Kaiser_Status?: 'Pending' | 'Authorized' | 'Denied' | 'In Review' | 'Submitted';
+  CalAIM_Status?: 'Authorized' | 'Not Authorized' | 'Pending' | 'Under Review';
+  kaiser_user_assignment?: string;
+  
+  // Next steps tracking
+  next_steps?: string;
+  next_steps_date?: string;
+  last_updated?: string;
+  
+  // Application info
+  status: string;
+  pathway: string;
+  createdAt: any;
+}
+
+const statusColors = {
+  'Pending': 'bg-yellow-100 text-yellow-800',
+  'Authorized': 'bg-green-100 text-green-800',
+  'Denied': 'bg-red-100 text-red-800',
+  'In Review': 'bg-blue-100 text-blue-800',
+  'Submitted': 'bg-purple-100 text-purple-800',
+  'Not Authorized': 'bg-red-100 text-red-800',
+  'Under Review': 'bg-orange-100 text-orange-800'
+};
+
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case 'Authorized': return <CheckCircle className="h-4 w-4" />;
+    case 'Denied': case 'Not Authorized': return <XCircle className="h-4 w-4" />;
+    case 'Pending': case 'Under Review': case 'In Review': return <Clock className="h-4 w-4" />;
+    default: return <AlertCircle className="h-4 w-4" />;
+  }
+};
+
+const getNextSteps = (member: KaiserMember) => {
+  if (member.next_steps) return member.next_steps;
+  
+  // Auto-generate next steps based on status
+  switch (member.Kaiser_Status) {
+    case 'Pending':
+      return 'Submit initial Kaiser application';
+    case 'Submitted':
+      return 'Follow up on application status';
+    case 'In Review':
+      return 'Await Kaiser review decision';
+    case 'Authorized':
+      return member.CalAIM_Status === 'Authorized' ? 'Complete enrollment process' : 'Obtain CalAIM authorization';
+    case 'Denied':
+      return 'Review denial reason and consider appeal';
+    default:
+      return 'Update Kaiser status';
+  }
+};
+
+const isOverdue = (dateString?: string) => {
+  if (!dateString) return false;
+  const dueDate = new Date(dateString);
+  const today = new Date();
+  return dueDate < today;
+};
+
+export default function KaiserTrackerPage() {
+  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+  const db = useFirestore();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [countyFilter, setCountyFilter] = useState<string>('all');
+  const [assignmentFilter, setAssignmentFilter] = useState<string>('all');
+  const [activeTab, setActiveTab] = useState('all');
+
+  // Query Kaiser members (members with Kaiser health plan)
+  const kaiserQuery = useMemo(() => {
+    if (!db) return null;
+    return query(
+      collection(db, 'applications'),
+      where('healthPlan', '==', 'Kaiser'),
+      orderBy('createdAt', 'desc')
+    );
+  }, [db]);
+
+  const { data: applications, loading, error } = useCollection(kaiserQuery);
+
+  const kaiserMembers: KaiserMember[] = useMemo(() => {
+    if (!applications) return [];
+    
+    return applications.map(app => ({
+      id: app.id,
+      memberFirstName: app.memberFirstName || '',
+      memberLastName: app.memberLastName || '',
+      memberMediCalNum: app.memberMediCalNum || '',
+      memberMrn: app.memberMrn,
+      memberCounty: app.memberCounty || '',
+      healthPlan: app.healthPlan || '',
+      
+      // Kaiser specific fields (these would come from Caspio sync or manual entry)
+      MCP_CIN: app.MCP_CIN,
+      CalAIM_MCP: app.CalAIM_MCP,
+      Kaiser_Status: app.Kaiser_Status || 'Pending',
+      CalAIM_Status: app.CalAIM_Status || 'Pending',
+      kaiser_user_assignment: app.kaiser_user_assignment,
+      
+      // Next steps
+      next_steps: app.next_steps,
+      next_steps_date: app.next_steps_date,
+      last_updated: app.lastUpdated,
+      
+      // Application info
+      status: app.status || '',
+      pathway: app.pathway || '',
+      createdAt: app.createdAt
+    }));
+  }, [applications]);
+
+  // Filter members based on search and filters
+  const filteredMembers = useMemo(() => {
+    return kaiserMembers.filter(member => {
+      const matchesSearch = searchTerm === '' || 
+        `${member.memberFirstName} ${member.memberLastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        member.memberMediCalNum.includes(searchTerm) ||
+        (member.memberMrn && member.memberMrn.toLowerCase().includes(searchTerm.toLowerCase()));
+      
+      const matchesStatus = statusFilter === 'all' || member.Kaiser_Status === statusFilter;
+      const matchesCounty = countyFilter === 'all' || member.memberCounty === countyFilter;
+      const matchesAssignment = assignmentFilter === 'all' || member.kaiser_user_assignment === assignmentFilter;
+      
+      return matchesSearch && matchesStatus && matchesCounty && matchesAssignment;
+    });
+  }, [kaiserMembers, searchTerm, statusFilter, countyFilter, assignmentFilter]);
+
+  // Group members by status for tabs
+  const membersByStatus = useMemo(() => {
+    const groups = {
+      all: filteredMembers,
+      pending: filteredMembers.filter(m => m.Kaiser_Status === 'Pending'),
+      submitted: filteredMembers.filter(m => m.Kaiser_Status === 'Submitted'),
+      inReview: filteredMembers.filter(m => m.Kaiser_Status === 'In Review'),
+      authorized: filteredMembers.filter(m => m.Kaiser_Status === 'Authorized'),
+      denied: filteredMembers.filter(m => m.Kaiser_Status === 'Denied'),
+      overdue: filteredMembers.filter(m => isOverdue(m.next_steps_date))
+    };
+    return groups;
+  }, [filteredMembers]);
+
+  // Get unique values for filters
+  const uniqueCounties = useMemo(() => 
+    [...new Set(kaiserMembers.map(m => m.memberCounty).filter(Boolean))].sort(),
+    [kaiserMembers]
+  );
+
+  const uniqueAssignments = useMemo(() => 
+    [...new Set(kaiserMembers.map(m => m.kaiser_user_assignment).filter(Boolean))].sort(),
+    [kaiserMembers]
+  );
+
+  if (isAdminLoading) {
+    return <div className="flex items-center justify-center h-64">Loading...</div>;
+  }
+
+  if (!isAdmin) {
+    return <div className="flex items-center justify-center h-64">Access denied. Admin privileges required.</div>;
+  }
+
+  return (
+    <div className="container mx-auto p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Kaiser Tracker</h1>
+          <p className="text-muted-foreground">Comprehensive tracking for Kaiser CalAIM members</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-lg px-3 py-1">
+            {kaiserMembers.length} Total Members
+          </Badge>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Pending</CardTitle>
+            <Clock className="h-4 w-4 text-yellow-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{membersByStatus.pending.length}</div>
+            <p className="text-xs text-muted-foreground">Awaiting submission</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">In Review</CardTitle>
+            <AlertCircle className="h-4 w-4 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{membersByStatus.inReview.length}</div>
+            <p className="text-xs text-muted-foreground">Under Kaiser review</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Authorized</CardTitle>
+            <CheckCircle className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{membersByStatus.authorized.length}</div>
+            <p className="text-xs text-muted-foreground">Kaiser approved</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Overdue</CardTitle>
+            <XCircle className="h-4 w-4 text-red-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{membersByStatus.overdue.length}</div>
+            <p className="text-xs text-muted-foreground">Past due date</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filters
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">Search</label>
+              <Input
+                placeholder="Name, Medi-Cal #, MRN..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium mb-2 block">Kaiser Status</label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="Pending">Pending</SelectItem>
+                  <SelectItem value="Submitted">Submitted</SelectItem>
+                  <SelectItem value="In Review">In Review</SelectItem>
+                  <SelectItem value="Authorized">Authorized</SelectItem>
+                  <SelectItem value="Denied">Denied</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-2 block">County</label>
+              <Select value={countyFilter} onValueChange={setCountyFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All counties" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Counties</SelectItem>
+                  {uniqueCounties.map(county => (
+                    <SelectItem key={county} value={county}>{county}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-2 block">Assignment</label>
+              <Select value={assignmentFilter} onValueChange={setAssignmentFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All assignments" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Assignments</SelectItem>
+                  {uniqueAssignments.map(assignment => (
+                    <SelectItem key={assignment} value={assignment}>{assignment}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Member Table with Tabs */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Kaiser Members</CardTitle>
+          <CardDescription>
+            Comprehensive tracking of all Kaiser CalAIM members
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid w-full grid-cols-7">
+              <TabsTrigger value="all">All ({membersByStatus.all.length})</TabsTrigger>
+              <TabsTrigger value="pending">Pending ({membersByStatus.pending.length})</TabsTrigger>
+              <TabsTrigger value="submitted">Submitted ({membersByStatus.submitted.length})</TabsTrigger>
+              <TabsTrigger value="inReview">In Review ({membersByStatus.inReview.length})</TabsTrigger>
+              <TabsTrigger value="authorized">Authorized ({membersByStatus.authorized.length})</TabsTrigger>
+              <TabsTrigger value="denied">Denied ({membersByStatus.denied.length})</TabsTrigger>
+              <TabsTrigger value="overdue" className="text-red-600">Overdue ({membersByStatus.overdue.length})</TabsTrigger>
+            </TabsList>
+
+            {Object.entries(membersByStatus).map(([key, members]) => (
+              <TabsContent key={key} value={key}>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Member</TableHead>
+                        <TableHead>Medi-Cal #</TableHead>
+                        <TableHead>MRN</TableHead>
+                        <TableHead>County</TableHead>
+                        <TableHead>Kaiser Status</TableHead>
+                        <TableHead>CalAIM Status</TableHead>
+                        <TableHead>Assignment</TableHead>
+                        <TableHead>Next Steps</TableHead>
+                        <TableHead>Due Date</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {members.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                            No members found matching the current filters.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        members.map((member) => (
+                          <TableRow key={member.id}>
+                            <TableCell>
+                              <div className="font-medium">
+                                {member.memberFirstName} {member.memberLastName}
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">
+                              {member.memberMediCalNum}
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">
+                              {member.memberMrn || '-'}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                {member.memberCounty}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={statusColors[member.Kaiser_Status || 'Pending']}>
+                                <div className="flex items-center gap-1">
+                                  {getStatusIcon(member.Kaiser_Status || 'Pending')}
+                                  {member.Kaiser_Status || 'Pending'}
+                                </div>
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={statusColors[member.CalAIM_Status || 'Pending']}>
+                                <div className="flex items-center gap-1">
+                                  {getStatusIcon(member.CalAIM_Status || 'Pending')}
+                                  {member.CalAIM_Status || 'Pending'}
+                                </div>
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <User className="h-3 w-3" />
+                                {member.kaiser_user_assignment || 'Unassigned'}
+                              </div>
+                            </TableCell>
+                            <TableCell className="max-w-xs">
+                              <div className="text-sm truncate">
+                                {getNextSteps(member)}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {member.next_steps_date ? (
+                                <div className={`flex items-center gap-1 text-sm ${isOverdue(member.next_steps_date) ? 'text-red-600' : ''}`}>
+                                  <Calendar className="h-3 w-3" />
+                                  {new Date(member.next_steps_date).toLocaleDateString()}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Button size="sm" variant="outline" asChild>
+                                  <a href={`/admin/applications/${member.id}`}>
+                                    View
+                                  </a>
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </TabsContent>
+            ))}
+          </Tabs>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
