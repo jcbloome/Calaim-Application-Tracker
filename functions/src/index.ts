@@ -13,6 +13,12 @@ export {
   getCalAIMFolderStructure 
 } from './google-drive-search';
 
+// Export intelligent name matching functions
+export {
+  matchDriveFoldersWithCaspio,
+  autoImportHighConfidenceMatches
+} from './intelligent-name-matching';
+
 // Export Smart Sync and Duplicate Prevention functions
 export { checkSyncStatus, performManualSync, checkForDuplicateClients, resolveDuplicateClients } from './smart-sync';
 

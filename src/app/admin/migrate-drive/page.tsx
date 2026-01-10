@@ -13,6 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import ClientIDFileFinder from '@/components/ClientIDFileFinder';
+import IntelligentNameMatcher from '@/components/IntelligentNameMatcher';
 import {
   Table,
   TableBody,
@@ -440,6 +441,9 @@ export default function MigrateDrivePage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Intelligent Name Matching */}
+      <IntelligentNameMatcher />
 
       {/* ClientID File Finder */}
       <ClientIDFileFinder />
