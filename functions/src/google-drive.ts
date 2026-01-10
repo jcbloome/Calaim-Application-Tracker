@@ -1,8 +1,15 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
 
+// Define secrets for Google Drive API
+const googleDriveClientId = defineSecret("GOOGLE_DRIVE_CLIENT_ID");
+const googleDriveClientSecret = defineSecret("GOOGLE_DRIVE_CLIENT_SECRET");
+
 // Google Drive Migration Functions
-export const authenticateGoogleDrive = onCall(async (request) => {
+export const authenticateGoogleDrive = onCall({
+  secrets: [googleDriveClientId, googleDriveClientSecret]
+}, async (request) => {
   try {
     // Verify user is authenticated and authorized
     if (!request.auth) {
@@ -27,7 +34,9 @@ export const authenticateGoogleDrive = onCall(async (request) => {
   }
 });
 
-export const scanCalAIMDriveFolders = onCall(async (request) => {
+export const scanCalAIMDriveFolders = onCall({
+  secrets: [googleDriveClientId, googleDriveClientSecret]
+}, async (request) => {
   try {
     // Verify user is authenticated and authorized
     if (!request.auth) {
@@ -123,7 +132,9 @@ export const scanCalAIMDriveFolders = onCall(async (request) => {
   }
 });
 
-export const migrateDriveFoldersToFirebase = onCall(async (request) => {
+export const migrateDriveFoldersToFirebase = onCall({
+  secrets: [googleDriveClientId, googleDriveClientSecret]
+}, async (request) => {
   try {
     const { folders } = request.data;
     
