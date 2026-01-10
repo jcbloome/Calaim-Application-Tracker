@@ -423,9 +423,22 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
     
     console.log(`✅ Successfully fetched ALL members: ${allMembers.length} total records`);
     
-    // Filter for Kaiser members using CalAIM_MCP field
+    // Debug: Check CalAIM_MCP values in first 10 members
+    console.log('🔍 CalAIM_MCP values in first 10 members:', 
+      allMembers.slice(0, 10).map(m => ({ 
+        CalAIM_MCP: m.CalAIM_MCP, 
+        CalAIM_MCO: m.CalAIM_MCO,
+        HealthPlan: m.HealthPlan,
+        Kaiser_Status: m.Kaiser_Status 
+      }))
+    );
+    
+    // Filter for Kaiser members using multiple possible field names
     const kaiserMembers = allMembers.filter(member => 
-      member.CalAIM_MCP === 'Kaiser'
+      member.CalAIM_MCP === 'Kaiser' || 
+      member.CalAIM_MCO === 'Kaiser' ||
+      member.HealthPlan === 'Kaiser' ||
+      member.Kaiser_Status // Any member with a Kaiser status
     );
     
     console.log(`🏥 Filtered to Kaiser members: ${kaiserMembers.length} out of ${allMembers.length} total`);
