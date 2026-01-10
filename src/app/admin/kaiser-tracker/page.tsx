@@ -80,6 +80,8 @@ interface KaiserMember {
   kaiser_user_assignment: string;
   pathway: string;
   next_steps_date: string;
+  t2038_requested_date?: string;
+  tier_requested_date?: string;
   source: string;
 }
 
@@ -216,59 +218,173 @@ export default function KaiserTrackerPage() {
     }
   }, [members, sortField, sortDirection]);
 
-  // Generate ILS Weekly Report
+  // Generate ILS Weekly Report as PDF
   const generateILSReport = () => {
     try {
       const bottleneckStatuses = [
         "T2038 Requested",
         "Tier Level Requested", 
-        "RCFE/ILS for Invoicing"
+        "RCFE/ILS for Contracting"
       ];
       
       const bottleneckMembers = members.filter(member => 
         bottleneckStatuses.includes(member.Kaiser_Status || '')
       );
       
-      const csvHeaders = [
-        'Member Name',
-        'MRN (MCP_CIN)',
-        'Kaiser Status',
-        'Staff Assignment',
-        'Next Step Date',
-        'County',
-        'Client ID2'
-      ];
+      // Create HTML content for PDF
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>ILS Weekly Report - ${new Date().toLocaleDateString()}</title>
+          <style>
+            body { 
+              font-family: Arial, sans-serif; 
+              margin: 20px; 
+              font-size: 12px;
+            }
+            .header { 
+              text-align: center; 
+              margin-bottom: 30px; 
+              border-bottom: 2px solid #333;
+              padding-bottom: 10px;
+            }
+            .header h1 { 
+              color: #333; 
+              margin: 0;
+              font-size: 18px;
+            }
+            .header p { 
+              color: #666; 
+              margin: 5px 0 0 0;
+              font-size: 12px;
+            }
+            table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin-top: 20px;
+            }
+            th, td { 
+              border: 1px solid #ddd; 
+              padding: 8px; 
+              text-align: left;
+              font-size: 11px;
+            }
+            th { 
+              background-color: #f5f5f5; 
+              font-weight: bold;
+              color: #333;
+            }
+            .status-t2038 { background-color: #fef3c7; }
+            .status-tier { background-color: #dbeafe; }
+            .status-rcfe { background-color: #d1fae5; }
+            .summary { 
+              margin-top: 20px; 
+              padding: 15px; 
+              background-color: #f9f9f9; 
+              border-radius: 5px;
+            }
+            .summary h3 { 
+              margin: 0 0 10px 0; 
+              color: #333;
+              font-size: 14px;
+            }
+            .summary-item { 
+              margin: 5px 0; 
+              font-size: 12px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Independent Living Systems (ILS) Weekly Report</h1>
+            <p>Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
+            <p>Kaiser Members at Critical Bottleneck Stages</p>
+          </div>
+          
+          <div class="summary">
+            <h3>Summary</h3>
+            <div class="summary-item"><strong>Total Members in Report:</strong> ${bottleneckMembers.length}</div>
+            <div class="summary-item"><strong>T2038 Requested:</strong> ${bottleneckMembers.filter(m => m.Kaiser_Status === 'T2038 Requested').length}</div>
+            <div class="summary-item"><strong>Tier Level Requested:</strong> ${bottleneckMembers.filter(m => m.Kaiser_Status === 'Tier Level Requested').length}</div>
+            <div class="summary-item"><strong>RCFE/ILS for Contracting:</strong> ${bottleneckMembers.filter(m => m.Kaiser_Status === 'RCFE/ILS for Contracting').length}</div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Member Name</th>
+                <th>MRN</th>
+                <th>Kaiser Status</th>
+                <th>T2038 Requested Date</th>
+                <th>Tier Requested Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${bottleneckMembers.map(member => {
+                const statusClass = 
+                  member.Kaiser_Status === 'T2038 Requested' ? 'status-t2038' :
+                  member.Kaiser_Status === 'Tier Level Requested' ? 'status-tier' :
+                  member.Kaiser_Status === 'RCFE/ILS for Contracting' ? 'status-rcfe' : '';
+                
+                return `
+                  <tr class="${statusClass}">
+                    <td><strong>${member.memberFirstName} ${member.memberLastName}</strong></td>
+                    <td>${member.memberMrn || 'N/A'}</td>
+                    <td>${member.Kaiser_Status || 'N/A'}</td>
+                    <td>${member.t2038_requested_date ? formatDate(member.t2038_requested_date) : '-'}</td>
+                    <td>${member.tier_requested_date ? formatDate(member.tier_requested_date) : '-'}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+          
+          <div style="margin-top: 30px; font-size: 10px; color: #666; text-align: center; border-top: 1px solid #ddd; padding-top: 10px;">
+            <p>This report shows Kaiser members at critical bottleneck stages requiring ILS coordination.</p>
+            <p>Generated from CalAIM Application Tracker - Kaiser Pipeline Management System</p>
+          </div>
+        </body>
+        </html>
+      `;
       
-      const csvRows = bottleneckMembers.map(member => [
-        `${member.memberFirstName} ${member.memberLastName}`,
-        member.memberMrn || 'N/A',
-        member.Kaiser_Status || 'N/A',
-        member.kaiser_user_assignment || 'Unassigned',
-        member.next_steps_date ? formatDate(member.next_steps_date) : 'No date set',
-        member.memberCounty || 'N/A',
-        member.client_ID2 || 'N/A'
-      ]);
-      
-      const csvContent = [
-        csvHeaders.join(','),
-        ...csvRows.map(row => row.map(cell => `"${cell}"`).join(','))
-      ].join('\n');
-      
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `ILS_Weekly_Report_${new Date().toISOString().split('T')[0]}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      toast({
-        title: 'Report Downloaded',
-        description: `Generated ILS report with ${bottleneckMembers.length} members at bottleneck stages`,
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
+      // Create a new window and print as PDF
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+        
+        // Wait for content to load then trigger print dialog
+        printWindow.onload = () => {
+          setTimeout(() => {
+            printWindow.print();
+            printWindow.close();
+          }, 500);
+        };
+        
+        toast({
+          title: 'PDF Report Generated',
+          description: `ILS report with ${bottleneckMembers.length} members ready for download`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      } else {
+        // Fallback: create downloadable HTML file
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `ILS_Weekly_Report_${new Date().toISOString().split('T')[0]}.html`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        toast({
+          title: 'HTML Report Downloaded',
+          description: 'Open the HTML file and print to PDF from your browser',
+          className: 'bg-blue-100 text-blue-900 border-blue-200',
+        });
+      }
     } catch (error) {
       console.error('Error generating report:', error);
       toast({
@@ -313,6 +429,8 @@ export default function KaiserTrackerPage() {
           kaiser_user_assignment: member?.kaiser_user_assignment || '',
           pathway: member?.pathway || '',
           next_steps_date: member?.next_steps_date || '',
+          t2038_requested_date: member?.t2038_requested_date || '',
+          tier_requested_date: member?.tier_requested_date || '',
           source: member?.source || 'caspio'
         }));
         
@@ -383,7 +501,7 @@ export default function KaiserTrackerPage() {
             disabled={members.length === 0}
           >
             <Download className="mr-2 h-4 w-4" />
-            ILS Weekly Report
+            ILS Weekly Report (PDF)
           </Button>
         </div>
       </div>
@@ -424,7 +542,7 @@ export default function KaiserTrackerPage() {
               {members.filter(m => 
                 m.Kaiser_Status === 'T2038 Requested' || 
                 m.Kaiser_Status === 'Tier Level Requested' || 
-                m.Kaiser_Status === 'RCFE/ILS for Invoicing'
+                m.Kaiser_Status === 'RCFE/ILS for Contracting'
               ).length}
             </div>
             <p className="text-xs text-muted-foreground">Weekly report ready</p>
