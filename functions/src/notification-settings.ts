@@ -76,15 +76,9 @@ export const updateNotificationSettings = onCall(async (request) => {
   }
 });
 
-export const checkNotificationPermissions = onCall(async (request) => {
-  try {
-    const { type, priority, userId } = request.data;
-
-    if (!userId) {
-      throw new HttpsError('invalid-argument', 'userId is required');
-    }
-
-    const db = admin.firestore();
+// Internal function for checking permissions
+async function checkPermissionsInternal(type: string, priority: string, userId: string) {
+  const db = admin.firestore();
     
     // Get global notification settings
     const settingsDoc = await db.collection('notificationSettings').doc('global').get();
@@ -149,6 +143,18 @@ export const checkNotificationPermissions = onCall(async (request) => {
         visual: globalSettings.visualEffects || {}
       }
     };
+}
+
+// Export the callable function that uses the internal function
+export const checkNotificationPermissions = onCall(async (request) => {
+  try {
+    const { type, priority, userId } = request.data;
+
+    if (!userId) {
+      throw new HttpsError('invalid-argument', 'userId is required');
+    }
+
+    return await checkPermissionsInternal(type, priority, userId);
 
   } catch (error: any) {
     console.error('❌ Error checking notification permissions:', error);
@@ -181,18 +187,17 @@ export const sendNotificationWithSettings = onCall(async (request) => {
 
     // Check notification settings for each recipient
     for (const recipientId of recipientIds) {
-      const permissionCheck = await checkNotificationPermissions({
-        data: { type, priority, userId: recipientId }
-      });
+      // Call the permission check function directly with the internal logic
+      const permissionCheck = await checkPermissionsInternal(type, priority, recipientId);
 
-      if (permissionCheck.data.shouldNotify) {
+      if (permissionCheck.shouldNotify) {
         // Get recipient info
         const recipientDoc = await db.collection('staff').doc(recipientId).get();
         const recipient = recipientDoc.data();
 
         if (recipient && recipient.email) {
           // Send email notification if enabled
-          if (permissionCheck.data.settings.email?.enabled) {
+          if (permissionCheck.settings.email?.enabled) {
             try {
               await sendEmailNotification({
                 to: recipient.email,
@@ -244,7 +249,7 @@ export const sendNotificationWithSettings = onCall(async (request) => {
         results.push({
           recipientId,
           status: 'skipped',
-          reason: permissionCheck.data.reason
+          reason: permissionCheck.reason || 'Notification disabled'
         });
       }
     }

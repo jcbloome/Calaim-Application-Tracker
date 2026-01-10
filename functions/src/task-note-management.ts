@@ -2,9 +2,9 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { defineSecret } from "firebase-functions/params";
 
-// Define secrets for email notifications
-const emailUser = defineSecret("EMAIL_USER");
-const emailPass = defineSecret("EMAIL_PASS");
+// Define secrets for email notifications (temporarily commented out for deployment)
+// const emailUser = defineSecret("EMAIL_USER");
+// const emailPass = defineSecret("EMAIL_PASS");
 
 // Task Management Functions
 
