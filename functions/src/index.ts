@@ -688,6 +688,245 @@ export const publishCsSummaryToCaspioSimple = onCall(async (request) => {
   }
 });
 
+// Comprehensive Member Sync to Caspio Function
+export const syncMemberToCaspio = onCall({
+  secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret]
+}, async (request) => {
+  try {
+    const { memberId } = request.data;
+    
+    if (!memberId) {
+      throw new HttpsError('invalid-argument', 'Member ID is required');
+    }
+    
+    // Verify user is authenticated and authorized
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+    
+    console.log(`🔄 Starting comprehensive sync for member: ${memberId}`);
+    
+    // Get Caspio access token
+    const baseUrl = caspioBaseUrl.value() || 'https://c7ebl500.caspio.com/rest/v2';
+    const clientId = caspioClientId.value();
+    const clientSecret = caspioClientSecret.value();
+    
+    if (!clientId || !clientSecret) {
+      throw new HttpsError('failed-precondition', 'Caspio credentials not configured');
+    }
+    
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
+    
+    console.log('🔑 Getting Caspio access token...');
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: 'grant_type=client_credentials',
+    });
+    
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
+    }
+    
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    console.log('✅ Got Caspio access token');
+    
+    // Fetch complete member data from Firestore
+    console.log('📥 Fetching member data from Firestore...');
+    const db = admin.firestore();
+    const memberDoc = await db.collection('members').doc(memberId).get();
+    
+    if (!memberDoc.exists) {
+      throw new HttpsError('not-found', `Member with ID ${memberId} not found in Firestore`);
+    }
+    
+    const memberData = memberDoc.data();
+    console.log('✅ Retrieved member data from Firestore');
+    
+    // Prepare comprehensive Caspio data mapping
+    const caspioMemberData = {
+      // Basic Member Information (Page 1)
+      Senior_First: memberData?.memberFirstName || '',
+      Senior_Last: memberData?.memberLastName || '',
+      MCP_CIN: memberData?.memberMrn || memberData?.memberMediCalNum || '',
+      MC: memberData?.memberMediCalNum || '',
+      Member_County: memberData?.memberCounty || '',
+      Member_DOB: memberData?.memberDob || '',
+      Member_Phone: memberData?.memberPhone || '',
+      Member_Address: memberData?.memberAddress || '',
+      Member_City: memberData?.memberCity || '',
+      Member_State: memberData?.memberState || 'CA',
+      Member_Zip: memberData?.memberZip || '',
+      
+      // Health Plan & Status Information (Page 2)
+      CalAIM_MCP: memberData?.healthPlan || 'Kaiser',
+      CalAIM_Status: memberData?.CalAIM_Status || 'Pending',
+      Kaiser_Status: memberData?.Kaiser_Status || 'Pre-T2038',
+      Kaiser_User_Assignment: memberData?.kaiser_user_assignment || '',
+      SNF_Diversion_or_Transition: memberData?.pathway || memberData?.SNF_Diversion_or_Transition || '',
+      
+      // Care Coordination Information (Page 3)
+      Primary_Care_Provider: memberData?.primaryCareProvider || '',
+      Specialist_Provider: memberData?.specialistProvider || '',
+      Current_Medications: memberData?.currentMedications || '',
+      Medical_Conditions: memberData?.medicalConditions || '',
+      Functional_Status: memberData?.functionalStatus || '',
+      Cognitive_Status: memberData?.cognitiveStatus || '',
+      
+      // Service Planning Information (Page 4)
+      Service_Needs: memberData?.serviceNeeds || '',
+      Housing_Status: memberData?.housingStatus || '',
+      Transportation_Needs: memberData?.transportationNeeds || '',
+      Caregiver_Support: memberData?.caregiverSupport || '',
+      Emergency_Contact_Name: memberData?.emergencyContactName || '',
+      Emergency_Contact_Phone: memberData?.emergencyContactPhone || '',
+      
+      // System Fields
+      client_ID2: memberData?.client_ID2 || memberData?.id || memberId,
+      ApplicationID: memberData?.applicationId || '',
+      UserID: memberData?.userId || request.auth.uid,
+      DateCreated: memberData?.createdAt || new Date().toISOString(),
+      LastUpdated: new Date().toISOString(),
+      SyncedBy: request.auth.uid,
+      SyncedAt: new Date().toISOString(),
+      
+      // Workflow tracking
+      next_steps_date: memberData?.next_steps_date || '',
+      T2038_Requested_Date: memberData?.T2038_Requested_Date || '',
+      Tier_Requested_Date: memberData?.Tier_Requested_Date || '',
+      
+      // Notes and Comments
+      Care_Notes: memberData?.careNotes || '',
+      Admin_Notes: memberData?.adminNotes || '',
+      Status_Notes: memberData?.statusNotes || ''
+    };
+    
+    console.log('📝 Prepared comprehensive Caspio data mapping');
+    
+    // Check if member already exists in Caspio
+    const membersTable = 'CalAIM_tbl_Members';
+    const clientId2 = caspioMemberData.client_ID2;
+    
+    if (clientId2) {
+      console.log(`🔍 Checking if member exists in Caspio (client_ID2: ${clientId2})...`);
+      
+      const searchUrl = `${baseUrl}/tables/${membersTable}/records?q.where=client_ID2='${clientId2}'`;
+      const searchResponse = await fetch(searchUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (searchResponse.ok) {
+        const searchData = await searchResponse.json();
+        
+        if (searchData.Result && searchData.Result.length > 0) {
+          // Member exists - UPDATE
+          console.log('📝 Member exists in Caspio, updating record...');
+          
+          const updateUrl = `${baseUrl}/tables/${membersTable}/records?q.where=client_ID2='${clientId2}'`;
+          const updateResponse = await fetch(updateUrl, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(caspioMemberData),
+          });
+          
+          if (!updateResponse.ok) {
+            const errorText = await updateResponse.text();
+            throw new HttpsError('internal', `Failed to update Caspio record: ${updateResponse.status} ${errorText}`);
+          }
+          
+          const result = await updateResponse.json();
+          console.log('✅ Successfully updated member in Caspio');
+          
+          return {
+            success: true,
+            action: 'updated',
+            message: `Successfully updated member "${caspioMemberData.Senior_First} ${caspioMemberData.Senior_Last}" in Caspio`,
+            data: result,
+            memberId: memberId,
+            client_ID2: clientId2
+          };
+          
+        } else {
+          // Member doesn't exist - CREATE
+          console.log('📝 Member not found in Caspio, creating new record...');
+        }
+      }
+    }
+    
+    // CREATE new member record
+    console.log('📝 Creating new member record in Caspio...');
+    
+    const insertResponse = await fetch(`${baseUrl}/tables/${membersTable}/records`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(caspioMemberData),
+    });
+    
+    if (!insertResponse.ok) {
+      const errorText = await insertResponse.text();
+      throw new HttpsError('internal', `Failed to create Caspio record: ${insertResponse.status} ${errorText}`);
+    }
+    
+    const result = await insertResponse.json();
+    console.log('✅ Successfully created member in Caspio');
+    
+    // Update Firestore with sync status
+    await memberDoc.ref.update({
+      lastSyncedToCaspio: admin.firestore.FieldValue.serverTimestamp(),
+      syncedBy: request.auth.uid,
+      caspioSyncStatus: 'synced'
+    });
+    
+    return {
+      success: true,
+      action: 'created',
+      message: `Successfully created member "${caspioMemberData.Senior_First} ${caspioMemberData.Senior_Last}" in Caspio`,
+      data: result,
+      memberId: memberId,
+      client_ID2: clientId2
+    };
+    
+  } catch (error: any) {
+    console.error('❌ Error syncing member to Caspio:', error);
+    
+    // Log sync failure to Firestore
+    if (request.data?.memberId) {
+      try {
+        const db = admin.firestore();
+        await db.collection('members').doc(request.data.memberId).update({
+          lastSyncError: error.message,
+          lastSyncAttempt: admin.firestore.FieldValue.serverTimestamp(),
+          caspioSyncStatus: 'failed'
+        });
+      } catch (logError) {
+        console.error('Failed to log sync error to Firestore:', logError);
+      }
+    }
+    
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', `Sync failed: ${error.message}`);
+  }
+});
+
 // Publish CS Summary to Caspio Function
 export const publishCsSummaryToCaspio = onCall({
   secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret]

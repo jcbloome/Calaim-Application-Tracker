@@ -64,6 +64,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
+import { SyncToCaspioButton } from '@/components/SyncToCaspioButton';
 
 const kaiserSteps = [
   "Pre-T2038, Compiling Docs",
@@ -532,6 +533,17 @@ function AdminActions({ application }: { application: Application }) {
                             CS Summary data has been published to Caspio database
                         </p>
                     )}
+                    
+                    <SyncToCaspioButton
+                        memberId={application.id}
+                        memberName={`${application.memberFirstName} ${application.memberLastName}`}
+                        variant="outline"
+                        className="w-full"
+                        onSyncComplete={(result) => {
+                            console.log('Sync completed:', result);
+                            // Optionally refresh application data or update UI
+                        }}
+                    />
                 </CardContent>
             </Card>
             <DialogContent>
