@@ -34,6 +34,19 @@ export {
   update2FAPreferences 
 } from './two-factor-auth';
 
+// Export Task and Note Management functions
+export {
+  createMemberTask,
+  getMemberTasks,
+  updateMemberTask,
+  getDailyTasks,
+  createMemberNote,
+  getMemberNotes,
+  createNoteReply,
+  updateMemberNote,
+  markNotesAsRead
+} from './task-note-management';
+
 admin.initializeApp();
 
 // Define secrets for Caspio API

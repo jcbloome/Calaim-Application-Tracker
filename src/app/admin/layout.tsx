@@ -51,6 +51,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } 
 const adminNavLinks = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard },
   { href: '/admin/dashboard', label: 'Daily Dashboard', icon: Bell },
+  { href: '/admin/daily-tasks', label: 'Daily Tasks', icon: ClipboardList },
   { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
   { href: '/admin/my-tasks', label: 'My Tasks', icon: ClipboardList },
   { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },

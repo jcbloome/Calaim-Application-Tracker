@@ -68,6 +68,8 @@ import { SyncToCaspioButton } from '@/components/SyncToCaspioButton';
 import { MemberFileLookup } from '@/components/MemberFileLookup';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import { DuplicateClientChecker } from '@/components/DuplicateClientChecker';
+import TaskScheduler from '@/components/TaskScheduler';
+import NoteTracker from '@/components/NoteTracker';
 
 const kaiserSteps = [
   "Pre-T2038, Compiling Docs",
@@ -1108,6 +1110,15 @@ function ApplicationDetailPageContent() {
         <StaffApplicationTracker application={application} />
         <AdminActions application={application} />
         <MemberFileLookup clientId={(application as any)?.client_ID2} />
+        <TaskScheduler 
+          memberId={application.id}
+          memberName={`${application.memberFirstName} ${application.memberLastName}`}
+          currentAssignee={(application as any)?.kaiser_user_assignment}
+        />
+        <NoteTracker 
+          memberId={application.id}
+          memberName={`${application.memberFirstName} ${application.memberLastName}`}
+        />
          <Card>
             <CardHeader>
                 <CardTitle className="flex items-center gap-2"><List className="h-5 w-5" /> Uploaded Files</CardTitle>
