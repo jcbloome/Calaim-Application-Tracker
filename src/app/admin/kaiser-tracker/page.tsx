@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, Download } from 'lucide-react';
+import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, Download, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
 
@@ -100,19 +100,94 @@ const getDaysOverdue = (dateString: string): number => {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
 
-const formatDate = (dateString: string): string => {
-  if (!dateString) return 'No date set';
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { 
-    month: 'short', 
-    day: 'numeric', 
-    year: 'numeric' 
-  });
-};
+  const formatDate = (dateString: string): string => {
+    if (!dateString) return 'No date set';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+  };
+
+  const getDaysUntilDue = (dateString: string): number => {
+    if (!dateString) return 999;
+    const dueDate = new Date(dateString);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffTime = dueDate.getTime() - today.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
 
   const getStatusColor = (status: string): string => {
     return statusColors[status] || 'bg-gray-100 text-gray-800 border-gray-200';
   };
+
+  // Sorting functionality
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortField !== field) return <ArrowUpDown className="h-3 w-3" />;
+    return sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
+  };
+
+  // Sort members based on current sort settings
+  const sortedMembers = [...members].sort((a, b) => {
+    if (!sortField) return 0;
+    
+    let aValue = '';
+    let bValue = '';
+    
+    switch (sortField) {
+      case 'name':
+        aValue = `${a.memberFirstName} ${a.memberLastName}`.toLowerCase();
+        bValue = `${b.memberFirstName} ${b.memberLastName}`.toLowerCase();
+        break;
+      case 'mrn':
+        aValue = a.memberMrn || '';
+        bValue = b.memberMrn || '';
+        break;
+      case 'county':
+        aValue = a.memberCounty || '';
+        bValue = b.memberCounty || '';
+        break;
+      case 'pathway':
+        aValue = a.pathway || '';
+        bValue = b.pathway || '';
+        break;
+      case 'kaiser_status':
+        aValue = a.Kaiser_Status || '';
+        bValue = b.Kaiser_Status || '';
+        break;
+      case 'calaim_status':
+        aValue = a.CalAIM_Status || '';
+        bValue = b.CalAIM_Status || '';
+        break;
+      case 'assignment':
+        aValue = a.kaiser_user_assignment || '';
+        bValue = b.kaiser_user_assignment || '';
+        break;
+      case 'due_date':
+        aValue = a.next_steps_date || '9999-12-31';
+        bValue = b.next_steps_date || '9999-12-31';
+        break;
+      default:
+        return 0;
+    }
+    
+    if (sortDirection === 'asc') {
+      return aValue.localeCompare(bValue);
+    } else {
+      return bValue.localeCompare(aValue);
+    }
+  });
 
   // Generate ILS Weekly Report
   const generateILSReport = () => {
@@ -176,6 +251,8 @@ export default function KaiserTrackerPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [members, setMembers] = useState<KaiserMember[]>([]);
+  const [sortField, setSortField] = useState<string>('');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   if (!isAdmin) {
     return (
@@ -285,74 +362,151 @@ export default function KaiserTrackerPage() {
         </div>
       </div>
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Members</CardTitle>
-            <User className="h-4 w-4 text-blue-600" />
+      {/* Comprehensive Summary Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+        
+        {/* Kaiser Status Steps Summary */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-blue-600" />
+              Kaiser Status Breakdown
+            </CardTitle>
+            <CardDescription>Members at each Kaiser status step</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{members.length}</div>
-            <p className="text-xs text-muted-foreground">Kaiser members</p>
+            <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
+              {kaiserSteps.map((status) => {
+                const count = members.filter(m => m.Kaiser_Status === status).length;
+                if (count === 0) return null;
+                return (
+                  <div key={status} className="flex items-center justify-between text-xs p-2 rounded border">
+                    <span className="truncate pr-2" title={status}>{status}</span>
+                    <Badge variant="outline" className="text-xs">
+                      {count}
+                    </Badge>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 pt-4 border-t">
+              <div className="flex items-center justify-between font-medium">
+                <span>Total Members</span>
+                <Badge className="bg-blue-100 text-blue-800">
+                  {members.length}
+                </Badge>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
+        {/* County Breakdown */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Overdue Tasks</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-600" />
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <User className="h-5 w-5 text-green-600" />
+              County Distribution
+            </CardTitle>
+            <CardDescription>Members by county</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              {members.filter(m => isOverdue(m.next_steps_date)).length}
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {[...new Set(members.map(m => m.memberCounty).filter(Boolean))]
+                .sort()
+                .map((county) => {
+                  const count = members.filter(m => m.memberCounty === county).length;
+                  const overdue = members.filter(m => m.memberCounty === county && isOverdue(m.next_steps_date)).length;
+                  return (
+                    <div key={county} className="flex items-center justify-between text-sm p-2 rounded border">
+                      <div className="flex flex-col">
+                        <span className="font-medium">{county}</span>
+                        {overdue > 0 && (
+                          <span className="text-xs text-red-600 flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            {overdue} overdue
+                          </span>
+                        )}
+                      </div>
+                      <Badge variant="outline">
+                        {count}
+                      </Badge>
+                    </div>
+                  );
+                })}
+              {members.filter(m => !m.memberCounty).length > 0 && (
+                <div className="flex items-center justify-between text-sm p-2 rounded border">
+                  <span className="text-muted-foreground">No County</span>
+                  <Badge variant="outline">
+                    {members.filter(m => !m.memberCounty).length}
+                  </Badge>
+                </div>
+              )}
             </div>
-            <p className="text-xs text-muted-foreground">Past due date</p>
           </CardContent>
         </Card>
 
+        {/* Staff Assignment Summary */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-600" />
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <User className="h-5 w-5 text-purple-600" />
+              Staff Assignments
+            </CardTitle>
+            <CardDescription>Workload by staff member</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {members.filter(m => m.Kaiser_Status === 'Complete' || m.Kaiser_Status === 'ILS Contracted (Complete)').length}
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {[...new Set(members.map(m => m.kaiser_user_assignment).filter(Boolean))]
+                .sort()
+                .map((staff) => {
+                  const count = members.filter(m => m.kaiser_user_assignment === staff).length;
+                  const overdue = members.filter(m => m.kaiser_user_assignment === staff && isOverdue(m.next_steps_date)).length;
+                  const dueToday = members.filter(m => {
+                    if (m.kaiser_user_assignment !== staff) return false;
+                    const days = getDaysUntilDue(m.next_steps_date);
+                    return days === 0;
+                  }).length;
+                  
+                  return (
+                    <div key={staff} className="flex items-center justify-between text-sm p-2 rounded border">
+                      <div className="flex flex-col">
+                        <span className="font-medium truncate" title={staff}>{staff}</span>
+                        <div className="flex gap-2 text-xs">
+                          {overdue > 0 && (
+                            <span className="text-red-600 flex items-center gap-1">
+                              <AlertTriangle className="h-3 w-3" />
+                              {overdue} overdue
+                            </span>
+                          )}
+                          {dueToday > 0 && (
+                            <span className="text-orange-600 flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {dueToday} due today
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <Badge variant="outline">
+                        {count}
+                      </Badge>
+                    </div>
+                  );
+                })}
+              {members.filter(m => !m.kaiser_user_assignment).length > 0 && (
+                <div className="flex items-center justify-between text-sm p-2 rounded border border-orange-200 bg-orange-50">
+                  <div className="flex flex-col">
+                    <span className="text-orange-700 font-medium">Unassigned</span>
+                    <span className="text-xs text-orange-600">Needs assignment</span>
+                  </div>
+                  <Badge className="bg-orange-100 text-orange-800">
+                    {members.filter(m => !m.kaiser_user_assignment).length}
+                  </Badge>
+                </div>
+              )}
             </div>
-            <p className="text-xs text-muted-foreground">Finished cases</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">On Hold</CardTitle>
-            <XCircle className="h-4 w-4 text-orange-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-600">
-              {members.filter(m => m.Kaiser_Status === 'On-Hold' || m.Kaiser_Status === 'Non-active').length}
-            </div>
-            <p className="text-xs text-muted-foreground">Paused cases</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">ILS Bottlenecks</CardTitle>
-            <Download className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-600">
-              {members.filter(m => 
-                m.Kaiser_Status === 'T2038 Requested' || 
-                m.Kaiser_Status === 'Tier Level Requested' || 
-                m.Kaiser_Status === 'RCFE/ILS for Invoicing'
-              ).length}
-            </div>
-            <p className="text-xs text-muted-foreground">Weekly report ready</p>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Comprehensive Kaiser Status Breakdown */}
@@ -441,22 +595,92 @@ export default function KaiserTrackerPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Member</TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => handleSort('name')}
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                      >
+                        Member {getSortIcon('name')}
+                      </Button>
+                    </TableHead>
                     <TableHead>Client ID2</TableHead>
-                    <TableHead>Medi-Cal #</TableHead>
-                    <TableHead>MRN</TableHead>
-                    <TableHead>County</TableHead>
-                    <TableHead>Pathway</TableHead>
-                    <TableHead>Kaiser Status</TableHead>
-                    <TableHead>CalAIM Status</TableHead>
-                    <TableHead>Assignment</TableHead>
-                    <TableHead>Kaiser Status</TableHead>
-                    <TableHead>Due Date</TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => handleSort('mrn')}
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                      >
+                        MRN {getSortIcon('mrn')}
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => handleSort('county')}
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                      >
+                        County {getSortIcon('county')}
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => handleSort('pathway')}
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                      >
+                        Pathway {getSortIcon('pathway')}
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => handleSort('kaiser_status')}
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                      >
+                        Kaiser Status {getSortIcon('kaiser_status')}
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => handleSort('calaim_status')}
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                      >
+                        CalAIM Status {getSortIcon('calaim_status')}
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => handleSort('assignment')}
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                      >
+                        Assignment {getSortIcon('assignment')}
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => handleSort('due_date')}
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                      >
+                        Due Date {getSortIcon('due_date')}
+                      </Button>
+                    </TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {members.map((member) => (
+                  {sortedMembers.map((member) => (
                     <TableRow key={member.id}>
                       <TableCell>
                         <div className="font-medium">
@@ -468,7 +692,6 @@ export default function KaiserTrackerPage() {
                           {member.client_ID2 || 'N/A'}
                         </Badge>
                       </TableCell>
-                      <TableCell>{member.memberMediCalNum || 'N/A'}</TableCell>
                       <TableCell>{member.memberMrn || 'N/A'}</TableCell>
                       <TableCell>{member.memberCounty || 'N/A'}</TableCell>
                       <TableCell>
