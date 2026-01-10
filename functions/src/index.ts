@@ -173,18 +173,54 @@ export const publishCsSummaryToCaspioSimple = onCall(async (request) => {
     const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
     const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
     
+    // Try different token URL format
+    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
     const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = `${baseUrl}/oauth/token`;
     
     console.log('🔑 Getting Caspio access token...');
-    const tokenResponse = await fetch(tokenUrl, {
+    console.log('🔗 Token URL:', tokenUrl);
+    console.log('🔑 Authorization header length:', credentials.length);
+    
+    // Try multiple approaches for OAuth
+    console.log('🔄 Trying OAuth approach 1: Standard form data');
+    let tokenResponse = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Basic ${credentials}`,
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
       },
       body: 'grant_type=client_credentials',
     });
+    
+    // If that fails, try with different content type
+    if (!tokenResponse.ok && tokenResponse.status === 415) {
+      console.log('🔄 Trying OAuth approach 2: JSON body');
+      tokenResponse = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${credentials}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ grant_type: 'client_credentials' }),
+      });
+    }
+    
+    // If still fails, try without rest/v2 in URL
+    if (!tokenResponse.ok && tokenResponse.status === 415) {
+      console.log('🔄 Trying OAuth approach 3: Alternative URL');
+      const altTokenUrl = `https://c7ebl500.caspio.com/rest/v2/oauth/token`;
+      tokenResponse = await fetch(altTokenUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${credentials}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json'
+        },
+        body: 'grant_type=client_credentials',
+      });
+    }
     
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
@@ -207,6 +243,26 @@ export const publishCsSummaryToCaspioSimple = onCall(async (request) => {
     console.log(`🔍 Checking if member "${firstName} ${lastName}" already exists...`);
     
     const membersTable = 'CalAIM_tbl_Members';
+    
+    // First, let's check what fields are available in the table
+    console.log('🔍 Getting table schema...');
+    const schemaUrl = `${baseUrl}/tables/${membersTable}/fields`;
+    
+    const schemaResponse = await fetch(schemaUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (schemaResponse.ok) {
+      const schemaData = await schemaResponse.json();
+      console.log('📋 Available table fields:', JSON.stringify(schemaData, null, 2));
+    } else {
+      console.log('⚠️ Could not get table schema:', schemaResponse.status);
+    }
+    
     const searchUrl = `${baseUrl}/tables/${membersTable}/records?q.where=MemberFirstName='${firstName}' AND MemberLastName='${lastName}'`;
     
     const searchResponse = await fetch(searchUrl, {
@@ -225,24 +281,15 @@ export const publishCsSummaryToCaspioSimple = onCall(async (request) => {
       }
     }
     
-    // Transform and insert data (simplified for now)
+    // Transform and insert data - Bob Jones test with basic fields
     const memberData = {
-      ApplicationID: applicationData.id || '',
-      UserID: applicationData.userId || '',
-      Status: applicationData.status || 'In Progress',
       MemberFirstName: firstName,
       MemberLastName: lastName,
       MemberDOB: applicationData.memberDob || '',
       MemberMediCalNum: applicationData.memberMediCalNum || '',
-      MemberMRN: applicationData.memberMrn || '',
-      MemberLanguage: applicationData.memberLanguage || '',
-      MemberCounty: applicationData.memberCounty || '',
-      ReferrerFirstName: applicationData.referrerFirstName || '',
-      ReferrerLastName: applicationData.referrerLastName || '',
-      ReferrerEmail: applicationData.referrerEmail || '',
-      ReferrerPhone: applicationData.referrerPhone || '',
-      // Add more fields as needed
     };
+    
+    console.log('📝 Sending Bob Jones test data:', memberData);
     
     console.log('📝 Inserting member data:', memberData);
     

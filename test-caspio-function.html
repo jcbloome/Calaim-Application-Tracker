@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Caspio Function</title>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-functions.js"></script>
+</head>
+<body>
+    <h1>Test Caspio Function</h1>
+    <button onclick="testCaspioFunction()">Test CS Summary Publishing</button>
+    <div id="result"></div>
+
+    <script>
+        // Firebase config
+        const firebaseConfig = {
+            apiKey: "AIzaSyD11siPTL9iJsr3TiODs1AnM4shmBX-2_0",
+            authDomain: "studio-2881432245-f1d94.firebaseapp.com",
+            projectId: "studio-2881432245-f1d94",
+            storageBucket: "studio-2881432245-f1d94.firebasestorage.app",
+            messagingSenderId: "1743754824",
+            appId: "1:1743754824:web:091a6ec709e828db512a7d"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const functions = firebase.functions();
+
+        async function testCaspioFunction() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing...';
+
+            try {
+                const testData = {
+                    id: 'bob-jones-test',
+                    memberFirstName: 'Bob',
+                    memberLastName: 'Jones',
+                    memberDob: '03/15/1965',
+                    memberMediCalNum: '987654321'
+                };
+
+                const publishToCaspio = firebase.functions().httpsCallable('publishCsSummaryToCaspioSimple');
+                const result = await publishToCaspio(testData);
+                
+                resultDiv.innerHTML = `<pre>Success: ${JSON.stringify(result.data, null, 2)}</pre>`;
+            } catch (error) {
+                resultDiv.innerHTML = `<pre>Error: ${error.message}</pre>`;
+            }
+        }
+    </script>
+</body>
+</html>
