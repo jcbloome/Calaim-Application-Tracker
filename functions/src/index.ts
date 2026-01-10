@@ -6,6 +6,13 @@ import * as admin from "firebase-admin";
 // Export Google Drive migration functions
 export { authenticateGoogleDrive, scanCalAIMDriveFolders, migrateDriveFoldersToFirebase } from './google-drive';
 
+// Export Google Drive search functions
+export { 
+  searchClientIDFiles, 
+  testGoogleDriveConnection, 
+  getCalAIMFolderStructure 
+} from './google-drive-search';
+
 // Export Smart Sync and Duplicate Prevention functions
 export { checkSyncStatus, performManualSync, checkForDuplicateClients, resolveDuplicateClients } from './smart-sync';
 

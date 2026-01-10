@@ -12,6 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import ClientIDFileFinder from '@/components/ClientIDFileFinder';
 import {
   Table,
   TableBody,
@@ -439,6 +440,9 @@ export default function MigrateDrivePage() {
           </CardContent>
         </Card>
       )}
+
+      {/* ClientID File Finder */}
+      <ClientIDFileFinder />
     </div>
   );
 }
