@@ -8,37 +8,160 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, Download, ArrowUpDown, ArrowUp, ArrowDown, Shield, HourglassIcon } from 'lucide-react';
+import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, Download, ArrowUpDown, ArrowUp, ArrowDown, Shield, HourglassIcon, Filter, X } from 'lucide-react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
 
+// Kaiser workflow with next steps and recommended timeframes
+const kaiserWorkflow = {
+  "Pre-T2038, Compiling Docs": {
+    nextStep: "T2038 Requested",
+    recommendedDays: 3,
+    description: "Compile all required documents and submit T2038 request",
+    requiredActions: ["Gather medical records", "Complete T2038 form", "Submit to Kaiser"]
+  },
+  "T2038 Requested": {
+    nextStep: "T2038 Received",
+    recommendedDays: 14,
+    description: "Follow up on T2038 request status",
+    requiredActions: ["Monitor Kaiser response", "Follow up if no response in 10 days"]
+  },
+  "T2038 Received": {
+    nextStep: "T2038 received, Need First Contact",
+    recommendedDays: 2,
+    description: "Review T2038 and initiate first contact",
+    requiredActions: ["Review T2038 details", "Schedule initial member contact"]
+  },
+  "T2038 received, Need First Contact": {
+    nextStep: "T2038 received, doc collection",
+    recommendedDays: 5,
+    description: "Complete first contact and begin document collection",
+    requiredActions: ["Contact member", "Explain process", "Begin document gathering"]
+  },
+  "T2038 received, doc collection": {
+    nextStep: "Needs RN Visit",
+    recommendedDays: 7,
+    description: "Complete document collection and schedule RN visit",
+    requiredActions: ["Collect all required documents", "Schedule RN assessment"]
+  },
+  "Needs RN Visit": {
+    nextStep: "RN/MSW Scheduled",
+    recommendedDays: 3,
+    description: "Schedule RN/MSW visit",
+    requiredActions: ["Contact RN/MSW", "Schedule visit", "Confirm with member"]
+  },
+  "RN/MSW Scheduled": {
+    nextStep: "RN Visit Complete",
+    recommendedDays: 7,
+    description: "Complete RN/MSW visit",
+    requiredActions: ["Conduct visit", "Complete assessment", "Submit report"]
+  },
+  "RN Visit Complete": {
+    nextStep: "Need Tier Level",
+    recommendedDays: 2,
+    description: "Review RN report and determine tier level needs",
+    requiredActions: ["Review assessment", "Determine tier requirements"]
+  },
+  "Need Tier Level": {
+    nextStep: "Tier Level Requested",
+    recommendedDays: 3,
+    description: "Submit tier level request",
+    requiredActions: ["Prepare tier request", "Submit to Kaiser", "Document submission"]
+  },
+  "Tier Level Requested": {
+    nextStep: "Tier Level Received",
+    recommendedDays: 14,
+    description: "Follow up on tier level determination",
+    requiredActions: ["Monitor Kaiser response", "Follow up if delayed"]
+  },
+  "Tier Level Received": {
+    nextStep: "Locating RCFEs",
+    recommendedDays: 1,
+    description: "Begin RCFE location process",
+    requiredActions: ["Review tier level", "Begin RCFE search"]
+  },
+  "Locating RCFEs": {
+    nextStep: "Found RCFE",
+    recommendedDays: 10,
+    description: "Identify suitable RCFE options",
+    requiredActions: ["Search available RCFEs", "Contact facilities", "Assess suitability"]
+  },
+  "Found RCFE": {
+    nextStep: "R&B Requested",
+    recommendedDays: 3,
+    description: "Request room and board approval",
+    requiredActions: ["Submit R&B request", "Provide RCFE details"]
+  },
+  "R&B Requested": {
+    nextStep: "R&B Signed",
+    recommendedDays: 7,
+    description: "Follow up on R&B approval",
+    requiredActions: ["Monitor approval status", "Follow up if needed"]
+  },
+  "R&B Signed": {
+    nextStep: "RCFE/ILS for Invoicing",
+    recommendedDays: 2,
+    description: "Initiate invoicing process",
+    requiredActions: ["Set up invoicing", "Coordinate with ILS"]
+  },
+  "RCFE/ILS for Invoicing": {
+    nextStep: "ILS Contracted (Complete)",
+    recommendedDays: 5,
+    description: "Complete ILS contracting",
+    requiredActions: ["Finalize contract", "Set up services"]
+  },
+  "ILS Contracted (Complete)": {
+    nextStep: "Confirm ILS Contracted",
+    recommendedDays: 3,
+    description: "Confirm all services are in place",
+    requiredActions: ["Verify services started", "Confirm member satisfaction"]
+  },
+  "Confirm ILS Contracted": {
+    nextStep: "Complete",
+    recommendedDays: 1,
+    description: "Finalize case completion",
+    requiredActions: ["Complete final documentation", "Close case"]
+  },
+  "Complete": {
+    nextStep: null,
+    recommendedDays: 0,
+    description: "Case completed successfully",
+    requiredActions: ["Case closed"]
+  },
+  "T2038 email but need auth sheet": {
+    nextStep: "T2038 Requested",
+    recommendedDays: 2,
+    description: "Obtain authorization sheet and resubmit",
+    requiredActions: ["Get auth sheet signed", "Resubmit T2038"]
+  },
+  "Tier Level Revision Request": {
+    nextStep: "Tier Level Requested",
+    recommendedDays: 5,
+    description: "Submit revised tier level request",
+    requiredActions: ["Revise request", "Resubmit to Kaiser"]
+  },
+  "Tier Level Appeal": {
+    nextStep: "Tier Level Requested",
+    recommendedDays: 10,
+    description: "Process tier level appeal",
+    requiredActions: ["Prepare appeal documentation", "Submit appeal"]
+  },
+  "On-Hold": {
+    nextStep: null,
+    recommendedDays: 30,
+    description: "Case on hold - review regularly",
+    requiredActions: ["Review hold reason", "Set review date"]
+  },
+  "Non-active": {
+    nextStep: null,
+    recommendedDays: 0,
+    description: "Case inactive",
+    requiredActions: ["Case closed as inactive"]
+  }
+};
+
 // All Kaiser status steps for comprehensive tracking
-const kaiserSteps = [
-  "Pre-T2038, Compiling Docs",
-  "T2038 Requested",
-  "T2038 Received",
-  "T2038 received, Need First Contact",
-  "T2038 received, doc collection",
-  "Needs RN Visit",
-  "RN/MSW Scheduled",
-  "RN Visit Complete",
-  "Need Tier Level",
-  "Tier Level Requested",
-  "Tier Level Received",
-  "Locating RCFEs",
-  "Found RCFE",
-  "R&B Requested",
-  "R&B Signed",
-  "RCFE/ILS for Invoicing",
-  "ILS Contracted (Complete)",
-  "Confirm ILS Contracted",
-  "Complete",
-  "Tier Level Revision Request",
-  "On-Hold",
-  "Tier Level Appeal",
-  "T2038 email but need auth sheet",
-  "Non-active",
-];
+const kaiserSteps = Object.keys(kaiserWorkflow);
 
 // Status colors for visual identification
 const statusColors: Record<string, string> = {
@@ -84,6 +207,9 @@ interface KaiserMember {
   next_steps_date: string;
   t2038_requested_date?: string;
   tier_requested_date?: string;
+  last_status_change?: string;
+  workflow_step?: string;
+  days_in_current_status?: number;
   source: string;
 }
 
@@ -96,6 +222,13 @@ export default function KaiserTrackerPage() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [selectedStaff, setSelectedStaff] = useState<string>('all');
   const [editingMember, setEditingMember] = useState<string | null>(null);
+  const [filters, setFilters] = useState({
+    kaiserStatus: 'all',
+    calaimStatus: 'all',
+    county: 'all',
+    assignment: 'all',
+    overdueOnly: false
+  });
 
   // Helper functions
   const isOverdue = (dateString: string): boolean => {
@@ -142,26 +275,76 @@ export default function KaiserTrackerPage() {
     return <Clock className="h-3 w-3" />;
   };
 
-  // Update member status functions
+  // Update member status functions with workflow automation
   const updateMemberStatus = async (memberId: string, field: string, value: string) => {
     try {
-      // Update local state immediately for better UX
-      setMembers(prevMembers => 
-        prevMembers.map(member => 
-          member.id === memberId 
-            ? { ...member, [field]: value }
-            : member
-        )
-      );
+      const member = members.find(m => m.id === memberId);
+      if (!member) return;
+
+      // If updating Kaiser Status, check for workflow automation
+      if (field === 'Kaiser_Status' && value in kaiserWorkflow) {
+        const workflow = kaiserWorkflow[value as keyof typeof kaiserWorkflow];
+        const currentDate = new Date();
+        const recommendedDueDate = new Date(currentDate);
+        recommendedDueDate.setDate(currentDate.getDate() + workflow.recommendedDays);
+        
+        // Update member with new status and recommended due date
+        setMembers(prevMembers => 
+          prevMembers.map(m => 
+            m.id === memberId 
+              ? { 
+                  ...m, 
+                  [field]: value,
+                  next_steps_date: workflow.recommendedDays > 0 ? recommendedDueDate.toISOString().split('T')[0] : m.next_steps_date,
+                  last_status_change: new Date().toISOString(),
+                  workflow_step: workflow.nextStep || 'Complete'
+                }
+              : m
+          )
+        );
+
+        // Show workflow guidance
+        if (workflow.nextStep) {
+          toast({
+            title: 'Status Updated with Next Steps',
+            description: (
+              <div className="space-y-2">
+                <p><strong>Current:</strong> {value}</p>
+                <p><strong>Next Step:</strong> {workflow.nextStep}</p>
+                <p><strong>Due:</strong> {recommendedDueDate.toLocaleDateString()}</p>
+                <p><strong>Action:</strong> {workflow.description}</p>
+              </div>
+            ),
+            className: 'bg-blue-100 text-blue-900 border-blue-200',
+            duration: 8000,
+          });
+        } else {
+          toast({
+            title: 'Status Updated - Case Complete!',
+            description: `Member has reached: ${value}`,
+            className: 'bg-green-100 text-green-900 border-green-200',
+          });
+        }
+      } else {
+        // Regular status update
+        setMembers(prevMembers => 
+          prevMembers.map(m => 
+            m.id === memberId 
+              ? { ...m, [field]: value }
+              : m
+          )
+        );
+
+        toast({
+          title: 'Status Updated',
+          description: `${field} updated successfully`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      }
 
       // TODO: Add API call to sync with Caspio
       console.log(`Updating member ${memberId}: ${field} = ${value}`);
       
-      toast({
-        title: 'Status Updated',
-        description: `${field} updated successfully`,
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
     } catch (error) {
       console.error('Error updating member status:', error);
       toast({
@@ -225,18 +408,82 @@ export default function KaiserTrackerPage() {
     }
   }, [members]);
 
-  // Filter members by selected staff
+  // Get unique values for filter dropdowns
+  const filterOptions = useMemo(() => {
+    try {
+      const uniqueKaiserStatuses = [...new Set((members || []).map(m => m?.Kaiser_Status).filter(Boolean))];
+      const uniqueCalaimStatuses = [...new Set((members || []).map(m => m?.CalAIM_Status).filter(Boolean))];
+      const uniqueCounties = [...new Set((members || []).map(m => m?.memberCounty).filter(Boolean))];
+      const uniqueAssignments = [...new Set((members || []).map(m => m?.kaiser_user_assignment).filter(Boolean))];
+      
+      return {
+        kaiserStatuses: uniqueKaiserStatuses.sort(),
+        calaimStatuses: uniqueCalaimStatuses.sort(),
+        counties: uniqueCounties.sort(),
+        assignments: uniqueAssignments.sort()
+      };
+    } catch (error) {
+      console.error('Error getting filter options:', error);
+      return {
+        kaiserStatuses: [],
+        calaimStatuses: [],
+        counties: [],
+        assignments: []
+      };
+    }
+  }, [members]);
+
+  // Apply all filters
   const filteredMembers = useMemo(() => {
     try {
       if (!members || members.length === 0) return [];
-      if (selectedStaff === 'all') return members;
-      if (selectedStaff === 'unassigned') return members.filter(m => !m?.kaiser_user_assignment);
-      return members.filter(m => m?.kaiser_user_assignment === selectedStaff);
+      
+      let filtered = [...members];
+      
+      // Staff filter
+      if (selectedStaff !== 'all') {
+        if (selectedStaff === 'unassigned') {
+          filtered = filtered.filter(m => !m?.kaiser_user_assignment);
+        } else {
+          filtered = filtered.filter(m => m?.kaiser_user_assignment === selectedStaff);
+        }
+      }
+      
+      // Kaiser Status filter
+      if (filters.kaiserStatus !== 'all') {
+        filtered = filtered.filter(m => m?.Kaiser_Status === filters.kaiserStatus);
+      }
+      
+      // CalAIM Status filter
+      if (filters.calaimStatus !== 'all') {
+        filtered = filtered.filter(m => m?.CalAIM_Status === filters.calaimStatus);
+      }
+      
+      // County filter
+      if (filters.county !== 'all') {
+        filtered = filtered.filter(m => m?.memberCounty === filters.county);
+      }
+      
+      // Assignment filter (different from staff filter - this is for specific filtering)
+      if (filters.assignment !== 'all') {
+        if (filters.assignment === 'unassigned') {
+          filtered = filtered.filter(m => !m?.kaiser_user_assignment);
+        } else {
+          filtered = filtered.filter(m => m?.kaiser_user_assignment === filters.assignment);
+        }
+      }
+      
+      // Overdue only filter
+      if (filters.overdueOnly) {
+        filtered = filtered.filter(m => isOverdue(m?.next_steps_date));
+      }
+      
+      return filtered;
     } catch (error) {
       console.error('Error filtering members:', error);
       return members || [];
     }
-  }, [members, selectedStaff]);
+  }, [members, selectedStaff, filters]);
 
   // Sort members based on current sort settings with error handling
   const sortedMembers = useMemo(() => {
@@ -500,24 +747,33 @@ export default function KaiserTrackerPage() {
         
         console.log('Raw members data:', membersData.slice(0, 3)); // Log first 3 members
         
-        // Validate and clean member data
-        const cleanMembers = membersData.map((member: any, index: number) => ({
-          id: member?.id || `member-${index}`,
-          memberFirstName: member?.memberFirstName || '',
-          memberLastName: member?.memberLastName || '',
-          memberMediCalNum: member?.memberMediCalNum || '',
-          memberMrn: member?.memberMrn || '',
-          memberCounty: member?.memberCounty || '',
-          client_ID2: member?.client_ID2 || '',
-          Kaiser_Status: member?.Kaiser_Status || 'Pending',
-          CalAIM_Status: member?.CalAIM_Status || 'Pending',
-          kaiser_user_assignment: member?.kaiser_user_assignment || '',
-          pathway: member?.pathway || '',
-          next_steps_date: member?.next_steps_date || '',
-          t2038_requested_date: member?.t2038_requested_date || '',
-          tier_requested_date: member?.tier_requested_date || '',
-          source: member?.source || 'caspio'
-        }));
+        // Validate and clean member data with workflow tracking
+        const cleanMembers = membersData.map((member: any, index: number) => {
+          const kaiserStatus = member?.Kaiser_Status || 'Pre-T2038, Compiling Docs';
+          const lastChange = member?.last_status_change ? new Date(member.last_status_change) : new Date();
+          const daysInStatus = Math.floor((new Date().getTime() - lastChange.getTime()) / (1000 * 60 * 60 * 24));
+          
+          return {
+            id: member?.id || `member-${index}`,
+            memberFirstName: member?.memberFirstName || '',
+            memberLastName: member?.memberLastName || '',
+            memberMediCalNum: member?.memberMediCalNum || '',
+            memberMrn: member?.memberMrn || '',
+            memberCounty: member?.memberCounty || '',
+            client_ID2: member?.client_ID2 || '',
+            Kaiser_Status: kaiserStatus,
+            CalAIM_Status: member?.CalAIM_Status || 'Pending',
+            kaiser_user_assignment: member?.kaiser_user_assignment || '',
+            pathway: member?.pathway || '',
+            next_steps_date: member?.next_steps_date || '',
+            t2038_requested_date: member?.t2038_requested_date || '',
+            tier_requested_date: member?.tier_requested_date || '',
+            last_status_change: member?.last_status_change || new Date().toISOString(),
+            workflow_step: kaiserWorkflow[kaiserStatus as keyof typeof kaiserWorkflow]?.nextStep || null,
+            days_in_current_status: daysInStatus,
+            source: member?.source || 'caspio'
+          };
+        });
         
         console.log('Cleaned members data:', cleanMembers.slice(0, 3)); // Log first 3 cleaned members
         
@@ -591,45 +847,253 @@ export default function KaiserTrackerPage() {
         </div>
       </div>
 
-      {/* Staff Filter */}
-      <div className="flex items-center gap-4 mb-6">
-        <div className="flex items-center gap-2">
-          <User className="h-4 w-4 text-muted-foreground" />
-          <label htmlFor="staff-filter" className="text-sm font-medium">
-            Filter by Staff:
-          </label>
-        </div>
-        <Select value={selectedStaff} onValueChange={setSelectedStaff}>
-          <SelectTrigger className="w-64">
-            <SelectValue placeholder="Select staff member" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">
-              All Staff ({members.length} members)
-            </SelectItem>
-            <SelectItem value="unassigned">
-              Unassigned ({members.filter(m => !m?.kaiser_user_assignment).length} members)
-            </SelectItem>
-            {staffMembers.map((staff) => {
-              const count = members.filter(m => m?.kaiser_user_assignment === staff).length;
-              return (
-                <SelectItem key={staff} value={staff}>
-                  {staff} ({count} members)
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-        {selectedStaff !== 'all' && (
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => setSelectedStaff('all')}
-          >
-            Clear Filter
-          </Button>
-        )}
-      </div>
+      {/* Comprehensive Filters */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filters
+          </CardTitle>
+          <CardDescription>
+            Filter members by status, assignment, county, or other criteria
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            
+            {/* Staff Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1">
+                <User className="h-3 w-3" />
+                Staff Assignment
+              </label>
+              <Select value={selectedStaff} onValueChange={setSelectedStaff}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Staff" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Staff</SelectItem>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {staffMembers.map((staff) => (
+                    <SelectItem key={staff} value={staff}>
+                      {staff}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Kaiser Status Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                Kaiser Status
+              </label>
+              <Select 
+                value={filters.kaiserStatus} 
+                onValueChange={(value) => setFilters(prev => ({...prev, kaiserStatus: value}))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  {filterOptions.kaiserStatuses.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* CalAIM Status Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1">
+                <Shield className="h-3 w-3" />
+                CalAIM Status
+              </label>
+              <Select 
+                value={filters.calaimStatus} 
+                onValueChange={(value) => setFilters(prev => ({...prev, calaimStatus: value}))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  {filterOptions.calaimStatuses.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* County Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1">
+                <User className="h-3 w-3" />
+                County
+              </label>
+              <Select 
+                value={filters.county} 
+                onValueChange={(value) => setFilters(prev => ({...prev, county: value}))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Counties" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Counties</SelectItem>
+                  {filterOptions.counties.map((county) => (
+                    <SelectItem key={county} value={county}>
+                      {county}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Assignment Filter (Additional) */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1">
+                <User className="h-3 w-3" />
+                Assignment
+              </label>
+              <Select 
+                value={filters.assignment} 
+                onValueChange={(value) => setFilters(prev => ({...prev, assignment: value}))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Assignments" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Assignments</SelectItem>
+                  <SelectItem value="unassigned">Unassigned Only</SelectItem>
+                  {filterOptions.assignments.map((assignment) => (
+                    <SelectItem key={assignment} value={assignment}>
+                      {assignment}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Overdue Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                Due Status
+              </label>
+              <Select 
+                value={filters.overdueOnly ? 'overdue' : 'all'} 
+                onValueChange={(value) => setFilters(prev => ({...prev, overdueOnly: value === 'overdue'}))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Tasks" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Tasks</SelectItem>
+                  <SelectItem value="overdue">Overdue Only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+          </div>
+
+          {/* Active Filters & Clear All */}
+          <div className="flex items-center justify-between mt-4 pt-4 border-t">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>Showing {filteredMembers.length} of {members.length} members</span>
+            </div>
+            
+            {(selectedStaff !== 'all' || 
+              filters.kaiserStatus !== 'all' || 
+              filters.calaimStatus !== 'all' || 
+              filters.county !== 'all' || 
+              filters.assignment !== 'all' || 
+              filters.overdueOnly) && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => {
+                  setSelectedStaff('all');
+                  setFilters({
+                    kaiserStatus: 'all',
+                    calaimStatus: 'all',
+                    county: 'all',
+                    assignment: 'all',
+                    overdueOnly: false
+                  });
+                }}
+                className="flex items-center gap-1"
+              >
+                <X className="h-3 w-3" />
+                Clear All Filters
+              </Button>
+            )}
+          </div>
+
+          {/* Active Filter Tags */}
+          <div className="flex flex-wrap gap-2 mt-3">
+            {selectedStaff !== 'all' && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                Staff: {selectedStaff === 'unassigned' ? 'Unassigned' : selectedStaff}
+                <X 
+                  className="h-3 w-3 cursor-pointer" 
+                  onClick={() => setSelectedStaff('all')}
+                />
+              </Badge>
+            )}
+            {filters.kaiserStatus !== 'all' && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                Kaiser: {filters.kaiserStatus}
+                <X 
+                  className="h-3 w-3 cursor-pointer" 
+                  onClick={() => setFilters(prev => ({...prev, kaiserStatus: 'all'}))}
+                />
+              </Badge>
+            )}
+            {filters.calaimStatus !== 'all' && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                CalAIM: {filters.calaimStatus}
+                <X 
+                  className="h-3 w-3 cursor-pointer" 
+                  onClick={() => setFilters(prev => ({...prev, calaimStatus: 'all'}))}
+                />
+              </Badge>
+            )}
+            {filters.county !== 'all' && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                County: {filters.county}
+                <X 
+                  className="h-3 w-3 cursor-pointer" 
+                  onClick={() => setFilters(prev => ({...prev, county: 'all'}))}
+                />
+              </Badge>
+            )}
+            {filters.assignment !== 'all' && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                Assignment: {filters.assignment === 'unassigned' ? 'Unassigned' : filters.assignment}
+                <X 
+                  className="h-3 w-3 cursor-pointer" 
+                  onClick={() => setFilters(prev => ({...prev, assignment: 'all'}))}
+                />
+              </Badge>
+            )}
+            {filters.overdueOnly && (
+              <Badge variant="secondary" className="flex items-center gap-1 bg-red-100 text-red-800">
+                Overdue Only
+                <X 
+                  className="h-3 w-3 cursor-pointer" 
+                  onClick={() => setFilters(prev => ({...prev, overdueOnly: false}))}
+                />
+              </Badge>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Quick Overview */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
@@ -965,6 +1429,61 @@ export default function KaiserTrackerPage() {
 
       </div>
 
+      {/* Workflow Alerts */}
+      {filteredMembers.some(m => 
+        (m.days_in_current_status || 0) > (kaiserWorkflow[m.Kaiser_Status as keyof typeof kaiserWorkflow]?.recommendedDays || 0)
+      ) && (
+        <Card className="border-orange-200 bg-orange-50">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2 text-orange-800">
+              <AlertTriangle className="h-5 w-5" />
+              Workflow Alerts
+            </CardTitle>
+            <CardDescription className="text-orange-700">
+              Members who have been in their current status longer than recommended
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {filteredMembers
+                .filter(m => (m.days_in_current_status || 0) > (kaiserWorkflow[m.Kaiser_Status as keyof typeof kaiserWorkflow]?.recommendedDays || 0))
+                .slice(0, 5)
+                .map(member => (
+                  <div key={member.id} className="flex items-center justify-between p-2 bg-white rounded border border-orange-200">
+                    <div className="flex items-center gap-3">
+                      <AlertTriangle className="h-4 w-4 text-orange-600" />
+                      <div>
+                        <span className="font-medium">{member.memberFirstName} {member.memberLastName}</span>
+                        <span className="text-sm text-muted-foreground ml-2">
+                          {member.days_in_current_status} days in "{member.Kaiser_Status}"
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="bg-orange-100 text-orange-800">
+                        {member.workflow_step || 'Review Needed'}
+                      </Badge>
+                      {member.workflow_step && (
+                        <Button 
+                          size="sm" 
+                          onClick={() => updateMemberStatus(member.id, 'Kaiser_Status', member.workflow_step!)}
+                        >
+                          Advance
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              {filteredMembers.filter(m => (m.days_in_current_status || 0) > (kaiserWorkflow[m.Kaiser_Status as keyof typeof kaiserWorkflow]?.recommendedDays || 0)).length > 5 && (
+                <p className="text-sm text-orange-700 text-center pt-2">
+                  ...and {filteredMembers.filter(m => (m.days_in_current_status || 0) > (kaiserWorkflow[m.Kaiser_Status as keyof typeof kaiserWorkflow]?.recommendedDays || 0)).length - 5} more members need attention
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Members Table */}
         <Card>
           <CardHeader>
@@ -1076,6 +1595,7 @@ export default function KaiserTrackerPage() {
                         Due Date {getSortIcon('due_date')}
                       </Button>
                     </TableHead>
+                    <TableHead>Next Steps</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1241,11 +1761,48 @@ export default function KaiserTrackerPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Button size="sm" variant="outline" asChild>
-                          <a href={`/admin/applications/${member.id}`}>
-                            Manage
-                          </a>
-                        </Button>
+                        <div className="space-y-1">
+                          {member.workflow_step ? (
+                            <>
+                              <div className="text-sm font-medium text-blue-700">
+                                Next: {member.workflow_step}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {kaiserWorkflow[member.Kaiser_Status as keyof typeof kaiserWorkflow]?.description}
+                              </div>
+                              <div className="text-xs">
+                                <Badge variant="outline" className={`${
+                                  (member.days_in_current_status || 0) > (kaiserWorkflow[member.Kaiser_Status as keyof typeof kaiserWorkflow]?.recommendedDays || 0)
+                                    ? 'bg-red-50 text-red-700 border-red-200'
+                                    : 'bg-green-50 text-green-700 border-green-200'
+                                }`}>
+                                  {member.days_in_current_status || 0} days in status
+                                </Badge>
+                              </div>
+                            </>
+                          ) : (
+                            <span className="text-sm text-green-600 font-medium">Complete</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="outline" asChild>
+                            <a href={`/admin/applications/${member.id}`}>
+                              Manage
+                            </a>
+                          </Button>
+                          {member.workflow_step && (
+                            <Button 
+                              size="sm" 
+                              variant="default"
+                              onClick={() => updateMemberStatus(member.id, 'Kaiser_Status', member.workflow_step!)}
+                              className="bg-blue-600 hover:bg-blue-700"
+                            >
+                              Next Step
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
