@@ -51,6 +51,7 @@ const adminNavLinks = [
   { href: '/admin/my-tasks', label: 'My Tasks', icon: ClipboardList },
   { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
   { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
+  { href: '/admin/batch-sync', label: 'Batch Sync', icon: Database },
   { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
 ];
 

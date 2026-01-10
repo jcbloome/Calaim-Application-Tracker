@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, Download, ArrowUpDown, ArrowUp, ArrowDown, Shield, HourglassIcon, Filter, X } from 'lucide-react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
+import { useAutoSync } from '@/hooks/use-auto-sync';
 
 // Kaiser workflow with next steps and recommended timeframes
 const kaiserWorkflow = {

@@ -9,6 +9,12 @@ export { authenticateGoogleDrive, scanCalAIMDriveFolders, migrateDriveFoldersToF
 // Export Smart Sync and Duplicate Prevention functions
 export { checkSyncStatus, performManualSync, checkForDuplicateClients, resolveDuplicateClients } from './smart-sync';
 
+// Export Auto-Sync and Batch Sync functions
+export { performAutoSync, getPendingSyncs, performBatchSync } from './auto-batch-sync';
+
+// Export Caspio Webhook functions
+export { caspioWebhook } from './caspio-webhooks';
+
 admin.initializeApp();
 
 // Define secrets for Caspio API
