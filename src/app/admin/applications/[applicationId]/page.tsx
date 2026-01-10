@@ -65,6 +65,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
 import { SyncToCaspioButton } from '@/components/SyncToCaspioButton';
+import { MemberFileLookup } from '@/components/MemberFileLookup';
 
 const kaiserSteps = [
   "Pre-T2038, Compiling Docs",
@@ -1078,6 +1079,7 @@ function ApplicationDetailPageContent() {
       <aside className="lg:col-span-1 space-y-6">
         <StaffApplicationTracker application={application} />
         <AdminActions application={application} />
+        <MemberFileLookup clientId={(application as any)?.client_ID2} />
          <Card>
             <CardHeader>
                 <CardTitle className="flex items-center gap-2"><List className="h-5 w-5" /> Uploaded Files</CardTitle>

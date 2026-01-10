@@ -3,6 +3,9 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
 
+// Export Google Drive migration functions
+export { authenticateGoogleDrive, scanCalAIMDriveFolders, migrateDriveFoldersToFirebase } from './google-drive';
+
 admin.initializeApp();
 
 // Define secrets for Caspio API

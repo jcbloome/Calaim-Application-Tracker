@@ -20,6 +20,7 @@ import {
   ClipboardList,
   Heart,
   Printer,
+  FolderSync,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -55,6 +56,7 @@ const adminNavLinks = [
 
 const superAdminNavLinks = [
     { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
+    { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
     { href: '/admin/super', label: 'Super Admin', icon: Shield },
 ];
 
