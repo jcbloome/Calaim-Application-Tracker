@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar } from 'lucide-react';
+import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, Download } from 'lucide-react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
 
@@ -110,9 +110,66 @@ const formatDate = (dateString: string): string => {
   });
 };
 
-const getStatusColor = (status: string): string => {
-  return statusColors[status] || 'bg-gray-100 text-gray-800 border-gray-200';
-};
+  const getStatusColor = (status: string): string => {
+    return statusColors[status] || 'bg-gray-100 text-gray-800 border-gray-200';
+  };
+
+  // Generate ILS Weekly Report
+  const generateILSReport = () => {
+    // Filter members at major bottleneck stages
+    const bottleneckStatuses = [
+      "T2038 Requested",
+      "Tier Level Requested", 
+      "RCFE/ILS for Invoicing"
+    ];
+    
+    const bottleneckMembers = members.filter(member => 
+      bottleneckStatuses.includes(member.Kaiser_Status || '')
+    );
+    
+    // Create CSV content
+    const csvHeaders = [
+      'Member Name',
+      'MRN (MCP_CIN)',
+      'Kaiser Status',
+      'Staff Assignment',
+      'Next Step Date',
+      'County',
+      'Client ID2'
+    ];
+    
+    const csvRows = bottleneckMembers.map(member => [
+      `${member.memberFirstName} ${member.memberLastName}`,
+      member.memberMrn || 'N/A',
+      member.Kaiser_Status || 'N/A',
+      member.kaiser_user_assignment || 'Unassigned',
+      member.next_steps_date ? formatDate(member.next_steps_date) : 'No date set',
+      member.memberCounty || 'N/A',
+      member.client_ID2 || 'N/A'
+    ]);
+    
+    const csvContent = [
+      csvHeaders.join(','),
+      ...csvRows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+    
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `ILS_Weekly_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: 'Report Downloaded',
+      description: `Generated ILS report with ${bottleneckMembers.length} members at bottleneck stages`,
+      className: 'bg-green-100 text-green-900 border-green-200',
+    });
+  };
 
 export default function KaiserTrackerPage() {
   const { isAdmin } = useAdmin();
@@ -207,18 +264,29 @@ export default function KaiserTrackerPage() {
             Overview of all Kaiser members from Caspio. Click "Manage" to access detailed tracking in the Staff Application Tracker.
           </p>
         </div>
-        <Button onClick={handleSync} disabled={isLoading}>
-          {isLoading ? (
-            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="mr-2 h-4 w-4" />
-          )}
-          Sync from Caspio
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={handleSync} disabled={isLoading}>
+            {isLoading ? (
+              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            Sync from Caspio
+          </Button>
+          
+          <Button 
+            onClick={generateILSReport} 
+            variant="outline"
+            disabled={members.length === 0}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            ILS Weekly Report
+          </Button>
+        </div>
       </div>
 
       {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Members</CardTitle>
@@ -266,6 +334,23 @@ export default function KaiserTrackerPage() {
               {members.filter(m => m.Kaiser_Status === 'On-Hold' || m.Kaiser_Status === 'Non-active').length}
             </div>
             <p className="text-xs text-muted-foreground">Paused cases</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">ILS Bottlenecks</CardTitle>
+            <Download className="h-4 w-4 text-purple-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-purple-600">
+              {members.filter(m => 
+                m.Kaiser_Status === 'T2038 Requested' || 
+                m.Kaiser_Status === 'Tier Level Requested' || 
+                m.Kaiser_Status === 'RCFE/ILS for Invoicing'
+              ).length}
+            </div>
+            <p className="text-xs text-muted-foreground">Weekly report ready</p>
           </CardContent>
         </Card>
       </div>

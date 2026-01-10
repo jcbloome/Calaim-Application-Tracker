@@ -523,27 +523,18 @@ export default function ManagerialOverviewPage() {
             <Card className="border-t-4 border-red-500">
                 <CardHeader>
                     <CardTitle className="text-lg">Kaiser Pipeline Status</CardTitle>
-                    <CardDescription>Member count at each stage.</CardDescription>
+                    <CardDescription>Comprehensive Kaiser member tracking and bottleneck identification.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    {kaiserPipelineStats.length > 0 ? (
-                        <div className="space-y-2">
-                        {kaiserPipelineStats.map(item => (
-                             <div key={item.name} className="flex items-center justify-between text-sm p-1">
-                                <span className="text-muted-foreground">{item.name}</span>
-                                <span className="font-semibold">{item.value}</span>
-                            </div>
-                        ))}
-                        </div>
-                    ) : (
-                         <p className="text-sm text-muted-foreground text-center py-4">No members in the Kaiser pipeline.</p>
-                    )}
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                        Kaiser tracking has been moved to the dedicated Kaiser Tracker dashboard for comprehensive pipeline management.
+                    </p>
                 </CardContent>
                 <CardFooter>
                     <Button asChild variant="outline" className="w-full">
-                        <Link href="/admin/reports/ils">
-                            <Printer className="mr-2 h-4 w-4" />
-                            Generate ILS Report
+                        <Link href="/admin/kaiser-tracker">
+                            <User className="mr-2 h-4 w-4" />
+                            Open Kaiser Tracker
                         </Link>
                     </Button>
                 </CardFooter>
