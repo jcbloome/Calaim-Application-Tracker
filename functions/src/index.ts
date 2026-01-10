@@ -31,6 +31,14 @@ export { caspioWebhook } from './caspio-webhooks';
 // Export Email Notification functions
 export { sendManualNotification } from './email-notifications';
 
+// Export Resend Email functions
+export { 
+  sendResendNotification,
+  sendDocumentUploadNotification,
+  sendCsSummaryCompletionNotification,
+  sendKaiserStatusUpdateNotification
+} from './resend-email-service';
+
 // Export Manual Notification functions (alternative to Firestore triggers)
 export { 
   checkForNewDocuments, 
