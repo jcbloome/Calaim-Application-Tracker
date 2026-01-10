@@ -2,6 +2,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
+import { WindowsNotificationContainer } from '@/components/WindowsNotification';
 import { cn } from '@/lib/utils';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { Inter } from 'next/font/google';
@@ -32,6 +33,7 @@ export default function RootLayout({
           <FirebaseClientProvider>{children}</FirebaseClientProvider>
         </React.Suspense>
         <Toaster />
+        <WindowsNotificationContainer />
       </body>
     </html>
   );

@@ -13,6 +13,7 @@ import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collec
 import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { NotificationManager } from '@/components/NotificationManager';
+import NotificationSettings from '@/components/NotificationSettings';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -1101,6 +1102,9 @@ export default function SuperAdminPage() {
                         <NotificationManager />
                     </CardContent>
                 </Card>
+
+                {/* Advanced Notification Settings */}
+                <NotificationSettings />
             </div>
             
         </div>

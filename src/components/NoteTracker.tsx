@@ -32,6 +32,7 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '@/firebase';
+import { useWindowsNotifications } from '@/components/WindowsNotification';
 
 interface Note {
   id: string;
@@ -109,6 +110,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
   const [showArchived, setShowArchived] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
+  const { showNotification } = useWindowsNotifications();
   const notesEndRef = useRef<HTMLDivElement>(null);
 
   // New note form state
@@ -277,6 +279,20 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
           description: newNote.sendNotification ? 'Notifications sent to selected staff' : 'Note saved successfully',
           className: 'bg-green-100 text-green-900 border-green-200',
         });
+
+        // Show Windows-style notification
+        showNotification({
+          type: 'success',
+          title: 'Note Created Successfully! 🎯',
+          message: `Your ${newNote.category.toLowerCase()} note for ${memberName} has been posted${newNote.sendNotification ? ' and notifications sent to staff' : ''}.`,
+          author: user.displayName || user.email || 'You',
+          memberName,
+          priority: newNote.priority,
+          duration: 4000,
+          sound: true,
+          soundType: 'arrow-target',
+          animation: 'bounce'
+        });
       }
     } catch (error: any) {
       toast({
@@ -327,6 +343,19 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
           title: 'Reply Added',
           description: 'Your reply has been posted',
           className: 'bg-green-100 text-green-900 border-green-200',
+        });
+
+        // Show Windows-style notification for reply
+        showNotification({
+          type: 'note',
+          title: 'Reply Posted! 💬',
+          message: `Your reply has been added to the conversation for ${memberName}.`,
+          author: user.displayName || user.email || 'You',
+          memberName,
+          duration: 3000,
+          sound: true,
+          soundType: 'chime',
+          animation: 'slide'
         });
       }
     } catch (error: any) {

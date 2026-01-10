@@ -47,6 +47,14 @@ export {
   markNotesAsRead
 } from './task-note-management';
 
+// Export Notification Settings functions
+export {
+  getNotificationSettings,
+  updateNotificationSettings,
+  checkNotificationPermissions,
+  sendNotificationWithSettings
+} from './notification-settings';
+
 admin.initializeApp();
 
 // Define secrets for Caspio API
