@@ -22,7 +22,8 @@ import {
   Printer,
   FolderSync,
   Bell,
-  Database
+  Database,
+  FileEdit
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -54,6 +55,7 @@ const adminNavLinks = [
   { href: '/admin/my-tasks', label: 'My Tasks', icon: ClipboardList },
   { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
   { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
+  { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
   { href: '/admin/batch-sync', label: 'Batch Sync', icon: Database },
   { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
 ];

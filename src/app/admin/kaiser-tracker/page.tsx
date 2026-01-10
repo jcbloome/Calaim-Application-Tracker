@@ -207,6 +207,16 @@ interface KaiserMember {
   kaiser_user_assignment: string;
   pathway: string;
   next_steps_date: string;
+  // Kaiser T2038 Process Dates
+  Kaiser_T2038_Requested_Date?: string;
+  Kaiser_T2038_Received_Date?: string;
+  // Kaiser Tier Level Process Dates  
+  Kaiser_Tier_Level_Requested_Date?: string;
+  Kaiser_Tier_Level_Received_Date?: string;
+  // ILS RCFE Contract Process Dates
+  ILS_RCFE_Sent_For_Contract_Date?: string;
+  ILS_RCFE_Received_Contract_Date?: string;
+  // Legacy fields (keeping for compatibility)
   t2038_requested_date?: string;
   tier_requested_date?: string;
   last_status_change?: string;

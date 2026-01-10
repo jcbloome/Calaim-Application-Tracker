@@ -525,6 +525,16 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
       next_steps_date: member.next_steps_date || '',
       last_updated: member.LastUpdated || member.last_updated || '',
       
+      // Kaiser Process Dates
+      Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date || '',
+      Kaiser_T2038_Received_Date: member.Kaiser_T2038_Received_Date || '',
+      Kaiser_Tier_Level_Requested_Date: member.Kaiser_Tier_Level_Requested_Date || '',
+      Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date || '',
+      
+      // ILS RCFE Contract Dates
+      ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || '',
+      ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || '',
+      
       // Caspio record info
       caspio_id: member.client_ID2 || member.Client_ID2 || member.CLIENT_ID2 || member.clientID2 || member.ClientID2 || member.id || `caspio-${index}`,
       source: 'caspio',
@@ -712,6 +722,146 @@ export const publishCsSummaryToCaspioSimple = onCall(async (request) => {
     
   } catch (error: any) {
     console.error('❌ Error publishing CS Summary:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', `Unexpected error: ${error.message}`);
+  }
+});
+
+// Update Kaiser Member Dates in Caspio
+export const updateKaiserMemberDates = onCall({
+  secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret]
+}, async (request) => {
+  try {
+    const { memberId, updates } = request.data;
+    
+    if (!memberId) {
+      throw new HttpsError('invalid-argument', 'memberId is required');
+    }
+    
+    if (!updates || Object.keys(updates).length === 0) {
+      throw new HttpsError('invalid-argument', 'updates object is required');
+    }
+    
+    console.log(`📅 Updating Kaiser member dates for ID: ${memberId}`);
+    console.log('📅 Updates:', updates);
+    
+    // Get Caspio credentials
+    const baseUrl = caspioBaseUrl.value();
+    const clientId = caspioClientId.value();
+    const clientSecret = caspioClientSecret.value();
+    
+    // Get access token
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
+    
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: 'grant_type=client_credentials',
+    });
+    
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
+    }
+    
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    
+    // Prepare update data for Caspio
+    const updateData: any = {
+      LastUpdated: new Date().toISOString()
+    };
+    
+    // Map the date fields
+    if (updates.Kaiser_T2038_Requested_Date) {
+      updateData.Kaiser_T2038_Requested_Date = updates.Kaiser_T2038_Requested_Date;
+    }
+    if (updates.Kaiser_T2038_Received_Date) {
+      updateData.Kaiser_T2038_Received_Date = updates.Kaiser_T2038_Received_Date;
+    }
+    if (updates.Kaiser_Tier_Level_Requested_Date) {
+      updateData.Kaiser_Tier_Level_Requested_Date = updates.Kaiser_Tier_Level_Requested_Date;
+    }
+    if (updates.Kaiser_Tier_Level_Received_Date) {
+      updateData.Kaiser_Tier_Level_Received_Date = updates.Kaiser_Tier_Level_Received_Date;
+    }
+    if (updates.ILS_RCFE_Sent_For_Contract_Date) {
+      updateData.ILS_RCFE_Sent_For_Contract_Date = updates.ILS_RCFE_Sent_For_Contract_Date;
+    }
+    if (updates.ILS_RCFE_Received_Contract_Date) {
+      updateData.ILS_RCFE_Received_Contract_Date = updates.ILS_RCFE_Received_Contract_Date;
+    }
+    
+    // Update in Caspio using client_ID2 or Record_ID
+    const membersTable = 'CalAIM_tbl_Members';
+    let updateUrl: string;
+    
+    // Try to find the member by client_ID2 first, then by Record_ID
+    if (memberId.startsWith('CL')) {
+      // This looks like a client_ID2
+      updateUrl = `${baseUrl}/tables/${membersTable}/records?q.where=client_ID2='${memberId}'`;
+    } else {
+      // This might be a Record_ID or Firebase document ID
+      updateUrl = `${baseUrl}/tables/${membersTable}/records?q.where=Record_ID='${memberId}'`;
+    }
+    
+    console.log('📅 Updating Caspio with URL:', updateUrl);
+    console.log('📅 Update data:', updateData);
+    
+    const updateResponse = await fetch(updateUrl, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updateData),
+    });
+    
+    if (!updateResponse.ok) {
+      const errorText = await updateResponse.text();
+      throw new HttpsError('internal', `Failed to update Caspio dates: ${updateResponse.status} ${errorText}`);
+    }
+    
+    const result = await updateResponse.json();
+    console.log('✅ Successfully updated Kaiser member dates in Caspio');
+    
+    // Also update in Firebase if we have an application document
+    try {
+      const db = admin.firestore();
+      const appsSnapshot = await db.collection('applications')
+        .where('client_ID2', '==', memberId)
+        .limit(1)
+        .get();
+      
+      if (!appsSnapshot.empty) {
+        const appDoc = appsSnapshot.docs[0];
+        await appDoc.ref.update({
+          ...updates,
+          lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+        });
+        console.log('✅ Also updated Firebase application document');
+      }
+    } catch (firebaseError) {
+      console.warn('⚠️ Could not update Firebase document:', firebaseError);
+      // Don't fail the whole operation if Firebase update fails
+    }
+    
+    return {
+      success: true,
+      message: `Successfully updated Kaiser member dates for ${memberId}`,
+      updatedFields: Object.keys(updateData).filter(key => key !== 'LastUpdated'),
+      caspioResult: result
+    };
+    
+  } catch (error: any) {
+    console.error('❌ Error updating Kaiser member dates:', error);
     if (error instanceof HttpsError) {
       throw error;
     }
