@@ -423,24 +423,38 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
     
     console.log(`✅ Successfully fetched ALL members: ${allMembers.length} total records`);
     
-    // Filter for Kaiser members and transform Caspio data
+    // Filter for Kaiser members using CalAIM_MCP field
     const kaiserMembers = allMembers.filter(member => 
-      member.HealthPlan === 'Kaiser' || 
-      member.Kaiser_Status || 
-      member.Kaiser_Stathus ||
-      // If no health plan field, include all for now
-      !member.HealthPlan
+      member.CalAIM_MCP === 'Kaiser'
     );
     
     console.log(`🏥 Filtered to Kaiser members: ${kaiserMembers.length} out of ${allMembers.length} total`);
     
+    // Debug: Log first member's fields to verify correct mapping
+    if (kaiserMembers.length > 0) {
+      console.log('📋 Sample Kaiser member fields:', Object.keys(kaiserMembers[0]));
+      console.log('📋 Sample Kaiser member data with CORRECT field names:', {
+        Senior_First: kaiserMembers[0].Senior_First,
+        Senior_Last: kaiserMembers[0].Senior_Last,
+        MC: kaiserMembers[0].MC,
+        MCP_CIN: kaiserMembers[0].MCP_CIN,
+        Member_County: kaiserMembers[0].Member_County,
+        SNF_Diversion_or_Transition: kaiserMembers[0].SNF_Diversion_or_Transition,
+        CalAIM_Status: kaiserMembers[0].CalAIM_Status,
+        Kaiser_Status: kaiserMembers[0].Kaiser_Status,
+        Kaiser_User_Assignment: kaiserMembers[0].Kaiser_User_Assignment,
+        CalAIM_MCP: kaiserMembers[0].CalAIM_MCP,
+        client_ID2: kaiserMembers[0].client_ID2
+      });
+    }
+    
     const transformedMembers = kaiserMembers.map((member: any) => ({
-      // Basic info
-      memberFirstName: member.MemberFirstName || '',
-      memberLastName: member.MemberLastName || '',
-      memberMediCalNum: member.MemberMediCalNum || '',
-      memberMrn: member.MemberMRN || member.MRN || '',
-      memberCounty: member.MemberCounty || member.member_county || '',
+      // Basic info using EXACT Caspio field names
+      memberFirstName: member.Senior_First || '',
+      memberLastName: member.Senior_Last || '',
+      memberMediCalNum: member.MC || '',
+      memberMrn: member.MCP_CIN || '', // MCP_CIN is MRN for Kaiser
+      memberCounty: member.Member_County || '',
       
       // Key linking field
       client_ID2: member.client_ID2 || '',
@@ -448,24 +462,15 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
       // Kaiser specific fields
       MCP_CIN: member.MCP_CIN || '',
       CalAIM_MCP: member.CalAIM_MCP || '',
-      Kaiser_Status: member.Kaiser_Status || member.Kaiser_Stathus || 'Pending',
+      Kaiser_Status: member.Kaiser_Status || 'Pending',
       CalAIM_Status: member.CalAIM_Status || 'Pending',
-      kaiser_user_assignment: member.kaiser_user_assignment || '',
+      kaiser_user_assignment: member.Kaiser_User_Assignment || '',
       
-      // Additional Caspio fields
-      ApplicationID: member.ApplicationID || '',
-      UserID: member.UserID || '',
-      Status: member.Status || '',
-      
-      // Contact information
-      ReferrerFirstName: member.ReferrerFirstName || '',
-      ReferrerLastName: member.ReferrerLastName || '',
-      ReferrerEmail: member.ReferrerEmail || '',
-      ReferrerPhone: member.ReferrerPhone || '',
+      // Pathway information
+      pathway: member.SNF_Diversion_or_Transition || '',
       
       // Health plan info
-      HealthPlan: member.HealthPlan || 'Kaiser',
-      Pathway: member.Pathway || '',
+      HealthPlan: member.CalAIM_MCP || 'Kaiser',
       
       // Dates and tracking
       DateCreated: member.DateCreated || '',
