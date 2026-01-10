@@ -9,9 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, User, MapPin, Clock, AlertCircle, CheckCircle, XCircle, Filter } from 'lucide-react';
+import { Calendar, User, MapPin, Clock, AlertCircle, CheckCircle, XCircle, Filter, Download, RefreshCw } from 'lucide-react';
 import { useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useToast } from '@/hooks/use-toast';
 
 interface KaiserMember {
   id: string;
@@ -22,12 +24,26 @@ interface KaiserMember {
   memberCounty: string;
   healthPlan: string;
   
+  // Key linking field
+  client_ID2?: string;
+  
   // Kaiser specific fields
   MCP_CIN?: string;
   CalAIM_MCP?: string;
   Kaiser_Status?: 'Pending' | 'Authorized' | 'Denied' | 'In Review' | 'Submitted';
   CalAIM_Status?: 'Authorized' | 'Not Authorized' | 'Pending' | 'Under Review';
   kaiser_user_assignment?: string;
+  
+  // Additional Caspio fields
+  ApplicationID?: string;
+  UserID?: string;
+  ReferrerFirstName?: string;
+  ReferrerLastName?: string;
+  ReferrerEmail?: string;
+  ReferrerPhone?: string;
+  HealthPlan?: string;
+  Pathway?: string;
+  DateCreated?: string;
   
   // Next steps tracking
   next_steps?: string;
@@ -38,6 +54,10 @@ interface KaiserMember {
   status: string;
   pathway: string;
   createdAt: any;
+  
+  // Source tracking
+  source?: 'firebase' | 'caspio';
+  caspio_id?: string;
 }
 
 const statusColors = {
@@ -89,11 +109,14 @@ const isOverdue = (dateString?: string) => {
 export default function KaiserTrackerPage() {
   const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const db = useFirestore();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [countyFilter, setCountyFilter] = useState<string>('all');
   const [assignmentFilter, setAssignmentFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('all');
+  const [caspioMembers, setCaspioMembers] = useState<KaiserMember[]>([]);
+  const [isLoadingCaspio, setIsLoadingCaspio] = useState(false);
 
   // Query Kaiser members (members with Kaiser health plan)
   const kaiserQuery = useMemo(() => {
@@ -107,10 +130,44 @@ export default function KaiserTrackerPage() {
 
   const { data: applications, loading, error } = useCollection(kaiserQuery);
 
+  // Fetch Caspio data
+  const fetchCaspioData = async () => {
+    setIsLoadingCaspio(true);
+    try {
+      const functions = getFunctions();
+      const fetchKaiserMembers = httpsCallable(functions, 'fetchKaiserMembersFromCaspio');
+      
+      const result = await fetchKaiserMembers();
+      const data = result.data as any;
+      
+      if (data.success) {
+        setCaspioMembers(data.members || []);
+        toast({
+          title: 'Success!',
+          description: `Loaded ${data.total} members from Caspio`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: data.message || 'Failed to fetch Caspio data',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error fetching Caspio data:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message || 'Failed to connect to Caspio',
+      });
+    } finally {
+      setIsLoadingCaspio(false);
+    }
+  };
+
   const kaiserMembers: KaiserMember[] = useMemo(() => {
-    if (!applications) return [];
-    
-    return applications.map(app => ({
+    const firebaseMembers = applications ? applications.map(app => ({
       id: app.id,
       memberFirstName: app.memberFirstName || '',
       memberLastName: app.memberLastName || '',
@@ -135,8 +192,40 @@ export default function KaiserTrackerPage() {
       status: app.status || '',
       pathway: app.pathway || '',
       createdAt: app.createdAt
-    }));
-  }, [applications]);
+    })) : [];
+
+    // Combine Firebase and Caspio data, prioritizing Caspio data for Kaiser-specific fields
+    const combinedMembers = [...firebaseMembers];
+    
+    // Add Caspio-only members or update existing ones with Caspio data
+    caspioMembers.forEach(caspioMember => {
+      const existingIndex = combinedMembers.findIndex(fm => 
+        fm.memberMediCalNum === caspioMember.memberMediCalNum ||
+        (fm.memberFirstName === caspioMember.memberFirstName && fm.memberLastName === caspioMember.memberLastName)
+      );
+      
+      if (existingIndex >= 0) {
+        // Update existing member with Caspio data
+        combinedMembers[existingIndex] = {
+          ...combinedMembers[existingIndex],
+          ...caspioMember,
+          id: combinedMembers[existingIndex].id, // Keep Firebase ID
+        };
+      } else {
+        // Add new Caspio-only member
+        combinedMembers.push({
+          ...caspioMember,
+          id: `caspio-${caspioMember.caspio_id}`,
+          healthPlan: 'Kaiser',
+          status: 'Caspio Only',
+          pathway: 'Unknown',
+          createdAt: null
+        });
+      }
+    });
+    
+    return combinedMembers;
+  }, [applications, caspioMembers]);
 
   // Filter members based on search and filters
   const filteredMembers = useMemo(() => {
@@ -198,11 +287,29 @@ export default function KaiserTrackerPage() {
           <Badge variant="outline" className="text-lg px-3 py-1">
             {kaiserMembers.length} Total Members
           </Badge>
+          <Button 
+            onClick={fetchCaspioData} 
+            disabled={isLoadingCaspio}
+            variant="outline"
+            size="sm"
+          >
+            {isLoadingCaspio ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Sync from Caspio
+              </>
+            )}
+          </Button>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Pending</CardTitle>
@@ -211,6 +318,17 @@ export default function KaiserTrackerPage() {
           <CardContent>
             <div className="text-2xl font-bold">{membersByStatus.pending.length}</div>
             <p className="text-xs text-muted-foreground">Awaiting submission</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Submitted</CardTitle>
+            <AlertCircle className="h-4 w-4 text-purple-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{membersByStatus.submitted.length}</div>
+            <p className="text-xs text-muted-foreground">Sent to Kaiser</p>
           </CardContent>
         </Card>
 
@@ -238,12 +356,120 @@ export default function KaiserTrackerPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Overdue</CardTitle>
+            <CardTitle className="text-sm font-medium">Denied</CardTitle>
             <XCircle className="h-4 w-4 text-red-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{membersByStatus.denied.length}</div>
+            <p className="text-xs text-muted-foreground">Kaiser denied</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Overdue</CardTitle>
+            <AlertCircle className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{membersByStatus.overdue.length}</div>
             <p className="text-xs text-muted-foreground">Past due date</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Additional Stage Breakdown Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Kaiser Status Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm">Pending</span>
+                <Badge className="bg-yellow-100 text-yellow-800">{membersByStatus.pending.length}</Badge>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm">Submitted</span>
+                <Badge className="bg-purple-100 text-purple-800">{membersByStatus.submitted.length}</Badge>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm">In Review</span>
+                <Badge className="bg-blue-100 text-blue-800">{membersByStatus.inReview.length}</Badge>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm">Authorized</span>
+                <Badge className="bg-green-100 text-green-800">{membersByStatus.authorized.length}</Badge>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm">Denied</span>
+                <Badge className="bg-red-100 text-red-800">{membersByStatus.denied.length}</Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">CalAIM Authorization</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {(() => {
+                const calaimAuthorized = kaiserMembers.filter(m => m.CalAIM_Status === 'Authorized').length;
+                const calaimPending = kaiserMembers.filter(m => m.CalAIM_Status === 'Pending' || m.CalAIM_Status === 'Under Review').length;
+                const calaimNotAuthorized = kaiserMembers.filter(m => m.CalAIM_Status === 'Not Authorized').length;
+                
+                return (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Authorized</span>
+                      <Badge className="bg-green-100 text-green-800">{calaimAuthorized}</Badge>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Pending Review</span>
+                      <Badge className="bg-yellow-100 text-yellow-800">{calaimPending}</Badge>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Not Authorized</span>
+                      <Badge className="bg-red-100 text-red-800">{calaimNotAuthorized}</Badge>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Assignment Status</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {(() => {
+                const assigned = kaiserMembers.filter(m => m.kaiser_user_assignment && m.kaiser_user_assignment !== '').length;
+                const unassigned = kaiserMembers.filter(m => !m.kaiser_user_assignment || m.kaiser_user_assignment === '').length;
+                const overdue = membersByStatus.overdue.length;
+                
+                return (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Assigned</span>
+                      <Badge className="bg-blue-100 text-blue-800">{assigned}</Badge>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Unassigned</span>
+                      <Badge className="bg-gray-100 text-gray-800">{unassigned}</Badge>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Overdue Tasks</span>
+                      <Badge className="bg-orange-100 text-orange-800">{overdue}</Badge>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -344,6 +570,7 @@ export default function KaiserTrackerPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Member</TableHead>
+                        <TableHead>Client ID2</TableHead>
                         <TableHead>Medi-Cal #</TableHead>
                         <TableHead>MRN</TableHead>
                         <TableHead>County</TableHead>
@@ -358,7 +585,7 @@ export default function KaiserTrackerPage() {
                     <TableBody>
                       {members.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                             No members found matching the current filters.
                           </TableCell>
                         </TableRow>
@@ -368,6 +595,16 @@ export default function KaiserTrackerPage() {
                             <TableCell>
                               <div className="font-medium">
                                 {member.memberFirstName} {member.memberLastName}
+                              </div>
+                              {member.source === 'caspio' && (
+                                <Badge variant="secondary" className="text-xs mt-1">
+                                  Caspio
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">
+                              <div className="font-medium text-blue-600">
+                                {member.client_ID2 || '-'}
                               </div>
                             </TableCell>
                             <TableCell className="font-mono text-sm">

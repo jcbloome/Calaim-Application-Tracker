@@ -156,6 +156,121 @@ export const testCaspioConnection = onCall({
   }
 });
 
+// Fetch Kaiser members from Caspio
+export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
+  try {
+    console.log('📥 Fetching Kaiser members from Caspio...');
+    
+    // Get Caspio access token
+    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+    
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
+    
+    console.log('🔑 Getting Caspio access token...');
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: 'grant_type=client_credentials',
+    });
+    
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
+    }
+    
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    console.log('✅ Got access token');
+    
+    // Fetch all members from CalAIM_tbl_Members table
+    const membersTable = 'CalAIM_tbl_Members';
+    const fetchUrl = `${baseUrl}/tables/${membersTable}/records`;
+    
+    console.log('📋 Fetching members from:', fetchUrl);
+    
+    const membersResponse = await fetch(fetchUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!membersResponse.ok) {
+      const errorText = await membersResponse.text();
+      throw new HttpsError('internal', `Failed to fetch members: ${membersResponse.status} ${errorText}`);
+    }
+    
+    const membersData = await membersResponse.json();
+    console.log('✅ Successfully fetched members:', membersData.Result?.length || 0);
+    
+    // Transform Caspio data to match our Kaiser tracker format
+    const transformedMembers = (membersData.Result || []).map((member: any) => ({
+      // Basic info
+      memberFirstName: member.MemberFirstName || '',
+      memberLastName: member.MemberLastName || '',
+      memberMediCalNum: member.MemberMediCalNum || '',
+      memberMrn: member.MemberMRN || member.MRN || '',
+      memberCounty: member.MemberCounty || member.member_county || '',
+      
+      // Key linking field
+      client_ID2: member.client_ID2 || '',
+      
+      // Kaiser specific fields
+      MCP_CIN: member.MCP_CIN || '',
+      CalAIM_MCP: member.CalAIM_MCP || '',
+      Kaiser_Status: member.Kaiser_Status || member.Kaiser_Stathus || 'Pending',
+      CalAIM_Status: member.CalAIM_Status || 'Pending',
+      kaiser_user_assignment: member.kaiser_user_assignment || '',
+      
+      // Additional Caspio fields
+      ApplicationID: member.ApplicationID || '',
+      UserID: member.UserID || '',
+      Status: member.Status || '',
+      
+      // Contact information
+      ReferrerFirstName: member.ReferrerFirstName || '',
+      ReferrerLastName: member.ReferrerLastName || '',
+      ReferrerEmail: member.ReferrerEmail || '',
+      ReferrerPhone: member.ReferrerPhone || '',
+      
+      // Health plan info
+      HealthPlan: member.HealthPlan || '',
+      Pathway: member.Pathway || '',
+      
+      // Dates and tracking
+      DateCreated: member.DateCreated || '',
+      next_steps_date: member.next_steps_date || '',
+      last_updated: member.LastUpdated || member.last_updated || '',
+      
+      // Caspio record info
+      caspio_id: member.client_ID2 || member.id || '',
+      source: 'caspio'
+    }));
+    
+    return {
+      success: true,
+      message: `Successfully fetched ${transformedMembers.length} members from Caspio`,
+      members: transformedMembers,
+      total: transformedMembers.length
+    };
+    
+  } catch (error: any) {
+    console.error('❌ Error fetching Caspio members:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', `Unexpected error: ${error.message}`);
+  }
+});
+
 // Simplified publish function for testing
 export const publishCsSummaryToCaspioSimple = onCall(async (request) => {
   try {
