@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, User, MapPin, Clock, AlertCircle, CheckCircle, XCircle, Filter, Download, RefreshCw } from 'lucide-react';
+import { Calendar, User, MapPin, Clock, AlertCircle, CheckCircle, XCircle, Filter, Download, RefreshCw, Edit, Save, X } from 'lucide-react';
 import { useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -117,6 +117,9 @@ export default function KaiserTrackerPage() {
   const [activeTab, setActiveTab] = useState('all');
   const [caspioMembers, setCaspioMembers] = useState<KaiserMember[]>([]);
   const [isLoadingCaspio, setIsLoadingCaspio] = useState(false);
+  const [editingMember, setEditingMember] = useState<string | null>(null);
+  const [editingData, setEditingData] = useState<Partial<KaiserMember>>({});
+  const [isSaving, setIsSaving] = useState(false);
 
   // Query Kaiser members (members with Kaiser health plan)
   const kaiserQuery = useMemo(() => {
@@ -168,6 +171,63 @@ export default function KaiserTrackerPage() {
       });
     } finally {
       setIsLoadingCaspio(false);
+    }
+  };
+
+  // Start editing a member
+  const startEditing = (member: KaiserMember) => {
+    setEditingMember(member.id);
+    setEditingData({
+      Kaiser_Status: member.Kaiser_Status,
+      CalAIM_Status: member.CalAIM_Status,
+      kaiser_user_assignment: member.kaiser_user_assignment,
+      next_steps_date: member.next_steps_date
+    });
+  };
+
+  // Cancel editing
+  const cancelEditing = () => {
+    setEditingMember(null);
+    setEditingData({});
+  };
+
+  // Save changes to both Firebase and Caspio
+  const saveChanges = async (member: KaiserMember) => {
+    setIsSaving(true);
+    try {
+      const functions = getFunctions();
+      const syncKaiserStatus = httpsCallable(functions, 'syncKaiserStatus');
+      
+      const result = await syncKaiserStatus({
+        applicationId: member.id.startsWith('caspio-') ? null : member.id,
+        client_ID2: member.client_ID2,
+        Kaiser_Status: editingData.Kaiser_Status,
+        CalAIM_Status: editingData.CalAIM_Status,
+        kaiser_user_assignment: editingData.kaiser_user_assignment,
+        next_steps_date: editingData.next_steps_date
+      });
+      
+      toast({
+        title: 'Success!',
+        description: 'Kaiser status synced to both systems',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      
+      // Refresh data to show changes
+      await fetchCaspioData();
+      
+      setEditingMember(null);
+      setEditingData({});
+      
+    } catch (error: any) {
+      console.error('Error saving changes:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message || 'Failed to save changes',
+      });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -667,26 +727,70 @@ export default function KaiserTrackerPage() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Badge className={statusColors[member.Kaiser_Status || 'Pending']}>
-                                <div className="flex items-center gap-1">
-                                  {getStatusIcon(member.Kaiser_Status || 'Pending')}
-                                  {member.Kaiser_Status || 'Pending'}
-                                </div>
-                              </Badge>
+                              {editingMember === member.id ? (
+                                <Select 
+                                  value={editingData.Kaiser_Status || member.Kaiser_Status || 'Pending'} 
+                                  onValueChange={(value) => setEditingData({...editingData, Kaiser_Status: value as any})}
+                                >
+                                  <SelectTrigger className="w-32">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Pending">Pending</SelectItem>
+                                    <SelectItem value="Submitted">Submitted</SelectItem>
+                                    <SelectItem value="In Review">In Review</SelectItem>
+                                    <SelectItem value="Authorized">Authorized</SelectItem>
+                                    <SelectItem value="Denied">Denied</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Badge className={statusColors[member.Kaiser_Status || 'Pending']}>
+                                  <div className="flex items-center gap-1">
+                                    {getStatusIcon(member.Kaiser_Status || 'Pending')}
+                                    {member.Kaiser_Status || 'Pending'}
+                                  </div>
+                                </Badge>
+                              )}
                             </TableCell>
                             <TableCell>
-                              <Badge className={statusColors[member.CalAIM_Status || 'Pending']}>
-                                <div className="flex items-center gap-1">
-                                  {getStatusIcon(member.CalAIM_Status || 'Pending')}
-                                  {member.CalAIM_Status || 'Pending'}
-                                </div>
-                              </Badge>
+                              {editingMember === member.id ? (
+                                <Select 
+                                  value={editingData.CalAIM_Status || member.CalAIM_Status || 'Pending'} 
+                                  onValueChange={(value) => setEditingData({...editingData, CalAIM_Status: value as any})}
+                                >
+                                  <SelectTrigger className="w-32">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Pending">Pending</SelectItem>
+                                    <SelectItem value="Under Review">Under Review</SelectItem>
+                                    <SelectItem value="Authorized">Authorized</SelectItem>
+                                    <SelectItem value="Not Authorized">Not Authorized</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Badge className={statusColors[member.CalAIM_Status || 'Pending']}>
+                                  <div className="flex items-center gap-1">
+                                    {getStatusIcon(member.CalAIM_Status || 'Pending')}
+                                    {member.CalAIM_Status || 'Pending'}
+                                  </div>
+                                </Badge>
+                              )}
                             </TableCell>
                             <TableCell>
-                              <div className="flex items-center gap-1">
-                                <User className="h-3 w-3" />
-                                {member.kaiser_user_assignment || 'Unassigned'}
-                              </div>
+                              {editingMember === member.id ? (
+                                <Input
+                                  value={editingData.kaiser_user_assignment || member.kaiser_user_assignment || ''}
+                                  onChange={(e) => setEditingData({...editingData, kaiser_user_assignment: e.target.value})}
+                                  placeholder="Assign to..."
+                                  className="w-32"
+                                />
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <User className="h-3 w-3" />
+                                  {member.kaiser_user_assignment || 'Unassigned'}
+                                </div>
+                              )}
                             </TableCell>
                             <TableCell className="max-w-xs">
                               <div className="text-sm truncate">
@@ -705,11 +809,47 @@ export default function KaiserTrackerPage() {
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
-                                <Button size="sm" variant="outline" asChild>
-                                  <a href={`/admin/applications/${member.id}`}>
-                                    View
-                                  </a>
-                                </Button>
+                                {editingMember === member.id ? (
+                                  <>
+                                    <Button 
+                                      size="sm" 
+                                      onClick={() => saveChanges(member)}
+                                      disabled={isSaving}
+                                      className="bg-green-600 hover:bg-green-700"
+                                    >
+                                      {isSaving ? (
+                                        <RefreshCw className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <Save className="h-3 w-3" />
+                                      )}
+                                    </Button>
+                                    <Button 
+                                      size="sm" 
+                                      variant="outline" 
+                                      onClick={cancelEditing}
+                                      disabled={isSaving}
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Button 
+                                      size="sm" 
+                                      variant="outline" 
+                                      onClick={() => startEditing(member)}
+                                    >
+                                      <Edit className="h-3 w-3" />
+                                    </Button>
+                                    {!member.id.startsWith('caspio-') && (
+                                      <Button size="sm" variant="outline" asChild>
+                                        <a href={`/admin/applications/${member.id}`}>
+                                          View
+                                        </a>
+                                      </Button>
+                                    )}
+                                  </>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>

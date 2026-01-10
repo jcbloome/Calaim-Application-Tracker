@@ -156,6 +156,186 @@ export const testCaspioConnection = onCall({
   }
 });
 
+// Update Kaiser status in Caspio
+export const updateKaiserStatusInCaspio = onCall(async (request) => {
+  try {
+    const { client_ID2, Kaiser_Status, CalAIM_Status, kaiser_user_assignment, next_steps_date } = request.data;
+    
+    if (!client_ID2) {
+      throw new HttpsError('invalid-argument', 'client_ID2 is required to update Caspio record');
+    }
+    
+    console.log(`📝 Updating Kaiser status in Caspio for client_ID2: ${client_ID2}`);
+    
+    // Get Caspio access token
+    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+    
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
+    
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: 'grant_type=client_credentials',
+    });
+    
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
+    }
+    
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    
+    // Update the record in Caspio
+    const membersTable = 'CalAIM_tbl_Members';
+    const updateUrl = `${baseUrl}/tables/${membersTable}/records?q.where=client_ID2='${client_ID2}'`;
+    
+    const updateData: any = {
+      LastUpdated: new Date().toISOString()
+    };
+    
+    if (Kaiser_Status) updateData.Kaiser_Status = Kaiser_Status;
+    if (CalAIM_Status) updateData.CalAIM_Status = CalAIM_Status;
+    if (kaiser_user_assignment) updateData.kaiser_user_assignment = kaiser_user_assignment;
+    if (next_steps_date) updateData.next_steps_date = next_steps_date;
+    
+    console.log('📝 Update data:', updateData);
+    
+    const updateResponse = await fetch(updateUrl, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updateData),
+    });
+    
+    if (!updateResponse.ok) {
+      const errorText = await updateResponse.text();
+      throw new HttpsError('internal', `Failed to update Caspio record: ${updateResponse.status} ${errorText}`);
+    }
+    
+    const result = await updateResponse.json();
+    console.log('✅ Successfully updated Caspio record');
+    
+    return {
+      success: true,
+      message: `Successfully updated Kaiser status in Caspio for client_ID2: ${client_ID2}`,
+      data: result,
+    };
+    
+  } catch (error: any) {
+    console.error('❌ Error updating Caspio:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', `Unexpected error: ${error.message}`);
+  }
+});
+
+// Sync Kaiser status from App to Firebase and Caspio
+export const syncKaiserStatus = onCall(async (request) => {
+  try {
+    const { applicationId, client_ID2, Kaiser_Status, CalAIM_Status, kaiser_user_assignment, next_steps_date } = request.data;
+    
+    console.log(`🔄 Syncing Kaiser status for application: ${applicationId}, client_ID2: ${client_ID2}`);
+    
+    // Update Firebase first
+    if (applicationId) {
+      const db = admin.firestore();
+      const appRef = db.collection('applications').doc(applicationId);
+      
+      const updateData: any = {
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+      };
+      
+      if (Kaiser_Status) updateData.Kaiser_Status = Kaiser_Status;
+      if (CalAIM_Status) updateData.CalAIM_Status = CalAIM_Status;
+      if (kaiser_user_assignment) updateData.kaiser_user_assignment = kaiser_user_assignment;
+      if (next_steps_date) updateData.next_steps_date = next_steps_date;
+      if (client_ID2) updateData.client_ID2 = client_ID2;
+      
+      await appRef.update(updateData);
+      console.log('✅ Updated Firebase application');
+    }
+    
+    // Update Caspio if we have client_ID2
+    if (client_ID2) {
+      console.log('📝 Updating Caspio record...');
+      
+      // Get Caspio access token
+      const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+      const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+      const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+      
+      const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+      const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
+      
+      const tokenResponse = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${credentials}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json'
+        },
+        body: 'grant_type=client_credentials',
+      });
+      
+      if (tokenResponse.ok) {
+        const tokenData = await tokenResponse.json();
+        const accessToken = tokenData.access_token;
+        
+        // Update the record in Caspio
+        const membersTable = 'CalAIM_tbl_Members';
+        const updateUrl = `${baseUrl}/tables/${membersTable}/records?q.where=client_ID2='${client_ID2}'`;
+        
+        const updateData: any = {
+          LastUpdated: new Date().toISOString()
+        };
+        
+        if (Kaiser_Status) updateData.Kaiser_Status = Kaiser_Status;
+        if (CalAIM_Status) updateData.CalAIM_Status = CalAIM_Status;
+        if (kaiser_user_assignment) updateData.kaiser_user_assignment = kaiser_user_assignment;
+        if (next_steps_date) updateData.next_steps_date = next_steps_date;
+        
+        const updateResponse = await fetch(updateUrl, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(updateData),
+        });
+        
+        if (updateResponse.ok) {
+          console.log('✅ Updated Caspio record');
+        } else {
+          console.log('⚠️ Failed to update Caspio record:', updateResponse.status);
+        }
+      }
+    }
+    
+    return {
+      success: true,
+      message: 'Successfully synced Kaiser status to both Firebase and Caspio',
+    };
+    
+  } catch (error: any) {
+    console.error('❌ Error syncing Kaiser status:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', `Sync error: ${error.message}`);
+  }
+});
+
 // Fetch Kaiser members from Caspio
 export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
   try {
