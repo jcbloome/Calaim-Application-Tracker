@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, Download, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, Download, ArrowUpDown, ArrowUp, ArrowDown, Shield, HourglassIcon } from 'lucide-react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
 
@@ -573,7 +573,7 @@ export default function KaiserTrackerPage() {
       </div>
 
       {/* Quick Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -622,10 +622,44 @@ export default function KaiserTrackerPage() {
             <p className="text-xs text-muted-foreground">Weekly report ready</p>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Authorized</CardTitle>
+            <Shield className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              {filteredMembers.filter(m => 
+                m.CalAIM_Status?.toLowerCase().includes('authorized') || 
+                m.CalAIM_Status?.toLowerCase().includes('approved')
+              ).length}
+            </div>
+            <p className="text-xs text-muted-foreground">CalAIM authorized</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Pending</CardTitle>
+            <HourglassIcon className="h-4 w-4 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-600">
+              {filteredMembers.filter(m => 
+                m.CalAIM_Status?.toLowerCase().includes('pending') || 
+                m.CalAIM_Status?.toLowerCase().includes('waiting') ||
+                m.CalAIM_Status?.toLowerCase().includes('submitted') ||
+                (!m.CalAIM_Status || m.CalAIM_Status === 'Pending')
+              ).length}
+            </div>
+            <p className="text-xs text-muted-foreground">Awaiting authorization</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Comprehensive Summary Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
         
         {/* Kaiser Status Steps Summary */}
         <Card>
@@ -666,6 +700,88 @@ export default function KaiserTrackerPage() {
                 <Badge className="bg-blue-100 text-blue-800">
                   {filteredMembers.length}
                 </Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* CalAIM Authorization Status */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Shield className="h-5 w-5 text-green-600" />
+              CalAIM Authorization
+            </CardTitle>
+            <CardDescription>Authorization status breakdown</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {[...new Set((filteredMembers || []).map(m => m?.CalAIM_Status).filter(Boolean))]
+                .sort()
+                .map((status) => {
+                  try {
+                    const count = (filteredMembers || []).filter(m => m?.CalAIM_Status === status).length;
+                    const isAuthorized = status?.toLowerCase().includes('authorized') || status?.toLowerCase().includes('approved');
+                    const isPending = status?.toLowerCase().includes('pending') || status?.toLowerCase().includes('waiting') || status?.toLowerCase().includes('submitted');
+                    
+                    return (
+                      <div key={status} className="flex items-center justify-between text-sm p-2 rounded border">
+                        <div className="flex items-center gap-2">
+                          {isAuthorized ? (
+                            <Shield className="h-3 w-3 text-green-600" />
+                          ) : isPending ? (
+                            <HourglassIcon className="h-3 w-3 text-orange-600" />
+                          ) : (
+                            <Clock className="h-3 w-3 text-gray-600" />
+                          )}
+                          <span className="font-medium">{status}</span>
+                        </div>
+                        <Badge 
+                          variant="outline" 
+                          className={
+                            isAuthorized ? "bg-green-50 text-green-700 border-green-200" :
+                            isPending ? "bg-orange-50 text-orange-700 border-orange-200" :
+                            "bg-gray-50 text-gray-700 border-gray-200"
+                          }
+                        >
+                          {count}
+                        </Badge>
+                      </div>
+                    );
+                  } catch (error) {
+                    console.error('Error rendering CalAIM status card:', error);
+                    return null;
+                  }
+                })}
+              
+              {/* Summary totals */}
+              <div className="mt-4 pt-4 border-t space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-3 w-3 text-green-600" />
+                    <span className="font-medium text-green-700">Total Authorized</span>
+                  </div>
+                  <Badge className="bg-green-100 text-green-800">
+                    {filteredMembers.filter(m => 
+                      m.CalAIM_Status?.toLowerCase().includes('authorized') || 
+                      m.CalAIM_Status?.toLowerCase().includes('approved')
+                    ).length}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <HourglassIcon className="h-3 w-3 text-orange-600" />
+                    <span className="font-medium text-orange-700">Total Pending</span>
+                  </div>
+                  <Badge className="bg-orange-100 text-orange-800">
+                    {filteredMembers.filter(m => 
+                      m.CalAIM_Status?.toLowerCase().includes('pending') || 
+                      m.CalAIM_Status?.toLowerCase().includes('waiting') ||
+                      m.CalAIM_Status?.toLowerCase().includes('submitted') ||
+                      (!m.CalAIM_Status || m.CalAIM_Status === 'Pending')
+                    ).length}
+                  </Badge>
+                </div>
               </div>
             </div>
           </CardContent>
