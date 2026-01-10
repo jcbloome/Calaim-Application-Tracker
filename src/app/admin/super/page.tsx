@@ -258,7 +258,13 @@ export default function SuperAdminPage() {
                 });
             });
             
-            staff.sort((a, b) => (a.lastName || '').localeCompare(b.lastName || ''));
+            staff.sort((a, b) => {
+                // Super Admins first, then regular Admins
+                if (a.role === 'Super Admin' && b.role !== 'Super Admin') return -1;
+                if (b.role === 'Super Admin' && a.role !== 'Super Admin') return 1;
+                // Within same role, sort by last name
+                return (a.lastName || '').localeCompare(b.lastName || '');
+            });
             setStaffList(staff);
         } catch (error) {
             console.error("[fetchAllStaff] Error:", error);
