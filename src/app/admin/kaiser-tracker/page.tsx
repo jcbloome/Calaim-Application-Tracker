@@ -15,6 +15,34 @@ import { collection, query, where, orderBy } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
 
+// Kaiser status options from the individual application pages
+const kaiserSteps = [
+  "Pre-T2038, Compiling Docs",
+  "T2038 Requested",
+  "T2038 Received",
+  "T2038 received, Need First Contact",
+  "T2038 received, doc collection",
+  "Needs RN Visit",
+  "RN/MSW Scheduled",
+  "RN Visit Complete",
+  "Need Tier Level",
+  "Tier Level Requested",
+  "Tier Level Received",
+  "Locating RCFEs",
+  "Found RCFE",
+  "R&B Requested",
+  "R&B Signed",
+  "RCFE/ILS for Invoicing",
+  "ILS Contracted (Complete)",
+  "Confirm ILS Contracted",
+  "Complete",
+  "Tier Level Revision Request",
+  "On-Hold",
+  "Tier Level Appeal",
+  "T2038 email but need auth sheet",
+  "Non-active",
+];
+
 interface KaiserMember {
   id: string;
   memberFirstName: string;
@@ -30,7 +58,7 @@ interface KaiserMember {
   // Kaiser specific fields
   MCP_CIN?: string;
   CalAIM_MCP?: string;
-  Kaiser_Status?: 'Pending' | 'Authorized' | 'Denied' | 'In Review' | 'Submitted';
+  Kaiser_Status?: string;
   CalAIM_Status?: 'Authorized' | 'Not Authorized' | 'Pending' | 'Under Review';
   kaiser_user_assignment?: string;
   
@@ -60,23 +88,72 @@ interface KaiserMember {
   caspio_id?: string;
 }
 
-const statusColors = {
+const statusColors: Record<string, string> = {
+  // Starting phase
+  'Pre-T2038, Compiling Docs': 'bg-yellow-100 text-yellow-800',
+  'T2038 Requested': 'bg-yellow-100 text-yellow-800',
+  
+  // Active processing
+  'T2038 Received': 'bg-blue-100 text-blue-800',
+  'T2038 received, Need First Contact': 'bg-blue-100 text-blue-800',
+  'T2038 received, doc collection': 'bg-blue-100 text-blue-800',
+  'Needs RN Visit': 'bg-purple-100 text-purple-800',
+  'RN/MSW Scheduled': 'bg-purple-100 text-purple-800',
+  'RN Visit Complete': 'bg-purple-100 text-purple-800',
+  'Need Tier Level': 'bg-indigo-100 text-indigo-800',
+  'Tier Level Requested': 'bg-indigo-100 text-indigo-800',
+  'Tier Level Received': 'bg-indigo-100 text-indigo-800',
+  'Locating RCFEs': 'bg-cyan-100 text-cyan-800',
+  'Found RCFE': 'bg-cyan-100 text-cyan-800',
+  'R&B Requested': 'bg-teal-100 text-teal-800',
+  'R&B Signed': 'bg-teal-100 text-teal-800',
+  'RCFE/ILS for Invoicing': 'bg-emerald-100 text-emerald-800',
+  'Confirm ILS Contracted': 'bg-emerald-100 text-emerald-800',
+  
+  // Completed
+  'Complete': 'bg-green-100 text-green-800',
+  'ILS Contracted (Complete)': 'bg-green-100 text-green-800',
+  
+  // On Hold/Issues
+  'On-Hold': 'bg-orange-100 text-orange-800',
+  'Non-active': 'bg-gray-100 text-gray-800',
+  
+  // Appeals/Revisions
+  'Tier Level Revision Request': 'bg-red-100 text-red-800',
+  'Tier Level Appeal': 'bg-red-100 text-red-800',
+  'T2038 email but need auth sheet': 'bg-amber-100 text-amber-800',
+  
+  // CalAIM Status colors
   'Pending': 'bg-yellow-100 text-yellow-800',
+  'Under Review': 'bg-blue-100 text-blue-800',
   'Authorized': 'bg-green-100 text-green-800',
+  'Not Authorized': 'bg-red-100 text-red-800',
+  
+  // Fallback colors
   'Denied': 'bg-red-100 text-red-800',
   'In Review': 'bg-blue-100 text-blue-800',
-  'Submitted': 'bg-purple-100 text-purple-800',
-  'Not Authorized': 'bg-red-100 text-red-800',
-  'Under Review': 'bg-orange-100 text-orange-800'
+  'Submitted': 'bg-purple-100 text-purple-800'
 };
 
 const getStatusIcon = (status: string) => {
-  switch (status) {
-    case 'Authorized': return <CheckCircle className="h-4 w-4" />;
-    case 'Denied': case 'Not Authorized': return <XCircle className="h-4 w-4" />;
-    case 'Pending': case 'Under Review': case 'In Review': return <Clock className="h-4 w-4" />;
-    default: return <AlertCircle className="h-4 w-4" />;
+  // Completed statuses
+  if (status === 'Complete' || status === 'ILS Contracted (Complete)') {
+    return <CheckCircle className="h-4 w-4" />;
   }
+  // On hold/inactive
+  if (status === 'On-Hold' || status === 'Non-active') {
+    return <XCircle className="h-4 w-4" />;
+  }
+  // Appeals/revisions
+  if (status?.includes('Appeal') || status?.includes('Revision')) {
+    return <AlertCircle className="h-4 w-4" />;
+  }
+  // CalAIM statuses
+  if (status === 'Authorized') return <CheckCircle className="h-4 w-4" />;
+  if (status === 'Not Authorized') return <XCircle className="h-4 w-4" />;
+  
+  // Default for all other statuses (in progress)
+  return <Clock className="h-4 w-4" />;
 };
 
 const getNextSteps = (member: KaiserMember) => {
@@ -106,7 +183,7 @@ const isOverdue = (dateString?: string) => {
   return dueDate < today;
 };
 
-export default function KaiserTrackerPage() {
+function KaiserTrackerPageContent() {
   const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const db = useFirestore();
   const { toast } = useToast();
@@ -323,11 +400,36 @@ export default function KaiserTrackerPage() {
   const membersByStatus = useMemo(() => {
     const groups = {
       all: filteredMembers,
-      pending: filteredMembers.filter(m => m.Kaiser_Status === 'Pending'),
-      submitted: filteredMembers.filter(m => m.Kaiser_Status === 'Submitted'),
-      inReview: filteredMembers.filter(m => m.Kaiser_Status === 'In Review'),
-      authorized: filteredMembers.filter(m => m.Kaiser_Status === 'Authorized'),
-      denied: filteredMembers.filter(m => m.Kaiser_Status === 'Denied'),
+      starting: filteredMembers.filter(m => {
+        const status = m.Kaiser_Status || '';
+        return !status || 
+               status.includes('Pre-T2038') || 
+               status.includes('T2038 Requested');
+      }),
+      inProgress: filteredMembers.filter(m => {
+        const status = m.Kaiser_Status || '';
+        return status && 
+               (status.includes('T2038 Received') || 
+                status.includes('RN') || 
+                status.includes('Tier Level') ||
+                status.includes('RCFE'));
+      }),
+      completed: filteredMembers.filter(m => {
+        const status = m.Kaiser_Status || '';
+        return status === 'Complete' || 
+               status === 'ILS Contracted (Complete)';
+      }),
+      onHold: filteredMembers.filter(m => {
+        const status = m.Kaiser_Status || '';
+        return status === 'On-Hold' || 
+               status === 'Non-active';
+      }),
+      appeals: filteredMembers.filter(m => {
+        const status = m.Kaiser_Status || '';
+        return status && 
+               (status.includes('Appeal') || 
+                status.includes('Revision'));
+      }),
       overdue: filteredMembers.filter(m => isOverdue(m.next_steps_date))
     };
     return groups;
@@ -419,63 +521,63 @@ export default function KaiserTrackerPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
+            <CardTitle className="text-sm font-medium">Starting</CardTitle>
             <Clock className="h-4 w-4 text-yellow-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{membersByStatus.pending.length}</div>
-            <p className="text-xs text-muted-foreground">Awaiting submission</p>
+            <div className="text-2xl font-bold">{membersByStatus.starting.length}</div>
+            <p className="text-xs text-muted-foreground">Pre-T2038 phase</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Submitted</CardTitle>
-            <AlertCircle className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{membersByStatus.submitted.length}</div>
-            <p className="text-xs text-muted-foreground">Sent to Kaiser</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">In Review</CardTitle>
+            <CardTitle className="text-sm font-medium">In Progress</CardTitle>
             <AlertCircle className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{membersByStatus.inReview.length}</div>
-            <p className="text-xs text-muted-foreground">Under Kaiser review</p>
+            <div className="text-2xl font-bold">{membersByStatus.inProgress.length}</div>
+            <p className="text-xs text-muted-foreground">Active processing</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Authorized</CardTitle>
+            <CardTitle className="text-sm font-medium">Completed</CardTitle>
             <CheckCircle className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{membersByStatus.authorized.length}</div>
-            <p className="text-xs text-muted-foreground">Kaiser approved</p>
+            <div className="text-2xl font-bold">{membersByStatus.completed.length}</div>
+            <p className="text-xs text-muted-foreground">ILS contracted</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Denied</CardTitle>
-            <XCircle className="h-4 w-4 text-red-600" />
+            <CardTitle className="text-sm font-medium">On Hold</CardTitle>
+            <XCircle className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{membersByStatus.denied.length}</div>
-            <p className="text-xs text-muted-foreground">Kaiser denied</p>
+            <div className="text-2xl font-bold">{membersByStatus.onHold.length}</div>
+            <p className="text-xs text-muted-foreground">Paused/inactive</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Appeals</CardTitle>
+            <AlertCircle className="h-4 w-4 text-red-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{membersByStatus.appeals.length}</div>
+            <p className="text-xs text-muted-foreground">Revisions/appeals</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Overdue</CardTitle>
-            <AlertCircle className="h-4 w-4 text-orange-600" />
+            <AlertCircle className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{membersByStatus.overdue.length}</div>
@@ -662,11 +764,11 @@ export default function KaiserTrackerPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="grid w-full grid-cols-7">
               <TabsTrigger value="all">All ({membersByStatus.all.length})</TabsTrigger>
-              <TabsTrigger value="pending">Pending ({membersByStatus.pending.length})</TabsTrigger>
-              <TabsTrigger value="submitted">Submitted ({membersByStatus.submitted.length})</TabsTrigger>
-              <TabsTrigger value="inReview">In Review ({membersByStatus.inReview.length})</TabsTrigger>
-              <TabsTrigger value="authorized">Authorized ({membersByStatus.authorized.length})</TabsTrigger>
-              <TabsTrigger value="denied">Denied ({membersByStatus.denied.length})</TabsTrigger>
+              <TabsTrigger value="starting">Starting ({membersByStatus.starting.length})</TabsTrigger>
+              <TabsTrigger value="inProgress">In Progress ({membersByStatus.inProgress.length})</TabsTrigger>
+              <TabsTrigger value="completed">Completed ({membersByStatus.completed.length})</TabsTrigger>
+              <TabsTrigger value="onHold">On Hold ({membersByStatus.onHold.length})</TabsTrigger>
+              <TabsTrigger value="appeals">Appeals ({membersByStatus.appeals.length})</TabsTrigger>
               <TabsTrigger value="overdue" className="text-red-600">Overdue ({membersByStatus.overdue.length})</TabsTrigger>
             </TabsList>
 
@@ -729,22 +831,22 @@ export default function KaiserTrackerPage() {
                             <TableCell>
                               {editingMember === member.id ? (
                                 <Select 
-                                  value={editingData.Kaiser_Status || member.Kaiser_Status || 'Pending'} 
-                                  onValueChange={(value) => setEditingData({...editingData, Kaiser_Status: value as any})}
+                                  value={editingData.Kaiser_Status || member.Kaiser_Status || 'Pre-T2038, Compiling Docs'} 
+                                  onValueChange={(value) => setEditingData({...editingData, Kaiser_Status: value})}
                                 >
-                                  <SelectTrigger className="w-32">
+                                  <SelectTrigger className="w-48">
                                     <SelectValue />
                                   </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="Pending">Pending</SelectItem>
-                                    <SelectItem value="Submitted">Submitted</SelectItem>
-                                    <SelectItem value="In Review">In Review</SelectItem>
-                                    <SelectItem value="Authorized">Authorized</SelectItem>
-                                    <SelectItem value="Denied">Denied</SelectItem>
+                                  <SelectContent className="max-h-60">
+                                    {kaiserSteps.map((step) => (
+                                      <SelectItem key={step} value={step}>
+                                        {step}
+                                      </SelectItem>
+                                    ))}
                                   </SelectContent>
                                 </Select>
                               ) : (
-                                <Badge className={statusColors[member.Kaiser_Status || 'Pending']}>
+                                <Badge className={statusColors[member.Kaiser_Status || 'Pending'] || 'bg-gray-100 text-gray-800'}>
                                   <div className="flex items-center gap-1">
                                     {getStatusIcon(member.Kaiser_Status || 'Pending')}
                                     {member.Kaiser_Status || 'Pending'}
@@ -769,7 +871,7 @@ export default function KaiserTrackerPage() {
                                   </SelectContent>
                                 </Select>
                               ) : (
-                                <Badge className={statusColors[member.CalAIM_Status || 'Pending']}>
+                                <Badge className={statusColors[member.CalAIM_Status || 'Pending'] || 'bg-gray-100 text-gray-800'}>
                                   <div className="flex items-center gap-1">
                                     {getStatusIcon(member.CalAIM_Status || 'Pending')}
                                     {member.CalAIM_Status || 'Pending'}
@@ -865,4 +967,27 @@ export default function KaiserTrackerPage() {
       </Card>
     </div>
   );
+}
+
+export default function KaiserTrackerPage() {
+  try {
+    return <KaiserTrackerPageContent />;
+  } catch (error) {
+    console.error('Kaiser Tracker Error:', error);
+    return (
+      <div className="container mx-auto py-8">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-red-600">Kaiser Tracker Error</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>There was an error loading the Kaiser Tracker. Please try refreshing the page.</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Error: {error instanceof Error ? error.message : 'Unknown error'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 }
