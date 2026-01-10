@@ -46,7 +46,8 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 const adminNavLinks = [
-  { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/admin', label: 'Overview', icon: LayoutDashboard },
+  { href: '/admin/dashboard', label: 'Daily Dashboard', icon: Bell },
   { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
   { href: '/admin/my-tasks', label: 'My Tasks', icon: ClipboardList },
   { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },

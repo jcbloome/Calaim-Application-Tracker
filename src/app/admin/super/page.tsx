@@ -12,6 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp, addDoc, orderBy } from 'firebase/firestore';
 import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { NotificationManager } from '@/components/NotificationManager';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -1077,6 +1078,22 @@ export default function SuperAdminPage() {
                             </Button>
                         </CardFooter>
                     )}
+                </Card>
+
+                {/* Notification Management */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Bell className="h-5 w-5" />
+                            Email Notification System
+                        </CardTitle>
+                        <CardDescription>
+                            Manage automated email notifications for document uploads and CS Summary completions
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <NotificationManager />
+                    </CardContent>
                 </Card>
             </div>
             

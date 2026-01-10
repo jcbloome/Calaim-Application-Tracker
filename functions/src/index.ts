@@ -15,6 +15,25 @@ export { performAutoSync, getPendingSyncs, performBatchSync } from './auto-batch
 // Export Caspio Webhook functions
 export { caspioWebhook } from './caspio-webhooks';
 
+// Export Email Notification functions
+export { sendManualNotification } from './email-notifications';
+
+// Export Manual Notification functions (alternative to Firestore triggers)
+export { 
+  checkForNewDocuments, 
+  checkForCompletedCsSummaries, 
+  sendDocumentUploadNotifications, 
+  sendCsSummaryNotifications 
+} from './manual-notifications';
+
+// Export Two-Factor Authentication functions
+export { 
+  send2FACode, 
+  verify2FACode, 
+  check2FAStatus, 
+  update2FAPreferences 
+} from './two-factor-auth';
+
 admin.initializeApp();
 
 // Define secrets for Caspio API
