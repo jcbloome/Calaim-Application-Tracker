@@ -482,9 +482,10 @@ export default function SuperAdminPage() {
         setWebhookLog(null);
         try {
             const functions = getFunctions();
-            const testConnection = httpsCallable(functions, 'testCaspioConnection');
+            // First try basic connection test
+            const testBasicConnection = httpsCallable(functions, 'testBasicConnection');
             
-            const result = await testConnection();
+            const result = await testBasicConnection();
             const data = result.data as any;
             
             if (data.success) {

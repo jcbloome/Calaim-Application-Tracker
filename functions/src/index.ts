@@ -1,8 +1,14 @@
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
 
 admin.initializeApp();
+
+// Define secrets for Caspio API
+const caspioBaseUrl = defineSecret("CASPIO_BASE_URL");
+const caspioClientId = defineSecret("CASPIO_CLIENT_ID");
+const caspioClientSecret = defineSecret("CASPIO_CLIENT_SECRET");
 
 // Run every day at 9:00 AM (Los Angeles time)
 export const checkMissingForms = onSchedule({
@@ -35,8 +41,46 @@ export const checkMissingForms = onSchedule({
   });
 });
 
+// Simple test function without secrets first
+export const testBasicConnection = onCall(async (request) => {
+  try {
+    console.log('🔍 Testing basic connectivity from Firebase Functions...');
+    
+    // Test basic connectivity first
+    const httpTest = await fetch('https://httpbin.org/get', {
+      method: 'GET',
+      headers: { 'User-Agent': 'CalAIM-Functions-Test' }
+    });
+    
+    console.log('✅ Basic HTTP test:', httpTest.status, httpTest.statusText);
+    
+    // Test Caspio domain
+    const caspioTest = await fetch('https://c7ebl500.caspio.com', {
+      method: 'GET',
+      headers: { 'User-Agent': 'CalAIM-Caspio-Test' }
+    });
+    
+    console.log('✅ Caspio domain test:', caspioTest.status, caspioTest.statusText);
+    
+    return {
+      success: true,
+      message: 'Basic connectivity successful from Firebase Functions',
+      tests: {
+        httpTest: httpTest.status,
+        caspioTest: caspioTest.status
+      }
+    };
+    
+  } catch (error: any) {
+    console.error('❌ Basic connection test failed:', error);
+    throw new HttpsError('internal', `Connection test failed: ${error.message}`);
+  }
+});
+
 // Caspio API Integration Function
-export const testCaspioConnection = onCall(async (request) => {
+export const testCaspioConnection = onCall({
+  secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret]
+}, async (request) => {
   try {
     console.log('🔍 Testing Caspio connection from Firebase Functions...');
     
@@ -57,9 +101,15 @@ export const testCaspioConnection = onCall(async (request) => {
     console.log('✅ Caspio domain test:', caspioTest.status, caspioTest.statusText);
     
     // Test Caspio OAuth endpoint
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = process.env.CASPIO_CLIENT_ID;
-    const clientSecret = process.env.CASPIO_CLIENT_SECRET;
+    const baseUrl = caspioBaseUrl.value() || 'https://c7ebl500.caspio.com/rest/v2';
+    const clientId = caspioClientId.value();
+    const clientSecret = caspioClientSecret.value();
+    
+    console.log('🔍 Secret values:', {
+      baseUrl: baseUrl,
+      clientIdLength: clientId?.length || 0,
+      clientSecretLength: clientSecret?.length || 0
+    });
     
     if (!clientId || !clientSecret) {
       throw new HttpsError('failed-precondition', 'Caspio credentials not configured');
@@ -107,7 +157,9 @@ export const testCaspioConnection = onCall(async (request) => {
 });
 
 // Publish CS Summary to Caspio Function
-export const publishCsSummaryToCaspio = onCall(async (request) => {
+export const publishCsSummaryToCaspio = onCall({
+  secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret]
+}, async (request) => {
   try {
     const applicationData = request.data;
     
@@ -118,9 +170,9 @@ export const publishCsSummaryToCaspio = onCall(async (request) => {
     console.log('📤 Publishing CS Summary to Caspio via Functions...');
     
     // Get Caspio access token
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = process.env.CASPIO_CLIENT_ID;
-    const clientSecret = process.env.CASPIO_CLIENT_SECRET;
+    const baseUrl = caspioBaseUrl.value() || 'https://c7ebl500.caspio.com/rest/v2';
+    const clientId = caspioClientId.value();
+    const clientSecret = caspioClientSecret.value();
     
     if (!clientId || !clientSecret) {
       throw new HttpsError('failed-precondition', 'Caspio credentials not configured');
