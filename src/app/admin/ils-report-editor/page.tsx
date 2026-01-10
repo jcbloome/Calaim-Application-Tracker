@@ -21,7 +21,8 @@ import {
   Loader2,
   Edit,
   Eye,
-  Printer
+  Printer,
+  MessageSquare
 } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';
@@ -55,6 +56,7 @@ export default function ILSReportEditorPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [editingMember, setEditingMember] = useState<string | null>(null);
   const [reportDate, setReportDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [reportComments, setReportComments] = useState('');
   const { toast } = useToast();
 
   // Load Kaiser members for ILS report
@@ -154,6 +156,7 @@ export default function ILSReportEditorPage() {
   const generatePrintableReport = () => {
     const reportData = {
       reportDate,
+      comments: reportComments,
       members: members.map(member => ({
         memberName: member.memberName,
         memberMrn: member.memberMrn,
@@ -183,9 +186,13 @@ export default function ILSReportEditorPage() {
               .status-tier { background-color: #dbeafe; color: #1e40af; }
               .status-rcfe { background-color: #f3e8ff; color: #7c3aed; }
               .footer { margin-top: 30px; font-size: 12px; color: #666; }
+              .comments-section { margin: 20px 0; padding: 15px; background-color: #f9f9f9; border-left: 4px solid #007bff; }
+              .comments-section h2 { margin: 0 0 10px 0; font-size: 16px; color: #333; }
+              .comments-content { font-size: 14px; line-height: 1.5; color: #555; white-space: pre-wrap; }
               @media print { 
                 body { margin: 0; }
                 .no-print { display: none; }
+                .comments-section { background-color: #f5f5f5; }
               }
             </style>
           </head>
@@ -195,6 +202,13 @@ export default function ILSReportEditorPage() {
               <div class="report-date">Report Date: ${format(new Date(reportDate), 'MMMM dd, yyyy')}</div>
               <div class="report-date">Kaiser Bottleneck Members</div>
             </div>
+            
+            ${reportData.comments ? `
+            <div class="comments-section">
+              <h2>Report Comments & Notes</h2>
+              <div class="comments-content">${reportData.comments.replace(/\n/g, '<br>')}</div>
+            </div>
+            ` : ''}
             
             <table>
               <thead>
@@ -261,6 +275,28 @@ export default function ILSReportEditorPage() {
     return { total, byStatus, withT2038Date, withTierDate, withRCFEDate };
   }, [members]);
 
+  // Save comments to localStorage
+  const saveComments = () => {
+    if (reportComments.trim()) {
+      localStorage.setItem(`ils-report-comments-${reportDate}`, reportComments);
+      toast({
+        title: 'Comments Saved',
+        description: 'Report comments saved locally',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    }
+  };
+
+  // Load comments from localStorage
+  useEffect(() => {
+    const savedComments = localStorage.getItem(`ils-report-comments-${reportDate}`);
+    if (savedComments) {
+      setReportComments(savedComments);
+    } else {
+      setReportComments('');
+    }
+  }, [reportDate]);
+
   useEffect(() => {
     if (isAdmin && !isUserLoading) {
       loadMembers();
@@ -321,40 +357,68 @@ export default function ILSReportEditorPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="report-date">Report Date</Label>
-              <Input
-                id="report-date"
-                type="date"
-                value={reportDate}
-                onChange={(e) => setReportDate(e.target.value)}
-                className="w-40"
-              />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="report-date">Report Date</Label>
+                <Input
+                  id="report-date"
+                  type="date"
+                  value={reportDate}
+                  onChange={(e) => setReportDate(e.target.value)}
+                  className="w-40"
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                <Button
+                  onClick={loadMembers}
+                  disabled={isLoading}
+                  variant="outline"
+                >
+                  {isLoading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  Refresh Data
+                </Button>
+                
+                <Button
+                  onClick={generatePrintableReport}
+                  disabled={members.length === 0}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Printer className="mr-2 h-4 w-4" />
+                  Generate PDF Report
+                </Button>
+              </div>
             </div>
             
-            <div className="flex gap-2">
-              <Button
-                onClick={loadMembers}
-                disabled={isLoading}
-                variant="outline"
-              >
-                {isLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                )}
-                Refresh Data
-              </Button>
-              
-              <Button
-                onClick={generatePrintableReport}
-                disabled={members.length === 0}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                <Printer className="mr-2 h-4 w-4" />
-                Generate PDF Report
-              </Button>
+            <div className="space-y-2">
+              <Label htmlFor="report-comments">Report Comments & Notes</Label>
+              <Textarea
+                id="report-comments"
+                placeholder="Add any comments, observations, or notes about this week's bottlenecks..."
+                value={reportComments}
+                onChange={(e) => setReportComments(e.target.value)}
+                rows={6}
+                className="resize-none"
+              />
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  These comments will be included in the printable report for ILS
+                </p>
+                <Button
+                  onClick={saveComments}
+                  size="sm"
+                  variant="outline"
+                  disabled={!reportComments.trim()}
+                >
+                  <Save className="mr-2 h-3 w-3" />
+                  Save Comments
+                </Button>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -424,6 +488,26 @@ export default function ILSReportEditorPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Comments Preview */}
+      {reportComments && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              Report Comments Preview
+            </CardTitle>
+            <CardDescription>
+              This section will appear in the printable report
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
+              <div className="whitespace-pre-wrap text-sm">{reportComments}</div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Members Table */}
       <Card>
