@@ -156,6 +156,129 @@ export const testCaspioConnection = onCall({
   }
 });
 
+// Simplified publish function for testing
+export const publishCsSummaryToCaspioSimple = onCall(async (request) => {
+  try {
+    const applicationData = request.data;
+    
+    if (!applicationData) {
+      throw new HttpsError('invalid-argument', 'Application data is required');
+    }
+    
+    console.log('📤 Publishing CS Summary to Caspio via Functions (Simple)...');
+    console.log('📋 Application data received:', JSON.stringify(applicationData, null, 2));
+    
+    // Use hardcoded credentials temporarily
+    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+    
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const tokenUrl = `${baseUrl}/oauth/token`;
+    
+    console.log('🔑 Getting Caspio access token...');
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'grant_type=client_credentials',
+    });
+    
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      console.log('❌ OAuth Error:', errorText);
+      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
+    }
+    
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    console.log('✅ Got access token');
+    
+    // Check if member already exists
+    const firstName = applicationData.memberFirstName || '';
+    const lastName = applicationData.memberLastName || '';
+    
+    if (!firstName || !lastName) {
+      throw new HttpsError('invalid-argument', 'Member first name and last name are required');
+    }
+    
+    console.log(`🔍 Checking if member "${firstName} ${lastName}" already exists...`);
+    
+    const membersTable = 'CalAIM_tbl_Members';
+    const searchUrl = `${baseUrl}/tables/${membersTable}/records?q.where=MemberFirstName='${firstName}' AND MemberLastName='${lastName}'`;
+    
+    const searchResponse = await fetch(searchUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (searchResponse.ok) {
+      const searchData = await searchResponse.json();
+      console.log('🔍 Search result:', searchData);
+      if (searchData.Result && searchData.Result.length > 0) {
+        throw new HttpsError('already-exists', `Member "${firstName} ${lastName}" already exists in Caspio database`);
+      }
+    }
+    
+    // Transform and insert data (simplified for now)
+    const memberData = {
+      ApplicationID: applicationData.id || '',
+      UserID: applicationData.userId || '',
+      Status: applicationData.status || 'In Progress',
+      MemberFirstName: firstName,
+      MemberLastName: lastName,
+      MemberDOB: applicationData.memberDob || '',
+      MemberMediCalNum: applicationData.memberMediCalNum || '',
+      MemberMRN: applicationData.memberMrn || '',
+      MemberLanguage: applicationData.memberLanguage || '',
+      MemberCounty: applicationData.memberCounty || '',
+      ReferrerFirstName: applicationData.referrerFirstName || '',
+      ReferrerLastName: applicationData.referrerLastName || '',
+      ReferrerEmail: applicationData.referrerEmail || '',
+      ReferrerPhone: applicationData.referrerPhone || '',
+      // Add more fields as needed
+    };
+    
+    console.log('📝 Inserting member data:', memberData);
+    
+    const insertResponse = await fetch(`${baseUrl}/tables/${membersTable}/records`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(memberData),
+    });
+    
+    if (!insertResponse.ok) {
+      const errorText = await insertResponse.text();
+      console.log('❌ Insert Error:', errorText);
+      throw new HttpsError('internal', `Failed to insert member record: ${insertResponse.status} ${errorText}`);
+    }
+    
+    const result = await insertResponse.json();
+    console.log('✅ Successfully published CS Summary to Caspio:', result);
+    
+    return {
+      success: true,
+      message: `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio database`,
+      data: result,
+    };
+    
+  } catch (error: any) {
+    console.error('❌ Error publishing CS Summary:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', `Unexpected error: ${error.message}`);
+  }
+});
+
 // Publish CS Summary to Caspio Function
 export const publishCsSummaryToCaspio = onCall({
   secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret]

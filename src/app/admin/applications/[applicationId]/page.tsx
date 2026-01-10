@@ -440,10 +440,12 @@ function AdminActions({ application }: { application: Application }) {
         
         try {
             const functions = getFunctions();
-            const publishToCaspio = httpsCallable(functions, 'publishCsSummaryToCaspio');
+            const publishToCaspio = httpsCallable(functions, 'publishCsSummaryToCaspioSimple');
             
+            console.log('📤 Sending application data to Caspio:', application);
             const result = await publishToCaspio(application);
             const data = result.data as any;
+            console.log('📥 Caspio response:', data);
             
             if (data.success) {
                 toast({
