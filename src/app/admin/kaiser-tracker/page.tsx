@@ -121,14 +121,19 @@ export default function KaiserTrackerPage() {
   // Query Kaiser members (members with Kaiser health plan)
   const kaiserQuery = useMemo(() => {
     if (!db) return null;
-    return query(
-      collection(db, 'applications'),
-      where('healthPlan', '==', 'Kaiser'),
-      orderBy('createdAt', 'desc')
-    );
+    try {
+      return query(
+        collection(db, 'applications'),
+        where('healthPlan', '==', 'Kaiser'),
+        orderBy('createdAt', 'desc')
+      );
+    } catch (error) {
+      console.error('Error creating Kaiser query:', error);
+      return null;
+    }
   }, [db]);
 
-  const { data: applications, loading, error } = useCollection(kaiserQuery);
+  const { data: applications, loading, error } = useCollection(kaiserQuery || undefined);
 
   // Fetch Caspio data
   const fetchCaspioData = async () => {
@@ -167,64 +172,75 @@ export default function KaiserTrackerPage() {
   };
 
   const kaiserMembers: KaiserMember[] = useMemo(() => {
-    const firebaseMembers = applications ? applications.map(app => ({
-      id: app.id,
-      memberFirstName: app.memberFirstName || '',
-      memberLastName: app.memberLastName || '',
-      memberMediCalNum: app.memberMediCalNum || '',
-      memberMrn: app.memberMrn,
-      memberCounty: app.memberCounty || '',
-      healthPlan: app.healthPlan || '',
-      
-      // Kaiser specific fields (these would come from Caspio sync or manual entry)
-      MCP_CIN: app.MCP_CIN,
-      CalAIM_MCP: app.CalAIM_MCP,
-      Kaiser_Status: app.Kaiser_Status || 'Pending',
-      CalAIM_Status: app.CalAIM_Status || 'Pending',
-      kaiser_user_assignment: app.kaiser_user_assignment,
-      
-      // Next steps
-      next_steps: app.next_steps,
-      next_steps_date: app.next_steps_date,
-      last_updated: app.lastUpdated,
-      
-      // Application info
-      status: app.status || '',
-      pathway: app.pathway || '',
-      createdAt: app.createdAt
-    })) : [];
+    try {
+      const firebaseMembers = applications ? applications.map(app => ({
+        id: app.id,
+        memberFirstName: app.memberFirstName || '',
+        memberLastName: app.memberLastName || '',
+        memberMediCalNum: app.memberMediCalNum || '',
+        memberMrn: app.memberMrn,
+        memberCounty: app.memberCounty || '',
+        healthPlan: app.healthPlan || '',
+        
+        // Kaiser specific fields (these would come from Caspio sync or manual entry)
+        client_ID2: app.client_ID2,
+        MCP_CIN: app.MCP_CIN,
+        CalAIM_MCP: app.CalAIM_MCP,
+        Kaiser_Status: app.Kaiser_Status || 'Pending',
+        CalAIM_Status: app.CalAIM_Status || 'Pending',
+        kaiser_user_assignment: app.kaiser_user_assignment,
+        
+        // Next steps
+        next_steps: app.next_steps,
+        next_steps_date: app.next_steps_date,
+        last_updated: app.lastUpdated,
+        
+        // Application info
+        status: app.status || '',
+        pathway: app.pathway || '',
+        createdAt: app.createdAt,
+        source: 'firebase' as const
+      })) : [];
 
-    // Combine Firebase and Caspio data, prioritizing Caspio data for Kaiser-specific fields
-    const combinedMembers = [...firebaseMembers];
-    
-    // Add Caspio-only members or update existing ones with Caspio data
-    caspioMembers.forEach(caspioMember => {
-      const existingIndex = combinedMembers.findIndex(fm => 
-        fm.memberMediCalNum === caspioMember.memberMediCalNum ||
-        (fm.memberFirstName === caspioMember.memberFirstName && fm.memberLastName === caspioMember.memberLastName)
-      );
+      // Combine Firebase and Caspio data, prioritizing Caspio data for Kaiser-specific fields
+      const combinedMembers = [...firebaseMembers];
       
-      if (existingIndex >= 0) {
-        // Update existing member with Caspio data
-        combinedMembers[existingIndex] = {
-          ...combinedMembers[existingIndex],
-          ...caspioMember,
-          id: combinedMembers[existingIndex].id, // Keep Firebase ID
-        };
-      } else {
-        // Add new Caspio-only member
-        combinedMembers.push({
-          ...caspioMember,
-          id: `caspio-${caspioMember.caspio_id}`,
-          healthPlan: 'Kaiser',
-          status: 'Caspio Only',
-          pathway: 'Unknown',
-          createdAt: null
+      // Add Caspio-only members or update existing ones with Caspio data
+      if (caspioMembers && Array.isArray(caspioMembers)) {
+        caspioMembers.forEach(caspioMember => {
+          const existingIndex = combinedMembers.findIndex(fm => 
+            (fm.memberMediCalNum && caspioMember.memberMediCalNum && fm.memberMediCalNum === caspioMember.memberMediCalNum) ||
+            (fm.memberFirstName === caspioMember.memberFirstName && fm.memberLastName === caspioMember.memberLastName)
+          );
+          
+          if (existingIndex >= 0) {
+            // Update existing member with Caspio data
+            combinedMembers[existingIndex] = {
+              ...combinedMembers[existingIndex],
+              ...caspioMember,
+              id: combinedMembers[existingIndex].id, // Keep Firebase ID
+              source: 'firebase' as const
+            };
+          } else {
+            // Add new Caspio-only member
+            combinedMembers.push({
+              ...caspioMember,
+              id: `caspio-${caspioMember.caspio_id || Math.random()}`,
+              healthPlan: 'Kaiser',
+              status: 'Caspio Only',
+              pathway: 'Unknown',
+              createdAt: null,
+              source: 'caspio' as const
+            });
+          }
         });
       }
-    });
-    
-    return combinedMembers;
+      
+      return combinedMembers;
+    } catch (error) {
+      console.error('Error processing Kaiser members:', error);
+      return [];
+    }
   }, [applications, caspioMembers]);
 
   // Filter members based on search and filters
@@ -268,12 +284,43 @@ export default function KaiserTrackerPage() {
     [kaiserMembers]
   );
 
-  if (isAdminLoading) {
-    return <div className="flex items-center justify-center h-64">Loading...</div>;
+  if (isAdminLoading || loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="flex items-center gap-2">
+          <RefreshCw className="h-6 w-6 animate-spin" />
+          <span>Loading Kaiser Tracker...</span>
+        </div>
+      </div>
+    );
   }
 
   if (!isAdmin) {
-    return <div className="flex items-center justify-center h-64">Access denied. Admin privileges required.</div>;
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+          <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+          <p className="text-muted-foreground">Admin privileges required to access Kaiser Tracker.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <XCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+          <h2 className="text-xl font-semibold mb-2">Error Loading Data</h2>
+          <p className="text-muted-foreground">Unable to load Kaiser member data. Please try refreshing the page.</p>
+          <Button onClick={() => window.location.reload()} className="mt-4">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh Page
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -189,30 +189,72 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
     const accessToken = tokenData.access_token;
     console.log('✅ Got access token');
     
-    // Fetch all members from CalAIM_tbl_Members table
+    // Fetch all members from CalAIM_tbl_Members table with pagination
     const membersTable = 'CalAIM_tbl_Members';
-    const fetchUrl = `${baseUrl}/tables/${membersTable}/records`;
+    let allMembers: any[] = [];
+    let pageSize = 1000; // Caspio's max page size
+    let pageNumber = 1;
+    let hasMoreData = true;
     
-    console.log('📋 Fetching members from:', fetchUrl);
+    console.log('📋 Fetching all members from:', membersTable);
     
-    const membersResponse = await fetch(fetchUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    if (!membersResponse.ok) {
-      const errorText = await membersResponse.text();
-      throw new HttpsError('internal', `Failed to fetch members: ${membersResponse.status} ${errorText}`);
+    while (hasMoreData) {
+      // Try to filter for Kaiser members if possible, otherwise get all
+      const fetchUrl = `${baseUrl}/tables/${membersTable}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
+      
+      console.log(`📄 Fetching page ${pageNumber} (up to ${pageSize} records)...`);
+      
+      const membersResponse = await fetch(fetchUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!membersResponse.ok) {
+        const errorText = await membersResponse.text();
+        throw new HttpsError('internal', `Failed to fetch members page ${pageNumber}: ${membersResponse.status} ${errorText}`);
+      }
+      
+      const membersData = await membersResponse.json();
+      const pageResults = membersData.Result || [];
+      
+      console.log(`✅ Page ${pageNumber}: ${pageResults.length} members`);
+      
+      if (pageResults.length > 0) {
+        allMembers = allMembers.concat(pageResults);
+        pageNumber++;
+        
+        // If we got less than the page size, we've reached the end
+        if (pageResults.length < pageSize) {
+          hasMoreData = false;
+        }
+      } else {
+        hasMoreData = false;
+      }
+      
+      // Safety check to prevent infinite loops
+      if (pageNumber > 50) {
+        console.log('⚠️ Reached maximum page limit (50), stopping pagination');
+        hasMoreData = false;
+      }
     }
     
-    const membersData = await membersResponse.json();
-    console.log('✅ Successfully fetched members:', membersData.Result?.length || 0);
+    console.log(`✅ Successfully fetched ALL members: ${allMembers.length} total records`);
     
-    // Transform Caspio data to match our Kaiser tracker format
-    const transformedMembers = (membersData.Result || []).map((member: any) => ({
+    // Filter for Kaiser members and transform Caspio data
+    const kaiserMembers = allMembers.filter(member => 
+      member.HealthPlan === 'Kaiser' || 
+      member.Kaiser_Status || 
+      member.Kaiser_Stathus ||
+      // If no health plan field, include all for now
+      !member.HealthPlan
+    );
+    
+    console.log(`🏥 Filtered to Kaiser members: ${kaiserMembers.length} out of ${allMembers.length} total`);
+    
+    const transformedMembers = kaiserMembers.map((member: any) => ({
       // Basic info
       memberFirstName: member.MemberFirstName || '',
       memberLastName: member.MemberLastName || '',
@@ -242,7 +284,7 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
       ReferrerPhone: member.ReferrerPhone || '',
       
       // Health plan info
-      HealthPlan: member.HealthPlan || '',
+      HealthPlan: member.HealthPlan || 'Kaiser',
       Pathway: member.Pathway || '',
       
       // Dates and tracking
