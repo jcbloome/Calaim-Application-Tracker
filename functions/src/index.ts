@@ -6,6 +6,9 @@ import * as admin from "firebase-admin";
 // Export Google Drive migration functions
 export { authenticateGoogleDrive, scanCalAIMDriveFolders, migrateDriveFoldersToFirebase } from './google-drive';
 
+// Export Smart Sync and Duplicate Prevention functions
+export { checkSyncStatus, performManualSync, checkForDuplicateClients, resolveDuplicateClients } from './smart-sync';
+
 admin.initializeApp();
 
 // Define secrets for Caspio API

@@ -66,6 +66,8 @@ import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, A
 import { format } from 'date-fns';
 import { SyncToCaspioButton } from '@/components/SyncToCaspioButton';
 import { MemberFileLookup } from '@/components/MemberFileLookup';
+import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
+import { DuplicateClientChecker } from '@/components/DuplicateClientChecker';
 
 const kaiserSteps = [
   "Pre-T2038, Compiling Docs",
@@ -534,6 +536,26 @@ function AdminActions({ application }: { application: Application }) {
                             CS Summary data has been published to Caspio database
                         </p>
                     )}
+                    
+                    {/* Duplicate Client Check */}
+                    <DuplicateClientChecker 
+                      memberData={application}
+                      onDuplicateResolved={(clientId) => {
+                        // Refresh the page or update the application data
+                        window.location.reload();
+                      }}
+                    />
+
+                    {/* Sync Status */}
+                    <SyncStatusIndicator
+                      applicationId={application.id}
+                      clientId={(application as any)?.client_ID2}
+                      memberData={application}
+                      onSyncComplete={() => {
+                        // Refresh data or show success message
+                        window.location.reload();
+                      }}
+                    />
                     
                     <SyncToCaspioButton
                         memberId={application.id}
