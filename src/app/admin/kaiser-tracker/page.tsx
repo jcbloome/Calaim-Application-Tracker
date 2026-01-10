@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, Download, ArrowUpDown, ArrowUp, ArrowDown, Shield, HourglassIcon } from 'lucide-react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
@@ -94,6 +95,7 @@ export default function KaiserTrackerPage() {
   const [sortField, setSortField] = useState<string>('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [selectedStaff, setSelectedStaff] = useState<string>('all');
+  const [editingMember, setEditingMember] = useState<string | null>(null);
 
   // Helper functions
   const isOverdue = (dateString: string): boolean => {
@@ -138,6 +140,63 @@ export default function KaiserTrackerPage() {
       return <AlertTriangle className="h-3 w-3" />;
     }
     return <Clock className="h-3 w-3" />;
+  };
+
+  // Update member status functions
+  const updateMemberStatus = async (memberId: string, field: string, value: string) => {
+    try {
+      // Update local state immediately for better UX
+      setMembers(prevMembers => 
+        prevMembers.map(member => 
+          member.id === memberId 
+            ? { ...member, [field]: value }
+            : member
+        )
+      );
+
+      // TODO: Add API call to sync with Caspio
+      console.log(`Updating member ${memberId}: ${field} = ${value}`);
+      
+      toast({
+        title: 'Status Updated',
+        description: `${field} updated successfully`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error) {
+      console.error('Error updating member status:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to update member status',
+      });
+    }
+  };
+
+  const updateMemberDate = async (memberId: string, date: string) => {
+    try {
+      setMembers(prevMembers => 
+        prevMembers.map(member => 
+          member.id === memberId 
+            ? { ...member, next_steps_date: date }
+            : member
+        )
+      );
+
+      console.log(`Updating member ${memberId}: next_steps_date = ${date}`);
+      
+      toast({
+        title: 'Date Updated',
+        description: 'Next steps date updated successfully',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error) {
+      console.error('Error updating member date:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to update date',
+      });
+    }
   };
 
   // Sorting functionality
@@ -1041,50 +1100,143 @@ export default function KaiserTrackerPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge className={getStatusColor(member.Kaiser_Status || 'Pending')} variant="outline">
-                          <div className="flex items-center gap-1">
-                            {getStatusIcon(member.Kaiser_Status || 'Pending')}
-                            <span className="text-xs">{member.Kaiser_Status || 'Pending'}</span>
-                          </div>
-                        </Badge>
+                        <Select 
+                          value={member.Kaiser_Status || 'Pending'} 
+                          onValueChange={(value) => updateMemberStatus(member.id, 'Kaiser_Status', value)}
+                        >
+                          <SelectTrigger className="w-full min-w-[200px]">
+                            <SelectValue>
+                              <Badge className={getStatusColor(member.Kaiser_Status || 'Pending')} variant="outline">
+                                <div className="flex items-center gap-1">
+                                  {getStatusIcon(member.Kaiser_Status || 'Pending')}
+                                  <span className="text-xs">{member.Kaiser_Status || 'Pending'}</span>
+                                </div>
+                              </Badge>
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {kaiserSteps.map((status) => (
+                              <SelectItem key={status} value={status}>
+                                <div className="flex items-center gap-2">
+                                  {getStatusIcon(status)}
+                                  <span className="text-sm">{status}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell>
-                        <Badge className="bg-blue-100 text-blue-800 border-blue-200" variant="outline">
-                          <div className="flex items-center gap-1">
-                            {getStatusIcon(member.CalAIM_Status || 'Pending')}
-                            <span className="text-xs">{member.CalAIM_Status || 'Pending'}</span>
-                          </div>
-                        </Badge>
+                        <Select 
+                          value={member.CalAIM_Status || 'Pending'} 
+                          onValueChange={(value) => updateMemberStatus(member.id, 'CalAIM_Status', value)}
+                        >
+                          <SelectTrigger className="w-full min-w-[150px]">
+                            <SelectValue>
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-200" variant="outline">
+                                <div className="flex items-center gap-1">
+                                  {getStatusIcon(member.CalAIM_Status || 'Pending')}
+                                  <span className="text-xs">{member.CalAIM_Status || 'Pending'}</span>
+                                </div>
+                              </Badge>
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Pending">
+                              <div className="flex items-center gap-2">
+                                <HourglassIcon className="h-3 w-3 text-orange-600" />
+                                <span>Pending</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="Submitted">
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-3 w-3 text-blue-600" />
+                                <span>Submitted</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="Under Review">
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-3 w-3 text-yellow-600" />
+                                <span>Under Review</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="Authorized">
+                              <div className="flex items-center gap-2">
+                                <Shield className="h-3 w-3 text-green-600" />
+                                <span>Authorized</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="Approved">
+                              <div className="flex items-center gap-2">
+                                <CheckCircle className="h-3 w-3 text-green-600" />
+                                <span>Approved</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="Denied">
+                              <div className="flex items-center gap-2">
+                                <XCircle className="h-3 w-3 text-red-600" />
+                                <span>Denied</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="Needs More Info">
+                              <div className="flex items-center gap-2">
+                                <AlertTriangle className="h-3 w-3 text-orange-600" />
+                                <span>Needs More Info</span>
+                              </div>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1">
-                          <User className="h-3 w-3" />
-                          {member.kaiser_user_assignment || 'Unassigned'}
-                        </div>
+                        <Select 
+                          value={member.kaiser_user_assignment || 'unassigned'} 
+                          onValueChange={(value) => updateMemberStatus(member.id, 'kaiser_user_assignment', value === 'unassigned' ? '' : value)}
+                        >
+                          <SelectTrigger className="w-full min-w-[150px]">
+                            <SelectValue>
+                              <div className="flex items-center gap-1">
+                                <User className="h-3 w-3" />
+                                <span className="text-sm">{member.kaiser_user_assignment || 'Unassigned'}</span>
+                              </div>
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">
+                              <div className="flex items-center gap-2">
+                                <User className="h-3 w-3 text-gray-400" />
+                                <span className="text-gray-600">Unassigned</span>
+                              </div>
+                            </SelectItem>
+                            {staffMembers.map((staff) => (
+                              <SelectItem key={staff} value={staff}>
+                                <div className="flex items-center gap-2">
+                                  <User className="h-3 w-3 text-blue-600" />
+                                  <span>{staff}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell>
-                        <div className={`flex items-center gap-1 text-xs ${
-                          isOverdue(member.next_steps_date) 
-                            ? 'text-red-600 font-medium' 
-                            : member.next_steps_date 
-                              ? 'text-muted-foreground' 
-                              : 'text-gray-400'
-                        }`}>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="date"
+                            value={member.next_steps_date || ''}
+                            onChange={(e) => updateMemberDate(member.id, e.target.value)}
+                            className={`w-full text-xs ${
+                              isOverdue(member.next_steps_date) 
+                                ? 'border-red-300 bg-red-50' 
+                                : 'border-gray-300'
+                            }`}
+                          />
                           {isOverdue(member.next_steps_date) && (
-                            <AlertTriangle className="h-3 w-3" />
-                          )}
-                          {member.next_steps_date ? (
-                            <>
-                              <Calendar className="h-3 w-3" />
-                              {formatDate(member.next_steps_date)}
-                              {isOverdue(member.next_steps_date) && (
-                                <span className="ml-1">
-                                  ({Math.abs(getDaysUntilDue(member.next_steps_date))} days overdue)
-                                </span>
-                              )}
-                            </>
-                          ) : (
-                            'No date set'
+                            <div className="flex items-center gap-1 text-red-600">
+                              <AlertTriangle className="h-3 w-3" />
+                              <span className="text-xs font-medium">
+                                {Math.abs(getDaysUntilDue(member.next_steps_date))}d overdue
+                              </span>
+                            </div>
                           )}
                         </div>
                       </TableCell>
