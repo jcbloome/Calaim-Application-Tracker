@@ -362,11 +362,55 @@ export default function KaiserTrackerPage() {
         </div>
       </div>
 
+      {/* Quick Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Kaiser Members</CardTitle>
+            <User className="h-4 w-4 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">{members.length}</div>
+            <p className="text-xs text-muted-foreground">Active in pipeline</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Overdue Tasks</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">
+              {members.filter(m => isOverdue(m.next_steps_date)).length}
+            </div>
+            <p className="text-xs text-muted-foreground">Need immediate attention</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">ILS Bottlenecks</CardTitle>
+            <Download className="h-4 w-4 text-purple-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-purple-600">
+              {members.filter(m => 
+                m.Kaiser_Status === 'T2038 Requested' || 
+                m.Kaiser_Status === 'Tier Level Requested' || 
+                m.Kaiser_Status === 'RCFE/ILS for Invoicing'
+              ).length}
+            </div>
+            <p className="text-xs text-muted-foreground">Weekly report ready</p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Comprehensive Summary Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         
         {/* Kaiser Status Steps Summary */}
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-blue-600" />
@@ -509,73 +553,6 @@ export default function KaiserTrackerPage() {
 
       </div>
 
-      {/* Comprehensive Kaiser Status Breakdown */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
-        {kaiserSteps.map((status) => {
-          const statusMembers = members.filter(m => m.Kaiser_Status === status);
-          const overdueMembers = statusMembers.filter(m => isOverdue(m.next_steps_date));
-          const assignedStaff = [...new Set(statusMembers.map(m => m.kaiser_user_assignment).filter(Boolean))];
-          
-          if (statusMembers.length === 0) return null;
-          
-          return (
-            <Card key={status} className={`${overdueMembers.length > 0 ? 'border-red-300 bg-red-50' : ''} hover:shadow-md transition-shadow`}>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-xs font-medium leading-tight">
-                    {status}
-                  </CardTitle>
-                  <div className="flex items-center gap-1">
-                    {overdueMembers.length > 0 && (
-                      <AlertTriangle className="h-3 w-3 text-red-600" />
-                    )}
-                    <Badge className={getStatusColor(status)} variant="outline">
-                      {statusMembers.length}
-                    </Badge>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                {/* Overdue Alert */}
-                {overdueMembers.length > 0 && (
-                  <div className="text-xs text-red-600 font-medium mb-2 flex items-center gap-1">
-                    <AlertTriangle className="h-3 w-3" />
-                    {overdueMembers.length} overdue
-                  </div>
-                )}
-                
-                {/* Staff Assignments */}
-                <div className="text-xs text-muted-foreground mb-2">
-                  <div className="font-medium">Staff:</div>
-                  {assignedStaff.length > 0 ? (
-                    <div>{assignedStaff.slice(0, 2).join(', ')}{assignedStaff.length > 2 ? '...' : ''}</div>
-                  ) : (
-                    <div className="text-orange-600">Unassigned ({statusMembers.filter(m => !m.kaiser_user_assignment).length})</div>
-                  )}
-                </div>
-                
-                {/* Member List Preview */}
-                <div className="text-xs text-muted-foreground">
-                  <div className="font-medium">Members:</div>
-                  <div className="space-y-1">
-                    {statusMembers.slice(0, 3).map((member, idx) => (
-                      <div key={idx} className="flex items-center justify-between">
-                        <span className="truncate">{member.memberFirstName} {member.memberLastName}</span>
-                        {isOverdue(member.next_steps_date) && (
-                          <AlertTriangle className="h-2 w-2 text-red-500 ml-1" />
-                        )}
-                      </div>
-                    ))}
-                    {statusMembers.length > 3 && (
-                      <div className="text-gray-500">+{statusMembers.length - 3} more</div>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
 
       {/* Members Table */}
       <Card>
