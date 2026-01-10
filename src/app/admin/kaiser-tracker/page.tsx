@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, Download, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
@@ -92,6 +93,7 @@ export default function KaiserTrackerPage() {
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [sortField, setSortField] = useState<string>('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [selectedStaff, setSelectedStaff] = useState<string>('all');
 
   // Helper functions
   const isOverdue = (dateString: string): boolean => {
@@ -153,12 +155,36 @@ export default function KaiserTrackerPage() {
     return sortDirection === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
   };
 
+  // Get unique staff members for dropdown
+  const staffMembers = useMemo(() => {
+    try {
+      const uniqueStaff = [...new Set((members || []).map(m => m?.kaiser_user_assignment).filter(Boolean))];
+      return uniqueStaff.sort();
+    } catch (error) {
+      console.error('Error getting staff members:', error);
+      return [];
+    }
+  }, [members]);
+
+  // Filter members by selected staff
+  const filteredMembers = useMemo(() => {
+    try {
+      if (!members || members.length === 0) return [];
+      if (selectedStaff === 'all') return members;
+      if (selectedStaff === 'unassigned') return members.filter(m => !m?.kaiser_user_assignment);
+      return members.filter(m => m?.kaiser_user_assignment === selectedStaff);
+    } catch (error) {
+      console.error('Error filtering members:', error);
+      return members || [];
+    }
+  }, [members, selectedStaff]);
+
   // Sort members based on current sort settings with error handling
   const sortedMembers = useMemo(() => {
     try {
-      if (!members || members.length === 0) return [];
+      if (!filteredMembers || filteredMembers.length === 0) return [];
       
-      return [...members].sort((a, b) => {
+      return [...filteredMembers].sort((a, b) => {
         if (!sortField) return 0;
         
         let aValue = '';
@@ -214,9 +240,9 @@ export default function KaiserTrackerPage() {
       });
     } catch (error) {
       console.error('Error sorting members:', error);
-      return members || [];
+      return filteredMembers || [];
     }
-  }, [members, sortField, sortDirection]);
+  }, [filteredMembers, sortField, sortDirection]);
 
   // Generate ILS Weekly Report as PDF
   const generateILSReport = () => {
@@ -227,7 +253,7 @@ export default function KaiserTrackerPage() {
         "RCFE/ILS for Contracting"
       ];
       
-      const bottleneckMembers = members.filter(member => 
+      const bottleneckMembers = filteredMembers.filter(member => 
         bottleneckStatuses.includes(member.Kaiser_Status || '')
       );
       
@@ -506,16 +532,64 @@ export default function KaiserTrackerPage() {
         </div>
       </div>
 
+      {/* Staff Filter */}
+      <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center gap-2">
+          <User className="h-4 w-4 text-muted-foreground" />
+          <label htmlFor="staff-filter" className="text-sm font-medium">
+            Filter by Staff:
+          </label>
+        </div>
+        <Select value={selectedStaff} onValueChange={setSelectedStaff}>
+          <SelectTrigger className="w-64">
+            <SelectValue placeholder="Select staff member" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">
+              All Staff ({members.length} members)
+            </SelectItem>
+            <SelectItem value="unassigned">
+              Unassigned ({members.filter(m => !m?.kaiser_user_assignment).length} members)
+            </SelectItem>
+            {staffMembers.map((staff) => {
+              const count = members.filter(m => m?.kaiser_user_assignment === staff).length;
+              return (
+                <SelectItem key={staff} value={staff}>
+                  {staff} ({count} members)
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+        {selectedStaff !== 'all' && (
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => setSelectedStaff('all')}
+          >
+            Clear Filter
+          </Button>
+        )}
+      </div>
+
       {/* Quick Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Kaiser Members</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              {selectedStaff === 'all' ? 'Total Kaiser Members' : 
+               selectedStaff === 'unassigned' ? 'Unassigned Members' : 
+               `${selectedStaff}'s Members`}
+            </CardTitle>
             <User className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{members.length}</div>
-            <p className="text-xs text-muted-foreground">Active in pipeline</p>
+            <div className="text-2xl font-bold text-blue-600">{filteredMembers.length}</div>
+            <p className="text-xs text-muted-foreground">
+              {selectedStaff === 'all' ? 'Active in pipeline' : 
+               selectedStaff === 'unassigned' ? 'Need assignment' : 
+               'Assigned cases'}
+            </p>
           </CardContent>
         </Card>
 
@@ -526,7 +600,7 @@ export default function KaiserTrackerPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              {members.filter(m => isOverdue(m.next_steps_date)).length}
+              {filteredMembers.filter(m => isOverdue(m.next_steps_date)).length}
             </div>
             <p className="text-xs text-muted-foreground">Need immediate attention</p>
           </CardContent>
@@ -539,7 +613,7 @@ export default function KaiserTrackerPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-purple-600">
-              {members.filter(m => 
+              {filteredMembers.filter(m => 
                 m.Kaiser_Status === 'T2038 Requested' || 
                 m.Kaiser_Status === 'Tier Level Requested' || 
                 m.Kaiser_Status === 'RCFE/ILS for Contracting'
@@ -566,7 +640,7 @@ export default function KaiserTrackerPage() {
             <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
               {kaiserSteps.map((status) => {
                 try {
-                  const count = members?.filter(m => m?.Kaiser_Status === status)?.length || 0;
+                  const count = filteredMembers?.filter(m => m?.Kaiser_Status === status)?.length || 0;
                   if (count === 0) return null;
                   return (
                     <div key={status} className="flex items-center justify-between text-xs p-2 rounded border">
@@ -584,9 +658,13 @@ export default function KaiserTrackerPage() {
             </div>
             <div className="mt-4 pt-4 border-t">
               <div className="flex items-center justify-between font-medium">
-                <span>Total Members</span>
+                <span>
+                  {selectedStaff === 'all' ? 'Total Members' : 
+                   selectedStaff === 'unassigned' ? 'Unassigned Members' : 
+                   `${selectedStaff}'s Members`}
+                </span>
                 <Badge className="bg-blue-100 text-blue-800">
-                  {members.length}
+                  {filteredMembers.length}
                 </Badge>
               </div>
             </div>
@@ -604,12 +682,12 @@ export default function KaiserTrackerPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2 max-h-64 overflow-y-auto">
-              {[...new Set((members || []).map(m => m?.memberCounty).filter(Boolean))]
+              {[...new Set((filteredMembers || []).map(m => m?.memberCounty).filter(Boolean))]
                 .sort()
                 .map((county) => {
                   try {
-                    const count = (members || []).filter(m => m?.memberCounty === county).length;
-                    const overdue = (members || []).filter(m => m?.memberCounty === county && isOverdue(m?.next_steps_date)).length;
+                    const count = (filteredMembers || []).filter(m => m?.memberCounty === county).length;
+                    const overdue = (filteredMembers || []).filter(m => m?.memberCounty === county && isOverdue(m?.next_steps_date)).length;
                     return (
                       <div key={county} className="flex items-center justify-between text-sm p-2 rounded border">
                         <div className="flex flex-col">
@@ -631,11 +709,11 @@ export default function KaiserTrackerPage() {
                     return null;
                   }
                 })}
-              {members.filter(m => !m.memberCounty).length > 0 && (
+              {filteredMembers.filter(m => !m.memberCounty).length > 0 && (
                 <div className="flex items-center justify-between text-sm p-2 rounded border">
                   <span className="text-muted-foreground">No County</span>
                   <Badge variant="outline">
-                    {members.filter(m => !m.memberCounty).length}
+                    {filteredMembers.filter(m => !m.memberCounty).length}
                   </Badge>
                 </div>
               )}
@@ -713,16 +791,28 @@ export default function KaiserTrackerPage() {
       </div>
 
       {/* Members Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Kaiser Members ({members.length})</CardTitle>
-        </CardHeader>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Kaiser Members ({filteredMembers.length}
+              {selectedStaff !== 'all' && ` of ${members.length} total`})
+            </CardTitle>
+          </CardHeader>
         <CardContent>
           {members.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground">No Kaiser members loaded yet.</p>
               <p className="text-sm text-muted-foreground mt-2">
                 Click "Sync from Caspio" to load member data.
+              </p>
+            </div>
+          ) : filteredMembers.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">
+                No members found for {selectedStaff === 'unassigned' ? 'unassigned' : selectedStaff}.
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Try selecting a different staff member or clear the filter.
               </p>
             </div>
           ) : (
