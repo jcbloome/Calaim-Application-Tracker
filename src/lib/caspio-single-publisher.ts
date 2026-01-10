@@ -9,6 +9,12 @@ const CASPIO_CONFIG = {
   membersTable: 'CalAIM_tbl_Members',
 };
 
+console.log('🔧 Caspio Config Loaded:');
+console.log('  - Base URL from env:', process.env.CASPIO_BASE_URL);
+console.log('  - Using Base URL:', CASPIO_CONFIG.baseUrl);
+console.log('  - Client ID available:', !!CASPIO_CONFIG.clientId);
+console.log('  - Client Secret available:', !!CASPIO_CONFIG.clientSecret);
+
 interface CaspioApiResponse {
   success: boolean;
   message: string;
@@ -51,7 +57,25 @@ async function getCaspioAccessToken(): Promise<string> {
   
   console.log('🌐 Making OAuth request to:', tokenUrl);
   
+  // Test basic connectivity first
   try {
+    console.log('🔍 Testing basic connectivity to Caspio...');
+    const testResponse = await fetch('https://httpbin.org/get', {
+      method: 'GET',
+      headers: { 'User-Agent': 'CalAIM-Test' }
+    });
+    console.log('✅ Basic HTTP connectivity works:', testResponse.status);
+  } catch (testError) {
+    console.log('❌ Basic HTTP connectivity failed:', testError);
+  }
+  
+  try {
+    console.log('🔑 Making Caspio OAuth request with:');
+    console.log('  - URL:', tokenUrl);
+    console.log('  - Method: POST');
+    console.log('  - Headers: Authorization (Basic), Content-Type');
+    console.log('  - Body: grant_type=client_credentials');
+    
     const response = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
