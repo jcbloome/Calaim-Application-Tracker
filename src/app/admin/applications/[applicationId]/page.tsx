@@ -41,6 +41,7 @@ import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMemb
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
 import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot, collection, getDocs } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -438,20 +439,16 @@ function AdminActions({ application }: { application: Application }) {
         setIsSendingToCaspio(true);
         
         try {
-            const response = await fetch('/api/caspio/publish', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(application),
-            });
+            const functions = getFunctions();
+            const publishToCaspio = httpsCallable(functions, 'publishCsSummaryToCaspio');
             
-            const result = await response.json();
+            const result = await publishToCaspio(application);
+            const data = result.data as any;
             
-            if (result.success) {
+            if (data.success) {
                 toast({
                     title: 'Success!',
-                    description: result.message,
+                    description: data.message,
                     className: 'bg-green-100 text-green-900 border-green-200',
                 });
                 
@@ -464,25 +461,28 @@ function AdminActions({ application }: { application: Application }) {
                     }, { merge: true });
                 }
             } else {
-                if (result.isDuplicate) {
-                    toast({
-                        variant: 'destructive',
-                        title: 'Duplicate Record',
-                        description: result.message,
-                    });
-                } else {
-                    toast({
-                        variant: 'destructive',
-                        title: 'Caspio Error',
-                        description: result.message,
-                    });
-                }
+                toast({
+                    variant: 'destructive',
+                    title: 'Caspio Error',
+                    description: data.message,
+                });
             }
         } catch (error: any) {
+            // Handle Firebase Functions errors
+            let errorMessage = 'Failed to send to Caspio';
+            
+            if (error.code === 'functions/already-exists') {
+                errorMessage = 'This member already exists in Caspio database';
+            } else if (error.code === 'functions/failed-precondition') {
+                errorMessage = 'Caspio credentials not configured properly';
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+            
             toast({
                 variant: 'destructive',
                 title: 'Error',
-                description: `Failed to send to Caspio: ${error.message}`,
+                description: errorMessage,
             });
         } finally {
             setIsSendingToCaspio(false);

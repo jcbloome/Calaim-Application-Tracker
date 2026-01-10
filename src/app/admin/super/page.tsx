@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp, addDoc, orderBy } from 'firebase/firestore';
 import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -480,14 +481,17 @@ export default function SuperAdminPage() {
         setIsSendingWebhook(true);
         setWebhookLog(null);
         try {
-            const response = await fetch('/api/caspio/test');
-            const result = await response.json();
+            const functions = getFunctions();
+            const testConnection = httpsCallable(functions, 'testCaspioConnection');
             
-            if (result.success) {
-                toast({ title: "Caspio Connection Test", description: result.message, className: 'bg-green-100 text-green-900 border-green-200' });
-                setWebhookLog(`✅ Success: ${result.message}\n\nBoth connect_tbl_clients and CalAIM_tbl_Members tables are accessible.`);
+            const result = await testConnection();
+            const data = result.data as any;
+            
+            if (data.success) {
+                toast({ title: "Caspio Connection Test", description: data.message, className: 'bg-green-100 text-green-900 border-green-200' });
+                setWebhookLog(`✅ Success: ${data.message}\n\nTest Results:\n- HTTP Test: ${data.tests?.httpTest}\n- Caspio Domain: ${data.tests?.caspioTest}\n- OAuth Test: ${data.tests?.oauthTest}`);
             } else {
-                setWebhookLog(`❌ Failed: ${result.message}`);
+                setWebhookLog(`❌ Failed: ${data.message}`);
                 toast({ variant: 'destructive', title: 'Caspio Connection Failed', description: "See log on page for details." });
             }
         } catch (error: any) {
