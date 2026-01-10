@@ -12,6 +12,7 @@ import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, 
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
 import { useAutoSync } from '@/hooks/use-auto-sync';
+import { MemberListModal } from '@/components/MemberListModal';
 
 // Kaiser workflow with next steps and recommended timeframes
 const kaiserWorkflow = {
@@ -217,12 +218,34 @@ interface KaiserMember {
 export default function KaiserTrackerPage() {
   const { isAdmin } = useAdmin();
   const { toast } = useToast();
+
+  // Helper function to open member list modal
+  const openMemberModal = (
+    memberList: KaiserMember[],
+    title: string,
+    description: string,
+    filterType: 'kaiser_status' | 'county' | 'staff' | 'calaim_status',
+    filterValue: string
+  ) => {
+    setModalMembers(memberList);
+    setModalTitle(title);
+    setModalDescription(description);
+    setModalFilterType(filterType);
+    setModalFilterValue(filterValue);
+    setModalOpen(true);
+  };
   const [isLoading, setIsLoading] = useState(false);
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [sortField, setSortField] = useState<string>('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [selectedStaff, setSelectedStaff] = useState<string>('all');
   const [editingMember, setEditingMember] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMembers, setModalMembers] = useState<KaiserMember[]>([]);
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalDescription, setModalDescription] = useState('');
+  const [modalFilterType, setModalFilterType] = useState<'kaiser_status' | 'county' | 'staff' | 'calaim_status'>('kaiser_status');
+  const [modalFilterValue, setModalFilterValue] = useState('');
   const [filters, setFilters] = useState({
     kaiserStatus: 'all',
     calaimStatus: 'all',
@@ -1220,17 +1243,14 @@ export default function KaiserTrackerPage() {
                     <button
                       key={status}
                       onClick={() => {
-                        setFilters(prev => ({
-                          ...prev,
-                          kaiserStatus: status
-                        }));
-                        // Scroll to table
-                        setTimeout(() => {
-                          document.getElementById('members-table')?.scrollIntoView({ 
-                            behavior: 'smooth',
-                            block: 'start'
-                          });
-                        }, 100);
+                        const statusMembers = filteredMembers?.filter(m => m?.Kaiser_Status === status) || [];
+                        openMemberModal(
+                          statusMembers,
+                          `Kaiser Status: ${status}`,
+                          `Members currently at ${status} stage`,
+                          'kaiser_status',
+                          status
+                        );
                       }}
                       className="flex items-center justify-between text-xs p-2 rounded border hover:bg-blue-50 hover:border-blue-200 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
                     >
@@ -1304,16 +1324,14 @@ export default function KaiserTrackerPage() {
                       <button
                         key={status}
                         onClick={() => {
-                          setFilters(prev => ({
-                            ...prev,
-                            calaimStatus: status
-                          }));
-                          setTimeout(() => {
-                            document.getElementById('members-table')?.scrollIntoView({ 
-                              behavior: 'smooth',
-                              block: 'start'
-                            });
-                          }, 100);
+                          const statusMembers = (filteredMembers || []).filter(m => m?.CalAIM_Status === status);
+                          openMemberModal(
+                            statusMembers,
+                            `CalAIM Status: ${status}`,
+                            `Members with ${status} CalAIM authorization status`,
+                            'calaim_status',
+                            status
+                          );
                         }}
                         className="flex items-center justify-between text-sm p-2 rounded border hover:bg-green-50 hover:border-green-200 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 cursor-pointer w-full"
                       >
@@ -1402,16 +1420,14 @@ export default function KaiserTrackerPage() {
                       <button
                         key={county}
                         onClick={() => {
-                          setFilters(prev => ({
-                            ...prev,
-                            county: county
-                          }));
-                          setTimeout(() => {
-                            document.getElementById('members-table')?.scrollIntoView({ 
-                              behavior: 'smooth',
-                              block: 'start'
-                            });
-                          }, 100);
+                          const countyMembers = (filteredMembers || []).filter(m => m?.memberCounty === county);
+                          openMemberModal(
+                            countyMembers,
+                            `${county} County Members`,
+                            `All Kaiser members in ${county} County`,
+                            'county',
+                            county
+                          );
                         }}
                         className="flex items-center justify-between text-sm p-2 rounded border hover:bg-green-50 hover:border-green-200 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 cursor-pointer w-full"
                       >
@@ -1476,16 +1492,14 @@ export default function KaiserTrackerPage() {
                       <button
                         key={staff}
                         onClick={() => {
-                          setFilters(prev => ({
-                            ...prev,
-                            staffAssigned: staff
-                          }));
-                          setTimeout(() => {
-                            document.getElementById('members-table')?.scrollIntoView({ 
-                              behavior: 'smooth',
-                              block: 'start'
-                            });
-                          }, 100);
+                          const staffMembers = (members || []).filter(m => m?.kaiser_user_assignment === staff);
+                          openMemberModal(
+                            staffMembers,
+                            `${staff}'s Assigned Members`,
+                            `All Kaiser members assigned to ${staff}`,
+                            'staff',
+                            staff
+                          );
                         }}
                         className="flex items-center justify-between text-sm p-2 rounded border hover:bg-purple-50 hover:border-purple-200 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1 cursor-pointer w-full"
                       >
@@ -1919,6 +1933,17 @@ export default function KaiserTrackerPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Member List Modal */}
+      <MemberListModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        members={modalMembers}
+        title={modalTitle}
+        description={modalDescription}
+        filterType={modalFilterType}
+        filterValue={modalFilterValue}
+      />
     </div>
   );
 }
