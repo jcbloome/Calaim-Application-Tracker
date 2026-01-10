@@ -55,6 +55,16 @@ export {
   sendNotificationWithSettings
 } from './notification-settings';
 
+// Export Login Tracking functions
+export {
+  logUserActivity,
+  getLoginLogs,
+  getActiveSessions,
+  forceUserLogout,
+  updateUserActivity,
+  cleanupOldLogs
+} from './login-tracking';
+
 admin.initializeApp();
 
 // Define secrets for Caspio API

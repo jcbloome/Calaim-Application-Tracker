@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { WindowsNotificationContainer } from '@/components/WindowsNotification';
+import LoginTrackingProvider from '@/components/LoginTrackingProvider';
 import { cn } from '@/lib/utils';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { Inter } from 'next/font/google';
@@ -30,7 +31,11 @@ export default function RootLayout({
     <html lang="en" className={cn('h-full antialiased', inter.className)}>
       <body className="min-h-screen flex flex-col">
         <React.Suspense fallback={<div className="flex h-screen w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
-          <FirebaseClientProvider>{children}</FirebaseClientProvider>
+          <FirebaseClientProvider>
+            <LoginTrackingProvider>
+              {children}
+            </LoginTrackingProvider>
+          </FirebaseClientProvider>
         </React.Suspense>
         <Toaster />
         <WindowsNotificationContainer />
