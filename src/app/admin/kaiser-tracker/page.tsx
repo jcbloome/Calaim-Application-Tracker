@@ -474,6 +474,11 @@ export default function KaiserTrackerPage() {
         }
       }
       
+      // Staff Assigned filter (from clicking staff cards)
+      if (filters.staffAssigned) {
+        filtered = filtered.filter(m => m?.kaiser_user_assignment === filters.staffAssigned);
+      }
+      
       // Overdue only filter
       if (filters.overdueOnly) {
         filtered = filtered.filter(m => isOverdue(m?.next_steps_date));
@@ -1014,6 +1019,7 @@ export default function KaiserTrackerPage() {
               filters.calaimStatus !== 'all' || 
               filters.county !== 'all' || 
               filters.assignment !== 'all' || 
+              filters.staffAssigned ||
               filters.overdueOnly) && (
               <Button 
                 variant="outline" 
@@ -1025,6 +1031,7 @@ export default function KaiserTrackerPage() {
                     calaimStatus: 'all',
                     county: 'all',
                     assignment: 'all',
+                    staffAssigned: '',
                     overdueOnly: false
                   });
                 }}
@@ -1080,6 +1087,15 @@ export default function KaiserTrackerPage() {
                 <X 
                   className="h-3 w-3 cursor-pointer" 
                   onClick={() => setFilters(prev => ({...prev, assignment: 'all'}))}
+                />
+              </Badge>
+            )}
+            {filters.staffAssigned && (
+              <Badge variant="secondary" className="flex items-center gap-1 bg-purple-100 text-purple-800">
+                Staff: {filters.staffAssigned}
+                <X 
+                  className="h-3 w-3 cursor-pointer" 
+                  onClick={() => setFilters(prev => ({...prev, staffAssigned: ''}))}
                 />
               </Badge>
             )}
@@ -1201,12 +1217,31 @@ export default function KaiserTrackerPage() {
                   const count = filteredMembers?.filter(m => m?.Kaiser_Status === status)?.length || 0;
                   if (count === 0) return null;
                   return (
-                    <div key={status} className="flex items-center justify-between text-xs p-2 rounded border">
-                      <span className="truncate pr-2" title={status}>{status}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {count}
-                      </Badge>
-                    </div>
+                    <button
+                      key={status}
+                      onClick={() => {
+                        setFilters(prev => ({
+                          ...prev,
+                          kaiserStatus: status
+                        }));
+                        // Scroll to table
+                        setTimeout(() => {
+                          document.getElementById('members-table')?.scrollIntoView({ 
+                            behavior: 'smooth',
+                            block: 'start'
+                          });
+                        }, 100);
+                      }}
+                      className="flex items-center justify-between text-xs p-2 rounded border hover:bg-blue-50 hover:border-blue-200 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
+                    >
+                      <span className="truncate pr-2 text-left" title={status}>{status}</span>
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline" className="text-xs">
+                          {count}
+                        </Badge>
+                        <span className="text-blue-600 text-xs">→</span>
+                      </div>
+                    </button>
                   );
                 } catch (error) {
                   console.error('Error rendering status card:', error);
@@ -1225,6 +1260,23 @@ export default function KaiserTrackerPage() {
                   {filteredMembers.length}
                 </Badge>
               </div>
+              {filters.kaiserStatus && (
+                <div className="mt-3 pt-3 border-t">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-blue-600 font-medium">
+                      Filtered by: {filters.kaiserStatus}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setFilters(prev => ({ ...prev, kaiserStatus: '' }))}
+                      className="text-xs h-6 px-2"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1249,7 +1301,22 @@ export default function KaiserTrackerPage() {
                     const isPending = status?.toLowerCase().includes('pending') || status?.toLowerCase().includes('waiting') || status?.toLowerCase().includes('submitted');
                     
                     return (
-                      <div key={status} className="flex items-center justify-between text-sm p-2 rounded border">
+                      <button
+                        key={status}
+                        onClick={() => {
+                          setFilters(prev => ({
+                            ...prev,
+                            calaimStatus: status
+                          }));
+                          setTimeout(() => {
+                            document.getElementById('members-table')?.scrollIntoView({ 
+                              behavior: 'smooth',
+                              block: 'start'
+                            });
+                          }, 100);
+                        }}
+                        className="flex items-center justify-between text-sm p-2 rounded border hover:bg-green-50 hover:border-green-200 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 cursor-pointer w-full"
+                      >
                         <div className="flex items-center gap-2">
                           {isAuthorized ? (
                             <Shield className="h-3 w-3 text-green-600" />
@@ -1260,17 +1327,20 @@ export default function KaiserTrackerPage() {
                           )}
                           <span className="font-medium">{status}</span>
                         </div>
-                        <Badge 
-                          variant="outline" 
-                          className={
-                            isAuthorized ? "bg-green-50 text-green-700 border-green-200" :
-                            isPending ? "bg-orange-50 text-orange-700 border-orange-200" :
-                            "bg-gray-50 text-gray-700 border-gray-200"
-                          }
-                        >
-                          {count}
-                        </Badge>
-                      </div>
+                        <div className="flex items-center gap-1">
+                          <Badge 
+                            variant="outline" 
+                            className={
+                              isAuthorized ? "bg-green-50 text-green-700 border-green-200" :
+                              isPending ? "bg-orange-50 text-orange-700 border-orange-200" :
+                              "bg-gray-50 text-gray-700 border-gray-200"
+                            }
+                          >
+                            {count}
+                          </Badge>
+                          <span className="text-green-600 text-xs">→</span>
+                        </div>
+                      </button>
                     );
                   } catch (error) {
                     console.error('Error rendering CalAIM status card:', error);
@@ -1329,8 +1399,23 @@ export default function KaiserTrackerPage() {
                     const count = (filteredMembers || []).filter(m => m?.memberCounty === county).length;
                     const overdue = (filteredMembers || []).filter(m => m?.memberCounty === county && isOverdue(m?.next_steps_date)).length;
                     return (
-                      <div key={county} className="flex items-center justify-between text-sm p-2 rounded border">
-                        <div className="flex flex-col">
+                      <button
+                        key={county}
+                        onClick={() => {
+                          setFilters(prev => ({
+                            ...prev,
+                            county: county
+                          }));
+                          setTimeout(() => {
+                            document.getElementById('members-table')?.scrollIntoView({ 
+                              behavior: 'smooth',
+                              block: 'start'
+                            });
+                          }, 100);
+                        }}
+                        className="flex items-center justify-between text-sm p-2 rounded border hover:bg-green-50 hover:border-green-200 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 cursor-pointer w-full"
+                      >
+                        <div className="flex flex-col text-left">
                           <span className="font-medium">{county}</span>
                           {overdue > 0 && (
                             <span className="text-xs text-red-600 flex items-center gap-1">
@@ -1339,10 +1424,13 @@ export default function KaiserTrackerPage() {
                             </span>
                           )}
                         </div>
-                        <Badge variant="outline">
-                          {count}
-                        </Badge>
-                      </div>
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline">
+                            {count}
+                          </Badge>
+                          <span className="text-green-600 text-xs">→</span>
+                        </div>
+                      </button>
                     );
                   } catch (error) {
                     console.error('Error rendering county card:', error);
@@ -1385,8 +1473,23 @@ export default function KaiserTrackerPage() {
                     }).length;
                     
                     return (
-                      <div key={staff} className="flex items-center justify-between text-sm p-2 rounded border">
-                        <div className="flex flex-col">
+                      <button
+                        key={staff}
+                        onClick={() => {
+                          setFilters(prev => ({
+                            ...prev,
+                            staffAssigned: staff
+                          }));
+                          setTimeout(() => {
+                            document.getElementById('members-table')?.scrollIntoView({ 
+                              behavior: 'smooth',
+                              block: 'start'
+                            });
+                          }, 100);
+                        }}
+                        className="flex items-center justify-between text-sm p-2 rounded border hover:bg-purple-50 hover:border-purple-200 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1 cursor-pointer w-full"
+                      >
+                        <div className="flex flex-col text-left">
                           <span className="font-medium truncate" title={staff}>{staff}</span>
                           <div className="flex gap-2 text-xs">
                             {overdue > 0 && (
@@ -1403,10 +1506,13 @@ export default function KaiserTrackerPage() {
                             )}
                           </div>
                         </div>
-                        <Badge variant="outline">
-                          {count}
-                        </Badge>
-                      </div>
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline">
+                            {count}
+                          </Badge>
+                          <span className="text-purple-600 text-xs">→</span>
+                        </div>
+                      </button>
                     );
                   } catch (error) {
                     console.error('Error rendering staff card:', error);
@@ -1511,7 +1617,7 @@ export default function KaiserTrackerPage() {
               </p>
             </div>
           ) : (
-            <div className="rounded-md border">
+            <div id="members-table" className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
