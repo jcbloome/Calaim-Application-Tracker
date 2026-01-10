@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { WindowsNotificationContainer } from '@/components/WindowsNotification';
+import { CursorNotificationContainer } from '@/components/CursorStyleNotification';
 import LoginTrackingProvider from '@/components/LoginTrackingProvider';
 import { cn } from '@/lib/utils';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
@@ -39,6 +40,7 @@ export default function RootLayout({
         </React.Suspense>
         <Toaster />
         <WindowsNotificationContainer />
+        <CursorNotificationContainer />
       </body>
     </html>
   );

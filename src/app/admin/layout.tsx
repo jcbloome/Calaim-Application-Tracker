@@ -64,6 +64,7 @@ const adminNavLinks = [
 const superAdminNavLinks = [
     { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
     { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
+    { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell },
     { href: '/admin/super', label: 'Super Admin', icon: Shield },
 ];
 

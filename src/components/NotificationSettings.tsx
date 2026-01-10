@@ -96,7 +96,19 @@ const SOUND_OPTIONS = [
   { value: 'arrow-target', label: 'Arrow Hit Target 🎯', description: 'Satisfying target hit sound' },
   { value: 'bell', label: 'Bell Chime 🔔', description: 'Classic notification bell' },
   { value: 'chime', label: 'Soft Chime ✨', description: 'Gentle notification sound' },
-  { value: 'pop', label: 'Pop Sound 💫', description: 'Quick pop notification' }
+  { value: 'pop', label: 'Pop Sound 💫', description: 'Quick pop notification' },
+  { value: 'windows-default', label: 'Windows Default 🪟', description: 'Classic Windows notification' },
+  { value: 'success-ding', label: 'Success Ding ✅', description: 'Achievement completion sound' },
+  { value: 'message-swoosh', label: 'Message Swoosh 💨', description: 'Smooth message arrival' },
+  { value: 'alert-beep', label: 'Alert Beep ⚠️', description: 'Attention-grabbing beep' },
+  { value: 'coin-drop', label: 'Coin Drop 🪙', description: 'Satisfying coin sound' },
+  { value: 'bubble-pop', label: 'Bubble Pop 🫧', description: 'Playful bubble burst' },
+  { value: 'typewriter-ding', label: 'Typewriter Ding 📝', description: 'Vintage typewriter bell' },
+  { value: 'glass-ping', label: 'Glass Ping 🥂', description: 'Crystal clear ping' },
+  { value: 'wooden-knock', label: 'Wooden Knock 🚪', description: 'Gentle wooden tap' },
+  { value: 'digital-blip', label: 'Digital Blip 🤖', description: 'Futuristic digital sound' },
+  { value: 'water-drop', label: 'Water Drop 💧', description: 'Peaceful water droplet' },
+  { value: 'silent', label: 'Silent Mode 🔇', description: 'Visual only, no sound' }
 ];
 
 const ANIMATION_OPTIONS = [
@@ -224,7 +236,6 @@ export default function NotificationSettings() {
       
       switch (soundType) {
         case 'arrow-target':
-          // Generate arrow hit target sound
           audioBuffer = generateArrowTargetSound(audioContext);
           break;
         case 'bell':
@@ -236,6 +247,41 @@ export default function NotificationSettings() {
         case 'pop':
           audioBuffer = generatePopSound(audioContext);
           break;
+        case 'windows-default':
+          audioBuffer = generateWindowsDefaultSound(audioContext);
+          break;
+        case 'success-ding':
+          audioBuffer = generateSuccessDingSound(audioContext);
+          break;
+        case 'message-swoosh':
+          audioBuffer = generateMessageSwooshSound(audioContext);
+          break;
+        case 'alert-beep':
+          audioBuffer = generateAlertBeepSound(audioContext);
+          break;
+        case 'coin-drop':
+          audioBuffer = generateCoinDropSound(audioContext);
+          break;
+        case 'bubble-pop':
+          audioBuffer = generateBubblePopSound(audioContext);
+          break;
+        case 'typewriter-ding':
+          audioBuffer = generateTypewriterDingSound(audioContext);
+          break;
+        case 'glass-ping':
+          audioBuffer = generateGlassPingSound(audioContext);
+          break;
+        case 'wooden-knock':
+          audioBuffer = generateWoodenKnockSound(audioContext);
+          break;
+        case 'digital-blip':
+          audioBuffer = generateDigitalBlipSound(audioContext);
+          break;
+        case 'water-drop':
+          audioBuffer = generateWaterDropSound(audioContext);
+          break;
+        case 'silent':
+          return; // No sound for silent mode
         default:
           audioBuffer = generateArrowTargetSound(audioContext);
       }
@@ -314,6 +360,210 @@ export default function NotificationSettings() {
       const t = i / sampleRate;
       const envelope = Math.exp(-t * 20);
       data[i] = envelope * Math.sin(2 * Math.PI * 1000 * t) * 0.4;
+    }
+    
+    return buffer;
+  };
+
+  // Generate Windows default sound
+  const generateWindowsDefaultSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.5;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 2);
+      // Classic Windows notification frequencies
+      data[i] = envelope * (
+        Math.sin(2 * Math.PI * 800 * t) * 0.3 +
+        Math.sin(2 * Math.PI * 1000 * t) * 0.2 +
+        Math.sin(2 * Math.PI * 1200 * t) * 0.1
+      );
+    }
+    
+    return buffer;
+  };
+
+  // Generate success ding sound
+  const generateSuccessDingSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.6;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 1.5);
+      // Ascending ding sound
+      const frequency = 600 + (t * 400);
+      data[i] = envelope * Math.sin(2 * Math.PI * frequency * t) * 0.3;
+    }
+    
+    return buffer;
+  };
+
+  // Generate message swoosh sound
+  const generateMessageSwooshSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.4;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 5);
+      // Swoosh effect with frequency sweep
+      const frequency = 1200 - (t * 800);
+      const noise = (Math.random() - 0.5) * 0.1 * envelope;
+      data[i] = envelope * Math.sin(2 * Math.PI * frequency * t) * 0.2 + noise;
+    }
+    
+    return buffer;
+  };
+
+  // Generate alert beep sound
+  const generateAlertBeepSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.3;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      // Sharp beep with quick attack/decay
+      const envelope = t < 0.05 ? t / 0.05 : Math.exp(-(t - 0.05) * 8);
+      data[i] = envelope * Math.sin(2 * Math.PI * 1500 * t) * 0.4;
+    }
+    
+    return buffer;
+  };
+
+  // Generate coin drop sound
+  const generateCoinDropSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.8;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 3);
+      // Metallic coin sound with harmonics
+      data[i] = envelope * (
+        Math.sin(2 * Math.PI * 1000 * t) * 0.4 +
+        Math.sin(2 * Math.PI * 2000 * t) * 0.2 +
+        Math.sin(2 * Math.PI * 3000 * t) * 0.1
+      );
+    }
+    
+    return buffer;
+  };
+
+  // Generate bubble pop sound
+  const generateBubblePopSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.2;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 15);
+      // High frequency pop with quick decay
+      data[i] = envelope * Math.sin(2 * Math.PI * 2000 * t) * 0.3;
+    }
+    
+    return buffer;
+  };
+
+  // Generate typewriter ding sound
+  const generateTypewriterDingSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.7;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 2);
+      // Classic typewriter bell
+      data[i] = envelope * (
+        Math.sin(2 * Math.PI * 1200 * t) * 0.4 +
+        Math.sin(2 * Math.PI * 2400 * t) * 0.2
+      );
+    }
+    
+    return buffer;
+  };
+
+  // Generate glass ping sound
+  const generateGlassPingSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.5;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 4);
+      // Crystal clear high frequency ping
+      data[i] = envelope * Math.sin(2 * Math.PI * 2500 * t) * 0.25;
+    }
+    
+    return buffer;
+  };
+
+  // Generate wooden knock sound
+  const generateWoodenKnockSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.3;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 10);
+      // Woody thump with low frequencies
+      const noise = (Math.random() - 0.5) * 0.2 * envelope;
+      data[i] = envelope * Math.sin(2 * Math.PI * 300 * t) * 0.4 + noise;
+    }
+    
+    return buffer;
+  };
+
+  // Generate digital blip sound
+  const generateDigitalBlipSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.15;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 12);
+      // Digital square wave blip
+      const square = Math.sign(Math.sin(2 * Math.PI * 1000 * t));
+      data[i] = envelope * square * 0.3;
+    }
+    
+    return buffer;
+  };
+
+  // Generate water drop sound
+  const generateWaterDropSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.6;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 3);
+      // Gentle water drop with descending frequency
+      const frequency = 800 - (t * 200);
+      data[i] = envelope * Math.sin(2 * Math.PI * frequency * t) * 0.2;
     }
     
     return buffer;
