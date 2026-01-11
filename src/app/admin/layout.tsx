@@ -76,6 +76,7 @@ const adminNavLinks = [
     ]
   },
   { href: '/admin/tasks', label: 'Tasks', icon: ClipboardList },
+  { href: '/admin/my-notes', label: 'My Notes', icon: MessageSquareText },
   { 
     label: 'Kaiser', 
     icon: Heart, 

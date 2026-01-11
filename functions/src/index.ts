@@ -72,6 +72,14 @@ export {
   markNoteAsRead
 } from './staff-notification-system';
 
+// Export Caspio Note Webhook functions
+export {
+  caspioCalAIMNotesWebhook,
+  caspioClientNotesWebhook,
+  getStaffNotes,
+  markNotificationsRead,
+} from './caspio-note-webhooks';
+
 // Export Manual Notification functions (alternative to Firestore triggers)
 export { 
   checkForNewDocuments, 

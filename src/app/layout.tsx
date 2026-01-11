@@ -4,6 +4,7 @@ import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { WindowsNotificationContainer } from '@/components/WindowsNotification';
 import { CursorNotificationContainer } from '@/components/CursorStyleNotification';
+import { RealTimeNotifications } from '@/components/RealTimeNotifications';
 import LoginTrackingProvider from '@/components/LoginTrackingProvider';
 import { cn } from '@/lib/utils';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
@@ -41,6 +42,7 @@ export default function RootLayout({
         <Toaster />
         <WindowsNotificationContainer />
         <CursorNotificationContainer />
+        <RealTimeNotifications />
       </body>
     </html>
   );
