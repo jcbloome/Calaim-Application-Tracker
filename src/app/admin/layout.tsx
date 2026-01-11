@@ -75,7 +75,15 @@ const adminNavLinks = [
       { href: '/admin/forms/review', label: 'Form Review', icon: FileEdit },
     ]
   },
-  { href: '/admin/tasks', label: 'Tasks', icon: ClipboardList },
+  { 
+    label: 'Tasks', 
+    icon: ClipboardList, 
+    isSubmenu: true,
+    submenuItems: [
+      { href: '/admin/tasks', label: 'Task Management', icon: ClipboardList },
+      { href: '/admin/staff-notes', label: 'My Notes', icon: MessageSquareText },
+    ]
+  },
   { href: '/admin/my-notes', label: 'My Notes', icon: MessageSquareText },
   { 
     label: 'Kaiser', 
@@ -99,6 +107,7 @@ const superAdminNavLinks = [
         { isDivider: true, label: 'Notifications' },
         { href: '/admin/notification-settings', label: 'Notification Settings', icon: Settings },
         { href: '/admin/system-note-log', label: 'System Note Log', icon: MessageSquareText },
+        { href: '/admin/super-admin-notes', label: 'Complete Note Log', icon: FileText },
         { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell },
         { isDivider: true, label: 'Data Management' },
         { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },

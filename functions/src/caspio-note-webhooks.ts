@@ -355,6 +355,254 @@ export const markNotificationsRead = onRequest(
   }
 );
 
+// Function to add a new note
+export const addStaffNote = onRequest(
+  { cors: true },
+  async (request, response) => {
+    try {
+      if (request.method !== 'POST') {
+        response.status(405).json({ error: 'Method not allowed' });
+        return;
+      }
+
+      const { 
+        memberId, 
+        memberName, 
+        noteContent, 
+        noteType, 
+        priority, 
+        staffId, 
+        staffName,
+        tableType = 'staff_note'
+      } = request.body;
+
+      if (!noteContent || !staffId || !staffName) {
+        response.status(400).json({ error: 'Note content, staff ID, and staff name are required' });
+        return;
+      }
+
+      const db = getDb();
+      
+      // Create note document
+      const noteData = {
+        memberId: memberId || null,
+        memberName: memberName || null,
+        noteContent,
+        noteType: noteType || 'general',
+        priority: priority || 'medium',
+        staffId,
+        staffName,
+        tableType,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+
+      // Store in caspio_notes collection for consistency
+      const noteRef = await db.collection('caspio_notes').add(noteData);
+
+      // Also create a staff notification for other staff if this is about a specific member
+      if (memberId && memberName) {
+        // Get all admin users to notify
+        const usersSnapshot = await db.collection('users')
+          .where('role', 'in', ['admin', 'super_admin'])
+          .where('uid', '!=', staffId) // Don't notify the creator
+          .get();
+
+        const notifications = [];
+        for (const userDoc of usersSnapshot.docs) {
+          const notificationData = {
+            userId: userDoc.id,
+            noteId: noteRef.id,
+            title: `New Staff Note - ${memberName}`,
+            message: noteContent.length > 100 ? noteContent.substring(0, 100) + '...' : noteContent,
+            senderName: staffName,
+            memberName,
+            type: 'staff_note',
+            priority: priority || 'medium',
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            isRead: false,
+            applicationId: memberId,
+          };
+
+          const notificationRef = await db.collection('staff_notifications').add(notificationData);
+          notifications.push(notificationRef.id);
+        }
+
+        console.log(`📝 Staff note created: ${noteRef.id}, notifications sent: ${notifications.length}`);
+      }
+
+      response.status(200).json({
+        success: true,
+        noteId: noteRef.id,
+        message: 'Note added successfully'
+      });
+
+    } catch (error: any) {
+      console.error('❌ Error adding staff note:', error);
+      response.status(500).json({
+        error: 'Internal server error',
+        message: error.message
+      });
+    }
+  }
+);
+
+// Function to get all notes (for super admin)
+export const getAllNotes = onRequest(
+  { cors: true },
+  async (request, response) => {
+    try {
+      const { searchParams } = new URL(request.url);
+      const limit = parseInt(searchParams.get('limit') || '100');
+      const offset = parseInt(searchParams.get('offset') || '0');
+      const staffFilter = searchParams.get('staff');
+      const typeFilter = searchParams.get('type');
+      const priorityFilter = searchParams.get('priority');
+
+      const db = getDb();
+      
+      // Build query for caspio_notes
+      let notesQuery = db.collection('caspio_notes');
+      
+      if (staffFilter) {
+        notesQuery = notesQuery.where('staffName', '==', staffFilter);
+      }
+      
+      if (typeFilter) {
+        notesQuery = notesQuery.where('tableType', '==', typeFilter);
+      }
+      
+      if (priorityFilter) {
+        notesQuery = notesQuery.where('priority', '==', priorityFilter);
+      }
+
+      const notesSnapshot = await notesQuery
+        .orderBy('timestamp', 'desc')
+        .limit(limit)
+        .offset(offset)
+        .get();
+
+      const notes = notesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp?.toDate?.() || new Date(doc.data().timestamp)
+      }));
+
+      // Also get staff notifications
+      let notificationsQuery = db.collection('staff_notifications');
+      
+      const notificationsSnapshot = await notificationsQuery
+        .orderBy('timestamp', 'desc')
+        .limit(limit)
+        .get();
+
+      const notifications = notificationsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp?.toDate?.() || new Date(doc.data().timestamp),
+        source: 'notification'
+      }));
+
+      // Combine and sort all notes
+      const allNotes = [...notes, ...notifications].sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      // Get staff list for filtering
+      const usersSnapshot = await db.collection('users')
+        .where('role', 'in', ['admin', 'super_admin'])
+        .get();
+      
+      const staffList = usersSnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().displayName || doc.data().email,
+        email: doc.data().email
+      }));
+
+      response.status(200).json({
+        success: true,
+        notes: allNotes.slice(0, limit),
+        staffList,
+        total: allNotes.length,
+        hasMore: allNotes.length > limit
+      });
+
+    } catch (error: any) {
+      console.error('❌ Error getting all notes:', error);
+      response.status(500).json({
+        error: 'Internal server error',
+        message: error.message
+      });
+    }
+  }
+);
+
+// Function to get notes for a specific staff member
+export const getStaffMemberNotes = onRequest(
+  { cors: true },
+  async (request, response) => {
+    try {
+      const { searchParams } = new URL(request.url);
+      const staffId = searchParams.get('staffId');
+      const limit = parseInt(searchParams.get('limit') || '50');
+      const offset = parseInt(searchParams.get('offset') || '0');
+
+      if (!staffId) {
+        response.status(400).json({ error: 'Staff ID required' });
+        return;
+      }
+
+      const db = getDb();
+      
+      // Get notes created by this staff member
+      const notesSnapshot = await db.collection('caspio_notes')
+        .where('staffId', '==', staffId)
+        .orderBy('timestamp', 'desc')
+        .limit(limit)
+        .offset(offset)
+        .get();
+
+      const notes = notesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp?.toDate?.() || new Date(doc.data().timestamp)
+      }));
+
+      // Get notifications for this staff member
+      const notificationsSnapshot = await db.collection('staff_notifications')
+        .where('userId', '==', staffId)
+        .orderBy('timestamp', 'desc')
+        .limit(limit)
+        .get();
+
+      const notifications = notificationsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp?.toDate?.() || new Date(doc.data().timestamp),
+        source: 'notification'
+      }));
+
+      // Combine and sort
+      const allNotes = [...notes, ...notifications].sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      response.status(200).json({
+        success: true,
+        notes: allNotes,
+        total: allNotes.length
+      });
+
+    } catch (error: any) {
+      console.error('❌ Error getting staff member notes:', error);
+      response.status(500).json({
+        error: 'Internal server error',
+        message: error.message
+      });
+    }
+  }
+);
+
 // Function to get all notes for a specific member
 export const getMemberNotes = onRequest(
   { cors: true },

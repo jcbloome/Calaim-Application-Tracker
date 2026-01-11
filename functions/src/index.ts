@@ -80,6 +80,9 @@ export {
   getStaffNotes,
   markNotificationsRead,
   getMemberNotes,
+  addStaffNote,
+  getAllNotes,
+  getStaffMemberNotes,
 } from './caspio-note-webhooks';
 
 // Export Manual Notification functions (alternative to Firestore triggers)
