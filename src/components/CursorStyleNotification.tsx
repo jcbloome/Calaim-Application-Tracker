@@ -216,3 +216,28 @@ export function NotificationManager({ children }: NotificationManagerProps) {
     </>
   );
 }
+
+// Hook for cursor-style notifications (for demo page compatibility)
+export function useCursorNotifications() {
+  const showNotification = (notification: Omit<NotificationData, 'id' | 'timestamp'>) => {
+    if ((window as any).showStaffNotification) {
+      (window as any).showStaffNotification(notification);
+    }
+  };
+
+  return { showNotification };
+}
+
+// Hook for tab notifications (for demo page compatibility)
+export function useTabNotifications() {
+  const addNotification = (notification: Omit<NotificationData, 'id' | 'timestamp'>) => {
+    if ((window as any).showStaffNotification) {
+      (window as any).showStaffNotification(notification);
+    }
+  };
+
+  return { addNotification };
+}
+
+// Container component alias (for layout compatibility)
+export const CursorNotificationContainer = NotificationManager;
