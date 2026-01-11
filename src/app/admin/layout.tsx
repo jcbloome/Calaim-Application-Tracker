@@ -27,7 +27,9 @@ import {
   Mail,
   Brain,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Settings,
+  MessageSquareText
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -93,12 +95,15 @@ const superAdminNavLinks = [
       submenuItems: [
         { href: '/admin/super', label: 'Admin Panel', icon: Shield },
         { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
+        { isDivider: true, label: 'Notifications' },
         { href: '/admin/notification-settings', label: 'Notification Settings', icon: Settings },
         { href: '/admin/system-note-log', label: 'System Note Log', icon: MessageSquareText },
+        { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell },
+        { isDivider: true, label: 'Data Management' },
         { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
         { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain },
         { href: '/admin/intelligent-matching', label: 'Legacy Matching', icon: Brain },
-        { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell },
+        { isDivider: true, label: 'Development Tools' },
         { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
       ]
     },
@@ -178,7 +183,16 @@ function AdminHeader() {
                         <div className={`absolute top-full left-0 mt-1 w-48 bg-white border rounded-md shadow-lg transition-all duration-200 z-50 ${
                           hoveredSubmenu === link.label ? 'opacity-100 visible' : 'opacity-0 invisible'
                         }`}>
-                          {link.submenuItems.map(subItem => {
+                          {link.submenuItems.map((subItem, index) => {
+                            if (subItem.isDivider) {
+                              return (
+                                <div key={`divider-${index}`} className="px-3 py-1 border-t border-gray-200 mt-1 pt-2">
+                                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    {subItem.label}
+                                  </div>
+                                </div>
+                              );
+                            }
                             const isActive = pathname === subItem.href;
                             const SubIcon = subItem.icon;
                             return (
@@ -285,7 +299,16 @@ function AdminHeader() {
                              </button>
                              {isOpen && (
                                <div className="ml-6 space-y-1">
-                                 {link.submenuItems.map((subItem) => {
+                                 {link.submenuItems.map((subItem, index) => {
+                                   if (subItem.isDivider) {
+                                     return (
+                                       <div key={`mobile-divider-${index}`} className="px-3 py-1 border-t border-gray-200 mt-2 pt-2">
+                                         <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                           {subItem.label}
+                                         </div>
+                                       </div>
+                                     );
+                                   }
                                    const SubIcon = subItem.icon;
                                    return (
                                      <SheetClose asChild key={subItem.href}>
