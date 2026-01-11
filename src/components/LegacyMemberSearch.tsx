@@ -142,6 +142,46 @@ export default function LegacyMemberSearch() {
     }
   }, [members]);
 
+  const testGoogleDriveConnection = async () => {
+    setIsImporting(true);
+    try {
+      const functions = getFunctions();
+      const testFunction = httpsCallable(functions, 'testGoogleDriveConnection');
+      
+      toast({
+        title: 'Testing Connection',
+        description: 'Testing Google Drive authentication and folder access...',
+        className: 'bg-blue-100 text-blue-900 border-blue-200',
+      });
+
+      const result = await testFunction();
+      const data = result.data as any;
+
+      if (data.success && data.connected) {
+        toast({
+          title: 'Connection Successful!',
+          description: data.message,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Connection Failed',
+          description: data.message || data.error || 'Failed to connect to Google Drive',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error testing Google Drive connection:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Connection Test Failed',
+        description: error.message || 'Failed to test Google Drive connection',
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const importLegacyMembers = async () => {
     setIsImporting(true);
     try {
@@ -263,6 +303,10 @@ export default function LegacyMemberSearch() {
               Refresh
             </Button>
           )}
+          <Button onClick={testGoogleDriveConnection} disabled={isImporting} variant="outline">
+            {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FolderOpen className="mr-2 h-4 w-4" />}
+            Test Connection
+          </Button>
           <Button onClick={importLegacyMembers} disabled={isImporting}>
             {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Archive className="mr-2 h-4 w-4" />}
             {members.length > 0 ? 'Re-import' : 'Import Legacy Members'}

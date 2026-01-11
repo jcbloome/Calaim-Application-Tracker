@@ -59,7 +59,8 @@ export {
 export {
   importLegacyMembersFromDrive,
   refreshLegacyMemberData,
-  searchLegacyMembers
+  searchLegacyMembers,
+  testGoogleDriveConnection
 } from './legacy-member-search';
 
 // Export Staff Notification System functions

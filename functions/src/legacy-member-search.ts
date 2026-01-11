@@ -92,16 +92,24 @@ function parseNameFromFolder(folderName: string): {
 // Function to get authenticated Google Drive service
 async function getDriveService() {
   try {
-    // Get service account credentials from environment
-    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '{}');
+    const db = getDb();
     
-    const auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: ['https://www.googleapis.com/auth/drive.readonly']
-    });
-
-    const authClient = await auth.getClient();
-    return google.drive({ version: 'v3', auth: authClient });
+    // Get stored Google Drive credentials from Firestore
+    const credentialsDoc = await db.collection('google_credentials').doc('drive_credentials').get();
+    
+    if (!credentialsDoc.exists) {
+      throw new HttpsError('unauthenticated', 'Google Drive credentials not found. Please authenticate first.');
+    }
+    
+    const credentials = credentialsDoc.data();
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      'urn:ietf:wg:oauth:2.0:oob'
+    );
+    
+    oauth2Client.setCredentials(credentials);
+    return google.drive({ version: 'v3', auth: oauth2Client });
   } catch (error) {
     console.error('Error setting up Google Drive service:', error);
     throw new HttpsError('internal', 'Failed to authenticate with Google Drive');
@@ -113,7 +121,11 @@ export const importLegacyMembersFromDrive = onCall(async (request) => {
   try {
     console.log('🔍 Starting legacy member import from Google Drive...');
     
+    // Test authentication first
+    console.log('🔑 Testing Google Drive authentication...');
     const drive = await getDriveService();
+    console.log('✅ Google Drive authentication successful');
+    
     const db = getDb();
 
     // Find the CalAIM Members folder
@@ -234,7 +246,19 @@ export const importLegacyMembersFromDrive = onCall(async (request) => {
 
   } catch (error: any) {
     console.error('❌ Error importing legacy members:', error);
-    throw new HttpsError('internal', `Failed to import legacy members: ${error.message}`);
+    
+    // Provide more specific error messages
+    if (error.code === 'unauthenticated') {
+      throw new HttpsError('unauthenticated', 'Google Drive authentication failed. Please ensure Google Drive credentials are properly configured.');
+    } else if (error.code === 'not-found') {
+      throw error; // Re-throw as-is
+    } else if (error.message?.includes('quota')) {
+      throw new HttpsError('resource-exhausted', 'Google Drive API quota exceeded. Please try again later.');
+    } else if (error.message?.includes('permission')) {
+      throw new HttpsError('permission-denied', 'Insufficient permissions to access Google Drive. Please check folder sharing settings.');
+    } else {
+      throw new HttpsError('internal', `Failed to import legacy members: ${error.message || 'Unknown error'}`);
+    }
   }
 });
 
@@ -258,6 +282,43 @@ export const refreshLegacyMemberData = onCall(async (request) => {
   } catch (error: any) {
     console.error('❌ Error refreshing legacy member data:', error);
     throw new HttpsError('internal', `Failed to refresh legacy member data: ${error.message}`);
+  }
+});
+
+// Test Google Drive connection
+export const testGoogleDriveConnection = onCall(async (request) => {
+  try {
+    console.log('🔍 Testing Google Drive connection...');
+    
+    const drive = await getDriveService();
+    
+    // Try to list the root folder to test connection
+    const testQuery = await drive.files.list({
+      q: "name='CalAIM Members' and mimeType='application/vnd.google-apps.folder'",
+      fields: 'files(id, name)',
+      pageSize: 1,
+    });
+
+    const foundFolders = testQuery.data.files || [];
+    
+    return {
+      success: true,
+      connected: true,
+      calaimFolderFound: foundFolders.length > 0,
+      calaimFolderId: foundFolders.length > 0 ? foundFolders[0].id : null,
+      message: foundFolders.length > 0 
+        ? 'Google Drive connected successfully and CalAIM Members folder found'
+        : 'Google Drive connected but CalAIM Members folder not found'
+    };
+
+  } catch (error: any) {
+    console.error('❌ Google Drive connection test failed:', error);
+    return {
+      success: false,
+      connected: false,
+      error: error.message,
+      message: `Connection failed: ${error.message}`
+    };
   }
 });
 
