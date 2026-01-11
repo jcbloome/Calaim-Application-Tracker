@@ -111,6 +111,7 @@ function AdminHeader() {
   const router = useRouter();
   const pathname = usePathname();
   const [openSubmenus, setOpenSubmenus] = useState<Set<string>>(new Set());
+  const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null);
 
   const handleSignOut = async () => {
     if (auth) {
@@ -127,6 +128,14 @@ function AdminHeader() {
       newOpenSubmenus.add(label);
     }
     setOpenSubmenus(newOpenSubmenus);
+  };
+
+  const handleMouseEnter = (label: string) => {
+    setHoveredSubmenu(label);
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredSubmenu(null);
   };
 
   const combinedNavLinks = [
@@ -156,13 +165,19 @@ function AdminHeader() {
                   const Icon = link.icon;
                   return (
                     <NavigationMenuItem key={link.label}>
-                      <div className="relative group">
+                      <div 
+                        className="relative"
+                        onMouseEnter={() => handleMouseEnter(link.label)}
+                        onMouseLeave={handleMouseLeave}
+                      >
                         <button className={`${navigationMenuTriggerStyle()} ${isSubmenuActive ? 'bg-accent text-accent-foreground' : ''} flex items-center gap-2`}>
                           {Icon && <Icon className="h-4 w-4" />}
                           {link.label}
                           <ChevronDown className="h-3 w-3" />
                         </button>
-                        <div className="absolute top-full left-0 mt-1 w-48 bg-white border rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                        <div className={`absolute top-full left-0 mt-1 w-48 bg-white border rounded-md shadow-lg transition-all duration-200 z-50 ${
+                          hoveredSubmenu === link.label ? 'opacity-100 visible' : 'opacity-0 invisible'
+                        }`}>
                           {link.submenuItems.map(subItem => {
                             const isActive = pathname === subItem.href;
                             const SubIcon = subItem.icon;
