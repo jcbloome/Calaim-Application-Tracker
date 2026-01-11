@@ -39,6 +39,14 @@ export {
   sendKaiserStatusUpdateNotification
 } from './resend-email-service';
 
+// Export Intelligent Matching functions
+export {
+  getAllCalAIMFolders,
+  getAllCaspioMembers,
+  generateMatchingSuggestions,
+  applyMatchingSuggestions
+} from './intelligent-matching';
+
 // Export Manual Notification functions (alternative to Firestore triggers)
 export { 
   checkForNewDocuments, 

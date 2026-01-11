@@ -24,7 +24,9 @@ import {
   Bell,
   Database,
   FileEdit,
-  Mail
+  Mail,
+  Brain,
+  Brain
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -65,6 +67,7 @@ const adminNavLinks = [
 const superAdminNavLinks = [
     { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
     { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
+    { href: '/admin/intelligent-matching', label: 'Intelligent Matching', icon: Brain },
     { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell },
     { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
     { href: '/admin/super', label: 'Super Admin', icon: Shield },
