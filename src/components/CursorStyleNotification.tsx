@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { X, MessageSquare, User, Clock, ExternalLink } from 'lucide-react';
+import { X, MessageSquare, User, Clock, ExternalLink, MessageSquareText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -143,6 +143,20 @@ export function CursorStyleNotification({
               </div>
 
               <div className="flex gap-2">
+                {notification.memberName && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleClose}
+                    className="h-7 text-xs"
+                    asChild
+                  >
+                    <Link href={`/admin/my-notes?member=${encodeURIComponent(notification.memberName)}`}>
+                      <MessageSquareText className="h-3 w-3 mr-1" />
+                      Notes
+                    </Link>
+                  </Button>
+                )}
                 {notification.applicationId && (
                   <Button
                     size="sm"

@@ -79,6 +79,7 @@ export {
   caspioClientNotesWebhook,
   getStaffNotes,
   markNotificationsRead,
+  getMemberNotes,
 } from './caspio-note-webhooks';
 
 // Export Manual Notification functions (alternative to Firestore triggers)

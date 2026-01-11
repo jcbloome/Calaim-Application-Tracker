@@ -354,3 +354,100 @@ export const markNotificationsRead = onRequest(
     }
   }
 );
+
+// Function to get all notes for a specific member
+export const getMemberNotes = onRequest(
+  { cors: true },
+  async (request, response) => {
+    try {
+      const { searchParams } = new URL(request.url);
+      const memberId = searchParams.get('memberId');
+      const memberName = searchParams.get('memberName');
+      const limit = parseInt(searchParams.get('limit') || '100');
+      const offset = parseInt(searchParams.get('offset') || '0');
+
+      if (!memberId && !memberName) {
+        response.status(400).json({ error: 'Member ID or Member Name required' });
+        return;
+      }
+
+      const db = getDb();
+      
+      // Query both caspio_notes and staff_notifications for this member
+      let notesQuery = db.collection('caspio_notes');
+      
+      if (memberId) {
+        // Search by Client_ID2 or Client_ID
+        notesQuery = notesQuery.where('Client_ID2', '==', memberId);
+      } else if (memberName) {
+        // Search by member name
+        notesQuery = notesQuery.where('Member_Name', '==', memberName)
+          .limit(limit);
+      }
+
+      const notesSnapshot = await notesQuery
+        .orderBy('timestamp', 'desc')
+        .limit(limit)
+        .offset(offset)
+        .get();
+
+      const notes = notesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp?.toDate?.() || new Date(doc.data().timestamp)
+      }));
+
+      // Also get staff notifications for this member
+      let notificationsQuery = db.collection('staff_notifications');
+      
+      if (memberId) {
+        notificationsQuery = notificationsQuery.where('applicationId', '==', memberId);
+      } else if (memberName) {
+        notificationsQuery = notificationsQuery.where('memberName', '==', memberName);
+      }
+
+      const notificationsSnapshot = await notificationsQuery
+        .orderBy('timestamp', 'desc')
+        .limit(limit)
+        .get();
+
+      const notifications = notificationsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp?.toDate?.() || new Date(doc.data().timestamp),
+        source: 'notification'
+      }));
+
+      // Combine and sort all notes by timestamp
+      const allNotes = [...notes, ...notifications].sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      // Get member info from the first note
+      const memberInfo = notes.length > 0 ? {
+        memberId: notes[0].Client_ID2 || notes[0].Client_ID || memberId,
+        memberName: notes[0].Member_Name || notes[0].Client_Name || memberName,
+        tableType: notes[0].tableType
+      } : {
+        memberId,
+        memberName,
+        tableType: 'unknown'
+      };
+
+      response.status(200).json({
+        success: true,
+        memberInfo,
+        notes: allNotes,
+        total: allNotes.length,
+        hasMore: allNotes.length === limit
+      });
+
+    } catch (error: any) {
+      console.error('❌ Error getting member notes:', error);
+      response.status(500).json({
+        error: 'Internal server error',
+        message: error.message
+      });
+    }
+  }
+);

@@ -2,10 +2,22 @@
 
 import { useAdmin } from '@/hooks/use-admin';
 import StaffNotesManager from '@/components/StaffNotesManager';
+import MemberNotesView from '@/components/MemberNotesView';
 import { Loader2 } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { useState, useEffect } from 'react';
 
 export default function MyNotesPage() {
   const { isLoading, isAdmin } = useAdmin();
+  const searchParams = useSearchParams();
+  const [selectedMember, setSelectedMember] = useState<{ name?: string } | null>(null);
+
+  useEffect(() => {
+    const memberName = searchParams.get('member');
+    if (memberName) {
+      setSelectedMember({ name: memberName });
+    }
+  }, [searchParams]);
 
   if (isLoading) {
     return (
@@ -36,6 +48,14 @@ export default function MyNotesPage() {
       </div>
       
       <StaffNotesManager viewMode="personal" />
+      
+      {/* Member Notes View Modal */}
+      {selectedMember && (
+        <MemberNotesView
+          memberName={selectedMember.name}
+          onClose={() => setSelectedMember(null)}
+        />
+      )}
     </div>
   );
 }

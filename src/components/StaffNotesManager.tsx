@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { format, parseISO, isToday, isThisWeek, isThisMonth } from 'date-fns';
 import Link from 'next/link';
+import MemberNotesView from './MemberNotesView';
 
 interface StaffNote {
   id: string;
@@ -56,6 +57,7 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'timestamp' | 'priority' | 'sender'>('timestamp');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [selectedMember, setSelectedMember] = useState<{ id?: string; name?: string } | null>(null);
   
   const { user } = useAuth();
   const { toast } = useToast();
@@ -468,6 +470,17 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setSelectedMember({
+                                id: note.applicationId,
+                                name: note.memberName
+                              })}
+                              title="View all notes for this member"
+                            >
+                              <MessageSquareText className="h-3 w-3" />
+                            </Button>
                             {!note.isRead && (
                               <Button
                                 variant="ghost"
@@ -526,6 +539,15 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Member Notes View Modal */}
+      {selectedMember && (
+        <MemberNotesView
+          memberId={selectedMember.id}
+          memberName={selectedMember.name}
+          onClose={() => setSelectedMember(null)}
+        />
       )}
     </div>
   );
