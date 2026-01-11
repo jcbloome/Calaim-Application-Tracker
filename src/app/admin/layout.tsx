@@ -54,10 +54,17 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } 
 
 const adminNavLinks = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard },
-  { href: '/admin/dashboard', label: 'Daily Dashboard', icon: Bell },
-  { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
+  { 
+    label: 'Applications', 
+    icon: FolderKanban, 
+    isSubmenu: true,
+    submenuItems: [
+      { href: '/admin/applications', label: 'All Applications', icon: FolderKanban },
+      { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
+      { href: '/admin/forms/review', label: 'Form Review', icon: FileEdit },
+    ]
+  },
   { href: '/admin/tasks', label: 'Tasks', icon: ClipboardList },
-  { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
   { 
     label: 'Kaiser', 
     icon: Heart, 
@@ -67,17 +74,23 @@ const adminNavLinks = [
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
     ]
   },
-  { href: '/admin/batch-sync', label: 'Batch Sync', icon: Database },
   { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
 ];
 
 const superAdminNavLinks = [
-    { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
     { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
     { href: '/admin/intelligent-matching', label: 'Intelligent Matching', icon: Brain },
     { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell },
     { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
-    { href: '/admin/super', label: 'Super Admin', icon: Shield },
+    { 
+      label: 'Super Admin', 
+      icon: Shield, 
+      isSubmenu: true,
+      submenuItems: [
+        { href: '/admin/super', label: 'Admin Panel', icon: Shield },
+        { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
+      ]
+    },
 ];
 
 

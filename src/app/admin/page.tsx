@@ -16,6 +16,7 @@ import { AdminApplicationsTable } from './applications/components/AdminApplicati
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
+import { DailyNotificationDashboard } from '@/components/DailyNotificationDashboard';
 
 export default function AdminDashboardPage() {
   const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -158,11 +159,14 @@ export default function AdminDashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+        <h1 className="text-3xl font-bold">Admin Overview</h1>
         <p className="text-muted-foreground">
-          Welcome back, {user?.displayName || 'Admin'}. Here's an overview of all applications.
+          Daily dashboard with notifications, statistics, and recent applications.
         </p>
       </div>
+
+      {/* Daily Notifications Dashboard */}
+      <DailyNotificationDashboard />
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card className="border-l-4 border-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
