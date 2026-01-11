@@ -86,9 +86,6 @@ const adminNavLinks = [
 ];
 
 const superAdminNavLinks = [
-    { href: '/admin/notification-settings', label: 'Notification Settings', icon: Bell },
-    { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell },
-    { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
     { 
       label: 'Super Admin', 
       icon: Shield, 
@@ -96,10 +93,13 @@ const superAdminNavLinks = [
       submenuItems: [
         { href: '/admin/super', label: 'Admin Panel', icon: Shield },
         { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
-        { href: '/admin/system-note-log', label: 'System Note Log', icon: FileEdit },
+        { href: '/admin/notification-settings', label: 'Notification Settings', icon: Settings },
+        { href: '/admin/system-note-log', label: 'System Note Log', icon: MessageSquareText },
         { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
         { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain },
         { href: '/admin/intelligent-matching', label: 'Legacy Matching', icon: Brain },
+        { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell },
+        { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
       ]
     },
 ];

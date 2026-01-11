@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '@/firebase';
-import { Bell, TestTube, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { Bell, Volume2, VolumeX, Loader2 } from 'lucide-react';
 
 interface NotificationSettings {
   noteNotifications: boolean;
@@ -26,7 +26,6 @@ export function StaffNotificationSettings() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -87,44 +86,7 @@ export function StaffNotificationSettings() {
     }
   };
 
-  const testNotification = async () => {
-    setIsTesting(true);
-    try {
-      const functions = getFunctions();
-      const sendTestNotification = httpsCallable(functions, 'sendTestStaffNotification');
-      
-      const result = await sendTestNotification();
-      const data = result.data as any;
-      
-      if (data.success) {
-        // Show the test notification using the global function
-        if ((window as any).showStaffNotification) {
-          (window as any).showStaffNotification({
-            title: 'Test Notification',
-            message: 'This is a test notification to verify your settings are working correctly.',
-            senderName: 'System Test',
-            memberName: 'Test Member',
-            type: 'note',
-            priority: 'medium'
-          });
-        }
-        
-        toast({
-          title: 'Test Sent',
-          description: 'A test notification has been triggered',
-          className: 'bg-blue-100 text-blue-900 border-blue-200',
-        });
-      }
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Test Failed',
-        description: error.message || 'Failed to send test notification',
-      });
-    } finally {
-      setIsTesting(false);
-    }
-  };
+  // Test functionality removed - notifications will appear when actual staff notes are sent
 
   const updateSetting = (key: keyof NotificationSettings, value: boolean) => {
     setSettings(prev => ({ ...prev, [key]: value }));
@@ -226,7 +188,7 @@ export function StaffNotificationSettings() {
           <Button 
             onClick={saveSettings} 
             disabled={isSaving}
-            className="flex-1"
+            className="w-full"
           >
             {isSaving ? (
               <>
@@ -237,27 +199,25 @@ export function StaffNotificationSettings() {
               'Save Settings'
             )}
           </Button>
-          
-          <Button 
-            variant="outline" 
-            onClick={testNotification}
-            disabled={isTesting || !settings.noteNotifications}
-            className="flex items-center gap-2"
-          >
-            {isTesting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <TestTube className="h-4 w-4" />
-            )}
-            Test Notification
-          </Button>
         </div>
 
-        {!settings.noteNotifications && (
-          <div className="text-sm text-muted-foreground text-center py-2">
-            Enable note notifications to test the notification system
+        <div className="text-sm text-muted-foreground text-center py-2">
+          Notifications will appear when you receive actual staff notes
+        </div>
+
+        {/* Windows Notification Info */}
+        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h4 className="font-medium text-blue-900 mb-2 flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            Windows Notification Permissions
+          </h4>
+          <div className="text-sm text-blue-800 space-y-1">
+            <p>• Windows users may need to enable browser notifications in their system settings</p>
+            <p>• Popups appear as static overlays within the application (no system-level permissions needed)</p>
+            <p>• Each notification includes a direct link to view the related member application</p>
+            <p>• Notifications auto-dismiss after 8 seconds or can be manually dismissed</p>
           </div>
-        )}
+        </div>
       </CardContent>
     </Card>
   );
