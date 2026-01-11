@@ -26,7 +26,8 @@ import {
   FileEdit,
   Mail,
   Brain,
-  Brain
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -54,12 +55,18 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } 
 const adminNavLinks = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard },
   { href: '/admin/dashboard', label: 'Daily Dashboard', icon: Bell },
-  { href: '/admin/daily-tasks', label: 'Daily Tasks', icon: ClipboardList },
   { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
-  { href: '/admin/my-tasks', label: 'My Tasks', icon: ClipboardList },
+  { href: '/admin/tasks', label: 'Tasks', icon: ClipboardList },
   { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
-  { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
-  { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
+  { 
+    label: 'Kaiser', 
+    icon: Heart, 
+    isSubmenu: true,
+    submenuItems: [
+      { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
+      { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
+    ]
+  },
   { href: '/admin/batch-sync', label: 'Batch Sync', icon: Database },
   { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
 ];
@@ -79,12 +86,23 @@ function AdminHeader() {
   const auth = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const [openSubmenus, setOpenSubmenus] = useState<Set<string>>(new Set());
 
   const handleSignOut = async () => {
     if (auth) {
       await auth.signOut();
     }
     window.location.href = '/';
+  };
+
+  const toggleSubmenu = (label: string) => {
+    const newOpenSubmenus = new Set(openSubmenus);
+    if (newOpenSubmenus.has(label)) {
+      newOpenSubmenus.delete(label);
+    } else {
+      newOpenSubmenus.add(label);
+    }
+    setOpenSubmenus(newOpenSubmenus);
   };
 
   const combinedNavLinks = [
@@ -109,18 +127,50 @@ function AdminHeader() {
            <NavigationMenu className="hidden lg:flex">
             <NavigationMenuList>
               {combinedNavLinks.map(link => {
-                const isActive = pathname === link.href || (link.href !== '/admin' && pathname.startsWith(link.href));
-                const Icon = link.icon;
-                return (
-                  <NavigationMenuItem key={link.href}>
-                    <NavigationMenuLink asChild active={isActive} className={navigationMenuTriggerStyle()}>
-                      <Link href={link.href}>
-                        {Icon && <Icon className="mr-2 h-4 w-4" />}
-                        {link.label}
-                      </Link>
-                    </NavigationMenuLink>
-                  </NavigationMenuItem>
-                );
+                if (link.isSubmenu && link.submenuItems) {
+                  const isSubmenuActive = link.submenuItems.some(item => pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href)));
+                  const Icon = link.icon;
+                  return (
+                    <NavigationMenuItem key={link.label}>
+                      <div className="relative group">
+                        <button className={`${navigationMenuTriggerStyle()} ${isSubmenuActive ? 'bg-accent text-accent-foreground' : ''} flex items-center gap-2`}>
+                          {Icon && <Icon className="h-4 w-4" />}
+                          {link.label}
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
+                        <div className="absolute top-full left-0 mt-1 w-48 bg-white border rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                          {link.submenuItems.map(subItem => {
+                            const isActive = pathname === subItem.href;
+                            const SubIcon = subItem.icon;
+                            return (
+                              <Link
+                                key={subItem.href}
+                                href={subItem.href}
+                                className={`flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${isActive ? 'bg-gray-100 font-medium' : ''}`}
+                              >
+                                {SubIcon && <SubIcon className="h-4 w-4" />}
+                                {subItem.label}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </NavigationMenuItem>
+                  );
+                } else {
+                  const isActive = pathname === link.href || (link.href !== '/admin' && pathname.startsWith(link.href));
+                  const Icon = link.icon;
+                  return (
+                    <NavigationMenuItem key={link.href}>
+                      <NavigationMenuLink asChild active={isActive} className={navigationMenuTriggerStyle()}>
+                        <Link href={link.href}>
+                          {Icon && <Icon className="mr-2 h-4 w-4" />}
+                          {link.label}
+                        </Link>
+                      </NavigationMenuLink>
+                    </NavigationMenuItem>
+                  );
+                }
               })}
             </NavigationMenuList>
           </NavigationMenu>
@@ -179,14 +229,48 @@ function AdminHeader() {
                   <nav className="flex flex-col gap-4 mt-8">
                     {combinedNavLinks.map((link) => {
                        const Icon = link.icon;
-                       return (
-                        <SheetClose asChild key={link.href}>
-                          <Link href={link.href} className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary">
-                            {Icon && <Icon className="h-4 w-4" />}
-                            {link.label}
-                          </Link>
-                        </SheetClose>
-                      );
+                       
+                       if (link.isSubmenu && link.submenuItems) {
+                         const isOpen = openSubmenus.has(link.label);
+                         return (
+                           <div key={link.label}>
+                             <button
+                               onClick={() => toggleSubmenu(link.label)}
+                               className="flex items-center justify-between w-full gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
+                             >
+                               <div className="flex items-center gap-3">
+                                 {Icon && <Icon className="h-4 w-4" />}
+                                 {link.label}
+                               </div>
+                               {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                             </button>
+                             {isOpen && (
+                               <div className="ml-6 space-y-1">
+                                 {link.submenuItems.map((subItem) => {
+                                   const SubIcon = subItem.icon;
+                                   return (
+                                     <SheetClose asChild key={subItem.href}>
+                                       <Link href={subItem.href} className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-all hover:text-primary">
+                                         {SubIcon && <SubIcon className="h-3 w-3" />}
+                                         {subItem.label}
+                                       </Link>
+                                     </SheetClose>
+                                   );
+                                 })}
+                               </div>
+                             )}
+                           </div>
+                         );
+                       } else {
+                         return (
+                          <SheetClose asChild key={link.href}>
+                            <Link href={link.href} className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary">
+                              {Icon && <Icon className="h-4 w-4" />}
+                              {link.label}
+                            </Link>
+                          </SheetClose>
+                        );
+                       }
                     })}
                   </nav>
                    <div className="mt-auto border-t pt-6">

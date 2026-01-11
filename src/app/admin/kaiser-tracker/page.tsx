@@ -589,8 +589,8 @@ export default function KaiserTrackerPage() {
     }
   }, [filteredMembers, sortField, sortDirection]);
 
-  // Generate ILS Weekly Report as PDF
-  const generateILSReport = () => {
+  // ILS Report functionality moved to dedicated ILS Report Editor
+  // const generateILSReport = () => {
     try {
       const bottleneckStatuses = [
         "T2038 Requested",
@@ -875,14 +875,6 @@ export default function KaiserTrackerPage() {
             Sync from Caspio
           </Button>
           
-          <Button 
-            onClick={generateILSReport} 
-            variant="outline"
-            disabled={members.length === 0}
-          >
-            <Download className="mr-2 h-4 w-4" />
-            ILS Weekly Report (PDF)
-          </Button>
         </div>
       </div>
 
