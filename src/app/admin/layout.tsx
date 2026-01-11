@@ -53,7 +53,15 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 const adminNavLinks = [
-  { href: '/admin', label: 'Overview', icon: LayoutDashboard },
+  { 
+    label: 'Overview', 
+    icon: LayoutDashboard, 
+    isSubmenu: true,
+    submenuItems: [
+      { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+      { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
+    ]
+  },
   { 
     label: 'Applications', 
     icon: FolderKanban, 
@@ -74,12 +82,9 @@ const adminNavLinks = [
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
     ]
   },
-  { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
 ];
 
 const superAdminNavLinks = [
-    { href: '/admin/comprehensive-matching', label: 'Drive-Caspio Matching', icon: Brain },
-    { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
     { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell },
     { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
     { 
@@ -89,6 +94,8 @@ const superAdminNavLinks = [
       submenuItems: [
         { href: '/admin/super', label: 'Admin Panel', icon: Shield },
         { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
+        { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
+        { href: '/admin/comprehensive-matching', label: 'Drive-Caspio Matching', icon: Brain },
         { href: '/admin/intelligent-matching', label: 'Legacy Matching', icon: Brain },
       ]
     },
