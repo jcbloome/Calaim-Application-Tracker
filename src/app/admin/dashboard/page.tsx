@@ -36,7 +36,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <AuthGuard require2FA={true}>
+    <AuthGuard require2FA={false}>
       <div className="container mx-auto py-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

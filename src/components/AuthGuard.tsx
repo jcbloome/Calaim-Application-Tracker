@@ -11,7 +11,7 @@ interface AuthGuardProps {
   require2FA?: boolean;
 }
 
-export function AuthGuard({ children, require2FA = true }: AuthGuardProps) {
+export function AuthGuard({ children, require2FA = false }: AuthGuardProps) {
   const [is2FAVerified, setIs2FAVerified] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
   const { user, isUserLoading } = useUser();
