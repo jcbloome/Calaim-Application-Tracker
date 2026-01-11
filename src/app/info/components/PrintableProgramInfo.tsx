@@ -58,7 +58,7 @@ export function PrintableProgramInfo() {
             
             <SectionTitle>Switching to Health Net or Kaiser</SectionTitle>
             <p>If you are in another Medi-Cal managed care plan and you would like to work with Connections, you will need to switch.</p>
-            <p>You can change your health plan by contacting <a href="https://www.healthcareoptions.dhcs.ca.gov/en/enroll" target="_blank" rel="noopener noreferrer">California Health Care Options</a> at 1-800-430-4263 or visiting their website: https://www.healthcareoptions.dhcs.ca.gov/en/enroll. Generally, changes made by the end of the month are effective on the first day of the following month.</p>
+            <p>You can change your health plan by contacting <a href="https://www.healthcareoptions.dhcs.ca.gov/en/enroll" target="_blank" rel="noopener noreferrer">California Health Care Options</a> at 1-800-430-4263 or visiting their website. Generally, changes made by the end of the month are effective on the first day of the following month.</p>
             
             <SectionTitle>Applying for Health Net (and being assigned to Molina)</SectionTitle>
             <p>When applying for Medi-Cal with Health Net sometimes people are automatically assigned to Molina instead, you will need to call Health Net (800-675-6110) and request to be switched to Health Net.</p>
@@ -66,7 +66,7 @@ export function PrintableProgramInfo() {
             <SectionTitle>Share of Cost (SOC)</SectionTitle>
             <p>A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay. This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.</p>
             <p>Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.</p>
-            <p>Read more about eliminating share of cost at the California Advocates for Nursing Home Reform (CANHR): <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer">https://canhr.org/understanding-the-share-of-cost-for-medi-cal/</a>.</p>
+            <p>Read more about eliminating share of cost at the <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer">California Advocates for Nursing Home Reform (CANHR)</a>.</p>
             
             <SectionTitle>Room &amp; Board Payments</SectionTitle>
             <p>The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is responsible for paying the RCFE the 'assisted living' portion. Some areas in California are quite expensive and impractical for CalAIM. Also, many RCFEs might choose not to work with CalAIM.</p>

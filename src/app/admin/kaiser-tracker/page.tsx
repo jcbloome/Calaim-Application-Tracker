@@ -1459,8 +1459,8 @@ export default function KaiserTrackerPage() {
               </p>
             </div>
           ) : (
-            <div id="members-table" className="rounded-md border">
-              <Table>
+              <div id="members-table" className="rounded-md border overflow-x-auto">
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>

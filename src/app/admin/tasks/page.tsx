@@ -566,7 +566,7 @@ function KaiserTaskTable({ tasks }: { tasks: KaiserTask[] }) {
 
   return (
     <Card>
-      <CardContent className="p-0">
+      <CardContent className="p-0 overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -653,7 +653,7 @@ function DailyTaskTable({ tasks }: { tasks: DailyTask[] }) {
           Tasks scheduled for the selected time period
         </CardDescription>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="p-0 overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
