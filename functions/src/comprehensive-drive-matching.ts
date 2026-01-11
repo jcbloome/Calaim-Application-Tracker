@@ -320,18 +320,56 @@ export const scanAllCalAIMFolders = onCall(async (request) => {
     const folders: DriveFolder[] = [];
     
     for (const file of memberFoldersQuery.data.files || []) {
+      // First, try to parse the member name from the main folder
       const parsedName = parseNameFromFolder(file.name!);
       
-      // Get folder contents count
+      // Get folder contents to check for Kaiser/Health Net subfolders
       const contentsQuery = await drive.files.list({
         q: `'${file.id}' in parents`,
-        fields: 'files(id, mimeType)',
+        fields: 'files(id, name, mimeType)',
         pageSize: 1000,
       });
       
       const contents = contentsQuery.data.files || [];
       const fileCount = contents.filter(f => f.mimeType !== 'application/vnd.google-apps.folder').length;
       const subfolderCount = contents.filter(f => f.mimeType === 'application/vnd.google-apps.folder').length;
+      
+      // Look for Kaiser or Health Net subfolders
+      const kaiserFolder = contents.find(f => 
+        f.mimeType === 'application/vnd.google-apps.folder' && 
+        f.name?.toLowerCase().includes('kaiser')
+      );
+      
+      const healthNetFolder = contents.find(f => 
+        f.mimeType === 'application/vnd.google-apps.folder' && 
+        (f.name?.toLowerCase().includes('health') || f.name?.toLowerCase().includes('net'))
+      );
+      
+      // Count files in subfolders too
+      let totalFileCount = fileCount;
+      let totalSubfolderCount = subfolderCount;
+      
+      if (kaiserFolder) {
+        const kaiserContents = await drive.files.list({
+          q: `'${kaiserFolder.id}' in parents`,
+          fields: 'files(id, mimeType)',
+          pageSize: 1000,
+        });
+        const kaiserFiles = kaiserContents.data.files || [];
+        totalFileCount += kaiserFiles.filter(f => f.mimeType !== 'application/vnd.google-apps.folder').length;
+        totalSubfolderCount += kaiserFiles.filter(f => f.mimeType === 'application/vnd.google-apps.folder').length;
+      }
+      
+      if (healthNetFolder) {
+        const healthNetContents = await drive.files.list({
+          q: `'${healthNetFolder.id}' in parents`,
+          fields: 'files(id, mimeType)',
+          pageSize: 1000,
+        });
+        const healthNetFiles = healthNetContents.data.files || [];
+        totalFileCount += healthNetFiles.filter(f => f.mimeType !== 'application/vnd.google-apps.folder').length;
+        totalSubfolderCount += healthNetFiles.filter(f => f.mimeType === 'application/vnd.google-apps.folder').length;
+      }
       
       folders.push({
         id: file.id!,
@@ -344,8 +382,8 @@ export const scanAllCalAIMFolders = onCall(async (request) => {
         extractedFullName: parsedName.fullName,
         hasClientId: parsedName.hasClientId,
         extractedClientId: parsedName.clientId,
-        fileCount,
-        subfolderCount,
+        fileCount: totalFileCount,
+        subfolderCount: totalSubfolderCount,
         lastModified: file.modifiedTime || undefined
       });
     }

@@ -236,9 +236,9 @@ export default function ILSReportEditorPage() {
                         ${member.Kaiser_Status}
                       </span>
                     </td>
-                    <td>${member.Kaiser_T2038_Requested_Date ? format(new Date(member.Kaiser_T2038_Requested_Date), 'MM/dd/yyyy') : '-'}</td>
-                    <td>${member.Kaiser_Tier_Level_Requested_Date ? format(new Date(member.Kaiser_Tier_Level_Requested_Date), 'MM/dd/yyyy') : '-'}</td>
-                    <td>${member.ILS_RCFE_Sent_For_Contract_Date ? format(new Date(member.ILS_RCFE_Sent_For_Contract_Date), 'MM/dd/yyyy') : '-'}</td>
+                    <td>${member.Kaiser_T2038_Requested_Date && member.Kaiser_T2038_Requested_Date !== 'null' ? format(new Date(member.Kaiser_T2038_Requested_Date), 'MM/dd/yyyy') : '-'}</td>
+                    <td>${member.Kaiser_Tier_Level_Requested_Date && member.Kaiser_Tier_Level_Requested_Date !== 'null' ? format(new Date(member.Kaiser_Tier_Level_Requested_Date), 'MM/dd/yyyy') : '-'}</td>
+                    <td>${member.ILS_RCFE_Sent_For_Contract_Date && member.ILS_RCFE_Sent_For_Contract_Date !== 'null' ? format(new Date(member.ILS_RCFE_Sent_For_Contract_Date), 'MM/dd/yyyy') : '-'}</td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -665,7 +665,7 @@ function MemberEditCard({ member, isEditing, isSaving, onEdit, onCancel, onSave 
                 />
               ) : (
                 <div className="text-sm">
-                  {member.Kaiser_T2038_Requested_Date ? 
+                  {member.Kaiser_T2038_Requested_Date && member.Kaiser_T2038_Requested_Date !== 'null' ? 
                     format(new Date(member.Kaiser_T2038_Requested_Date), 'MMM dd, yyyy') : 
                     <span className="text-muted-foreground">Not set</span>
                   }
@@ -683,7 +683,7 @@ function MemberEditCard({ member, isEditing, isSaving, onEdit, onCancel, onSave 
                 />
               ) : (
                 <div className="text-sm">
-                  {member.Kaiser_T2038_Received_Date ? 
+                  {member.Kaiser_T2038_Received_Date && member.Kaiser_T2038_Received_Date !== 'null' ? 
                     format(new Date(member.Kaiser_T2038_Received_Date), 'MMM dd, yyyy') : 
                     <span className="text-muted-foreground">Not set</span>
                   }
@@ -708,7 +708,7 @@ function MemberEditCard({ member, isEditing, isSaving, onEdit, onCancel, onSave 
                 />
               ) : (
                 <div className="text-sm">
-                  {member.Kaiser_Tier_Level_Requested_Date ? 
+                  {member.Kaiser_Tier_Level_Requested_Date && member.Kaiser_Tier_Level_Requested_Date !== 'null' ? 
                     format(new Date(member.Kaiser_Tier_Level_Requested_Date), 'MMM dd, yyyy') : 
                     <span className="text-muted-foreground">Not set</span>
                   }
@@ -726,7 +726,7 @@ function MemberEditCard({ member, isEditing, isSaving, onEdit, onCancel, onSave 
                 />
               ) : (
                 <div className="text-sm">
-                  {member.Kaiser_Tier_Level_Received_Date ? 
+                  {member.Kaiser_Tier_Level_Received_Date && member.Kaiser_Tier_Level_Received_Date !== 'null' ? 
                     format(new Date(member.Kaiser_Tier_Level_Received_Date), 'MMM dd, yyyy') : 
                     <span className="text-muted-foreground">Not set</span>
                   }
@@ -751,7 +751,7 @@ function MemberEditCard({ member, isEditing, isSaving, onEdit, onCancel, onSave 
                 />
               ) : (
                 <div className="text-sm">
-                  {member.ILS_RCFE_Sent_For_Contract_Date ? 
+                  {member.ILS_RCFE_Sent_For_Contract_Date && member.ILS_RCFE_Sent_For_Contract_Date !== 'null' ? 
                     format(new Date(member.ILS_RCFE_Sent_For_Contract_Date), 'MMM dd, yyyy') : 
                     <span className="text-muted-foreground">Not set</span>
                   }
@@ -769,7 +769,7 @@ function MemberEditCard({ member, isEditing, isSaving, onEdit, onCancel, onSave 
                 />
               ) : (
                 <div className="text-sm">
-                  {member.ILS_RCFE_Received_Contract_Date ? 
+                  {member.ILS_RCFE_Received_Contract_Date && member.ILS_RCFE_Received_Contract_Date !== 'null' ? 
                     format(new Date(member.ILS_RCFE_Received_Contract_Date), 'MMM dd, yyyy') : 
                     <span className="text-muted-foreground">Not set</span>
                   }

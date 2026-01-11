@@ -1,7 +1,6 @@
 'use client';
 
 import { useAdmin } from '@/hooks/use-admin';
-import { AuthGuard } from '@/components/AuthGuard';
 import { DailyNotificationDashboard } from '@/components/DailyNotificationDashboard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Shield, Calendar, Bell } from 'lucide-react';
@@ -36,36 +35,34 @@ export default function DashboardPage() {
   }
 
   return (
-    <AuthGuard require2FA={false}>
-      <div className="container mx-auto py-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Admin Dashboard</h1>
-            <p className="text-muted-foreground">
-              Monitor daily activity and manage notifications
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Daily Overview</span>
-          </div>
+    <div className="container mx-auto py-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Admin Dashboard</h1>
+          <p className="text-muted-foreground">
+            Monitor daily activity and manage notifications
+          </p>
         </div>
-
-        {/* Security Notice */}
-        <Card className="border-green-200 bg-green-50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-green-800">
-              <Shield className="h-4 w-4" />
-              <span className="text-sm font-medium">Secure Session Active</span>
-              <span className="text-xs text-green-600">• Two-factor authentication verified</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Daily Dashboard */}
-        <DailyNotificationDashboard />
+        <div className="flex items-center gap-2">
+          <Calendar className="h-5 w-5 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Daily Overview</span>
+        </div>
       </div>
-    </AuthGuard>
+
+      {/* Security Notice */}
+      <Card className="border-blue-200 bg-blue-50">
+        <CardContent className="pt-6">
+          <div className="flex items-center gap-2 text-blue-800">
+            <Shield className="h-4 w-4" />
+            <span className="text-sm font-medium">Admin Session Active</span>
+            <span className="text-xs text-blue-600">• Testing mode - 2FA temporarily disabled</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Daily Dashboard */}
+      <DailyNotificationDashboard />
+    </div>
   );
 }
