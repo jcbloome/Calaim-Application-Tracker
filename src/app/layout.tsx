@@ -37,12 +37,12 @@ export default function RootLayout({
             <LoginTrackingProvider>
               {children}
             </LoginTrackingProvider>
+            <RealTimeNotifications />
           </FirebaseClientProvider>
         </React.Suspense>
         <Toaster />
         <WindowsNotificationContainer />
         <CursorNotificationContainer />
-        <RealTimeNotifications />
       </body>
     </html>
   );

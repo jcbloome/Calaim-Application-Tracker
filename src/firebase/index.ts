@@ -13,3 +13,11 @@ export * from './errors';
 export * from './error-emitter';
 export { initializeFirebase } from './client-init';
 export type { FirebaseSdks } from './client-init';
+
+// Export Firebase instances for direct use
+import { initializeFirebase } from './client-init';
+
+// Initialize Firebase and export instances
+const { firebaseApp: app, firestore: db, auth, storage } = initializeFirebase();
+
+export { app, db, auth, storage };
