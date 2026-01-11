@@ -1,9 +1,9 @@
 'use client';
 
 import { useAdmin } from '@/hooks/use-admin';
-import ComprehensiveDriveMatching from '@/components/ComprehensiveDriveMatching';
+import LegacyMemberSearch from '@/components/LegacyMemberSearch';
 
-export default function ComprehensiveMatchingPage() {
+export default function LegacyMemberSearchPage() {
   const { isLoading, isSuperAdmin } = useAdmin();
 
   if (isLoading) {
@@ -28,24 +28,25 @@ export default function ComprehensiveMatchingPage() {
   return (
     <div className="container mx-auto py-8 space-y-8">
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold">Comprehensive Drive-Caspio Matching</h1>
+        <h1 className="text-3xl font-bold">Legacy CalAIM Member Search</h1>
         <p className="text-muted-foreground">
-          Advanced system to match 800+ Google Drive folders with 1000+ Caspio member records using intelligent algorithms
+          Search and browse legacy CalAIM members stored in Google Drive folders. This system preserves the existing folder structure and provides comprehensive search capabilities for historical member records.
         </p>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <h3 className="font-semibold text-blue-800 mb-2">🎯 System Overview</h3>
-        <div className="text-sm text-blue-700 space-y-1">
-          <p>• <strong>Comprehensive Scanning:</strong> Analyzes all CalAIM Members folders and extracts member names</p>
-          <p>• <strong>Intelligent Matching:</strong> Uses advanced algorithms to match Drive folders with Caspio records</p>
-          <p>• <strong>Manual Review:</strong> Allows confirmation of uncertain matches before applying</p>
-          <p>• <strong>Automated Updates:</strong> Updates Caspio with Drive folder IDs for seamless integration</p>
-          <p>• <strong>Time Savings:</strong> Eliminates need to manually add Client_ID2 to each folder name</p>
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+        <h3 className="font-semibold text-amber-800 mb-2">📋 Legacy System Overview</h3>
+        <div className="text-sm text-amber-700 space-y-1">
+          <p>• <strong>Import All Records:</strong> Imports all CalAIM member folders from Google Drive without modification</p>
+          <p>• <strong>Preserve Structure:</strong> Maintains existing folder organization and file structure</p>
+          <p>• <strong>Comprehensive Search:</strong> Search by first name, last name, or Client ID across all legacy records</p>
+          <p>• <strong>Plan Folder Detection:</strong> Automatically identifies Kaiser and Health Net subfolders</p>
+          <p>• <strong>Direct Access:</strong> Provides direct links to Google Drive folders for document access</p>
+          <p>• <strong>Separate from New System:</strong> Independent from the new CalAIM application tracker system</p>
         </div>
       </div>
 
-      <ComprehensiveDriveMatching />
+      <LegacyMemberSearch />
     </div>
   );
 }

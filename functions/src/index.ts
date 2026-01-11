@@ -55,6 +55,13 @@ export {
   applyConfirmedMatches
 } from './comprehensive-drive-matching';
 
+// Export Legacy Member Search functions
+export {
+  importLegacyMembersFromDrive,
+  refreshLegacyMemberData,
+  searchLegacyMembers
+} from './legacy-member-search';
+
 // Export Manual Notification functions (alternative to Firestore triggers)
 export { 
   checkForNewDocuments, 

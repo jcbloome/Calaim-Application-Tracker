@@ -95,7 +95,7 @@ const superAdminNavLinks = [
         { href: '/admin/super', label: 'Admin Panel', icon: Shield },
         { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
         { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
-        { href: '/admin/comprehensive-matching', label: 'Drive-Caspio Matching', icon: Brain },
+        { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain },
         { href: '/admin/intelligent-matching', label: 'Legacy Matching', icon: Brain },
       ]
     },
