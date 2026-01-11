@@ -32,6 +32,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/firebase';
+import { NotificationManager } from '@/components/CursorStyleNotification';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,6 +86,7 @@ const adminNavLinks = [
 ];
 
 const superAdminNavLinks = [
+    { href: '/admin/notification-settings', label: 'Notification Settings', icon: Bell },
     { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell },
     { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
     { 
@@ -94,6 +96,7 @@ const superAdminNavLinks = [
       submenuItems: [
         { href: '/admin/super', label: 'Admin Panel', icon: Shield },
         { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
+        { href: '/admin/system-note-log', label: 'System Note Log', icon: FileEdit },
         { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
         { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain },
         { href: '/admin/intelligent-matching', label: 'Legacy Matching', icon: Brain },
@@ -386,11 +389,13 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   
   // If loading is done and user is an admin, show the full admin layout.
   return (
-    <div className="flex flex-col min-h-screen">
-      <AdminHeader />
-      <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
-        {children}
-      </main>
-    </div>
+    <NotificationManager>
+      <div className="flex flex-col min-h-screen">
+        <AdminHeader />
+        <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
+          {children}
+        </main>
+      </div>
+    </NotificationManager>
   );
 }

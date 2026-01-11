@@ -62,6 +62,16 @@ export {
   searchLegacyMembers
 } from './legacy-member-search';
 
+// Export Staff Notification System functions
+export {
+  getStaffNotificationSettings,
+  updateStaffNotificationSettings,
+  sendTestStaffNotification,
+  logStaffNote,
+  getSystemNoteLog,
+  markNoteAsRead
+} from './staff-notification-system';
+
 // Export Manual Notification functions (alternative to Firestore triggers)
 export { 
   checkForNewDocuments, 
