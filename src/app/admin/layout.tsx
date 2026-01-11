@@ -78,8 +78,8 @@ const adminNavLinks = [
 ];
 
 const superAdminNavLinks = [
+    { href: '/admin/comprehensive-matching', label: 'Drive-Caspio Matching', icon: Brain },
     { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
-    { href: '/admin/intelligent-matching', label: 'Intelligent Matching', icon: Brain },
     { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell },
     { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
     { 
@@ -89,6 +89,7 @@ const superAdminNavLinks = [
       submenuItems: [
         { href: '/admin/super', label: 'Admin Panel', icon: Shield },
         { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
+        { href: '/admin/intelligent-matching', label: 'Legacy Matching', icon: Brain },
       ]
     },
 ];

@@ -47,6 +47,14 @@ export {
   applyMatchingSuggestions
 } from './intelligent-matching';
 
+// Export Comprehensive Drive Matching functions
+export {
+  scanAllCalAIMFolders,
+  getAllCaspioMembersComprehensive,
+  generateComprehensiveMatching,
+  applyConfirmedMatches
+} from './comprehensive-drive-matching';
+
 // Export Manual Notification functions (alternative to Firestore triggers)
 export { 
   checkForNewDocuments, 
