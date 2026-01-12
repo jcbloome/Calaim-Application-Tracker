@@ -185,10 +185,20 @@ function PathwayPageContent() {
   };
 
   const doUpload = async (files: File[], requirementTitle: string) => {
-      if (!user?.uid || !applicationId) return null;
+      if (!user?.uid || !applicationId || !storage) {
+        console.error('Upload prerequisites not met:', { 
+          hasUser: !!user?.uid, 
+          hasApplicationId: !!applicationId, 
+          hasStorage: !!storage 
+        });
+        return null;
+      }
 
       const file = files[0];
-      const storagePath = `user_uploads/${user.uid}/${applicationId}/${requirementTitle}/${file.name}`;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const storagePath = `user_uploads/${user.uid}/${applicationId}/${requirementTitle}/${timestamp}_${file.name}`;
+      
+      console.log('Creating storage reference:', storagePath);
       const storageRef = ref(storage, storagePath);
 
       return new Promise<{ downloadURL: string, path: string }>((resolve, reject) => {
@@ -197,29 +207,73 @@ function PathwayPageContent() {
           uploadTask.on('state_changed',
               (snapshot) => {
                   const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                  console.log(`Upload progress for ${requirementTitle}: ${progress}%`);
                   setUploadProgress(prev => ({ ...prev, [requirementTitle]: progress }));
               },
               (error) => {
                   console.error("Upload failed:", error);
-                  reject(error);
+                  reject(new Error(`Upload failed: ${error.message}`));
               },
               async () => {
-                  const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                  resolve({ downloadURL, path: storagePath });
+                  try {
+                      console.log('Upload completed, getting download URL...');
+                      const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                      console.log('Download URL obtained:', downloadURL);
+                      resolve({ downloadURL, path: storagePath });
+                  } catch (error: any) {
+                      console.error('Error getting download URL:', error);
+                      reject(new Error(`Failed to get download URL: ${error.message}`));
+                  }
               }
           );
       });
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, requirementTitle: string) => {
-    if (!event.target.files?.length || !user?.uid) return;
+    if (!event.target.files?.length || !user?.uid) {
+      console.log('Upload blocked:', { 
+        hasFiles: !!event.target.files?.length, 
+        hasUser: !!user?.uid,
+        userEmail: user?.email 
+      });
+      if (!user?.uid) {
+        toast({ 
+          variant: 'destructive', 
+          title: 'Authentication Required', 
+          description: 'Please sign in to upload files.' 
+        });
+      }
+      return;
+    }
+
+    if (!applicationId) {
+      toast({ 
+        variant: 'destructive', 
+        title: 'Application Required', 
+        description: 'No application ID found. Please create an application first.' 
+      });
+      return;
+    }
+
+    if (!storage) {
+      toast({ 
+        variant: 'destructive', 
+        title: 'Upload Service Unavailable', 
+        description: 'File upload service is not available. Please try again later.' 
+      });
+      return;
+    }
+
     const files = Array.from(event.target.files);
+    console.log('Starting upload:', { requirementTitle, fileCount: files.length, applicationId });
     
     setUploading(prev => ({...prev, [requirementTitle]: true}));
     setUploadProgress(prev => ({ ...prev, [requirementTitle]: 0 }));
     
     try {
         const uploadResult = await doUpload(files, requirementTitle);
+        console.log('Upload result:', uploadResult);
+        
         if (uploadResult) {
             await handleFormStatusUpdate([{
                 name: requirementTitle,
@@ -229,10 +283,21 @@ function PathwayPageContent() {
                 downloadURL: uploadResult.downloadURL,
                 dateCompleted: Timestamp.now(),
             }]);
-            toast({ title: 'Upload Successful', description: `${requirementTitle} has been uploaded.` });
+            toast({ 
+              title: 'Upload Successful', 
+              description: `${requirementTitle} has been uploaded successfully.`,
+              className: 'bg-green-100 text-green-900 border-green-200'
+            });
+        } else {
+          throw new Error('Upload failed - no result returned');
         }
-    } catch (error) {
-        toast({ variant: 'destructive', title: 'Upload Failed', description: 'Could not upload file.' });
+    } catch (error: any) {
+        console.error('Upload error:', error);
+        toast({ 
+          variant: 'destructive', 
+          title: 'Upload Failed', 
+          description: error.message || 'Could not upload file. Please try again.' 
+        });
     } finally {
         setUploading(prev => ({...prev, [requirementTitle]: false}));
         setUploadProgress(prev => ({ ...prev, [requirementTitle]: 0 }));
