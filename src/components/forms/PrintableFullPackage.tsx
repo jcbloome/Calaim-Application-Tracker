@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import { Button } from '@/components/ui/button';
+import { Printer, Download } from 'lucide-react';
 import { PrintableCsSummaryForm } from './PrintableCsSummaryForm';
 import { PrintableWaiversForm } from './PrintableWaiversForm';
 import { PrintableDeclarationForm } from './PrintableDeclarationForm';
@@ -23,75 +25,6 @@ export function PrintableFullPackage({
 }: PrintableFullPackageProps) {
   return (
     <div className="space-y-12 print:space-y-16">
-      {/* Package Cover Page */}
-      <div className="bg-white shadow-lg print:shadow-none print:bg-white">
-        <div className="p-8 print:p-6 text-center border-b print:border-b-2 print:border-black">
-          <h1 className="text-4xl print:text-3xl font-bold text-gray-900 print:text-black mb-4">
-            CalAIM Application Package
-          </h1>
-          <h2 className="text-2xl print:text-xl font-semibold text-gray-700 print:text-black mb-6">
-            Community Support for Assisted Living Transitions
-          </h2>
-          
-          <div className="max-w-2xl mx-auto space-y-4 text-left">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm print:text-xs">
-              <div>
-                <strong>Application ID:</strong> {applicationId || '_________________'}
-              </div>
-              <div>
-                <strong>Date Prepared:</strong> {new Date().toLocaleDateString()}
-              </div>
-              <div>
-                <strong>Member Name:</strong> {applicationData.memberFirstName && applicationData.memberLastName 
-                  ? `${applicationData.memberFirstName} ${applicationData.memberLastName}` 
-                  : '_________________'}
-              </div>
-              <div>
-                <strong>Pathway:</strong> {pathway || applicationData.pathway || '_________________'}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-8 print:p-6">
-          <h3 className="text-xl font-semibold text-gray-900 print:text-black mb-4">
-            Package Contents
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <h4 className="font-medium text-gray-900 print:text-black mb-2">Required Forms:</h4>
-              <ul className="text-sm print:text-xs text-gray-700 print:text-black space-y-1 list-disc list-inside">
-                <li>Program Information & Acknowledgment</li>
-                <li>CS Member Summary Form</li>
-                <li>Waivers & Authorizations</li>
-                {pathway === 'SNF Diversion' && <li>Declaration of Eligibility</li>}
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-900 print:text-black mb-2">Reference Materials:</h4>
-              <ul className="text-sm print:text-xs text-gray-700 print:text-black space-y-1 list-disc list-inside">
-                <li>Acronym Glossary</li>
-                <li>Program Information Guide</li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="mt-8 p-4 print:p-6 bg-blue-50 print:bg-white border print:border-black">
-            <h4 className="font-medium text-gray-900 print:text-black mb-2">Instructions:</h4>
-            <ol className="text-sm print:text-xs text-gray-700 print:text-black space-y-1 list-decimal list-inside">
-              <li>Print all pages of this package</li>
-              <li>Complete all required forms using black or blue ink</li>
-              <li>Sign and date where indicated</li>
-              <li>Scan or photograph completed forms clearly</li>
-              <li>Upload completed forms through your online application portal</li>
-              <li>Keep copies for your records</li>
-            </ol>
-          </div>
-        </div>
-      </div>
-
-      {/* Page Break */}
-      <div className="page-break print:page-break-before"></div>
 
       {/* Program Information */}
       <PrintableProgramInfoForm 
@@ -161,18 +94,17 @@ export function PrintableFullPackage({
         </div>
       </div>
 
-      {/* Print Controls - Only show if enabled */}
+      {/* Print Controls - Upper left like other forms */}
       {showPrintButton && (
-        <div className="fixed bottom-4 right-4 print:hidden">
-          <button
-            onClick={() => window.print()}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 font-medium"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-            </svg>
+        <div className="mb-6 flex flex-col sm:flex-row gap-3 print:hidden">
+          <Button onClick={() => window.print()} className="flex-1 sm:flex-none">
+            <Printer className="h-4 w-4 mr-2" />
             Print Complete Package
-          </button>
+          </Button>
+          <Button onClick={() => window.print()} variant="outline" className="flex-1 sm:flex-none">
+            <Download className="h-4 w-4 mr-2" />
+            Download PDF
+          </Button>
         </div>
       )}
     </div>

@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useUser, useStorage } from '@/firebase';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { FormSeparationTool } from '@/components/FormSeparationTool';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const individualForms = [
   {
@@ -238,8 +240,8 @@ export default function PrintablePackagePage() {
 
                 <Card className="sticky top-28">
                     <CardHeader>
-                        <CardTitle>Secure Upload Portal</CardTitle>
-                        <CardDescription>If you've completed a printable form, you can upload it here. Please note this does not link it to a specific application automatically.</CardDescription>
+                        <CardTitle>Document Upload & Processing</CardTitle>
+                        <CardDescription>Upload completed forms individually or as a package. Our system can automatically separate multi-form PDF packages.</CardDescription>
                     </CardHeader>
                     <CardContent>
                         {!user && !isUserLoading && (
@@ -259,7 +261,14 @@ export default function PrintablePackagePage() {
                         )}
 
                         {user && (
-                            <form onSubmit={handleUpload} className="space-y-4">
+                            <Tabs defaultValue="individual" className="w-full">
+                                <TabsList className="grid w-full grid-cols-2">
+                                    <TabsTrigger value="individual">Individual Upload</TabsTrigger>
+                                    <TabsTrigger value="package">PDF Package Separation</TabsTrigger>
+                                </TabsList>
+                                
+                                <TabsContent value="individual" className="space-y-4">
+                                    <form onSubmit={handleUpload} className="space-y-4">
                                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                                     <div className="flex items-start gap-3">
                                         <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
@@ -342,6 +351,20 @@ export default function PrintablePackagePage() {
                                     )}
                                 </Button>
                             </form>
+                        </TabsContent>
+                        
+                        <TabsContent value="package" className="space-y-4">
+                            <FormSeparationTool 
+                                onSeparationComplete={(forms) => {
+                                    toast({
+                                        title: 'Forms Separated Successfully',
+                                        description: `${forms.length} forms have been extracted from your PDF package.`,
+                                        className: 'bg-green-100 text-green-900 border-green-200',
+                                    });
+                                }}
+                            />
+                        </TabsContent>
+                    </Tabs>
                         )}
                     </CardContent>
                 </Card>

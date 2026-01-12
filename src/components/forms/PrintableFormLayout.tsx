@@ -32,8 +32,8 @@ export function PrintableFormLayout({
   };
 
   const handleDownloadPDF = () => {
-    // This would integrate with a PDF generation service
-    console.log('PDF download would be implemented here');
+    // For now, use print dialog which allows saving as PDF
+    window.print();
   };
 
   return (
