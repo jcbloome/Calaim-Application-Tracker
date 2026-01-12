@@ -94,11 +94,11 @@ async function getDriveService() {
   try {
     const db = getDb();
     
-    // Get stored Google Drive credentials from Firestore
-    const credentialsDoc = await db.collection('google_credentials').doc('drive_credentials').get();
+    // Get stored Google Drive credentials from Firestore (using same path as comprehensive matching)
+    const credentialsDoc = await db.collection('system').doc('google-drive-credentials').get();
     
     if (!credentialsDoc.exists) {
-      throw new HttpsError('unauthenticated', 'Google Drive credentials not found. Please authenticate first.');
+      throw new HttpsError('unauthenticated', 'Google Drive credentials not found. Please authenticate Google Drive access in the admin panel first.');
     }
     
     const credentials = credentialsDoc.data();
@@ -110,9 +110,12 @@ async function getDriveService() {
     
     oauth2Client.setCredentials(credentials);
     return google.drive({ version: 'v3', auth: oauth2Client });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error setting up Google Drive service:', error);
-    throw new HttpsError('internal', 'Failed to authenticate with Google Drive');
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', `Failed to authenticate with Google Drive: ${error.message}`);
   }
 }
 

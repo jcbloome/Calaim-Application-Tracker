@@ -113,7 +113,6 @@ const superAdminNavLinks = [
         { isDivider: true, label: 'Data Management' },
         { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
         { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain },
-        { href: '/admin/intelligent-matching', label: 'Legacy Matching', icon: Brain },
         { isDivider: true, label: 'Development Tools' },
         { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
       ]
@@ -186,7 +185,7 @@ function AdminHeader() {
                         onMouseEnter={() => handleMouseEnter(link.label)}
                         onMouseLeave={handleMouseLeave}
                       >
-                        <button className={`${navigationMenuTriggerStyle()} ${isSubmenuActive ? 'bg-accent text-accent-foreground' : ''} flex items-center gap-2`}>
+                        <button className={`${navigationMenuTriggerStyle()} ${isSubmenuActive ? 'bg-accent text-accent-foreground' : 'text-foreground'} flex items-center gap-2 hover:bg-accent hover:text-accent-foreground`}>
                           {Icon && <Icon className="h-4 w-4" />}
                           {link.label}
                           <ChevronDown className="h-3 w-3" />

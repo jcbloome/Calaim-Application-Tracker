@@ -11,7 +11,50 @@ interface EmailOptions {
   textContent: string;
   memberName?: string;
   applicationId?: string;
-  type?: 'document_upload' | 'cs_summary_complete' | 'kaiser_update' | 'general';
+  type?: 'document_upload' | 'cs_summary_complete' | 'kaiser_update' | 'general' | 'note_notification';
+}
+
+// Helper function for direct email sending (not a Firebase function)
+export async function sendResendEmailNotification(options: EmailOptions): Promise<void> {
+  const apiKey = RESEND_API_KEY;
+
+  if (!apiKey) {
+    console.log('⚠️ Resend API key not configured, skipping email send');
+    return;
+  }
+
+  console.log(`📧 Sending Resend notification to ${options.to.length} recipients`);
+  console.log(`📧 Subject: ${options.subject}`);
+  console.log(`📧 Type: ${options.type || 'general'}`);
+
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'CalAIM Tracker <notifications@connectcalaim.com>',
+        to: options.to,
+        subject: options.subject,
+        html: options.htmlContent,
+        text: options.textContent,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Resend API error: ${response.status} ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log(`✅ Email sent successfully via Resend. ID: ${result.id}`);
+
+  } catch (error: any) {
+    console.error('❌ Error sending email via Resend:', error);
+    throw new Error(`Failed to send email via Resend: ${error.message}`);
+  }
 }
 
 // Send email using Resend API

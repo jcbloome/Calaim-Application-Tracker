@@ -164,8 +164,7 @@ Note: ${noteData.Note_Content || noteData.Note_Text || 'No content provided'}
 This notification was automatically generated from your Caspio database.
           `,
           type: 'note_notification',
-          memberName: noteData.Member_Name || noteData.Client_Name,
-          senderName: noteData.Staff_Name || noteData.Staff_Member || 'System'
+          memberName: noteData.Member_Name || noteData.Client_Name
         });
       } catch (emailError) {
         console.error('Error sending email notification:', emailError);
@@ -462,7 +461,7 @@ export const getAllNotes = onRequest(
       const db = getDb();
       
       // Build query for caspio_notes
-      let notesQuery = db.collection('caspio_notes');
+      let notesQuery: admin.firestore.Query = db.collection('caspio_notes');
       
       if (staffFilter) {
         notesQuery = notesQuery.where('staffName', '==', staffFilter);
@@ -489,7 +488,7 @@ export const getAllNotes = onRequest(
       }));
 
       // Also get staff notifications
-      let notificationsQuery = db.collection('staff_notifications');
+      let notificationsQuery: admin.firestore.Query = db.collection('staff_notifications');
       
       const notificationsSnapshot = await notificationsQuery
         .orderBy('timestamp', 'desc')
@@ -622,7 +621,7 @@ export const getMemberNotes = onRequest(
       const db = getDb();
       
       // Query both caspio_notes and staff_notifications for this member
-      let notesQuery = db.collection('caspio_notes');
+      let notesQuery: admin.firestore.Query = db.collection('caspio_notes');
       
       if (memberId) {
         // Search by Client_ID2 or Client_ID
@@ -646,7 +645,7 @@ export const getMemberNotes = onRequest(
       }));
 
       // Also get staff notifications for this member
-      let notificationsQuery = db.collection('staff_notifications');
+      let notificationsQuery: admin.firestore.Query = db.collection('staff_notifications');
       
       if (memberId) {
         notificationsQuery = notificationsQuery.where('applicationId', '==', memberId);
@@ -672,10 +671,11 @@ export const getMemberNotes = onRequest(
       );
 
       // Get member info from the first note
-      const memberInfo = notes.length > 0 ? {
-        memberId: notes[0].Client_ID2 || notes[0].Client_ID || memberId,
-        memberName: notes[0].Member_Name || notes[0].Client_Name || memberName,
-        tableType: notes[0].tableType
+      const firstNote = notes.length > 0 ? notes[0] : null;
+      const memberInfo = firstNote ? {
+        memberId: (firstNote as any).Client_ID2 || (firstNote as any).Client_ID || memberId,
+        memberName: (firstNote as any).Member_Name || (firstNote as any).Client_Name || memberName,
+        tableType: (firstNote as any).tableType
       } : {
         memberId,
         memberName,

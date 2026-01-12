@@ -9,7 +9,6 @@ export { authenticateGoogleDrive, scanCalAIMDriveFolders, migrateDriveFoldersToF
 // Export Google Drive search functions
 export { 
   searchClientIDFiles, 
-  testGoogleDriveConnection, 
   getCalAIMFolderStructure 
 } from './google-drive-search';
 
@@ -108,7 +107,6 @@ export {
   updateMemberTask,
   getDailyTasks,
   createMemberNote,
-  getMemberNotes,
   createNoteReply,
   updateMemberNote,
   markNotesAsRead
