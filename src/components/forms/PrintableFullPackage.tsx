@@ -24,7 +24,22 @@ export function PrintableFullPackage({
   showPrintButton = true 
 }: PrintableFullPackageProps) {
   return (
-    <div className="space-y-12 print:space-y-16">
+    <div className="max-w-4xl mx-auto">
+      {/* Print Controls - Upper left like other forms */}
+      {showPrintButton && (
+        <div className="mb-6 flex flex-col sm:flex-row gap-3 print:hidden">
+          <Button onClick={() => window.print()} className="flex-1 sm:flex-none">
+            <Printer className="h-4 w-4 mr-2" />
+            Print Complete Package
+          </Button>
+          <Button onClick={() => window.print()} variant="outline" className="flex-1 sm:flex-none">
+            <Download className="h-4 w-4 mr-2" />
+            Download PDF
+          </Button>
+        </div>
+      )}
+      
+      <div className="space-y-12 print:space-y-16">
 
       {/* Program Information */}
       <PrintableProgramInfoForm 
@@ -94,19 +109,7 @@ export function PrintableFullPackage({
         </div>
       </div>
 
-      {/* Print Controls - Upper left like other forms */}
-      {showPrintButton && (
-        <div className="mb-6 flex flex-col sm:flex-row gap-3 print:hidden">
-          <Button onClick={() => window.print()} className="flex-1 sm:flex-none">
-            <Printer className="h-4 w-4 mr-2" />
-            Print Complete Package
-          </Button>
-          <Button onClick={() => window.print()} variant="outline" className="flex-1 sm:flex-none">
-            <Download className="h-4 w-4 mr-2" />
-            Download PDF
-          </Button>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
