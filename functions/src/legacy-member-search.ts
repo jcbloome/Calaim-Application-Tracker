@@ -1,7 +1,12 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
 import { getFirestore } from 'firebase-admin/firestore';
 import { google } from 'googleapis';
+
+// Define secrets for Google Drive API
+const googleDriveClientId = defineSecret("GOOGLE_DRIVE_CLIENT_ID");
+const googleDriveClientSecret = defineSecret("GOOGLE_DRIVE_CLIENT_SECRET");
 
 // Lazy initialization of Firestore
 let _db: admin.firestore.Firestore | null = null;
@@ -92,9 +97,25 @@ function parseNameFromFolder(folderName: string): {
 // Function to get authenticated Google Drive service
 async function getDriveService() {
   try {
-    const db = getDb();
+    console.log('🔑 Setting up Google Drive service...');
     
-    // Get stored Google Drive credentials from Firestore (using same path as comprehensive matching)
+    // Try service account authentication first (simpler and more reliable)
+    try {
+      const auth = new google.auth.GoogleAuth({
+        scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      });
+      
+      const authClient = await auth.getClient();
+      const drive = google.drive({ version: 'v3', auth: authClient });
+      
+      console.log('✅ Using service account authentication');
+      return drive;
+    } catch (serviceAccountError) {
+      console.log('⚠️ Service account auth failed, trying OAuth2:', serviceAccountError);
+    }
+    
+    // Fallback to OAuth2 with stored credentials
+    const db = getDb();
     const credentialsDoc = await db.collection('system').doc('google-drive-credentials').get();
     
     if (!credentialsDoc.exists) {
@@ -103,15 +124,17 @@ async function getDriveService() {
     
     const credentials = credentialsDoc.data();
     const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
+      googleDriveClientId.value(),
+      googleDriveClientSecret.value(),
       'urn:ietf:wg:oauth:2.0:oob'
     );
     
     oauth2Client.setCredentials(credentials);
+    console.log('✅ Using OAuth2 authentication');
     return google.drive({ version: 'v3', auth: oauth2Client });
+    
   } catch (error: any) {
-    console.error('Error setting up Google Drive service:', error);
+    console.error('❌ Error setting up Google Drive service:', error);
     if (error instanceof HttpsError) {
       throw error;
     }
@@ -120,7 +143,9 @@ async function getDriveService() {
 }
 
 // Import all legacy members from Google Drive
-export const importLegacyMembersFromDrive = onCall(async (request) => {
+export const importLegacyMembersFromDrive = onCall({
+  secrets: [googleDriveClientId, googleDriveClientSecret]
+}, async (request) => {
   try {
     console.log('🔍 Starting legacy member import from Google Drive...');
     
@@ -266,7 +291,9 @@ export const importLegacyMembersFromDrive = onCall(async (request) => {
 });
 
 // Refresh legacy member data from Firestore
-export const refreshLegacyMemberData = onCall(async (request) => {
+export const refreshLegacyMemberData = onCall({
+  secrets: [googleDriveClientId, googleDriveClientSecret]
+}, async (request) => {
   try {
     const db = getDb();
     const legacyMembersRef = db.collection('legacyMembers');
@@ -289,7 +316,9 @@ export const refreshLegacyMemberData = onCall(async (request) => {
 });
 
 // Test Google Drive connection
-export const testGoogleDriveConnection = onCall(async (request) => {
+export const testGoogleDriveConnection = onCall({
+  secrets: [googleDriveClientId, googleDriveClientSecret]
+}, async (request) => {
   try {
     console.log('🔍 Testing Google Drive connection...');
     
@@ -326,7 +355,9 @@ export const testGoogleDriveConnection = onCall(async (request) => {
 });
 
 // Search legacy members by name or client ID
-export const searchLegacyMembers = onCall(async (request) => {
+export const searchLegacyMembers = onCall({
+  secrets: [googleDriveClientId, googleDriveClientSecret]
+}, async (request) => {
   try {
     const { searchTerm, filterBy, limit = 100 } = request.data;
     const db = getDb();
