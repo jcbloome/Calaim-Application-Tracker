@@ -399,6 +399,159 @@ function PathwayPageContent() {
     }
   };
 
+  // Comprehensive Firebase diagnostics for pathway page
+  const runComprehensiveDiagnostics = async () => {
+    console.log('🔍 [PATHWAY] === COMPREHENSIVE FIREBASE DIAGNOSTICS ===');
+    
+    try {
+      // 1. User Authentication Status
+      console.log('👤 [PATHWAY] User Authentication:');
+      console.log('   - User exists:', !!user);
+      console.log('   - User UID:', user?.uid);
+      console.log('   - User email:', user?.email);
+      console.log('   - Email verified:', user?.emailVerified);
+      
+      if (user) {
+        try {
+          const token = await user.getIdToken(true);
+          const tokenResult = await user.getIdTokenResult();
+          console.log('   - Token length:', token.length);
+          console.log('   - Token expiry:', tokenResult.expirationTime);
+          console.log('   - Sign in provider:', tokenResult.signInProvider);
+          console.log('   - Auth time:', tokenResult.authTime);
+          console.log('   - Claims:', tokenResult.claims);
+        } catch (tokenError: any) {
+          console.log('   - ❌ Token error:', tokenError.message);
+        }
+      }
+      
+      // 2. Firebase Services Status
+      console.log('🔥 [PATHWAY] Firebase Services:');
+      console.log('   - Firestore available:', !!firestore);
+      console.log('   - Storage available:', !!storage);
+      if (storage) {
+        console.log('   - Storage bucket:', storage.bucket);
+        console.log('   - Storage app name:', storage.app.name);
+        console.log('   - Max upload retry time:', storage.maxUploadRetryTime);
+        console.log('   - Max operation retry time:', storage.maxOperationRetryTime);
+      }
+      
+      // 3. Test Firestore Access
+      console.log('📊 [PATHWAY] Testing Firestore Access...');
+      try {
+        const testDoc = doc(firestore, 'test', `pathway-test-${Date.now()}`);
+        await setDoc(testDoc, { 
+          test: true, 
+          timestamp: serverTimestamp(),
+          user: user?.uid,
+          source: 'pathway-diagnostics'
+        });
+        console.log('✅ [PATHWAY] Firestore write: SUCCESS');
+      } catch (firestoreError: any) {
+        console.log('❌ [PATHWAY] Firestore write: FAILED -', firestoreError.message);
+        console.log('   - Error code:', firestoreError.code);
+      }
+      
+      // 4. Test Storage Access (Multiple Methods)
+      console.log('🪣 [PATHWAY] Testing Storage Access...');
+      
+      if (storage && user) {
+        // Method 1: uploadBytes (direct)
+        try {
+          console.log('🧪 [PATHWAY] Method 1: uploadBytes (direct)...');
+          const testRef1 = ref(storage, `diagnostic-test/${user.uid}/direct-${Date.now()}.txt`);
+          const testBlob1 = new Blob(['Direct upload test'], { type: 'text/plain' });
+          
+          const snapshot1 = await uploadBytes(testRef1, testBlob1);
+          const downloadURL1 = await getDownloadURL(snapshot1.ref);
+          console.log('✅ [PATHWAY] uploadBytes: SUCCESS');
+          console.log('🔗 [PATHWAY] Direct upload URL:', downloadURL1);
+        } catch (directError: any) {
+          console.log('❌ [PATHWAY] uploadBytes: FAILED -', directError.message);
+          console.log('   - Error code:', directError.code);
+        }
+        
+        // Method 2: uploadBytesResumable (with timeout)
+        try {
+          console.log('🧪 [PATHWAY] Method 2: uploadBytesResumable (with 10s timeout)...');
+          const testRef2 = ref(storage, `diagnostic-test/${user.uid}/resumable-${Date.now()}.txt`);
+          const testBlob2 = new Blob(['Resumable upload test'], { type: 'text/plain' });
+          
+          const uploadTask = uploadBytesResumable(testRef2, testBlob2);
+          
+          // Set up timeout
+          const uploadPromise = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              uploadTask.cancel();
+              reject(new Error('Upload timeout after 10 seconds'));
+            }, 10000);
+            
+            uploadTask.on('state_changed',
+              (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                console.log(`📈 [PATHWAY] Resumable progress: ${progress.toFixed(1)}%`);
+              },
+              (error) => {
+                clearTimeout(timeout);
+                reject(error);
+              },
+              async () => {
+                clearTimeout(timeout);
+                try {
+                  const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                  resolve(downloadURL);
+                } catch (urlError) {
+                  reject(urlError);
+                }
+              }
+            );
+          });
+          
+          const downloadURL2 = await uploadPromise;
+          console.log('✅ [PATHWAY] uploadBytesResumable: SUCCESS');
+          console.log('🔗 [PATHWAY] Resumable upload URL:', downloadURL2);
+          
+        } catch (resumableError: any) {
+          console.log('❌ [PATHWAY] uploadBytesResumable: FAILED -', resumableError.message);
+          console.log('   - Error code:', resumableError.code);
+        }
+      }
+      
+      // 5. Network Test
+      console.log('🌐 [PATHWAY] Testing Network Connectivity...');
+      try {
+        const networkTest = await fetch('https://firebasestorage.googleapis.com/', { method: 'HEAD' });
+        console.log('✅ [PATHWAY] Network to Firebase Storage: SUCCESS -', networkTest.status);
+      } catch (networkError: any) {
+        console.log('❌ [PATHWAY] Network to Firebase Storage: FAILED -', networkError.message);
+      }
+      
+      // 6. Browser Environment
+      console.log('🌐 [PATHWAY] Browser Environment:');
+      console.log('   - User Agent:', navigator.userAgent);
+      console.log('   - Online:', navigator.onLine);
+      console.log('   - Connection:', (navigator as any).connection?.effectiveType || 'unknown');
+      console.log('   - Language:', navigator.language);
+      console.log('   - Platform:', navigator.platform);
+      
+      console.log('🔍 [PATHWAY] === DIAGNOSTICS COMPLETE ===');
+      
+      toast({
+        title: 'Comprehensive Diagnostics Complete',
+        description: 'Check browser console for detailed results. Look for ✅ SUCCESS or ❌ FAILED markers.',
+        className: 'bg-blue-100 text-blue-900 border-blue-200'
+      });
+      
+    } catch (error: any) {
+      console.log('❌ [PATHWAY] Diagnostics failed:', error.message);
+      toast({
+        variant: 'destructive',
+        title: 'Diagnostics Failed',
+        description: error.message
+      });
+    }
+  };
+
   const testStorageConnection = async () => {
     console.log('Testing storage connection...');
     try {
@@ -840,9 +993,17 @@ function PathwayPageContent() {
                         >
                             🧪 Test Storage (New)
                         </Button>
+                        <Button 
+                            onClick={runComprehensiveDiagnostics} 
+                            variant="default" 
+                            size="sm"
+                            className="text-xs bg-blue-600 hover:bg-blue-700"
+                        >
+                            🔍 Full Diagnostics
+                        </Button>
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
-                        Debug tools - check browser console for detailed logs
+                        Debug tools - check browser console for detailed logs. Use "Full Diagnostics" for complete analysis.
                     </p>
                 </div>
                 </CardContent>
