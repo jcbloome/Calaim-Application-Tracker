@@ -18,8 +18,13 @@ let firebaseSdks: FirebaseSdks | null = null;
 function getSdks(firebaseApp: FirebaseApp): FirebaseSdks {
   const auth = getAuth(firebaseApp);
   // Persistence is now handled at login time to ensure it completes before sign-in.
-  const storage = getStorage(firebaseApp, "gs://studio-2881432245-f1d94.appspot.com");
+  const storage = getStorage(firebaseApp);
   console.log('🔧 [FIREBASE] Storage initialized with bucket:', storage.app.options.storageBucket);
+  console.log('🔧 [FIREBASE] Full storage config:', {
+    bucket: storage.app.options.storageBucket,
+    projectId: storage.app.options.projectId,
+    appName: storage.app.name
+  });
   return {
     firebaseApp,
     auth: auth,

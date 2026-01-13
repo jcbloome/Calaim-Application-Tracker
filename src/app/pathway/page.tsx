@@ -545,8 +545,16 @@ function PathwayPageContent() {
       // 5. Network Test
       addDiagnosticLog('🌐 [PATHWAY] Testing Network Connectivity...');
       try {
+        // Test 1: Basic Firebase Storage API
         const networkTest = await fetch('https://firebasestorage.googleapis.com/', { method: 'HEAD' });
         addDiagnosticLog(`✅ [PATHWAY] Network to Firebase Storage: SUCCESS - ${networkTest.status}`);
+        
+        // Test 2: Specific bucket access
+        const bucketTest = await fetch('https://firebasestorage.googleapis.com/v0/b/studio-2881432245-f1d94.firebasestorage.app/o?alt=media', {
+          method: 'HEAD',
+          mode: 'cors'
+        });
+        addDiagnosticLog(`✅ [PATHWAY] Bucket access: SUCCESS - ${bucketTest.status}`);
       } catch (networkError: any) {
         addDiagnosticLog(`❌ [PATHWAY] Network to Firebase Storage: FAILED - ${networkError.message}`);
       }
