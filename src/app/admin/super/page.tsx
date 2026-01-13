@@ -10,8 +10,9 @@ import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, Shield
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp, addDoc, orderBy } from 'firebase/firestore';
-import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
+import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError, useStorage } from '@/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import { NotificationManager } from '@/components/NotificationManager';
 import NotificationSettings from '@/components/NotificationSettings';
 import LoginActivityTracker from '@/components/LoginActivityTracker';
@@ -171,6 +172,7 @@ export default function SuperAdminPage() {
     const router = useRouter();
     const { toast } = useToast();
     const firestore = useFirestore();
+    const storage = useStorage();
 
     const [staffList, setStaffList] = useState<StaffMember[]>([]);
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
@@ -192,6 +194,11 @@ export default function SuperAdminPage() {
     const [isLoadingTest, setIsLoadingTest] = useState<string | null>(null);
     const [testResults, setTestResults] = useState<TestResult[]>([]);
     const [testDocId, setTestDocId] = useState<string | null>(null);
+
+    // Storage test suite state
+    const [storageTestResults, setStorageTestResults] = useState<TestResult[]>([]);
+    const [isStorageTestLoading, setIsStorageTestLoading] = useState<string | null>(null);
+    const [uploadProgress, setUploadProgress] = useState<number>(0);
 
     const applicationsQuery = useMemoFirebase(() => {
         if (isAdminLoading || !firestore || !currentUser) {
@@ -769,6 +776,158 @@ export default function SuperAdminPage() {
         });
     };
 
+    // Storage Test Functions
+    const addStorageTestResult = (result: TestResult) => {
+        setStorageTestResults(prev => [result, ...prev]);
+    };
+
+    const runStorageTest = async (testName: string, testFn: () => Promise<string>) => {
+        if (!storage || !currentUser) {
+            toast({ variant: 'destructive', title: 'Not Ready', description: 'Please wait for user and Storage to be initialized.' });
+            return;
+        }
+        setIsStorageTestLoading(testName);
+        try {
+            const result = await testFn();
+            addStorageTestResult({ name: testName, success: true, message: result });
+            toast({ title: 'Test Passed', description: `${testName} completed successfully.`, className: 'bg-green-100 text-green-900 border-green-200' });
+        } catch (error: any) {
+            addStorageTestResult({ name: testName, success: false, message: error.message });
+            toast({ variant: 'destructive', title: 'Test Failed', description: `${testName}: ${error.message}` });
+        } finally {
+            setIsStorageTestLoading(null);
+        }
+    };
+
+    const testStorageUpload = () => {
+        return new Promise<string>((resolve, reject) => {
+            if (!storage || !currentUser) {
+                reject(new Error('Storage or user not available'));
+                return;
+            }
+
+            const testData = new Blob(['Hello World - Storage Test'], { type: 'text/plain' });
+            const testFile = new File([testData], 'test-upload.txt', { type: 'text/plain' });
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const storagePath = `user_uploads/${currentUser.uid}/test/${timestamp}_test-upload.txt`;
+            const storageRef = ref(storage, storagePath);
+
+            const uploadTask = uploadBytesResumable(storageRef, testFile);
+
+            uploadTask.on('state_changed',
+                (snapshot) => {
+                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                    setUploadProgress(progress);
+                },
+                (error) => {
+                    console.error('Upload failed:', error);
+                    reject(new Error(`Upload failed: ${error.code} - ${error.message}`));
+                },
+                async () => {
+                    try {
+                        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                        resolve(`Successfully uploaded test file. Download URL: ${downloadURL}`);
+                    } catch (error: any) {
+                        reject(new Error(`Failed to get download URL: ${error.message}`));
+                    }
+                }
+            );
+        });
+    };
+
+    const testStorageList = () => {
+        return new Promise<string>((resolve, reject) => {
+            if (!storage || !currentUser) {
+                reject(new Error('Storage or user not available'));
+                return;
+            }
+
+            const userUploadsRef = ref(storage, `user_uploads/${currentUser.uid}`);
+            
+            listAll(userUploadsRef)
+                .then((result) => {
+                    const fileCount = result.items.length;
+                    const folderCount = result.prefixes.length;
+                    resolve(`Successfully listed user uploads: ${fileCount} files, ${folderCount} folders`);
+                })
+                .catch((error) => {
+                    reject(new Error(`List failed: ${error.code} - ${error.message}`));
+                });
+        });
+    };
+
+    const testStorageDelete = () => {
+        return new Promise<string>((resolve, reject) => {
+            if (!storage || !currentUser) {
+                reject(new Error('Storage or user not available'));
+                return;
+            }
+
+            // Try to delete a test file (this might fail if no test files exist)
+            const testRef = ref(storage, `user_uploads/${currentUser.uid}/test/test-delete.txt`);
+            
+            // First upload a file to delete
+            const testData = new Blob(['Delete me'], { type: 'text/plain' });
+            const testFile = new File([testData], 'test-delete.txt', { type: 'text/plain' });
+            const uploadTask = uploadBytesResumable(testRef, testFile);
+
+            uploadTask.on('state_changed',
+                () => {}, // Progress
+                (error) => reject(new Error(`Upload for delete test failed: ${error.message}`)),
+                async () => {
+                    // Now delete it
+                    try {
+                        await deleteObject(testRef);
+                        resolve('Successfully uploaded and deleted test file');
+                    } catch (error: any) {
+                        reject(new Error(`Delete failed: ${error.code} - ${error.message}`));
+                    }
+                }
+            );
+        });
+    };
+
+    const testStorageAsUser = () => {
+        return new Promise<string>((resolve, reject) => {
+            if (!storage || !currentUser) {
+                reject(new Error('Storage or user not available'));
+                return;
+            }
+
+            // Test uploading to a different user's path (should fail)
+            const fakeUserId = 'fake-user-id-12345';
+            const testData = new Blob(['Unauthorized test'], { type: 'text/plain' });
+            const testFile = new File([testData], 'unauthorized-test.txt', { type: 'text/plain' });
+            const unauthorizedPath = `user_uploads/${fakeUserId}/test/unauthorized.txt`;
+            const storageRef = ref(storage, unauthorizedPath);
+
+            const uploadTask = uploadBytesResumable(storageRef, testFile);
+
+            uploadTask.on('state_changed',
+                () => {}, // Progress
+                (error) => {
+                    // This should fail with unauthorized error
+                    if (error.code === 'storage/unauthorized') {
+                        resolve('Security test passed: Unauthorized access correctly blocked');
+                    } else {
+                        reject(new Error(`Unexpected error: ${error.code} - ${error.message}`));
+                    }
+                },
+                () => {
+                    // This should not succeed
+                    reject(new Error('Security test failed: Unauthorized upload was allowed'));
+                }
+            );
+        });
+    };
+
+    const storageTests = [
+        { name: '1. Upload File', fn: testStorageUpload, description: `Uploads to 'user_uploads/${currentUser?.uid}/test/'` },
+        { name: '2. List Files', fn: testStorageList, description: `Lists from 'user_uploads/${currentUser?.uid}/'` },
+        { name: '3. Delete File', fn: testStorageDelete, description: `Uploads and deletes test file` },
+        { name: '4. Security Test', fn: testStorageAsUser, description: `Tests unauthorized access (should fail)` },
+    ];
+
     const firestoreTests = [
         { name: '1. Create Document', fn: testCreate, description: "Writes to 'test_writes/{new_id}'." },
         { name: '2. Read Document', fn: testRead, description: "Reads from 'test_writes/{id}'." },
@@ -907,6 +1066,65 @@ export default function SuperAdminPage() {
                                                 <AlertDescription className="break-words text-xs">{result.message}</AlertDescription>
                                             </Alert>
                                         ))}
+                                        </div>
+                                    )}
+                                </ScrollArea>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-3 text-lg"><Database className="h-5 w-5" />Firebase Storage Test Suite</CardTitle>
+                            <CardDescription>Run tests to diagnose storage upload and security issues.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {storageTests.map(test => (
+                                    <div key={test.name} className="flex flex-col gap-2 p-4 border rounded-lg bg-muted/30">
+                                        <h3 className="font-semibold text-sm">{test.name}</h3>
+                                        <p className="text-xs text-muted-foreground flex-grow">{test.description}</p>
+                                        <Button 
+                                            onClick={() => runStorageTest(test.name, test.fn)} 
+                                            disabled={!!isStorageTestLoading || !currentUser || !storage} 
+                                            size="sm"
+                                        >
+                                            {isStorageTestLoading === test.name ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                            Run Test
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                            
+                            {uploadProgress > 0 && uploadProgress < 100 && (
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-sm">
+                                        <span>Upload Progress</span>
+                                        <span>{uploadProgress.toFixed(0)}%</span>
+                                    </div>
+                                    <div className="w-full bg-gray-200 rounded-full h-2">
+                                        <div 
+                                            className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                                            style={{ width: `${uploadProgress}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            <div>
+                                <h4 className="font-semibold text-sm mb-2">Storage Test Results</h4>
+                                <ScrollArea className="h-48 w-full rounded-md border p-4">
+                                    {storageTestResults.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground text-center py-8">No storage tests run yet.</p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {storageTestResults.map((result, index) => (
+                                                <Alert key={index} variant={result.success ? 'default' : 'destructive'} className={result.success ? 'bg-green-50 border-green-200' : ''}>
+                                                    {result.success ? <CheckCircle className="h-4 w-4" /> : <FileWarning className="h-4 w-4" />}
+                                                    <AlertTitle className="text-xs font-semibold">{result.name} - {result.success ? 'Passed' : 'Failed'}</AlertTitle>
+                                                    <AlertDescription className="break-words text-xs">{result.message}</AlertDescription>
+                                                </Alert>
+                                            ))}
                                         </div>
                                     )}
                                 </ScrollArea>
