@@ -93,6 +93,11 @@ const ROLE_COLORS = {
 };
 
 export default function LoginActivityTracker() {
+  try {
+    const { toast } = useToast();
+    const firestore = useFirestore();
+    const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+  
   const [loginLogs, setLoginLogs] = useState<LoginLog[]>([]);
   const [activeSessions, setActiveSessions] = useState<SessionInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -101,9 +106,6 @@ export default function LoginActivityTracker() {
   const [filterRole, setFilterRole] = useState<string>('all');
   const [filterDate, setFilterDate] = useState<string>('today');
   const [selectedUser, setSelectedUser] = useState<string>('all');
-  const { toast } = useToast();
-  const firestore = useFirestore();
-  const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
 
   // Check super admin permissions
   if (isAdminLoading) {
@@ -345,16 +347,21 @@ export default function LoginActivityTracker() {
   };
 
   useEffect(() => {
-    loadLoginLogs();
-    loadActiveSessions();
-    
-    // Refresh active sessions every 30 seconds
-    const interval = setInterval(() => {
+    // Only load if we have firestore and super admin access
+    if (firestore && isSuperAdmin && !isAdminLoading) {
+      loadLoginLogs();
       loadActiveSessions();
-    }, 30000);
-    
-    return () => clearInterval(interval);
-  }, [filterDate, selectedUser, filterAction]);
+      
+      // Refresh active sessions every 30 seconds
+      const interval = setInterval(() => {
+        if (firestore && isSuperAdmin) {
+          loadActiveSessions();
+        }
+      }, 30000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [filterDate, selectedUser, filterAction, firestore, isSuperAdmin, isAdminLoading]);
 
   return (
     <div className="space-y-6">
@@ -807,4 +814,16 @@ export default function LoginActivityTracker() {
       </Tabs>
     </div>
   );
+  } catch (error) {
+    console.error('LoginActivityTracker error:', error);
+    return (
+      <div className="text-center py-8">
+        <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+        <h3 className="text-lg font-semibold text-red-600 mb-2">Component Error</h3>
+        <p className="text-muted-foreground">
+          There was an error loading the login activity tracker. Please refresh the page.
+        </p>
+      </div>
+    );
+  }
 }
