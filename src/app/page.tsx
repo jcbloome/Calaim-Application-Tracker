@@ -7,6 +7,7 @@ import {
   signInWithEmailAndPassword,
   browserLocalPersistence,
   setPersistence,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import type { AuthError, User } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,7 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import { AccessibleButton } from '@/components/ui/accessible-button';
-import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
+import { Eye, EyeOff, Loader2, LogIn, Mail } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
@@ -58,6 +59,8 @@ export default function HomePage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
 
   useEffect(() => {
     if (isUserLoading) {
@@ -105,6 +108,41 @@ export default function HomePage() {
       setError(errorMessage);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail.trim()) {
+      enhancedToast.error('Email Required', 'Please enter your email address to reset your password.');
+      return;
+    }
+
+    if (!auth) {
+      enhancedToast.error('Service Unavailable', 'Firebase authentication is not available.');
+      return;
+    }
+
+    setIsResettingPassword(true);
+    try {
+      await sendPasswordResetEmail(auth, resetEmail);
+      enhancedToast.success('Password Reset Email Sent', 'Check your email for instructions to reset your password.');
+      setResetEmail('');
+      setIsResettingPassword(false);
+    } catch (err) {
+      const authError = err as AuthError;
+      let errorMessage = 'Failed to send password reset email.';
+      
+      if (authError.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email address.';
+      } else if (authError.code === 'auth/invalid-email') {
+        errorMessage = 'Please enter a valid email address.';
+      } else if (authError.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many password reset attempts. Please try again later.';
+      }
+      
+      enhancedToast.error('Password Reset Failed', errorMessage);
+      setIsResettingPassword(false);
     }
   };
   
@@ -175,6 +213,39 @@ export default function HomePage() {
                 Sign In
               </AccessibleButton>
             </form>
+            
+            {/* Forgot Password Section */}
+            <div className="mt-6 pt-4 border-t border-gray-200">
+              <p className="text-sm text-gray-600 mb-3">Forgot your password?</p>
+              <form onSubmit={handleForgotPassword} className="space-y-3">
+                <Input
+                  type="email"
+                  placeholder="Enter your email address"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  disabled={isResettingPassword}
+                />
+                <Button 
+                  type="submit" 
+                  variant="outline" 
+                  className="w-full" 
+                  disabled={isResettingPassword}
+                >
+                  {isResettingPassword ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Sending Reset Email...
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="mr-2 h-4 w-4" />
+                      Send Password Reset Email
+                    </>
+                  )}
+                </Button>
+              </form>
+            </div>
+            
              <div className="mt-4 text-center text-sm">
               Don't have an account?{' '}
               <Link href="/signup" className="underline text-primary">

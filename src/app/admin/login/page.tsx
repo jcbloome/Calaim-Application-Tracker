@@ -7,6 +7,7 @@ import {
   signInWithEmailAndPassword,
   setPersistence,
   browserLocalPersistence,
+  sendPasswordResetEmail,
   type User
 } from 'firebase/auth';
 import type { AuthError } from 'firebase/auth';
@@ -22,7 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, Loader2, LogIn, ShieldAlert, LogOut } from 'lucide-react';
+import { Eye, EyeOff, Loader2, LogIn, ShieldAlert, LogOut, Mail } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
@@ -58,6 +59,8 @@ export default function AdminLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
 
   // This effect will redirect a logged-in admin away from the login page.
   useEffect(() => {
@@ -104,6 +107,57 @@ export default function AdminLoginPage() {
       }
       setError(errorMessage);
       setIsLoading(false); // Only set loading to false on error.
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Email Required',
+        description: 'Please enter your email address to reset your password.',
+      });
+      return;
+    }
+
+    if (!auth) {
+      toast({
+        variant: 'destructive',
+        title: 'Service Unavailable',
+        description: 'Firebase authentication is not available.',
+      });
+      return;
+    }
+
+    setIsResettingPassword(true);
+    try {
+      await sendPasswordResetEmail(auth, resetEmail);
+      toast({
+        title: 'Password Reset Email Sent',
+        description: 'Check your email for instructions to reset your password.',
+        className: 'bg-green-100 text-green-900 border-green-200'
+      });
+      setResetEmail('');
+      setIsResettingPassword(false);
+    } catch (err) {
+      const authError = err as AuthError;
+      let errorMessage = 'Failed to send password reset email.';
+      
+      if (authError.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email address.';
+      } else if (authError.code === 'auth/invalid-email') {
+        errorMessage = 'Please enter a valid email address.';
+      } else if (authError.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many password reset attempts. Please try again later.';
+      }
+      
+      toast({
+        variant: 'destructive',
+        title: 'Password Reset Failed',
+        description: errorMessage,
+      });
+      setIsResettingPassword(false);
     }
   };
 
@@ -176,6 +230,39 @@ export default function AdminLoginPage() {
                 {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Signing In...</> : <><LogIn className="mr-2 h-4 w-4" />Sign In</>}
               </Button>
             </form>
+            
+            {/* Forgot Password Section */}
+            <div className="mt-6 pt-4 border-t border-gray-200">
+              <p className="text-sm text-gray-600 mb-3">Forgot your password?</p>
+              <form onSubmit={handleForgotPassword} className="space-y-3">
+                <Input
+                  type="email"
+                  placeholder="Enter your email address"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  disabled={isResettingPassword}
+                />
+                <Button 
+                  type="submit" 
+                  variant="outline" 
+                  className="w-full" 
+                  disabled={isResettingPassword}
+                >
+                  {isResettingPassword ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Sending Reset Email...
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="mr-2 h-4 w-4" />
+                      Send Password Reset Email
+                    </>
+                  )}
+                </Button>
+              </form>
+            </div>
+            
              <div className="mt-4 text-center text-sm">
               <Link href="/" className="underline text-primary">
                 Return to Home
