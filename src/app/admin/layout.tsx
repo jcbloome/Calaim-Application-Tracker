@@ -185,7 +185,7 @@ function AdminHeader() {
                         onMouseEnter={() => handleMouseEnter(link.label)}
                         onMouseLeave={handleMouseLeave}
                       >
-                        <button className={`${navigationMenuTriggerStyle()} ${isSubmenuActive ? 'bg-accent text-accent-foreground' : 'text-foreground'} flex items-center gap-2 hover:bg-accent hover:text-accent-foreground`}>
+                        <button className={`${navigationMenuTriggerStyle()} ${isSubmenuActive ? 'bg-accent text-accent-foreground' : ''} flex items-center gap-2 hover:bg-accent hover:text-accent-foreground ${link.label === 'Super Admin' ? '!text-foreground font-medium' : 'text-foreground'}`}>
                           {Icon && <Icon className="h-4 w-4" />}
                           {link.label}
                           <ChevronDown className="h-3 w-3" />
