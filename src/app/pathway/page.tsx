@@ -441,7 +441,7 @@ function PathwayPageContent() {
       addDiagnosticLog(`   - Firestore available: ${!!firestore}`);
       addDiagnosticLog(`   - Storage available: ${!!storage}`);
       if (storage) {
-        addDiagnosticLog(`   - Storage bucket: ${storage.bucket}`);
+        addDiagnosticLog(`   - Storage bucket: ${storage.app.options.storageBucket}`);
         addDiagnosticLog(`   - Storage app name: ${storage.app.name}`);
         addDiagnosticLog(`   - Max upload retry time: ${storage.maxUploadRetryTime}`);
         addDiagnosticLog(`   - Max operation retry time: ${storage.maxOperationRetryTime}`);
@@ -470,7 +470,7 @@ function PathwayPageContent() {
         // Method 1: uploadBytes (direct) with timeout
         try {
           addDiagnosticLog('🧪 [PATHWAY] Method 1: uploadBytes (direct)...');
-          addDiagnosticLog(`   - Storage bucket debug: ${storage.bucket || 'UNDEFINED'}`);
+          addDiagnosticLog(`   - Storage bucket debug: ${storage.app.options.storageBucket || 'UNDEFINED'}`);
           
           const testRef1 = ref(storage, `diagnostic-test/${user.uid}/direct-${Date.now()}.txt`);
           addDiagnosticLog(`   - Reference created: ${testRef1.fullPath}`);
