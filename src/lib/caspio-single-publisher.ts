@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 // Caspio configuration for your two-table structure
 const CASPIO_CONFIG = {
-  baseUrl: process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2',
+  baseUrl: process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com',
   clientId: process.env.CASPIO_CLIENT_ID,
   clientSecret: process.env.CASPIO_CLIENT_SECRET,
   clientsTable: 'connect_tbl_clients',
