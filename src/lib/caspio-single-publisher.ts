@@ -56,70 +56,157 @@ async function getCaspioAccessToken(): Promise<string> {
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
   
   console.log('🌐 Making OAuth request to:', tokenUrl);
+  console.log('🔍 DETAILED CASPIO DEBUG INFO:');
+  console.log('  📍 Full token URL:', tokenUrl);
+  console.log('  🔑 Client ID (first 10 chars):', clientId.substring(0, 10) + '...');
+  console.log('  🔐 Client Secret (first 10 chars):', clientSecret.substring(0, 10) + '...');
+  console.log('  📝 Base64 credentials (first 20 chars):', credentials.substring(0, 20) + '...');
+  console.log('  🌐 Base URL breakdown:', {
+    original: baseUrl,
+    hasRestV2: baseUrl.includes('/rest/v2'),
+    endsWithSlash: baseUrl.endsWith('/'),
+    length: baseUrl.length
+  });
   
   // Test basic connectivity first
   try {
-    console.log('🔍 Testing basic connectivity to Caspio...');
-    const testResponse = await fetch('https://httpbin.org/get', {
+    console.log('🔍 Testing basic connectivity to Caspio domain...');
+    const domainTest = await fetch(`${baseUrl.split('/rest')[0]}/`, {
       method: 'GET',
       headers: { 'User-Agent': 'CalAIM-Test' }
     });
-    console.log('✅ Basic HTTP connectivity works:', testResponse.status);
+    console.log('✅ Caspio domain connectivity:', domainTest.status, domainTest.statusText);
   } catch (testError) {
-    console.log('❌ Basic HTTP connectivity failed:', testError);
+    console.log('❌ Caspio domain connectivity failed:', testError);
   }
   
   try {
-    console.log('🔑 Making Caspio OAuth request with:');
-    console.log('  - URL:', tokenUrl);
-    console.log('  - Method: POST');
-    console.log('  - Headers: Authorization (Basic), Content-Type');
-    console.log('  - Body: grant_type=client_credentials');
+    console.log('🔑 === DETAILED OAUTH REQUEST DEBUG ===');
+    console.log('📤 REQUEST DETAILS:');
+    console.log('  🎯 URL:', tokenUrl);
+    console.log('  🔧 Method: POST');
+    console.log('  📋 Headers:');
+    console.log('    - Authorization: Basic [REDACTED]');
+    console.log('    - Content-Type: application/x-www-form-urlencoded');
+    console.log('    - Accept: application/json');
+    console.log('    - User-Agent: CalAIM-Application/1.0');
+    console.log('  📦 Body: grant_type=client_credentials');
+    console.log('  📏 Body length:', 'grant_type=client_credentials'.length);
+    
+    const requestHeaders = {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+      'User-Agent': 'CalAIM-Application/1.0'
+    };
+    
+    console.log('🚀 Sending OAuth request...');
+    const startTime = Date.now();
     
     const response = await fetch(tokenUrl, {
       method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
-        'User-Agent': 'CalAIM-Application/1.0'
-      },
+      headers: requestHeaders,
       body: 'grant_type=client_credentials',
     });
     
-    console.log('📡 OAuth Response Status:', response.status, response.statusText);
-    console.log('📡 OAuth Response Headers:', Object.fromEntries(response.headers.entries()));
+    const endTime = Date.now();
+    console.log('⏱️ Request took:', endTime - startTime, 'ms');
+    
+    console.log('📥 === OAUTH RESPONSE DEBUG ===');
+    console.log('📊 Response Status:', response.status, response.statusText);
+    console.log('🌐 Response URL:', response.url);
+    console.log('✅ Response OK:', response.ok);
+    console.log('📋 Response Headers:');
+    
+    const responseHeaders = Object.fromEntries(response.headers.entries());
+    Object.entries(responseHeaders).forEach(([key, value]) => {
+      console.log(`    - ${key}: ${value}`);
+    });
     
     if (!response.ok) {
-      const errorText = await response.text();
-      console.log('❌ OAuth Error Response:', errorText);
-      console.log('❌ OAuth Error Status:', response.status);
-      console.log('❌ OAuth Error Headers:', Object.fromEntries(response.headers.entries()));
+      console.log('🚨 === OAUTH ERROR ANALYSIS ===');
       
-      // If 415 error, try alternative endpoint
+      let errorText = '';
+      let errorJson = null;
+      
+      try {
+        errorText = await response.text();
+        console.log('📄 Raw Error Response:', errorText);
+        
+        // Try to parse as JSON
+        if (errorText.trim().startsWith('{')) {
+          errorJson = JSON.parse(errorText);
+          console.log('📋 Parsed Error JSON:', errorJson);
+        }
+      } catch (parseError) {
+        console.log('⚠️ Could not parse error response as JSON:', parseError);
+      }
+      
+      console.log('🔍 Error Analysis:');
+      console.log('  📊 Status Code:', response.status);
+      console.log('  📝 Status Text:', response.statusText);
+      console.log('  🌐 Final URL:', response.url);
+      console.log('  📏 Response Length:', errorText.length);
+      console.log('  🎯 Content-Type:', response.headers.get('content-type'));
+      console.log('  🔒 WWW-Authenticate:', response.headers.get('www-authenticate'));
+      console.log('  🚫 Allow:', response.headers.get('allow'));
+      
+      // If 415 error, try multiple alternative approaches
       if (response.status === 415) {
-        console.log('🔄 Trying alternative OAuth endpoint format...');
-        const altTokenUrl = `${baseUrl}/oauth/token`;
+        console.log('🔄 === TRYING ALTERNATIVE APPROACHES FOR 415 ERROR ===');
         
-        const altResponse = await fetch(altTokenUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Basic ${credentials}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json'
-          },
-          body: 'grant_type=client_credentials',
-        });
+        // Try 1: Original endpoint without /rest/v2
+        const altTokenUrl1 = `${baseUrl.replace('/rest/v2', '')}/oauth/token`;
+        console.log('🔄 Attempt 1: Trying endpoint without /rest/v2:', altTokenUrl1);
         
-        console.log('📡 Alternative OAuth Response Status:', altResponse.status, altResponse.statusText);
+        try {
+          const altResponse1 = await fetch(altTokenUrl1, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Basic ${credentials}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Accept': 'application/json'
+            },
+            body: 'grant_type=client_credentials',
+          });
+          
+          console.log('📡 Alt1 Response:', altResponse1.status, altResponse1.statusText);
+          
+          if (altResponse1.ok) {
+            const data = await altResponse1.json();
+            console.log('✅ OAuth Success with alternative endpoint 1!');
+            return data.access_token;
+          }
+        } catch (alt1Error) {
+          console.log('❌ Alternative 1 failed:', alt1Error);
+        }
         
-        if (altResponse.ok) {
-          const data = await altResponse.json();
-          console.log('✅ OAuth Success with alternative endpoint!');
-          return data.access_token;
-        } else {
-          const altErrorText = await altResponse.text();
-          console.log('❌ Alternative OAuth Error:', altErrorText);
+        // Try 2: JSON format instead of form-encoded
+        console.log('🔄 Attempt 2: Trying JSON format');
+        
+        try {
+          const altResponse2 = await fetch(tokenUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Basic ${credentials}`,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify({ grant_type: 'client_credentials' }),
+          });
+          
+          console.log('📡 Alt2 Response:', altResponse2.status, altResponse2.statusText);
+          
+          if (altResponse2.ok) {
+            const data = await altResponse2.json();
+            console.log('✅ OAuth Success with JSON format!');
+            return data.access_token;
+          } else {
+            const alt2ErrorText = await altResponse2.text();
+            console.log('❌ JSON format error:', alt2ErrorText);
+          }
+        } catch (alt2Error) {
+          console.log('❌ Alternative 2 failed:', alt2Error);
         }
       }
       
@@ -434,12 +521,26 @@ export async function publishCsSummaryToCaspio(firebaseData: any): Promise<Caspi
  */
 export async function testCaspioConnection(): Promise<CaspioApiResponse> {
   try {
-    console.log('[CaspioSinglePublisher] Testing Caspio connection...');
+    console.log('🧪 === COMPREHENSIVE CASPIO CONNECTION TEST ===');
+    console.log('🕐 Test started at:', new Date().toISOString());
+    console.log('📋 Configuration check:');
+    console.log('  - Base URL:', CASPIO_CONFIG.baseUrl);
+    console.log('  - Clients Table:', CASPIO_CONFIG.clientsTable);
+    console.log('  - Members Table:', CASPIO_CONFIG.membersTable);
+    console.log('  - Client ID set:', !!CASPIO_CONFIG.clientId);
+    console.log('  - Client Secret set:', !!CASPIO_CONFIG.clientSecret);
     
+    console.log('🔑 Step 1: Getting access token...');
     const accessToken = await getCaspioAccessToken();
+    console.log('✅ Access token obtained, length:', accessToken.length);
     
-    // Test both tables
-    const clientsResponse = await fetch(`${CASPIO_CONFIG.baseUrl}/tables/${CASPIO_CONFIG.clientsTable}/records?q.limit=1`, {
+    // Test both tables with detailed logging
+    console.log('📊 Step 2: Testing table access...');
+    
+    const clientsUrl = `${CASPIO_CONFIG.baseUrl}/rest/v2/tables/${CASPIO_CONFIG.clientsTable}/records?q.limit=1`;
+    console.log('🔍 Testing clients table:', clientsUrl);
+    
+    const clientsResponse = await fetch(clientsUrl, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -447,27 +548,45 @@ export async function testCaspioConnection(): Promise<CaspioApiResponse> {
       },
     });
     
-    const membersResponse = await fetch(`${CASPIO_CONFIG.baseUrl}/tables/${CASPIO_CONFIG.membersTable}/records?q.limit=1`, {
+    console.log('📡 Clients table response:', clientsResponse.status, clientsResponse.statusText);
+    
+    const membersUrl = `${CASPIO_CONFIG.baseUrl}/rest/v2/tables/${CASPIO_CONFIG.membersTable}/records?q.limit=1`;
+    console.log('🔍 Testing members table:', membersUrl);
+    
+    const membersResponse = await fetch(membersUrl, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
     });
+    
+    console.log('📡 Members table response:', membersResponse.status, membersResponse.statusText);
     
     if (!clientsResponse.ok) {
-      throw new CaspioApiError(`Cannot access connect_tbl_clients: ${clientsResponse.status}`);
+      const clientsError = await clientsResponse.text();
+      console.log('❌ Clients table error:', clientsError);
+      throw new CaspioApiError(`Cannot access connect_tbl_clients: ${clientsResponse.status} - ${clientsError}`);
     }
     
     if (!membersResponse.ok) {
-      throw new CaspioApiError(`Cannot access CalAIM_tbl_Members: ${membersResponse.status}`);
+      const membersError = await membersResponse.text();
+      console.log('❌ Members table error:', membersError);
+      throw new CaspioApiError(`Cannot access CalAIM_tbl_Members: ${membersResponse.status} - ${membersError}`);
     }
     
-    console.log('[CaspioSinglePublisher] Connection test successful');
+    // Get sample data to verify access
+    const clientsData = await clientsResponse.json();
+    const membersData = await membersResponse.json();
+    
+    console.log('📊 Test Results:');
+    console.log('  ✅ Clients table accessible, records found:', clientsData.Result?.length || 0);
+    console.log('  ✅ Members table accessible, records found:', membersData.Result?.length || 0);
+    console.log('🎉 Connection test successful!');
     
     return {
       success: true,
-      message: 'Successfully connected to Caspio API. Both connect_tbl_clients and CalAIM_tbl_Members tables are accessible.',
+      message: `Successfully connected to Caspio API. Clients table: ${clientsData.Result?.length || 0} records, Members table: ${membersData.Result?.length || 0} records accessible.`,
     };
     
   } catch (error: any) {
