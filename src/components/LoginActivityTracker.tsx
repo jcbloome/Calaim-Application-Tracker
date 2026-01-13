@@ -33,7 +33,8 @@ import {
   TrendingUp,
   Users,
   Timer,
-  MapPin
+  MapPin,
+  X
 } from 'lucide-react';
 import { format, formatDistanceToNow, startOfDay, endOfDay, subDays, isToday, isYesterday } from 'date-fns';
 import { useFirestore } from '@/firebase';
@@ -106,6 +107,8 @@ export default function LoginActivityTracker() {
   const [filterRole, setFilterRole] = useState<string>('all');
   const [filterDate, setFilterDate] = useState<string>('today');
   const [selectedUser, setSelectedUser] = useState<string>('all');
+  const [errorLog, setErrorLog] = useState<string[]>([]);
+  const [showErrorLog, setShowErrorLog] = useState(false);
 
   // Check super admin permissions
   if (isAdminLoading) {
@@ -127,10 +130,42 @@ export default function LoginActivityTracker() {
     );
   }
 
+  // Add error to visible log
+  const addErrorLog = (message: string, error?: any) => {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = `[${timestamp}] ${message}`;
+    if (error) {
+      console.error(message, error);
+      setErrorLog(prev => [...prev, logEntry, `  Error: ${error.message || error}`]);
+    } else {
+      console.log(message);
+      setErrorLog(prev => [...prev, logEntry]);
+    }
+    setShowErrorLog(true);
+  };
+
+  // Add info to visible log
+  const addInfoLog = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = `[${timestamp}] ℹ️ ${message}`;
+    console.log(message);
+    setErrorLog(prev => [...prev, logEntry]);
+  };
+
+  // Clear error log
+  const clearErrorLog = () => {
+    setErrorLog([]);
+    setShowErrorLog(false);
+  };
+
   // Load login logs
   const loadLoginLogs = async () => {
-    if (!firestore || !isSuperAdmin) return;
+    if (!firestore || !isSuperAdmin) {
+      addErrorLog('Cannot load logs: Missing firestore or super admin access');
+      return;
+    }
     
+    addInfoLog('Starting to load login logs...');
     setIsLoading(true);
     try {
       let startDate = new Date();
@@ -191,8 +226,9 @@ export default function LoginActivityTracker() {
       });
       
       setLoginLogs(logs);
+      addInfoLog(`Successfully loaded ${logs.length} login logs`);
     } catch (error: any) {
-      console.error('Error loading login logs:', error);
+      addErrorLog('Failed to load login logs', error);
       toast({
         variant: 'destructive',
         title: 'Load Failed',
@@ -205,8 +241,12 @@ export default function LoginActivityTracker() {
 
   // Load active sessions (simplified - just show recent logins as "active")
   const loadActiveSessions = async () => {
-    if (!firestore || !isSuperAdmin) return;
+    if (!firestore || !isSuperAdmin) {
+      addErrorLog('Cannot load active sessions: Missing firestore or super admin access');
+      return;
+    }
     
+    addInfoLog('Loading active sessions...');
     try {
       // Get logins from the last hour as "active sessions"
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
@@ -246,8 +286,9 @@ export default function LoginActivityTracker() {
       });
       
       setActiveSessions(sessions);
+      addInfoLog(`Successfully loaded ${sessions.length} active sessions`);
     } catch (error: any) {
-      console.error('Error loading active sessions:', error);
+      addErrorLog('Failed to load active sessions', error);
     }
   };
 
@@ -347,19 +388,28 @@ export default function LoginActivityTracker() {
   };
 
   useEffect(() => {
+    addInfoLog('LoginActivityTracker component loaded');
+    addInfoLog(`Firestore available: ${!!firestore}`);
+    addInfoLog(`Super admin: ${isSuperAdmin}`);
+    addInfoLog(`Admin loading: ${isAdminLoading}`);
+    
     // Only load if we have firestore and super admin access
     if (firestore && isSuperAdmin && !isAdminLoading) {
+      addInfoLog('Prerequisites met - loading data...');
       loadLoginLogs();
       loadActiveSessions();
       
       // Refresh active sessions every 30 seconds
       const interval = setInterval(() => {
         if (firestore && isSuperAdmin) {
+          addInfoLog('Auto-refreshing active sessions...');
           loadActiveSessions();
         }
       }, 30000);
       
       return () => clearInterval(interval);
+    } else {
+      addErrorLog('Prerequisites not met for loading data');
     }
   }, [filterDate, selectedUser, filterAction, firestore, isSuperAdmin, isAdminLoading]);
 
@@ -389,6 +439,18 @@ export default function LoginActivityTracker() {
             )}
             Refresh
           </Button>
+          <Button 
+            onClick={() => setShowErrorLog(!showErrorLog)} 
+            variant={errorLog.length > 0 ? "destructive" : "outline"}
+          >
+            <Eye className="mr-2 h-4 w-4" />
+            Debug Log ({errorLog.length})
+          </Button>
+          {errorLog.length > 0 && (
+            <Button onClick={clearErrorLog} variant="outline" size="sm">
+              Clear Log
+            </Button>
+          )}
         </div>
       </div>
 
@@ -478,6 +540,48 @@ export default function LoginActivityTracker() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Debug/Error Log Panel */}
+      {showErrorLog && (
+        <Card className="border-orange-200 bg-orange-50">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-orange-600" />
+                Debug Log
+              </CardTitle>
+              <Button onClick={() => setShowErrorLog(false)} variant="ghost" size="sm">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <CardDescription>
+              Real-time log of operations and errors for debugging
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-40 w-full rounded border bg-white p-3">
+              <div className="space-y-1 font-mono text-sm">
+                {errorLog.length === 0 ? (
+                  <p className="text-muted-foreground italic">No log entries yet...</p>
+                ) : (
+                  errorLog.map((entry, index) => (
+                    <div 
+                      key={index} 
+                      className={`${
+                        entry.includes('Error:') ? 'text-red-600' : 
+                        entry.includes('ℹ️') ? 'text-blue-600' : 
+                        'text-gray-700'
+                      }`}
+                    >
+                      {entry}
+                    </div>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card>
