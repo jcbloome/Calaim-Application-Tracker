@@ -52,7 +52,7 @@ async function getCaspioAccessToken(): Promise<string> {
     throw new CaspioApiError('Caspio credentials not configured. Please set CASPIO_CLIENT_ID and CASPIO_CLIENT_SECRET environment variables.');
   }
   
-  const tokenUrl = `${baseUrl}/oauth/token`;
+  const tokenUrl = `${baseUrl}/rest/v2/oauth/token`;
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
   
   console.log('🌐 Making OAuth request to:', tokenUrl);
@@ -81,17 +81,47 @@ async function getCaspioAccessToken(): Promise<string> {
       headers: {
         'Authorization': `Basic ${credentials}`,
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'User-Agent': 'CalAIM-Application/1.0'
       },
       body: 'grant_type=client_credentials',
     });
     
     console.log('📡 OAuth Response Status:', response.status, response.statusText);
+    console.log('📡 OAuth Response Headers:', Object.fromEntries(response.headers.entries()));
     
     if (!response.ok) {
       const errorText = await response.text();
       console.log('❌ OAuth Error Response:', errorText);
       console.log('❌ OAuth Error Status:', response.status);
       console.log('❌ OAuth Error Headers:', Object.fromEntries(response.headers.entries()));
+      
+      // If 415 error, try alternative endpoint
+      if (response.status === 415) {
+        console.log('🔄 Trying alternative OAuth endpoint format...');
+        const altTokenUrl = `${baseUrl}/oauth/token`;
+        
+        const altResponse = await fetch(altTokenUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Basic ${credentials}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json'
+          },
+          body: 'grant_type=client_credentials',
+        });
+        
+        console.log('📡 Alternative OAuth Response Status:', altResponse.status, altResponse.statusText);
+        
+        if (altResponse.ok) {
+          const data = await altResponse.json();
+          console.log('✅ OAuth Success with alternative endpoint!');
+          return data.access_token;
+        } else {
+          const altErrorText = await altResponse.text();
+          console.log('❌ Alternative OAuth Error:', altErrorText);
+        }
+      }
       
       // Try to parse as JSON for more details
       try {
