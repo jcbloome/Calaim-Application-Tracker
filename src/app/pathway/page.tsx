@@ -467,19 +467,33 @@ function PathwayPageContent() {
       addDiagnosticLog('🪣 [PATHWAY] Testing Storage Access...');
       
       if (storage && user) {
-        // Method 1: uploadBytes (direct)
+        // Method 1: uploadBytes (direct) with timeout
         try {
           addDiagnosticLog('🧪 [PATHWAY] Method 1: uploadBytes (direct)...');
-          const testRef1 = ref(storage, `diagnostic-test/${user.uid}/direct-${Date.now()}.txt`);
-          const testBlob1 = new Blob(['Direct upload test'], { type: 'text/plain' });
+          addDiagnosticLog(`   - Storage bucket debug: ${storage.bucket || 'UNDEFINED'}`);
           
-          const snapshot1 = await uploadBytes(testRef1, testBlob1);
+          const testRef1 = ref(storage, `diagnostic-test/${user.uid}/direct-${Date.now()}.txt`);
+          addDiagnosticLog(`   - Reference created: ${testRef1.fullPath}`);
+          
+          const testBlob1 = new Blob(['Direct upload test'], { type: 'text/plain' });
+          addDiagnosticLog(`   - Blob created: ${testBlob1.size} bytes`);
+          
+          // Add timeout to prevent hanging
+          const uploadPromise = uploadBytes(testRef1, testBlob1);
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('uploadBytes timeout after 15 seconds')), 15000)
+          );
+          
+          addDiagnosticLog('   - Starting upload with 15s timeout...');
+          const snapshot1 = await Promise.race([uploadPromise, timeoutPromise]);
+          
           const downloadURL1 = await getDownloadURL(snapshot1.ref);
           addDiagnosticLog('✅ [PATHWAY] uploadBytes: SUCCESS');
           addDiagnosticLog(`🔗 [PATHWAY] Direct upload URL: ${downloadURL1}`);
         } catch (directError: any) {
           addDiagnosticLog(`❌ [PATHWAY] uploadBytes: FAILED - ${directError.message}`);
           addDiagnosticLog(`   - Error code: ${directError.code}`);
+          addDiagnosticLog(`   - Error name: ${directError.name}`);
         }
         
         // Method 2: uploadBytesResumable (with timeout)
