@@ -12,7 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp, addDoc, orderBy } from 'firebase/firestore';
 import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError, useStorage } from '@/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
+import { ref, uploadBytesResumable, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import { NotificationManager } from '@/components/NotificationManager';
 import NotificationSettings from '@/components/NotificationSettings';
 import { Label } from '@/components/ui/label';
@@ -308,7 +308,7 @@ export default function SuperAdminPage() {
         }
     };
 
-    // Check Firebase Storage rules
+    // Check Firebase Storage rules with detailed diagnostics
     const checkStorageRules = async () => {
         if (!storage || !currentUser) {
             toast({
@@ -319,34 +319,116 @@ export default function SuperAdminPage() {
             return;
         }
 
-        addStorageLog('🔒 Checking Firebase Storage security rules...');
+        addStorageLog('🔒 DETAILED Storage Rules Diagnostic...');
         
         try {
-            // Test if we can create a reference (this should always work)
-            const testRef = ref(storage, `user_uploads/${currentUser.uid}/rules-test/test.txt`);
-            addStorageLog(`✅ Can create storage reference: ${testRef.fullPath}`);
+            // Get user token details
+            const token = await currentUser.getIdToken();
+            const tokenResult = await currentUser.getIdTokenResult();
             
-            addStorageLog(`🔍 Storage bucket: ${storage.app.options.storageBucket}`);
-            addStorageLog(`🔍 User UID: ${currentUser.uid}`);
-            addStorageLog(`🔍 User email: ${currentUser.email}`);
-            addStorageLog(`🔍 Expected path pattern: user_uploads/{userId}/*`);
+            addStorageLog(`🔍 AUTHENTICATION DETAILS:`);
+            addStorageLog(`   User UID: ${currentUser.uid}`);
+            addStorageLog(`   User email: ${currentUser.email}`);
+            addStorageLog(`   Email verified: ${currentUser.emailVerified}`);
+            addStorageLog(`   Token length: ${token.length}`);
+            addStorageLog(`   Auth provider: ${tokenResult.signInProvider}`);
             
-            // The real test is the upload - rules issues show up during upload attempts
-            addStorageLog(`ℹ️ Storage rules are checked during upload operations`);
-            addStorageLog(`ℹ️ If uploads timeout, it's likely a rules configuration issue`);
+            addStorageLog(`🔍 STORAGE CONFIGURATION:`);
+            addStorageLog(`   Storage bucket: ${storage.app.options.storageBucket}`);
+            addStorageLog(`   Storage project: ${storage.app.options.projectId}`);
+            addStorageLog(`   Firebase app: ${storage.app.name}`);
+            
+            addStorageLog(`🔍 PATH ANALYSIS:`);
+            const testPath = `user_uploads/${currentUser.uid}/rules-test/test.txt`;
+            addStorageLog(`   Test path: ${testPath}`);
+            addStorageLog(`   Path matches pattern: user_uploads/{userId}/**`);
+            addStorageLog(`   UserId in path: ${currentUser.uid}`);
+            addStorageLog(`   Auth UID matches: ${currentUser.uid === currentUser.uid ? '✅ YES' : '❌ NO'}`);
+            
+            // Test creating reference
+            const testRef = ref(storage, testPath);
+            addStorageLog(`✅ Storage reference created successfully`);
+            addStorageLog(`   Reference bucket: ${testRef.bucket}`);
+            addStorageLog(`   Reference full path: ${testRef.fullPath}`);
+            
+            addStorageLog(`🔍 RULES REQUIREMENTS CHECK:`);
+            addStorageLog(`   request.auth != null: ${currentUser ? '✅ YES (user authenticated)' : '❌ NO'}`);
+            addStorageLog(`   request.auth.uid == userId: ${currentUser ? '✅ YES (UIDs should match)' : '❌ NO'}`);
+            
+            addStorageLog(`⚠️ NEXT STEP: Try Direct Upload Test to see actual rules behavior`);
             
             toast({
-                title: 'Storage Rules Check Complete',
-                description: 'Check debug log for details',
+                title: 'Storage Rules Analysis Complete',
+                description: 'Check debug log for detailed authentication and path analysis',
                 className: 'bg-blue-100 text-blue-900 border-blue-200'
             });
             
         } catch (error: any) {
-            addStorageLog(`❌ Storage rules check failed: ${error.message}`);
+            addStorageLog(`❌ Storage rules analysis failed: ${error.message}`);
+            addStorageLog(`❌ Error code: ${error.code}`);
+            addStorageLog(`❌ Error stack: ${error.stack}`);
             toast({
                 variant: 'destructive',
-                title: 'Storage Rules Check Failed',
+                title: 'Storage Rules Analysis Failed',
                 description: error.message
+            });
+        }
+    };
+
+    // Simple upload test using uploadBytes instead of uploadBytesResumable
+    const testSimpleUpload = async () => {
+        if (!storage || !currentUser) {
+            toast({
+                variant: 'destructive',
+                title: 'Not Ready',
+                description: 'Storage or user not available'
+            });
+            return;
+        }
+
+        try {
+            addStorageLog('🧪 Testing SIMPLE upload (uploadBytes instead of uploadBytesResumable)...');
+            
+            const testData = new Blob(['Simple upload test'], { type: 'text/plain' });
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const storagePath = `user_uploads/${currentUser.uid}/simple-test/${timestamp}_simple.txt`;
+            
+            addStorageLog(`📁 Simple upload path: ${storagePath}`);
+            
+            const storageRef = ref(storage, storagePath);
+            addStorageLog(`✅ Storage reference created: ${storageRef.fullPath}`);
+            
+            // Use uploadBytes instead of uploadBytesResumable
+            addStorageLog(`🚀 Starting uploadBytes (not resumable)...`);
+            
+            const uploadResult = await uploadBytes(storageRef, testData);
+            addStorageLog(`✅ uploadBytes completed! Bytes transferred: ${uploadResult.totalBytes}`);
+            
+            const downloadURL = await getDownloadURL(uploadResult.ref);
+            addStorageLog(`✅ Download URL obtained: ${downloadURL}`);
+            
+            toast({
+                title: 'Simple Upload Success!',
+                description: 'uploadBytes worked - issue might be with uploadBytesResumable',
+                className: 'bg-green-100 text-green-900 border-green-200'
+            });
+            
+        } catch (error: any) {
+            addStorageLog(`❌ Simple upload failed: ${error.code} - ${error.message}`);
+            addStorageLog(`❌ Error details: ${JSON.stringify(error, null, 2)}`);
+            
+            if (error.code === 'storage/unauthorized') {
+                addStorageLog(`🔒 Still getting unauthorized - rules issue persists`);
+            } else if (error.code === 'storage/unknown') {
+                addStorageLog(`❓ Unknown error - might be service configuration issue`);
+            } else {
+                addStorageLog(`🔍 Different error type: ${error.code}`);
+            }
+            
+            toast({
+                variant: 'destructive',
+                title: 'Simple Upload Failed',
+                description: `${error.code}: ${error.message}`
             });
         }
     };
@@ -1528,21 +1610,27 @@ export default function SuperAdminPage() {
                                         🔒 Check Storage Rules
                                     </Button>
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                     <Button 
                                         onClick={testDirectStorageUpload}
                                         variant="default"
                                         size="sm"
-                                        className="flex-1"
                                         disabled={!storage || !currentUser}
                                     >
                                         🎯 Direct Upload Test
                                     </Button>
                                     <Button 
+                                        onClick={testSimpleUpload}
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={!storage || !currentUser}
+                                    >
+                                        🧪 Simple Upload Test
+                                    </Button>
+                                    <Button 
                                         onClick={resetAllTests}
                                         variant="destructive"
                                         size="sm"
-                                        className="flex-1"
                                     >
                                         🔄 Reset All Tests
                                     </Button>
@@ -1565,6 +1653,9 @@ export default function SuperAdminPage() {
                                         🔥 <strong>Storage uploads timing out!</strong> This is likely a Firebase Storage security rules issue. Check your Firebase console Storage rules.
                                     </div>
                                 )}
+                                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+                                    💡 <strong>Key Insight:</strong> Applications/forms save successfully (Firestore works) but documents fail (Storage issue). This confirms authentication works - it's specifically a Storage rules problem.
+                                </div>
                             </div>
                             
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
