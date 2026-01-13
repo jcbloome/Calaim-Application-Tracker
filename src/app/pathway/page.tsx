@@ -239,15 +239,27 @@ function PathwayPageContent() {
       const storageRef = ref(storage, storagePath);
 
       return new Promise<{ downloadURL: string, path: string }>((resolve, reject) => {
-          console.log('Starting upload task for file:', file.name, 'Size:', file.size, 'Type:', file.type);
-          
-          // Add timeout to prevent hanging uploads
-          const uploadTimeout = setTimeout(() => {
-              console.error('Upload timeout after 5 minutes');
-              reject(new Error('Upload timeout - please try again with a smaller file'));
-          }, 5 * 60 * 1000); // 5 minutes
+            console.log('Starting upload task for file:', file.name, 'Size:', file.size, 'Type:', file.type);
+            console.log('Storage instance details:', {
+                app: storage.app.name,
+                bucket: storage.app.options.storageBucket,
+                project: storage.app.options.projectId
+            });
+            console.log('User details:', {
+                uid: user.uid,
+                email: user.email,
+                isAnonymous: user.isAnonymous
+            });
+            
+            // Add timeout to prevent hanging uploads
+            const uploadTimeout = setTimeout(() => {
+                console.error('Upload timeout after 5 minutes');
+                reject(new Error('Upload timeout - please try again with a smaller file'));
+            }, 5 * 60 * 1000); // 5 minutes
 
-          const uploadTask = uploadBytesResumable(storageRef, file);
+            console.log('Creating uploadBytesResumable task...');
+            const uploadTask = uploadBytesResumable(storageRef, file);
+            console.log('Upload task created successfully:', uploadTask);
 
           uploadTask.on('state_changed',
               (snapshot) => {
@@ -321,6 +333,70 @@ function PathwayPageContent() {
       description: 'Check console for detailed authentication information',
       className: 'bg-blue-100 text-blue-900 border-blue-200'
     });
+  };
+
+  const testStorageConnectionOnPathway = async () => {
+    console.log('🔍 Testing Storage on Pathway Page...');
+    
+    try {
+      console.log('Storage available:', !!storage);
+      console.log('User available:', !!user);
+      console.log('User UID:', user?.uid);
+      console.log('User email:', user?.email);
+      console.log('Application ID:', applicationId);
+      
+      if (!storage) {
+        throw new Error('Storage not available on pathway page');
+      }
+      
+      if (!user?.uid) {
+        throw new Error('User not authenticated on pathway page');
+      }
+
+      // Test creating a reference (same as Super Admin)
+      const testRef = ref(storage, `user_uploads/${user.uid}/pathway-test/test.txt`);
+      console.log('✅ Storage reference created on pathway:', testRef.fullPath);
+      
+      // Test upload (same as Super Admin)
+      const testData = new Blob(['Pathway Test'], { type: 'text/plain' });
+      const testFile = new File([testData], 'pathway-test.txt', { type: 'text/plain' });
+      
+      const uploadTask = uploadBytesResumable(testRef, testFile);
+      
+      uploadTask.on('state_changed',
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          console.log('Pathway upload progress:', progress + '%');
+        },
+        (error) => {
+          console.error('Pathway upload failed:', error);
+          toast({
+            variant: 'destructive',
+            title: 'Pathway Storage Test Failed',
+            description: `Upload failed: ${error.code} - ${error.message}`
+          });
+        },
+        async () => {
+          console.log('✅ Pathway upload completed successfully');
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          console.log('Pathway download URL:', downloadURL);
+          
+          toast({
+            title: 'Pathway Storage Test Passed',
+            description: 'Storage works perfectly on pathway page too!',
+            className: 'bg-green-100 text-green-900 border-green-200'
+          });
+        }
+      );
+      
+    } catch (error: any) {
+      console.error('Pathway storage test failed:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Pathway Storage Test Failed',
+        description: error.message
+      });
+    }
   };
 
   const testStorageConnection = async () => {
@@ -754,7 +830,15 @@ function PathwayPageContent() {
                             size="sm"
                             className="text-xs"
                         >
-                            🔧 Test Storage
+                            🔧 Test Storage (Old)
+                        </Button>
+                        <Button 
+                            onClick={testStorageConnectionOnPathway} 
+                            variant="outline" 
+                            size="sm"
+                            className="text-xs"
+                        >
+                            🧪 Test Storage (New)
                         </Button>
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
