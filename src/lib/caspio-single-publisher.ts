@@ -90,8 +90,19 @@ async function getCaspioAccessToken(): Promise<string> {
     if (!response.ok) {
       const errorText = await response.text();
       console.log('❌ OAuth Error Response:', errorText);
+      console.log('❌ OAuth Error Status:', response.status);
+      console.log('❌ OAuth Error Headers:', Object.fromEntries(response.headers.entries()));
+      
+      // Try to parse as JSON for more details
+      try {
+        const errorJson = JSON.parse(errorText);
+        console.log('❌ OAuth Error JSON:', errorJson);
+      } catch (parseError) {
+        console.log('❌ OAuth Error (not JSON):', errorText);
+      }
+      
       throw new CaspioApiError(
-        `Failed to get Caspio access token: ${response.status} ${response.statusText}`,
+        `Failed to get Caspio access token: ${response.status} ${response.statusText} - ${errorText}`,
         response.status,
         errorText
       );
