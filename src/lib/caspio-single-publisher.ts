@@ -35,6 +35,30 @@ class CaspioApiError extends Error {
 }
 
 /**
+ * Clean and format Caspio base URL consistently
+ */
+function getCleanBaseUrl(baseUrl: string): string {
+  let cleanUrl = baseUrl;
+  
+  // Remove any duplicate protocol prefixes
+  if (cleanUrl.includes('ffhttps://')) {
+    cleanUrl = cleanUrl.replace('ffhttps://', 'https://');
+  }
+  
+  // Remove /rest/v2 if it's already in the base URL to avoid duplication
+  if (cleanUrl.includes('/rest/v2')) {
+    cleanUrl = cleanUrl.replace('/rest/v2', '');
+  }
+  
+  // Ensure it starts with https://
+  if (!cleanUrl.startsWith('https://')) {
+    cleanUrl = `https://${cleanUrl}`;
+  }
+  
+  return cleanUrl;
+}
+
+/**
  * Get access token from Caspio OAuth2
  */
 async function getCaspioAccessToken(): Promise<string> {
@@ -52,8 +76,14 @@ async function getCaspioAccessToken(): Promise<string> {
     throw new CaspioApiError('Caspio credentials not configured. Please set CASPIO_CLIENT_ID and CASPIO_CLIENT_SECRET environment variables.');
   }
   
-  const tokenUrl = `${baseUrl}/rest/v2/oauth/token`;
+  const cleanBaseUrl = getCleanBaseUrl(baseUrl);
+  const tokenUrl = `${cleanBaseUrl}/rest/v2/oauth/token`;
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  
+  console.log('🔧 URL Cleanup:');
+  console.log('  - Original baseUrl:', baseUrl);
+  console.log('  - Cleaned baseUrl:', cleanBaseUrl);
+  console.log('  - Final tokenUrl:', tokenUrl);
   
   console.log('🌐 Making OAuth request to:', tokenUrl);
   console.log('🔍 DETAILED CASPIO DEBUG INFO:');
@@ -156,7 +186,7 @@ async function getCaspioAccessToken(): Promise<string> {
         console.log('🔄 === TRYING ALTERNATIVE APPROACHES FOR 415 ERROR ===');
         
         // Try 1: Original endpoint without /rest/v2
-        const altTokenUrl1 = `${baseUrl.replace('/rest/v2', '')}/oauth/token`;
+        const altTokenUrl1 = `${cleanBaseUrl}/oauth/token`;
         console.log('🔄 Attempt 1: Trying endpoint without /rest/v2:', altTokenUrl1);
         
         try {
@@ -537,7 +567,8 @@ export async function testCaspioConnection(): Promise<CaspioApiResponse> {
     // Test both tables with detailed logging
     console.log('📊 Step 2: Testing table access...');
     
-    const clientsUrl = `${CASPIO_CONFIG.baseUrl}/rest/v2/tables/${CASPIO_CONFIG.clientsTable}/records?q.limit=1`;
+    const cleanBaseUrl = getCleanBaseUrl(CASPIO_CONFIG.baseUrl);
+    const clientsUrl = `${cleanBaseUrl}/rest/v2/tables/${CASPIO_CONFIG.clientsTable}/records?q.limit=1`;
     console.log('🔍 Testing clients table:', clientsUrl);
     
     const clientsResponse = await fetch(clientsUrl, {
@@ -550,7 +581,7 @@ export async function testCaspioConnection(): Promise<CaspioApiResponse> {
     
     console.log('📡 Clients table response:', clientsResponse.status, clientsResponse.statusText);
     
-    const membersUrl = `${CASPIO_CONFIG.baseUrl}/rest/v2/tables/${CASPIO_CONFIG.membersTable}/records?q.limit=1`;
+    const membersUrl = `${cleanBaseUrl}/rest/v2/tables/${CASPIO_CONFIG.membersTable}/records?q.limit=1`;
     console.log('🔍 Testing members table:', membersUrl);
     
     const membersResponse = await fetch(membersUrl, {
