@@ -106,7 +106,7 @@ async function getDriveService() {
       });
       
       const authClient = await auth.getClient();
-      const drive = google.drive({ version: 'v3', auth: authClient });
+      const drive = google.drive({ version: 'v3', auth: authClient as any });
       
       console.log('✅ Using service account authentication');
       return drive;
