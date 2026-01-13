@@ -36,7 +36,9 @@ import {
   MapPin
 } from 'lucide-react';
 import { format, formatDistanceToNow, startOfDay, endOfDay, subDays, isToday, isYesterday } from 'date-fns';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useFirestore } from '@/firebase';
+import { collection, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
+import { useAdmin } from '@/hooks/use-admin';
 
 interface LoginLog {
   id: string;
@@ -100,14 +102,35 @@ export default function LoginActivityTracker() {
   const [filterDate, setFilterDate] = useState<string>('today');
   const [selectedUser, setSelectedUser] = useState<string>('all');
   const { toast } = useToast();
+  const firestore = useFirestore();
+  const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+
+  // Check super admin permissions
+  if (isAdminLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin mr-2" />
+        <span>Loading permissions...</span>
+      </div>
+    );
+  }
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="text-center py-8">
+        <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+        <h3 className="text-lg font-semibold text-red-600 mb-2">Access Denied</h3>
+        <p className="text-muted-foreground">Only Super Admins can view login logs</p>
+      </div>
+    );
+  }
 
   // Load login logs
   const loadLoginLogs = async () => {
+    if (!firestore || !isSuperAdmin) return;
+    
     setIsLoading(true);
     try {
-      const functions = getFunctions();
-      const getLogs = httpsCallable(functions, 'getLoginLogs');
-      
       let startDate = new Date();
       let endDate = new Date();
       
@@ -133,93 +156,106 @@ export default function LoginActivityTracker() {
           endDate = endOfDay(new Date());
       }
       
-      const result = await getLogs({
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        userId: selectedUser === 'all' ? null : selectedUser,
-        action: filterAction === 'all' ? null : filterAction
+      // Build Firestore query
+      let q = query(
+        collection(firestore, 'loginLogs'),
+        where('timestamp', '>=', Timestamp.fromDate(startDate)),
+        where('timestamp', '<=', Timestamp.fromDate(endDate)),
+        orderBy('timestamp', 'desc'),
+        limit(1000)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const logs: LoginLog[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        logs.push({
+          id: doc.id,
+          userId: data.userId || '',
+          userEmail: data.email || '',
+          userName: data.displayName || data.email || 'Unknown',
+          userRole: data.role || 'User',
+          action: 'login', // Default to login since that's what we track
+          timestamp: data.timestamp?.toDate() || new Date(),
+          success: true, // Assume success if logged
+          ipAddress: data.ipAddress,
+          userAgent: data.userAgent,
+          deviceType: data.deviceType,
+          browser: data.browser,
+          location: data.location,
+          sessionDuration: data.sessionDuration
+        });
       });
       
-      const data = result.data as any;
-      
-      if (data.success && data.logs) {
-        const logs = data.logs.map((log: any) => ({
-          ...log,
-          timestamp: new Date(log.timestamp)
-        }));
-        setLoginLogs(logs);
-      }
+      setLoginLogs(logs);
     } catch (error: any) {
       console.error('Error loading login logs:', error);
-      console.error('Error details:', {
-        code: error.code,
-        message: error.message,
-        details: error.details
-      });
       toast({
         variant: 'destructive',
         title: 'Load Failed',
-        description: `Could not load login activity logs: ${error.message || error.code || 'Unknown error'}`,
+        description: `Could not load login activity logs: ${error.message || 'Unknown error'}`,
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Load active sessions
+  // Load active sessions (simplified - just show recent logins as "active")
   const loadActiveSessions = async () => {
+    if (!firestore || !isSuperAdmin) return;
+    
     try {
-      const functions = getFunctions();
-      const getSessions = httpsCallable(functions, 'getActiveSessions');
+      // Get logins from the last hour as "active sessions"
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
       
-      const result = await getSessions({});
-      const data = result.data as any;
+      const q = query(
+        collection(firestore, 'loginLogs'),
+        where('timestamp', '>=', Timestamp.fromDate(oneHourAgo)),
+        orderBy('timestamp', 'desc'),
+        limit(50)
+      );
       
-      if (data.success && data.sessions) {
-        const sessions = data.sessions.map((session: any) => ({
-          ...session,
-          loginTime: new Date(session.loginTime),
-          lastActivity: new Date(session.lastActivity)
-        }));
-        setActiveSessions(sessions);
-      }
+      const querySnapshot = await getDocs(q);
+      const sessions: SessionInfo[] = [];
+      const seenUsers = new Set<string>();
+      
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        const userId = data.userId;
+        
+        // Only show the most recent login per user
+        if (!seenUsers.has(userId)) {
+          seenUsers.add(userId);
+          sessions.push({
+            userId: userId,
+            userEmail: data.email || '',
+            userName: data.displayName || data.email || 'Unknown',
+            userRole: data.role || 'User',
+            loginTime: data.timestamp?.toDate() || new Date(),
+            lastActivity: data.timestamp?.toDate() || new Date(),
+            ipAddress: data.ipAddress,
+            deviceType: data.deviceType,
+            browser: data.browser,
+            isActive: true,
+            sessionDuration: Math.floor((Date.now() - (data.timestamp?.toDate()?.getTime() || Date.now())) / 60000)
+          });
+        }
+      });
+      
+      setActiveSessions(sessions);
     } catch (error: any) {
       console.error('Error loading active sessions:', error);
-      console.error('Active sessions error details:', {
-        code: error.code,
-        message: error.message,
-        details: error.details
-      });
     }
   };
 
-  // Force logout user
+  // Force logout user (simplified - just show a message)
   const forceLogoutUser = async (userId: string, userName: string) => {
-    try {
-      const functions = getFunctions();
-      const forceLogout = httpsCallable(functions, 'forceUserLogout');
-      
-      const result = await forceLogout({ userId });
-      const data = result.data as any;
-      
-      if (data.success) {
-        toast({
-          title: 'User Logged Out',
-          description: `${userName} has been forcefully logged out`,
-          className: 'bg-green-100 text-green-900 border-green-200',
-        });
-        
-        // Refresh data
-        loadActiveSessions();
-        loadLoginLogs();
-      }
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Logout Failed',
-        description: error.message || 'Could not force logout user',
-      });
-    }
+    toast({
+      title: 'Force Logout Not Available',
+      description: 'Force logout functionality requires additional Firebase Functions setup',
+      variant: 'default',
+    });
   };
 
   // Export logs to CSV
