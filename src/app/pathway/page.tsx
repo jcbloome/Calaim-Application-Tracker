@@ -293,6 +293,36 @@ function PathwayPageContent() {
       });
   };
 
+  const checkAuthStatus = async () => {
+    console.log('=== AUTH STATUS CHECK ===');
+    console.log('User object:', user);
+    console.log('User UID:', user?.uid);
+    console.log('User email:', user?.email);
+    console.log('User loading:', isUserLoading);
+    console.log('Application ID:', applicationId);
+    console.log('Firestore available:', !!firestore);
+    console.log('Storage available:', !!storage);
+    
+    if (user?.uid) {
+      // Check if user token is valid
+      try {
+        const token = await user.getIdToken();
+        console.log('User token obtained successfully (length):', token.length);
+        
+        const tokenResult = await user.getIdTokenResult();
+        console.log('Token claims:', tokenResult.claims);
+      } catch (error) {
+        console.error('Error getting user token:', error);
+      }
+    }
+    
+    toast({
+      title: 'Auth Check Complete',
+      description: 'Check console for detailed authentication information',
+      className: 'bg-blue-100 text-blue-900 border-blue-200'
+    });
+  };
+
   const testStorageConnection = async () => {
     console.log('Testing storage connection...');
     try {
@@ -304,15 +334,46 @@ function PathwayPageContent() {
         throw new Error('User not authenticated');
       }
       
+      console.log('User info:', { uid: user.uid, email: user.email });
+      console.log('Application ID:', applicationId);
+      
       // Test creating a reference
-      const testRef = ref(storage, `test/${user.uid}/test.txt`);
+      const testRef = ref(storage, `user_uploads/${user.uid}/test/test.txt`);
       console.log('Storage reference created successfully:', testRef);
       
-      toast({
-        title: 'Storage Test',
-        description: 'Storage connection test passed. Try uploading again.',
-        className: 'bg-blue-100 text-blue-900 border-blue-200'
-      });
+      // Try to upload a small test file
+      const testBlob = new Blob(['Hello World Test'], { type: 'text/plain' });
+      const testFile = new File([testBlob], 'test.txt', { type: 'text/plain' });
+      
+      console.log('Attempting test upload...');
+      const uploadTask = uploadBytesResumable(testRef, testFile);
+      
+      uploadTask.on('state_changed',
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          console.log('Test upload progress:', progress + '%');
+        },
+        (error) => {
+          console.error('Test upload failed:', error);
+          toast({
+            variant: 'destructive',
+            title: 'Storage Test Failed',
+            description: `Upload test failed: ${error.message}`
+          });
+        },
+        async () => {
+          console.log('Test upload completed successfully');
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          console.log('Test download URL:', downloadURL);
+          
+          toast({
+            title: 'Storage Test Passed',
+            description: 'Storage connection and upload test successful!',
+            className: 'bg-green-100 text-green-900 border-green-200'
+          });
+        }
+      );
+      
     } catch (error: any) {
       console.error('Storage test failed:', error);
       toast({
@@ -674,6 +735,31 @@ function PathwayPageContent() {
                         <span>{completedCount} of {totalCount} required items completed</span>
                     </div>
                     <Progress value={progress} className="h-2" />
+                </div>
+                
+                {/* Debug: Test Buttons */}
+                <div className="pt-4 border-t">
+                    <div className="flex gap-2 flex-wrap">
+                        <Button 
+                            onClick={checkAuthStatus} 
+                            variant="outline" 
+                            size="sm"
+                            className="text-xs"
+                        >
+                            🔍 Check Auth
+                        </Button>
+                        <Button 
+                            onClick={testStorageConnection} 
+                            variant="outline" 
+                            size="sm"
+                            className="text-xs"
+                        >
+                            🔧 Test Storage
+                        </Button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                        Debug tools - check browser console for detailed logs
+                    </p>
                 </div>
                 </CardContent>
                 {(!isReadOnly && (application.status === 'In Progress' || application.status === 'Requires Revision')) && (
