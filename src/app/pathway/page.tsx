@@ -94,6 +94,8 @@ function PathwayPageContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [diagnosticsLog, setDiagnosticsLog] = useState<string[]>([]);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -399,45 +401,54 @@ function PathwayPageContent() {
     }
   };
 
+  // Helper function to add log entries
+  const addDiagnosticLog = (message: string) => {
+    console.log(message);
+    setDiagnosticsLog(prev => [...prev, message]);
+  };
+
   // Comprehensive Firebase diagnostics for pathway page
   const runComprehensiveDiagnostics = async () => {
-    console.log('🔍 [PATHWAY] === COMPREHENSIVE FIREBASE DIAGNOSTICS ===');
+    setDiagnosticsLog([]);
+    setShowDiagnostics(true);
+    
+    addDiagnosticLog('🔍 [PATHWAY] === COMPREHENSIVE FIREBASE DIAGNOSTICS ===');
     
     try {
       // 1. User Authentication Status
-      console.log('👤 [PATHWAY] User Authentication:');
-      console.log('   - User exists:', !!user);
-      console.log('   - User UID:', user?.uid);
-      console.log('   - User email:', user?.email);
-      console.log('   - Email verified:', user?.emailVerified);
+      addDiagnosticLog('👤 [PATHWAY] User Authentication:');
+      addDiagnosticLog(`   - User exists: ${!!user}`);
+      addDiagnosticLog(`   - User UID: ${user?.uid}`);
+      addDiagnosticLog(`   - User email: ${user?.email}`);
+      addDiagnosticLog(`   - Email verified: ${user?.emailVerified}`);
       
       if (user) {
         try {
           const token = await user.getIdToken(true);
           const tokenResult = await user.getIdTokenResult();
-          console.log('   - Token length:', token.length);
-          console.log('   - Token expiry:', tokenResult.expirationTime);
-          console.log('   - Sign in provider:', tokenResult.signInProvider);
-          console.log('   - Auth time:', tokenResult.authTime);
-          console.log('   - Claims:', tokenResult.claims);
+          addDiagnosticLog(`   - Token length: ${token.length}`);
+          addDiagnosticLog(`   - Token expiry: ${tokenResult.expirationTime}`);
+          addDiagnosticLog(`   - Sign in provider: ${tokenResult.signInProvider}`);
+          addDiagnosticLog(`   - Auth time: ${tokenResult.authTime}`);
+          addDiagnosticLog(`   - Claims: ${JSON.stringify(tokenResult.claims, null, 2)}`);
         } catch (tokenError: any) {
-          console.log('   - ❌ Token error:', tokenError.message);
+          addDiagnosticLog(`   - ❌ Token error: ${tokenError.message}`);
         }
       }
       
       // 2. Firebase Services Status
-      console.log('🔥 [PATHWAY] Firebase Services:');
-      console.log('   - Firestore available:', !!firestore);
-      console.log('   - Storage available:', !!storage);
+      addDiagnosticLog('🔥 [PATHWAY] Firebase Services:');
+      addDiagnosticLog(`   - Firestore available: ${!!firestore}`);
+      addDiagnosticLog(`   - Storage available: ${!!storage}`);
       if (storage) {
-        console.log('   - Storage bucket:', storage.bucket);
-        console.log('   - Storage app name:', storage.app.name);
-        console.log('   - Max upload retry time:', storage.maxUploadRetryTime);
-        console.log('   - Max operation retry time:', storage.maxOperationRetryTime);
+        addDiagnosticLog(`   - Storage bucket: ${storage.bucket}`);
+        addDiagnosticLog(`   - Storage app name: ${storage.app.name}`);
+        addDiagnosticLog(`   - Max upload retry time: ${storage.maxUploadRetryTime}`);
+        addDiagnosticLog(`   - Max operation retry time: ${storage.maxOperationRetryTime}`);
       }
       
       // 3. Test Firestore Access
-      console.log('📊 [PATHWAY] Testing Firestore Access...');
+      addDiagnosticLog('📊 [PATHWAY] Testing Firestore Access...');
       try {
         const testDoc = doc(firestore, 'test', `pathway-test-${Date.now()}`);
         await setDoc(testDoc, { 
@@ -446,34 +457,34 @@ function PathwayPageContent() {
           user: user?.uid,
           source: 'pathway-diagnostics'
         });
-        console.log('✅ [PATHWAY] Firestore write: SUCCESS');
+        addDiagnosticLog('✅ [PATHWAY] Firestore write: SUCCESS');
       } catch (firestoreError: any) {
-        console.log('❌ [PATHWAY] Firestore write: FAILED -', firestoreError.message);
-        console.log('   - Error code:', firestoreError.code);
+        addDiagnosticLog(`❌ [PATHWAY] Firestore write: FAILED - ${firestoreError.message}`);
+        addDiagnosticLog(`   - Error code: ${firestoreError.code}`);
       }
       
       // 4. Test Storage Access (Multiple Methods)
-      console.log('🪣 [PATHWAY] Testing Storage Access...');
+      addDiagnosticLog('🪣 [PATHWAY] Testing Storage Access...');
       
       if (storage && user) {
         // Method 1: uploadBytes (direct)
         try {
-          console.log('🧪 [PATHWAY] Method 1: uploadBytes (direct)...');
+          addDiagnosticLog('🧪 [PATHWAY] Method 1: uploadBytes (direct)...');
           const testRef1 = ref(storage, `diagnostic-test/${user.uid}/direct-${Date.now()}.txt`);
           const testBlob1 = new Blob(['Direct upload test'], { type: 'text/plain' });
           
           const snapshot1 = await uploadBytes(testRef1, testBlob1);
           const downloadURL1 = await getDownloadURL(snapshot1.ref);
-          console.log('✅ [PATHWAY] uploadBytes: SUCCESS');
-          console.log('🔗 [PATHWAY] Direct upload URL:', downloadURL1);
+          addDiagnosticLog('✅ [PATHWAY] uploadBytes: SUCCESS');
+          addDiagnosticLog(`🔗 [PATHWAY] Direct upload URL: ${downloadURL1}`);
         } catch (directError: any) {
-          console.log('❌ [PATHWAY] uploadBytes: FAILED -', directError.message);
-          console.log('   - Error code:', directError.code);
+          addDiagnosticLog(`❌ [PATHWAY] uploadBytes: FAILED - ${directError.message}`);
+          addDiagnosticLog(`   - Error code: ${directError.code}`);
         }
         
         // Method 2: uploadBytesResumable (with timeout)
         try {
-          console.log('🧪 [PATHWAY] Method 2: uploadBytesResumable (with 10s timeout)...');
+          addDiagnosticLog('🧪 [PATHWAY] Method 2: uploadBytesResumable (with 10s timeout)...');
           const testRef2 = ref(storage, `diagnostic-test/${user.uid}/resumable-${Date.now()}.txt`);
           const testBlob2 = new Blob(['Resumable upload test'], { type: 'text/plain' });
           
@@ -489,7 +500,7 @@ function PathwayPageContent() {
             uploadTask.on('state_changed',
               (snapshot) => {
                 const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                console.log(`📈 [PATHWAY] Resumable progress: ${progress.toFixed(1)}%`);
+                addDiagnosticLog(`📈 [PATHWAY] Resumable progress: ${progress.toFixed(1)}%`);
               },
               (error) => {
                 clearTimeout(timeout);
@@ -508,42 +519,42 @@ function PathwayPageContent() {
           });
           
           const downloadURL2 = await uploadPromise;
-          console.log('✅ [PATHWAY] uploadBytesResumable: SUCCESS');
-          console.log('🔗 [PATHWAY] Resumable upload URL:', downloadURL2);
+          addDiagnosticLog('✅ [PATHWAY] uploadBytesResumable: SUCCESS');
+          addDiagnosticLog(`🔗 [PATHWAY] Resumable upload URL: ${downloadURL2}`);
           
         } catch (resumableError: any) {
-          console.log('❌ [PATHWAY] uploadBytesResumable: FAILED -', resumableError.message);
-          console.log('   - Error code:', resumableError.code);
+          addDiagnosticLog(`❌ [PATHWAY] uploadBytesResumable: FAILED - ${resumableError.message}`);
+          addDiagnosticLog(`   - Error code: ${resumableError.code}`);
         }
       }
       
       // 5. Network Test
-      console.log('🌐 [PATHWAY] Testing Network Connectivity...');
+      addDiagnosticLog('🌐 [PATHWAY] Testing Network Connectivity...');
       try {
         const networkTest = await fetch('https://firebasestorage.googleapis.com/', { method: 'HEAD' });
-        console.log('✅ [PATHWAY] Network to Firebase Storage: SUCCESS -', networkTest.status);
+        addDiagnosticLog(`✅ [PATHWAY] Network to Firebase Storage: SUCCESS - ${networkTest.status}`);
       } catch (networkError: any) {
-        console.log('❌ [PATHWAY] Network to Firebase Storage: FAILED -', networkError.message);
+        addDiagnosticLog(`❌ [PATHWAY] Network to Firebase Storage: FAILED - ${networkError.message}`);
       }
       
       // 6. Browser Environment
-      console.log('🌐 [PATHWAY] Browser Environment:');
-      console.log('   - User Agent:', navigator.userAgent);
-      console.log('   - Online:', navigator.onLine);
-      console.log('   - Connection:', (navigator as any).connection?.effectiveType || 'unknown');
-      console.log('   - Language:', navigator.language);
-      console.log('   - Platform:', navigator.platform);
+      addDiagnosticLog('🌐 [PATHWAY] Browser Environment:');
+      addDiagnosticLog(`   - User Agent: ${navigator.userAgent}`);
+      addDiagnosticLog(`   - Online: ${navigator.onLine}`);
+      addDiagnosticLog(`   - Connection: ${(navigator as any).connection?.effectiveType || 'unknown'}`);
+      addDiagnosticLog(`   - Language: ${navigator.language}`);
+      addDiagnosticLog(`   - Platform: ${navigator.platform}`);
       
-      console.log('🔍 [PATHWAY] === DIAGNOSTICS COMPLETE ===');
+      addDiagnosticLog('🔍 [PATHWAY] === DIAGNOSTICS COMPLETE ===');
       
       toast({
         title: 'Comprehensive Diagnostics Complete',
-        description: 'Check browser console for detailed results. Look for ✅ SUCCESS or ❌ FAILED markers.',
+        description: 'Results are displayed below. Look for ✅ SUCCESS or ❌ FAILED markers.',
         className: 'bg-blue-100 text-blue-900 border-blue-200'
       });
       
     } catch (error: any) {
-      console.log('❌ [PATHWAY] Diagnostics failed:', error.message);
+      addDiagnosticLog(`❌ [PATHWAY] Diagnostics failed: ${error.message}`);
       toast({
         variant: 'destructive',
         title: 'Diagnostics Failed',
@@ -1003,8 +1014,34 @@ function PathwayPageContent() {
                         </Button>
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
-                        Debug tools - check browser console for detailed logs. Use "Full Diagnostics" for complete analysis.
+                        Debug tools - results displayed below. Use "Full Diagnostics" for complete analysis.
                     </p>
+                    
+                    {showDiagnostics && diagnosticsLog.length > 0 && (
+                        <div className="mt-4 p-4 bg-gray-50 border rounded-lg">
+                            <div className="flex justify-between items-center mb-2">
+                                <h4 className="text-sm font-semibold text-gray-700">Diagnostics Results</h4>
+                                <Button 
+                                    onClick={() => setShowDiagnostics(false)} 
+                                    variant="ghost" 
+                                    size="sm"
+                                    className="text-xs"
+                                >
+                                    ✕ Close
+                                </Button>
+                            </div>
+                            <div className="max-h-96 overflow-y-auto bg-black text-green-400 p-3 rounded font-mono text-xs">
+                                {diagnosticsLog.map((log, index) => (
+                                    <div key={index} className="mb-1 whitespace-pre-wrap">
+                                        {log}
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="mt-2 text-xs text-gray-600">
+                                <strong>Look for:</strong> ✅ SUCCESS (working) or ❌ FAILED (broken)
+                            </div>
+                        </div>
+                    )}
                 </div>
                 </CardContent>
                 {(!isReadOnly && (application.status === 'In Progress' || application.status === 'Requires Revision')) && (
