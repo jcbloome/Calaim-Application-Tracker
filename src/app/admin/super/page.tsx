@@ -730,18 +730,21 @@ export default function SuperAdminPage() {
         setIsSendingWebhook(true);
         setWebhookLog(null);
         try {
-            const functions = getFunctions();
-            // First try basic connection test
-            const testBasicConnection = httpsCallable(functions, 'testBasicConnection');
+            // Use the API route instead of Firebase Function
+            const response = await fetch('/api/caspio/test', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
             
-            const result = await testBasicConnection();
-            const data = result.data as any;
+            const data = await response.json();
             
             if (data.success) {
                 toast({ title: "Caspio Connection Test", description: data.message, className: 'bg-green-100 text-green-900 border-green-200' });
                 setWebhookLog(`✅ Success: ${data.message}\n\nTest Results:\n- HTTP Test: ${data.tests?.httpTest}\n- Caspio Domain: ${data.tests?.caspioTest}\n- OAuth Test: ${data.tests?.oauthTest}`);
             } else {
-                setWebhookLog(`❌ Failed: ${data.message}`);
+                setWebhookLog(`❌ Failed: ${data.message}\n\nError Details: ${data.error || 'Unknown error'}`);
                 toast({ variant: 'destructive', title: 'Caspio Connection Failed', description: "See log on page for details." });
             }
         } catch (error: any) {

@@ -204,10 +204,8 @@ export const testBasicConnection = onCall(async (request) => {
   }
 });
 
-// Caspio API Integration Function
-export const testCaspioConnection = onCall({
-  secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret]
-}, async (request) => {
+// Caspio API Integration Function with fallback to environment variables
+export const testCaspioConnection = onCall(async (request) => {
   try {
     console.log('🔍 Testing Caspio connection from Firebase Functions...');
     
@@ -227,10 +225,23 @@ export const testCaspioConnection = onCall({
     
     console.log('✅ Caspio domain test:', caspioTest.status, caspioTest.statusText);
     
-    // Test Caspio OAuth endpoint
-    const baseUrl = caspioBaseUrl.value() || 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = caspioClientId.value();
-    const clientSecret = caspioClientSecret.value();
+    // Try to get credentials from secrets first, then fall back to environment variables
+    let baseUrl: string;
+    let clientId: string;
+    let clientSecret: string;
+    
+    try {
+      // Try secrets first (for production)
+      baseUrl = caspioBaseUrl.value() || process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2';
+      clientId = caspioClientId.value() || process.env.CASPIO_CLIENT_ID || '';
+      clientSecret = caspioClientSecret.value() || process.env.CASPIO_CLIENT_SECRET || '';
+    } catch (secretError) {
+      // Fall back to environment variables (for local development)
+      console.log('⚠️ Secrets not available, using environment variables');
+      baseUrl = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2';
+      clientId = process.env.CASPIO_CLIENT_ID || '';
+      clientSecret = process.env.CASPIO_CLIENT_SECRET || '';
+    }
     
     console.log('🔍 Secret values:', {
       baseUrl: baseUrl,
