@@ -1148,21 +1148,26 @@ export default function SuperAdminPage() {
                 }]);
             }
 
-            // Test 3: Check if functions are deployed
+            // Test 3: Basic Firestore write test
             try {
-                const testFunction = httpsCallable(functions, 'testFirestorePermissions');
-                await testFunction({});
+                const db = getFirestore();
+                const testDoc = doc(db, 'test_writes', 'connectivity_test');
+                await setDoc(testDoc, {
+                    timestamp: new Date(),
+                    test: 'Firebase Functions Test Suite',
+                    status: 'success'
+                });
                 
                 setFunctionsTestResults(prev => [...prev, {
-                    testName: 'Functions Deployment',
+                    testName: 'Firestore Write Test',
                     status: 'success',
-                    message: 'Firebase Functions are deployed and accessible.'
+                    message: '✅ Successfully wrote test document to Firestore.'
                 }]);
             } catch (error: any) {
                 setFunctionsTestResults(prev => [...prev, {
-                    testName: 'Functions Deployment',
+                    testName: 'Firestore Write Test',
                     status: 'error',
-                    message: `Functions deployment issue: ${error.code || error.message}`
+                    message: `❌ Failed to write to Firestore: ${error.code || error.message}`
                 }]);
             }
 
