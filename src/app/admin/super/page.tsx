@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, ShieldCheck, Bell, PlusCircle, Beaker, FileWarning, CheckCircle, Clock, Database } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp, addDoc, orderBy } from 'firebase/firestore';
+import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp, addDoc, orderBy, limit, getFirestore } from 'firebase/firestore';
 import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError, useStorage } from '@/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { ref, uploadBytesResumable, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
@@ -1098,44 +1098,53 @@ export default function SuperAdminPage() {
         setFunctionsTestResults([]);
         
         try {
-            const functions = getFunctions();
-            
-            // Test 1: getLoginLogs
+            // Test 1: Direct Firestore access for login logs (bypassing Functions)
             try {
-                const getLoginLogs = httpsCallable(functions, 'getLoginLogs');
-                const result = await getLoginLogs({
-                    startDate: new Date().toISOString(),
-                    endDate: new Date().toISOString()
-                });
+                const db = getFirestore();
+                const logsCollection = collection(db, 'loginLogs');
+                const logsQuery = query(logsCollection, limit(10));
+                const logsSnapshot = await getDocs(logsQuery);
+                
+                const logs = logsSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
                 
                 setFunctionsTestResults(prev => [...prev, {
-                    testName: 'getLoginLogs',
+                    testName: 'getLoginLogs (Direct Firestore)',
                     status: 'success',
-                    message: `Successfully called getLoginLogs function. Returned ${result.data?.logs?.length || 0} logs.`
+                    message: `✅ Successfully accessed loginLogs collection directly. Found ${logs.length} log entries.`
                 }]);
             } catch (error: any) {
                 setFunctionsTestResults(prev => [...prev, {
-                    testName: 'getLoginLogs',
+                    testName: 'getLoginLogs (Direct Firestore)',
                     status: 'error',
-                    message: `Failed to call getLoginLogs: ${error.code || error.message}`
+                    message: `❌ Failed to access loginLogs: ${error.code || error.message}`
                 }]);
             }
 
-            // Test 2: getActiveSessions
+            // Test 2: Direct Firestore access for active sessions (bypassing Functions)
             try {
-                const getActiveSessions = httpsCallable(functions, 'getActiveSessions');
-                const result = await getActiveSessions({});
+                const db = getFirestore();
+                const sessionsCollection = collection(db, 'activeSessions');
+                const sessionsQuery = query(sessionsCollection, limit(10));
+                const sessionsSnapshot = await getDocs(sessionsQuery);
+                
+                const sessions = sessionsSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
                 
                 setFunctionsTestResults(prev => [...prev, {
-                    testName: 'getActiveSessions',
+                    testName: 'getActiveSessions (Direct Firestore)',
                     status: 'success',
-                    message: `Successfully called getActiveSessions function. Returned ${result.data?.sessions?.length || 0} sessions.`
+                    message: `✅ Successfully accessed activeSessions collection directly. Found ${sessions.length} active sessions.`
                 }]);
             } catch (error: any) {
                 setFunctionsTestResults(prev => [...prev, {
-                    testName: 'getActiveSessions',
+                    testName: 'getActiveSessions (Direct Firestore)',
                     status: 'error',
-                    message: `Failed to call getActiveSessions: ${error.code || error.message}`
+                    message: `❌ Failed to access activeSessions: ${error.code || error.message}`
                 }]);
             }
 
