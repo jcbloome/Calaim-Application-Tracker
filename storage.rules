@@ -7,19 +7,28 @@ service firebase.storage {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     
-    // Allow authenticated users to upload to shared folders
+    // Allow authenticated users to upload to shared folders (admin only)
     match /shared_uploads/{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        exists(/databases/(default)/documents/admins/$(request.auth.uid));
     }
     
-    // Allow authenticated users to upload documents
+    // Allow authenticated users to upload documents (admin only)
     match /documents/{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        exists(/databases/(default)/documents/admins/$(request.auth.uid));
     }
     
-    // Temporary: Allow all authenticated users to upload anywhere (for testing)
+    // Allow diagnostic tests (temporary, user-specific)
+    match /diagnostic-test/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Deny all other access by default
     match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }
