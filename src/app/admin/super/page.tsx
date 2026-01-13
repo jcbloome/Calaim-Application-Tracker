@@ -199,6 +199,7 @@ export default function SuperAdminPage() {
     const [storageTestResults, setStorageTestResults] = useState<TestResult[]>([]);
     const [isStorageTestLoading, setIsStorageTestLoading] = useState<string | null>(null);
     const [uploadProgress, setUploadProgress] = useState<number>(0);
+    const [storageDebugLog, setStorageDebugLog] = useState<string[]>([]);
 
     const applicationsQuery = useMemoFirebase(() => {
         if (isAdminLoading || !firestore || !currentUser) {
@@ -781,17 +782,97 @@ export default function SuperAdminPage() {
         setStorageTestResults(prev => [result, ...prev]);
     };
 
+    const addStorageLog = (message: string) => {
+        const timestamp = new Date().toLocaleTimeString();
+        setStorageDebugLog(prev => [`[${timestamp}] ${message}`, ...prev]);
+    };
+
+    const runStorageDiagnostics = async () => {
+        setStorageDebugLog([]);
+        addStorageLog('🔍 Starting Firebase Storage Diagnostics...');
+        
+        try {
+            // Compare Firebase services
+            compareFirebaseServices();
+            
+            // Check if storage is initialized
+            addStorageLog(`Storage instance: ${storage ? '✅ Available' : '❌ Not available'}`);
+            addStorageLog(`Current user: ${currentUser ? `✅ ${currentUser.email} (${currentUser.uid})` : '❌ Not authenticated'}`);
+            
+            if (!storage) {
+                addStorageLog('❌ CRITICAL: Storage not initialized - this is the root cause!');
+                addStorageLog('🔧 Check Firebase client initialization in src/firebase/client-init.ts');
+                addStorageLog('🔧 Verify useStorage hook is working correctly');
+                return;
+            }
+            
+            if (!currentUser) {
+                addStorageLog('❌ CRITICAL: User not authenticated - cannot test storage');
+                return;
+            }
+
+            // Check storage configuration
+            addStorageLog(`Storage app: ${storage.app.name}`);
+            addStorageLog(`Storage bucket: ${storage.app.options.storageBucket}`);
+            
+            // Test creating a reference
+            try {
+                const testRef = ref(storage, `user_uploads/${currentUser.uid}/diagnostics/test.txt`);
+                addStorageLog(`✅ Storage reference created: ${testRef.fullPath}`);
+                addStorageLog(`Reference bucket: ${testRef.bucket}`);
+                addStorageLog(`Reference name: ${testRef.name}`);
+            } catch (error: any) {
+                addStorageLog(`❌ Failed to create storage reference: ${error.message}`);
+                return;
+            }
+
+            // Test user token
+            try {
+                const token = await currentUser.getIdToken();
+                addStorageLog(`✅ User token obtained (length: ${token.length})`);
+                
+                const tokenResult = await currentUser.getIdTokenResult();
+                addStorageLog(`Token claims: ${JSON.stringify(tokenResult.claims, null, 2)}`);
+            } catch (error: any) {
+                addStorageLog(`❌ Failed to get user token: ${error.message}`);
+            }
+
+            // Test basic storage operations
+            addStorageLog('🧪 Testing basic storage operations...');
+            
+            toast({
+                title: 'Storage Diagnostics Complete',
+                description: 'Check the debug log below for detailed information',
+                className: 'bg-blue-100 text-blue-900 border-blue-200'
+            });
+
+        } catch (error: any) {
+            addStorageLog(`❌ Diagnostics failed: ${error.message}`);
+            addStorageLog(`Error stack: ${error.stack}`);
+        }
+    };
+
     const runStorageTest = async (testName: string, testFn: () => Promise<string>) => {
+        addStorageLog(`🧪 Starting test: ${testName}`);
+        
         if (!storage || !currentUser) {
+            const errorMsg = `Not ready - Storage: ${!!storage}, User: ${!!currentUser}`;
+            addStorageLog(`❌ ${errorMsg}`);
             toast({ variant: 'destructive', title: 'Not Ready', description: 'Please wait for user and Storage to be initialized.' });
             return;
         }
+        
         setIsStorageTestLoading(testName);
         try {
+            addStorageLog(`⏳ Running ${testName}...`);
             const result = await testFn();
+            addStorageLog(`✅ ${testName} passed: ${result}`);
             addStorageTestResult({ name: testName, success: true, message: result });
             toast({ title: 'Test Passed', description: `${testName} completed successfully.`, className: 'bg-green-100 text-green-900 border-green-200' });
         } catch (error: any) {
+            addStorageLog(`❌ ${testName} failed: ${error.message}`);
+            addStorageLog(`Error code: ${error.code}`);
+            addStorageLog(`Error stack: ${error.stack}`);
             addStorageTestResult({ name: testName, success: false, message: error.message });
             toast({ variant: 'destructive', title: 'Test Failed', description: `${testName}: ${error.message}` });
         } finally {
@@ -801,8 +882,12 @@ export default function SuperAdminPage() {
 
     const testStorageUpload = () => {
         return new Promise<string>((resolve, reject) => {
+            addStorageLog('📤 Starting upload test...');
+            
             if (!storage || !currentUser) {
-                reject(new Error('Storage or user not available'));
+                const error = 'Storage or user not available';
+                addStorageLog(`❌ ${error}`);
+                reject(new Error(error));
                 return;
             }
 
@@ -810,28 +895,49 @@ export default function SuperAdminPage() {
             const testFile = new File([testData], 'test-upload.txt', { type: 'text/plain' });
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const storagePath = `user_uploads/${currentUser.uid}/test/${timestamp}_test-upload.txt`;
-            const storageRef = ref(storage, storagePath);
+            
+            addStorageLog(`📁 Upload path: ${storagePath}`);
+            addStorageLog(`📄 File: ${testFile.name} (${testFile.size} bytes, ${testFile.type})`);
+            
+            try {
+                const storageRef = ref(storage, storagePath);
+                addStorageLog(`✅ Storage reference created successfully`);
+                addStorageLog(`🪣 Bucket: ${storageRef.bucket}`);
+                addStorageLog(`📍 Full path: ${storageRef.fullPath}`);
 
-            const uploadTask = uploadBytesResumable(storageRef, testFile);
+                const uploadTask = uploadBytesResumable(storageRef, testFile);
+                addStorageLog(`🚀 Upload task created, starting upload...`);
 
-            uploadTask.on('state_changed',
-                (snapshot) => {
-                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                    setUploadProgress(progress);
-                },
-                (error) => {
-                    console.error('Upload failed:', error);
-                    reject(new Error(`Upload failed: ${error.code} - ${error.message}`));
-                },
-                async () => {
-                    try {
-                        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                        resolve(`Successfully uploaded test file. Download URL: ${downloadURL}`);
-                    } catch (error: any) {
-                        reject(new Error(`Failed to get download URL: ${error.message}`));
+                uploadTask.on('state_changed',
+                    (snapshot) => {
+                        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                        addStorageLog(`📊 Upload progress: ${progress.toFixed(1)}% (${snapshot.bytesTransferred}/${snapshot.totalBytes} bytes)`);
+                        addStorageLog(`📈 Upload state: ${snapshot.state}`);
+                        setUploadProgress(progress);
+                    },
+                    (error) => {
+                        addStorageLog(`❌ Upload failed with error: ${error.code}`);
+                        addStorageLog(`❌ Error message: ${error.message}`);
+                        addStorageLog(`❌ Error details: ${JSON.stringify(error, null, 2)}`);
+                        reject(new Error(`Upload failed: ${error.code} - ${error.message}`));
+                    },
+                    async () => {
+                        try {
+                            addStorageLog(`✅ Upload completed successfully!`);
+                            addStorageLog(`🔗 Getting download URL...`);
+                            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                            addStorageLog(`✅ Download URL obtained: ${downloadURL}`);
+                            resolve(`Successfully uploaded test file. Download URL: ${downloadURL}`);
+                        } catch (error: any) {
+                            addStorageLog(`❌ Failed to get download URL: ${error.message}`);
+                            reject(new Error(`Failed to get download URL: ${error.message}`));
+                        }
                     }
-                }
-            );
+                );
+            } catch (error: any) {
+                addStorageLog(`❌ Failed to create storage reference: ${error.message}`);
+                reject(new Error(`Failed to create storage reference: ${error.message}`));
+            }
         });
     };
 
@@ -919,6 +1025,34 @@ export default function SuperAdminPage() {
                 }
             );
         });
+    };
+
+    const compareFirebaseServices = () => {
+        addStorageLog('🔍 Comparing Firebase Services...');
+        addStorageLog(`Firestore: ${firestore ? '✅ Available' : '❌ Not available'}`);
+        addStorageLog(`Storage: ${storage ? '✅ Available' : '❌ Not available'}`);
+        
+        if (firestore) {
+            addStorageLog(`Firestore app: ${firestore.app.name}`);
+            addStorageLog(`Firestore project: ${firestore.app.options.projectId}`);
+        }
+        
+        if (storage) {
+            addStorageLog(`Storage app: ${storage.app.name}`);
+            addStorageLog(`Storage project: ${storage.app.options.projectId}`);
+            addStorageLog(`Storage bucket: ${storage.app.options.storageBucket}`);
+        } else {
+            addStorageLog('❌ CRITICAL: Storage is not initialized!');
+            addStorageLog('🔧 This explains why uploads fail - Storage service is missing');
+            addStorageLog('🔧 Check Firebase client initialization in src/firebase/client-init.ts');
+            addStorageLog('🔧 Verify storage is properly exported from Firebase provider');
+        }
+        
+        // Check if they're using the same app instance
+        if (firestore && storage) {
+            const sameApp = firestore.app === storage.app;
+            addStorageLog(`Same Firebase app instance: ${sameApp ? '✅ Yes' : '⚠️ No - this could cause issues'}`);
+        }
     };
 
     const storageTests = [
@@ -1079,6 +1213,19 @@ export default function SuperAdminPage() {
                             <CardDescription>Run tests to diagnose storage upload and security issues.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
+                            <div className="mb-4">
+                                <Button 
+                                    onClick={runStorageDiagnostics}
+                                    variant="outline"
+                                    className="w-full"
+                                >
+                                    🔍 Run Storage Diagnostics
+                                </Button>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    Check Firebase Storage initialization and configuration
+                                </p>
+                            </div>
+                            
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 {storageTests.map(test => (
                                     <div key={test.name} className="flex flex-col gap-2 p-4 border rounded-lg bg-muted/30">
@@ -1111,23 +1258,42 @@ export default function SuperAdminPage() {
                                 </div>
                             )}
                             
-                            <div>
-                                <h4 className="font-semibold text-sm mb-2">Storage Test Results</h4>
-                                <ScrollArea className="h-48 w-full rounded-md border p-4">
-                                    {storageTestResults.length === 0 ? (
-                                        <p className="text-sm text-muted-foreground text-center py-8">No storage tests run yet.</p>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            {storageTestResults.map((result, index) => (
-                                                <Alert key={index} variant={result.success ? 'default' : 'destructive'} className={result.success ? 'bg-green-50 border-green-200' : ''}>
-                                                    {result.success ? <CheckCircle className="h-4 w-4" /> : <FileWarning className="h-4 w-4" />}
-                                                    <AlertTitle className="text-xs font-semibold">{result.name} - {result.success ? 'Passed' : 'Failed'}</AlertTitle>
-                                                    <AlertDescription className="break-words text-xs">{result.message}</AlertDescription>
-                                                </Alert>
-                                            ))}
-                                        </div>
-                                    )}
-                                </ScrollArea>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div>
+                                    <h4 className="font-semibold text-sm mb-2">Storage Test Results</h4>
+                                    <ScrollArea className="h-48 w-full rounded-md border p-4">
+                                        {storageTestResults.length === 0 ? (
+                                            <p className="text-sm text-muted-foreground text-center py-8">No storage tests run yet.</p>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {storageTestResults.map((result, index) => (
+                                                    <Alert key={index} variant={result.success ? 'default' : 'destructive'} className={result.success ? 'bg-green-50 border-green-200' : ''}>
+                                                        {result.success ? <CheckCircle className="h-4 w-4" /> : <FileWarning className="h-4 w-4" />}
+                                                        <AlertTitle className="text-xs font-semibold">{result.name} - {result.success ? 'Passed' : 'Failed'}</AlertTitle>
+                                                        <AlertDescription className="break-words text-xs">{result.message}</AlertDescription>
+                                                    </Alert>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </ScrollArea>
+                                </div>
+                                
+                                <div>
+                                    <h4 className="font-semibold text-sm mb-2">Debug Log</h4>
+                                    <ScrollArea className="h-48 w-full rounded-md border p-4 bg-gray-50">
+                                        {storageDebugLog.length === 0 ? (
+                                            <p className="text-sm text-muted-foreground text-center py-8">No debug logs yet. Run diagnostics to see detailed information.</p>
+                                        ) : (
+                                            <div className="space-y-1">
+                                                {storageDebugLog.map((log, index) => (
+                                                    <div key={index} className="text-xs font-mono break-words">
+                                                        {log}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </ScrollArea>
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
