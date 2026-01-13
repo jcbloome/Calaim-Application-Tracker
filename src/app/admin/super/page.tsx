@@ -740,17 +740,23 @@ export default function SuperAdminPage() {
             
             const data = await response.json();
             
+            // Format detailed logs for display
+            const detailedLogs = data.detailedLogs ? data.detailedLogs.join('\n') : '';
+            const debugInfo = data.debug ? JSON.stringify(data.debug, null, 2) : '';
+            
             if (data.success) {
                 toast({ title: "Caspio Connection Test", description: data.message, className: 'bg-green-100 text-green-900 border-green-200' });
-                setWebhookLog(`✅ Success: ${data.message}\n\nTest Results:\n- HTTP Test: ${data.tests?.httpTest}\n- Caspio Domain: ${data.tests?.caspioTest}\n- OAuth Test: ${data.tests?.oauthTest}`);
+                setWebhookLog(`✅ SUCCESS: ${data.message}\n\n=== DETAILED LOGS ===\n${detailedLogs}\n\n=== TEST RESULTS ===\n- HTTP Test: ${data.tests?.httpTest || 'N/A'}\n- Caspio Domain: ${data.tests?.caspioTest || 'N/A'}\n- OAuth Test: ${data.tests?.oauthTest || 'N/A'}`);
             } else {
-                setWebhookLog(`❌ Failed: ${data.message}\n\nError Details: ${data.error || 'Unknown error'}`);
-                toast({ variant: 'destructive', title: 'Caspio Connection Failed', description: "See log on page for details." });
+                const errorLog = `❌ FAILED: ${data.message}\n\n=== ERROR DETAILS ===\n${data.error || 'Unknown error'}\n\n=== DETAILED LOGS ===\n${detailedLogs}\n\n=== DEBUG INFO ===\n${debugInfo}`;
+                setWebhookLog(errorLog);
+                toast({ variant: 'destructive', title: 'Caspio Connection Failed', description: "See detailed log on page below." });
             }
         } catch (error: any) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            setWebhookLog(`❌ Error: ${errorMessage}`);
-            toast({ variant: 'destructive', title: 'Caspio Connection Error', description: "See log on page for details." });
+            const networkErrorLog = `❌ NETWORK ERROR: ${errorMessage}\n\n=== ERROR DETAILS ===\nThis is likely a network connectivity issue or server error.\n\nError Type: ${error.name || 'Unknown'}\nError Message: ${error.message || 'No message'}\nError Stack: ${error.stack ? error.stack.substring(0, 500) + '...' : 'No stack trace'}`;
+            setWebhookLog(networkErrorLog);
+            toast({ variant: 'destructive', title: 'Caspio Connection Error', description: "Network error - see detailed log on page below." });
         } finally {
             setIsSendingWebhook(false);
         }
