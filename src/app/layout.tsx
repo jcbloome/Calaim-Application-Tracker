@@ -6,6 +6,7 @@ import { WindowsNotificationContainer } from '@/components/WindowsNotification';
 import { CursorNotificationContainer } from '@/components/CursorStyleNotification';
 import { RealTimeNotifications } from '@/components/RealTimeNotifications';
 import LoginTrackingProvider from '@/components/LoginTrackingProvider';
+import { AutoLogoutProvider } from '@/components/AutoLogoutProvider';
 import { cn } from '@/lib/utils';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { Inter } from 'next/font/google';
@@ -35,7 +36,9 @@ export default function RootLayout({
         <React.Suspense fallback={<div className="flex h-screen w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
           <FirebaseClientProvider>
             <LoginTrackingProvider>
-              {children}
+              <AutoLogoutProvider>
+                {children}
+              </AutoLogoutProvider>
             </LoginTrackingProvider>
             <RealTimeNotifications />
           </FirebaseClientProvider>
