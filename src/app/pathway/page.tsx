@@ -185,48 +185,142 @@ function PathwayPageContent() {
   };
 
   const doUpload = async (files: File[], requirementTitle: string) => {
+      console.log('doUpload called with:', { 
+        fileCount: files.length, 
+        requirementTitle,
+        hasUser: !!user?.uid, 
+        hasApplicationId: !!applicationId, 
+        hasStorage: !!storage,
+        hasFirestore: !!firestore
+      });
+
       if (!user?.uid || !applicationId || !storage) {
         console.error('Upload prerequisites not met:', { 
           hasUser: !!user?.uid, 
           hasApplicationId: !!applicationId, 
-          hasStorage: !!storage 
+          hasStorage: !!storage,
+          userEmail: user?.email
         });
-        return null;
+        throw new Error('Upload service not available. Please refresh the page and try again.');
+      }
+
+      if (files.length === 0) {
+        throw new Error('No files selected for upload.');
       }
 
       const file = files[0];
+      
+      // Validate file size (max 10MB)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        throw new Error(`File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds the maximum limit of 10MB.`);
+      }
+
+      // Validate file type
+      const allowedTypes = [
+        'application/pdf',
+        'image/jpeg',
+        'image/jpg', 
+        'image/png',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ];
+      
+      if (!allowedTypes.includes(file.type)) {
+        throw new Error(`File type "${file.type}" is not supported. Please upload PDF, Word documents, or images (JPG, PNG).`);
+      }
+
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const storagePath = `user_uploads/${user.uid}/${applicationId}/${requirementTitle}/${timestamp}_${file.name}`;
       
       console.log('Creating storage reference:', storagePath);
+      console.log('File info:', { name: file.name, size: file.size, type: file.type });
+      
       const storageRef = ref(storage, storagePath);
 
       return new Promise<{ downloadURL: string, path: string }>((resolve, reject) => {
+          console.log('Starting upload task for file:', file.name, 'Size:', file.size, 'Type:', file.type);
+          
+          // Add timeout to prevent hanging uploads
+          const uploadTimeout = setTimeout(() => {
+              console.error('Upload timeout after 5 minutes');
+              reject(new Error('Upload timeout - please try again with a smaller file'));
+          }, 5 * 60 * 1000); // 5 minutes
+
           const uploadTask = uploadBytesResumable(storageRef, file);
 
           uploadTask.on('state_changed',
               (snapshot) => {
                   const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                  console.log(`Upload progress for ${requirementTitle}: ${progress}%`);
+                  console.log(`Upload progress for ${requirementTitle}: ${progress}% (${snapshot.bytesTransferred}/${snapshot.totalBytes} bytes)`);
+                  console.log('Upload state:', snapshot.state);
                   setUploadProgress(prev => ({ ...prev, [requirementTitle]: progress }));
               },
               (error) => {
                   console.error("Upload failed:", error);
-                  reject(new Error(`Upload failed: ${error.message}`));
+                  console.error("Error code:", error.code);
+                  console.error("Error message:", error.message);
+                  clearTimeout(uploadTimeout);
+                  
+                  // Provide more specific error messages
+                  let errorMessage = 'Upload failed. Please try again.';
+                  if (error.code === 'storage/unauthorized') {
+                      errorMessage = 'Upload permission denied. Please check your authentication.';
+                  } else if (error.code === 'storage/canceled') {
+                      errorMessage = 'Upload was canceled.';
+                  } else if (error.code === 'storage/unknown') {
+                      errorMessage = 'Unknown upload error. Please check your internet connection.';
+                  } else if (error.code === 'storage/quota-exceeded') {
+                      errorMessage = 'Storage quota exceeded. Please contact support.';
+                  }
+                  
+                  reject(new Error(errorMessage));
               },
               async () => {
                   try {
+                      clearTimeout(uploadTimeout);
                       console.log('Upload completed, getting download URL...');
                       const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
                       console.log('Download URL obtained:', downloadURL);
                       resolve({ downloadURL, path: storagePath });
                   } catch (error: any) {
                       console.error('Error getting download URL:', error);
+                      clearTimeout(uploadTimeout);
                       reject(new Error(`Failed to get download URL: ${error.message}`));
                   }
               }
           );
       });
+  };
+
+  const testStorageConnection = async () => {
+    console.log('Testing storage connection...');
+    try {
+      if (!storage) {
+        throw new Error('Storage not initialized');
+      }
+      
+      if (!user?.uid) {
+        throw new Error('User not authenticated');
+      }
+      
+      // Test creating a reference
+      const testRef = ref(storage, `test/${user.uid}/test.txt`);
+      console.log('Storage reference created successfully:', testRef);
+      
+      toast({
+        title: 'Storage Test',
+        description: 'Storage connection test passed. Try uploading again.',
+        className: 'bg-blue-100 text-blue-900 border-blue-200'
+      });
+    } catch (error: any) {
+      console.error('Storage test failed:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Storage Test Failed',
+        description: error.message
+      });
+    }
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, requirementTitle: string) => {
@@ -271,10 +365,12 @@ function PathwayPageContent() {
     setUploadProgress(prev => ({ ...prev, [requirementTitle]: 0 }));
     
     try {
+        console.log('Attempting upload with user:', user?.email, 'applicationId:', applicationId);
         const uploadResult = await doUpload(files, requirementTitle);
         console.log('Upload result:', uploadResult);
         
         if (uploadResult) {
+            console.log('Updating form status...');
             await handleFormStatusUpdate([{
                 name: requirementTitle,
                 status: 'Completed',
@@ -283,6 +379,7 @@ function PathwayPageContent() {
                 downloadURL: uploadResult.downloadURL,
                 dateCompleted: Timestamp.now(),
             }]);
+            console.log('Form status updated successfully');
             toast({ 
               title: 'Upload Successful', 
               description: `${requirementTitle} has been uploaded successfully.`,
@@ -292,7 +389,17 @@ function PathwayPageContent() {
           throw new Error('Upload failed - no result returned');
         }
     } catch (error: any) {
-        console.error('Upload error:', error);
+        console.error('Upload error details:', {
+          error: error,
+          message: error.message,
+          code: error.code,
+          stack: error.stack,
+          user: user?.email,
+          applicationId: applicationId,
+          requirementTitle: requirementTitle,
+          fileInfo: files.map(f => ({ name: f.name, size: f.size, type: f.type }))
+        });
+        
         toast({ 
           variant: 'destructive', 
           title: 'Upload Failed', 
