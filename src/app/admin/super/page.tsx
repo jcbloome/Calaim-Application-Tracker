@@ -216,6 +216,71 @@ export default function SuperAdminPage() {
         });
     };
 
+    // Direct storage upload test (bypasses functions)
+    const testDirectStorageUpload = async () => {
+        if (!storage || !currentUser) {
+            toast({
+                variant: 'destructive',
+                title: 'Not Ready',
+                description: 'Storage or user not available'
+            });
+            return;
+        }
+
+        try {
+            addStorageLog('🚀 Starting DIRECT storage upload test...');
+            
+            // Create test file
+            const testData = new Blob(['Direct upload test - bypassing functions'], { type: 'text/plain' });
+            const testFile = new File([testData], 'direct-test.txt', { type: 'text/plain' });
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const storagePath = `user_uploads/${currentUser.uid}/direct-test/${timestamp}_direct-test.txt`;
+            
+            addStorageLog(`📁 Direct upload path: ${storagePath}`);
+            addStorageLog(`📄 File: ${testFile.name} (${testFile.size} bytes)`);
+            
+            const storageRef = ref(storage, storagePath);
+            const uploadTask = uploadBytesResumable(storageRef, testFile);
+            
+            uploadTask.on('state_changed',
+                (snapshot) => {
+                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                    addStorageLog(`📊 Direct upload progress: ${progress.toFixed(1)}%`);
+                    setUploadProgress(progress);
+                },
+                (error) => {
+                    addStorageLog(`❌ Direct upload failed: ${error.code} - ${error.message}`);
+                    toast({
+                        variant: 'destructive',
+                        title: 'Direct Upload Failed',
+                        description: `${error.code}: ${error.message}`
+                    });
+                },
+                async () => {
+                    try {
+                        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                        addStorageLog(`✅ Direct upload SUCCESS! URL: ${downloadURL}`);
+                        toast({
+                            title: 'Direct Upload Success!',
+                            description: 'Storage upload works perfectly - issue is not with storage',
+                            className: 'bg-green-100 text-green-900 border-green-200'
+                        });
+                    } catch (error: any) {
+                        addStorageLog(`❌ Failed to get download URL: ${error.message}`);
+                    }
+                }
+            );
+            
+        } catch (error: any) {
+            addStorageLog(`❌ Direct upload setup failed: ${error.message}`);
+            toast({
+                variant: 'destructive',
+                title: 'Direct Upload Setup Failed',
+                description: error.message
+            });
+        }
+    };
+
     const applicationsQuery = useMemoFirebase(() => {
         if (isAdminLoading || !firestore || !currentUser) {
           return null;
@@ -1334,7 +1399,7 @@ export default function SuperAdminPage() {
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-3 text-lg"><Bell className="h-5 w-5" />Firebase Functions Test Suite</CardTitle>
-                            <CardDescription>Test Firebase Functions connectivity and login tracking functions.</CardDescription>
+                            <CardDescription>Test Firebase Functions connectivity and login tracking functions. If functions fail, they need deployment.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div className="flex gap-2">
@@ -1385,6 +1450,15 @@ export default function SuperAdminPage() {
                                 </Button>
                                 <div className="flex gap-2">
                                     <Button 
+                                        onClick={testDirectStorageUpload}
+                                        variant="default"
+                                        size="sm"
+                                        className="flex-1"
+                                        disabled={!storage || !currentUser}
+                                    >
+                                        🎯 Direct Upload Test
+                                    </Button>
+                                    <Button 
                                         onClick={resetAllTests}
                                         variant="destructive"
                                         size="sm"
@@ -1394,8 +1468,18 @@ export default function SuperAdminPage() {
                                     </Button>
                                 </div>
                                 <p className="text-xs text-muted-foreground">
-                                    Check Firebase Storage initialization and configuration. Use reset if tests get stuck.
+                                    Check Firebase Storage initialization and configuration. Use "Direct Upload Test" to verify storage works. Use reset if tests get stuck.
                                 </p>
+                                {storageTestResults.some(r => r.status === 'success') && (
+                                    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs text-green-800">
+                                        ✅ <strong>Storage is working!</strong> Upload issues are likely in the pathway page implementation, not Firebase Storage itself.
+                                    </div>
+                                )}
+                                {functionsTestResults.some(r => r.status === 'error' && r.message.includes('permission-denied')) && (
+                                    <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+                                        ⚠️ <strong>Functions need deployment.</strong> Login activity logs won't work until Firebase Functions are deployed with proper authentication.
+                                    </div>
+                                )}
                             </div>
                             
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
