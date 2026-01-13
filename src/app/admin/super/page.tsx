@@ -240,23 +240,50 @@ export default function SuperAdminPage() {
             addStorageLog(`📄 File: ${testFile.name} (${testFile.size} bytes)`);
             
             const storageRef = ref(storage, storagePath);
+            addStorageLog(`✅ Storage reference created: ${storageRef.fullPath}`);
+            
+            // Add 10-second timeout for direct test
+            const timeoutId = setTimeout(() => {
+                addStorageLog(`❌ Direct upload timeout after 10 seconds`);
+                toast({
+                    variant: 'destructive',
+                    title: 'Direct Upload Timeout',
+                    description: 'Upload is hanging - likely Firebase Storage rules issue'
+                });
+            }, 10000);
+            
             const uploadTask = uploadBytesResumable(storageRef, testFile);
+            addStorageLog(`🚀 Upload task created, starting direct upload...`);
             
             uploadTask.on('state_changed',
                 (snapshot) => {
                     const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                    addStorageLog(`📊 Direct upload progress: ${progress.toFixed(1)}%`);
+                    addStorageLog(`📊 Direct upload progress: ${progress.toFixed(1)}% (${snapshot.bytesTransferred}/${snapshot.totalBytes} bytes)`);
+                    addStorageLog(`📈 Upload state: ${snapshot.state}`);
                     setUploadProgress(progress);
                 },
                 (error) => {
+                    clearTimeout(timeoutId);
                     addStorageLog(`❌ Direct upload failed: ${error.code} - ${error.message}`);
-                    toast({
-                        variant: 'destructive',
-                        title: 'Direct Upload Failed',
-                        description: `${error.code}: ${error.message}`
-                    });
+                    addStorageLog(`❌ Error details: ${JSON.stringify(error, null, 2)}`);
+                    
+                    if (error.code === 'storage/unauthorized') {
+                        addStorageLog(`🔒 DIAGNOSIS: Firebase Storage security rules are blocking uploads`);
+                        toast({
+                            variant: 'destructive',
+                            title: 'Storage Rules Issue',
+                            description: 'Firebase Storage security rules are blocking uploads'
+                        });
+                    } else {
+                        toast({
+                            variant: 'destructive',
+                            title: 'Direct Upload Failed',
+                            description: `${error.code}: ${error.message}`
+                        });
+                    }
                 },
                 async () => {
+                    clearTimeout(timeoutId);
                     try {
                         const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
                         addStorageLog(`✅ Direct upload SUCCESS! URL: ${downloadURL}`);
@@ -276,6 +303,49 @@ export default function SuperAdminPage() {
             toast({
                 variant: 'destructive',
                 title: 'Direct Upload Setup Failed',
+                description: error.message
+            });
+        }
+    };
+
+    // Check Firebase Storage rules
+    const checkStorageRules = async () => {
+        if (!storage || !currentUser) {
+            toast({
+                variant: 'destructive',
+                title: 'Not Ready',
+                description: 'Storage or user not available'
+            });
+            return;
+        }
+
+        addStorageLog('🔒 Checking Firebase Storage security rules...');
+        
+        try {
+            // Test if we can create a reference (this should always work)
+            const testRef = ref(storage, `user_uploads/${currentUser.uid}/rules-test/test.txt`);
+            addStorageLog(`✅ Can create storage reference: ${testRef.fullPath}`);
+            
+            addStorageLog(`🔍 Storage bucket: ${storage.app.options.storageBucket}`);
+            addStorageLog(`🔍 User UID: ${currentUser.uid}`);
+            addStorageLog(`🔍 User email: ${currentUser.email}`);
+            addStorageLog(`🔍 Expected path pattern: user_uploads/{userId}/*`);
+            
+            // The real test is the upload - rules issues show up during upload attempts
+            addStorageLog(`ℹ️ Storage rules are checked during upload operations`);
+            addStorageLog(`ℹ️ If uploads timeout, it's likely a rules configuration issue`);
+            
+            toast({
+                title: 'Storage Rules Check Complete',
+                description: 'Check debug log for details',
+                className: 'bg-blue-100 text-blue-900 border-blue-200'
+            });
+            
+        } catch (error: any) {
+            addStorageLog(`❌ Storage rules check failed: ${error.message}`);
+            toast({
+                variant: 'destructive',
+                title: 'Storage Rules Check Failed',
                 description: error.message
             });
         }
@@ -1441,13 +1511,23 @@ export default function SuperAdminPage() {
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div className="mb-4 space-y-2">
-                                <Button 
-                                    onClick={runStorageDiagnostics}
-                                    variant="outline"
-                                    className="w-full"
-                                >
-                                    🔍 Run Storage Diagnostics
-                                </Button>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <Button 
+                                        onClick={runStorageDiagnostics}
+                                        variant="outline"
+                                        className="w-full"
+                                    >
+                                        🔍 Run Storage Diagnostics
+                                    </Button>
+                                    <Button 
+                                        onClick={checkStorageRules}
+                                        variant="outline"
+                                        className="w-full"
+                                        disabled={!storage || !currentUser}
+                                    >
+                                        🔒 Check Storage Rules
+                                    </Button>
+                                </div>
                                 <div className="flex gap-2">
                                     <Button 
                                         onClick={testDirectStorageUpload}
@@ -1478,6 +1558,11 @@ export default function SuperAdminPage() {
                                 {functionsTestResults.some(r => r.status === 'error' && r.message.includes('permission-denied')) && (
                                     <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
                                         ⚠️ <strong>Functions need deployment.</strong> Login activity logs won't work until Firebase Functions are deployed with proper authentication.
+                                    </div>
+                                )}
+                                {storageTestResults.some(r => r.status === 'error' && r.message.includes('timeout')) && (
+                                    <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">
+                                        🔥 <strong>Storage uploads timing out!</strong> This is likely a Firebase Storage security rules issue. Check your Firebase console Storage rules.
                                     </div>
                                 )}
                             </div>
