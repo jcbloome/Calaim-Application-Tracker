@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -131,7 +131,7 @@ export default function LoginActivityTracker() {
   }
 
   // Add error to visible log
-  const addErrorLog = (message: string, error?: any) => {
+  const addErrorLog = useCallback((message: string, error?: any) => {
     const timestamp = new Date().toLocaleTimeString();
     const logEntry = `[${timestamp}] ${message}`;
     if (error) {
@@ -142,15 +142,15 @@ export default function LoginActivityTracker() {
       setErrorLog(prev => [...prev, logEntry]);
     }
     setShowErrorLog(true);
-  };
+  }, []);
 
   // Add info to visible log
-  const addInfoLog = (message: string) => {
+  const addInfoLog = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
     const logEntry = `[${timestamp}] ℹ️ ${message}`;
     console.log(message);
     setErrorLog(prev => [...prev, logEntry]);
-  };
+  }, []);
 
   // Clear error log
   const clearErrorLog = () => {
@@ -159,7 +159,7 @@ export default function LoginActivityTracker() {
   };
 
   // Load login logs
-  const loadLoginLogs = async () => {
+  const loadLoginLogs = useCallback(async () => {
     if (!firestore || !isSuperAdmin) {
       addErrorLog('Cannot load logs: Missing firestore or super admin access');
       return;
@@ -237,10 +237,10 @@ export default function LoginActivityTracker() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [firestore, isSuperAdmin, filterDate, selectedUser, addErrorLog, addInfoLog]);
 
   // Load active sessions (simplified - just show recent logins as "active")
-  const loadActiveSessions = async () => {
+  const loadActiveSessions = useCallback(async () => {
     if (!firestore || !isSuperAdmin) {
       addErrorLog('Cannot load active sessions: Missing firestore or super admin access');
       return;
@@ -290,7 +290,7 @@ export default function LoginActivityTracker() {
     } catch (error: any) {
       addErrorLog('Failed to load active sessions', error);
     }
-  };
+  }, [firestore, isSuperAdmin, addErrorLog]);
 
   // Force logout user (simplified - just show a message)
   const forceLogoutUser = async (userId: string, userName: string) => {
@@ -411,7 +411,7 @@ export default function LoginActivityTracker() {
     } else {
       addErrorLog('Prerequisites not met for loading data');
     }
-  }, [filterDate, selectedUser, filterAction, firestore, isSuperAdmin, isAdminLoading]);
+  }, [filterDate, selectedUser, firestore, isSuperAdmin, isAdminLoading]);
 
   return (
     <div className="space-y-6">
