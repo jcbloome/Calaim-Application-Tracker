@@ -151,10 +151,15 @@ export default function LoginActivityTracker() {
       }
     } catch (error: any) {
       console.error('Error loading login logs:', error);
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        details: error.details
+      });
       toast({
         variant: 'destructive',
         title: 'Load Failed',
-        description: 'Could not load login activity logs',
+        description: `Could not load login activity logs: ${error.message || error.code || 'Unknown error'}`,
       });
     } finally {
       setIsLoading(false);
@@ -180,6 +185,11 @@ export default function LoginActivityTracker() {
       }
     } catch (error: any) {
       console.error('Error loading active sessions:', error);
+      console.error('Active sessions error details:', {
+        code: error.code,
+        message: error.message,
+        details: error.details
+      });
     }
   };
 

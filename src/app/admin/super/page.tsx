@@ -200,6 +200,8 @@ export default function SuperAdminPage() {
     const [isStorageTestLoading, setIsStorageTestLoading] = useState<string | null>(null);
     const [uploadProgress, setUploadProgress] = useState<number>(0);
     const [storageDebugLog, setStorageDebugLog] = useState<string[]>([]);
+    const [functionsTestResults, setFunctionsTestResults] = useState<TestResult[]>([]);
+    const [isFunctionsTestLoading, setIsFunctionsTestLoading] = useState(false);
 
     const applicationsQuery = useMemoFirebase(() => {
         if (isAdminLoading || !firestore || !currentUser) {
@@ -852,6 +854,81 @@ export default function SuperAdminPage() {
         }
     };
 
+    const testFirebaseFunctions = async () => {
+        setIsFunctionsTestLoading(true);
+        setFunctionsTestResults([]);
+        
+        try {
+            const functions = getFunctions();
+            
+            // Test 1: getLoginLogs
+            try {
+                const getLoginLogs = httpsCallable(functions, 'getLoginLogs');
+                const result = await getLoginLogs({
+                    startDate: new Date().toISOString(),
+                    endDate: new Date().toISOString()
+                });
+                
+                setFunctionsTestResults(prev => [...prev, {
+                    testName: 'getLoginLogs',
+                    status: 'success',
+                    message: `Successfully called getLoginLogs function. Returned ${result.data?.logs?.length || 0} logs.`
+                }]);
+            } catch (error: any) {
+                setFunctionsTestResults(prev => [...prev, {
+                    testName: 'getLoginLogs',
+                    status: 'error',
+                    message: `Failed to call getLoginLogs: ${error.code || error.message}`
+                }]);
+            }
+
+            // Test 2: getActiveSessions
+            try {
+                const getActiveSessions = httpsCallable(functions, 'getActiveSessions');
+                const result = await getActiveSessions({});
+                
+                setFunctionsTestResults(prev => [...prev, {
+                    testName: 'getActiveSessions',
+                    status: 'success',
+                    message: `Successfully called getActiveSessions function. Returned ${result.data?.sessions?.length || 0} sessions.`
+                }]);
+            } catch (error: any) {
+                setFunctionsTestResults(prev => [...prev, {
+                    testName: 'getActiveSessions',
+                    status: 'error',
+                    message: `Failed to call getActiveSessions: ${error.code || error.message}`
+                }]);
+            }
+
+            // Test 3: Check if functions are deployed
+            try {
+                const testFunction = httpsCallable(functions, 'testFirestorePermissions');
+                await testFunction({});
+                
+                setFunctionsTestResults(prev => [...prev, {
+                    testName: 'Functions Deployment',
+                    status: 'success',
+                    message: 'Firebase Functions are deployed and accessible.'
+                }]);
+            } catch (error: any) {
+                setFunctionsTestResults(prev => [...prev, {
+                    testName: 'Functions Deployment',
+                    status: 'error',
+                    message: `Functions deployment issue: ${error.code || error.message}`
+                }]);
+            }
+
+        } catch (error: any) {
+            setFunctionsTestResults(prev => [...prev, {
+                testName: 'Functions Connection',
+                status: 'error',
+                message: `Failed to connect to Firebase Functions: ${error.message}`
+            }]);
+        } finally {
+            setIsFunctionsTestLoading(false);
+        }
+    };
+
     const runStorageTest = async (testName: string, testFn: () => Promise<string>) => {
         addStorageLog(`🧪 Starting test: ${testName}`);
         
@@ -1207,6 +1284,45 @@ export default function SuperAdminPage() {
                         </CardContent>
                     </Card>
 
+                    {/* Firebase Functions Test Suite */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-3 text-lg"><Bell className="h-5 w-5" />Firebase Functions Test Suite</CardTitle>
+                            <CardDescription>Test Firebase Functions connectivity and login tracking functions.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="flex gap-2">
+                                <Button 
+                                    onClick={testFirebaseFunctions} 
+                                    disabled={isFunctionsTestLoading || !currentUser} 
+                                    variant="secondary"
+                                >
+                                    {isFunctionsTestLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bell className="mr-2 h-4 w-4" />}
+                                    Test Functions
+                                </Button>
+                            </div>
+                            <div>
+                                <h4 className="font-semibold text-sm mb-2">Functions Test Results</h4>
+                                <ScrollArea className="h-48 w-full rounded-md border p-4">
+                                    {functionsTestResults.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground text-center py-8">No functions tests run yet.</p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {functionsTestResults.map((result, index) => (
+                                                <Alert key={index} variant={result.status === 'error' ? 'destructive' : 'default'} className={result.status === 'success' ? 'bg-green-50 border-green-200' : ''}>
+                                                    {result.status === 'success' ? <CheckCircle className="h-4 w-4" /> : <FileWarning className="h-4 w-4" />}
+                                                    <AlertTitle className="text-xs font-semibold">{result.testName} - {result.status === 'success' ? 'Passed' : 'Failed'}</AlertTitle>
+                                                    <AlertDescription className="break-words text-xs">{result.message}</AlertDescription>
+                                                </Alert>
+                                            ))}
+                                        </div>
+                                    )}
+                                </ScrollArea>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Firebase Storage Test Suite */}
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-3 text-lg"><Database className="h-5 w-5" />Firebase Storage Test Suite</CardTitle>
