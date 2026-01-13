@@ -15,7 +15,6 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import { NotificationManager } from '@/components/NotificationManager';
 import NotificationSettings from '@/components/NotificationSettings';
-import LoginActivityTracker from '@/components/LoginActivityTracker';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -1663,9 +1662,6 @@ export default function SuperAdminPage() {
 
                 {/* Advanced Notification Settings */}
                 <NotificationSettings />
-
-                {/* Login Activity Tracking */}
-                <LoginActivityTracker />
             </div>
             
         </div>

@@ -30,7 +30,8 @@ import {
   ChevronRight,
   Settings,
   MessageSquareText,
-  FileText
+  FileText,
+  Activity
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -85,7 +86,6 @@ const adminNavLinks = [
       { href: '/admin/staff-notes', label: 'My Notes', icon: MessageSquareText },
     ]
   },
-  { href: '/admin/my-notes', label: 'My Notes', icon: MessageSquareText },
   { 
     label: 'Kaiser', 
     icon: Heart, 
@@ -105,6 +105,7 @@ const superAdminNavLinks = [
       submenuItems: [
         { href: '/admin/super', label: 'Admin Panel', icon: Shield },
         { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
+        { href: '/admin/login-activity', label: 'Login Activity', icon: Activity },
         { isDivider: true, label: 'Notifications' },
         { href: '/admin/notification-settings', label: 'Notification Settings', icon: Settings },
         { href: '/admin/system-note-log', label: 'System Note Log', icon: MessageSquareText },
