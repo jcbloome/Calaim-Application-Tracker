@@ -202,6 +202,20 @@ export default function SuperAdminPage() {
     const [storageDebugLog, setStorageDebugLog] = useState<string[]>([]);
     const [functionsTestResults, setFunctionsTestResults] = useState<TestResult[]>([]);
     const [isFunctionsTestLoading, setIsFunctionsTestLoading] = useState(false);
+    
+    // Emergency reset function
+    const resetAllTests = () => {
+        setIsStorageTestLoading(null);
+        setIsFunctionsTestLoading(false);
+        setUploadProgress(0);
+        setStorageTestResults([]);
+        setFunctionsTestResults([]);
+        toast({
+            title: 'Tests Reset',
+            description: 'All test states have been cleared',
+            className: 'bg-blue-100 text-blue-900 border-blue-200'
+        });
+    };
 
     const applicationsQuery = useMemoFirebase(() => {
         if (isAdminLoading || !firestore || !currentUser) {
@@ -976,6 +990,12 @@ export default function SuperAdminPage() {
             addStorageLog(`📁 Upload path: ${storagePath}`);
             addStorageLog(`📄 File: ${testFile.name} (${testFile.size} bytes, ${testFile.type})`);
             
+            // Add timeout to prevent hanging
+            const timeoutId = setTimeout(() => {
+                addStorageLog(`❌ Upload timeout after 30 seconds`);
+                reject(new Error('Upload timeout - test took too long'));
+            }, 30000);
+
             try {
                 const storageRef = ref(storage, storagePath);
                 addStorageLog(`✅ Storage reference created successfully`);
@@ -993,12 +1013,14 @@ export default function SuperAdminPage() {
                         setUploadProgress(progress);
                     },
                     (error) => {
+                        clearTimeout(timeoutId);
                         addStorageLog(`❌ Upload failed with error: ${error.code}`);
                         addStorageLog(`❌ Error message: ${error.message}`);
                         addStorageLog(`❌ Error details: ${JSON.stringify(error, null, 2)}`);
                         reject(new Error(`Upload failed: ${error.code} - ${error.message}`));
                     },
                     async () => {
+                        clearTimeout(timeoutId);
                         try {
                             addStorageLog(`✅ Upload completed successfully!`);
                             addStorageLog(`🔗 Getting download URL...`);
@@ -1012,6 +1034,7 @@ export default function SuperAdminPage() {
                     }
                 );
             } catch (error: any) {
+                clearTimeout(timeoutId);
                 addStorageLog(`❌ Failed to create storage reference: ${error.message}`);
                 reject(new Error(`Failed to create storage reference: ${error.message}`));
             }
@@ -1025,15 +1048,22 @@ export default function SuperAdminPage() {
                 return;
             }
 
+            // Add timeout protection
+            const timeoutId = setTimeout(() => {
+                reject(new Error('List timeout - operation took too long'));
+            }, 15000);
+
             const userUploadsRef = ref(storage, `user_uploads/${currentUser.uid}`);
             
             listAll(userUploadsRef)
                 .then((result) => {
+                    clearTimeout(timeoutId);
                     const fileCount = result.items.length;
                     const folderCount = result.prefixes.length;
                     resolve(`Successfully listed user uploads: ${fileCount} files, ${folderCount} folders`);
                 })
                 .catch((error) => {
+                    clearTimeout(timeoutId);
                     reject(new Error(`List failed: ${error.code} - ${error.message}`));
                 });
         });
@@ -1046,6 +1076,11 @@ export default function SuperAdminPage() {
                 return;
             }
 
+            // Add timeout protection
+            const timeoutId = setTimeout(() => {
+                reject(new Error('Delete test timeout - operation took too long'));
+            }, 30000);
+
             // Try to delete a test file (this might fail if no test files exist)
             const testRef = ref(storage, `user_uploads/${currentUser.uid}/test/test-delete.txt`);
             
@@ -1056,13 +1091,18 @@ export default function SuperAdminPage() {
 
             uploadTask.on('state_changed',
                 () => {}, // Progress
-                (error) => reject(new Error(`Upload for delete test failed: ${error.message}`)),
+                (error) => {
+                    clearTimeout(timeoutId);
+                    reject(new Error(`Upload for delete test failed: ${error.message}`));
+                },
                 async () => {
                     // Now delete it
                     try {
                         await deleteObject(testRef);
+                        clearTimeout(timeoutId);
                         resolve('Successfully uploaded and deleted test file');
                     } catch (error: any) {
+                        clearTimeout(timeoutId);
                         reject(new Error(`Delete failed: ${error.code} - ${error.message}`));
                     }
                 }
@@ -1077,6 +1117,11 @@ export default function SuperAdminPage() {
                 return;
             }
 
+            // Add timeout protection
+            const timeoutId = setTimeout(() => {
+                reject(new Error('Security test timeout - operation took too long'));
+            }, 15000);
+
             // Test uploading to a different user's path (should fail)
             const fakeUserId = 'fake-user-id-12345';
             const testData = new Blob(['Unauthorized test'], { type: 'text/plain' });
@@ -1089,6 +1134,7 @@ export default function SuperAdminPage() {
             uploadTask.on('state_changed',
                 () => {}, // Progress
                 (error) => {
+                    clearTimeout(timeoutId);
                     // This should fail with unauthorized error
                     if (error.code === 'storage/unauthorized') {
                         resolve('Security test passed: Unauthorized access correctly blocked');
@@ -1097,6 +1143,7 @@ export default function SuperAdminPage() {
                     }
                 },
                 () => {
+                    clearTimeout(timeoutId);
                     // This should not succeed
                     reject(new Error('Security test failed: Unauthorized upload was allowed'));
                 }
@@ -1329,7 +1376,7 @@ export default function SuperAdminPage() {
                             <CardDescription>Run tests to diagnose storage upload and security issues.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="mb-4">
+                            <div className="mb-4 space-y-2">
                                 <Button 
                                     onClick={runStorageDiagnostics}
                                     variant="outline"
@@ -1337,8 +1384,18 @@ export default function SuperAdminPage() {
                                 >
                                     🔍 Run Storage Diagnostics
                                 </Button>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                    Check Firebase Storage initialization and configuration
+                                <div className="flex gap-2">
+                                    <Button 
+                                        onClick={resetAllTests}
+                                        variant="destructive"
+                                        size="sm"
+                                        className="flex-1"
+                                    >
+                                        🔄 Reset All Tests
+                                    </Button>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    Check Firebase Storage initialization and configuration. Use reset if tests get stuck.
                                 </p>
                             </div>
                             
