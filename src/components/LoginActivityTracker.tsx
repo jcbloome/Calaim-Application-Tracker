@@ -95,6 +95,12 @@ export default function LoginActivityTracker() {
 
       setLoginLogs(logs);
       addDebugLog(`✅ Loaded ${logs.length} login logs`);
+      
+      // Debug: Log first few entries to see data structure
+      if (logs.length > 0) {
+        addDebugLog(`🔍 Sample log data: ${JSON.stringify(logs[0], null, 2).substring(0, 200)}...`);
+        addDebugLog(`📊 Available fields: ${Object.keys(logs[0]).join(', ')}`);
+      }
     } catch (err: any) {
       const errorMsg = `Failed to load login logs: ${err.message}`;
       setError(errorMsg);
@@ -288,16 +294,30 @@ export default function LoginActivityTracker() {
                     <div className="flex items-center gap-3">
                       <User className="h-4 w-4 text-blue-500" />
                       <div>
-                        <p className="font-medium">{log.userName}</p>
-                        <p className="text-sm text-muted-foreground">{log.userEmail}</p>
+                        <p className="font-medium">
+                          {log.userName || log.userEmail || 'Unknown User'}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {log.userEmail || 'No email'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Role: {log.userRole || 'Unknown'} | ID: {log.userId || 'N/A'}
+                        </p>
                         {log.failureReason && (
                           <p className="text-sm text-red-600">Reason: {log.failureReason}</p>
                         )}
+                        {/* Debug: Show raw data */}
+                        <details className="text-xs text-gray-400 mt-1">
+                          <summary className="cursor-pointer">Debug Data</summary>
+                          <pre className="mt-1 text-xs bg-gray-100 p-1 rounded">
+                            {JSON.stringify(log, null, 2)}
+                          </pre>
+                        </details>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <Badge variant={getActionBadgeVariant(log.action, log.success)}>
-                        {log.action}
+                      <Badge variant={getActionBadgeVariant(log.action || 'unknown', log.success !== false)}>
+                        {log.action || 'unknown'}
                       </Badge>
                       <div className="text-right text-sm">
                         <p className="flex items-center gap-1">
@@ -306,7 +326,7 @@ export default function LoginActivityTracker() {
                         </p>
                         <p className="flex items-center gap-1 text-muted-foreground">
                           <MapPin className="h-3 w-3" />
-                          {log.ipAddress}
+                          {log.ipAddress || 'Unknown IP'}
                         </p>
                       </div>
                     </div>
