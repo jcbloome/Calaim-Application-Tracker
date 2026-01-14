@@ -31,7 +31,8 @@ import {
   Settings,
   MessageSquareText,
   FileText,
-  Activity
+  Activity,
+  TestTube2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -116,6 +117,7 @@ const superAdminNavLinks = [
         { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
         { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain },
         { isDivider: true, label: 'Development Tools' },
+        { href: '/admin/user-diagnostics', label: 'User Side Diagnostic Tools', icon: TestTube2 },
         { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
       ]
     },
