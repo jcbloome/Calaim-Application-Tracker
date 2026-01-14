@@ -83,14 +83,20 @@ export default function LoginActivityTracker() {
   }, []);
 
   const ensureCurrentUserSession = useCallback(async () => {
+    addDebugLog(`🔍 ensureCurrentUserSession called`);
+    addDebugLog(`👤 Current user exists: ${!!currentUser}`);
+    
     if (!currentUser) {
       addDebugLog('❌ No current user - cannot create session');
       return;
     }
 
+    addDebugLog(`👤 Current user details: ${currentUser.email}, UID: ${currentUser.uid}`);
+
     try {
-      addDebugLog(`👤 Creating/updating active session for: ${currentUser.email}`);
+      addDebugLog(`🔥 Getting Firestore instance...`);
       const db = getFirestore();
+      addDebugLog(`📄 Creating session document reference for UID: ${currentUser.uid}`);
       const sessionDoc = doc(db, 'activeSessions', currentUser.uid);
       
       const sessionData = {
@@ -102,15 +108,26 @@ export default function LoginActivityTracker() {
         loginTime: serverTimestamp(),
         lastActivity: serverTimestamp(),
         ipAddress: 'Current Session', // We don't have access to IP in browser
-        userAgent: navigator.userAgent,
+        userAgent: navigator.userAgent.substring(0, 100), // Truncate to avoid size issues
         sessionDuration: 0,
-        isActive: true
+        isActive: true,
+        createdAt: new Date().toISOString(), // Add regular timestamp too
+        lastUpdated: new Date().toISOString()
       };
 
+      addDebugLog(`💾 Attempting to write session data...`);
+      addDebugLog(`📊 Session data: ${JSON.stringify(sessionData, null, 2).substring(0, 300)}...`);
+      
       await setDoc(sessionDoc, sessionData, { merge: true });
-      addDebugLog(`✅ Created/updated active session for ${currentUser.email}`);
+      addDebugLog(`✅ Successfully created/updated active session for ${currentUser.email}`);
+      
+      // Verify the document was created
+      addDebugLog(`🔍 Verifying session was created...`);
+      
     } catch (err: any) {
       addDebugLog(`❌ Failed to create session: ${err.message}`);
+      addDebugLog(`❌ Error code: ${err.code}`);
+      addDebugLog(`❌ Error stack: ${err.stack}`);
     }
   }, [currentUser, addDebugLog]);
 
@@ -205,14 +222,41 @@ export default function LoginActivityTracker() {
     }
   }, [addDebugLog]);
 
+  const testFirestoreWrite = useCallback(async () => {
+    try {
+      addDebugLog('🧪 Testing basic Firestore write permissions...');
+      const db = getFirestore();
+      const testDoc = doc(db, 'test_writes', `session_test_${Date.now()}`);
+      
+      await setDoc(testDoc, {
+        test: 'session creation test',
+        timestamp: new Date().toISOString(),
+        user: currentUser?.email || 'unknown'
+      });
+      
+      addDebugLog('✅ Basic Firestore write test successful');
+      return true;
+    } catch (err: any) {
+      addDebugLog(`❌ Basic Firestore write test failed: ${err.message}`);
+      return false;
+    }
+  }, [currentUser, addDebugLog]);
+
   const refreshData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     addDebugLog('🔄 Refreshing login activity data...');
     
     try {
-      // First ensure current user has an active session
-      await ensureCurrentUserSession();
+      // First test basic Firestore write permissions
+      const canWrite = await testFirestoreWrite();
+      
+      if (canWrite) {
+        // Then ensure current user has an active session
+        await ensureCurrentUserSession();
+      } else {
+        addDebugLog('⚠️ Skipping session creation due to write permission issues');
+      }
       
       // Then load all data
       await Promise.all([loadLoginLogs(), loadActiveSessions()]);
@@ -222,7 +266,7 @@ export default function LoginActivityTracker() {
     } finally {
       setIsLoading(false);
     }
-  }, [loadLoginLogs, loadActiveSessions, ensureCurrentUserSession, addDebugLog]);
+  }, [loadLoginLogs, loadActiveSessions, ensureCurrentUserSession, testFirestoreWrite, addDebugLog]);
 
   useEffect(() => {
     if (isSuperAdmin) {
