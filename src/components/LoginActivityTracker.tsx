@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
-import { getFirestore, collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
+import { getFirestore, collection, query, orderBy, limit, getDocs, where, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { useUser } from '@/firebase';
 import { 
   Activity,
   AlertTriangle,
@@ -68,6 +69,7 @@ interface ActiveSession {
 
 export default function LoginActivityTracker() {
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+  const { currentUser } = useUser();
   const [loginLogs, setLoginLogs] = useState<LoginLog[]>([]);
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -79,6 +81,38 @@ export default function LoginActivityTracker() {
     const timestamp = new Date().toLocaleTimeString();
     setDebugLogs(prev => [`[${timestamp}] ${message}`, ...prev.slice(0, 49)]);
   }, []);
+
+  const ensureCurrentUserSession = useCallback(async () => {
+    if (!currentUser) {
+      addDebugLog('❌ No current user - cannot create session');
+      return;
+    }
+
+    try {
+      addDebugLog(`👤 Creating/updating active session for: ${currentUser.email}`);
+      const db = getFirestore();
+      const sessionDoc = doc(db, 'activeSessions', currentUser.uid);
+      
+      const sessionData = {
+        userId: currentUser.uid,
+        userEmail: currentUser.email,
+        userName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Unknown',
+        displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Unknown',
+        email: currentUser.email,
+        loginTime: serverTimestamp(),
+        lastActivity: serverTimestamp(),
+        ipAddress: 'Current Session', // We don't have access to IP in browser
+        userAgent: navigator.userAgent,
+        sessionDuration: 0,
+        isActive: true
+      };
+
+      await setDoc(sessionDoc, sessionData, { merge: true });
+      addDebugLog(`✅ Created/updated active session for ${currentUser.email}`);
+    } catch (err: any) {
+      addDebugLog(`❌ Failed to create session: ${err.message}`);
+    }
+  }, [currentUser, addDebugLog]);
 
   const loadLoginLogs = useCallback(async () => {
     try {
@@ -177,6 +211,10 @@ export default function LoginActivityTracker() {
     addDebugLog('🔄 Refreshing login activity data...');
     
     try {
+      // First ensure current user has an active session
+      await ensureCurrentUserSession();
+      
+      // Then load all data
       await Promise.all([loadLoginLogs(), loadActiveSessions()]);
       addDebugLog('✅ Data refresh completed');
     } catch (err) {
@@ -184,7 +222,7 @@ export default function LoginActivityTracker() {
     } finally {
       setIsLoading(false);
     }
-  }, [loadLoginLogs, loadActiveSessions, addDebugLog]);
+  }, [loadLoginLogs, loadActiveSessions, ensureCurrentUserSession, addDebugLog]);
 
   useEffect(() => {
     if (isSuperAdmin) {
@@ -233,10 +271,6 @@ export default function LoginActivityTracker() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Login Activity Tracker</h2>
-          <p className="text-muted-foreground">Monitor staff login/logout activity and manage active sessions</p>
-        </div>
         <Button onClick={refreshData} disabled={isLoading} variant="outline">
           <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
           Refresh
