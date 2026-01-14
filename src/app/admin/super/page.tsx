@@ -6,7 +6,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, ShieldCheck, Bell, PlusCircle, Beaker, FileWarning, CheckCircle, Clock, Database } from 'lucide-react';
+import { Loader2, ShieldAlert, UserPlus, Send, Users, Mail, Save, Trash2, ShieldCheck, Bell, PlusCircle, Beaker, FileWarning, CheckCircle, Database } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp, addDoc, orderBy, limit, getFirestore } from 'firebase/firestore';
@@ -65,14 +65,6 @@ interface TestResult {
     message: string;
 }
 
-interface LoginLog {
-    id: string;
-    userId: string;
-    email: string;
-    displayName: string;
-    role: 'Admin' | 'User';
-    timestamp: any;
-}
 
 
 const sampleApplicationData = {
@@ -440,15 +432,8 @@ export default function SuperAdminPage() {
         return query(collectionGroup(firestore, 'applications')) as Query<Application & FormValues>;
     }, [firestore, isAdminLoading, currentUser]);
 
-    const loginLogsQuery = useMemoFirebase(() => {
-        // Temporarily disabled to fix permissions issue
-        return null;
-        // if (isAdminLoading || !firestore || !isSuperAdmin) return null;
-        // return query(collection(firestore, 'loginLogs'), orderBy('timestamp', 'desc'));
-    }, [firestore, isAdminLoading, isSuperAdmin]);
 
     const { data: allApplications, isLoading: isLoadingApplications } = useCollection<Application & FormValues>(applicationsQuery);
-    const { data: loginLogs, isLoading: isLoadingLoginLogs } = useCollection<LoginLog>(loginLogsQuery);
     
     const fetchAllStaff = async () => {
         if (!firestore || !currentUser) return;
@@ -1098,30 +1083,6 @@ export default function SuperAdminPage() {
         setFunctionsTestResults([]);
         
         try {
-            // Test 1: Direct Firestore access for login logs (bypassing Functions)
-            try {
-                const db = getFirestore();
-                const logsCollection = collection(db, 'loginLogs');
-                const logsQuery = query(logsCollection, limit(10));
-                const logsSnapshot = await getDocs(logsQuery);
-                
-                const logs = logsSnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
-                
-                setFunctionsTestResults(prev => [...prev, {
-                    testName: 'getLoginLogs (Direct Firestore)',
-                    status: 'success',
-                    message: `✅ Successfully accessed loginLogs collection directly. Found ${logs.length} log entries.`
-                }]);
-            } catch (error: any) {
-                setFunctionsTestResults(prev => [...prev, {
-                    testName: 'getLoginLogs (Direct Firestore)',
-                    status: 'error',
-                    message: `❌ Failed to access loginLogs: ${error.code || error.message}`
-                }]);
-            }
 
             // Test 2: Direct Firestore access for active sessions (bypassing Functions)
             try {
@@ -1493,43 +1454,6 @@ export default function SuperAdminPage() {
                         </CardContent>
                     </Card>
 
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-3 text-lg"><Clock className="h-5 w-5" />User Login Log</CardTitle>
-                             <CardDescription>A summary of recent login events across the application.</CardDescription>
-                        </CardHeader>
-                         <CardContent>
-                            <ScrollArea className="h-72 w-full">
-                                {isLoadingLoginLogs ? (
-                                    <div className="flex items-center justify-center h-full"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-                                ) : loginLogs && loginLogs.length > 0 ? (
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead>User</TableHead>
-                                                <TableHead>Role</TableHead>
-                                                <TableHead className="text-right">Time</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {loginLogs.map(log => (
-                                                <TableRow key={log.id}>
-                                                    <TableCell>
-                                                        <div className="font-medium">{log.displayName}</div>
-                                                        <div className="text-xs text-muted-foreground">{log.email}</div>
-                                                    </TableCell>
-                                                    <TableCell>{log.role}</TableCell>
-                                                    <TableCell className="text-right text-xs">{log.timestamp ? format(log.timestamp.toDate(), 'P p') : 'N/A'}</TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                ) : (
-                                    <p className="text-sm text-muted-foreground text-center py-10">No login events recorded.</p>
-                                )}
-                            </ScrollArea>
-                        </CardContent>
-                    </Card>
 
                     <Card>
                         <CardHeader>
