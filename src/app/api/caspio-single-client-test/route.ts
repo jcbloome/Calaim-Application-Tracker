@@ -12,7 +12,18 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🧪 Starting Single Client → Member Test API...');
     
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch (parseError) {
+      console.error('❌ JSON parsing error:', parseError);
+      return NextResponse.json({
+        success: false,
+        message: `JSON parsing failed: ${parseError.message}`,
+        error: parseError.toString()
+      }, { status: 400 });
+    }
+    
     const testClient: TestClient = body.testClient;
     
     if (!testClient) {

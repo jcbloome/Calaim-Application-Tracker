@@ -312,7 +312,7 @@ export default function CaspioTestPage() {
             lastName: `Single-${new Date().toISOString().substring(0, 19).replace(/[:.]/g, '-')}`,
             seniorFirst: 'Senior',
             seniorLast: `Guardian-${new Date().toISOString().substring(0, 10)}`,
-            mco: 'Kaiser Permanente'
+            mco: Math.random() > 0.5 ? 'Kaiser Permanente' : 'Health Net'
           }
         })
       });
@@ -493,7 +493,7 @@ export default function CaspioTestPage() {
               <ul className="text-sm text-blue-800 space-y-1">
                 <li>• <strong>Name:</strong> TestClient Single-[timestamp]</li>
                 <li>• <strong>Senior:</strong> Senior Guardian-[date]</li>
-                <li>• <strong>MCO:</strong> Kaiser Permanente</li>
+                <li>• <strong>MCO:</strong> Kaiser Permanente OR Health Net (random)</li>
                 <li>• <strong>Fields:</strong> First_Name, Last_Name, Senior_First, Senior_Last</li>
               </ul>
             </div>
@@ -615,11 +615,11 @@ export default function CaspioTestPage() {
           </div>
           
           <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">Test Data (3 Mock Members):</h4>
+            <h4 className="font-medium text-blue-900 mb-2">Test Data (Mock Members - Kaiser/Health Net Only):</h4>
             <ul className="text-sm text-blue-800 space-y-1">
               <li>• John Smith → Kaiser Permanente</li>
               <li>• Maria Garcia → Health Net</li>
-              <li>• David Johnson → Blue Cross Blue Shield</li>
+              <li>• David Johnson → Kaiser Permanente</li>
             </ul>
           </div>
         </CardContent>
@@ -838,7 +838,8 @@ export default function CaspioTestPage() {
                 <h4 className="font-medium text-yellow-800 mb-2">Field Mapping Notes:</h4>
                 <ul className="text-sm text-yellow-700 space-y-1">
                   <li>• <strong>Direct Matches:</strong> memberFirstName → memberFirstName, memberLastName → memberLastName</li>
-                  <li>• <strong>Alternative Names:</strong> memberFirstName → Senior_First, memberMrn → MCP_CIN (Kaiser)</li>
+                  <li>• <strong>Alternative Names:</strong> memberFirstName → Senior_First, memberMrn → MCP_CIN</li>
+                  <li>• <strong>MCO Restriction:</strong> healthPlan must be "Kaiser" or "Health Net" only</li>
                   <li>• <strong>ID Fields:</strong> client_ID2 and Client_ID2 are the same field with different casing</li>
                   <li>• <strong>Status Fields:</strong> CalAIM_Status, Kaiser_Status track different workflow stages</li>
                   <li>• <strong>Date Fields:</strong> Multiple date tracking fields for Kaiser processes and ILS contracts</li>
@@ -849,6 +850,35 @@ export default function CaspioTestPage() {
         </TabsContent>
 
         <TabsContent value="sample-data" className="space-y-6">
+          {/* MCO Restriction Notice */}
+          <Card className="border-orange-500 bg-orange-50">
+            <CardHeader>
+              <CardTitle className="text-orange-800">🏥 MCO Restriction</CardTitle>
+              <CardDescription className="text-orange-700">
+                All mock applications must use only Kaiser Permanente or Health Net as MCO
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3 bg-white border border-orange-200 rounded">
+                  <h4 className="font-medium text-orange-900 mb-2">✅ Allowed MCOs:</h4>
+                  <ul className="text-sm text-orange-800 space-y-1">
+                    <li>• Kaiser Permanente</li>
+                    <li>• Health Net</li>
+                  </ul>
+                </div>
+                <div className="p-3 bg-white border border-orange-200 rounded">
+                  <h4 className="font-medium text-orange-900 mb-2">❌ Not Allowed:</h4>
+                  <ul className="text-sm text-orange-800 space-y-1">
+                    <li>• Blue Cross Blue Shield</li>
+                    <li>• Anthem</li>
+                    <li>• Other MCOs</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* CS Summary Sample Data */}
             <Card>
@@ -920,8 +950,8 @@ export default function CaspioTestPage() {
                   <h4 className="font-semibold text-green-600 mb-2">Health Plan & IDs</h4>
                   <ul className="text-sm space-y-1">
                     <li>• memberMediCalNum → MC</li>
-                    <li>• memberMrn → MCP_CIN (Kaiser)</li>
-                    <li>• healthPlan → CalAIM_MCO</li>
+                    <li>• memberMrn → MCP_CIN (Kaiser/Health Net)</li>
+                    <li>• healthPlan → CalAIM_MCO (Kaiser/Health Net only)</li>
                     <li>• pathway → SNF_Diversion_or_Transition</li>
                   </ul>
                 </div>
