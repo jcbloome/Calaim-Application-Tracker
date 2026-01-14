@@ -223,6 +223,8 @@ const caspioMembersFields = {
 export default function CaspioTestPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [testResults, setTestResults] = useState<TestResponse | null>(null);
+  const [isSingleTestRunning, setIsSingleTestRunning] = useState(false);
+  const [singleTestResults, setSingleTestResults] = useState<any>(null);
   const { toast } = useToast();
 
   const runCaspioMemberSyncTest = async () => {
@@ -289,6 +291,64 @@ export default function CaspioTestPage() {
       });
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  const runSingleClientTest = async () => {
+    setIsSingleTestRunning(true);
+    setSingleTestResults(null);
+
+    try {
+      console.log('🧪 Starting Single Client → Member Test...');
+      
+      const response = await fetch('/api/caspio-single-client-test', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          testClient: {
+            firstName: 'TestClient',
+            lastName: `Single-${new Date().toISOString().substring(0, 19).replace(/[:.]/g, '-')}`,
+            seniorFirst: 'Senior',
+            seniorLast: `Guardian-${new Date().toISOString().substring(0, 10)}`,
+            mco: 'Kaiser Permanente'
+          }
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API failed: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log('📊 Single client test results:', data);
+      
+      setSingleTestResults(data);
+      
+      if (data.success) {
+        toast({
+          title: 'Single Client Test Successful! ✅',
+          description: `Client created with ID: ${data.clientId}, Member record linked successfully`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Single Client Test Failed',
+          description: data.message || 'Unknown error occurred',
+        });
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Single client test failed:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Test Error',
+        description: `Single client test failed: ${error.message}`,
+      });
+    } finally {
+      setIsSingleTestRunning(false);
     }
   };
 
@@ -414,6 +474,111 @@ export default function CaspioTestPage() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Single Client Test - NEW */}
+      <Card className="border-blue-500 bg-blue-50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-blue-800">
+            <Users className="h-5 w-5" />
+            Single Client → Member Test
+          </CardTitle>
+          <CardDescription className="text-blue-700">
+            Test the complete workflow: Create client record → Link to member table with enhanced fields
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 border border-blue-200 rounded-lg bg-white">
+              <h4 className="font-medium text-blue-900 mb-2">Test Client Data:</h4>
+              <ul className="text-sm text-blue-800 space-y-1">
+                <li>• <strong>Name:</strong> TestClient Single-[timestamp]</li>
+                <li>• <strong>Senior:</strong> Senior Guardian-[date]</li>
+                <li>• <strong>MCO:</strong> Kaiser Permanente</li>
+                <li>• <strong>Fields:</strong> First_Name, Last_Name, Senior_First, Senior_Last</li>
+              </ul>
+            </div>
+            <div className="p-4 border border-blue-200 rounded-lg bg-white">
+              <h4 className="font-medium text-blue-900 mb-2">Expected Workflow:</h4>
+              <ul className="text-sm text-blue-800 space-y-1">
+                <li>• 1️⃣ Create record in connect_tbl_clients</li>
+                <li>• 2️⃣ Get client_ID2 from response</li>
+                <li>• 3️⃣ Retrieve client record with all fields</li>
+                <li>• 4️⃣ Create linked record in CalAIM_tbl_Members</li>
+              </ul>
+            </div>
+          </div>
+          
+          <Button 
+            onClick={runSingleClientTest}
+            disabled={isSingleTestRunning}
+            size="lg"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {isSingleTestRunning ? (
+              <>
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Testing Single Client → Member Workflow...
+              </>
+            ) : (
+              <>
+                <Database className="mr-2 h-5 w-5" />
+                Run Single Client → Member Test
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Single Test Results */}
+      {singleTestResults && (
+        <Card className={`${singleTestResults.success ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}>
+          <CardHeader>
+            <CardTitle className={`flex items-center gap-2 ${singleTestResults.success ? 'text-green-800' : 'text-red-800'}`}>
+              {singleTestResults.success ? (
+                <CheckCircle2 className="h-5 w-5" />
+              ) : (
+                <AlertTriangle className="h-5 w-5" />
+              )}
+              Single Client Test Results
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 border rounded-lg bg-white">
+                <h4 className="font-medium mb-2">Client Table Result:</h4>
+                <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto">
+                  {JSON.stringify(singleTestResults.clientResult, null, 2)}
+                </pre>
+              </div>
+              <div className="p-4 border rounded-lg bg-white">
+                <h4 className="font-medium mb-2">Member Table Result:</h4>
+                <pre className="text-xs bg-gray-100 p-2 rounded overflow-auto">
+                  {JSON.stringify(singleTestResults.memberResult, null, 2)}
+                </pre>
+              </div>
+            </div>
+            
+            {singleTestResults.success && (
+              <div className="p-4 bg-green-100 border border-green-200 rounded-lg">
+                <h4 className="font-medium text-green-800 mb-2">✅ Success Summary:</h4>
+                <ul className="text-sm text-green-700 space-y-1">
+                  <li>• <strong>Client ID:</strong> {singleTestResults.clientId}</li>
+                  <li>• <strong>Client Record:</strong> Created with Senior_First and Senior_Last</li>
+                  <li>• <strong>Member Record:</strong> Linked with client_ID2 and enhanced fields</li>
+                  <li>• <strong>MCO:</strong> {singleTestResults.mco}</li>
+                </ul>
+              </div>
+            )}
+            
+            {!singleTestResults.success && (
+              <div className="p-4 bg-red-100 border border-red-200 rounded-lg">
+                <h4 className="font-medium text-red-800 mb-2">❌ Error Details:</h4>
+                <p className="text-sm text-red-700">{singleTestResults.message}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Test Description */}
       <Card>
