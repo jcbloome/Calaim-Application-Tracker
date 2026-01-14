@@ -20,12 +20,18 @@ export async function POST() {
     const accessToken = await getCaspioAccessToken(baseUrl, clientId, clientSecret);
     console.log('✅ Caspio access token obtained successfully');
     
-    // Mock test data (simplified for initial testing)
+    // First, let's discover what fields actually exist in the table
+    console.log('🔍 Discovering actual table structure...');
+    const tableStructure = await getTableStructure(accessToken, baseUrl, 'connect_tbl_clients');
+    console.log('📋 Table structure:', JSON.stringify(tableStructure, null, 2));
+    
+    // Mock test data with unique names to avoid conflicts
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
     const testMembers: MockMember[] = [
-      { firstName: 'John', lastName: 'Smith', mco: 'Kaiser Permanente' }
+      { firstName: 'TestUser', lastName: `APIRoute-${timestamp}`, mco: 'Kaiser Permanente' }
     ];
     
-    console.log(`📋 Testing with ${testMembers.length} mock member`);
+    console.log(`📋 Testing with ${testMembers.length} mock member - SIMPLIFIED TEST (clients table only)`);
     
     const results = [];
     
@@ -33,21 +39,15 @@ export async function POST() {
       try {
         console.log(`👤 Processing member: ${member.firstName} ${member.lastName}`);
         
-        // Step 1: Add to connect_tbl_clients table and get client_ID2
-        const clientId = await addToClientTable(accessToken, member, baseUrl);
-        console.log(`✅ Added to connect_tbl_clients table, client_ID2: ${clientId}`);
-        
-        // Step 2: Add to CalAIM_tbl_Members with client_ID2 and MCO
-        const memberResult = await addToMemberTable(accessToken, member, clientId, baseUrl);
-        console.log(`✅ Added to CalAIM_tbl_Members`);
+        // SIMPLIFIED: Only add to connect_tbl_clients table (no CalAIM_tbl_Members for now)
+        const clientResult = await addToClientTable(accessToken, member, baseUrl);
+        console.log(`✅ Successfully added to connect_tbl_clients table`);
         
         results.push({
           member: `${member.firstName} ${member.lastName}`,
-          clientId: clientId,
-          mco: member.mco,
           success: true,
-          clientTableResult: clientId,
-          memberTableResult: memberResult
+          clientTableResult: clientResult,
+          message: 'Successfully added to clients table only'
         });
         
       } catch (memberError: any) {
@@ -123,9 +123,9 @@ async function addToClientTable(accessToken: string, member: MockMember, baseUrl
   const clientTableUrl = `${baseUrl}/tables/connect_tbl_clients/records`;
   
   const clientData = {
-    First_Name: member.firstName,
-    Last_Name: member.lastName
-    // Removed Date_Created and Status as they don't exist in the table
+    Senior_First: member.firstName,
+    Senior_Last: member.lastName
+    // Using the actual field names from Caspio interface
   };
   
   console.log(`📝 Adding to connect_tbl_clients table:`, clientData);
@@ -146,54 +146,35 @@ async function addToClientTable(accessToken: string, member: MockMember, baseUrl
   }
   
   const result = await response.json();
-  console.log('📋 connect_tbl_clients table response:', result);
+  console.log('📋 connect_tbl_clients table response:', JSON.stringify(result, null, 2));
+  console.log('📋 Available fields in response:', Object.keys(result || {}));
   
-  // Extract client_ID2 from response (try different possible field names)
-  if (result && result.client_ID2) {
-    return result.client_ID2;
-  } else if (result && result.Client_ID2) {
-    return result.Client_ID2;
-  } else if (result && result.Record_ID) {
-    return result.Record_ID;
-  } else {
-    console.log('Available fields in response:', Object.keys(result || {}));
-    throw new Error('client_ID2/Client_ID2/Record_ID not found in connect_tbl_clients table response');
-  }
+  // For now, just return the whole result - we'll see what fields are actually returned
+  return result;
 }
 
-// Add member to CalAIM_tbl_Members with client_ID2 and MCO
-async function addToMemberTable(accessToken: string, member: MockMember, clientId: string, baseUrl: string): Promise<any> {
-  const memberTableUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
+// CalAIM_tbl_Members function removed for simplified testing
+
+// Get table structure/fields
+async function getTableStructure(accessToken: string, baseUrl: string, tableName: string): Promise<any> {
+  const tableUrl = `${baseUrl}/tables/${tableName}`;
   
-  const memberData = {
-    client_ID2: clientId,
-    memberFirstName: member.firstName,
-    memberLastName: member.lastName,
-    CalAIM_MCO: member.mco,
-    CalAIM_Status: 'New Referral',
-    LastUpdated: new Date().toISOString(),
-    created_date: new Date().toISOString()
-  };
+  console.log(`🔍 Checking table structure at: ${tableUrl}`);
   
-  console.log(`📝 Adding to CalAIM_tbl_Members:`, memberData);
-  
-  const response = await fetch(memberTableUrl, {
-    method: 'POST',
+  const response = await fetch(tableUrl, {
+    method: 'GET',
     headers: {
       'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
       'Accept': 'application/json'
-    },
-    body: JSON.stringify(memberData)
+    }
   });
   
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Failed to add to CalAIM_tbl_Members: ${response.status} ${errorText}`);
+    console.log(`❌ Failed to get table structure: ${response.status} ${errorText}`);
+    return { error: `${response.status}: ${errorText}` };
   }
   
   const result = await response.json();
-  console.log('📋 CalAIM_tbl_Members response:', result);
-  
   return result;
 }

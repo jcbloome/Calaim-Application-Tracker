@@ -40,13 +40,77 @@ export default function CaspioTestPage() {
     setTestResults(null);
 
     try {
-      // Try Firebase function first
-      console.log('🧪 Starting Caspio member sync test via Firebase function...');
-      const functions = getFunctions();
-      const testFunction = httpsCallable(functions, 'testCaspioMemberSync');
+      // Go DIRECTLY to the simple API route - no Firebase function at all
+      console.log('🧪 Starting SIMPLE Caspio test via API route ONLY...');
       
-      const result = await testFunction();
-      const data = result.data as TestResponse;
+      const apiResponse = await fetch('/api/caspio-simple-test', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!apiResponse.ok) {
+        throw new Error(`API route failed: ${apiResponse.status} ${apiResponse.statusText}`);
+      }
+      
+      const data = await apiResponse.json();
+      console.log('📊 Simple API test results:', data);
+      
+      // Convert the response to match the expected format
+      const formattedData = {
+        success: data.success,
+        message: data.message,
+        results: [{
+          member: data.testData ? `${data.testData.Senior_First} ${data.testData.Senior_Last}` : 'Test User',
+          success: data.success,
+          clientTableResult: data.response,
+          error: data.success ? undefined : data.message
+        }],
+        summary: {
+          totalTested: 1,
+          successful: data.success ? 1 : 0,
+          failed: data.success ? 0 : 1
+        }
+      };
+      
+      setTestResults(formattedData);
+      
+      if (data.success) {
+        toast({
+          title: 'Test Completed (Simple API)',
+          description: data.message,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Test Failed',
+          description: data.message,
+        });
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Simple API test failed:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Test Error',
+        description: `Simple API failed: ${error.message}`,
+      });
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  // Remove the old fallback logic since we're going direct to API
+  const runCaspioMemberSyncTestOLD = async () => {
+    setIsRunning(true);
+    setTestResults(null);
+
+    try {
+      // Skip Firebase function for now, go directly to API route
+      console.log('🧪 Starting Caspio member sync test via API route (bypassing Firebase)...');
+      throw new Error('Bypassing Firebase function to test API route directly');
       
       console.log('📊 Test results:', data);
       setTestResults(data);
@@ -69,9 +133,9 @@ export default function CaspioTestPage() {
       console.error('❌ Firebase function failed, trying API route fallback:', error);
       
       try {
-        // Fallback to API route
-        console.log('🔄 Trying API route fallback...');
-        const apiResponse = await fetch('/api/caspio-member-sync-test', {
+        // Fallback to SIMPLE API route (bypassing cache issues)
+        console.log('🔄 Trying SIMPLE API route fallback...');
+        const apiResponse = await fetch('/api/caspio-simple-test', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -181,7 +245,7 @@ export default function CaspioTestPage() {
             onClick={runCaspioMemberSyncTest}
             disabled={isRunning}
             size="lg"
-            className="w-full"
+            className="w-full mb-4"
           >
             {isRunning ? (
               <>
@@ -194,6 +258,30 @@ export default function CaspioTestPage() {
                 Run Caspio Member Sync Test
               </>
             )}
+          </Button>
+          
+          {/* NEW DIRECT TEST BUTTON */}
+          <Button 
+            onClick={async () => {
+              console.log('🚀 DIRECT API TEST - bypassing all caching...');
+              try {
+                const response = await fetch('/api/caspio-simple-test', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                console.log('📊 DIRECT result:', result);
+                alert(`Direct test result: ${result.success ? 'SUCCESS' : 'FAILED'}\n${result.message}`);
+              } catch (error: any) {
+                console.error('❌ Direct test error:', error);
+                alert(`Direct test error: ${error.message}`);
+              }
+            }}
+            size="lg"
+            className="w-full"
+            variant="outline"
+          >
+            🚀 DIRECT API TEST (Bypass Cache)
           </Button>
         </CardContent>
       </Card>

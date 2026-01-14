@@ -30,9 +30,10 @@ export const testCaspioMemberSync = onCall({
     const accessToken = await getCaspioAccessToken();
     console.log('✅ Caspio access token obtained successfully');
     
-    // Mock test data (simplified for initial testing)
+    // Mock test data with unique names to avoid conflicts
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
     const testMembers: MockMember[] = [
-      { firstName: 'John', lastName: 'Smith', mco: 'Kaiser Permanente' }
+      { firstName: 'TestUser', lastName: `Firebase-${timestamp}`, mco: 'Kaiser Permanente' }
     ];
     
     console.log(`📋 Testing with ${testMembers.length} mock member`);
