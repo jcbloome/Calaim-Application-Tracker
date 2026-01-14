@@ -39,6 +39,7 @@ export const authenticateGoogleDrive = onCall({
 export const scanCalAIMDriveFolders = onCall({
   secrets: [googleDriveClientId, googleDriveClientSecret, googleServiceAccountKey]
 }, async (request) => {
+  const { limitFolders = false, maxFolders = 10 } = request.data || {};
   try {
     // Verify user is authenticated and authorized
     if (!request.auth) {
@@ -105,12 +106,16 @@ export const scanCalAIMDriveFolders = onCall({
     
     console.log(`📁 Found CalAIM Members folder: ${calaimFolderId}`);
     
-    // Scan all subfolders in the CalAIM Members directory
-    console.log('🔄 Starting comprehensive scan of 800+ member folders...');
+    // Scan subfolders in the CalAIM Members directory
+    if (limitFolders) {
+      console.log(`🔄 Starting LIMITED scan of ${maxFolders} member folders for testing...`);
+    } else {
+      console.log('🔄 Starting comprehensive scan of 800+ member folders...');
+    }
     console.log('📋 This will attempt to use real Google Drive API if credentials are configured');
     const startTime = Date.now();
     
-    const driveFolders = await scanDriveFolder(calaimFolderId, members);
+    const driveFolders = await scanDriveFolder(calaimFolderId, members, limitFolders, maxFolders);
     
     const endTime = Date.now();
     const scanDuration = (endTime - startTime) / 1000;
@@ -358,7 +363,7 @@ async function findCalAIMMembersFolder(): Promise<string | null> {
 }
 
 // Scan a Google Drive folder and return all member subfolders
-async function scanDriveFolder(folderId: string, members: any[]): Promise<any[]> {
+async function scanDriveFolder(folderId: string, members: any[], limitFolders: boolean = false, maxFolders: number = 10): Promise<any[]> {
   try {
     console.log(`📂 Starting REAL scan of CalAIM Members folder: ${folderId}`);
     
@@ -375,9 +380,10 @@ async function scanDriveFolder(folderId: string, members: any[]): Promise<any[]>
       
       try {
         // Get folders from Google Drive API with pagination
+        const pageSize = limitFolders ? Math.min(maxFolders, 20) : 100;
         const response = await drive.files.list({
           q: `'${folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-          pageSize: 100, // Process 100 folders at a time
+          pageSize: pageSize,
           pageToken: nextPageToken,
           fields: 'nextPageToken, files(id, name, createdTime, modifiedTime, webViewLink)',
           orderBy: 'name'
@@ -418,9 +424,17 @@ async function scanDriveFolder(folderId: string, members: any[]): Promise<any[]>
             
             totalProcessed++;
             
-            // Log progress every 50 folders
-            if (totalProcessed % 50 === 0) {
+            // Log progress every 50 folders (or every 5 for limited scans)
+            const progressInterval = limitFolders ? 5 : 50;
+            if (totalProcessed % progressInterval === 0) {
               console.log(`📊 Progress: ${totalProcessed} folders processed...`);
+            }
+            
+            // Stop if we've reached the limit for testing
+            if (limitFolders && totalProcessed >= maxFolders) {
+              console.log(`🛑 Reached limit of ${maxFolders} folders for testing`);
+              nextPageToken = undefined; // Stop pagination
+              break;
             }
             
           } catch (folderError) {

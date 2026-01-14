@@ -84,21 +84,22 @@ export default function MigrateDrivePage() {
     }
   };
 
-  const scanCalAIMFolders = async () => {
+  const scanCalAIMFolders = async (limitFolders: boolean = false, maxFolders: number = 10) => {
     setIsScanning(true);
     
     try {
       const functions = getFunctions();
       const scanFunction = httpsCallable(functions, 'scanCalAIMDriveFolders');
       
-      const result = await scanFunction();
+      const result = await scanFunction({ limitFolders, maxFolders });
       const data = result.data as any;
       
       if (data.success) {
         setFolders(data.folders);
+        const scanType = limitFolders ? `LIMITED TEST (${data.folders.length} folders)` : `FULL SCAN (${data.folders.length} folders)`;
         toast({
           title: 'Scan Complete',
-          description: `Found ${data.folders.length} member folders in Google Drive`,
+          description: `${scanType} - Found ${data.folders.length} member folders in Google Drive`,
           className: 'bg-green-100 text-green-900 border-green-200',
         });
       }
@@ -245,24 +246,49 @@ export default function MigrateDrivePage() {
               Scan the "CalAIM Members" folder and match to existing members
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button 
-              onClick={scanCalAIMFolders} 
-              disabled={isScanning}
-              className="w-full"
-            >
-              {isScanning ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Scanning Google Drive...
-                </>
-              ) : (
-                <>
-                  <FolderOpen className="mr-2 h-4 w-4" />
-                  Scan CalAIM Members Folder
-                </>
-              )}
-            </Button>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Button 
+                onClick={() => scanCalAIMFolders(true, 10)} 
+                disabled={isScanning}
+                variant="outline"
+                className="w-full"
+              >
+                {isScanning ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Scanning...
+                  </>
+                ) : (
+                  <>
+                    <FolderOpen className="mr-2 h-4 w-4" />
+                    Test Scan (10 folders)
+                  </>
+                )}
+              </Button>
+              
+              <Button 
+                onClick={() => scanCalAIMFolders(false)} 
+                disabled={isScanning}
+                className="w-full"
+              >
+                {isScanning ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Scanning...
+                  </>
+                ) : (
+                  <>
+                    <FolderOpen className="mr-2 h-4 w-4" />
+                    Full Scan (800+ folders)
+                  </>
+                )}
+              </Button>
+            </div>
+            
+            <div className="text-sm text-muted-foreground text-center">
+              Start with "Test Scan" to verify Google Drive access with a few folders
+            </div>
           </CardContent>
         </Card>
       )}

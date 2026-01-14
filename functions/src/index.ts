@@ -27,6 +27,27 @@ export { performAutoSync, getPendingSyncs, performBatchSync } from './auto-batch
 // Export Caspio Webhook functions
 export { caspioWebhook } from './caspio-webhooks';
 
+// Export Caspio Member Sync Test functions
+export { testCaspioMemberSync } from './caspio-member-sync-test';
+
+// Simple test function to verify Firebase Functions connectivity
+export const simpleTest = onCall({
+  cors: [
+    /localhost/,
+    /\.vercel\.app$/,
+    /\.netlify\.app$/,
+    /\.firebaseapp\.com$/
+  ]
+}, async (request) => {
+  return {
+    success: true,
+    message: "Firebase Functions is working correctly!",
+    timestamp: new Date().toISOString(),
+    userAuth: !!request.auth,
+    userUid: request.auth?.uid || null
+  };
+});
+
 // Export Email Notification functions
 export { sendManualNotification } from './email-notifications';
 

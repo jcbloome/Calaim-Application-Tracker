@@ -2,7 +2,7 @@
 
 ## 🔧 Setting Up Real Google Drive Integration
 
-To scan your actual 800+ CalAIM member folders, we need to set up Google Drive API credentials.
+To scan your actual 800+ CalAIM member folders, we need to set up Google Drive API credentials. We'll start with limited testing (10 folders) before scanning all folders.
 
 ### Step 1: Create Google Cloud Project & Enable APIs
 
@@ -62,14 +62,19 @@ firebase deploy --only functions
 
 ## 🎯 What This Will Enable
 
-Once set up, the scan will:
+Once set up, you can choose between:
 
-✅ **Connect to Real Google Drive**: Access your actual CalAIM Members folder
-✅ **Scan 800+ Folders**: Process all member folders with pagination
-✅ **Count Files**: Get actual file counts for each folder
-✅ **Match Members**: Compare folder names with Caspio member records
-✅ **Handle Rate Limits**: Respect Google API quotas and limits
-✅ **Provide Real Data**: Show actual folder names, dates, and file counts
+### Test Scan (10 folders)
+✅ **Quick Verification**: Test with just 10 folders to verify setup
+✅ **Fast Results**: Complete in under 1 minute
+✅ **Safe Testing**: No risk of hitting API limits
+✅ **Real Data Preview**: See actual folder names and file counts
+
+### Full Scan (800+ folders)
+✅ **Complete Migration**: Process all member folders with pagination
+✅ **Comprehensive Data**: Get file counts for every folder
+✅ **Member Matching**: Compare all folders with Caspio records
+✅ **Production Ready**: Handle rate limits and large datasets
 
 ## 🔍 Expected Results
 

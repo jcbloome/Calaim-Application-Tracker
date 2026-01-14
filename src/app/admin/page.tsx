@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, FolderKanban, Users, Activity, FileCheck2, List, RefreshCw } from 'lucide-react';
+import { Users, Activity, FileCheck2, List } from 'lucide-react';
 import { ApplicationListSkeleton } from '@/components/ui/application-skeleton';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdmin } from '@/hooks/use-admin';
@@ -158,27 +158,11 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Admin Overview</h1>
-          <p className="text-muted-foreground">
-            Daily dashboard with notifications, statistics, and recent applications.
-          </p>
-        </div>
-        <Button 
-          onClick={fetchApps} 
-          disabled={isLoadingApps} 
-          variant="outline" 
-          size="sm"
-          className="flex items-center gap-2"
-        >
-          {isLoadingApps ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4" />
-          )}
-          Refresh
-        </Button>
+      <div>
+        <h1 className="text-3xl font-bold">Admin Overview</h1>
+        <p className="text-muted-foreground">
+          Daily dashboard with notifications, statistics, and recent applications.
+        </p>
       </div>
 
       {/* Daily Notifications Dashboard */}

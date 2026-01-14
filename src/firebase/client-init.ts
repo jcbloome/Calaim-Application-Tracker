@@ -5,12 +5,14 @@ import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
+import { getFunctions, Functions, connectFunctionsEmulator } from 'firebase/functions';
 
 export interface FirebaseSdks {
   firebaseApp: FirebaseApp;
   auth: Auth;
   firestore: Firestore;
   storage: FirebaseStorage;
+  functions: Functions;
 }
 
 let firebaseSdks: FirebaseSdks | null = null;
@@ -19,17 +21,22 @@ function getSdks(firebaseApp: FirebaseApp): FirebaseSdks {
   const auth = getAuth(firebaseApp);
   // Persistence is now handled at login time to ensure it completes before sign-in.
   const storage = getStorage(firebaseApp);
+  const functions = getFunctions(firebaseApp);
+  
   console.log('🔧 [FIREBASE] Storage initialized with bucket:', storage.app.options.storageBucket);
+  console.log('🔧 [FIREBASE] Functions initialized for region:', functions.region);
   console.log('🔧 [FIREBASE] Full storage config:', {
     bucket: storage.app.options.storageBucket,
     projectId: storage.app.options.projectId,
     appName: storage.app.name
   });
+  
   return {
     firebaseApp,
     auth: auth,
     firestore: getFirestore(firebaseApp),
     storage: storage,
+    functions: functions,
   };
 }
 

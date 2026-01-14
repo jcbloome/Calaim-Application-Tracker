@@ -11,7 +11,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp, addDoc, orderBy, limit, getFirestore } from 'firebase/firestore';
 import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError, useStorage } from '@/firebase';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/firebase';
 import { ref, uploadBytesResumable, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import { NotificationManager } from '@/components/NotificationManager';
 import NotificationSettings from '@/components/NotificationSettings';
@@ -193,6 +194,11 @@ export default function SuperAdminPage() {
     const [storageDebugLog, setStorageDebugLog] = useState<string[]>([]);
     const [functionsTestResults, setFunctionsTestResults] = useState<TestResult[]>([]);
     const [isFunctionsTestLoading, setIsFunctionsTestLoading] = useState(false);
+    
+    // Caspio Member Sync Test state
+    const [isCaspioSyncTesting, setIsCaspioSyncTesting] = useState(false);
+    const [caspioSyncResults, setCaspioSyncResults] = useState<any[]>([]);
+    const [caspioSyncSummary, setCaspioSyncSummary] = useState<any>(null);
     
     // Emergency reset function
     const resetAllTests = () => {
@@ -784,6 +790,95 @@ export default function SuperAdminPage() {
             toast({ variant: 'destructive', title: 'Caspio Sync Error', description: "See log on page for details." });
         } finally {
             setIsSendingWebhook(false);
+        }
+    };
+
+    const handleSimpleFunctionTest = async () => {
+        try {
+            const testFunction = httpsCallable(functions, 'simpleTest');
+
+            toast({
+                title: 'Testing Firebase Functions',
+                description: 'Checking basic connectivity...',
+                className: 'bg-blue-100 text-blue-900 border-blue-200',
+            });
+
+            const response = await testFunction({});
+            const data = response.data as any;
+
+            console.log('✅ Simple Function Test Result:', data);
+            toast({
+                title: 'Firebase Functions Working!',
+                description: `Success: ${data.message}`,
+                className: 'bg-green-100 text-green-900 border-green-200',
+            });
+
+        } catch (error: any) {
+            console.error('❌ Simple Function Test Error:', error);
+            console.error('❌ Error details:', {
+                name: error.name,
+                message: error.message,
+                code: error.code,
+                stack: error.stack
+            });
+            toast({
+                variant: 'destructive',
+                title: 'Firebase Functions Failed',
+                description: `${error.code || 'Unknown'}: ${error.message || 'Failed to connect to Firebase Functions'}`,
+            });
+        }
+    };
+
+    const handleCaspioMemberSyncTest = async () => {
+        setIsCaspioSyncTesting(true);
+        setCaspioSyncResults([]);
+        setCaspioSyncSummary(null);
+
+        try {
+            const testFunction = httpsCallable(functions, 'testCaspioMemberSync');
+
+            toast({
+                title: 'Caspio Member Sync Test Started',
+                description: 'Testing member sync workflow with mock data...',
+                className: 'bg-blue-100 text-blue-900 border-blue-200',
+            });
+
+            const response = await testFunction({});
+            const data = response.data as any;
+
+            if (data.success) {
+                setCaspioSyncResults(data.results || []);
+                setCaspioSyncSummary(data.summary || null);
+                toast({
+                    title: 'Caspio Member Sync Test Complete',
+                    description: `${data.summary?.successful || 0} of ${data.summary?.totalTested || 0} members synced successfully.`,
+                    className: 'bg-green-100 text-green-900 border-green-200',
+                });
+            } else {
+                setCaspioSyncResults(data.results || []);
+                setCaspioSyncSummary(data.summary || { totalTested: 0, successful: 0, failed: 0 });
+                toast({
+                    variant: 'destructive',
+                    title: 'Caspio Member Sync Test Failed',
+                    description: data.message || 'An unknown error occurred during the test.',
+                });
+            }
+
+        } catch (error: any) {
+            console.error('❌ Caspio Member Sync Test Error:', error);
+            console.error('❌ Error details:', {
+                name: error.name,
+                message: error.message,
+                code: error.code,
+                stack: error.stack
+            });
+            toast({
+                variant: 'destructive',
+                title: 'Caspio Member Sync Test Error',
+                description: `${error.code || 'Unknown'}: ${error.message || 'Failed to run Caspio member sync test'}`,
+            });
+        } finally {
+            setIsCaspioSyncTesting(false);
         }
     };
 
@@ -1717,17 +1812,39 @@ export default function SuperAdminPage() {
                             <div className="space-y-4">
                                 <h4 className="font-semibold">Caspio Integration</h4>
                                 <p className="text-sm text-muted-foreground">Test connection to Caspio. Use the "Send CS Summary to Caspio" button on individual application pages to publish data.</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                                    <Button variant="outline" className="w-full" disabled={isSendingWebhook} onClick={handleTestCaspioConnection}>
+                                        {isSendingWebhook ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Testing...</> : <><Database className="mr-2 h-4 w-4"/>Test Connection</>}
+                                    </Button>
+                                    <Button 
+                                        variant="default" 
+                                        className="w-full" 
+                                        disabled={isCaspioSyncTesting} 
+                                        onClick={handleCaspioMemberSyncTest}
+                                    >
+                                        {isCaspioSyncTesting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Testing...</> : <><Database className="mr-2 h-4 w-4"/>Member Sync Test</>}
+                                    </Button>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <Button 
+                                        variant="secondary" 
+                                        className="w-full" 
+                                        onClick={handleSimpleFunctionTest}
+                                    >
+                                        <Beaker className="mr-2 h-4 w-4"/>
+                                        Test Firebase Functions
+                                    </Button>
+                                    <Button className="w-full" disabled variant="outline">
+                                        <Send className="mr-2 h-4 w-4"/>
+                                        Use Individual App Pages
+                                    </Button>
+                                </div>
                                 <AlertDialog>
                                     <AlertDialogTrigger asChild>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                            <Button variant="outline" className="w-full" disabled={isSendingWebhook} onClick={handleTestCaspioConnection}>
-                                                {isSendingWebhook ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Testing...</> : <><Database className="mr-2 h-4 w-4"/>Test Connection</>}
-                                            </Button>
-                                            <Button className="w-full" disabled variant="secondary">
-                                                <Send className="mr-2 h-4 w-4"/>
-                                                Use Individual App Pages
-                                            </Button>
-                                        </div>
+                                        <Button variant="outline" className="w-full mt-3">
+                                            <Send className="mr-2 h-4 w-4"/>
+                                            Send Test Data to Caspio
+                                        </Button>
                                     </AlertDialogTrigger>
                                     <AlertDialogContent className="max-w-2xl">
                                         <AlertDialogHeader>
@@ -1756,6 +1873,44 @@ export default function SuperAdminPage() {
                                             {webhookLog}
                                         </AlertDescription>
                                     </Alert>
+                                )}
+                                
+                                {/* Caspio Member Sync Test Results */}
+                                {caspioSyncSummary && (
+                                    <div className="mt-4 space-y-4">
+                                        <div className="grid grid-cols-3 gap-4 p-4 bg-muted/50 rounded-lg">
+                                            <div className="text-center">
+                                                <p className="text-2xl font-bold text-primary">{caspioSyncSummary.totalTested}</p>
+                                                <p className="text-xs text-muted-foreground">Total Tested</p>
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="text-2xl font-bold text-green-600">{caspioSyncSummary.successful}</p>
+                                                <p className="text-xs text-muted-foreground">Successful</p>
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="text-2xl font-bold text-red-600">{caspioSyncSummary.failed}</p>
+                                                <p className="text-xs text-muted-foreground">Failed</p>
+                                            </div>
+                                        </div>
+                                        
+                                        {caspioSyncResults.length > 0 && (
+                                            <div className="space-y-2">
+                                                <h5 className="font-semibold text-sm">Member Sync Results:</h5>
+                                                {caspioSyncResults.map((result, index) => (
+                                                    <Alert key={index} variant={result.success ? 'default' : 'destructive'} className={result.success ? 'bg-green-50 border-green-200' : ''}>
+                                                        {result.success ? <CheckCircle className="h-4 w-4" /> : <FileWarning className="h-4 w-4" />}
+                                                        <AlertTitle className="text-xs font-semibold">
+                                                            {result.member} ({result.mco}) - {result.success ? 'SUCCESS' : 'FAILED'}
+                                                        </AlertTitle>
+                                                        <AlertDescription className="text-xs">
+                                                            {result.message}
+                                                            {result.clientId && <p className="mt-1">Client ID: {result.clientId}</p>}
+                                                        </AlertDescription>
+                                                    </Alert>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                              <div className="space-y-4 pt-6 border-t">

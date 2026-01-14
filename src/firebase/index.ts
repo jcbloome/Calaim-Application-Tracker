@@ -18,6 +18,6 @@ export type { FirebaseSdks } from './client-init';
 import { initializeFirebase } from './client-init';
 
 // Initialize Firebase and export instances
-const { firebaseApp: app, firestore: db, auth, storage } = initializeFirebase();
+const { firebaseApp: app, firestore: db, auth, storage, functions } = initializeFirebase();
 
-export { app, db, auth, storage };
+export { app, db, auth, storage, functions };

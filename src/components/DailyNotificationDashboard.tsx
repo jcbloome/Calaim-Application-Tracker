@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useFirestore } from '@/firebase';
-import { collection, query, where, onSnapshot, orderBy, Timestamp, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, Timestamp } from 'firebase/firestore';
 import { 
   FileText, 
   Upload, 
@@ -159,34 +159,16 @@ export function DailyNotificationDashboard() {
       const startOfToday = startOfDay(today);
       const endOfToday = endOfDay(today);
 
-      // Query for all applications (not just today's) to get comprehensive stats
-      const allAppsQuery = collection(firestore, 'applications');
-      const todayAppsQuery = query(
-        collection(firestore, 'applications'),
-        where('lastModified', '>=', Timestamp.fromDate(startOfToday)),
-        where('lastModified', '<=', Timestamp.fromDate(endOfToday)),
-        orderBy('lastModified', 'desc')
-      );
-
-      // Also check for applications with recent CS Summary completions
-      const recentCsQuery = query(
-        collection(firestore, 'applications'),
-        where('csSummaryComplete', '==', true),
-        orderBy('lastModified', 'desc')
-      );
-
-      // Execute queries to refresh data
-      const [todaySnapshot, recentCsSnapshot] = await Promise.all([
-        getDocs(todayAppsQuery),
-        getDocs(recentCsQuery)
-      ]);
-
-      // The useEffect listener will automatically update the UI with fresh data
-      console.log(`🔄 Refreshed data: ${todaySnapshot.size} today activities, ${recentCsSnapshot.size} recent CS completions`);
+      // Since we have real-time listeners, just show a refresh message
+      // The onSnapshot listener will automatically provide fresh data
+      console.log('🔄 Refreshing dashboard data...');
+      
+      // Small delay to show the refresh state
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       toast({
         title: 'Data Refreshed',
-        description: `Updated with latest activity (${todaySnapshot.size} today)`,
+        description: 'Dashboard updated with latest activity',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {

@@ -1,0 +1,114 @@
+# CalAIM Application Tracker - Cursor Rules
+
+## Project Context & Architecture
+
+This is a **CalAIM Application Tracker** built with:
+- **Frontend**: Next.js 15, React, TypeScript, Tailwind CSS
+- **Backend**: Firebase Functions (Node.js 22, TypeScript)
+- **Database**: Firestore + Caspio integration
+- **Authentication**: Firebase Auth with admin roles
+- **External APIs**: Google Drive API, Caspio REST API
+
+## Key Project Components
+
+### 1. **Admin System** (`src/app/admin/`)
+- Multi-level admin interface with role-based access
+- Daily activity dashboard with real-time notifications
+- Application management and review system
+- Google Drive integration for document migration
+- Caspio sync and member management tools
+
+### 2. **Firebase Functions** (`functions/src/`)
+- **Google Drive Integration**: Real API scanning of 800+ CalAIM member folders
+- **Caspio Sync**: Member data synchronization between systems
+- **Email Notifications**: Automated staff notifications
+- **Document Processing**: PDF form separation and processing
+- **Webhook Handlers**: Real-time data sync from Caspio
+
+### 3. **Key Tables & Data Structure**
+- **Caspio Tables**: `connect_tbl_clients`, `CalAIM_tbl_Members`
+- **Firestore Collections**: `applications`, `users`, `admin-settings`
+- **Google Drive**: CalAIM Members folder with 800+ member subfolders
+
+## Current Development Status
+
+### ✅ **Completed Features**
+1. **Form Separator Tool**: Live PDF processing with page selection and form type assignment
+2. **Google Drive API Setup**: Real API integration with service account authentication
+3. **Admin Interface**: Complete dashboard with role management
+4. **Caspio Integration**: Member sync workflow (Client table → CalAIM Members table)
+
+### 🔧 **Current Issues Being Resolved**
+1. **Caspio Table Fields**: Debugging field names in `connect_tbl_clients` table
+2. **Google Drive Credentials**: Setting up real service account for 800+ folder scanning
+
+### 📋 **Pending Tasks**
+- Test real Google Drive scan on limited folders (10 folders first)
+- Complete Drive → Caspio member sync workflow integration
+- Full migration of 800+ member folders
+
+## Development Patterns & Conventions
+
+### **Firebase Functions**
+- Use `onCall` for client-callable functions
+- Use `defineSecret` for sensitive credentials
+- Always include error handling and detailed logging
+- Use TypeScript interfaces for data structures
+
+### **Admin Interface**
+- Role-based access control (`useAdmin` hook)
+- Real-time data updates with Firestore listeners
+- Consistent UI with shadcn/ui components
+- Mobile-responsive design with sheet navigation
+
+### **API Integration**
+- **Caspio**: OAuth2 with client credentials flow
+- **Google Drive**: Service account authentication with JWT
+- **Error Handling**: Graceful fallbacks and user-friendly messages
+
+## Common Commands
+
+```bash
+# Development
+npm run dev                    # Start Next.js dev server
+cd functions && npm run build  # Build Firebase Functions
+firebase deploy --only functions  # Deploy functions
+
+# Secrets Management
+firebase functions:secrets:set SECRET_NAME
+firebase functions:secrets:access SECRET_NAME
+
+# Testing
+# Navigate to /admin/caspio-test for Caspio sync testing
+# Navigate to /admin/migrate-drive for Google Drive testing
+```
+
+## Important File Locations
+
+- **Admin Layout**: `src/app/admin/layout.tsx`
+- **Caspio Test**: `functions/src/caspio-member-sync-test.ts`
+- **Google Drive**: `functions/src/google-drive.ts`
+- **Setup Guides**: `GOOGLE_DRIVE_SETUP.md`, `CASPIO_SETUP.md`
+
+## When Starting New Conversations
+
+1. **Review Recent Progress**: Check the latest completed features and current issues
+2. **Check TODO Status**: Look for in-progress tasks and pending items
+3. **Verify Environment**: Ensure dev server and functions are properly deployed
+4. **Continue Context**: Build upon existing implementations rather than starting over
+
+## Key Secrets & Configuration
+
+- `GOOGLE_SERVICE_ACCOUNT_KEY`: Google Drive API access
+- `CASPIO_BASE_URL`: `https://c7ebl500.caspio.com/rest/v2`
+- `CASPIO_CLIENT_ID` & `CASPIO_CLIENT_SECRET`: API authentication
+- Firebase project: `studio-2881432245-f1d94`
+
+## Development Philosophy
+
+- **Incremental Testing**: Test with limited data before full deployment
+- **Error Resilience**: Always provide fallbacks and clear error messages  
+- **User Experience**: Prioritize intuitive interfaces and real-time feedback
+- **Security First**: Use proper authentication and role-based access control
+
+This project is actively being developed with a focus on migrating from Google Drive to a Firebase-based system while maintaining Caspio integration for member management.
