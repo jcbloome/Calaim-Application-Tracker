@@ -667,8 +667,8 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
       caspio_id: member.client_ID2 || member.Client_ID2 || member.CLIENT_ID2 || member.clientID2 || member.ClientID2 || member.id || `caspio-${index}`,
       source: 'caspio',
       
-      // Generate unique ID for frontend
-      id: member.client_ID2 || member.Client_ID2 || member.CLIENT_ID2 || member.clientID2 || member.ClientID2 || `caspio-${index}`
+      // Generate unique ID for frontend - always use index to ensure uniqueness
+      id: `caspio-member-${index}-${member.client_ID2 || member.Client_ID2 || member.CLIENT_ID2 || member.clientID2 || member.ClientID2 || 'unknown'}`
     }));
     
     return {

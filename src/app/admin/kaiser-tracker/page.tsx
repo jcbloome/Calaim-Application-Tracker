@@ -619,7 +619,7 @@ export default function KaiserTrackerPage() {
           const daysInStatus = Math.floor((new Date().getTime() - lastChange.getTime()) / (1000 * 60 * 60 * 24));
           
           return {
-            id: member?.id || `member-${index}`,
+            id: member?.id || `frontend-member-${index}-${member?.client_ID2 || 'unknown'}`,
             memberFirstName: member?.memberFirstName || '',
             memberLastName: member?.memberLastName || '',
             memberMediCalNum: member?.memberMediCalNum || '',

@@ -1,10 +1,4 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { defineSecret } from "firebase-functions/params";
-
-// Define secrets for Caspio API
-const caspioBaseUrl = defineSecret("CASPIO_BASE_URL");
-const caspioClientId = defineSecret("CASPIO_CLIENT_ID");
-const caspioClientSecret = defineSecret("CASPIO_CLIENT_SECRET");
 
 interface MockMember {
   firstName: string;
@@ -19,26 +13,17 @@ interface CaspioClientResponse {
 
 // Test function to sync mock member data to Caspio
 export const testCaspioMemberSync = onCall({
-  secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret],
-  cors: [
-    /localhost/,
-    /\.vercel\.app$/,
-    /\.netlify\.app$/,
-    /\.firebaseapp\.com$/
-  ]
+  cors: true
 }, async (request) => {
   try {
     console.log('🧪 Starting Caspio Member Sync Test...');
     
-    // Check if secrets are available
-    console.log('🔍 Checking secrets availability...');
-    console.log(`Base URL available: ${!!caspioBaseUrl.value()}`);
-    console.log(`Client ID available: ${!!caspioClientId.value()}`);
-    console.log(`Client Secret available: ${!!caspioClientSecret.value()}`);
+    // Use hardcoded credentials for testing (same as Kaiser function)
+    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
     
-    if (!caspioBaseUrl.value() || !caspioClientId.value() || !caspioClientSecret.value()) {
-      throw new Error('Missing required Caspio secrets. Please check Firebase Functions secrets configuration.');
-    }
+    console.log('🔍 Using hardcoded credentials for testing...');
     
     // Get Caspio access token first
     console.log('🔑 Attempting to get Caspio access token...');
@@ -118,9 +103,9 @@ export const testCaspioMemberSync = onCall({
 
 // Get Caspio OAuth access token
 async function getCaspioAccessToken(): Promise<string> {
-  const baseUrl = caspioBaseUrl.value().replace('/rest/v2', '');
-  const clientId = caspioClientId.value();
-  const clientSecret = caspioClientSecret.value();
+  const baseUrl = 'https://c7ebl500.caspio.com';
+  const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+  const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
   
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
   const tokenUrl = `${baseUrl}/oauth/token`;
@@ -132,30 +117,34 @@ async function getCaspioAccessToken(): Promise<string> {
     headers: {
       'Authorization': `Basic ${credentials}`,
       'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json'
+      'Accept': 'application/json',
+      'User-Agent': 'CalAIM-Application/1.0'
     },
     body: 'grant_type=client_credentials',
   });
   
+  console.log(`📡 OAuth response: ${response.status} ${response.statusText}`);
+  
   if (!response.ok) {
     const errorText = await response.text();
+    console.error(`❌ OAuth failed: ${response.status} ${errorText}`);
     throw new Error(`Failed to get access token: ${response.status} ${errorText}`);
   }
   
   const tokenData = await response.json();
+  console.log(`✅ Access token obtained, length: ${tokenData.access_token?.length || 0}`);
   return tokenData.access_token;
 }
 
 // Add member to Client table and return client_ID2
 async function addToClientTable(accessToken: string, member: MockMember): Promise<string> {
-  const baseUrl = caspioBaseUrl.value();
+  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
   const clientTableUrl = `${baseUrl}/tables/connect_tbl_clients/records`;
   
   const clientData = {
     First_Name: member.firstName,
-    Last_Name: member.lastName,
-    Date_Created: new Date().toISOString(),
-    Status: 'Active'
+    Last_Name: member.lastName
+    // Removed Date_Created and Status as they don't exist in the table
   };
   
   console.log(`📝 Adding to connect_tbl_clients table:`, clientData);
@@ -193,7 +182,7 @@ async function addToClientTable(accessToken: string, member: MockMember): Promis
 
 // Add member to CalAIM_tbl_Members with client_ID2 and MCO
 async function addToMemberTable(accessToken: string, member: MockMember, clientId: string): Promise<any> {
-  const baseUrl = caspioBaseUrl.value();
+  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
   const memberTableUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
   
   const memberData = {
@@ -231,7 +220,7 @@ async function addToMemberTable(accessToken: string, member: MockMember, clientI
 
 // Check what tables are available
 async function checkAvailableTables(accessToken: string): Promise<any> {
-  const baseUrl = caspioBaseUrl.value();
+  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
   const tablesUrl = `${baseUrl}/tables`;
   
   console.log(`🔍 Checking tables at: ${tablesUrl}`);
@@ -256,7 +245,7 @@ async function checkAvailableTables(accessToken: string): Promise<any> {
 
 // Get table structure/fields
 async function getTableStructure(accessToken: string, tableName: string): Promise<any> {
-  const baseUrl = caspioBaseUrl.value();
+  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
   const tableUrl = `${baseUrl}/tables/${tableName}`;
   
   console.log(`🔍 Checking table structure at: ${tableUrl}`);

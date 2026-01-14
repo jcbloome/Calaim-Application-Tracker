@@ -40,10 +40,11 @@ export default function CaspioTestPage() {
     setTestResults(null);
 
     try {
+      // Try Firebase function first
+      console.log('🧪 Starting Caspio member sync test via Firebase function...');
       const functions = getFunctions();
       const testFunction = httpsCallable(functions, 'testCaspioMemberSync');
       
-      console.log('🧪 Starting Caspio member sync test...');
       const result = await testFunction();
       const data = result.data as TestResponse;
       
@@ -52,7 +53,7 @@ export default function CaspioTestPage() {
       
       if (data.success) {
         toast({
-          title: 'Test Completed',
+          title: 'Test Completed (Firebase)',
           description: data.message,
           className: 'bg-green-100 text-green-900 border-green-200',
         });
@@ -65,18 +66,48 @@ export default function CaspioTestPage() {
       }
       
     } catch (error: any) {
-      console.error('❌ Test error:', error);
-      console.error('❌ Error details:', {
-        name: error.name,
-        message: error.message,
-        code: error.code,
-        stack: error.stack
-      });
-      toast({
-        variant: 'destructive',
-        title: 'Test Error',
-        description: `${error.code || 'Unknown'}: ${error.message || 'Failed to run Caspio member sync test'}`,
-      });
+      console.error('❌ Firebase function failed, trying API route fallback:', error);
+      
+      try {
+        // Fallback to API route
+        console.log('🔄 Trying API route fallback...');
+        const apiResponse = await fetch('/api/caspio-member-sync-test', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!apiResponse.ok) {
+          throw new Error(`API route failed: ${apiResponse.status} ${apiResponse.statusText}`);
+        }
+        
+        const data = await apiResponse.json() as TestResponse;
+        console.log('📊 API route test results:', data);
+        setTestResults(data);
+        
+        if (data.success) {
+          toast({
+            title: 'Test Completed (API Route)',
+            description: data.message,
+            className: 'bg-blue-100 text-blue-900 border-blue-200',
+          });
+        } else {
+          toast({
+            variant: 'destructive',
+            title: 'Test Failed',
+            description: data.message,
+          });
+        }
+        
+      } catch (apiError: any) {
+        console.error('❌ Both Firebase function and API route failed:', apiError);
+        toast({
+          variant: 'destructive',
+          title: 'Test Error',
+          description: `Both methods failed. Firebase: ${error.message}. API: ${apiError.message}`,
+        });
+      }
     } finally {
       setIsRunning(false);
     }

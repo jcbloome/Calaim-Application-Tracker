@@ -21,10 +21,16 @@ function getSdks(firebaseApp: FirebaseApp): FirebaseSdks {
   const auth = getAuth(firebaseApp);
   // Persistence is now handled at login time to ensure it completes before sign-in.
   const storage = getStorage(firebaseApp);
-  const functions = getFunctions(firebaseApp);
+  const functions = getFunctions(firebaseApp, 'us-central1');
+  
+  // For development, we might need to connect to emulator or configure differently
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔧 [FIREBASE] Development mode - Functions configured for us-central1');
+  }
   
   console.log('🔧 [FIREBASE] Storage initialized with bucket:', storage.app.options.storageBucket);
   console.log('🔧 [FIREBASE] Functions initialized for region:', functions.region);
+  console.log('🔧 [FIREBASE] Functions URL:', functions.customDomain || 'default');
   console.log('🔧 [FIREBASE] Full storage config:', {
     bucket: storage.app.options.storageBucket,
     projectId: storage.app.options.projectId,

@@ -12,7 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc, collectionGroup, query, where, type Query, serverTimestamp, addDoc, orderBy, limit, getFirestore } from 'firebase/firestore';
 import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError, useStorage } from '@/firebase';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '@/firebase';
+import { useFunctions } from '@/firebase';
 import { ref, uploadBytesResumable, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import { NotificationManager } from '@/components/NotificationManager';
 import NotificationSettings from '@/components/NotificationSettings';
@@ -165,6 +165,7 @@ export default function SuperAdminPage() {
     const { toast } = useToast();
     const firestore = useFirestore();
     const storage = useStorage();
+    const functions = useFunctions();
 
     const [staffList, setStaffList] = useState<StaffMember[]>([]);
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
@@ -795,37 +796,60 @@ export default function SuperAdminPage() {
 
     const handleSimpleFunctionTest = async () => {
         try {
-            const testFunction = httpsCallable(functions, 'simpleTest');
-
             toast({
                 title: 'Testing Firebase Functions',
-                description: 'Checking basic connectivity...',
+                description: 'Trying direct Firebase Functions call...',
                 className: 'bg-blue-100 text-blue-900 border-blue-200',
             });
 
+            const testFunction = httpsCallable(functions, 'simpleTest');
             const response = await testFunction({});
             const data = response.data as any;
 
-            console.log('✅ Simple Function Test Result:', data);
+            console.log('✅ Direct Firebase Functions Test Result:', data);
             toast({
                 title: 'Firebase Functions Working!',
-                description: `Success: ${data.message}`,
+                description: `Direct call success: ${data.message}`,
                 className: 'bg-green-100 text-green-900 border-green-200',
             });
 
         } catch (error: any) {
-            console.error('❌ Simple Function Test Error:', error);
-            console.error('❌ Error details:', {
-                name: error.name,
-                message: error.message,
-                code: error.code,
-                stack: error.stack
-            });
-            toast({
-                variant: 'destructive',
-                title: 'Firebase Functions Failed',
-                description: `${error.code || 'Unknown'}: ${error.message || 'Failed to connect to Firebase Functions'}`,
-            });
+            console.error('❌ Direct Firebase Functions failed, trying API route fallback:', error);
+            
+            try {
+                toast({
+                    title: 'Trying API Route Fallback',
+                    description: 'Direct call failed, testing via API route...',
+                    className: 'bg-yellow-100 text-yellow-900 border-yellow-200',
+                });
+
+                const response = await fetch('/api/test-functions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ functionName: 'simpleTest', data: {} })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    console.log('✅ API Route Test Result:', data);
+                    toast({
+                        title: 'API Route Working!',
+                        description: `Fallback success: ${data.message}`,
+                        className: 'bg-green-100 text-green-900 border-green-200',
+                    });
+                } else {
+                    throw new Error(data.message);
+                }
+
+            } catch (apiError: any) {
+                console.error('❌ Both Firebase Functions and API route failed:', apiError);
+                toast({
+                    variant: 'destructive',
+                    title: 'All Tests Failed',
+                    description: `Both direct and API route failed: ${apiError.message}`,
+                });
+            }
         }
     };
 
@@ -865,18 +889,43 @@ export default function SuperAdminPage() {
             }
 
         } catch (error: any) {
-            console.error('❌ Caspio Member Sync Test Error:', error);
-            console.error('❌ Error details:', {
-                name: error.name,
-                message: error.message,
-                code: error.code,
-                stack: error.stack
-            });
-            toast({
-                variant: 'destructive',
-                title: 'Caspio Member Sync Test Error',
-                description: `${error.code || 'Unknown'}: ${error.message || 'Failed to run Caspio member sync test'}`,
-            });
+            console.error('❌ Direct Caspio test failed, trying API route fallback:', error);
+            
+            try {
+                toast({
+                    title: 'Trying API Route Fallback',
+                    description: 'Direct call failed, testing via API route...',
+                    className: 'bg-yellow-100 text-yellow-900 border-yellow-200',
+                });
+
+                const response = await fetch('/api/test-functions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ functionName: 'testCaspioMemberSync', data: {} })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    setCaspioSyncResults(data.results || []);
+                    setCaspioSyncSummary(data.summary || null);
+                    toast({
+                        title: 'Caspio Test Complete (API Route)',
+                        description: `${data.summary?.successful || 0} of ${data.summary?.totalTested || 0} members synced via fallback.`,
+                        className: 'bg-green-100 text-green-900 border-green-200',
+                    });
+                } else {
+                    throw new Error(data.message);
+                }
+
+            } catch (apiError: any) {
+                console.error('❌ Both direct and API route failed:', apiError);
+                toast({
+                    variant: 'destructive',
+                    title: 'All Caspio Tests Failed',
+                    description: `Both direct and API route failed: ${apiError.message}`,
+                });
+            }
         } finally {
             setIsCaspioSyncTesting(false);
         }
