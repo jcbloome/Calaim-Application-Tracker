@@ -56,6 +56,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { SessionTimer } from '@/components/SessionTimer';
 
 const adminNavLinks = [
   { 
@@ -241,6 +242,7 @@ function AdminHeader() {
         </div>
 
         <div className="flex items-center gap-4">
+          {user && <SessionTimer compact />}
           {user && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -350,6 +352,7 @@ function AdminHeader() {
                      {user ? (
                         <div className="flex flex-col gap-4">
                             <p className="text-sm text-muted-foreground text-center truncate">{user.displayName || user.email}</p>
+                            <SessionTimer className="w-full" />
                             <SheetClose asChild>
                                 <Button onClick={() => router.push('/admin/profile')} variant="outline" className="w-full">
                                 <UserIcon className="mr-2 h-4 w-4" />

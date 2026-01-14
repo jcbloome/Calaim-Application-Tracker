@@ -20,14 +20,14 @@ export function AutoLogoutProvider({ children }: AutoLogoutProviderProps) {
   // Configure auto-logout based on area
   const config = isAdminArea 
     ? {
-        timeoutMinutes: 60,      // 1 hour for admin (more sensitive data)
-        warningMinutes: 10,      // 10 minute warning
+        timeoutMinutes: 30,      // 30 minutes for admin (more sensitive data)
+        warningMinutes: 5,       // 5 minute warning
         showWarning: true,
         redirectPath: '/admin/login'
       }
     : {
-        timeoutMinutes: 120,     // 2 hours for regular users
-        warningMinutes: 15,      // 15 minute warning  
+        timeoutMinutes: 60,      // 1 hour for regular users
+        warningMinutes: 10,      // 10 minute warning  
         showWarning: true,
         redirectPath: '/'
       };
