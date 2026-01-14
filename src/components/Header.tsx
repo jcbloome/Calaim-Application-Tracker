@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { LogOut, User, Menu, UserCog, LogIn, TestTube2 } from 'lucide-react';
+import { LogOut, User, Menu, UserCog, LogIn, TestTube2, RefreshCw } from 'lucide-react';
 import { Button } from './ui/button';
 import { useAuth } from '@/firebase/provider';
 import {
@@ -36,7 +36,24 @@ export function Header() {
     if (auth) {
         await auth.signOut();
     }
+    // Clear session storage to ensure fresh login next time
+    sessionStorage.removeItem('auth_session_active');
+    localStorage.clear(); // Clear all local storage for complete logout
+    
     // After signing out, always return to the public home page.
+    window.location.href = '/';
+  };
+
+  const handleSwitchRole = async () => {
+    // Sign out and redirect to login selection
+    if (auth) {
+        await auth.signOut();
+    }
+    // Clear session storage to ensure fresh login next time
+    sessionStorage.removeItem('auth_session_active');
+    localStorage.clear();
+    
+    // Redirect to home page where user can choose admin or user login
     window.location.href = '/';
   };
 
@@ -81,6 +98,10 @@ export function Header() {
                   <span>My Profile</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleSwitchRole}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  <span>Switch Role</span>
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleSignOut}>
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Log out</span>
