@@ -42,6 +42,11 @@ interface LoginLog {
   email?: string;
   displayName?: string;
   role?: string;
+  type?: string;
+  event?: string;
+  ip?: string;
+  clientIP?: string;
+  remoteAddress?: string;
   [key: string]: any; // Allow any additional fields
 }
 
@@ -111,7 +116,9 @@ export default function LoginActivityTracker() {
         addDebugLog(`🔍 Sample log data: ${JSON.stringify(firstLog, null, 2).substring(0, 300)}...`);
         addDebugLog(`📊 Available fields: ${Object.keys(firstLog).join(', ')}`);
         addDebugLog(`👤 User fields: email=${firstLog.email}, displayName=${firstLog.displayName}, userName=${firstLog.userName}, userEmail=${firstLog.userEmail}`);
-        addDebugLog(`🔑 Other fields: action=${firstLog.action}, role=${firstLog.role}, userId=${firstLog.userId}`);
+        addDebugLog(`🔑 Action fields: action=${firstLog.action}, type=${firstLog.type}, event=${firstLog.event}`);
+        addDebugLog(`🌐 IP fields: ipAddress=${firstLog.ipAddress}, ip=${firstLog.ip}, clientIP=${firstLog.clientIP}, remoteAddress=${firstLog.remoteAddress}`);
+        addDebugLog(`📊 Other fields: role=${firstLog.role}, userId=${firstLog.userId}, success=${firstLog.success}`);
       }
     } catch (err: any) {
       const errorMsg = `Failed to load login logs: ${err.message}`;
@@ -125,6 +132,18 @@ export default function LoginActivityTracker() {
       addDebugLog('📥 Loading active sessions from Firestore...');
       const db = getFirestore();
       const sessionsCollection = collection(db, 'activeSessions');
+      
+      // First, try to get all documents to see what's there
+      const allSessionsSnapshot = await getDocs(sessionsCollection);
+      addDebugLog(`🔍 Total documents in activeSessions collection: ${allSessionsSnapshot.size}`);
+      
+      if (allSessionsSnapshot.size > 0) {
+        allSessionsSnapshot.docs.forEach((doc, index) => {
+          const data = doc.data();
+          addDebugLog(`📄 Session ${index + 1}: ID=${doc.id}, fields=${Object.keys(data).join(', ')}`);
+        });
+      }
+
       const sessionsQuery = query(
         sessionsCollection, 
         orderBy('lastActivity', 'desc'), 
@@ -139,6 +158,12 @@ export default function LoginActivityTracker() {
 
       setActiveSessions(sessions);
       addDebugLog(`✅ Loaded ${sessions.length} active sessions`);
+      
+      // Debug: Show sample session data if available
+      if (sessions.length > 0) {
+        const firstSession = sessions[0];
+        addDebugLog(`🔍 Sample session: ${JSON.stringify(firstSession, null, 2).substring(0, 200)}...`);
+      }
     } catch (err: any) {
       const errorMsg = `Failed to load active sessions: ${err.message}`;
       setError(errorMsg);
@@ -328,8 +353,8 @@ export default function LoginActivityTracker() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <Badge variant={getActionBadgeVariant(log.action || 'unknown', log.success !== false)}>
-                        {log.action || 'unknown'}
+                      <Badge variant={getActionBadgeVariant(log.action || log.type || log.event || 'unknown', log.success !== false)}>
+                        {log.action || log.type || log.event || 'unknown'}
                       </Badge>
                       <div className="text-right text-sm">
                         <p className="flex items-center gap-1">
@@ -338,7 +363,7 @@ export default function LoginActivityTracker() {
                         </p>
                         <p className="flex items-center gap-1 text-muted-foreground">
                           <MapPin className="h-3 w-3" />
-                          {log.ipAddress || 'Unknown IP'}
+                          {log.ipAddress || log.ip || log.clientIP || log.remoteAddress || 'Unknown IP'}
                         </p>
                       </div>
                     </div>
