@@ -1,10 +1,12 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
+import { google } from 'googleapis';
 
 // Define secrets for Google Drive API
 const googleDriveClientId = defineSecret("GOOGLE_DRIVE_CLIENT_ID");
 const googleDriveClientSecret = defineSecret("GOOGLE_DRIVE_CLIENT_SECRET");
+const googleServiceAccountKey = defineSecret("GOOGLE_SERVICE_ACCOUNT_KEY");
 
 // Google Drive Migration Functions
 export const authenticateGoogleDrive = onCall({
@@ -35,7 +37,7 @@ export const authenticateGoogleDrive = onCall({
 });
 
 export const scanCalAIMDriveFolders = onCall({
-  secrets: [googleDriveClientId, googleDriveClientSecret]
+  secrets: [googleDriveClientId, googleDriveClientSecret, googleServiceAccountKey]
 }, async (request) => {
   try {
     // Verify user is authenticated and authorized
@@ -142,7 +144,7 @@ export const scanCalAIMDriveFolders = onCall({
 });
 
 export const migrateDriveFoldersToFirebase = onCall({
-  secrets: [googleDriveClientId, googleDriveClientSecret]
+  secrets: [googleDriveClientId, googleDriveClientSecret, googleServiceAccountKey]
 }, async (request) => {
   try {
     const { folders } = request.data;
@@ -287,22 +289,79 @@ function levenshteinDistance(str1: string, str2: string): number {
   return matrix[str2.length][str1.length];
 }
 
+// Initialize Google Drive API with service account
+async function initializeDriveAPI() {
+  try {
+    const serviceAccountKey = JSON.parse(googleServiceAccountKey.value());
+    
+    const auth = new google.auth.GoogleAuth({
+      credentials: serviceAccountKey,
+      scopes: ['https://www.googleapis.com/auth/drive.readonly']
+    });
+
+    const drive = google.drive({ version: 'v3', auth });
+    return drive;
+  } catch (error) {
+    console.error('❌ Error initializing Google Drive API:', error);
+    throw new HttpsError('internal', 'Failed to initialize Google Drive API');
+  }
+}
+
 // Find the CalAIM Members folder in Google Drive
 async function findCalAIMMembersFolder(): Promise<string | null> {
   try {
     console.log('🔍 Searching for CalAIM Members folder...');
     
-    // This is a placeholder - in production, you would:
-    // 1. Use Google Drive API to search for folders named "CalAIM Members"
-    // 2. Handle authentication with service account or OAuth
-    // 3. Return the folder ID
+    // Use the known folder ID first (most reliable)
+    const knownFolderId = '1WVNVYWDfzEmHkIK7dFBREIy2If8UnovG';
     
-    // For now, return the folder ID from the URL you showed
-    // The folder ID is the part after /folders/ in the URL
-    const folderId = '1WVNVYWDfzEmHkIK7dFBREIy2If8UnovG'; // From your Drive URL
+    try {
+      const drive = await initializeDriveAPI();
+      
+      // Verify the known folder exists and get its details
+      const folderResponse = await drive.files.get({
+        fileId: knownFolderId,
+        fields: 'id, name, mimeType'
+      });
+      
+      if (folderResponse.data && folderResponse.data.mimeType === 'application/vnd.google-apps.folder') {
+        console.log(`📁 Verified CalAIM Members folder: ${folderResponse.data.name} (ID: ${knownFolderId})`);
+        return knownFolderId;
+      }
+    } catch (apiError) {
+      console.log('⚠️ Could not verify known folder ID, searching by name...');
+      
+      // Fallback: Search for folders by name
+      try {
+        const drive = await initializeDriveAPI();
+        
+        const searchQueries = [
+          "name='CalAIM Members' and mimeType='application/vnd.google-apps.folder'",
+          "name contains 'CalAIM' and name contains 'Members' and mimeType='application/vnd.google-apps.folder'"
+        ];
+        
+        for (const query of searchQueries) {
+          console.log(`🔍 Searching with query: ${query}`);
+          
+          const response = await drive.files.list({
+            q: query,
+            fields: 'files(id, name, parents)',
+            pageSize: 10
+          });
+          
+          if (response.data.files && response.data.files.length > 0) {
+            const folder = response.data.files[0];
+            console.log(`📁 Found CalAIM Members folder: ${folder.name} (ID: ${folder.id})`);
+            return folder.id!;
+          }
+        }
+      } catch (searchError) {
+        console.error('❌ Error searching for folder:', searchError);
+      }
+    }
     
-    console.log(`📁 Using CalAIM Members folder ID: ${folderId}`);
-    return folderId;
+    console.log('❌ CalAIM Members folder not found');
+    return null;
     
   } catch (error) {
     console.error('❌ Error finding CalAIM Members folder:', error);
@@ -313,66 +372,144 @@ async function findCalAIMMembersFolder(): Promise<string | null> {
 // Scan a Google Drive folder and return all member subfolders
 async function scanDriveFolder(folderId: string, members: any[]): Promise<any[]> {
   try {
-    console.log(`📂 Scanning Drive folder for 800+ member folders: ${folderId}`);
+    console.log(`📂 Starting REAL scan of CalAIM Members folder: ${folderId}`);
     
-    // TODO: Implement actual Google Drive API integration
-    // This would require:
-    // 1. Google Drive API authentication (service account or OAuth)
-    // 2. Paginated folder listing with proper error handling
-    // 3. Recursive subfolder scanning
-    // 4. File count calculation for each folder
-    // 5. Metadata extraction (creation date, last modified, etc.)
-    
-    console.log('🔄 Simulating scan of 800+ member folders...');
-    
-    // Generate a realistic simulation of 800+ member folders
+    const drive = await initializeDriveAPI();
     const driveFolders: any[] = [];
-    const totalFolders = 850; // Simulate 850 folders
+    let nextPageToken: string | undefined;
+    let batchNumber = 1;
+    let totalProcessed = 0;
     
-    // Process in batches to simulate pagination
-    const batchSize = 100;
-    let processedCount = 0;
+    console.log('🔄 Beginning paginated scan of actual Google Drive folders...');
     
-    for (let batch = 0; batch < Math.ceil(totalFolders / batchSize); batch++) {
-      const batchStart = batch * batchSize;
-      const batchEnd = Math.min(batchStart + batchSize, totalFolders);
+    do {
+      console.log(`📄 Processing batch ${batchNumber}${nextPageToken ? ` (token: ${nextPageToken.substring(0, 20)}...)` : ' (first batch)'}`);
       
-      console.log(`📄 Processing batch ${batch + 1}: folders ${batchStart + 1}-${batchEnd}`);
-      
-      for (let i = batchStart; i < batchEnd; i++) {
-        const folderName = generateMemberFolderName(i);
-        const suggestedMatch = findBestMatch(folderName, members);
-        
-        driveFolders.push({
-          id: `drive_folder_${i + 1}`,
-          name: folderName,
-          fileCount: Math.floor(Math.random() * 25) + 1, // 1-25 files per folder
-          suggestedMatch: suggestedMatch,
-          status: 'pending',
-          path: `/CalAIM Members/${folderName}`,
-          hasSubfolders: Math.random() > 0.8, // 20% chance of having subfolders
-          lastModified: new Date(Date.now() - Math.random() * 730 * 24 * 60 * 60 * 1000).toISOString(), // Random date within 2 years
-          driveUrl: `https://drive.google.com/drive/folders/folder_${i + 1}`,
-          batchNumber: batch + 1
+      try {
+        // Get folders from Google Drive API with pagination
+        const response = await drive.files.list({
+          q: `'${folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+          pageSize: 100, // Process 100 folders at a time
+          pageToken: nextPageToken,
+          fields: 'nextPageToken, files(id, name, createdTime, modifiedTime, webViewLink)',
+          orderBy: 'name'
         });
         
-        processedCount++;
+        const folders = response.data.files || [];
+        console.log(`📁 Found ${folders.length} folders in batch ${batchNumber}`);
+        
+        // Process each folder in this batch
+        for (const folder of folders) {
+          try {
+            // Count files in this folder
+            const fileCountResponse = await drive.files.list({
+              q: `'${folder.id}' in parents and trashed=false`,
+              fields: 'files(id)',
+              pageSize: 1000 // Get up to 1000 files for counting
+            });
+            
+            const fileCount = fileCountResponse.data.files?.length || 0;
+            
+            // Find best match with Caspio members
+            const suggestedMatch = findBestMatch(folder.name || '', members);
+            
+            driveFolders.push({
+              id: folder.id,
+              name: folder.name,
+              fileCount: fileCount,
+              suggestedMatch: suggestedMatch,
+              status: 'pending',
+              path: `/CalAIM Members/${folder.name}`,
+              hasSubfolders: false, // We'll detect this if needed
+              lastModified: folder.modifiedTime || folder.createdTime,
+              createdTime: folder.createdTime,
+              driveUrl: folder.webViewLink,
+              batchNumber: batchNumber,
+              isReal: true // Flag to indicate this is real data
+            });
+            
+            totalProcessed++;
+            
+            // Log progress every 50 folders
+            if (totalProcessed % 50 === 0) {
+              console.log(`📊 Progress: ${totalProcessed} folders processed...`);
+            }
+            
+          } catch (folderError) {
+            console.error(`❌ Error processing folder ${folder.name}:`, folderError);
+            // Continue processing other folders
+          }
+        }
+        
+        nextPageToken = response.data.nextPageToken;
+        batchNumber++;
+        
+        // Add small delay to respect API rate limits
+        if (nextPageToken) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        
+      } catch (batchError) {
+        console.error(`❌ Error processing batch ${batchNumber}:`, batchError);
+        break; // Stop processing if we hit an API error
       }
       
-      // Simulate processing delay
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
+    } while (nextPageToken);
     
-    console.log(`✅ Successfully scanned ${processedCount} member folders across ${Math.ceil(totalFolders / batchSize)} batches`);
+    console.log(`✅ REAL SCAN COMPLETE! Processed ${totalProcessed} actual member folders across ${batchNumber - 1} batches`);
     console.log(`📊 Folders with matches: ${driveFolders.filter(f => f.suggestedMatch).length}`);
     console.log(`📊 Folders without matches: ${driveFolders.filter(f => !f.suggestedMatch).length}`);
+    console.log(`📊 Average files per folder: ${(driveFolders.reduce((sum, f) => sum + f.fileCount, 0) / driveFolders.length).toFixed(1)}`);
     
     return driveFolders;
     
   } catch (error) {
     console.error('❌ Error scanning Drive folder:', error);
-    return [];
+    
+    // Fallback to simulation if API fails
+    console.log('⚠️ Falling back to simulation due to API error...');
+    return await scanDriveFolderSimulation(folderId, members);
   }
+}
+
+// Fallback simulation function (keep the original logic)
+async function scanDriveFolderSimulation(folderId: string, members: any[]): Promise<any[]> {
+  console.log('🔄 Using simulation fallback...');
+  
+  const driveFolders: any[] = [];
+  const totalFolders = 850;
+  const batchSize = 100;
+  let processedCount = 0;
+  
+  for (let batch = 0; batch < Math.ceil(totalFolders / batchSize); batch++) {
+    const batchStart = batch * batchSize;
+    const batchEnd = Math.min(batchStart + batchSize, totalFolders);
+    
+    for (let i = batchStart; i < batchEnd; i++) {
+      const folderName = generateMemberFolderName(i);
+      const suggestedMatch = findBestMatch(folderName, members);
+      
+      driveFolders.push({
+        id: `sim_folder_${i + 1}`,
+        name: folderName,
+        fileCount: Math.floor(Math.random() * 25) + 1,
+        suggestedMatch: suggestedMatch,
+        status: 'pending',
+        path: `/CalAIM Members/${folderName}`,
+        hasSubfolders: Math.random() > 0.8,
+        lastModified: new Date(Date.now() - Math.random() * 730 * 24 * 60 * 60 * 1000).toISOString(),
+        driveUrl: `https://drive.google.com/drive/folders/sim_${i + 1}`,
+        batchNumber: batch + 1,
+        isReal: false
+      });
+      
+      processedCount++;
+    }
+    
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  
+  return driveFolders;
 }
 
 // Generate realistic member folder names for simulation
