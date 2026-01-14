@@ -4,6 +4,8 @@ interface MockMember {
   firstName: string;
   lastName: string;
   mco: string; // MCO name
+  seniorFirst?: string; // Optional senior/guardian first name
+  seniorLast?: string; // Optional senior/guardian last name
 }
 
 interface CaspioClientResponse {
@@ -33,7 +35,13 @@ export const testCaspioMemberSync = onCall({
     // Mock test data with unique names to avoid conflicts
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
     const testMembers: MockMember[] = [
-      { firstName: 'TestUser', lastName: `Firebase-${timestamp}`, mco: 'Kaiser Permanente' }
+      { 
+        firstName: 'TestUser', 
+        lastName: `Firebase-${timestamp}`, 
+        mco: 'Kaiser Permanente',
+        seniorFirst: 'Senior',
+        seniorLast: `Guardian-${timestamp}`
+      }
     ];
     
     console.log(`📋 Testing with ${testMembers.length} mock member`);
@@ -144,7 +152,9 @@ async function addToClientTable(accessToken: string, member: MockMember): Promis
   
   const clientData = {
     First_Name: member.firstName,
-    Last_Name: member.lastName
+    Last_Name: member.lastName,
+    Senior_First: member.seniorFirst || member.firstName, // Use senior name if provided, fallback to member name
+    Senior_Last: member.seniorLast || member.lastName
     // Removed Date_Created and Status as they don't exist in the table
   };
   
@@ -186,6 +196,10 @@ async function addToMemberTable(accessToken: string, member: MockMember, clientI
   const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
   const memberTableUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
   
+  // First, get the client record to retrieve Senior_First and Senior_Last
+  console.log(`🔍 Retrieving client record with ID: ${clientId}`);
+  const clientRecord = await getClientRecord(accessToken, clientId);
+  
   const memberData = {
     client_ID2: clientId,
     memberFirstName: member.firstName,
@@ -193,10 +207,14 @@ async function addToMemberTable(accessToken: string, member: MockMember, clientI
     CalAIM_MCO: member.mco,
     CalAIM_Status: 'New Referral',
     LastUpdated: new Date().toISOString(),
-    created_date: new Date().toISOString()
+    created_date: new Date().toISOString(),
+    // Add the additional fields from client table
+    Senior_First: clientRecord?.Senior_First || clientRecord?.First_Name || member.firstName,
+    Senior_Last: clientRecord?.Senior_Last || clientRecord?.Last_Name || member.lastName,
+    Client_ID2: clientId // Explicitly include Client_ID2 as well
   };
   
-  console.log(`📝 Adding to CalAIM_tbl_Members:`, memberData);
+  console.log(`📝 Adding to CalAIM_tbl_Members with enhanced data:`, memberData);
   
   const response = await fetch(memberTableUrl, {
     method: 'POST',
@@ -217,6 +235,40 @@ async function addToMemberTable(accessToken: string, member: MockMember, clientI
   console.log('📋 CalAIM_tbl_Members response:', result);
   
   return result;
+}
+
+// Get client record by client_ID2 to retrieve Senior_First and Senior_Last
+async function getClientRecord(accessToken: string, clientId: string): Promise<any> {
+  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+  const clientRecordUrl = `${baseUrl}/tables/connect_tbl_clients/records`;
+  
+  console.log(`🔍 Fetching client record with ID: ${clientId}`);
+  
+  // Query for the specific client record
+  const response = await fetch(`${clientRecordUrl}?q.where=client_ID2='${clientId}'`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': 'application/json'
+    }
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.warn(`⚠️ Failed to get client record: ${response.status} ${errorText}`);
+    return null; // Return null if we can't fetch the record
+  }
+  
+  const result = await response.json();
+  console.log('📋 Client record response:', result);
+  
+  // Return the first record if found
+  if (result && result.Result && result.Result.length > 0) {
+    return result.Result[0];
+  }
+  
+  console.warn(`⚠️ No client record found with ID: ${clientId}`);
+  return null;
 }
 
 // Check what tables are available

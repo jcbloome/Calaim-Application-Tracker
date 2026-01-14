@@ -102,6 +102,16 @@ const adminNavLinks = [
 
 const superAdminNavLinks = [
     { 
+      label: 'Caspio Tools', 
+      icon: Database, 
+      isSubmenu: true,
+      submenuItems: [
+        { href: '/admin/caspio-test', label: 'Member Sync & Field Mapping', icon: Database },
+        { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
+        { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain },
+      ]
+    },
+    { 
       label: 'Super Admin', 
       icon: Shield, 
       isSubmenu: true,
@@ -114,12 +124,8 @@ const superAdminNavLinks = [
         { href: '/admin/system-note-log', label: 'System Note Log', icon: MessageSquareText },
         { href: '/admin/super-admin-notes', label: 'Complete Note Log', icon: FileText },
         { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell },
-        { isDivider: true, label: 'Data Management' },
-        { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
-        { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain },
         { isDivider: true, label: 'Development Tools' },
         { href: '/admin/user-diagnostics', label: 'User Side Diagnostic Tools', icon: TestTube2 },
-        { href: '/admin/caspio-test', label: 'Caspio Member Sync Test', icon: Database },
         { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
       ]
     },

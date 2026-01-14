@@ -5,9 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { Loader2, Database, CheckCircle2, AlertTriangle, Users, ArrowRight } from 'lucide-react';
+import { Loader2, Database, CheckCircle2, AlertTriangle, Users, ArrowRight, Mapping, Copy } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
 interface TestResult {
   member: string;
@@ -29,6 +33,192 @@ interface TestResponse {
     failed: number;
   };
 }
+
+// CS Summary Form Fields with Sample Data
+const csSummaryFields = {
+  // Step 1 - Member Info
+  memberFirstName: "John",
+  memberLastName: "Smith",
+  memberDob: "01/15/1965",
+  sex: "Male",
+  memberAge: 59,
+  memberMediCalNum: "987654321A",
+  confirmMemberMediCalNum: "987654321A",
+  memberMrn: "KP123456789",
+  confirmMemberMrn: "KP123456789",
+  memberLanguage: "English",
+  
+  // Step 1 - Referrer Info
+  referrerFirstName: "Dr. Sarah",
+  referrerLastName: "Johnson",
+  referrerEmail: "sarah.johnson@hospital.com",
+  referrerPhone: "(555) 123-4567",
+  referrerRelationship: "Case Manager",
+  agency: "County Hospital",
+
+  // Step 1 - Primary Contact Person
+  bestContactFirstName: "Mary",
+  bestContactLastName: "Smith",
+  bestContactRelationship: "Daughter",
+  bestContactPhone: "(555) 987-6543",
+  bestContactEmail: "mary.smith@email.com",
+  bestContactLanguage: "English",
+
+  // Secondary Contact
+  secondaryContactFirstName: "Robert",
+  secondaryContactLastName: "Smith",
+  secondaryContactRelationship: "Son",
+  secondaryContactPhone: "(555) 456-7890",
+  secondaryContactEmail: "robert.smith@email.com",
+  secondaryContactLanguage: "English",
+
+  // Step 1 - Legal Rep
+  hasLegalRep: "different",
+  repFirstName: "Attorney",
+  repLastName: "Wilson",
+  repRelationship: "Legal Guardian",
+  repPhone: "(555) 111-2222",
+  repEmail: "attorney.wilson@lawfirm.com",
+
+  // Step 2 - Location
+  currentLocation: "Skilled Nursing Facility",
+  currentAddress: "123 Care Center Dr",
+  currentCity: "Los Angeles",
+  currentState: "CA",
+  currentZip: "90210",
+  currentCounty: "Los Angeles",
+  customaryLocationType: "Private Residence",
+  customaryAddress: "456 Home Street",
+  customaryCity: "Los Angeles",
+  customaryState: "CA",
+  customaryZip: "90211",
+  customaryCounty: "Los Angeles",
+
+  // Step 3 - Health Plan & Pathway
+  healthPlan: "Kaiser",
+  existingHealthPlan: "Kaiser Permanente",
+  switchingHealthPlan: "No",
+  pathway: "SNF Transition",
+  meetsPathwayCriteria: true,
+  snfDiversionReason: "",
+
+  // Step 4 - ISP & RCFE
+  ispFirstName: "Lisa",
+  ispLastName: "Davis",
+  ispRelationship: "Independent Living Specialist",
+  ispPhone: "(555) 333-4444",
+  ispEmail: "lisa.davis@ils.com",
+  ispLocationType: "RCFE Facility",
+  ispAddress: "789 Care Home Ave",
+  ispFacilityName: "Sunshine Care Home",
+  onALWWaitlist: "Yes",
+  monthlyIncome: "$2,500",
+  ackRoomAndBoard: true,
+  hasPrefRCFE: "Yes",
+  rcfeName: "Preferred Care Home",
+  rcfeAddress: "321 Preferred St",
+  rcfeAdminName: "Administrator Johnson",
+  rcfeAdminPhone: "(555) 777-8888",
+  rcfeAdminEmail: "admin@preferredcare.com"
+};
+
+// CalAIM Members Table Fields
+const caspioMembersFields = {
+  // Basic Member Information
+  client_ID2: "12345",
+  Client_ID2: "12345", // Alternative field name
+  memberFirstName: "",
+  memberLastName: "",
+  Senior_First: "",
+  Senior_Last: "",
+  
+  // Member Details
+  memberMediCalNum: "",
+  memberMrn: "",
+  MCP_CIN: "", // Kaiser MRN field
+  MC: "", // Medi-Cal number field
+  memberCounty: "",
+  Member_County: "",
+  memberDob: "",
+  memberAge: "",
+  sex: "",
+  memberLanguage: "",
+  
+  // Health Plan & MCO
+  CalAIM_MCO: "",
+  CalAIM_MCP: "",
+  HealthPlan: "",
+  healthPlan: "",
+  
+  // Status Fields
+  CalAIM_Status: "",
+  Kaiser_Status: "",
+  pathway: "",
+  SNF_Diversion_or_Transition: "",
+  
+  // Contact Information
+  bestContactFirstName: "",
+  bestContactLastName: "",
+  bestContactPhone: "",
+  bestContactEmail: "",
+  bestContactRelationship: "",
+  bestContactLanguage: "",
+  
+  // Secondary Contact
+  secondaryContactFirstName: "",
+  secondaryContactLastName: "",
+  secondaryContactPhone: "",
+  secondaryContactEmail: "",
+  secondaryContactRelationship: "",
+  
+  // Referrer Information
+  referrerFirstName: "",
+  referrerLastName: "",
+  referrerPhone: "",
+  referrerEmail: "",
+  referrerRelationship: "",
+  agency: "",
+  
+  // Location Information
+  currentLocation: "",
+  currentAddress: "",
+  currentCity: "",
+  currentState: "",
+  currentZip: "",
+  currentCounty: "",
+  
+  // ISP Information
+  ispFirstName: "",
+  ispLastName: "",
+  ispPhone: "",
+  ispEmail: "",
+  ispFacilityName: "",
+  
+  // RCFE Information
+  rcfeName: "",
+  rcfeAddress: "",
+  rcfeAdminName: "",
+  rcfeAdminPhone: "",
+  rcfeAdminEmail: "",
+  
+  // Kaiser Process Dates
+  Kaiser_T2038_Requested_Date: "",
+  Kaiser_T2038_Received_Date: "",
+  Kaiser_Tier_Level_Requested_Date: "",
+  Kaiser_Tier_Level_Received_Date: "",
+  
+  // ILS RCFE Contract Dates
+  ILS_RCFE_Sent_For_Contract_Date: "",
+  ILS_RCFE_Received_Contract_Date: "",
+  
+  // Administrative Fields
+  DateCreated: "",
+  LastUpdated: "",
+  created_date: "",
+  last_updated: "",
+  next_steps_date: "",
+  kaiser_user_assignment: ""
+};
 
 export default function CaspioTestPage() {
   const [isRunning, setIsRunning] = useState(false);
@@ -182,10 +372,48 @@ export default function CaspioTestPage() {
       <div className="flex items-center gap-3 mb-6">
         <Database className="h-8 w-8 text-primary" />
         <div>
-          <h1 className="text-3xl font-bold">Caspio Member Sync Test</h1>
-          <p className="text-muted-foreground">Test the workflow: Client Table → CalAIM Members Table</p>
+          <h1 className="text-3xl font-bold">Caspio Member Sync & Field Mapping</h1>
+          <p className="text-muted-foreground">Test sync workflow and map CS Summary form fields to CalAIM Members table</p>
         </div>
       </div>
+
+      <Tabs defaultValue="sync-test" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="sync-test">Sync Test</TabsTrigger>
+          <TabsTrigger value="field-mapping">Field Mapping</TabsTrigger>
+          <TabsTrigger value="sample-data">Sample Data</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="sync-test" className="space-y-6">
+          {/* EMERGENCY DIRECT TEST BUTTON - VERY VISIBLE */}
+          <Card className="border-green-500 bg-green-50">
+        <CardHeader>
+          <CardTitle className="text-green-800">🚀 WORKING CASPIO TEST</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Button 
+            onClick={async () => {
+              console.log('🚀 EMERGENCY DIRECT API TEST...');
+              try {
+                const response = await fetch('/api/caspio-simple-test', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                console.log('📊 Result:', result);
+                alert(`RESULT: ${result.success ? 'SUCCESS ✅' : 'FAILED ❌'}\n${result.message}`);
+              } catch (error: any) {
+                console.error('❌ Error:', error);
+                alert(`ERROR: ${error.message}`);
+              }
+            }}
+            size="lg"
+            className="w-full bg-green-600 hover:bg-green-700 text-white"
+          >
+            🚀 CLICK HERE - WORKING CASPIO TEST
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Test Description */}
       <Card>
@@ -369,6 +597,217 @@ export default function CaspioTestPage() {
           </AlertDescription>
         </Alert>
       )}
+        </TabsContent>
+
+        <TabsContent value="field-mapping" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Mapping className="h-5 w-5" />
+                CS Summary Form → CalAIM Members Table Field Mapping
+              </CardTitle>
+              <CardDescription>
+                Map fields from the CS Summary form to the corresponding CalAIM Members table fields
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* CS Summary Form Fields */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-4 text-blue-600">CS Summary Form Fields</h3>
+                  <div className="space-y-4 max-h-96 overflow-y-auto border rounded-lg p-4">
+                    {Object.entries(csSummaryFields).map(([key, value]) => (
+                      <div key={key} className="flex flex-col gap-1 p-2 border-b">
+                        <div className="flex items-center justify-between">
+                          <Label className="font-medium text-sm">{key}</Label>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => navigator.clipboard.writeText(key)}
+                            className="h-6 w-6 p-0"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <Input 
+                          value={value?.toString() || ''} 
+                          readOnly 
+                          className="text-xs bg-blue-50"
+                          placeholder="Sample data"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* CalAIM Members Table Fields */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-4 text-green-600">CalAIM Members Table Fields</h3>
+                  <div className="space-y-4 max-h-96 overflow-y-auto border rounded-lg p-4">
+                    {Object.entries(caspioMembersFields).map(([key, value]) => (
+                      <div key={key} className="flex flex-col gap-1 p-2 border-b">
+                        <div className="flex items-center justify-between">
+                          <Label className="font-medium text-sm">{key}</Label>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => navigator.clipboard.writeText(key)}
+                            className="h-6 w-6 p-0"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <Input 
+                          value={value?.toString() || ''} 
+                          readOnly 
+                          className="text-xs bg-green-50"
+                          placeholder="Caspio field (empty)"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <h4 className="font-medium text-yellow-800 mb-2">Field Mapping Notes:</h4>
+                <ul className="text-sm text-yellow-700 space-y-1">
+                  <li>• <strong>Direct Matches:</strong> memberFirstName → memberFirstName, memberLastName → memberLastName</li>
+                  <li>• <strong>Alternative Names:</strong> memberFirstName → Senior_First, memberMrn → MCP_CIN (Kaiser)</li>
+                  <li>• <strong>ID Fields:</strong> client_ID2 and Client_ID2 are the same field with different casing</li>
+                  <li>• <strong>Status Fields:</strong> CalAIM_Status, Kaiser_Status track different workflow stages</li>
+                  <li>• <strong>Date Fields:</strong> Multiple date tracking fields for Kaiser processes and ILS contracts</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="sample-data" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* CS Summary Sample Data */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-blue-600">CS Summary Form Sample Data</CardTitle>
+                <CardDescription>Complete sample data for all CS Summary form fields</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Textarea
+                  value={JSON.stringify(csSummaryFields, null, 2)}
+                  readOnly
+                  className="h-96 font-mono text-xs"
+                />
+                <Button
+                  onClick={() => navigator.clipboard.writeText(JSON.stringify(csSummaryFields, null, 2))}
+                  className="mt-2 w-full"
+                  variant="outline"
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  Copy CS Summary Sample Data
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* CalAIM Members Sample Data */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-green-600">CalAIM Members Table Structure</CardTitle>
+                <CardDescription>All available fields in the CalAIM Members table</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Textarea
+                  value={JSON.stringify(caspioMembersFields, null, 2)}
+                  readOnly
+                  className="h-96 font-mono text-xs"
+                />
+                <Button
+                  onClick={() => navigator.clipboard.writeText(JSON.stringify(caspioMembersFields, null, 2))}
+                  className="mt-2 w-full"
+                  variant="outline"
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  Copy Members Table Structure
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Field Categories */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Field Categories & Mapping Strategy</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="p-4 border rounded-lg">
+                  <h4 className="font-semibold text-blue-600 mb-2">Member Information</h4>
+                  <ul className="text-sm space-y-1">
+                    <li>• memberFirstName → Senior_First</li>
+                    <li>• memberLastName → Senior_Last</li>
+                    <li>• memberDob → memberDob</li>
+                    <li>• memberAge → memberAge</li>
+                    <li>• sex → sex</li>
+                    <li>• memberLanguage → memberLanguage</li>
+                  </ul>
+                </div>
+                
+                <div className="p-4 border rounded-lg">
+                  <h4 className="font-semibold text-green-600 mb-2">Health Plan & IDs</h4>
+                  <ul className="text-sm space-y-1">
+                    <li>• memberMediCalNum → MC</li>
+                    <li>• memberMrn → MCP_CIN (Kaiser)</li>
+                    <li>• healthPlan → CalAIM_MCO</li>
+                    <li>• pathway → SNF_Diversion_or_Transition</li>
+                  </ul>
+                </div>
+                
+                <div className="p-4 border rounded-lg">
+                  <h4 className="font-semibold text-purple-600 mb-2">Contact Information</h4>
+                  <ul className="text-sm space-y-1">
+                    <li>• bestContactFirstName → bestContactFirstName</li>
+                    <li>• bestContactLastName → bestContactLastName</li>
+                    <li>• bestContactPhone → bestContactPhone</li>
+                    <li>• bestContactEmail → bestContactEmail</li>
+                    <li>• referrerFirstName → referrerFirstName</li>
+                  </ul>
+                </div>
+                
+                <div className="p-4 border rounded-lg">
+                  <h4 className="font-semibold text-orange-600 mb-2">Location Data</h4>
+                  <ul className="text-sm space-y-1">
+                    <li>• currentLocation → currentLocation</li>
+                    <li>• currentAddress → currentAddress</li>
+                    <li>• currentCity → currentCity</li>
+                    <li>• currentCounty → Member_County</li>
+                  </ul>
+                </div>
+                
+                <div className="p-4 border rounded-lg">
+                  <h4 className="font-semibold text-red-600 mb-2">ISP & RCFE</h4>
+                  <ul className="text-sm space-y-1">
+                    <li>• ispFirstName → ispFirstName</li>
+                    <li>• ispLastName → ispLastName</li>
+                    <li>• ispFacilityName → ispFacilityName</li>
+                    <li>• rcfeName → rcfeName</li>
+                    <li>• rcfeAdminName → rcfeAdminName</li>
+                  </ul>
+                </div>
+                
+                <div className="p-4 border rounded-lg">
+                  <h4 className="font-semibold text-gray-600 mb-2">Administrative</h4>
+                  <ul className="text-sm space-y-1">
+                    <li>• client_ID2 (generated)</li>
+                    <li>• CalAIM_Status (workflow)</li>
+                    <li>• Kaiser_Status (Kaiser only)</li>
+                    <li>• DateCreated (auto)</li>
+                    <li>• LastUpdated (auto)</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
