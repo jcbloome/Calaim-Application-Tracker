@@ -33,7 +33,8 @@ import {
   FileText,
   Activity,
   TestTube2,
-  Scissors
+  Scissors,
+  Map
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -106,7 +107,8 @@ const superAdminNavLinks = [
       icon: Database, 
       isSubmenu: true,
       submenuItems: [
-        { href: '/admin/caspio-test', label: 'Member Sync & Field Mapping', icon: Database },
+        { href: '/admin/caspio-field-mapping', label: 'Field Mapping Configuration', icon: Map },
+        { href: '/admin/caspio-test', label: 'Sync Testing & Development', icon: Database },
         { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
         { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain },
       ]

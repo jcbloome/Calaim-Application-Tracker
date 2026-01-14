@@ -9,7 +9,7 @@ import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
 import { Button } from '@/components/ui/button';
-import { Filter, Trash2, List, FileCheck2 } from 'lucide-react';
+import { Filter, Trash2, List, FileCheck2, Database, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -44,6 +44,7 @@ export default function AdminApplicationsPage() {
   const [pathwayFilter, setPathwayFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [memberFilter, setMemberFilter] = useState('');
+  const [isPushingToCaspio, setIsPushingToCaspio] = useState(false);
 
   const fetchAllApplications = useCallback(async () => {
     if (!firestore || !isAdmin) {
@@ -142,6 +143,72 @@ export default function AdminApplicationsPage() {
     }
   };
 
+  const handlePushToCaspio = async () => {
+    if (selected.length === 0) return;
+    
+    setIsPushingToCaspio(true);
+    
+    try {
+      const response = await fetch('/api/caspio-push-applications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          applicationIds: selected
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to push to Caspio');
+      }
+
+      const { results } = data;
+      
+      // Show detailed results
+      if (results.duplicates.length > 0) {
+        toast({
+          variant: 'destructive',
+          title: 'MRN Duplicates Found',
+          description: `${results.duplicates.length} application(s) have duplicate MRNs and were skipped.`,
+        });
+      }
+      
+      if (results.success.length > 0) {
+        toast({
+          title: 'Successfully Pushed to Caspio',
+          description: `${results.success.length} application(s) have been pushed to CalAIM Members table.`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      }
+      
+      if (results.errors.length > 0) {
+        toast({
+          variant: 'destructive',
+          title: 'Some Errors Occurred',
+          description: `${results.errors.length} application(s) failed to push due to errors.`,
+        });
+      }
+
+      // Clear selection after successful push
+      if (results.success.length > 0) {
+        setSelected([]);
+      }
+
+    } catch (error) {
+      console.error('Error pushing to Caspio:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Push Failed',
+        description: 'Failed to push applications to Caspio. Please try again.',
+      });
+    } finally {
+      setIsPushingToCaspio(false);
+    }
+  };
+
   const clearFilters = () => {
     setHealthPlanFilter('all');
     setPathwayFilter('all');
@@ -158,12 +225,21 @@ export default function AdminApplicationsPage() {
             <p className="text-muted-foreground">Browse and manage all applications submitted to the platform.</p>
           </div>
            {selected.length > 0 && isSuperAdmin && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                    <Button variant="destructive">
-                        <Trash2 className="mr-2 h-4 w-4" /> Delete ({selected.length})
-                    </Button>
-                </AlertDialogTrigger>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={handlePushToCaspio}
+                  disabled={isPushingToCaspio}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Database className="mr-2 h-4 w-4" />
+                  {isPushingToCaspio ? 'Pushing...' : `Push to Caspio (${selected.length})`}
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                      <Button variant="destructive">
+                          <Trash2 className="mr-2 h-4 w-4" /> Delete ({selected.length})
+                      </Button>
+                  </AlertDialogTrigger>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                     <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
@@ -178,7 +254,8 @@ export default function AdminApplicationsPage() {
                     </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
-            </AlertDialog>
+                </AlertDialog>
+              </div>
           )}
         </div>
         
