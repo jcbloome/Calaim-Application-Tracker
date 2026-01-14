@@ -22,15 +22,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 interface LoginLog {
   id: string;
-  userId: string;
-  userEmail: string;
-  userName: string;
-  userRole: string;
-  action: string;
-  timestamp: any;
-  ipAddress: string;
-  userAgent: string;
-  success: boolean;
+  userId?: string;
+  userEmail?: string;
+  userName?: string;
+  userRole?: string;
+  action?: string;
+  timestamp?: any;
+  ipAddress?: string;
+  userAgent?: string;
+  success?: boolean;
   failureReason?: string;
   location?: string;
   deviceInfo?: {
@@ -38,18 +38,27 @@ interface LoginLog {
     os: string;
     device: string;
   };
+  // Alternative field names that might be in the data
+  email?: string;
+  displayName?: string;
+  role?: string;
+  [key: string]: any; // Allow any additional fields
 }
 
 interface ActiveSession {
   id: string;
-  userId: string;
-  userEmail: string;
-  userName: string;
-  loginTime: any;
-  lastActivity: any;
-  ipAddress: string;
-  userAgent: string;
-  sessionDuration: number;
+  userId?: string;
+  userEmail?: string;
+  userName?: string;
+  loginTime?: any;
+  lastActivity?: any;
+  ipAddress?: string;
+  userAgent?: string;
+  sessionDuration?: number;
+  // Alternative field names
+  email?: string;
+  displayName?: string;
+  [key: string]: any;
 }
 
 export default function LoginActivityTracker() {
@@ -98,8 +107,11 @@ export default function LoginActivityTracker() {
       
       // Debug: Log first few entries to see data structure
       if (logs.length > 0) {
-        addDebugLog(`🔍 Sample log data: ${JSON.stringify(logs[0], null, 2).substring(0, 200)}...`);
-        addDebugLog(`📊 Available fields: ${Object.keys(logs[0]).join(', ')}`);
+        const firstLog = logs[0];
+        addDebugLog(`🔍 Sample log data: ${JSON.stringify(firstLog, null, 2).substring(0, 300)}...`);
+        addDebugLog(`📊 Available fields: ${Object.keys(firstLog).join(', ')}`);
+        addDebugLog(`👤 User fields: email=${firstLog.email}, displayName=${firstLog.displayName}, userName=${firstLog.userName}, userEmail=${firstLog.userEmail}`);
+        addDebugLog(`🔑 Other fields: action=${firstLog.action}, role=${firstLog.role}, userId=${firstLog.userId}`);
       }
     } catch (err: any) {
       const errorMsg = `Failed to load login logs: ${err.message}`;
@@ -237,8 +249,8 @@ export default function LoginActivityTracker() {
                     <div className="flex items-center gap-3">
                       <User className="h-4 w-4 text-blue-500" />
                       <div>
-                        <p className="font-medium">{session.userName}</p>
-                        <p className="text-sm text-muted-foreground">{session.userEmail}</p>
+                        <p className="font-medium">{session.userName || session.displayName || session.userEmail || session.email || 'Unknown User'}</p>
+                        <p className="text-sm text-muted-foreground">{session.userEmail || session.email || 'No email'}</p>
                       </div>
                     </div>
                     <div className="text-right text-sm">
@@ -295,13 +307,13 @@ export default function LoginActivityTracker() {
                       <User className="h-4 w-4 text-blue-500" />
                       <div>
                         <p className="font-medium">
-                          {log.userName || log.userEmail || 'Unknown User'}
+                          {log.userName || log.displayName || log.userEmail || log.email || 'Unknown User'}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          {log.userEmail || 'No email'}
+                          {log.userEmail || log.email || 'No email'}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          Role: {log.userRole || 'Unknown'} | ID: {log.userId || 'N/A'}
+                          Role: {log.userRole || log.role || 'Unknown'} | ID: {log.userId || 'N/A'}
                         </p>
                         {log.failureReason && (
                           <p className="text-sm text-red-600">Reason: {log.failureReason}</p>
