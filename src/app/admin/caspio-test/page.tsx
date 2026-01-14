@@ -1001,19 +1001,28 @@ export default function CaspioTestPage() {
                       <div className="space-y-2">
                         <Label className="text-sm font-medium text-green-700">CalAIM Members Field</Label>
                         <Select 
-                          value={fieldMappings[csField] || ''} 
+                          value={fieldMappings[csField] || 'no-mapping'} 
                           onValueChange={(value) => {
-                            setFieldMappings(prev => ({
-                              ...prev,
-                              [csField]: value
-                            }));
+                            if (value === 'no-mapping') {
+                              // Remove the mapping if "No Mapping" is selected
+                              setFieldMappings(prev => {
+                                const newMappings = { ...prev };
+                                delete newMappings[csField];
+                                return newMappings;
+                              });
+                            } else {
+                              setFieldMappings(prev => ({
+                                ...prev,
+                                [csField]: value
+                              }));
+                            }
                           }}
                         >
                           <SelectTrigger className="w-full">
                             <SelectValue placeholder="Select CalAIM field..." />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">-- No Mapping --</SelectItem>
+                            <SelectItem value="no-mapping">-- No Mapping --</SelectItem>
                             {caspioMembersFieldNames.map(fieldName => (
                               <SelectItem key={fieldName} value={fieldName}>
                                 {fieldName}
