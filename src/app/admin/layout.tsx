@@ -32,7 +32,8 @@ import {
   MessageSquareText,
   FileText,
   Activity,
-  TestTube2
+  TestTube2,
+  Scissors
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -77,6 +78,7 @@ const adminNavLinks = [
       { href: '/admin/applications', label: 'All Applications', icon: FolderKanban },
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/forms/review', label: 'Form Review', icon: FileEdit },
+      { href: '/admin/form-separator', label: 'Form Separator Tool', icon: Scissors },
     ]
   },
   { 
