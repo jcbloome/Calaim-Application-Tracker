@@ -57,6 +57,7 @@ function CsSummaryFormComponent() {
   const [currentStep, setCurrentStep] = useState(initialStep);
   const [isProcessing, setIsProcessing] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [showSkipOption, setShowSkipOption] = useState(false);
 
   const methods = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -93,6 +94,14 @@ function CsSummaryFormComponent() {
           const data = docSnap.data() as Application;
           setExistingApplicationData(data);
           reset(data as FormValues);
+          
+          // Check if CS Summary is already completed and show skip option
+          const csSummaryForm = data.forms?.find(form => 
+            form.name === 'CS Member Summary' || form.name === 'CS Summary'
+          );
+          if (csSummaryForm?.status === 'Completed' && !isAdminView) {
+            setShowSkipOption(true);
+          }
         } else {
             setInternalApplicationId(null);
             setExistingApplicationData(null);
@@ -304,6 +313,12 @@ function CsSummaryFormComponent() {
     }
   };
 
+  const handleSkipToPathway = () => {
+    if (internalApplicationId) {
+      router.push(`/pathway?applicationId=${internalApplicationId}`);
+    }
+  };
+
   if (isUserLoading || (!targetUserId && !isUserLoading && !isAdminView)) {
     return (
       <div className="flex-grow flex items-center justify-center">
@@ -346,6 +361,27 @@ function CsSummaryFormComponent() {
               </div>
               <Progress value={progress} className="w-full" />
             </div>
+
+            {/* Skip to Pathway Option for Completed Forms */}
+            {showSkipOption && (
+              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-medium text-blue-900">CS Summary Already Completed</h3>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Your CS Member Summary form is already completed. You can skip directly to the pathway page to continue with other requirements.
+                    </p>
+                  </div>
+                  <Button 
+                    type="button"
+                    onClick={handleSkipToPathway}
+                    className="ml-4 bg-blue-600 hover:bg-blue-700"
+                  >
+                    Skip to Pathway
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div className="min-h-[450px]">
               {currentStep === 1 && <Step1 isAdminView={isAdminView} />}

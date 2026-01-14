@@ -48,6 +48,12 @@ interface ApplicationData {
   pathway: 'SNF Transition' | 'SNF Diversion';
   healthPlan: 'Kaiser' | 'Health Net' | 'Other' | 'Kaiser Permanente';
   userId?: string;
+  forms?: Array<{
+    name: string;
+    status: 'Pending' | 'Completed';
+    type: string;
+    href: string;
+  }>;
 }
 
 type ApplicationStatus = 'In Progress' | 'Completed & Submitted' | 'Requires Revision' | 'Approved';
@@ -80,8 +86,19 @@ const ApplicationsTable = ({
   isLoading: boolean;
 }) => {
   const getActionLink = (app: ApplicationData) => {
-    // If the application is still being worked on, send the user back to the form to continue editing.
+    // If the application is still being worked on, check if CS Summary is completed
     if (app.status === 'In Progress' || app.status === 'Requires Revision') {
+      // Check if CS Member Summary form is completed
+      const csSummaryForm = (app as any).forms?.find((form: any) => 
+        form.name === 'CS Member Summary' || form.name === 'CS Summary'
+      );
+      
+      // If CS Summary is completed, go directly to pathway
+      if (csSummaryForm?.status === 'Completed') {
+        return `/pathway?applicationId=${app.id}`;
+      }
+      
+      // Otherwise, continue with CS Summary form
       return `/forms/cs-summary-form?applicationId=${app.id}`;
     }
     // For all other statuses, send them to the read-only pathway page.
@@ -89,8 +106,18 @@ const ApplicationsTable = ({
   };
 
   const getActionText = (app: ApplicationData) => {
-     if (app.status === 'In Progress' || app.status === 'Requires Revision') {
-      return 'Continue';
+    if (app.status === 'In Progress' || app.status === 'Requires Revision') {
+      // Check if CS Member Summary form is completed
+      const csSummaryForm = app.forms?.find(form => 
+        form.name === 'CS Member Summary' || form.name === 'CS Summary'
+      );
+      
+      // If CS Summary is completed, show "Continue to Pathway"
+      if (csSummaryForm?.status === 'Completed') {
+        return 'Continue to Pathway';
+      }
+      
+      return 'Continue Form';
     }
     return 'View';
   }
