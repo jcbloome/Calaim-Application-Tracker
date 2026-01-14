@@ -344,36 +344,93 @@ export default function LoginActivityTracker() {
         )}
       </div>
 
-      {/* Two-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Three-Column Layout for Maximum Space Efficiency */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Active Sessions - Compact */}
         <Card className="h-fit">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
               <Activity className="h-4 w-4" />
               Active Sessions ({activeSessions.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="max-h-48 overflow-y-auto">
+            <div className="max-h-64 overflow-y-auto">
               {activeSessions.length === 0 ? (
-                <p className="text-center text-muted-foreground py-4 text-sm">No active sessions</p>
+                <p className="text-center text-muted-foreground py-4 text-xs">No active sessions</p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-1">
                   {activeSessions.map((session) => (
-                    <div key={session.id} className="flex items-center justify-between p-2 border rounded text-sm">
+                    <div key={session.id} className="p-2 border rounded text-xs hover:bg-gray-50">
                       <div className="flex items-center gap-2">
                         <User className="h-3 w-3 text-blue-500 flex-shrink-0" />
-                        <div className="min-w-0">
-                          <p className="font-medium truncate">{session.userName || session.displayName || session.userEmail || session.email || 'Unknown User'}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium truncate text-xs">{session.userName || session.displayName || session.userEmail || session.email || 'Unknown User'}</p>
                           <p className="text-xs text-muted-foreground truncate">{session.userEmail || session.email || 'No email'}</p>
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {formatTimestamp(session.lastActivity)}
+                          </p>
                         </div>
                       </div>
-                      <div className="text-right text-xs text-muted-foreground flex-shrink-0">
-                        <p className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {formatTimestamp(session.lastActivity)}
-                        </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Login Logs - Compact */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Calendar className="h-4 w-4" />
+                Login History ({loginLogs.length})
+              </CardTitle>
+              <Select value={filterAction} onValueChange={setFilterAction}>
+                <SelectTrigger className="w-20 h-6 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="login">Login</SelectItem>
+                  <SelectItem value="logout">Logout</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="max-h-64 overflow-y-auto">
+              {loginLogs.length === 0 ? (
+                <p className="text-center text-muted-foreground py-4 text-xs">No login logs found</p>
+              ) : (
+                <div className="space-y-1">
+                  {loginLogs.map((log) => (
+                    <div key={log.id} className="p-2 border rounded text-xs hover:bg-gray-50">
+                      <div className="flex items-center gap-2">
+                        <User className="h-3 w-3 text-blue-500 flex-shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1">
+                            <p className="font-medium truncate text-xs">
+                              {log.userName || log.displayName || log.userEmail || log.email || 'Unknown User'}
+                            </p>
+                            <Badge variant={getActionBadgeVariant(log.action || log.type || log.event || 'unknown', log.success !== false)} className="text-xs px-1 py-0 h-4">
+                              {log.action || log.type || log.event || 'unknown'}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {log.userEmail || log.email || 'No email'}
+                          </p>
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {formatTimestamp(log.timestamp)}
+                          </p>
+                          {log.failureReason && (
+                            <p className="text-xs text-red-600 truncate">Reason: {log.failureReason}</p>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -385,20 +442,20 @@ export default function LoginActivityTracker() {
 
         {/* Debug Log - Compact */}
         <Card className="h-fit">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
               <Monitor className="h-4 w-4" />
               Debug Log
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="max-h-48 overflow-y-auto">
+            <div className="max-h-64 overflow-y-auto">
               {debugLogs.length === 0 ? (
-                <p className="text-center text-muted-foreground py-4 text-sm">No debug logs yet</p>
+                <p className="text-center text-muted-foreground py-4 text-xs">No debug logs yet</p>
               ) : (
                 <div className="space-y-1">
-                  {debugLogs.slice(0, 20).map((log, index) => (
-                    <p key={index} className="text-xs font-mono text-muted-foreground leading-tight">
+                  {debugLogs.slice(0, 15).map((log, index) => (
+                    <p key={index} className="text-xs font-mono text-muted-foreground leading-tight break-words">
                       {log}
                     </p>
                   ))}
@@ -408,75 +465,6 @@ export default function LoginActivityTracker() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Login Logs - Full Width but Compact */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Calendar className="h-4 w-4" />
-              Login Logs ({loginLogs.length})
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <Filter className="h-3 w-3" />
-              <Select value={filterAction} onValueChange={setFilterAction}>
-                <SelectTrigger className="w-28 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Actions</SelectItem>
-                  <SelectItem value="login">Login</SelectItem>
-                  <SelectItem value="logout">Logout</SelectItem>
-                  <SelectItem value="password_reset">Password Reset</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <div className="max-h-64 overflow-y-auto">
-            {loginLogs.length === 0 ? (
-              <p className="text-center text-muted-foreground py-6 text-sm">No login logs found</p>
-            ) : (
-              <div className="space-y-1">
-                {loginLogs.map((log) => (
-                  <div key={log.id} className="flex items-center justify-between p-2 border rounded text-sm hover:bg-gray-50">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <User className="h-3 w-3 text-blue-500 flex-shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium truncate">
-                            {log.userName || log.displayName || log.userEmail || log.email || 'Unknown User'}
-                          </p>
-                          <Badge variant={getActionBadgeVariant(log.action || log.type || log.event || 'unknown', log.success !== false)} className="text-xs px-1 py-0">
-                            {log.action || log.type || log.event || 'unknown'}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {log.userEmail || log.email || 'No email'} • Role: {log.userRole || log.role || 'Unknown'}
-                        </p>
-                        {log.failureReason && (
-                          <p className="text-xs text-red-600 truncate">Reason: {log.failureReason}</p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right text-xs text-muted-foreground flex-shrink-0 ml-2">
-                      <p className="flex items-center gap-1 justify-end">
-                        <Clock className="h-3 w-3" />
-                        {formatTimestamp(log.timestamp)}
-                      </p>
-                      <p className="flex items-center gap-1 justify-end">
-                        <MapPin className="h-3 w-3" />
-                        {log.ipAddress || log.ip || log.clientIP || log.remoteAddress || 'Unknown IP'}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
