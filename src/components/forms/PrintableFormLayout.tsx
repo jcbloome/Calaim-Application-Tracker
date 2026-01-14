@@ -1,10 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Printer, Download, FileText } from 'lucide-react';
+import { Printer, Download, FileText, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import Image from 'next/image';
 
@@ -27,13 +27,53 @@ export function PrintableFormLayout({
   showPrintButton = true,
   className = ''
 }: PrintableFormLayoutProps) {
+  const printableRef = useRef<HTMLDivElement>(null);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
   const handlePrint = () => {
     window.print();
   };
 
-  const handleDownloadPDF = () => {
-    // For now, use print dialog which allows saving as PDF
-    window.print();
+  const handleDownloadPDF = async () => {
+    if (!printableRef.current) return;
+    
+    setIsGeneratingPDF(true);
+    
+    try {
+      // Dynamically import html2pdf to avoid SSR issues
+      const html2pdf = (await import('html2pdf.js')).default;
+      
+      // Configure PDF options
+      const options = {
+        margin: 0.5,
+        filename: `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+          scale: 2,
+          useCORS: true,
+          letterRendering: true,
+          allowTaint: false
+        },
+        jsPDF: { 
+          unit: 'in', 
+          format: 'letter', 
+          orientation: 'portrait' 
+        }
+      };
+
+      // Generate and download PDF
+      await html2pdf()
+        .set(options)
+        .from(printableRef.current)
+        .save();
+        
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      // Fallback to print dialog
+      window.print();
+    } finally {
+      setIsGeneratingPDF(false);
+    }
   };
 
   return (
@@ -45,15 +85,29 @@ export function PrintableFormLayout({
             <Printer className="h-4 w-4 mr-2" />
             Print Form
           </Button>
-          <Button onClick={handleDownloadPDF} variant="outline" className="flex-1 sm:flex-none">
-            <Download className="h-4 w-4 mr-2" />
-            Download PDF
+          <Button 
+            onClick={handleDownloadPDF} 
+            variant="outline" 
+            className="flex-1 sm:flex-none"
+            disabled={isGeneratingPDF}
+          >
+            {isGeneratingPDF ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Generating PDF...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4 mr-2" />
+                Download PDF
+              </>
+            )}
           </Button>
         </div>
       )}
 
       {/* Printable Form */}
-      <div className="bg-white shadow-lg print:shadow-none print:bg-white">
+      <div ref={printableRef} className="bg-white shadow-lg print:shadow-none print:bg-white">
         {/* Header - Optimized for print */}
         <div className="p-8 print:p-6 border-b print:border-b-2 print:border-black">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 print:flex-row print:items-center">

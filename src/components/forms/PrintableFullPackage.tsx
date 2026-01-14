@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Printer, Download } from 'lucide-react';
+import { Printer, Download, Loader2 } from 'lucide-react';
 import { PrintableCsSummaryForm } from './PrintableCsSummaryForm';
 import { PrintableWaiversForm } from './PrintableWaiversForm';
 import { PrintableDeclarationForm } from './PrintableDeclarationForm';
@@ -23,6 +23,54 @@ export function PrintableFullPackage({
   pathway,
   showPrintButton = true 
 }: PrintableFullPackageProps) {
+  const printableRef = useRef<HTMLDivElement>(null);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  const handleDownloadPDF = async () => {
+    if (!printableRef.current) return;
+    
+    setIsGeneratingPDF(true);
+    
+    try {
+      // Dynamically import html2pdf to avoid SSR issues
+      const html2pdf = (await import('html2pdf.js')).default;
+      
+      // Configure PDF options for full package
+      const options = {
+        margin: 0.5,
+        filename: `CalAIM_Complete_Package_${applicationId || 'form'}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+          scale: 2,
+          useCORS: true,
+          letterRendering: true,
+          allowTaint: false,
+          height: window.innerHeight,
+          width: window.innerWidth
+        },
+        jsPDF: { 
+          unit: 'in', 
+          format: 'letter', 
+          orientation: 'portrait' 
+        },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+
+      // Generate and download PDF
+      await html2pdf()
+        .set(options)
+        .from(printableRef.current)
+        .save();
+        
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      // Fallback to print dialog
+      window.print();
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
       {/* Print Controls - Upper left like other forms */}
@@ -32,14 +80,28 @@ export function PrintableFullPackage({
             <Printer className="h-4 w-4 mr-2" />
             Print Complete Package
           </Button>
-          <Button onClick={() => window.print()} variant="outline" className="flex-1 sm:flex-none">
-            <Download className="h-4 w-4 mr-2" />
-            Download PDF
+          <Button 
+            onClick={handleDownloadPDF} 
+            variant="outline" 
+            className="flex-1 sm:flex-none"
+            disabled={isGeneratingPDF}
+          >
+            {isGeneratingPDF ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Generating PDF...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4 mr-2" />
+                Download PDF
+              </>
+            )}
           </Button>
         </div>
       )}
       
-      <div className="space-y-12 print:space-y-16">
+      <div ref={printableRef} className="space-y-12 print:space-y-16">
 
       {/* Program Information */}
       <PrintableProgramInfoForm 
