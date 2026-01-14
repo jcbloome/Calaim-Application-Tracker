@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useFirestore } from '@/firebase';
-import { collection, query, where, onSnapshot, orderBy, Timestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, Timestamp, getDocs } from 'firebase/firestore';
 import { 
   FileText, 
   Upload, 
@@ -64,54 +64,62 @@ export function DailyNotificationDashboard() {
     const startOfToday = startOfDay(today);
     const endOfToday = endOfDay(today);
 
-    // Query for applications with activity today
-    const applicationsQuery = query(
-      collection(firestore, 'applications'),
-      where('lastModified', '>=', Timestamp.fromDate(startOfToday)),
-      where('lastModified', '<=', Timestamp.fromDate(endOfToday)),
-      orderBy('lastModified', 'desc')
-    );
+    // Query for all applications to get comprehensive stats
+    const allApplicationsQuery = collection(firestore, 'applications');
 
-    const unsubscribe = onSnapshot(applicationsQuery, (snapshot) => {
+    const unsubscribe = onSnapshot(allApplicationsQuery, (snapshot) => {
       const stats: DailyStats = {
         newDocuments: 0,
         completedCsSummaries: 0,
-        totalApplications: snapshot.size,
+        totalApplications: 0,
         pendingReview: 0
       };
 
       const items: NotificationItem[] = [];
+      let todayActivityCount = 0;
 
       snapshot.forEach((doc) => {
         const data = doc.data();
-        const memberName = `${data.memberFirstName} ${data.memberLastName}`;
-        const timestamp = data.lastModified?.toDate() || new Date();
+        const memberName = `${data.memberFirstName || 'Unknown'} ${data.memberLastName || 'Member'}`;
+        const lastModified = data.lastModified?.toDate() || data.createdAt?.toDate() || new Date();
+        const timestamp = lastModified;
 
-        // Count new documents
-        if (data.hasNewDocuments && data.newDocumentCount > 0) {
-          stats.newDocuments += data.newDocumentCount;
-          items.push({
-            id: `${doc.id}-documents`,
-            type: 'document_upload',
-            applicationId: doc.id,
-            memberName,
-            timestamp,
-            hasNewDocuments: true,
-            newDocumentCount: data.newDocumentCount
-          });
+        // Check if activity happened today
+        const isToday = timestamp >= startOfToday && timestamp <= endOfToday;
+        if (isToday) {
+          todayActivityCount++;
         }
 
-        // Count completed CS summaries
-        if (data.csSummaryComplete && !data.csSummaryNotificationSent) {
-          stats.completedCsSummaries++;
-          items.push({
-            id: `${doc.id}-cs-summary`,
-            type: 'cs_summary_complete',
-            applicationId: doc.id,
-            memberName,
-            timestamp,
-            csSummaryComplete: true
-          });
+        // Count new documents (focus on recent activity)
+        if (data.hasNewDocuments && data.newDocumentCount > 0) {
+          stats.newDocuments += data.newDocumentCount;
+          if (isToday) {
+            items.push({
+              id: `${doc.id}-documents`,
+              type: 'document_upload',
+              applicationId: doc.id,
+              memberName,
+              timestamp,
+              hasNewDocuments: true,
+              newDocumentCount: data.newDocumentCount
+            });
+          }
+        }
+
+        // Count completed CS summaries (check recent completions)
+        if (data.csSummaryComplete) {
+          const csCompletedToday = data.csSummaryCompletedAt?.toDate() >= startOfToday;
+          if (csCompletedToday || (!data.csSummaryNotificationSent && isToday)) {
+            stats.completedCsSummaries++;
+            items.push({
+              id: `${doc.id}-cs-summary`,
+              type: 'cs_summary_complete',
+              applicationId: doc.id,
+              memberName,
+              timestamp: data.csSummaryCompletedAt?.toDate() || timestamp,
+              csSummaryComplete: true
+            });
+          }
         }
 
         // Count pending review items
@@ -120,36 +128,73 @@ export function DailyNotificationDashboard() {
         }
       });
 
+      // Set total applications to today's activity count for more relevant stats
+      stats.totalApplications = todayActivityCount;
+
       setDailyStats(stats);
       setNotificationItems(items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()));
       setIsLoading(false);
+    }, (error) => {
+      console.error('❌ Error loading daily dashboard:', error);
+      setIsLoading(false);
+      toast({
+        variant: 'destructive',
+        title: 'Loading Error',
+        description: 'Could not load daily dashboard data',
+      });
     });
 
     return () => unsubscribe();
-  }, [firestore]);
+  }, [firestore, toast]);
 
   const refreshData = async () => {
     setIsRefreshing(true);
     try {
-      const functions = getFunctions();
-      const checkDocuments = httpsCallable(functions, 'checkForNewDocuments');
-      const checkSummaries = httpsCallable(functions, 'checkForCompletedCsSummaries');
-      
-      await Promise.all([
-        checkDocuments({}),
-        checkSummaries({})
+      if (!firestore) {
+        throw new Error('Firestore not available');
+      }
+
+      // Force refresh by re-querying Firestore data
+      const today = new Date();
+      const startOfToday = startOfDay(today);
+      const endOfToday = endOfDay(today);
+
+      // Query for all applications (not just today's) to get comprehensive stats
+      const allAppsQuery = collection(firestore, 'applications');
+      const todayAppsQuery = query(
+        collection(firestore, 'applications'),
+        where('lastModified', '>=', Timestamp.fromDate(startOfToday)),
+        where('lastModified', '<=', Timestamp.fromDate(endOfToday)),
+        orderBy('lastModified', 'desc')
+      );
+
+      // Also check for applications with recent CS Summary completions
+      const recentCsQuery = query(
+        collection(firestore, 'applications'),
+        where('csSummaryComplete', '==', true),
+        orderBy('lastModified', 'desc')
+      );
+
+      // Execute queries to refresh data
+      const [todaySnapshot, recentCsSnapshot] = await Promise.all([
+        getDocs(todayAppsQuery),
+        getDocs(recentCsQuery)
       ]);
+
+      // The useEffect listener will automatically update the UI with fresh data
+      console.log(`🔄 Refreshed data: ${todaySnapshot.size} today activities, ${recentCsSnapshot.size} recent CS completions`);
       
       toast({
         title: 'Data Refreshed',
-        description: 'Daily statistics updated',
+        description: `Updated with latest activity (${todaySnapshot.size} today)`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
+      console.error('❌ Refresh error:', error);
       toast({
         variant: 'destructive',
         title: 'Refresh Failed',
-        description: 'Could not refresh data',
+        description: error.message || 'Could not refresh data',
       });
     } finally {
       setIsRefreshing(false);
