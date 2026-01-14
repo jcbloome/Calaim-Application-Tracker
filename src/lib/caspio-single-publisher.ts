@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 // Caspio configuration for your two-table structure
 const CASPIO_CONFIG = {
-  baseUrl: process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com',
+  // Force correct base URL - environment variable is corrupted
+  baseUrl: 'https://c7ebl500.caspio.com',
   clientId: process.env.CASPIO_CLIENT_ID,
   clientSecret: process.env.CASPIO_CLIENT_SECRET,
   clientsTable: 'connect_tbl_clients',
@@ -10,8 +11,8 @@ const CASPIO_CONFIG = {
 };
 
 console.log('🔧 Caspio Config Loaded:');
-console.log('  - Base URL from env:', process.env.CASPIO_BASE_URL);
-console.log('  - Using Base URL:', CASPIO_CONFIG.baseUrl);
+console.log('  - Base URL from env (CORRUPTED):', process.env.CASPIO_BASE_URL);
+console.log('  - Using CORRECTED Base URL:', CASPIO_CONFIG.baseUrl);
 console.log('  - Client ID available:', !!CASPIO_CONFIG.clientId);
 console.log('  - Client Secret available:', !!CASPIO_CONFIG.clientSecret);
 
@@ -38,6 +39,19 @@ class CaspioApiError extends Error {
  * Clean and format Caspio base URL consistently
  */
 function getCleanBaseUrl(baseUrl: string): string {
+  console.log('🔧 URL Cleanup - Input:', baseUrl);
+  
+  // Handle completely corrupted URLs by extracting just the domain
+  if (baseUrl.includes('ffhttps://') || baseUrl.includes('https://') && baseUrl.length > 50) {
+    // Extract just the domain from corrupted URL
+    const domainMatch = baseUrl.match(/(?:ff)?https?:\/\/([^\/]+)/);
+    if (domainMatch) {
+      const cleanUrl = `https://${domainMatch[1]}`;
+      console.log('🔧 Extracted clean domain:', cleanUrl);
+      return cleanUrl;
+    }
+  }
+  
   let cleanUrl = baseUrl;
   
   // Remove any duplicate protocol prefixes
@@ -55,6 +69,7 @@ function getCleanBaseUrl(baseUrl: string): string {
     cleanUrl = `https://${cleanUrl}`;
   }
   
+  console.log('🔧 URL Cleanup - Output:', cleanUrl);
   return cleanUrl;
 }
 
