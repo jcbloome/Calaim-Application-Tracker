@@ -329,80 +329,98 @@ export default function LoginActivityTracker() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-4">
+      {/* Compact Header */}
       <div className="flex items-center justify-between">
-        <Button onClick={refreshData} disabled={isLoading} variant="outline">
+        <Button onClick={refreshData} disabled={isLoading} variant="outline" size="sm">
           <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
+        {error && (
+          <div className="flex items-center gap-2 text-red-600 text-sm">
+            <AlertTriangle className="h-4 w-4" />
+            <span>Error: {error}</span>
+          </div>
+        )}
       </div>
 
-      {/* Error Display */}
-      {error && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-red-600">
-              <AlertTriangle className="h-4 w-4" />
-              <span className="font-medium">Error: {error}</span>
+      {/* Two-Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Active Sessions - Compact */}
+        <Card className="h-fit">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Activity className="h-4 w-4" />
+              Active Sessions ({activeSessions.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="max-h-48 overflow-y-auto">
+              {activeSessions.length === 0 ? (
+                <p className="text-center text-muted-foreground py-4 text-sm">No active sessions</p>
+              ) : (
+                <div className="space-y-2">
+                  {activeSessions.map((session) => (
+                    <div key={session.id} className="flex items-center justify-between p-2 border rounded text-sm">
+                      <div className="flex items-center gap-2">
+                        <User className="h-3 w-3 text-blue-500 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{session.userName || session.displayName || session.userEmail || session.email || 'Unknown User'}</p>
+                          <p className="text-xs text-muted-foreground truncate">{session.userEmail || session.email || 'No email'}</p>
+                        </div>
+                      </div>
+                      <div className="text-right text-xs text-muted-foreground flex-shrink-0">
+                        <p className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {formatTimestamp(session.lastActivity)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
-      )}
 
-      {/* Active Sessions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="h-5 w-5" />
-            Active Sessions ({activeSessions.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-64">
-            {activeSessions.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No active sessions found</p>
-            ) : (
-              <div className="space-y-2">
-                {activeSessions.map((session) => (
-                  <div key={session.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <User className="h-4 w-4 text-blue-500" />
-                      <div>
-                        <p className="font-medium">{session.userName || session.displayName || session.userEmail || session.email || 'Unknown User'}</p>
-                        <p className="text-sm text-muted-foreground">{session.userEmail || session.email || 'No email'}</p>
-                      </div>
-                    </div>
-                    <div className="text-right text-sm">
-                      <p className="flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {formatTimestamp(session.lastActivity)}
-                      </p>
-                      <p className="flex items-center gap-1 text-muted-foreground">
-                        <MapPin className="h-3 w-3" />
-                        {session.ipAddress}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ScrollArea>
-        </CardContent>
-      </Card>
+        {/* Debug Log - Compact */}
+        <Card className="h-fit">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Monitor className="h-4 w-4" />
+              Debug Log
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="max-h-48 overflow-y-auto">
+              {debugLogs.length === 0 ? (
+                <p className="text-center text-muted-foreground py-4 text-sm">No debug logs yet</p>
+              ) : (
+                <div className="space-y-1">
+                  {debugLogs.slice(0, 20).map((log, index) => (
+                    <p key={index} className="text-xs font-mono text-muted-foreground leading-tight">
+                      {log}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* Login Logs */}
+      {/* Login Logs - Full Width but Compact */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Calendar className="h-4 w-4" />
               Login Logs ({loginLogs.length})
             </CardTitle>
             <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4" />
+              <Filter className="h-3 w-3" />
               <Select value={filterAction} onValueChange={setFilterAction}>
-                <SelectTrigger className="w-32">
+                <SelectTrigger className="w-28 h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -415,83 +433,48 @@ export default function LoginActivityTracker() {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-96">
+        <CardContent className="pt-0">
+          <div className="max-h-64 overflow-y-auto">
             {loginLogs.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No login logs found</p>
+              <p className="text-center text-muted-foreground py-6 text-sm">No login logs found</p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {loginLogs.map((log) => (
-                  <div key={log.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <User className="h-4 w-4 text-blue-500" />
-                      <div>
-                        <p className="font-medium">
-                          {log.userName || log.displayName || log.userEmail || log.email || 'Unknown User'}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {log.userEmail || log.email || 'No email'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Role: {log.userRole || log.role || 'Unknown'} | ID: {log.userId || 'N/A'}
+                  <div key={log.id} className="flex items-center justify-between p-2 border rounded text-sm hover:bg-gray-50">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <User className="h-3 w-3 text-blue-500 flex-shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium truncate">
+                            {log.userName || log.displayName || log.userEmail || log.email || 'Unknown User'}
+                          </p>
+                          <Badge variant={getActionBadgeVariant(log.action || log.type || log.event || 'unknown', log.success !== false)} className="text-xs px-1 py-0">
+                            {log.action || log.type || log.event || 'unknown'}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {log.userEmail || log.email || 'No email'} • Role: {log.userRole || log.role || 'Unknown'}
                         </p>
                         {log.failureReason && (
-                          <p className="text-sm text-red-600">Reason: {log.failureReason}</p>
+                          <p className="text-xs text-red-600 truncate">Reason: {log.failureReason}</p>
                         )}
-                        {/* Debug: Show raw data */}
-                        <details className="text-xs text-gray-400 mt-1">
-                          <summary className="cursor-pointer">Debug Data</summary>
-                          <pre className="mt-1 text-xs bg-gray-100 p-1 rounded">
-                            {JSON.stringify(log, null, 2)}
-                          </pre>
-                        </details>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <Badge variant={getActionBadgeVariant(log.action || log.type || log.event || 'unknown', log.success !== false)}>
-                        {log.action || log.type || log.event || 'unknown'}
-                      </Badge>
-                      <div className="text-right text-sm">
-                        <p className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {formatTimestamp(log.timestamp)}
-                        </p>
-                        <p className="flex items-center gap-1 text-muted-foreground">
-                          <MapPin className="h-3 w-3" />
-                          {log.ipAddress || log.ip || log.clientIP || log.remoteAddress || 'Unknown IP'}
-                        </p>
-                      </div>
+                    <div className="text-right text-xs text-muted-foreground flex-shrink-0 ml-2">
+                      <p className="flex items-center gap-1 justify-end">
+                        <Clock className="h-3 w-3" />
+                        {formatTimestamp(log.timestamp)}
+                      </p>
+                      <p className="flex items-center gap-1 justify-end">
+                        <MapPin className="h-3 w-3" />
+                        {log.ipAddress || log.ip || log.clientIP || log.remoteAddress || 'Unknown IP'}
+                      </p>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-          </ScrollArea>
-        </CardContent>
-      </Card>
-
-      {/* Debug Log */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Monitor className="h-5 w-5" />
-            Debug Log
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-32">
-            {debugLogs.length === 0 ? (
-              <p className="text-center text-muted-foreground py-4">No debug logs yet</p>
-            ) : (
-              <div className="space-y-1">
-                {debugLogs.map((log, index) => (
-                  <p key={index} className="text-xs font-mono text-muted-foreground">
-                    {log}
-                  </p>
-                ))}
-              </div>
-            )}
-          </ScrollArea>
+          </div>
         </CardContent>
       </Card>
     </div>
