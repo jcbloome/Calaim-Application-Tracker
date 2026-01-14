@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { getFirestore, collection, query, orderBy, limit, getDocs, where, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useUser } from '@/firebase';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { 
   Activity,
   AlertTriangle,
@@ -70,6 +71,7 @@ interface ActiveSession {
 export default function LoginActivityTracker() {
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const { currentUser } = useUser();
+  const [authUser, setAuthUser] = useState<any>(null);
   const [loginLogs, setLoginLogs] = useState<LoginLog[]>([]);
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -82,29 +84,44 @@ export default function LoginActivityTracker() {
     setDebugLogs(prev => [`[${timestamp}] ${message}`, ...prev.slice(0, 49)]);
   }, []);
 
+  // Direct Firebase Auth listener
+  useEffect(() => {
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      addDebugLog(`🔐 Auth state changed: ${user ? `User: ${user.email}` : 'No user'}`);
+      setAuthUser(user);
+    });
+
+    return () => unsubscribe();
+  }, [addDebugLog]);
+
   const ensureCurrentUserSession = useCallback(async () => {
     addDebugLog(`🔍 ensureCurrentUserSession called`);
-    addDebugLog(`👤 Current user exists: ${!!currentUser}`);
+    addDebugLog(`👤 useUser currentUser exists: ${!!currentUser}`);
+    addDebugLog(`🔐 authUser exists: ${!!authUser}`);
     
-    if (!currentUser) {
-      addDebugLog('❌ No current user - cannot create session');
+    // Try both user sources
+    const user = currentUser || authUser;
+    
+    if (!user) {
+      addDebugLog('❌ No user found from either source - cannot create session');
       return;
     }
 
-    addDebugLog(`👤 Current user details: ${currentUser.email}, UID: ${currentUser.uid}`);
+    addDebugLog(`👤 Using user: ${user.email}, UID: ${user.uid}`);
 
     try {
       addDebugLog(`🔥 Getting Firestore instance...`);
       const db = getFirestore();
-      addDebugLog(`📄 Creating session document reference for UID: ${currentUser.uid}`);
-      const sessionDoc = doc(db, 'activeSessions', currentUser.uid);
+      addDebugLog(`📄 Creating session document reference for UID: ${user.uid}`);
+      const sessionDoc = doc(db, 'activeSessions', user.uid);
       
       const sessionData = {
-        userId: currentUser.uid,
-        userEmail: currentUser.email,
-        userName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Unknown',
-        displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Unknown',
-        email: currentUser.email,
+        userId: user.uid,
+        userEmail: user.email,
+        userName: user.displayName || user.email?.split('@')[0] || 'Unknown',
+        displayName: user.displayName || user.email?.split('@')[0] || 'Unknown',
+        email: user.email,
         loginTime: serverTimestamp(),
         lastActivity: serverTimestamp(),
         ipAddress: 'Current Session', // We don't have access to IP in browser
@@ -119,7 +136,7 @@ export default function LoginActivityTracker() {
       addDebugLog(`📊 Session data: ${JSON.stringify(sessionData, null, 2).substring(0, 300)}...`);
       
       await setDoc(sessionDoc, sessionData, { merge: true });
-      addDebugLog(`✅ Successfully created/updated active session for ${currentUser.email}`);
+      addDebugLog(`✅ Successfully created/updated active session for ${user.email}`);
       
       // Verify the document was created
       addDebugLog(`🔍 Verifying session was created...`);
@@ -129,7 +146,7 @@ export default function LoginActivityTracker() {
       addDebugLog(`❌ Error code: ${err.code}`);
       addDebugLog(`❌ Error stack: ${err.stack}`);
     }
-  }, [currentUser, addDebugLog]);
+  }, [currentUser, authUser, addDebugLog]);
 
   const loadLoginLogs = useCallback(async () => {
     try {
