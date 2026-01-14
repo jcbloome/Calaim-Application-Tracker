@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,7 +18,9 @@ import {
   Trash2,
   Edit3,
   Save,
-  X
+  X,
+  Plus,
+  Minus
 } from 'lucide-react';
 import {
   Table,
@@ -36,31 +38,83 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { PDFDocument } from 'pdf-lib';
+import { Document, Page, pdfjs } from 'react-pdf';
+
+// Set up PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 interface SeparatedForm {
   id: string;
   name: string;
-  type: 'CS Member Summary' | 'Waivers & Authorizations' | 'LIC 602A' | 'Declaration of Eligibility' | 'SNF Facesheet' | 'Proof of Income' | 'Other';
+  type: 'CS Member Summary' | 'Waivers & Authorizations' | 'LIC 602A' | 'Declaration of Eligibility' | 'SNF Facesheet' | 'Proof of Income' | 'Medi-Cal Forms' | 'Other';
   pages: number[];
-  confidence: number;
+  confidence?: number;
   previewUrl?: string;
   downloadUrl?: string;
+  pdfBlob?: Blob;
 }
+
+const FORM_TYPES = [
+  'CS Member Summary',
+  'Waivers & Authorizations', 
+  'LIC 602A',
+  'Declaration of Eligibility',
+  'SNF Facesheet',
+  'Proof of Income',
+  'Medi-Cal Forms',
+  'Other'
+] as const;
 
 export default function FormSeparatorPage() {
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
   const [separatedForms, setSeparatedForms] = useState<SeparatedForm[]>([]);
   const [file, setFile] = useState<File | null>(null);
+  const [pdfDocument, setPdfDocument] = useState<PDFDocument | null>(null);
+  const [numPages, setNumPages] = useState<number>(0);
   const [editingForm, setEditingForm] = useState<string | null>(null);
   const [editPages, setEditPages] = useState<string>('');
   const [previewForm, setPreviewForm] = useState<SeparatedForm | null>(null);
+  const [selectedPages, setSelectedPages] = useState<Set<number>>(new Set());
+  const [newFormType, setNewFormType] = useState<string>('');
+  const [newFormName, setNewFormName] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (selectedFile && selectedFile.type === 'application/pdf') {
       setFile(selectedFile);
       setSeparatedForms([]);
+      setSelectedPages(new Set());
+      
+      try {
+        // Load PDF for processing
+        const arrayBuffer = await selectedFile.arrayBuffer();
+        const pdf = await PDFDocument.load(arrayBuffer);
+        setPdfDocument(pdf);
+        setNumPages(pdf.getPageCount());
+        
+        toast({
+          title: 'PDF Loaded',
+          description: `Successfully loaded PDF with ${pdf.getPageCount()} pages`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      } catch (error) {
+        console.error('Error loading PDF:', error);
+        toast({
+          variant: 'destructive',
+          title: 'PDF Load Error',
+          description: 'Could not load the PDF file. Please try again.',
+        });
+      }
     } else {
       toast({
         variant: 'destructive',
@@ -70,69 +124,87 @@ export default function FormSeparatorPage() {
     }
   };
 
-  const processPdfSeparation = async () => {
-    if (!file) return;
+  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    setNumPages(numPages);
+  };
 
-    setIsProcessing(true);
+  const togglePageSelection = (pageNum: number) => {
+    const newSelection = new Set(selectedPages);
+    if (newSelection.has(pageNum)) {
+      newSelection.delete(pageNum);
+    } else {
+      newSelection.add(pageNum);
+    }
+    setSelectedPages(newSelection);
+  };
+
+  const selectPageRange = (start: number, end: number) => {
+    const newSelection = new Set(selectedPages);
+    for (let i = start; i <= end; i++) {
+      newSelection.add(i);
+    }
+    setSelectedPages(newSelection);
+  };
+
+  const clearSelection = () => {
+    setSelectedPages(new Set());
+  };
+
+  const createFormFromSelection = async () => {
+    if (selectedPages.size === 0 || !newFormType || !newFormName || !pdfDocument) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing Information',
+        description: 'Please select pages, form type, and provide a form name.',
+      });
+      return;
+    }
 
     try {
-      // Simulate processing time
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      setIsProcessing(true);
 
-      // Mock separated forms based on common patterns
-      const mockSeparatedForms: SeparatedForm[] = [
-        {
-          id: '1',
-          name: 'CS Member Summary',
-          type: 'CS Member Summary',
-          pages: [1, 2, 3],
-          confidence: 95,
-          previewUrl: '/mock-preview-1.pdf',
-          downloadUrl: '/mock-download-1.pdf'
-        },
-        {
-          id: '2',
-          name: 'Waivers & Authorizations',
-          type: 'Waivers & Authorizations',
-          pages: [4, 5],
-          confidence: 88,
-          previewUrl: '/mock-preview-2.pdf',
-          downloadUrl: '/mock-download-2.pdf'
-        },
-        {
-          id: '3',
-          name: "LIC 602A - Physician's Report",
-          type: 'LIC 602A',
-          pages: [6, 7, 8],
-          confidence: 92,
-          previewUrl: '/mock-preview-3.pdf',
-          downloadUrl: '/mock-download-3.pdf'
-        },
-        {
-          id: '4',
-          name: 'Proof of Income',
-          type: 'Proof of Income',
-          pages: [9],
-          confidence: 78,
-          previewUrl: '/mock-preview-4.pdf',
-          downloadUrl: '/mock-download-4.pdf'
-        }
-      ];
-
-      setSeparatedForms(mockSeparatedForms);
+      // Create new PDF with selected pages
+      const newPdf = await PDFDocument.create();
+      const pages = Array.from(selectedPages).sort((a, b) => a - b);
       
+      for (const pageNum of pages) {
+        const [copiedPage] = await newPdf.copyPages(pdfDocument, [pageNum - 1]);
+        newPdf.addPage(copiedPage);
+      }
+
+      const pdfBytes = await newPdf.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+
+      const newForm: SeparatedForm = {
+        id: Date.now().toString(),
+        name: newFormName,
+        type: newFormType as any,
+        pages: pages,
+        previewUrl: url,
+        downloadUrl: url,
+        pdfBlob: blob
+      };
+
+      setSeparatedForms(prev => [...prev, newForm]);
+      
+      // Clear selection and form inputs
+      setSelectedPages(new Set());
+      setNewFormName('');
+      setNewFormType('');
+
       toast({
-        title: 'Separation Complete',
-        description: `Successfully separated ${mockSeparatedForms.length} forms from the PDF package.`,
+        title: 'Form Created',
+        description: `Successfully created "${newFormName}" with ${pages.length} pages.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
 
-    } catch (error: any) {
-      console.error('PDF separation error:', error);
+    } catch (error) {
+      console.error('Error creating form:', error);
       toast({
         variant: 'destructive',
-        title: 'Separation Failed',
-        description: 'Could not process the PDF file. Please try again.',
+        title: 'Creation Failed',
+        description: 'Could not create the form. Please try again.',
       });
     } finally {
       setIsProcessing(false);
@@ -140,11 +212,27 @@ export default function FormSeparatorPage() {
   };
 
   const handleDownload = (form: SeparatedForm) => {
-    // In production, this would download the actual separated PDF
-    toast({
-      title: 'Download Started',
-      description: `Downloading ${form.name}...`,
-    });
+    if (form.pdfBlob) {
+      const url = URL.createObjectURL(form.pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${form.name.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: 'Download Started',
+        description: `Downloading ${form.name}...`,
+      });
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'Download Error',
+        description: 'PDF file not available for download.',
+      });
+    }
   };
 
   const handlePreview = (form: SeparatedForm) => {
@@ -202,7 +290,7 @@ export default function FormSeparatorPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6">
         {/* Upload Section */}
         <Card>
           <CardHeader>
@@ -211,12 +299,13 @@ export default function FormSeparatorPage() {
               Upload PDF Package
             </CardTitle>
             <CardDescription>
-              Upload a multi-form PDF package to automatically separate individual forms
+              Upload a multi-form PDF package to manually separate into individual forms
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
               <Input
+                ref={fileInputRef}
                 type="file"
                 accept=".pdf"
                 onChange={handleFileUpload}
@@ -225,78 +314,190 @@ export default function FormSeparatorPage() {
               {file && (
                 <div className="flex items-center justify-center gap-2 text-sm text-green-600">
                   <CheckCircle className="h-4 w-4" />
-                  {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
+                  {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB) - {numPages} pages
                 </div>
               )}
             </div>
-            
-            <Button 
-              onClick={processPdfSeparation}
-              disabled={!file || isProcessing}
-              className="w-full"
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing PDF...
-                </>
-              ) : (
-                <>
-                  <Scissors className="mr-2 h-4 w-4" />
-                  Separate Forms
-                </>
-              )}
-            </Button>
           </CardContent>
         </Card>
+
+        {/* PDF Viewer and Page Selection */}
+        {file && numPages > 0 && (
+          <div className="grid gap-6 lg:grid-cols-3">
+            {/* PDF Viewer */}
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Eye className="h-5 w-5" />
+                  PDF Preview & Page Selection
+                </CardTitle>
+                <CardDescription>
+                  Click pages to select them for form creation. Selected pages: {selectedPages.size}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex gap-2 flex-wrap">
+                    <Button size="sm" onClick={clearSelection} variant="outline">
+                      Clear Selection
+                    </Button>
+                    <Button size="sm" onClick={() => selectPageRange(1, numPages)} variant="outline">
+                      Select All
+                    </Button>
+                  </div>
+                  
+                  <div className="max-h-96 overflow-y-auto border rounded-lg p-4">
+                    <Document
+                      file={file}
+                      onLoadSuccess={onDocumentLoadSuccess}
+                      className="space-y-4"
+                    >
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        {Array.from({ length: numPages }, (_, i) => i + 1).map((pageNum) => (
+                          <div
+                            key={pageNum}
+                            className={`relative border-2 rounded cursor-pointer transition-all ${
+                              selectedPages.has(pageNum)
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-gray-200 hover:border-gray-400'
+                            }`}
+                            onClick={() => togglePageSelection(pageNum)}
+                          >
+                            <Page
+                              pageNumber={pageNum}
+                              width={150}
+                              renderTextLayer={false}
+                              renderAnnotationLayer={false}
+                            />
+                            <div className="absolute top-2 left-2 bg-black bg-opacity-75 text-white px-2 py-1 rounded text-xs">
+                              Page {pageNum}
+                            </div>
+                            {selectedPages.has(pageNum) && (
+                              <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center">
+                                <CheckCircle className="h-4 w-4" />
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </Document>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Form Creation Panel */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Plus className="h-5 w-5" />
+                  Create Form
+                </CardTitle>
+                <CardDescription>
+                  Create a new form from selected pages
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium">Form Name</label>
+                  <Input
+                    value={newFormName}
+                    onChange={(e) => setNewFormName(e.target.value)}
+                    placeholder="Enter form name..."
+                  />
+                </div>
+                
+                <div>
+                  <label className="text-sm font-medium">Form Type</label>
+                  <Select value={newFormType} onValueChange={setNewFormType}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select form type..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FORM_TYPES.map((type) => (
+                        <SelectItem key={type} value={type}>
+                          {type}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="text-sm text-gray-600">
+                  Selected Pages: {Array.from(selectedPages).sort((a, b) => a - b).join(', ') || 'None'}
+                </div>
+
+                <Button
+                  onClick={createFormFromSelection}
+                  disabled={selectedPages.size === 0 || !newFormType || !newFormName || isProcessing}
+                  className="w-full"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Form
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Instructions */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              How It Works
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex items-start gap-2">
-              <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-semibold">1</div>
-              <div>
-                <strong>Upload PDF Package:</strong> Select a multi-form PDF file containing various CalAIM forms
+        {!file && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                How It Works
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex items-start gap-2">
+                <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-semibold">1</div>
+                <div>
+                  <strong>Upload PDF Package:</strong> Select a multi-form PDF file containing various CalAIM forms
+                </div>
               </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-semibold">2</div>
-              <div>
-                <strong>Automatic Detection:</strong> AI analyzes the document and identifies individual forms
+              <div className="flex items-start gap-2">
+                <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-semibold">2</div>
+                <div>
+                  <strong>Review Pages:</strong> View all pages in the PDF and select which pages belong together
+                </div>
               </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-semibold">3</div>
-              <div>
-                <strong>Review & Edit:</strong> Review detected forms and manually adjust page ranges if needed
+              <div className="flex items-start gap-2">
+                <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-semibold">3</div>
+                <div>
+                  <strong>Assign Form Types:</strong> Group selected pages and assign them to form categories (CS Summary, Waivers, etc.)
+                </div>
               </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-semibold">4</div>
-              <div>
-                <strong>Download:</strong> Download individual forms as separate PDF files
+              <div className="flex items-start gap-2">
+                <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-semibold">4</div>
+                <div>
+                  <strong>Download Separated Forms:</strong> Download each form as a separate PDF file
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
-      {/* Results Section */}
+      {/* Created Forms Section */}
       {separatedForms.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-600" />
-              Separated Forms ({separatedForms.length})
+              Created Forms ({separatedForms.length})
             </CardTitle>
             <CardDescription>
-              Review the automatically detected forms and adjust page ranges as needed
+              Forms you've created from the PDF package
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -306,7 +507,7 @@ export default function FormSeparatorPage() {
                   <TableHead>Form Name</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Pages</TableHead>
-                  <TableHead>Confidence</TableHead>
+                  <TableHead>Page Count</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -314,7 +515,9 @@ export default function FormSeparatorPage() {
                 {separatedForms.map((form) => (
                   <TableRow key={form.id}>
                     <TableCell className="font-medium">{form.name}</TableCell>
-                    <TableCell>{form.type}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{form.type}</Badge>
+                    </TableCell>
                     <TableCell>
                       {editingForm === form.id ? (
                         <div className="flex items-center gap-2">
@@ -322,7 +525,7 @@ export default function FormSeparatorPage() {
                             value={editPages}
                             onChange={(e) => setEditPages(e.target.value)}
                             placeholder="1, 2, 3"
-                            className="w-24"
+                            className="w-32"
                           />
                           <Button
                             size="sm"
@@ -342,7 +545,7 @@ export default function FormSeparatorPage() {
                         </div>
                       ) : (
                         <div className="flex items-center gap-2">
-                          <span>{form.pages.join(', ')}</span>
+                          <span className="text-sm">{form.pages.join(', ')}</span>
                           <Button
                             size="sm"
                             variant="ghost"
@@ -354,7 +557,7 @@ export default function FormSeparatorPage() {
                         </div>
                       )}
                     </TableCell>
-                    <TableCell>{getConfidenceBadge(form.confidence)}</TableCell>
+                    <TableCell>{form.pages.length} pages</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button

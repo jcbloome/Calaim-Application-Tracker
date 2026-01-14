@@ -3,6 +3,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* React-PDF styles */
+.react-pdf__Page {
+  @apply shadow-sm border border-gray-200 rounded;
+}
+
+.react-pdf__Page__canvas {
+  @apply max-w-full h-auto;
+}
+
+.react-pdf__Document {
+  @apply flex flex-col items-center;
+}
+
 @import '../styles/print.css';
 
 @layer base {

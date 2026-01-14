@@ -99,13 +99,15 @@ export const scanCalAIMDriveFolders = onCall({
     // First, find the CalAIM Members folder
     const calaimFolderId = await findCalAIMMembersFolder();
     if (!calaimFolderId) {
-      throw new HttpsError('not-found', 'CalAIM Members folder not found in Google Drive');
+      console.log('❌ CalAIM Members folder not found - this may be due to missing Google Drive credentials');
+      throw new HttpsError('not-found', 'CalAIM Members folder not found. Please check Google Drive API setup and folder permissions.');
     }
     
     console.log(`📁 Found CalAIM Members folder: ${calaimFolderId}`);
     
     // Scan all subfolders in the CalAIM Members directory
     console.log('🔄 Starting comprehensive scan of 800+ member folders...');
+    console.log('📋 This will attempt to use real Google Drive API if credentials are configured');
     const startTime = Date.now();
     
     const driveFolders = await scanDriveFolder(calaimFolderId, members);
@@ -292,7 +294,13 @@ function levenshteinDistance(str1: string, str2: string): number {
 // Initialize Google Drive API with service account
 async function initializeDriveAPI() {
   try {
-    const serviceAccountKey = JSON.parse(googleServiceAccountKey.value());
+    // Check if service account key is available
+    const serviceAccountKeyValue = googleServiceAccountKey.value();
+    if (!serviceAccountKeyValue || serviceAccountKeyValue === 'placeholder') {
+      throw new Error('Google Service Account Key not configured');
+    }
+    
+    const serviceAccountKey = JSON.parse(serviceAccountKeyValue);
     
     const auth = new google.auth.GoogleAuth({
       credentials: serviceAccountKey,
@@ -300,10 +308,12 @@ async function initializeDriveAPI() {
     });
 
     const drive = google.drive({ version: 'v3', auth });
+    console.log('✅ Google Drive API initialized successfully');
     return drive;
   } catch (error) {
     console.error('❌ Error initializing Google Drive API:', error);
-    throw new HttpsError('internal', 'Failed to initialize Google Drive API');
+    console.log('ℹ️ This is expected if Google Drive credentials are not yet configured');
+    throw new HttpsError('internal', 'Google Drive API not available - credentials not configured');
   }
 }
 
@@ -316,6 +326,7 @@ async function findCalAIMMembersFolder(): Promise<string | null> {
     const knownFolderId = '1WVNVYWDfzEmHkIK7dFBREIy2If8UnovG';
     
     try {
+      console.log('🔑 Attempting to initialize Google Drive API...');
       const drive = await initializeDriveAPI();
       
       // Verify the known folder exists and get its details
@@ -329,35 +340,12 @@ async function findCalAIMMembersFolder(): Promise<string | null> {
         return knownFolderId;
       }
     } catch (apiError) {
-      console.log('⚠️ Could not verify known folder ID, searching by name...');
+      console.log('⚠️ Google Drive API not available, using known folder ID...');
+      console.log('📋 To enable real-time folder verification, set up Google Drive API credentials');
       
-      // Fallback: Search for folders by name
-      try {
-        const drive = await initializeDriveAPI();
-        
-        const searchQueries = [
-          "name='CalAIM Members' and mimeType='application/vnd.google-apps.folder'",
-          "name contains 'CalAIM' and name contains 'Members' and mimeType='application/vnd.google-apps.folder'"
-        ];
-        
-        for (const query of searchQueries) {
-          console.log(`🔍 Searching with query: ${query}`);
-          
-          const response = await drive.files.list({
-            q: query,
-            fields: 'files(id, name, parents)',
-            pageSize: 10
-          });
-          
-          if (response.data.files && response.data.files.length > 0) {
-            const folder = response.data.files[0];
-            console.log(`📁 Found CalAIM Members folder: ${folder.name} (ID: ${folder.id})`);
-            return folder.id!;
-          }
-        }
-      } catch (searchError) {
-        console.error('❌ Error searching for folder:', searchError);
-      }
+      // Return the known folder ID without API verification
+      console.log(`📁 Using known CalAIM Members folder ID: ${knownFolderId}`);
+      return knownFolderId;
     }
     
     console.log('❌ CalAIM Members folder not found');
