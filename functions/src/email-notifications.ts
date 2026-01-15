@@ -255,30 +255,55 @@ export const sendManualNotification = onCall(async (request) => {
   }
 });
 
-// Helper function to get staff members who should be notified
+// Helper function to get staff members who should be notified based on health plan
 async function getStaffToNotify(applicationData: any): Promise<any[]> {
   const db = admin.firestore();
   const staffToNotify: any[] = [];
   
   try {
-    // Get all staff members with notification preferences
-    const staffQuery = db.collection('users')
-      .where('isAdmin', '==', true)
-      .where('emailNotifications', '==', true);
+    // Get notification settings with health plan-specific recipients
+    const settingsRef = db.collection('system_settings').doc('notifications');
+    const settingsDoc = await settingsRef.get();
     
-    const staffSnapshot = await staffQuery.get();
+    let recipientUids: string[] = [];
     
-    staffSnapshot.forEach(doc => {
-      const staffData = doc.data();
-      if (staffData.email) {
-        staffToNotify.push({
-          uid: doc.id,
-          email: staffData.email,
-          firstName: staffData.firstName,
-          lastName: staffData.lastName
-        });
+    if (settingsDoc.exists) {
+      const settings = settingsDoc.data()!;
+      const healthPlan = applicationData.healthPlan || applicationData.existingHealthPlan;
+      
+      // Route based on health plan
+      if (healthPlan === 'Kaiser' || healthPlan === 'Kaiser Permanente') {
+        recipientUids = settings.kaiserRecipients || [];
+        console.log(`📧 Using Kaiser notification recipients: ${recipientUids.length} staff members`);
+      } else if (healthPlan === 'Health Net' || healthPlan === 'HealthNet') {
+        recipientUids = settings.healthNetRecipients || [];
+        console.log(`📧 Using Health Net notification recipients: ${recipientUids.length} staff members`);
+      } else {
+        // Fallback to general notifications for unknown health plans
+        recipientUids = settings.recipientUids || [];
+        console.log(`📧 Using general notification recipients for health plan "${healthPlan}": ${recipientUids.length} staff members`);
       }
-    });
+    }
+    
+    // Get staff member details for each recipient UID
+    if (recipientUids.length > 0) {
+      const staffPromises = recipientUids.map(uid => db.collection('users').doc(uid).get());
+      const staffDocs = await Promise.all(staffPromises);
+      
+      staffDocs.forEach((doc, index) => {
+        if (doc.exists) {
+          const staffData = doc.data()!;
+          if (staffData.email) {
+            staffToNotify.push({
+              uid: recipientUids[index],
+              email: staffData.email,
+              firstName: staffData.firstName,
+              lastName: staffData.lastName
+            });
+          }
+        }
+      });
+    }
     
     // Also include assigned staff member if specified
     if (applicationData.assignedStaff) {

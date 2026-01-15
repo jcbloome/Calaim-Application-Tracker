@@ -170,6 +170,8 @@ export default function SuperAdminPage() {
     const [staffList, setStaffList] = useState<StaffMember[]>([]);
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
     const [notificationRecipients, setNotificationRecipients] = useState<string[]>([]);
+    const [healthNetRecipients, setHealthNetRecipients] = useState<string[]>([]);
+    const [kaiserRecipients, setKaiserRecipients] = useState<string[]>([]);
     const [isSavingNotifications, setIsSavingNotifications] = useState(false);
     const [isSendingReminders, setIsSendingReminders] = useState(false);
     const [newStaffFirstName, setNewStaffFirstName] = useState('');
@@ -517,7 +519,10 @@ export default function SuperAdminPage() {
             });
 
             if (docSnap.exists()) {
-                setNotificationRecipients(docSnap.data()?.recipientUids || []);
+                const data = docSnap.data();
+                setNotificationRecipients(data?.recipientUids || []);
+                setHealthNetRecipients(data?.healthNetRecipients || []);
+                setKaiserRecipients(data?.kaiserRecipients || []);
             }
         } catch (error) {
              console.error("Error fetching notification settings:", error);
@@ -660,18 +665,34 @@ export default function SuperAdminPage() {
         );
     };
 
+    const handleHealthNetToggle = (uid: string, checked: boolean) => {
+        setHealthNetRecipients(prev => 
+            checked ? [...prev, uid] : prev.filter(id => id !== uid)
+        );
+    };
+
+    const handleKaiserToggle = (uid: string, checked: boolean) => {
+        setKaiserRecipients(prev => 
+            checked ? [...prev, uid] : prev.filter(id => id !== uid)
+        );
+    };
+
     const handleSaveNotifications = async () => {
         if (!firestore) return;
         setIsSavingNotifications(true);
         try {
             const settingsRef = doc(firestore, 'system_settings', 'notifications');
-            const data = { recipientUids: notificationRecipients };
+            const data = { 
+                recipientUids: notificationRecipients,
+                healthNetRecipients: healthNetRecipients,
+                kaiserRecipients: kaiserRecipients
+            };
             await setDoc(settingsRef, data, { merge: true }).catch(e => {
                 errorEmitter.emit('permission-error', new FirestorePermissionError({ path: settingsRef.path, operation: 'update', requestResourceData: data }));
                 throw e;
             });
 
-            toast({ title: "Settings Saved", description: "Notification preferences updated.", className: 'bg-green-100 text-green-900 border-green-200' });
+            toast({ title: "Settings Saved", description: "All notification preferences updated.", className: 'bg-green-100 text-green-900 border-green-200' });
         } catch (error: any) {
             // Error emitted above
         } finally {
@@ -2037,9 +2058,23 @@ export default function SuperAdminPage() {
                                         <div className="flex items-center justify-between gap-4">
                                             <div className="flex items-center gap-2">
                                                 <Bell className={`h-4 w-4 ${notificationRecipients.includes(staff.uid) ? 'text-primary' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`notif-${staff.uid}`} className="text-sm font-medium">Notifications</Label>
+                                                <Label htmlFor={`notif-${staff.uid}`} className="text-sm font-medium">General Notifications</Label>
                                             </div>
-                                            <Checkbox id={`notif-${staff.uid}`} checked={notificationRecipients.includes(staff.uid)} onCheckedChange={(checked) => handleNotificationToggle(staff.uid, !!checked)} aria-label={`Toggle notifications for ${staff.email}`} />
+                                            <Checkbox id={`notif-${staff.uid}`} checked={notificationRecipients.includes(staff.uid)} onCheckedChange={(checked) => handleNotificationToggle(staff.uid, !!checked)} aria-label={`Toggle general notifications for ${staff.email}`} />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4">
+                                            <div className="flex items-center gap-2">
+                                                <Heart className={`h-4 w-4 ${healthNetRecipients.includes(staff.uid) ? 'text-blue-600' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`healthnet-${staff.uid}`} className="text-sm font-medium">Health Net Applications</Label>
+                                            </div>
+                                            <Checkbox id={`healthnet-${staff.uid}`} checked={healthNetRecipients.includes(staff.uid)} onCheckedChange={(checked) => handleHealthNetToggle(staff.uid, !!checked)} aria-label={`Toggle Health Net notifications for ${staff.email}`} />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4">
+                                            <div className="flex items-center gap-2">
+                                                <Heart className={`h-4 w-4 ${kaiserRecipients.includes(staff.uid) ? 'text-red-600' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`kaiser-${staff.uid}`} className="text-sm font-medium">Kaiser Applications</Label>
+                                            </div>
+                                            <Checkbox id={`kaiser-${staff.uid}`} checked={kaiserRecipients.includes(staff.uid)} onCheckedChange={(checked) => handleKaiserToggle(staff.uid, !!checked)} aria-label={`Toggle Kaiser notifications for ${staff.email}`} />
                                         </div>
                                     </div>
                                 </div>

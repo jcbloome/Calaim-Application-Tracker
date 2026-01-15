@@ -181,6 +181,12 @@ export {
   cleanupOldLogs
 } from './login-tracking';
 
+// Export Document Reminder functions
+export { 
+  sendDocumentReminders,
+  triggerDocumentReminders
+} from './document-reminders';
+
 admin.initializeApp();
 
 // Define secrets for Caspio API
