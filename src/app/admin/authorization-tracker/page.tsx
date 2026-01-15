@@ -26,7 +26,10 @@ import {
   User,
   Phone,
   Mail,
-  X
+  X,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
 import { AuthorizationRulesDashboard } from '@/components/AuthorizationRulesDashboard';
@@ -86,6 +89,10 @@ export default function AuthorizationTracker() {
   const [selectedMCO, setSelectedMCO] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [showExpiringOnly, setShowExpiringOnly] = useState(false);
+  
+  // Sorting state
+  const [sortColumn, setSortColumn] = useState<string>('memberName');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Fetch authorization data
   const fetchAuthorizationData = async () => {
@@ -133,14 +140,37 @@ export default function AuthorizationTracker() {
     fetchAuthorizationData();
   }, [functions]);
 
-  // Filter members
-  const filteredMembers = useMemo(() => {
-    return members.filter(member => {
+  // Handle column sorting
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  // Get sort icon for column headers
+  const getSortIcon = (column: string) => {
+    if (sortColumn !== column) {
+      return <ArrowUpDown className="h-4 w-4 text-muted-foreground" />;
+    }
+    return sortDirection === 'asc' ? 
+      <ArrowUp className="h-4 w-4 text-primary" /> : 
+      <ArrowDown className="h-4 w-4 text-primary" />;
+  };
+
+  // Filter and sort members
+  const filteredAndSortedMembers = useMemo(() => {
+    // First filter
+    const filtered = members.filter(member => {
       const matchesSearch = searchTerm === '' || 
         member.memberName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         member.mrn.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesMCO = selectedMCO === 'all' || member.healthPlan === selectedMCO;
+      const matchesMCO = selectedMCO === 'all' || 
+        member.healthPlan === selectedMCO ||
+        member.healthPlan?.toLowerCase().includes(selectedMCO.toLowerCase());
       
       const matchesStatus = selectedStatus === 'all' || 
         member.t2038Status === selectedStatus || 
@@ -150,7 +180,53 @@ export default function AuthorizationTracker() {
       
       return matchesSearch && matchesMCO && matchesStatus && matchesExpiring;
     });
-  }, [members, searchTerm, selectedMCO, selectedStatus, showExpiringOnly]);
+
+    // Then sort
+    return filtered.sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortColumn) {
+        case 'memberName':
+          aValue = a.memberName.toLowerCase();
+          bValue = b.memberName.toLowerCase();
+          break;
+        case 'healthPlan':
+          aValue = a.healthPlan.toLowerCase();
+          bValue = b.healthPlan.toLowerCase();
+          break;
+        case 't2038EndDate':
+          aValue = a.authEndDateT2038 ? new Date(a.authEndDateT2038).getTime() : 0;
+          bValue = b.authEndDateT2038 ? new Date(b.authEndDateT2038).getTime() : 0;
+          break;
+        case 'h2022EndDate':
+          aValue = a.authEndDateH2022 ? new Date(a.authEndDateH2022).getTime() : 0;
+          bValue = b.authEndDateH2022 ? new Date(b.authEndDateH2022).getTime() : 0;
+          break;
+        case 't2038Status':
+          const t2038Order = { 'expired': 0, 'expiring': 1, 'active': 2, 'pending': 3, 'none': 4 };
+          aValue = t2038Order[a.t2038Status as keyof typeof t2038Order] || 5;
+          bValue = t2038Order[b.t2038Status as keyof typeof t2038Order] || 5;
+          break;
+        case 'h2022Status':
+          const h2022Order = { 'expired': 0, 'expiring': 1, 'active': 2, 'pending': 3, 'none': 4 };
+          aValue = h2022Order[a.h2022Status as keyof typeof h2022Order] || 5;
+          bValue = h2022Order[b.h2022Status as keyof typeof h2022Order] || 5;
+          break;
+        case 'needsAttention':
+          aValue = a.needsAttention ? 0 : 1;
+          bValue = b.needsAttention ? 0 : 1;
+          break;
+        default:
+          aValue = a.memberName.toLowerCase();
+          bValue = b.memberName.toLowerCase();
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [members, searchTerm, selectedMCO, selectedStatus, showExpiringOnly, sortColumn, sortDirection]);
 
   // Summary stats
   const stats = useMemo(() => {
@@ -284,8 +360,10 @@ export default function AuthorizationTracker() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Health Plans</SelectItem>
-                <SelectItem value="Kaiser Permanente">Kaiser</SelectItem>
-                <SelectItem value="Health Net">Health Net</SelectItem>
+                <SelectItem value="kaiser">Kaiser</SelectItem>
+                <SelectItem value="health net">Health Net</SelectItem>
+                <SelectItem value="molina">Molina</SelectItem>
+                <SelectItem value="anthem">Anthem</SelectItem>
               </SelectContent>
             </Select>
             
@@ -309,6 +387,32 @@ export default function AuthorizationTracker() {
               <AlertTriangle className="h-4 w-4 mr-2" />
               Expiring Only
             </Button>
+            
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSortColumn('needsAttention');
+                setSortDirection('asc');
+              }}
+            >
+              <AlertTriangle className="h-4 w-4 mr-2" />
+              Sort by Priority
+            </Button>
+            
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSearchTerm('');
+                setSelectedMCO('all');
+                setSelectedStatus('all');
+                setShowExpiringOnly(false);
+                setSortColumn('memberName');
+                setSortDirection('asc');
+              }}
+            >
+              <X className="h-4 w-4 mr-2" />
+              Clear All
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -324,7 +428,7 @@ export default function AuthorizationTracker() {
           {/* Authorization Table */}
           <Card>
         <CardHeader>
-          <CardTitle>Authorization Status ({filteredMembers.length} members)</CardTitle>
+          <CardTitle>Authorization Status ({filteredAndSortedMembers.length} members)</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -332,7 +436,7 @@ export default function AuthorizationTracker() {
               <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
               <p>Loading authorization data...</p>
             </div>
-          ) : filteredMembers.length === 0 ? (
+          ) : filteredAndSortedMembers.length === 0 ? (
             <EmptyState
               icon={Calendar}
               title="No Authorization Data"
@@ -350,18 +454,84 @@ export default function AuthorizationTracker() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Member</TableHead>
-                    <TableHead>Health Plan</TableHead>
-                    <TableHead>T2038 Status</TableHead>
-                    <TableHead>T2038 End Date</TableHead>
-                    <TableHead>H2022 Status</TableHead>
-                    <TableHead>H2022 End Date</TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                        onClick={() => handleSort('memberName')}
+                      >
+                        <div className="flex items-center gap-2">
+                          Member
+                          {getSortIcon('memberName')}
+                        </div>
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                        onClick={() => handleSort('healthPlan')}
+                      >
+                        <div className="flex items-center gap-2">
+                          Health Plan
+                          {getSortIcon('healthPlan')}
+                        </div>
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                        onClick={() => handleSort('t2038Status')}
+                      >
+                        <div className="flex items-center gap-2">
+                          T2038 Status
+                          {getSortIcon('t2038Status')}
+                        </div>
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                        onClick={() => handleSort('t2038EndDate')}
+                      >
+                        <div className="flex items-center gap-2">
+                          T2038 End Date
+                          {getSortIcon('t2038EndDate')}
+                        </div>
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                        onClick={() => handleSort('h2022Status')}
+                      >
+                        <div className="flex items-center gap-2">
+                          H2022 Status
+                          {getSortIcon('h2022Status')}
+                        </div>
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button 
+                        variant="ghost" 
+                        className="h-auto p-0 font-semibold hover:bg-transparent"
+                        onClick={() => handleSort('h2022EndDate')}
+                      >
+                        <div className="flex items-center gap-2">
+                          H2022 End Date
+                          {getSortIcon('h2022EndDate')}
+                        </div>
+                      </Button>
+                    </TableHead>
                     <TableHead>Contact</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredMembers.map((member) => (
+                  {filteredAndSortedMembers.map((member) => (
                     <TableRow key={member.id} className={member.needsAttention ? 'bg-red-50' : ''}>
                       <TableCell>
                         <div>
