@@ -1,0 +1,296 @@
+'use client';
+
+import React, { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { useAuth } from '@/firebase';
+import { confirmPasswordReset } from 'firebase/auth';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Header } from '@/components/Header';
+import { Eye, EyeOff, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+
+function ResetPasswordContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const auth = useAuth();
+  const { toast } = useToast();
+  
+  const token = searchParams.get('token');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isValidating, setIsValidating] = useState(true);
+  const [tokenValid, setTokenValid] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!token) {
+      setError('Invalid or missing reset token');
+      setIsValidating(false);
+      return;
+    }
+
+    // Validate token
+    const validateToken = async () => {
+      try {
+        const response = await fetch('/api/auth/validate-reset-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+
+        const data = await response.json();
+        
+        if (response.ok && data.valid) {
+          setTokenValid(true);
+        } else {
+          setError(data.error || 'Invalid or expired reset token');
+        }
+      } catch (error) {
+        setError('Failed to validate reset token');
+      } finally {
+        setIsValidating(false);
+      }
+    };
+
+    validateToken();
+  }, [token]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      return;
+    }
+
+    if (!auth || !token) {
+      setError('Authentication service not available');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // First, get the Firebase reset code from our token
+      const response = await fetch('/api/auth/get-firebase-reset-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to process reset request');
+      }
+
+      // Use Firebase's confirmPasswordReset with the code
+      await confirmPasswordReset(auth, data.code, password);
+
+      // Mark token as used
+      await fetch('/api/auth/mark-token-used', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+
+      setSuccess(true);
+      toast({
+        title: 'Password Reset Successful',
+        description: 'Your password has been updated. You can now sign in with your new password.',
+      });
+
+      // Redirect to login after 3 seconds
+      setTimeout(() => {
+        router.push('/');
+      }, 3000);
+
+    } catch (error: any) {
+      console.error('Password reset error:', error);
+      setError(error.message || 'Failed to reset password');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isValidating) {
+    return (
+      <>
+        <Header />
+        <main className="flex-grow flex items-center justify-center bg-slate-50 p-4">
+          <Card className="w-full max-w-md shadow-2xl">
+            <CardContent className="flex items-center justify-center p-8">
+              <Loader2 className="h-8 w-8 animate-spin mr-3" />
+              <p>Validating reset link...</p>
+            </CardContent>
+          </Card>
+        </main>
+      </>
+    );
+  }
+
+  if (!tokenValid || error) {
+    return (
+      <>
+        <Header />
+        <main className="flex-grow flex items-center justify-center bg-slate-50 p-4">
+          <Card className="w-full max-w-md shadow-2xl">
+            <CardHeader className="text-center">
+              <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+              <CardTitle className="text-2xl">Invalid Reset Link</CardTitle>
+              <CardDescription>
+                This password reset link is invalid or has expired.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center">
+              <p className="text-sm text-muted-foreground mb-4">
+                {error || 'The reset link may have expired or already been used.'}
+              </p>
+              <Button asChild className="w-full">
+                <a href="/">Return to Login</a>
+              </Button>
+            </CardContent>
+          </Card>
+        </main>
+      </>
+    );
+  }
+
+  if (success) {
+    return (
+      <>
+        <Header />
+        <main className="flex-grow flex items-center justify-center bg-slate-50 p-4">
+          <Card className="w-full max-w-md shadow-2xl">
+            <CardHeader className="text-center">
+              <CheckCircle className="h-12 w-12 text-green-600 mx-auto mb-4" />
+              <CardTitle className="text-2xl text-green-600">Password Reset Successful!</CardTitle>
+              <CardDescription>
+                Your password has been updated successfully.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center">
+              <p className="text-sm text-muted-foreground mb-4">
+                You will be redirected to the login page in a few seconds...
+              </p>
+              <Button asChild className="w-full">
+                <a href="/">Sign In Now</a>
+              </Button>
+            </CardContent>
+          </Card>
+        </main>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Header />
+      <main className="flex-grow flex items-center justify-center bg-slate-50 p-4">
+        <Card className="w-full max-w-md shadow-2xl">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl">Set New Password</CardTitle>
+            <CardDescription>
+              Enter your new password below
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="password">New Password</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    minLength={6}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1 h-8 w-8"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                <div className="relative">
+                  <Input
+                    id="confirmPassword"
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    minLength={6}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1 h-8 w-8"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Error</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Updating Password...
+                  </>
+                ) : (
+                  'Update Password'
+                )}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </main>
+    </>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <p className="ml-2">Loading...</p>
+      </div>
+    }>
+      <ResetPasswordContent />
+    </Suspense>
+  );
+}

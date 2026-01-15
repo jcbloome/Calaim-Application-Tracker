@@ -7,7 +7,6 @@ import {
   signInWithEmailAndPassword,
   browserLocalPersistence,
   setPersistence,
-  sendPasswordResetEmail,
 } from 'firebase/auth';
 import type { AuthError, User } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -118,30 +117,28 @@ export default function HomePage() {
       return;
     }
 
-    if (!auth) {
-      enhancedToast.error('Service Unavailable', 'Firebase authentication is not available.');
-      return;
-    }
-
     setIsResettingPassword(true);
     try {
-      await sendPasswordResetEmail(auth, resetEmail);
-      enhancedToast.success('Password Reset Email Sent', 'Check your email (including spam/junk folder) for instructions to reset your password. The email may take a few minutes to arrive.');
-      setResetEmail('');
-      setIsResettingPassword(false);
-    } catch (err) {
-      const authError = err as AuthError;
-      let errorMessage = 'Failed to send password reset email.';
-      
-      if (authError.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email address.';
-      } else if (authError.code === 'auth/invalid-email') {
-        errorMessage = 'Please enter a valid email address.';
-      } else if (authError.code === 'auth/too-many-requests') {
-        errorMessage = 'Too many password reset attempts. Please try again later.';
+      const response = await fetch('/api/auth/password-reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: resetEmail }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        enhancedToast.success('Password Reset Email Sent', 'Check your email (including spam/junk folder) for a beautifully designed reset link. The email may take a few minutes to arrive.');
+        setResetEmail('');
+      } else {
+        enhancedToast.error('Password Reset Failed', data.error || 'Failed to send password reset email.');
       }
-      
-      enhancedToast.error('Password Reset Failed', errorMessage);
+    } catch (error) {
+      console.error('Password reset error:', error);
+      enhancedToast.error('Password Reset Failed', 'An unexpected error occurred. Please try again.');
+    } finally {
       setIsResettingPassword(false);
     }
   };
@@ -219,8 +216,8 @@ export default function HomePage() {
               <p className="text-sm text-gray-600 mb-3">Forgot your password?</p>
               <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
                 <p className="text-xs text-blue-800">
-                  <strong>Note:</strong> Password reset emails may appear in your spam/junk folder. 
-                  Please check all folders and add our domain to your safe senders list to ensure delivery.
+                  <strong>✨ New:</strong> We now send beautiful, professional password reset emails! 
+                  Check your inbox (and spam folder) for a nicely designed email from the CalAIM Application Portal team.
                 </p>
               </div>
               <form onSubmit={handleForgotPassword} className="space-y-3">

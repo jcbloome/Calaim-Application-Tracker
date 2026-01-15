@@ -129,13 +129,47 @@ export default function AuthorizationTracker() {
       });
       
       setMembers(processedMembers);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching authorization data:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to fetch authorization data.'
-      });
+      
+      // If function doesn't exist, show a helpful message
+      if (error?.message?.includes('not found') || error?.code === 'not-found') {
+        toast({
+          variant: 'destructive',
+          title: 'Function Not Deployed',
+          description: 'The authorization tracker functions need to be deployed. Please contact your administrator.'
+        });
+        
+        // Use mock data for demonstration
+        const mockMembers: AuthorizationMember[] = [
+          {
+            id: 'mock-1',
+            memberName: 'Sample Member',
+            mrn: 'MRN123456',
+            healthPlan: 'Kaiser',
+            primaryContact: 'John Doe',
+            contactPhone: '(555) 123-4567',
+            contactEmail: 'john@example.com',
+            authStartDateT2038: '2024-01-01',
+            authEndDateT2038: '2024-12-31',
+            authStartDateH2022: '2024-06-01',
+            authEndDateH2022: '2024-11-30',
+            t2038Status: 'active',
+            h2022Status: 'expiring',
+            t2038DaysRemaining: 200,
+            h2022DaysRemaining: 10,
+            needsAttention: true
+          }
+        ];
+        
+        setMembers(mockMembers);
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: error?.message || 'Failed to fetch authorization data.'
+        });
+      }
     } finally {
       setIsLoading(false);
     }
