@@ -30,16 +30,18 @@ export const sendDocumentReminders = onSchedule({
     for (const doc of applicationsQuery.docs) {
       const application = doc.data();
       
-      // Check if application has missing required documents
+      // Check if application has missing required documents and reminders are enabled
       const missingDocs = getMissingRequiredDocuments(application);
+      const emailRemindersEnabled = application.emailRemindersEnabled !== false; // Default to true if not set
       
-      if (missingDocs.length > 0) {
+      if (missingDocs.length > 0 && emailRemindersEnabled) {
         const lastSubmitted = application.lastUpdated?.toDate() || application.createdAt?.toDate();
         const lastReminder = application.lastDocumentReminder?.toDate();
         
         // Send reminder if:
         // 1. It's been 2+ days since last submission/update
         // 2. No reminder sent yet, OR last reminder was 2+ days ago
+        // 3. Email reminders are enabled for this application
         const shouldSendReminder = lastSubmitted && 
           lastSubmitted <= twoDaysAgo && 
           (!lastReminder || lastReminder <= twoDaysAgo);
@@ -107,8 +109,9 @@ export const triggerDocumentReminders = onCall({
     for (const doc of applicationsQuery.docs) {
       const application = doc.data();
       const missingDocs = getMissingRequiredDocuments(application);
+      const emailRemindersEnabled = application.emailRemindersEnabled !== false; // Default to true if not set
       
-      if (missingDocs.length > 0 && application.referrerEmail) {
+      if (missingDocs.length > 0 && application.referrerEmail && emailRemindersEnabled) {
         remindersToSend.push({
           applicationId: doc.id,
           application,

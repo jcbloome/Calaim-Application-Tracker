@@ -371,6 +371,8 @@ function AdminActions({ application }: { application: Application }) {
     const [status, setStatus] = useState<Application['status'] | ''>('');
     const [isSending, setIsSending] = useState(false);
     const [isSendingToCaspio, setIsSendingToCaspio] = useState(false);
+    const [emailRemindersEnabled, setEmailRemindersEnabled] = useState((application as any)?.emailRemindersEnabled ?? true);
+    const [isUpdatingReminders, setIsUpdatingReminders] = useState(false);
     const { toast } = useToast();
     const router = useRouter();
 
@@ -379,6 +381,36 @@ function AdminActions({ application }: { application: Application }) {
         if (!firestore || !application.userId || !application.id) return null;
         return doc(firestore, `users/${application.userId}/applications`, application.id);
     }, [firestore, application.id, application.userId]);
+
+    const handleEmailRemindersToggle = async (enabled: boolean) => {
+        if (!docRef) return;
+        
+        setIsUpdatingReminders(true);
+        try {
+            await setDoc(docRef, {
+                emailRemindersEnabled: enabled,
+                lastUpdated: serverTimestamp()
+            }, { merge: true });
+            
+            setEmailRemindersEnabled(enabled);
+            toast({
+                title: enabled ? 'Email Reminders Enabled' : 'Email Reminders Disabled',
+                description: enabled 
+                    ? 'User will receive email reminders for missing documents'
+                    : 'User will not receive email reminders for missing documents',
+                className: enabled ? 'bg-green-100 text-green-900 border-green-200' : 'bg-orange-100 text-orange-900 border-orange-200'
+            });
+        } catch (error) {
+            console.error('Error updating email reminders:', error);
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: 'Failed to update email reminder settings'
+            });
+        } finally {
+            setIsUpdatingReminders(false);
+        }
+    };
 
     if (!isAdmin && !isSuperAdmin) {
         return null;
@@ -538,6 +570,30 @@ function AdminActions({ application }: { application: Application }) {
                             </>
                         )}
                     </Button>
+                    
+                    {/* Email Reminders Toggle */}
+                    <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                        <div className="flex items-center space-x-2">
+                            <Mail className="h-4 w-4 text-muted-foreground" />
+                            <div>
+                                <Label htmlFor="email-reminders" className="text-sm font-medium">
+                                    Email Reminders
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                    Send document reminders to user
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            {isUpdatingReminders && <Loader2 className="h-4 w-4 animate-spin" />}
+                            <Checkbox
+                                id="email-reminders"
+                                checked={emailRemindersEnabled}
+                                onCheckedChange={handleEmailRemindersToggle}
+                                disabled={isUpdatingReminders}
+                            />
+                        </div>
+                    </div>
                     
                     {(application as any)?.caspioSent && (
                         <p className="text-xs text-muted-foreground text-center">

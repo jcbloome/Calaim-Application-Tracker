@@ -53,10 +53,12 @@ export const onDocumentUpload = onDocumentCreated("applications/{applicationId}"
       return;
     }
     
-    // Create email notification
+    // Create email notification with enhanced subject line
+    const healthPlan = applicationData.healthPlan || applicationData.existingHealthPlan || 'Unknown';
+    const memberMrn = applicationData.memberMrn || 'No MRN';
     const emailData: EmailNotification = {
       to: staffToNotify.map(staff => staff.email),
-      subject: `New Documents Uploaded - ${memberName}`,
+      subject: `New Documents Uploaded for ${memberName}, ${healthPlan}, MRN: ${memberMrn}`,
       htmlContent: generateDocumentUploadEmailHTML(memberName, uploaderName, newFiles, applicationId),
       textContent: generateDocumentUploadEmailText(memberName, uploaderName, newFiles, applicationId),
       type: 'document_upload',
@@ -126,10 +128,12 @@ export const onCsSummaryComplete = onDocumentUpdated("applications/{applicationI
       return;
     }
     
-    // Create email notification
+    // Create email notification with enhanced subject line
+    const healthPlan = afterData.healthPlan || afterData.existingHealthPlan || 'Unknown';
+    const memberMrn = afterData.memberMrn || 'No MRN';
     const emailData: EmailNotification = {
       to: staffToNotify.map(staff => staff.email),
-      subject: `CS Summary Form Completed - ${memberName}`,
+      subject: `New CS Summary Form for ${memberName}, ${healthPlan}, MRN: ${memberMrn}`,
       htmlContent: generateCsSummaryEmailHTML(memberName, referrerName, afterData, applicationId),
       textContent: generateCsSummaryEmailText(memberName, referrerName, afterData, applicationId),
       type: 'cs_summary_complete',
@@ -195,13 +199,16 @@ export const sendManualNotification = onCall(async (request) => {
     
     let emailData: EmailNotification;
     
+    const healthPlan = applicationData.healthPlan || applicationData.existingHealthPlan || 'Unknown';
+    const memberMrn = applicationData.memberMrn || 'No MRN';
+    
     if (type === 'document_upload') {
       const uploaderName = `${applicationData.referrerFirstName} ${applicationData.referrerLastName}`;
       const uploadedFiles = applicationData.uploadedFiles || [];
       
       emailData = {
         to: staffToNotify.map((staff: any) => staff.email || staff),
-        subject: `Document Upload Notification - ${memberName}`,
+        subject: `New Documents Uploaded for ${memberName}, ${healthPlan}, MRN: ${memberMrn}`,
         htmlContent: generateDocumentUploadEmailHTML(memberName, uploaderName, uploadedFiles, applicationId),
         textContent: generateDocumentUploadEmailText(memberName, uploaderName, uploadedFiles, applicationId),
         type: 'document_upload',
@@ -213,7 +220,7 @@ export const sendManualNotification = onCall(async (request) => {
       
       emailData = {
         to: staffToNotify.map((staff: any) => staff.email || staff),
-        subject: `CS Summary Completed - ${memberName}`,
+        subject: `New CS Summary Form for ${memberName}, ${healthPlan}, MRN: ${memberMrn}`,
         htmlContent: generateCsSummaryEmailHTML(memberName, referrerName, applicationData, applicationId),
         textContent: generateCsSummaryEmailText(memberName, referrerName, applicationData, applicationId),
         type: 'cs_summary_complete',
