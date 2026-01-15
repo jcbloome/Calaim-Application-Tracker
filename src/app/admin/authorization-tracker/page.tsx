@@ -99,9 +99,79 @@ export default function AuthorizationTracker() {
   const [sortColumn, setSortColumn] = useState<string>('memberName');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
+  // Set mock data for demonstration when functions aren't deployed
+  const setMockData = () => {
+    const mockMembers: AuthorizationMember[] = [
+      {
+        id: 'mock-1',
+        memberName: 'Sarah Johnson',
+        mrn: 'MRN123456',
+        healthPlan: 'Kaiser',
+        primaryContact: 'Maria Garcia',
+        contactPhone: '(555) 123-4567',
+        contactEmail: 'maria@example.com',
+        authStartDateT2038: '2024-01-01',
+        authEndDateT2038: '2024-12-31',
+        authStartDateH2022: '2024-06-01',
+        authEndDateH2022: '2024-11-30',
+        t2038Status: 'active',
+        h2022Status: 'expiring',
+        t2038DaysRemaining: 200,
+        h2022DaysRemaining: 10,
+        needsAttention: true
+      },
+      {
+        id: 'mock-2',
+        memberName: 'Michael Chen',
+        mrn: 'MRN789012',
+        healthPlan: 'Health Net',
+        primaryContact: 'Jennifer Smith',
+        contactPhone: '(555) 987-6543',
+        contactEmail: 'jennifer@example.com',
+        authStartDateT2038: '2024-03-15',
+        authEndDateT2038: '2025-03-14',
+        authStartDateH2022: '2024-03-15',
+        authEndDateH2022: '2025-03-14',
+        t2038Status: 'active',
+        h2022Status: 'active',
+        t2038DaysRemaining: 120,
+        h2022DaysRemaining: 120,
+        needsAttention: false
+      },
+      {
+        id: 'mock-3',
+        memberName: 'Emily Rodriguez',
+        mrn: 'MRN345678',
+        healthPlan: 'Kaiser',
+        primaryContact: 'Robert Wilson',
+        contactPhone: '(555) 456-7890',
+        contactEmail: 'robert@example.com',
+        authStartDateT2038: '2023-08-01',
+        authEndDateT2038: '2024-01-20',
+        t2038Status: 'expired',
+        h2022Status: 'none',
+        t2038DaysRemaining: -10,
+        needsAttention: true
+      }
+    ];
+    
+    setMembers(mockMembers);
+    setIsLoading(false);
+    
+    toast({
+      title: 'Demo Mode',
+      description: 'Showing sample data. Authorization functions need to be deployed for live data.',
+      variant: 'default'
+    });
+  };
+
   // Fetch authorization data
   const fetchAuthorizationData = async () => {
-    if (!functions) return;
+    if (!functions) {
+      // Show mock data immediately if functions not available
+      setMockData();
+      return;
+    }
     
     setIsLoading(true);
     try {
@@ -132,44 +202,8 @@ export default function AuthorizationTracker() {
     } catch (error: any) {
       console.error('Error fetching authorization data:', error);
       
-      // If function doesn't exist, show a helpful message
-      if (error?.message?.includes('not found') || error?.code === 'not-found') {
-        toast({
-          variant: 'destructive',
-          title: 'Function Not Deployed',
-          description: 'The authorization tracker functions need to be deployed. Please contact your administrator.'
-        });
-        
-        // Use mock data for demonstration
-        const mockMembers: AuthorizationMember[] = [
-          {
-            id: 'mock-1',
-            memberName: 'Sample Member',
-            mrn: 'MRN123456',
-            healthPlan: 'Kaiser',
-            primaryContact: 'John Doe',
-            contactPhone: '(555) 123-4567',
-            contactEmail: 'john@example.com',
-            authStartDateT2038: '2024-01-01',
-            authEndDateT2038: '2024-12-31',
-            authStartDateH2022: '2024-06-01',
-            authEndDateH2022: '2024-11-30',
-            t2038Status: 'active',
-            h2022Status: 'expiring',
-            t2038DaysRemaining: 200,
-            h2022DaysRemaining: 10,
-            needsAttention: true
-          }
-        ];
-        
-        setMembers(mockMembers);
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: error?.message || 'Failed to fetch authorization data.'
-        });
-      }
+      // Show mock data for any error (CORS, function not found, etc.)
+      setMockData();
     } finally {
       setIsLoading(false);
     }
