@@ -9,6 +9,8 @@ import { useEffect } from 'react';
 import { type FormValues } from '../schema';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { PhoneInput } from '@/components/ui/phone-input';
+import { FormSection } from '@/components/FormSection';
+import { User, Phone, Mail, Shield } from 'lucide-react';
 
 
 export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
@@ -90,11 +92,12 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
 
   return (
     <div className="space-y-6">
-      <Card className="border-l-4 border-accent">
-        <CardHeader>
-          <CardTitle>Member Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <FormSection 
+        title="Member Information" 
+        icon={User} 
+        required={true}
+        description="Basic information about the CalAIM member"
+      >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={control}
@@ -260,15 +263,14 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 )}
             />
           </div>
-        </CardContent>
-      </Card>
+      </FormSection>
       
-      <Card className="border-l-4 border-accent">
-        <CardHeader>
-          <CardTitle>Your Information (Person Filling Form)</CardTitle>
-           <CardDescription>This is the person that will receive email updates as to the application status, including any missing documents, etc.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <FormSection 
+        title="Your Information (Person Filling Form)" 
+        icon={Mail} 
+        required={true}
+        description="This is the person that will receive email updates as to the application status, including any missing documents, etc."
+      >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={control}
@@ -353,15 +355,14 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
               )}
             />
           </div>
-        </CardContent>
-      </Card>
+      </FormSection>
       
-      <Card className="border-l-4 border-accent">
-        <CardHeader>
-          <CardTitle>Primary Contact Person</CardTitle>
-          <CardDescription>Provide contact details for the member's main point of contact. If member is primary contact reinput member name and put N/A in relationship field.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <FormSection 
+        title="Primary Contact Person" 
+        icon={User} 
+        required={true}
+        description="Provide contact details for the member's main point of contact. If member is primary contact reinput member name and put N/A in relationship field."
+      >
           <div className="p-4 border rounded-md space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={control} name="bestContactFirstName" render={({ field }) => (
@@ -397,15 +398,17 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                   )} />
               </div>
           </div>
-        </CardContent>
-      </Card>
+      </FormSection>
 
-      <Card className="border-l-4 border-accent">
-        <CardHeader>
-            <CardTitle>Secondary Contact Person (Optional)</CardTitle>
-            <CardDescription>Provide details for a secondary point of contact if available.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <FormSection 
+        title="Secondary Contact Person" 
+        icon={Phone} 
+        badge="Optional"
+        badgeVariant="secondary"
+        description="Provide details for a secondary point of contact if available."
+        collapsible={true}
+        defaultCollapsed={true}
+      >
              <div className="p-4 border rounded-md space-y-4 mt-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="secondaryContactFirstName" render={({ field }) => (
@@ -441,17 +444,17 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     )} />
                 </div>
             </div>
-        </CardContent>
-      </Card>
+      </FormSection>
       
-      <Card className="border-l-4 border-accent">
-        <CardHeader>
-          <CardTitle>Legal Representative</CardTitle>
-          <CardDescription>
-            A legal representative (e.g., with Power of Attorney) might be distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
+      <FormSection 
+        title="Legal Representative" 
+        icon={Shield} 
+        badge="Optional"
+        badgeVariant="outline"
+        description="A legal representative (e.g., with Power of Attorney) might be distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role."
+        collapsible={true}
+        defaultCollapsed={true}
+      >
             <FormField
                 control={control}
                 name="hasLegalRep"
@@ -503,8 +506,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     )} />
                 </div>
             </div>
-        </CardContent>
-      </Card>
+      </FormSection>
     </div>
   );
 }

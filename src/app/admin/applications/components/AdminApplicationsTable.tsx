@@ -16,8 +16,11 @@ import { Button } from '@/components/ui/button';
 import { format, parse, differenceInHours } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { Separator } from '@/components/ui/separator';
-import { AlertTriangle, Sparkles } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { AlertTriangle, Sparkles, Calendar, User, FileText } from 'lucide-react';
 import type { Application } from '@/lib/definitions';
+import { ApplicationCardSkeleton, ApplicationTableSkeleton } from '@/components/ApplicationCardSkeleton';
+import { EmptyState } from '@/components/EmptyState';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import type { WithId } from '@/firebase';
 import {
@@ -198,8 +201,10 @@ export const AdminApplicationsTable = ({
     }, [applications]);
 
   return (
-    <div className="w-full overflow-x-auto">
-      <Table>
+    <>
+      {/* Desktop Table View */}
+      <div className="hidden lg:block w-full overflow-x-auto">
+        <Table>
         <TableHeader>
           <TableRow>
             {onSelectionChange && selected && (
@@ -298,12 +303,130 @@ export const AdminApplicationsTable = ({
           ) : (
             <TableRow>
               <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
-                No applications found.
+                <EmptyState
+                  icon={FileText}
+                  title="No Applications Found"
+                  description="Applications will appear here once they're submitted by users."
+                  className="py-8"
+                />
               </TableCell>
             </TableRow>
           )}
         </TableBody>
       </Table>
-    </div>
+      </div>
+
+      {/* Mobile Card View */}
+      <div className="lg:hidden space-y-4">
+        {isLoading ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <ApplicationCardSkeleton key={i} />
+          ))
+        ) : sortedApplications.length > 0 ? (
+          sortedApplications.map(app => {
+            const referrerName = app.referrerName;
+            const submittedDate = app.createdAt ? format(app.createdAt.toDate(), 'MMM d, yyyy') : 'Unknown';
+            const lastUpdatedDate = app.lastUpdated ? format(app.lastUpdated.toDate(), 'MMM d, yyyy') : submittedDate;
+            const servicesDeclined = app.servicesDeclined === true;
+
+            return (
+              <div key={app.id} className="bg-white border rounded-lg p-4 shadow-sm">
+                {onSelectionChange && selected && (
+                  <div className="flex items-center mb-3">
+                    <Checkbox
+                      checked={selected.includes(app.id)}
+                      onCheckedChange={(checked) => onSelectionChange(app.id, !!checked)}
+                      aria-label={`Select application for ${app.memberFirstName} ${app.memberLastName}`}
+                    />
+                    <span className="ml-2 text-sm text-muted-foreground">Select</span>
+                  </div>
+                )}
+                
+                <div className="space-y-3">
+                  {/* Header with member name and status */}
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="font-semibold text-lg">
+                        {app.memberFirstName} {app.memberLastName}
+                      </h3>
+                      <p className="text-sm text-muted-foreground flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {referrerName || 'Unknown'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {servicesDeclined && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <AlertTriangle className="h-4 w-4 text-destructive" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Services were declined by member.</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                      <Badge variant={
+                        app.status === 'Completed & Submitted' ? 'default' :
+                        app.status === 'Approved' ? 'secondary' :
+                        app.status === 'Requires Revision' ? 'destructive' :
+                        'outline'
+                      }>
+                        {app.status}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Health plan and pathway */}
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                      {app.healthPlan || app.existingHealthPlan || 'Unknown Plan'}
+                    </Badge>
+                    <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                      {app.pathway || 'Unknown Pathway'}
+                    </Badge>
+                  </div>
+
+                  {/* Dates */}
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        Submitted:
+                      </span>
+                      <p className="font-medium">{submittedDate}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <FileText className="h-3 w-3" />
+                        Updated:
+                      </span>
+                      <p className="font-medium">{lastUpdatedDate}</p>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <QuickViewDialog application={app} />
+                    <Button asChild variant="default" size="sm">
+                      <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>
+                        View Details
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <EmptyState
+            icon={FileText}
+            title="No Applications Found"
+            description="Applications will appear here once they're submitted by users."
+          />
+        )}
+      </div>
+    </>
   );
 };

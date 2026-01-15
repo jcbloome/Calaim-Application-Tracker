@@ -9,12 +9,13 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getNextStep, getSortedKaiserStatuses, KAISER_STATUS_PROGRESSION } from '@/lib/kaiser-status-progression';
 import { Input } from '@/components/ui/input';
-import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, Download, ArrowUpDown, ArrowUp, ArrowDown, Shield, HourglassIcon, Filter, X } from 'lucide-react';
+import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, Download, ArrowUpDown, ArrowUp, ArrowDown, Shield, HourglassIcon, Filter, X, Database } from 'lucide-react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
 import { useAutoSync } from '@/hooks/use-auto-sync';
 import { MemberListModal } from '@/components/MemberListModal';
 import { MemberCardSkeleton, MemberTableSkeleton } from '@/components/MemberCardSkeleton';
+import { EmptyState } from '@/components/EmptyState';
 
 // Kaiser workflow with next steps and recommended timeframes
 const kaiserWorkflow = {
@@ -1460,21 +1461,28 @@ export default function KaiserTrackerPage() {
               </div>
             </>
           ) : members.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">No Kaiser members loaded yet.</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Click "Sync from Caspio" to load member data.
-              </p>
-            </div>
+            <EmptyState
+              icon={Database}
+              title="No Kaiser Members Loaded"
+              description="Kaiser member data needs to be synced from Caspio to display here."
+              actionLabel="Sync from Caspio"
+              actionOnClick={syncFromCaspio}
+            />
           ) : filteredMembers.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">
-                No members found for {selectedStaff === 'unassigned' ? 'unassigned' : selectedStaff}.
-              </p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Try selecting a different staff member or clear the filter.
-              </p>
-            </div>
+            <EmptyState
+              icon={Filter}
+              title="No Members Found"
+              description={`No members found for ${selectedStaff === 'unassigned' ? 'unassigned' : selectedStaff}. Try selecting a different staff member or clear the filter.`}
+              actionLabel="Clear Filters"
+              actionOnClick={() => {
+                setSelectedStaff('all');
+                setFilters({
+                  kaiserStatus: 'all',
+                  calaimStatus: 'all',
+                  overdueOnly: false
+                });
+              }}
+            />
           ) : (
               {/* Desktop Table View */}
               <div id="members-table" className="hidden lg:block rounded-md border overflow-x-auto">

@@ -20,6 +20,7 @@ import { formSchema, type FormValues } from '../schema';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { Application } from '@/lib/definitions';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
+import { FormProgressIndicator } from '@/components/FormProgressIndicator';
 
 const steps = [
   { id: 1, name: 'Member & Contact Info', fields: [
@@ -345,6 +346,16 @@ function CsSummaryFormComponent() {
                     </Button>
                 </div>
             )}
+            
+            {/* Progress Indicator */}
+            <div className="mb-8">
+              <FormProgressIndicator 
+                steps={steps} 
+                currentStep={currentStep}
+                completedSteps={[]}
+              />
+            </div>
+            
             <div className="mb-8">
               <div className="mb-4">
                   <h1 className="text-2xl font-bold">CS Member Summary</h1>
