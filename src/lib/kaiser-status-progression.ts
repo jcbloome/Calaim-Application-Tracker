@@ -9,8 +9,7 @@ export interface KaiserStatusStep {
 }
 
 export const KAISER_STATUS_PROGRESSION: KaiserStatusStep[] = [
-  // T2038 Process (Initial Authorization)
-  { id: 36, status: 'T2038, Not Requested, Doc Collection', sortOrder: 0, nextStep: 'T2038 Request Ready', category: 'T2038' },
+  // T2038 Process (Initial Authorization) - Note: ID 36 not visible in current table
   { id: 35, status: 'T2038 Request Ready', sortOrder: 1, nextStep: 'T2038 Requested', category: 'T2038' },
   { id: 1, status: 'T2038 Requested', sortOrder: 2, nextStep: 'T2038 received, Need First Contact', category: 'T2038' },
   { id: 21, status: 'T2038 received, Need First Contact', sortOrder: 4, nextStep: 'T2038 received, doc collection', category: 'T2038' },
@@ -35,9 +34,10 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatusStep[] = [
   // R&B Process (Room & Board)
   { id: 39, status: 'R&B Needed', sortOrder: 14.1, nextStep: 'R&B Requested', category: 'RB' },
   { id: 14, status: 'R&B Requested', sortOrder: 14.2, nextStep: 'R&B Signed', category: 'RB' },
-  { id: 15, status: 'R&B Signed', sortOrder: 14.3, nextStep: 'ILS Sent for Contract', category: 'RB' },
+  { id: 15, status: 'R&B Signed', sortOrder: 14.3, nextStep: 'ILS Contract Email Needed', category: 'RB' },
   
   // ILS Process (Independent Living Services)
+  { id: 47, status: 'ILS Contract Email Needed', sortOrder: 15.5, nextStep: 'ILS Sent for Contract', category: 'ILS' },
   { id: 38, status: 'ILS Sent for Contract', sortOrder: 16, nextStep: null, category: 'ILS' },
   
   // Final Statuses
