@@ -36,6 +36,8 @@ import {
 } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
 import { AuthorizationRulesDashboard } from '@/components/AuthorizationRulesDashboard';
+import { UpdateAuthorizationDialog } from './components/UpdateAuthorizationDialog';
+import { BulkAuthorizationUpdate } from './components/BulkAuthorizationUpdate';
 
 interface AuthorizationMember {
   id: string;
@@ -346,10 +348,16 @@ export default function AuthorizationTracker() {
           <h1 className="text-3xl font-bold">Authorization Tracker</h1>
           <p className="text-muted-foreground">Track T2038 and H2022 authorization dates and renewals</p>
         </div>
-        <Button onClick={fetchAuthorizationData} disabled={isLoading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-          Refresh Data
-        </Button>
+        <div className="flex gap-2">
+          <BulkAuthorizationUpdate 
+            members={members} 
+            onUpdate={fetchAuthorizationData}
+          />
+          <Button onClick={fetchAuthorizationData} disabled={isLoading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh Data
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -798,9 +806,10 @@ export default function AuthorizationTracker() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Button variant="outline" size="sm">
-                          Update Auth
-                        </Button>
+                        <UpdateAuthorizationDialog 
+                          member={member} 
+                          onUpdate={fetchAuthorizationData}
+                        />
                       </TableCell>
                     </TableRow>
                   ))}
