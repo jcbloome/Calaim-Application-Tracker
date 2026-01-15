@@ -1,11 +1,5 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import { defineSecret } from 'firebase-functions/params';
 import { logger } from 'firebase-functions';
-
-// Define secrets
-const CASPIO_CLIENT_ID = defineSecret('CASPIO_CLIENT_ID');
-const CASPIO_CLIENT_SECRET = defineSecret('CASPIO_CLIENT_SECRET');
-const CASPIO_BASE_URL = defineSecret('CASPIO_BASE_URL');
 
 interface CaspioAuthResponse {
   access_token: string;
@@ -52,7 +46,12 @@ interface AuthorizationMember {
  * Get OAuth token from Caspio
  */
 async function getCaspioToken(): Promise<string> {
-  const tokenUrl = `${CASPIO_BASE_URL.value()}/oauth/token`;
+  // Use hardcoded credentials (same as other functions)
+  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+  const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+  const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+  
+  const tokenUrl = `${baseUrl}/oauth/token`;
   
   const response = await fetch(tokenUrl, {
     method: 'POST',
@@ -61,8 +60,8 @@ async function getCaspioToken(): Promise<string> {
     },
     body: new URLSearchParams({
       grant_type: 'client_credentials',
-      client_id: CASPIO_CLIENT_ID.value(),
-      client_secret: CASPIO_CLIENT_SECRET.value(),
+      client_id: clientId,
+      client_secret: clientSecret,
     }),
   });
 
@@ -80,7 +79,8 @@ async function getCaspioToken(): Promise<string> {
  * Fetch members with authorization data from Caspio
  */
 async function fetchMembersFromCaspio(token: string): Promise<CaspioMemberRecord[]> {
-  const apiUrl = `${CASPIO_BASE_URL.value()}/rest/v2/tables/CalAIM_tbl_Members/records`;
+  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+  const apiUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
   
   // Only fetch members that have at least one authorization field
   const whereClause = `Authorization_Start_Date_T2038 IS NOT NULL OR Authorization_End_Date_T2038 IS NOT NULL OR Authorization_Start_Date_H2022 IS NOT NULL OR Authorization_End_Date_H2022 IS NOT NULL`;
@@ -128,9 +128,6 @@ function transformMemberData(caspioMember: CaspioMemberRecord): AuthorizationMem
  * Fetch authorization members from Caspio
  */
 export const fetchAuthorizationMembers = onCall(
-  {
-    secrets: [CASPIO_CLIENT_ID, CASPIO_CLIENT_SECRET, CASPIO_BASE_URL],
-  },
   async (request) => {
     try {
       logger.info('Fetching authorization members from Caspio');
@@ -164,9 +161,6 @@ export const fetchAuthorizationMembers = onCall(
  * Update authorization dates for a member
  */
 export const updateMemberAuthorization = onCall(
-  {
-    secrets: [CASPIO_CLIENT_ID, CASPIO_CLIENT_SECRET, CASPIO_BASE_URL],
-  },
   async (request) => {
     try {
       const { memberId, authorizationData } = request.data;
@@ -181,7 +175,8 @@ export const updateMemberAuthorization = onCall(
       const token = await getCaspioToken();
       
       // Update member record in Caspio
-      const apiUrl = `${CASPIO_BASE_URL.value()}/rest/v2/tables/CalAIM_tbl_Members/records`;
+      const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+      const apiUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
       const whereClause = `Record_ID='${memberId}'`;
       
       const response = await fetch(`${apiUrl}?q.where=${encodeURIComponent(whereClause)}`, {
