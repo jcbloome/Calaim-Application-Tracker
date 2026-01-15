@@ -638,7 +638,7 @@ function PathwayPageContent() {
     <>
       <Header />
       <main className="flex-grow bg-slate-50/50 py-8 sm:py-12">
-        <div className="container mx-auto max-w-4xl px-4 sm:px-6 space-y-8">
+        <div className="container mx-auto max-w-4xl px-4 sm:px-6 space-y-8 max-w-full overflow-x-hidden">
             <Card className="shadow-sm">
                 <CardHeader>
                 <CardTitle className="text-2xl sm:text-3xl font-bold text-primary">

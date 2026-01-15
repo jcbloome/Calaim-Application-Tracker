@@ -141,7 +141,7 @@ export default function Step3() {
                     control={control}
                     name="meetsPathwayCriteria"
                     render={({ field }) => (
-                        <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 bg-yellow-50 border-yellow-200">
                             <FormControl>
                                 <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                             </FormControl>

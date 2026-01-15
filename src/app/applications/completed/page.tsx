@@ -27,8 +27,8 @@ export default function ApplicationCompletedPage() {
     <>
       {showConfetti && <Confetti width={width} height={height} recycle={false} numberOfPieces={500} />}
       <Header />
-      <main className="flex-grow flex items-center justify-center p-4 sm:p-6 md:p-8">
-        <Card className="w-full max-w-2xl shadow-2xl text-center">
+      <main className="flex-grow flex items-center justify-center p-4 sm:p-6 md:p-8 overflow-x-hidden">
+        <Card className="w-full max-w-2xl shadow-2xl text-center overflow-hidden">
           <CardHeader className="items-center p-6 sm:p-10">
             {mascot && (
               <Image
@@ -44,6 +44,11 @@ export default function ApplicationCompletedPage() {
             <CardDescription className="text-lg max-w-xl mt-2 text-foreground">
               Great job! We'll get to work on compiling the application and get back to you shortly with the progress.
             </CardDescription>
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>What's Next:</strong> You will be notified about your application processing status through this portal or by email if we require additional documents.
+              </p>
+            </div>
           </CardHeader>
           <CardContent className="flex flex-col items-center p-6 pt-0 sm:pb-10">
              <Button asChild size="lg">

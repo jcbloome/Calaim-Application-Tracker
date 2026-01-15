@@ -126,7 +126,7 @@ export default function HomePage() {
     setIsResettingPassword(true);
     try {
       await sendPasswordResetEmail(auth, resetEmail);
-      enhancedToast.success('Password Reset Email Sent', 'Check your email for instructions to reset your password.');
+      enhancedToast.success('Password Reset Email Sent', 'Check your email (including spam/junk folder) for instructions to reset your password. The email may take a few minutes to arrive.');
       setResetEmail('');
       setIsResettingPassword(false);
     } catch (err) {
@@ -217,6 +217,12 @@ export default function HomePage() {
             {/* Forgot Password Section */}
             <div className="mt-6 pt-4 border-t border-gray-200">
               <p className="text-sm text-gray-600 mb-3">Forgot your password?</p>
+              <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <p className="text-xs text-blue-800">
+                  <strong>Note:</strong> Password reset emails may appear in your spam/junk folder. 
+                  Please check all folders and add our domain to your safe senders list to ensure delivery.
+                </p>
+              </div>
               <form onSubmit={handleForgotPassword} className="space-y-3">
                 <Input
                   type="email"

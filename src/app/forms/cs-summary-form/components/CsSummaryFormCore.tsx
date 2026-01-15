@@ -334,8 +334,8 @@ function CsSummaryFormComponent() {
   return (
     <FormProvider {...methods}>
       <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="flex-grow">
-        <div className="container mx-auto px-4 py-8 sm:px-6">
-          <div className="max-w-4xl mx-auto">
+        <div className="container mx-auto px-4 py-8 sm:px-6 max-w-full overflow-x-hidden">
+          <div className="max-w-4xl mx-auto w-full">
              {isAdminView && internalApplicationId && (
                 <div className="mb-6">
                     <Button variant="outline" asChild>
