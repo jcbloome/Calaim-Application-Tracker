@@ -9,41 +9,41 @@ export interface KaiserStatusStep {
 }
 
 export const KAISER_STATUS_PROGRESSION: KaiserStatusStep[] = [
-  // T2038 Process
-  { id: 35, status: 'T2038 Request', sortOrder: 1, nextStep: 'T2038 Requested', category: 'T2038' },
-  { id: 1, status: 'T2038 Requested', sortOrder: 2, nextStep: 'T2038 received', category: 'T2038' },
-  { id: 21, status: 'T2038 received', sortOrder: 4, nextStep: 'T2038 Auth Onhold', category: 'T2038' },
-  { id: 20, status: 'T2038 received', sortOrder: 5, nextStep: 'T2038 Auth Onhold', category: 'T2038' },
-  { id: 33, status: 'T2038 Auth Onhold', sortOrder: 5.4, nextStep: 'RN Visit Needed', category: 'T2038' },
+  // T2038 Process (Initial Authorization)
+  { id: 36, status: 'T2038, Not Requested, Doc Collection', sortOrder: 0, nextStep: 'T2038 Request Ready', category: 'T2038' },
+  { id: 35, status: 'T2038 Request Ready', sortOrder: 1, nextStep: 'T2038 Requested', category: 'T2038' },
+  { id: 1, status: 'T2038 Requested', sortOrder: 2, nextStep: 'T2038 received, Need First Contact', category: 'T2038' },
+  { id: 21, status: 'T2038 received, Need First Contact', sortOrder: 4, nextStep: 'T2038 received, doc collection', category: 'T2038' },
+  { id: 20, status: 'T2038 received, doc collection', sortOrder: 5, nextStep: 'T2038 Auth Only Email', category: 'T2038' },
+  { id: 33, status: 'T2038 Auth Only Email', sortOrder: 5.4, nextStep: 'RN Visit Needed', category: 'T2038' },
   
-  // RN Process
+  // RN Process (Nursing Assessment)
   { id: 40, status: 'RN Visit Needed', sortOrder: 6.5, nextStep: 'RN/MSW Scheduled', category: 'RN' },
   { id: 12, status: 'RN/MSW Scheduled', sortOrder: 7, nextStep: 'RN Visit Complete', category: 'RN' },
-  { id: 4, status: 'RN Visit Complete', sortOrder: 8, nextStep: 'Tier Level Requested', category: 'RN' },
+  { id: 4, status: 'RN Visit Complete', sortOrder: 8, nextStep: 'Tier Level Request Needed', category: 'RN' },
   
-  // Tier Level Process
-  { id: 31, status: 'Tier Level Requested', sortOrder: 9, nextStep: 'Tier Level Requested', category: 'TierLevel' },
+  // Tier Level Process (Care Level Determination)
+  { id: 31, status: 'Tier Level Request Needed', sortOrder: 9, nextStep: 'Tier Level Requested', category: 'TierLevel' },
   { id: 5, status: 'Tier Level Requested', sortOrder: 10, nextStep: 'Tier Level Received', category: 'TierLevel' },
   { id: 6, status: 'Tier Level Received', sortOrder: 11, nextStep: 'Tier Level Appeal', category: 'TierLevel' },
   { id: 26, status: 'Tier Level Appeal', sortOrder: 11.2, nextStep: 'RCFE Needed', category: 'TierLevel' },
   
-  // RCFE Process
+  // RCFE Process (Residential Care Facility)
   { id: 37, status: 'RCFE Needed', sortOrder: 12, nextStep: 'RCFE_Located', category: 'RCFE' },
   { id: 41, status: 'RCFE_Located', sortOrder: 14, nextStep: 'R&B Needed', category: 'RCFE' },
   
-  // R&B Process
+  // R&B Process (Room & Board)
   { id: 39, status: 'R&B Needed', sortOrder: 14.1, nextStep: 'R&B Requested', category: 'RB' },
   { id: 14, status: 'R&B Requested', sortOrder: 14.2, nextStep: 'R&B Signed', category: 'RB' },
-  { id: 15, status: 'R&B Signed', sortOrder: 14.3, nextStep: 'ILS Contract Email', category: 'RB' },
+  { id: 15, status: 'R&B Signed', sortOrder: 14.3, nextStep: 'ILS Contract Email Needed', category: 'RB' },
   
-  // ILS Process
-  { id: 44, status: 'ILS Contract Email', sortOrder: 15, nextStep: 'ILS Contracted', category: 'ILS' },
-  { id: 29, status: 'ILS Contracted', sortOrder: 15.2, nextStep: 'ILS Confirmed Contract', category: 'ILS' },
-  { id: 42, status: 'ILS Confirmed Contract', sortOrder: 15.3, nextStep: 'ILS Sent for Contract', category: 'ILS' },
-  { id: 38, status: 'ILS Sent for Contract', sortOrder: 16, nextStep: 'ILS Contracted and Paid', category: 'ILS' },
-  { id: 34, status: 'ILS Contracted and Paid', sortOrder: 20, nextStep: null, category: 'ILS' },
+  // ILS Process (Independent Living Services)
+  { id: 44, status: 'ILS Contract Email Needed', sortOrder: 15, nextStep: 'ILS Confirmed Contracted', category: 'ILS' },
+  { id: 42, status: 'ILS Confirmed Contracted', sortOrder: 15.3, nextStep: 'ILS Sent for Contract', category: 'ILS' },
+  { id: 38, status: 'ILS Sent for Contract', sortOrder: 16, nextStep: 'ILS Contracted and Member Placed', category: 'ILS' },
+  { id: 34, status: 'ILS Contracted and Member Placed', sortOrder: 20, nextStep: null, category: 'ILS' },
   
-  // Other Statuses
+  // Final Statuses
   { id: 22, status: 'Non-active', sortOrder: 22, nextStep: null, category: 'Other' },
   { id: 25, status: 'On-Hold', sortOrder: 23, nextStep: null, category: 'Other' },
 ];
