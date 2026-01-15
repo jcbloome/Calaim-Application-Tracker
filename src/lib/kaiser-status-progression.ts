@@ -35,13 +35,10 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatusStep[] = [
   // R&B Process (Room & Board)
   { id: 39, status: 'R&B Needed', sortOrder: 14.1, nextStep: 'R&B Requested', category: 'RB' },
   { id: 14, status: 'R&B Requested', sortOrder: 14.2, nextStep: 'R&B Signed', category: 'RB' },
-  { id: 15, status: 'R&B Signed', sortOrder: 14.3, nextStep: 'ILS Contract Email Needed', category: 'RB' },
+  { id: 15, status: 'R&B Signed', sortOrder: 14.3, nextStep: 'ILS Sent for Contract', category: 'RB' },
   
   // ILS Process (Independent Living Services)
-  { id: 44, status: 'ILS Contract Email Needed', sortOrder: 15, nextStep: 'ILS Confirmed Contracted', category: 'ILS' },
-  { id: 42, status: 'ILS Confirmed Contracted', sortOrder: 15.3, nextStep: 'ILS Sent for Contract', category: 'ILS' },
-  { id: 38, status: 'ILS Sent for Contract', sortOrder: 16, nextStep: 'ILS Contracted and Member Placed', category: 'ILS' },
-  { id: 34, status: 'ILS Contracted and Member Placed', sortOrder: 20, nextStep: null, category: 'ILS' },
+  { id: 38, status: 'ILS Sent for Contract', sortOrder: 16, nextStep: null, category: 'ILS' },
   
   // Final Statuses
   { id: 22, status: 'Non-active', sortOrder: 22, nextStep: null, category: 'Other' },
