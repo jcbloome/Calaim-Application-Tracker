@@ -14,6 +14,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
 import { useAutoSync } from '@/hooks/use-auto-sync';
 import { MemberListModal } from '@/components/MemberListModal';
+import { MemberCardSkeleton, MemberTableSkeleton } from '@/components/MemberCardSkeleton';
 
 // Kaiser workflow with next steps and recommended timeframes
 const kaiserWorkflow = {
@@ -1445,7 +1446,20 @@ export default function KaiserTrackerPage() {
             </CardTitle>
           </CardHeader>
         <CardContent>
-          {members.length === 0 ? (
+          {isLoading ? (
+            <>
+              {/* Desktop skeleton */}
+              <div className="hidden lg:block">
+                <MemberTableSkeleton />
+              </div>
+              {/* Mobile skeleton */}
+              <div className="lg:hidden space-y-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <MemberCardSkeleton key={i} />
+                ))}
+              </div>
+            </>
+          ) : members.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground">No Kaiser members loaded yet.</p>
               <p className="text-sm text-muted-foreground mt-2">
@@ -1462,7 +1476,8 @@ export default function KaiserTrackerPage() {
               </p>
             </div>
           ) : (
-              <div id="members-table" className="rounded-md border overflow-x-auto">
+              {/* Desktop Table View */}
+              <div id="members-table" className="hidden lg:block rounded-md border overflow-x-auto">
                 <Table>
                 <TableHeader>
                   <TableRow>
@@ -1769,6 +1784,101 @@ export default function KaiserTrackerPage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="lg:hidden space-y-4">
+              {sortedMembers.map((member) => (
+                <Card key={member.id} className="p-4">
+                  <div className="space-y-3">
+                    {/* Header with name and status */}
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-semibold text-lg">
+                          {member.memberFirstName} {member.memberLastName}
+                        </h3>
+                        <p className="text-sm text-muted-foreground">
+                          MRN: {member.memberMrn || 'N/A'}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="text-xs">
+                        {member.client_ID2 || 'N/A'}
+                      </Badge>
+                    </div>
+
+                    {/* Status badges */}
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                        {member.Kaiser_Status || 'No Status'}
+                      </Badge>
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                        {member.CalAIM_Status || 'Pending'}
+                      </Badge>
+                      {member.next_step && (
+                        <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                          Next: {member.next_step}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* Key info grid */}
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">County:</span>
+                        <p className="font-medium">{member.memberCounty || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Pathway:</span>
+                        <p className="font-medium">{member.pathway || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Assigned:</span>
+                        <p className="font-medium text-xs">
+                          {member.kaiser_user_assignment || 'Unassigned'}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Due Date:</span>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="date"
+                            value={member.next_steps_date || ''}
+                            onChange={(e) => updateMemberDate(member.id, e.target.value)}
+                            className={`text-xs h-8 ${
+                              isOverdue(member.next_steps_date) 
+                                ? 'border-red-300 bg-red-50' 
+                                : 'border-gray-300'
+                            }`}
+                          />
+                          {isOverdue(member.next_steps_date) && (
+                            <AlertTriangle className="h-4 w-4 text-red-600" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Assignment dropdown */}
+                    <div className="pt-2 border-t">
+                      <Select 
+                        value={member.kaiser_user_assignment || ''} 
+                        onValueChange={(value) => updateMemberAssignment(member.id, value)}
+                      >
+                        <SelectTrigger className="w-full h-8 text-xs">
+                          <SelectValue placeholder="Assign staff member..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">Unassigned</SelectItem>
+                          {staffMembers.map((staff) => (
+                            <SelectItem key={staff.uid} value={staff.displayName || staff.email}>
+                              {staff.displayName || staff.email}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </Card>
+              ))}
             </div>
           )}
         </CardContent>
