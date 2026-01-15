@@ -101,7 +101,6 @@ export default function AuthorizationTracker() {
 
   // Set mock data for demonstration when functions aren't deployed
   const setMockData = () => {
-    console.log('Setting mock data for Authorization Tracker');
     const mockMembers: AuthorizationMember[] = [
       {
         id: 'mock-1',
@@ -168,10 +167,9 @@ export default function AuthorizationTracker() {
 
   // Fetch authorization data
   const fetchAuthorizationData = async () => {
-    console.log('fetchAuthorizationData called, functions available:', !!functions);
     if (!functions) {
-      console.log('No functions available, showing mock data');
       // Show mock data immediately if functions not available
+      setIsLoading(true);
       setMockData();
       return;
     }
@@ -204,7 +202,6 @@ export default function AuthorizationTracker() {
       setMembers(processedMembers);
     } catch (error: any) {
       console.error('Error fetching authorization data:', error);
-      console.log('Showing mock data due to error');
       
       // Show mock data for any error (CORS, function not found, etc.)
       setMockData();
@@ -214,7 +211,6 @@ export default function AuthorizationTracker() {
   };
 
   useEffect(() => {
-    console.log('Authorization Tracker: useEffect triggered, functions:', !!functions);
     fetchAuthorizationData();
   }, [functions]);
 
