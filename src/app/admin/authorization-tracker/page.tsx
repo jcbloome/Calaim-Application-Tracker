@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/useAdmin';
 import { useFunctions } from '@/firebase';
 import { httpsCallable } from 'firebase/functions';
-import { format, parseISO, differenceInDays, addDays, isBefore, isAfter } from 'date-fns';
+import { format, parseISO, differenceInDays, addDays, isBefore, isAfter, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { 
   Calendar, 
   AlertTriangle, 
@@ -29,7 +29,10 @@ import {
   X,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  TrendingUp,
+  BarChart3,
+  PieChart
 } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
 import { AuthorizationRulesDashboard } from '@/components/AuthorizationRulesDashboard';
@@ -228,7 +231,7 @@ export default function AuthorizationTracker() {
     });
   }, [members, searchTerm, selectedMCO, selectedStatus, showExpiringOnly, sortColumn, sortDirection]);
 
-  // Summary stats
+  // Summary stats and monthly expiration data
   const stats = useMemo(() => {
     const total = members.length;
     const needingAttention = members.filter(m => m.needsAttention).length;
@@ -236,7 +239,78 @@ export default function AuthorizationTracker() {
     const h2022Expiring = members.filter(m => m.h2022Status === 'expiring').length;
     const expired = members.filter(m => m.t2038Status === 'expired' || m.h2022Status === 'expired').length;
     
-    return { total, needingAttention, t2038Expiring, h2022Expiring, expired };
+    // Calculate monthly expiration data for next 6 months
+    const today = new Date();
+    const monthlyExpirations = [];
+    
+    for (let i = 0; i < 6; i++) {
+      const monthStart = startOfMonth(addDays(today, i * 30));
+      const monthEnd = endOfMonth(addDays(today, i * 30));
+      const monthName = format(monthStart, 'MMM yyyy');
+      
+      const t2038Expirations = members.filter(m => {
+        if (!m.authEndDateT2038) return false;
+        const endDate = parseISO(m.authEndDateT2038);
+        return isWithinInterval(endDate, { start: monthStart, end: monthEnd });
+      }).length;
+      
+      const h2022Expirations = members.filter(m => {
+        if (!m.authEndDateH2022) return false;
+        const endDate = parseISO(m.authEndDateH2022);
+        return isWithinInterval(endDate, { start: monthStart, end: monthEnd });
+      }).length;
+      
+      monthlyExpirations.push({
+        month: monthName,
+        t2038: t2038Expirations,
+        h2022: h2022Expirations,
+        total: t2038Expirations + h2022Expirations
+      });
+    }
+    
+    // MCO breakdown
+    const mcoBreakdown = members.reduce((acc, member) => {
+      const mco = member.healthPlan || 'Unknown';
+      if (!acc[mco]) {
+        acc[mco] = { total: 0, needsAttention: 0, t2038Active: 0, h2022Active: 0 };
+      }
+      acc[mco].total++;
+      if (member.needsAttention) acc[mco].needsAttention++;
+      if (member.t2038Status === 'active') acc[mco].t2038Active++;
+      if (member.h2022Status === 'active') acc[mco].h2022Active++;
+      return acc;
+    }, {} as Record<string, { total: number; needsAttention: number; t2038Active: number; h2022Active: number }>);
+    
+    // Authorization type breakdown
+    const authBreakdown = {
+      t2038Only: members.filter(m => 
+        (m.authEndDateT2038 && !m.authEndDateH2022) || 
+        (m.t2038Status !== 'none' && m.h2022Status === 'none')
+      ).length,
+      h2022Only: members.filter(m => 
+        (!m.authEndDateT2038 && m.authEndDateH2022) || 
+        (m.t2038Status === 'none' && m.h2022Status !== 'none')
+      ).length,
+      both: members.filter(m => 
+        (m.authEndDateT2038 && m.authEndDateH2022) || 
+        (m.t2038Status !== 'none' && m.h2022Status !== 'none')
+      ).length,
+      neither: members.filter(m => 
+        (!m.authEndDateT2038 && !m.authEndDateH2022) || 
+        (m.t2038Status === 'none' && m.h2022Status === 'none')
+      ).length
+    };
+    
+    return { 
+      total, 
+      needingAttention, 
+      t2038Expiring, 
+      h2022Expiring, 
+      expired, 
+      monthlyExpirations,
+      mcoBreakdown,
+      authBreakdown
+    };
   }, [members]);
 
   const getStatusBadge = (status: string, daysRemaining?: number) => {
@@ -335,6 +409,142 @@ export default function AuthorizationTracker() {
               <div>
                 <p className="text-sm text-muted-foreground">Expired</p>
                 <p className="text-2xl font-bold text-red-600">{stats.expired}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Monthly Expiration Trends */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            Authorization Expirations by Month
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {stats.monthlyExpirations.map((month, index) => (
+              <div key={month.month} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className={`w-3 h-3 rounded-full ${
+                    index === 0 ? 'bg-red-500' : 
+                    index === 1 ? 'bg-orange-500' : 
+                    'bg-blue-500'
+                  }`} />
+                  <span className="font-medium">{month.month}</span>
+                </div>
+                <div className="flex items-center gap-6">
+                  <div className="text-center">
+                    <div className="text-sm text-muted-foreground">T2038</div>
+                    <div className="font-semibold text-blue-600">{month.t2038}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm text-muted-foreground">H2022</div>
+                    <div className="font-semibold text-purple-600">{month.h2022}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm text-muted-foreground">Total</div>
+                    <div className={`font-bold ${
+                      month.total > 10 ? 'text-red-600' : 
+                      month.total > 5 ? 'text-orange-600' : 
+                      'text-green-600'
+                    }`}>{month.total}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Additional Statistics */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* MCO Breakdown */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <PieChart className="h-5 w-5" />
+              Authorization Status by Health Plan
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {Object.entries(stats.mcoBreakdown)
+                .sort(([,a], [,b]) => b.total - a.total)
+                .map(([mco, data]) => (
+                <div key={mco} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <div className="font-medium">{mco}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {data.total} members
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-center">
+                      <div className="text-xs text-muted-foreground">Urgent</div>
+                      <div className={`font-semibold ${
+                        data.needsAttention > 0 ? 'text-red-600' : 'text-green-600'
+                      }`}>
+                        {data.needsAttention}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-muted-foreground">T2038</div>
+                      <div className="font-semibold text-blue-600">{data.t2038Active}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-muted-foreground">H2022</div>
+                      <div className="font-semibold text-purple-600">{data.h2022Active}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Authorization Type Distribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              Authorization Type Distribution
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-blue-600" />
+                  <span className="font-medium">T2038 Only</span>
+                </div>
+                <div className="font-bold text-blue-600">{stats.authBreakdown.t2038Only}</div>
+              </div>
+              
+              <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Building className="h-4 w-4 text-purple-600" />
+                  <span className="font-medium">H2022 Only</span>
+                </div>
+                <div className="font-bold text-purple-600">{stats.authBreakdown.h2022Only}</div>
+              </div>
+              
+              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <span className="font-medium">Both T2038 & H2022</span>
+                </div>
+                <div className="font-bold text-green-600">{stats.authBreakdown.both}</div>
+              </div>
+              
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <X className="h-4 w-4 text-gray-600" />
+                  <span className="font-medium">No Authorizations</span>
+                </div>
+                <div className="font-bold text-gray-600">{stats.authBreakdown.neither}</div>
               </div>
             </div>
           </CardContent>
