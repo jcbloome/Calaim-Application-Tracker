@@ -34,7 +34,8 @@ import {
   Activity,
   TestTube2,
   Scissors,
-  Map
+  Map,
+  Calendar
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -96,6 +97,7 @@ const adminNavLinks = [
     isSubmenu: true,
     submenuItems: [
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
+      { href: '/admin/daily-tasks', label: 'Daily Task Board', icon: Calendar },
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
     ]
   },

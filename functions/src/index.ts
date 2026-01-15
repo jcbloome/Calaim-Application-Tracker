@@ -3,6 +3,36 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
 
+// Kaiser Status Progression Helper
+const getNextStepForStatus = (currentStatus: string): string => {
+  const statusMap: { [key: string]: string } = {
+    'T2038 Request': 'T2038 Requested',
+    'T2038 Requested': 'T2038 received',
+    'T2038 received': 'T2038 Auth Onhold',
+    'T2038 Auth Onhold': 'RN Visit Needed',
+    'RN Visit Needed': 'RN/MSW Scheduled',
+    'RN/MSW Scheduled': 'RN Visit Complete',
+    'RN Visit Complete': 'Tier Level Requested',
+    'Tier Level Requested': 'Tier Level Received',
+    'Tier Level Received': 'Tier Level Appeal',
+    'Tier Level Appeal': 'RCFE Needed',
+    'RCFE Needed': 'RCFE_Located',
+    'RCFE_Located': 'R&B Needed',
+    'R&B Needed': 'R&B Requested',
+    'R&B Requested': 'R&B Signed',
+    'R&B Signed': 'ILS Contract Email',
+    'ILS Contract Email': 'ILS Contracted',
+    'ILS Contracted': 'ILS Confirmed Contract',
+    'ILS Confirmed Contract': 'ILS Sent for Contract',
+    'ILS Sent for Contract': 'ILS Contracted and Paid',
+    'ILS Contracted and Paid': 'Complete',
+    'Non-active': 'Review Status',
+    'On-Hold': 'Review Status'
+  };
+  
+  return statusMap[currentStatus] || '';
+};
+
 // Export Google Drive migration functions
 export { authenticateGoogleDrive, scanCalAIMDriveFolders, migrateDriveFoldersToFirebase } from './google-drive';
 
@@ -624,9 +654,13 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
       });
     }
     
-    const transformedMembers = kaiserMembers.map((member: any, index: number) => ({
-      // Basic info using EXACT Caspio field names
-      memberFirstName: member.Senior_First || '',
+    const transformedMembers = kaiserMembers.map((member: any, index: number) => {
+      const kaiserStatus = member.Kaiser_Status || '';
+      const nextStep = getNextStepForStatus(kaiserStatus);
+      
+      return {
+        // Basic info using EXACT Caspio field names
+        memberFirstName: member.Senior_First || '',
       memberLastName: member.Senior_Last || '',
       memberMediCalNum: member.MC || '',
       memberMrn: member.MCP_CIN || '', // MCP_CIN is MRN for Kaiser
@@ -669,7 +703,8 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
       
       // Generate unique ID for frontend - always use index to ensure uniqueness
       id: `caspio-member-${index}-${member.client_ID2 || member.Client_ID2 || member.CLIENT_ID2 || member.clientID2 || member.ClientID2 || 'unknown'}`
-    }));
+    };
+    });
     
     return {
       success: true,
@@ -768,17 +803,22 @@ export const fetchILSMembersFromCaspio = onCall(async (request) => {
     console.log(`✅ Successfully fetched ALL ILS members: ${allILSMembers.length} total records`);
     
     // Transform the data for the ILS Report
-    const transformedMembers = allILSMembers.map((member: any) => ({
-      // Basic info using EXACT Caspio field names
-      memberFirstName: member.Senior_First || '',
-      memberLastName: member.Senior_Last || '',
-      memberFullName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
-      memberMrn: member.MCP_CIN || member.memberMrn || '',
+    const transformedMembers = allILSMembers.map((member: any) => {
+      const kaiserStatus = member.Kaiser_Status || '';
+      const nextStep = getNextStepForStatus(kaiserStatus);
       
-      // Status and tracking info
-      CalAIM_Status: member.CalAIM_Status || '',
-      Kaiser_Status: member.Kaiser_Status || '',
-      pathway: member.SNF_Diversion_or_Transition || member.pathway || '',
+      return {
+        // Basic info using EXACT Caspio field names
+        memberFirstName: member.Senior_First || '',
+        memberLastName: member.Senior_Last || '',
+        memberFullName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
+        memberMrn: member.MCP_CIN || member.memberMrn || '',
+        
+        // Status and tracking info
+        CalAIM_Status: member.CalAIM_Status || '',
+        Kaiser_Status: member.Kaiser_Status || '',
+        next_step: nextStep,
+        pathway: member.SNF_Diversion_or_Transition || member.pathway || '',
       
       // Health plan info
       healthPlan: member.CalAIM_MCP || member.CalAIM_MCO || member.HealthPlan || '',
@@ -801,7 +841,8 @@ export const fetchILSMembersFromCaspio = onCall(async (request) => {
       
       // Raw member data for debugging
       _rawData: member
-    }));
+    };
+    });
     
     console.log(`🏥 Transformed ${transformedMembers.length} ILS members for report`);
     

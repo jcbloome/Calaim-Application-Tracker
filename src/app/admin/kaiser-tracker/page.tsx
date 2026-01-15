@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { getNextStep, getSortedKaiserStatuses, KAISER_STATUS_PROGRESSION } from '@/lib/kaiser-status-progression';
 import { Input } from '@/components/ui/input';
 import { RefreshCw, User, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, Download, ArrowUpDown, ArrowUp, ArrowDown, Shield, HourglassIcon, Filter, X } from 'lucide-react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -206,6 +207,7 @@ interface KaiserMember {
   CalAIM_Status: string;
   kaiser_user_assignment: string;
   pathway: string;
+  next_step: string;
   next_steps_date: string;
   // Kaiser T2038 Process Dates
   Kaiser_T2038_Requested_Date?: string;
@@ -630,6 +632,7 @@ export default function KaiserTrackerPage() {
             CalAIM_Status: member?.CalAIM_Status || 'Pending',
             kaiser_user_assignment: member?.kaiser_user_assignment || '',
             pathway: member?.pathway || '',
+            next_step: getNextStep(kaiserStatus) || '',
             next_steps_date: member?.next_steps_date || '',
             t2038_requested_date: member?.t2038_requested_date || '',
             tier_requested_date: member?.tier_requested_date || '',
@@ -1544,6 +1547,7 @@ export default function KaiserTrackerPage() {
                         Due Date {getSortIcon('due_date')}
                       </Button>
                     </TableHead>
+                    <TableHead>Next Step</TableHead>
                     <TableHead>Next Steps</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -1686,6 +1690,14 @@ export default function KaiserTrackerPage() {
                             ))}
                           </SelectContent>
                         </Select>
+                      </TableCell>
+                      <TableCell>
+                        <Badge 
+                          variant="outline" 
+                          className="bg-blue-50 text-blue-700 border-blue-200 text-xs"
+                        >
+                          {member.next_step || 'No Next Step'}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
