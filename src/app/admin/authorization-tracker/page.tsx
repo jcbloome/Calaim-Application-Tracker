@@ -167,20 +167,17 @@ export default function AuthorizationTracker() {
 
   // Fetch authorization data
   const fetchAuthorizationData = async () => {
-    if (!functions) {
-      // Show mock data immediately if functions not available
-      setIsLoading(true);
-      setMockData();
-      return;
-    }
-    
     setIsLoading(true);
     try {
-      const fetchMembers = httpsCallable(functions, 'fetchAuthorizationMembers');
-      const result = await fetchMembers();
-      const membersData = result.data as any[];
+      const response = await fetch('/api/authorization/members');
       
-      const processedMembers: AuthorizationMember[] = membersData.map(member => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const membersData = await response.json();
+      
+      const processedMembers: AuthorizationMember[] = membersData.map((member: any) => {
         const t2038Status = getAuthStatus(member.authEndDateT2038);
         const h2022Status = getAuthStatus(member.authEndDateH2022);
         const t2038DaysRemaining = getDaysRemaining(member.authEndDateT2038);
@@ -200,11 +197,23 @@ export default function AuthorizationTracker() {
       });
       
       setMembers(processedMembers);
+      
+      toast({
+        title: "Success",
+        description: `Loaded ${processedMembers.length} members with authorization data`,
+        variant: "default"
+      });
     } catch (error: any) {
       console.error('Error fetching authorization data:', error);
       
-      // Show mock data for any error (CORS, function not found, etc.)
+      // Show mock data for any error
       setMockData();
+      
+      toast({
+        title: "Using Demo Data",
+        description: "Could not connect to live data. Showing sample data for demonstration.",
+        variant: "destructive"
+      });
     } finally {
       setIsLoading(false);
     }
@@ -212,7 +221,7 @@ export default function AuthorizationTracker() {
 
   useEffect(() => {
     fetchAuthorizationData();
-  }, [functions]);
+  }, []);
 
   // Handle column sorting
   const handleSort = (column: string) => {

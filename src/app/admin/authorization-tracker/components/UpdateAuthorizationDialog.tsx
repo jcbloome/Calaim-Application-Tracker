@@ -9,8 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { useFunctions } from '@/firebase';
-import { httpsCallable } from 'firebase/functions';
 import { format, addMonths } from 'date-fns';
 import { 
   Calendar, 
@@ -42,7 +40,6 @@ interface UpdateAuthorizationDialogProps {
 
 export function UpdateAuthorizationDialog({ member, onUpdate }: UpdateAuthorizationDialogProps) {
   const { toast } = useToast();
-  const functions = useFunctions();
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
@@ -122,29 +119,35 @@ export function UpdateAuthorizationDialog({ member, onUpdate }: UpdateAuthorizat
   };
 
   const handleSave = async () => {
-    if (!functions) return;
-    
     setIsSaving(true);
     try {
-      const updateAuth = httpsCallable(functions, 'updateMemberAuthorization');
-      
       // Clean up empty strings to null
       const cleanedData = Object.entries(authData).reduce((acc, [key, value]) => {
         acc[key] = value === '' ? null : value;
         return acc;
       }, {} as any);
       
-      await updateAuth({
-        memberId: member.id,
-        authorizationData: {
-          Authorization_Start_Date_T2038: cleanedData.authStartDateT2038,
-          Authorization_End_Date_T2038: cleanedData.authEndDateT2038,
-          Authorization_Start_Date_H2022: cleanedData.authStartDateH2022,
-          Authorization_End_Date_H2022: cleanedData.authEndDateH2022,
-          Auth_Ext_Request_Date_T2038: cleanedData.authExtRequestDateT2038,
-          Auth_Ext_Request_Date_H2022: cleanedData.authExtRequestDateH2022,
-        }
+      const response = await fetch('/api/authorization/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          memberId: member.id,
+          authorizationData: {
+            Authorization_Start_Date_T2038: cleanedData.authStartDateT2038,
+            Authorization_End_Date_T2038: cleanedData.authEndDateT2038,
+            Authorization_Start_Date_H2022: cleanedData.authStartDateH2022,
+            Authorization_End_Date_H2022: cleanedData.authEndDateH2022,
+            Auth_Ext_Request_Date_T2038: cleanedData.authExtRequestDateT2038,
+            Auth_Ext_Request_Date_H2022: cleanedData.authExtRequestDateH2022,
+          }
+        })
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       
       toast({
         title: 'Authorization Updated',

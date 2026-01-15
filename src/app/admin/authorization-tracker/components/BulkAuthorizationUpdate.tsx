@@ -10,8 +10,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { useFunctions } from '@/firebase';
-import { httpsCallable } from 'firebase/functions';
 import { format, addMonths } from 'date-fns';
 import { 
   Users, 
@@ -45,7 +43,6 @@ interface BulkAuthorizationUpdateProps {
 
 export function BulkAuthorizationUpdate({ members, onUpdate }: BulkAuthorizationUpdateProps) {
   const { toast } = useToast();
-  const functions = useFunctions();
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
@@ -159,11 +156,10 @@ export function BulkAuthorizationUpdate({ members, onUpdate }: BulkAuthorization
   };
 
   const handleBulkUpdate = async () => {
-    if (!functions || selectedMembers.size === 0) return;
+    if (selectedMembers.size === 0) return;
     
     setIsSaving(true);
     try {
-      const updateAuth = httpsCallable(functions, 'updateMemberAuthorization');
       const updates = [];
       
       for (const memberId of selectedMembers) {
@@ -204,10 +200,18 @@ export function BulkAuthorizationUpdate({ members, onUpdate }: BulkAuthorization
         }
         
         if (Object.keys(authData).length > 0) {
-          updates.push(updateAuth({
-            memberId,
-            authorizationData: authData
-          }));
+          updates.push(
+            fetch('/api/authorization/update', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                memberId,
+                authorizationData: authData
+              })
+            })
+          );
         }
       }
       

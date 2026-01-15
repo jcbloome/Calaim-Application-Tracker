@@ -128,6 +128,7 @@ function transformMemberData(caspioMember: CaspioMemberRecord): AuthorizationMem
  * Fetch authorization members from Caspio
  */
 export const fetchAuthorizationMembers = onCall(
+  { cors: true },
   async (request) => {
     try {
       logger.info('Fetching authorization members from Caspio');
@@ -161,6 +162,7 @@ export const fetchAuthorizationMembers = onCall(
  * Update authorization dates for a member
  */
 export const updateMemberAuthorization = onCall(
+  { cors: true },
   async (request) => {
     try {
       const { memberId, authorizationData } = request.data;
