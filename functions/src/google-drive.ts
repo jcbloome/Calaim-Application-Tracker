@@ -122,10 +122,9 @@ export const scanCalAIMDriveFolders = onCall({
     
     console.log(`✅ Completed scan of ${driveFolders.length} member folders in ${scanDuration.toFixed(2)} seconds`);
     
-    // Calculate matching statistics
-    const foldersWithMatches = driveFolders.filter(f => f.suggestedMatch).length;
-    const foldersWithoutMatches = driveFolders.length - foldersWithMatches;
-    const matchPercentage = ((foldersWithMatches / driveFolders.length) * 100).toFixed(1);
+    // Calculate scan statistics
+    const totalFiles = driveFolders.reduce((sum, folder) => sum + folder.fileCount, 0);
+    const foldersWithSubfolders = driveFolders.filter(f => f.subfolders && f.subfolders.length > 0).length;
     
     return {
       success: true,
@@ -133,9 +132,9 @@ export const scanCalAIMDriveFolders = onCall({
       folders: driveFolders,
       statistics: {
         totalScanned: driveFolders.length,
-        foldersWithMatches: foldersWithMatches,
-        foldersWithoutMatches: foldersWithoutMatches,
-        matchPercentage: `${matchPercentage}%`,
+        totalFiles: totalFiles,
+        foldersWithSubfolders: foldersWithSubfolders,
+        averageFilesPerFolder: Math.round(totalFiles / driveFolders.length),
         scanDurationSeconds: scanDuration,
         batchesProcessed: Math.ceil(driveFolders.length / 100)
       }
@@ -236,65 +235,6 @@ export const migrateDriveFoldersToFirebase = onCall({
   }
 });
 
-// Helper function to find best member match using fuzzy string matching
-function findBestMatch(folderName: string, members: any[]) {
-  let bestMatch = null;
-  let bestScore = 0;
-  
-  const cleanFolderName = folderName.toLowerCase()
-    .replace(/[^a-z\s]/g, '') // Remove special characters
-    .replace(/\s+/g, ' ')     // Normalize spaces
-    .trim();
-  
-  for (const member of members) {
-    if (!member.Senior_First || !member.Senior_Last) continue;
-    
-    const memberName = `${member.Senior_First} ${member.Senior_Last}`.toLowerCase();
-    const score = calculateSimilarity(cleanFolderName, memberName);
-    
-    if (score > bestScore && score > 0.6) { // Minimum 60% similarity
-      bestScore = score;
-      bestMatch = {
-        client_ID2: member.client_ID2 || member.Client_ID2 || member.CLIENT_ID2 || 'unknown',
-        memberName: `${member.Senior_First} ${member.Senior_Last}`,
-        confidence: score
-      };
-    }
-  }
-  
-  return bestMatch;
-}
-
-// Simple string similarity calculation (Levenshtein-based)
-function calculateSimilarity(str1: string, str2: string): number {
-  const longer = str1.length > str2.length ? str1 : str2;
-  const shorter = str1.length > str2.length ? str2 : str1;
-  
-  if (longer.length === 0) return 1.0;
-  
-  const distance = levenshteinDistance(longer, shorter);
-  return (longer.length - distance) / longer.length;
-}
-
-function levenshteinDistance(str1: string, str2: string): number {
-  const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
-  
-  for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
-  for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
-  
-  for (let j = 1; j <= str2.length; j++) {
-    for (let i = 1; i <= str1.length; i++) {
-      const substitutionCost = str1[i - 1] === str2[j - 1] ? 0 : 1;
-      matrix[j][i] = Math.min(
-        matrix[j][i - 1] + 1,     // insertion
-        matrix[j - 1][i] + 1,     // deletion
-        matrix[j - 1][i - 1] + substitutionCost // substitution
-      );
-    }
-  }
-  
-  return matrix[str2.length][str1.length];
-}
 
 // Initialize Google Drive API with service account
 async function initializeDriveAPI() {
@@ -404,21 +344,43 @@ async function scanDriveFolder(folderId: string, members: any[], limitFolders: b
             
             const fileCount = fileCountResponse.data.files?.length || 0;
             
-            // Find best match with Caspio members
-            const suggestedMatch = findBestMatch(folder.name || '', members);
+            // Get subfolders
+            const subfoldersResponse = await drive.files.list({
+              q: `'${folder.id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+              fields: 'files(id, name)',
+              pageSize: 50
+            });
+            
+            const subfolders = subfoldersResponse.data.files?.map(subfolder => ({
+              id: subfolder.id,
+              name: subfolder.name,
+              fileCount: 0, // We'll count files in subfolders later if needed
+              path: `${folder.name}/${subfolder.name}`
+            })) || [];
+            
+            // Get some sample files for display
+            const filesResponse = await drive.files.list({
+              q: `'${folder.id}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false`,
+              fields: 'files(id, name, size, mimeType, modifiedTime)',
+              pageSize: 10
+            });
+            
+            const files = filesResponse.data.files?.map(file => ({
+              id: file.id,
+              name: file.name,
+              size: parseInt(file.size || '0'),
+              mimeType: file.mimeType,
+              modifiedTime: file.modifiedTime
+            })) || [];
             
             driveFolders.push({
               id: folder.id,
               name: folder.name,
               fileCount: fileCount,
-              suggestedMatch: suggestedMatch,
-              status: 'pending',
-              path: `/CalAIM Members/${folder.name}`,
-              hasSubfolders: false, // We'll detect this if needed
-              lastModified: folder.modifiedTime || folder.createdTime,
-              createdTime: folder.createdTime,
-              driveUrl: folder.webViewLink,
-              batchNumber: batchNumber,
+              subfolders: subfolders,
+              files: files.slice(0, 5), // Show first 5 files
+              path: `CalAIM Members/${folder.name}`,
+              status: 'scanned',
               isReal: true // Flag to indicate this is real data
             });
             
@@ -489,20 +451,15 @@ async function scanDriveFolderSimulation(folderId: string, members: any[]): Prom
     
     for (let i = batchStart; i < batchEnd; i++) {
       const folderName = generateMemberFolderName(i);
-      const suggestedMatch = findBestMatch(folderName, members);
       
       driveFolders.push({
         id: `sim_folder_${i + 1}`,
         name: folderName,
         fileCount: Math.floor(Math.random() * 25) + 1,
-        suggestedMatch: suggestedMatch,
-        status: 'pending',
-        path: `/CalAIM Members/${folderName}`,
-        hasSubfolders: Math.random() > 0.8,
-        lastModified: new Date(Date.now() - Math.random() * 730 * 24 * 60 * 60 * 1000).toISOString(),
-        driveUrl: `https://drive.google.com/drive/folders/sim_${i + 1}`,
-        batchNumber: batch + 1,
-        isReal: false
+        subfolders: [],
+        files: [],
+        path: `CalAIM Members/${folderName}`,
+        status: 'scanned'
       });
       
       processedCount++;
