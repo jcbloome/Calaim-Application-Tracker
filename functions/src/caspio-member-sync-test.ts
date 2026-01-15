@@ -211,7 +211,15 @@ async function addToMemberTable(accessToken: string, member: MockMember, clientI
     // Add the additional fields from client table
     Senior_First: clientRecord?.Senior_First || clientRecord?.First_Name || member.firstName,
     Senior_Last: clientRecord?.Senior_Last || clientRecord?.Last_Name || member.lastName,
-    Client_ID2: clientId // Explicitly include Client_ID2 as well
+    Client_ID2: clientId, // Explicitly include Client_ID2 as well
+    
+    // Authorization fields - initialize as null for new members
+    Authorization_Start_Date_T2038: null,
+    Authorization_End_Date_T2038: null,
+    Authorization_Start_Date_H2022: null,
+    Authorization_End_Date_H2022: null,
+    Auth_Ext_Request_Date_T2038: null,
+    Auth_Ext_Request_Date_H2022: null
   };
   
   console.log(`📝 Adding to CalAIM_tbl_Members with enhanced data:`, memberData);

@@ -703,6 +703,14 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
       ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || '',
       ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || '',
       
+      // Authorization fields
+      authStartDateT2038: member.Authorization_Start_Date_T2038 || null,
+      authEndDateT2038: member.Authorization_End_Date_T2038 || null,
+      authStartDateH2022: member.Authorization_Start_Date_H2022 || null,
+      authEndDateH2022: member.Authorization_End_Date_H2022 || null,
+      authExtRequestDateT2038: member.Auth_Ext_Request_Date_T2038 || null,
+      authExtRequestDateH2022: member.Auth_Ext_Request_Date_H2022 || null,
+      
       // Caspio record info
       caspio_id: member.client_ID2 || member.Client_ID2 || member.CLIENT_ID2 || member.clientID2 || member.ClientID2 || member.id || `caspio-${index}`,
       source: 'caspio',
@@ -844,6 +852,14 @@ export const fetchILSMembersFromCaspio = onCall(async (request) => {
       
       // ID fields
       client_ID2: member.client_ID2 || member.Client_ID2 || '',
+      
+      // Authorization fields
+      authStartDateT2038: member.Authorization_Start_Date_T2038 || null,
+      authEndDateT2038: member.Authorization_End_Date_T2038 || null,
+      authStartDateH2022: member.Authorization_Start_Date_H2022 || null,
+      authEndDateH2022: member.Authorization_End_Date_H2022 || null,
+      authExtRequestDateT2038: member.Auth_Ext_Request_Date_T2038 || null,
+      authExtRequestDateH2022: member.Auth_Ext_Request_Date_H2022 || null,
       
       // Raw member data for debugging
       _rawData: member
@@ -1528,3 +1544,5 @@ export const publishCsSummaryToCaspio = onCall({
     throw new HttpsError('internal', `Unexpected error: ${error.message}`);
   }
 });
+// Authorization Tracker
+export { fetchAuthorizationMembers, updateMemberAuthorization } from './authorization-tracker';

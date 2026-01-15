@@ -35,7 +35,8 @@ import {
   TestTube2,
   Scissors,
   Map,
-  Calendar
+  Calendar,
+  DollarSign
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -69,6 +70,7 @@ const adminNavLinks = [
     submenuItems: [
       { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
+      { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: DollarSign },
     ]
   },
   { 
