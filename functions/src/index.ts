@@ -687,6 +687,140 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
   }
 });
 
+// Fetch ILS members from Caspio (only members with ILS_View = "Yes")
+export const fetchILSMembersFromCaspio = onCall(async (request) => {
+  try {
+    console.log('📥 Fetching ILS members from Caspio (ILS_View = Yes)...');
+    
+    // Get Caspio access token
+    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+    
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
+    
+    console.log('🔑 Getting Caspio access token...');
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: 'grant_type=client_credentials',
+    });
+    
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
+    }
+    
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    console.log('✅ Got access token');
+    
+    // Fetch ILS members from Caspio (only those with ILS_View = "Yes")
+    const membersTable = 'CalAIM_tbl_Members';
+    let allILSMembers: any[] = [];
+    let pageSize = 1000; // Caspio's max page size
+    let pageNumber = 1;
+    let hasMoreData = true;
+    
+    console.log('📋 Fetching ILS members from:', membersTable, '(ILS_View = Yes)');
+    
+    while (hasMoreData) {
+      const fetchUrl = `${baseUrl}/tables/${membersTable}/records?q.where=ILS_View='Yes'&q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
+      
+      console.log(`📄 Fetching ILS members page ${pageNumber} (up to ${pageSize} records)...`);
+      
+      const membersResponse = await fetch(fetchUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!membersResponse.ok) {
+        const errorText = await membersResponse.text();
+        throw new HttpsError('internal', `Failed to fetch ILS members page ${pageNumber}: ${membersResponse.status} ${errorText}`);
+      }
+      
+      const membersData = await membersResponse.json();
+      const pageResults = membersData.Result || [];
+      
+      console.log(`📄 Page ${pageNumber}: Got ${pageResults.length} ILS members`);
+      
+      if (pageResults.length > 0) {
+        allILSMembers = allILSMembers.concat(pageResults);
+        pageNumber++;
+        
+        // If we got less than the page size, we're done
+        if (pageResults.length < pageSize) {
+          hasMoreData = false;
+        }
+      } else {
+        hasMoreData = false;
+      }
+    }
+    
+    console.log(`✅ Successfully fetched ALL ILS members: ${allILSMembers.length} total records`);
+    
+    // Transform the data for the ILS Report
+    const transformedMembers = allILSMembers.map((member: any) => ({
+      // Basic info using EXACT Caspio field names
+      memberFirstName: member.Senior_First || '',
+      memberLastName: member.Senior_Last || '',
+      memberFullName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
+      memberMrn: member.MCP_CIN || member.memberMrn || '',
+      
+      // Status and tracking info
+      CalAIM_Status: member.CalAIM_Status || '',
+      Kaiser_Status: member.Kaiser_Status || '',
+      pathway: member.SNF_Diversion_or_Transition || member.pathway || '',
+      
+      // Health plan info
+      healthPlan: member.CalAIM_MCP || member.CalAIM_MCO || member.HealthPlan || '',
+      
+      // ILS specific info
+      ILS_View: member.ILS_View || '',
+      
+      // Contact info
+      bestContactFirstName: member.bestContactFirstName || '',
+      bestContactLastName: member.bestContactLastName || '',
+      bestContactPhone: member.bestContactPhone || '',
+      bestContactEmail: member.bestContactEmail || '',
+      
+      // Dates
+      lastUpdated: member.LastUpdated || member.last_updated || '',
+      created_date: member.created_date || member.DateCreated || '',
+      
+      // ID fields
+      client_ID2: member.client_ID2 || member.Client_ID2 || '',
+      
+      // Raw member data for debugging
+      _rawData: member
+    }));
+    
+    console.log(`🏥 Transformed ${transformedMembers.length} ILS members for report`);
+    
+    return {
+      success: true,
+      members: transformedMembers,
+      count: transformedMembers.length,
+      message: `Successfully fetched ${transformedMembers.length} ILS members (ILS_View = Yes)`
+    };
+    
+  } catch (error: any) {
+    console.error('❌ Error fetching ILS members from Caspio:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', `Unexpected error: ${error.message}`);
+  }
+});
+
 // Simplified publish function for testing
 export const publishCsSummaryToCaspioSimple = onCall(async (request) => {
   try {

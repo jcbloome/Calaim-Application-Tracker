@@ -3,96 +3,104 @@
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useFirestore } from '@/firebase';
+import { useFunctions } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
-import { collectionGroup, getDocs, Timestamp } from 'firebase/firestore';
-import type { Application, StaffTracker } from '@/lib/definitions';
+import { httpsCallable } from 'firebase/functions';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, Printer, ArrowLeft } from 'lucide-react';
+import { Loader2, Printer, ArrowLeft, Users, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
-const reportableStatuses = [
-  'T2038 Requested',
-  'Tier Level Requested',
-  'RCFE/ILS for Invoicing',
-];
-
-type ReportableData = {
-  id: string;
+type ILSMember = {
+  memberFirstName: string;
+  memberLastName: string;
   memberFullName: string;
-  memberMrn?: string;
-  status?: string;
+  memberMrn: string;
+  CalAIM_Status: string;
+  Kaiser_Status: string;
+  pathway: string;
+  healthPlan: string;
+  ILS_View: string;
+  bestContactFirstName: string;
+  bestContactLastName: string;
+  bestContactPhone: string;
+  bestContactEmail: string;
   lastUpdated: string;
+  created_date: string;
+  client_ID2: string;
 };
 
 export default function IlsReportPage() {
-  const firestore = useFirestore();
+  const functions = useFunctions();
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
 
-  const [reportData, setReportData] = useState<ReportableData[]>([]);
+  const [ilsMembers, setIlsMembers] = useState<ILSMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
-    if (isAdminLoading || !firestore || !isSuperAdmin) {
+  const fetchILSMembers = useCallback(async () => {
+    if (isAdminLoading || !functions || !isSuperAdmin) {
       if (!isAdminLoading) setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
+    setError(null);
+    
     try {
-      const [appsSnap, trackersSnap] = await Promise.all([
-        getDocs(collectionGroup(firestore, 'applications')),
-        getDocs(collectionGroup(firestore, 'staffTrackers')),
-      ]);
-
-      const appsMap = new Map(appsSnap.docs.map(doc => [doc.id, doc.data() as Application]));
-      const trackers = trackersSnap.docs.map(doc => doc.data() as StaffTracker);
-
-      const filteredData: ReportableData[] = [];
-
-      trackers.forEach(tracker => {
-        if (tracker.status && reportableStatuses.includes(tracker.status)) {
-          const app = appsMap.get(tracker.applicationId);
-          if (app && app.healthPlan === 'Kaiser') {
-            filteredData.push({
-              id: app.id,
-              memberFullName: `${app.memberFirstName} ${app.memberLastName}`,
-              memberMrn: app.memberMrn,
-              status: tracker.status,
-              lastUpdated: format(tracker.lastUpdated.toDate(), 'PPP'),
-            });
-          }
-        }
-      });
+      console.log('📥 Fetching ILS members from Caspio...');
+      const fetchILSMembersFunction = httpsCallable(functions, 'fetchILSMembersFromCaspio');
+      const result = await fetchILSMembersFunction({});
       
-      // Sort by status, then by name
-      filteredData.sort((a, b) => {
-        if (a.status! < b.status!) return -1;
-        if (a.status! > b.status!) return 1;
-        if (a.memberFullName < b.memberFullName) return -1;
-        if (a.memberFullName > b.memberFullName) return 1;
-        return 0;
-      })
-
-      setReportData(filteredData);
+      const data = result.data as any;
+      
+      if (data.success && data.members) {
+        console.log(`✅ Successfully fetched ${data.count} ILS members`);
+        
+        // Sort by member name
+        const sortedMembers = data.members.sort((a: ILSMember, b: ILSMember) => {
+          if (a.memberFullName < b.memberFullName) return -1;
+          if (a.memberFullName > b.memberFullName) return 1;
+          return 0;
+        });
+        
+        setIlsMembers(sortedMembers);
+      } else {
+        console.error('❌ Failed to fetch ILS members:', data);
+        setError('Failed to fetch ILS members from Caspio');
+      }
     } catch (error) {
-      console.error("Error fetching ILS report data:", error);
+      console.error('❌ Error fetching ILS members:', error);
+      setError('Error connecting to Caspio database');
     } finally {
       setIsLoading(false);
     }
-  }, [firestore, isSuperAdmin, isAdminLoading]);
+  }, [functions, isSuperAdmin, isAdminLoading]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchILSMembers();
+  }, [fetchILSMembers]);
 
   if (isLoading || isAdminLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="ml-4">Generating ILS Report...</p>
+        <p className="ml-4">Fetching ILS members from Caspio...</p>
+      </div>
+    );
+  }
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Alert className="max-w-md">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            You need Super Admin access to view the ILS Report.
+          </AlertDescription>
+        </Alert>
       </div>
     );
   }
@@ -118,37 +126,84 @@ export default function IlsReportPage() {
       <main className="flex-grow container mx-auto py-8 px-4 print:p-0">
         <Card className="bg-white p-4 sm:p-8 shadow-lg rounded-lg print:shadow-none print:p-4 print:border-none">
           <CardHeader className="text-center print:text-left print:p-0">
-            <CardTitle className="text-2xl">ILS Weekly Report</CardTitle>
+            <CardTitle className="text-2xl flex items-center justify-center gap-2 print:justify-start">
+              <Users className="h-6 w-6" />
+              ILS Weekly Report
+            </CardTitle>
             <CardDescription>
-              As of {format(new Date(), 'PPPP')}
+              CalAIM Members with ILS_View = "Yes" • As of {format(new Date(), 'PPPP')}
             </CardDescription>
+            <div className="text-sm text-muted-foreground mt-2">
+              Total ILS Members: <span className="font-semibold text-primary">{ilsMembers.length}</span>
+            </div>
           </CardHeader>
           <CardContent className="mt-6 print:mt-4">
-            {reportData.length > 0 ? (
+            {error && (
+              <Alert className="mb-6" variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            
+            {ilsMembers.length > 0 ? (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Member Name</TableHead>
                     <TableHead>MRN</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Health Plan</TableHead>
+                    <TableHead>CalAIM Status</TableHead>
+                    <TableHead>Kaiser Status</TableHead>
+                    <TableHead>Pathway</TableHead>
+                    <TableHead>Primary Contact</TableHead>
+                    <TableHead>Contact Phone</TableHead>
                     <TableHead>Last Updated</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {reportData.map(item => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.memberFullName}</TableCell>
-                      <TableCell>{item.memberMrn}</TableCell>
-                      <TableCell>{item.status}</TableCell>
-                      <TableCell>{item.lastUpdated}</TableCell>
+                  {ilsMembers.map((member, index) => (
+                    <TableRow key={member.client_ID2 || index}>
+                      <TableCell className="font-medium">{member.memberFullName}</TableCell>
+                      <TableCell>{member.memberMrn || 'N/A'}</TableCell>
+                      <TableCell>{member.healthPlan || 'N/A'}</TableCell>
+                      <TableCell>
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          member.CalAIM_Status ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {member.CalAIM_Status || 'Not Set'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          member.Kaiser_Status ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {member.Kaiser_Status || 'Not Set'}
+                        </span>
+                      </TableCell>
+                      <TableCell>{member.pathway || 'N/A'}</TableCell>
+                      <TableCell>
+                        {member.bestContactFirstName && member.bestContactLastName 
+                          ? `${member.bestContactFirstName} ${member.bestContactLastName}`
+                          : 'N/A'
+                        }
+                      </TableCell>
+                      <TableCell>{member.bestContactPhone || 'N/A'}</TableCell>
+                      <TableCell>
+                        {member.lastUpdated 
+                          ? format(new Date(member.lastUpdated), 'MMM d, yyyy')
+                          : 'N/A'
+                        }
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             ) : (
-              <p className="text-center text-muted-foreground py-10">
-                No members are currently at the reportable stages.
-              </p>
+              <div className="text-center text-muted-foreground py-10">
+                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p className="text-lg font-medium mb-2">No ILS Members Found</p>
+                <p>No CalAIM members currently have ILS_View set to "Yes"</p>
+              </div>
             )}
           </CardContent>
         </Card>
