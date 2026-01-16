@@ -1321,7 +1321,7 @@ export default function KaiserTrackerPage() {
               <User className="h-5 w-5 text-purple-600" />
               Staff Assignments
             </CardTitle>
-            <CardDescription>Workload by staff member</CardDescription>
+            <CardDescription>Workload by staff member • Click any staff member to view their assigned members</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -1350,10 +1350,10 @@ export default function KaiserTrackerPage() {
                             staff
                           );
                         }}
-                        className="flex items-center justify-between text-sm p-2 rounded border hover:bg-purple-50 hover:border-purple-200 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1 cursor-pointer w-full"
+                        className="flex items-center justify-between text-sm p-3 rounded-lg border hover:bg-purple-50 hover:border-purple-300 hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1 cursor-pointer w-full group"
                       >
                         <div className="flex flex-col text-left">
-                          <span className="font-medium truncate" title={staff}>{staff}</span>
+                          <span className="font-medium truncate group-hover:text-purple-700 transition-colors" title={staff}>{staff}</span>
                           <div className="flex gap-2 text-xs">
                             {overdue > 0 && (
                               <span className="text-red-600 flex items-center gap-1">
@@ -1367,13 +1367,18 @@ export default function KaiserTrackerPage() {
                                 {dueToday} due today
                               </span>
                             )}
+                            {!overdue && !dueToday && (
+                              <span className="text-muted-foreground group-hover:text-purple-600 transition-colors">
+                                Click to view members
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-1">
-                          <Badge variant="outline">
+                          <Badge variant="outline" className="group-hover:border-purple-300 group-hover:bg-purple-50 transition-colors">
                             {count}
                           </Badge>
-                          <span className="text-purple-600 text-xs">→</span>
+                          <span className="text-purple-600 text-xs group-hover:text-purple-700 transition-colors">→</span>
                         </div>
                       </button>
                     );
@@ -1394,17 +1399,17 @@ export default function KaiserTrackerPage() {
                       'unassigned'
                     );
                   }}
-                  className="flex items-center justify-between text-sm p-2 rounded border border-orange-200 bg-orange-50 hover:bg-orange-100 hover:border-orange-300 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1 cursor-pointer w-full"
+                  className="flex items-center justify-between text-sm p-3 rounded-lg border border-orange-200 bg-orange-50 hover:bg-orange-100 hover:border-orange-300 hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1 cursor-pointer w-full group"
                 >
                   <div className="flex flex-col">
-                    <span className="text-orange-700 font-medium">Unassigned</span>
-                    <span className="text-xs text-orange-600">Click to assign staff</span>
+                    <span className="text-orange-700 font-medium group-hover:text-orange-800 transition-colors">Unassigned Members</span>
+                    <span className="text-xs text-orange-600 group-hover:text-orange-700 transition-colors">Click to view and assign staff</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Badge className="bg-orange-100 text-orange-800">
+                    <Badge className="bg-orange-100 text-orange-800 group-hover:bg-orange-200 transition-colors">
                       {members.filter(m => !m.kaiser_user_assignment).length}
                     </Badge>
-                    <span className="text-orange-600 text-xs">→</span>
+                    <span className="text-orange-600 text-xs group-hover:text-orange-700 transition-colors">→</span>
                   </div>
                 </button>
               )}
