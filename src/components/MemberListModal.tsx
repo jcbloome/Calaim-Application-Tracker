@@ -297,6 +297,8 @@ export function MemberListModal({
             {filterType === 'county' && ` in ${filterValue} County`}
             {filterType === 'staff' && ` assigned to ${filterValue}`}
             {filterType === 'calaim_status' && ` with CalAIM status: ${filterValue}`}
+            {filterType === 'staff_assignment' && ` that need staff assignment`}
+            {filterType === 'overdue_tasks' && ` with overdue tasks`}
           </div>
           <Button variant="outline" onClick={onClose}>
             Close

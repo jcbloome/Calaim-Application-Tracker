@@ -247,13 +247,14 @@ export default function KaiserTrackerPage() {
   const [modalMembers, setModalMembers] = useState<KaiserMember[]>([]);
   const [modalTitle, setModalTitle] = useState('');
   const [modalDescription, setModalDescription] = useState('');
-  const [modalFilterType, setModalFilterType] = useState<'kaiser_status' | 'county' | 'staff' | 'calaim_status'>('kaiser_status');
+  const [modalFilterType, setModalFilterType] = useState<'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'overdue_tasks'>('kaiser_status');
   const [modalFilterValue, setModalFilterValue] = useState('');
   const [filters, setFilters] = useState({
     kaiserStatus: 'all',
     calaimStatus: 'all',
     county: 'all',
     assignment: 'all',
+    staffAssigned: '',
     overdueOnly: false
   });
 
@@ -262,7 +263,7 @@ export default function KaiserTrackerPage() {
     memberList: KaiserMember[],
     title: string,
     description: string,
-    filterType: 'kaiser_status' | 'county' | 'staff' | 'calaim_status',
+    filterType: 'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'overdue_tasks',
     filterValue: string
   ) => {
     setModalMembers(memberList);
@@ -1520,6 +1521,9 @@ export default function KaiserTrackerPage() {
                 setFilters({
                   kaiserStatus: 'all',
                   calaimStatus: 'all',
+                  county: 'all',
+                  assignment: 'all',
+                  staffAssigned: '',
                   overdueOnly: false
                 });
               }}
