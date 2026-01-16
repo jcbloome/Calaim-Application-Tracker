@@ -52,20 +52,16 @@ export async function GET(req: NextRequest) {
     const apiUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
     
     let allMembers: any[] = [];
-    let pageToken = '';
-    let pageCount = 0;
-    let offset = 0;
-    const limit = 1000;
-    const maxPages = 10; // Safety limit
+    let pageNumber = 1;
+    const pageSize = 1000; // Maximum allowed by Caspio
+    const maxPages = 20; // Safety limit (up to 20,000 records)
     let pageMembers: any[] = [];
     
     do {
-      // Try both token-based and offset-based pagination
-      const url = pageToken 
-        ? `${apiUrl}?q.limit=${limit}&q.pageToken=${pageToken}`
-        : `${apiUrl}?q.limit=${limit}&q.offset=${offset}`;
+      // Use Caspio's correct pagination parameters
+      const url = `${apiUrl}?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
         
-      console.log(`📄 Fetching page ${pageCount + 1} from Caspio...`);
+      console.log(`📄 Fetching page ${pageNumber} from Caspio (pageSize: ${pageSize})...`);
       
       const response = await fetch(url, {
         method: 'GET',
@@ -85,22 +81,18 @@ export async function GET(req: NextRequest) {
       pageMembers = data.Result || [];
       allMembers = allMembers.concat(pageMembers);
       
-      pageToken = data.NextPageToken || '';
-      pageCount++;
-      offset += limit;
+      pageNumber++;
       
-      console.log(`📊 Page ${pageCount}: ${pageMembers.length} members, Total so far: ${allMembers.length}`);
+      console.log(`📊 Page ${pageNumber - 1}: ${pageMembers.length} members, Total so far: ${allMembers.length}`);
       console.log(`🔍 Response metadata:`, {
-        hasNextPageToken: !!data.NextPageToken,
-        nextPageToken: data.NextPageToken,
         resultCount: pageMembers.length,
         responseKeys: Object.keys(data),
-        nextOffset: offset
+        nextPageNumber: pageNumber
       });
       
-      // If we got fewer records than the limit and no next page token, we're done
-      if (pageMembers.length < limit && !pageToken) {
-        console.log('📋 Reached end of data - fewer records than limit and no next page token');
+      // If we got fewer records than pageSize, we've reached the end
+      if (pageMembers.length < pageSize) {
+        console.log(`📋 Reached end of data - got ${pageMembers.length} records (less than pageSize ${pageSize})`);
         break;
       }
       
@@ -120,9 +112,9 @@ export async function GET(req: NextRequest) {
         console.log('- Sample member data:', JSON.stringify(sample, null, 2).substring(0, 500) + '...');
       }
       
-    } while ((pageToken || pageMembers.length === limit) && pageCount < maxPages);
+    } while (pageMembers.length === pageSize && pageNumber <= maxPages);
     
-    console.log(`📊 Final total: ${allMembers.length} members from ${pageCount} pages`);
+    console.log(`📊 Final total: ${allMembers.length} members from ${pageNumber - 1} pages`);
     
     // Transform data for Authorization Tracker (include ALL members)
     const transformedMembers = allMembers.map((member: any) => {
