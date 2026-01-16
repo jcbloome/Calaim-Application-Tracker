@@ -21,7 +21,6 @@ import {
   RefreshCw, 
   Filter, 
   Download,
-  DollarSign,
   Building,
   User,
   Phone,
@@ -31,13 +30,11 @@ import {
   ArrowUp,
   ArrowDown,
   TrendingUp,
-  BarChart3,
   PieChart
 } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
 import { AuthorizationRulesDashboard } from '@/components/AuthorizationRulesDashboard';
 import { UpdateAuthorizationDialog } from './components/UpdateAuthorizationDialog';
-import { BulkAuthorizationUpdate } from './components/BulkAuthorizationUpdate';
 
 interface AuthorizationMember {
   id: string;
@@ -110,6 +107,7 @@ export default function AuthorizationTracker() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [showExpiringOnly, setShowExpiringOnly] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
   
   // Sorting state
   const [sortColumn, setSortColumn] = useState<string>('memberName');
@@ -283,6 +281,20 @@ export default function AuthorizationTracker() {
   // Handle summary card clicks for filtering
   const handleCardClick = (filterType: string) => {
     setSelectedFilter(filterType);
+    setSelectedMonth('all'); // Reset month filter when using summary cards
+    // Scroll to the members table
+    setTimeout(() => {
+      const tableElement = document.querySelector('[data-testid="members-table"]');
+      if (tableElement) {
+        tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
+  };
+
+  // Handle monthly expiration clicks for filtering
+  const handleMonthClick = (monthName: string) => {
+    setSelectedMonth(monthName);
+    setSelectedFilter('all'); // Reset other filters when using month filter
     // Scroll to the members table
     setTimeout(() => {
       const tableElement = document.querySelector('[data-testid="members-table"]');
@@ -295,6 +307,7 @@ export default function AuthorizationTracker() {
   // Clear filters
   const clearFilters = () => {
     setSelectedFilter('all');
+    setSelectedMonth('all');
     setSearchTerm('');
     setSelectedMCO('all');
     setSelectedStatus('all');
@@ -346,7 +359,39 @@ export default function AuthorizationTracker() {
         (selectedFilter === 'h2022Expiring' && member.h2022Status === 'expiring') ||
         (selectedFilter === 'expired' && (member.t2038Status === 'expired' || member.h2022Status === 'expired'));
       
-      return matchesSearch && matchesMCO && matchesStatus && matchesExpiring && matchesCardFilter;
+      // Month-based filtering
+      const matchesMonthFilter = selectedMonth === 'all' || (() => {
+        if (!selectedMonth) return true;
+        
+        // Parse the selected month (e.g., "Jan 2024")
+        const [monthName, year] = selectedMonth.split(' ');
+        const monthDate = new Date(`${monthName} 1, ${year}`);
+        const monthStart = startOfMonth(monthDate);
+        const monthEnd = endOfMonth(monthDate);
+        
+        // Check if either T2038 or H2022 expires in this month
+        const t2038ExpiresInMonth = member.authEndDateT2038 && (() => {
+          try {
+            const endDate = parseISO(member.authEndDateT2038);
+            return isWithinInterval(endDate, { start: monthStart, end: monthEnd });
+          } catch {
+            return false;
+          }
+        })();
+        
+        const h2022ExpiresInMonth = member.authEndDateH2022 && (() => {
+          try {
+            const endDate = parseISO(member.authEndDateH2022);
+            return isWithinInterval(endDate, { start: monthStart, end: monthEnd });
+          } catch {
+            return false;
+          }
+        })();
+        
+        return t2038ExpiresInMonth || h2022ExpiresInMonth;
+      })();
+      
+      return matchesSearch && matchesMCO && matchesStatus && matchesExpiring && matchesCardFilter && matchesMonthFilter;
     });
 
     // Then sort
@@ -394,7 +439,7 @@ export default function AuthorizationTracker() {
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [members, searchTerm, selectedMCO, selectedStatus, showExpiringOnly, selectedFilter, sortColumn, sortDirection]);
+  }, [members, searchTerm, selectedMCO, selectedStatus, showExpiringOnly, selectedFilter, selectedMonth, sortColumn, sortDirection]);
 
   // Summary stats and monthly expiration data
   const stats = useMemo(() => {
@@ -446,25 +491,6 @@ export default function AuthorizationTracker() {
       return acc;
     }, {} as Record<string, { total: number; needsAttention: number; t2038Active: number; h2022Active: number }>);
     
-    // Authorization type breakdown
-    const authBreakdown = {
-      t2038Only: members.filter(m => 
-        (m.authEndDateT2038 && !m.authEndDateH2022) || 
-        (m.t2038Status !== 'none' && m.h2022Status === 'none')
-      ).length,
-      h2022Only: members.filter(m => 
-        (!m.authEndDateT2038 && m.authEndDateH2022) || 
-        (m.t2038Status === 'none' && m.h2022Status !== 'none')
-      ).length,
-      both: members.filter(m => 
-        (m.authEndDateT2038 && m.authEndDateH2022) || 
-        (m.t2038Status !== 'none' && m.h2022Status !== 'none')
-      ).length,
-      neither: members.filter(m => 
-        (!m.authEndDateT2038 && !m.authEndDateH2022) || 
-        (m.t2038Status === 'none' && m.h2022Status === 'none')
-      ).length
-    };
     
     return { 
       total, 
@@ -473,8 +499,7 @@ export default function AuthorizationTracker() {
       h2022Expiring, 
       expired, 
       monthlyExpirations,
-      mcoBreakdown,
-      authBreakdown
+      mcoBreakdown
     };
   }, [members]);
 
@@ -512,10 +537,6 @@ export default function AuthorizationTracker() {
           <p className="text-muted-foreground">Track T2038 and H2022 authorization dates and renewals</p>
         </div>
         <div className="flex gap-2">
-          <BulkAuthorizationUpdate 
-            members={members} 
-            onUpdate={fetchAuthorizationData}
-          />
           <Button onClick={fetchAuthorizationData} disabled={isLoading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh Data
@@ -602,12 +623,19 @@ export default function AuthorizationTracker() {
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
             Authorization Expirations by Month
+            <span className="text-sm font-normal text-muted-foreground ml-2">(Click to filter)</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             {stats.monthlyExpirations.map((month, index) => (
-              <div key={month.month} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div 
+                key={month.month} 
+                className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors hover:bg-muted/70 ${
+                  selectedMonth === month.month ? 'bg-primary/10 border-2 border-primary' : 'bg-muted/50'
+                }`}
+                onClick={() => handleMonthClick(month.month)}
+              >
                 <div className="flex items-center gap-3">
                   <div className={`w-3 h-3 rounded-full ${
                     index === 0 ? 'bg-red-500' : 
@@ -686,50 +714,6 @@ export default function AuthorizationTracker() {
           </CardContent>
         </Card>
 
-        {/* Authorization Type Distribution */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" />
-              Authorization Type Distribution
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <DollarSign className="h-4 w-4 text-blue-600" />
-                  <span className="font-medium">T2038 Only</span>
-                </div>
-                <div className="font-bold text-blue-600">{stats.authBreakdown.t2038Only}</div>
-              </div>
-              
-              <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Building className="h-4 w-4 text-purple-600" />
-                  <span className="font-medium">H2022 Only</span>
-                </div>
-                <div className="font-bold text-purple-600">{stats.authBreakdown.h2022Only}</div>
-              </div>
-              
-              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span className="font-medium">Both T2038 & H2022</span>
-                </div>
-                <div className="font-bold text-green-600">{stats.authBreakdown.both}</div>
-              </div>
-              
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <X className="h-4 w-4 text-gray-600" />
-                  <span className="font-medium">No Authorizations</span>
-                </div>
-                <div className="font-bold text-gray-600">{stats.authBreakdown.neither}</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Filters */}
@@ -779,7 +763,7 @@ export default function AuthorizationTracker() {
               Expiring Only
             </Button>
             
-            {selectedFilter !== 'all' && (
+            {(selectedFilter !== 'all' || selectedMonth !== 'all') && (
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">
                   Filtered by: <span className="font-medium">
@@ -787,6 +771,7 @@ export default function AuthorizationTracker() {
                     {selectedFilter === 't2038Expiring' && 'T2038 Expiring'}
                     {selectedFilter === 'h2022Expiring' && 'H2022 Expiring'}
                     {selectedFilter === 'expired' && 'Expired'}
+                    {selectedMonth !== 'all' && `Expiring in ${selectedMonth}`}
                   </span>
                 </span>
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
