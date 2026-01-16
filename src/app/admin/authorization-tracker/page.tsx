@@ -21,6 +21,7 @@ import {
   RefreshCw, 
   Filter, 
   Download,
+  DollarSign,
   Building,
   User,
   Phone,
