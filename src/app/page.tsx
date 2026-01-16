@@ -131,7 +131,7 @@ export default function HomePage() {
       const data = await response.json();
 
       if (response.ok) {
-        enhancedToast.success('Beautiful Password Reset Email Sent! 🎨', 'Check your email (including spam/junk folder) for a professionally branded reset link from the Connections CalAIM Application Portal team.');
+        enhancedToast.success('Password Reset Email Sent', 'Check your email (including spam/junk folder) for a password reset link from the Connections CalAIM Application Portal.');
         setResetEmail('');
         return;
       } else {

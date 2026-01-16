@@ -144,8 +144,8 @@ export default function AdminLoginPage() {
 
       if (response.ok) {
         toast({
-          title: 'Beautiful Password Reset Email Sent! 🎨',
-          description: 'Check your email for a professional, branded password reset link from the Connections CalAIM Application Portal team.',
+          title: 'Password Reset Email Sent',
+          description: 'Check your email for a password reset link from the Connections CalAIM Application Portal.',
           className: 'bg-green-100 text-green-900 border-green-200'
         });
         setResetEmail('');
