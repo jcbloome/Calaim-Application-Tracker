@@ -719,15 +719,15 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
       next_steps_date: member.next_steps_date || '',
       last_updated: member.LastUpdated || member.last_updated || '',
       
-      // Kaiser Process Dates
-      Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date || '',
-      Kaiser_T2038_Received_Date: member.Kaiser_T2038_Received_Date || '',
-      Kaiser_Tier_Level_Requested_Date: member.Kaiser_Tier_Level_Requested_Date || '',
-      Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date || '',
+      // Kaiser Process Dates - using EXACT field names from Caspio screenshot
+      Kaiser_T2038_Requested_Date: member.Kaiser_T038_Requested || member.Kaiser_T2038_Requested || member.Kaiser_T2038_Requested_Date || '',
+      Kaiser_T2038_Received_Date: member.Kaiser_T038_Received || member.Kaiser_T2038_Received || member.Kaiser_T2038_Received_Date || '',
+      Kaiser_Tier_Level_Requested_Date: member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date || '',
+      Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received || member.Kaiser_Tier_Level_Received_Date || '',
       
-      // ILS RCFE Contract Dates
-      ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || '',
-      ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || '',
+      // ILS RCFE Contract Dates - try multiple field name variations
+      ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || member.ILS_RCFE_Sent_For_Contract || '',
+      ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || member.ILS_RCFE_Received_Contract || '',
       
       // Authorization fields
       authStartDateT2038: member.Authorization_Start_Date_T2038 || null,

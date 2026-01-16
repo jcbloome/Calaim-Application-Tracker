@@ -72,6 +72,25 @@ export default function ILSReportEditorPage() {
       const data = result.data as any;
       
       if (data.success && data.members) {
+        console.log('🔍 ILS REPORT DEBUG - First member fields:', Object.keys(data.members[0] || {}));
+        console.log('🔍 ILS REPORT DEBUG - Date fields in first member:', 
+          Object.keys(data.members[0] || {}).filter(key => 
+            key.toLowerCase().includes('t2038') || 
+            key.toLowerCase().includes('t038') ||
+            key.toLowerCase().includes('tier') || 
+            key.toLowerCase().includes('date') ||
+            key.toLowerCase().includes('requested') ||
+            key.toLowerCase().includes('received')
+          )
+        );
+        console.log('🔍 ILS REPORT DEBUG - Sample member date values:', {
+          Kaiser_T038_Requested: data.members[0]?.Kaiser_T038_Requested,
+          Kaiser_T2038_Requested: data.members[0]?.Kaiser_T2038_Requested,
+          Kaiser_T2038_Requested_Date: data.members[0]?.Kaiser_T2038_Requested_Date,
+          Kaiser_Tier_Level_Requested: data.members[0]?.Kaiser_Tier_Level_Requested,
+          Kaiser_Tier_Level_Requested_Date: data.members[0]?.Kaiser_Tier_Level_Requested_Date
+        });
+        
         // Filter for bottleneck statuses
         const bottleneckMembers = data.members
           .filter((member: any) => 
@@ -83,12 +102,15 @@ export default function ILSReportEditorPage() {
             memberMrn: member.memberMrn,
             client_ID2: member.client_ID2,
             Kaiser_Status: member.Kaiser_Status,
-            Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date,
-            Kaiser_T2038_Received_Date: member.Kaiser_T2038_Received_Date,
-            Kaiser_Tier_Level_Requested_Date: member.Kaiser_Tier_Level_Requested_Date,
-            Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date,
-            ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date,
-            ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date,
+            // Using EXACT field names from Caspio screenshot
+            Kaiser_T2038_Requested_Date: member.Kaiser_T038_Requested || member.Kaiser_T2038_Requested || member.Kaiser_T2038_Requested_Date || '',
+            Kaiser_T2038_Received_Date: member.Kaiser_T038_Received || member.Kaiser_T2038_Received || member.Kaiser_T2038_Received_Date || '',
+            // Tier Level fields from screenshot
+            Kaiser_Tier_Level_Requested_Date: member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date || '',
+            Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received || member.Kaiser_Tier_Level_Received_Date || '',
+            // Try multiple possible field names for ILS/RCFE dates
+            ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || member.ILS_RCFE_Sent_For_Contract || '',
+            ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || member.ILS_RCFE_Received_Contract || '',
             memberCounty: member.memberCounty,
             kaiser_user_assignment: member.kaiser_user_assignment
           }));
