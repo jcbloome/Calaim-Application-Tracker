@@ -5,7 +5,7 @@
 import '@/ai/firebase';
 
 import { Resend } from 'resend';
-import { render } from '@react-email/render';
+import { renderAsync } from '@react-email/render';
 import ApplicationStatusEmail from '@/components/emails/ApplicationStatusEmail';
 import ReminderEmail from '@/components/emails/ReminderEmail';
 import StaffAssignmentEmail from '@/components/emails/StaffAssignmentEmail';
@@ -82,7 +82,7 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
     const bccList = await getBccRecipients();
 
     try {
-        const emailHtml = render(ApplicationStatusEmail({
+        const emailHtml = await renderAsync(ApplicationStatusEmail({
             memberName,
             staffName,
             message,
@@ -117,7 +117,7 @@ export const sendReminderEmail = async (payload: ReminderPayload) => {
     }
 
     try {
-        const emailHtml = render(ReminderEmail({
+        const emailHtml = await renderAsync(ReminderEmail({
             referrerName,
             memberName,
             applicationId,
@@ -153,7 +153,7 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
     const bccList = await getBccRecipients();
 
     try {
-        const emailHtml = render(StaffAssignmentEmail({
+        const emailHtml = await renderAsync(StaffAssignmentEmail({
             staffName,
             memberName,
             memberMrn,

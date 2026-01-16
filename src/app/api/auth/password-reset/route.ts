@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import PasswordResetEmail from '@/components/emails/PasswordResetEmail';
-import { render } from '@react-email/render';
+import { renderAsync } from '@react-email/render';
 import crypto from 'crypto';
 import { resetTokenStore } from '@/lib/reset-tokens';
 
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     
     try {
       // Render the React email component to HTML
-      const emailHtml = render(PasswordResetEmail({
+      const emailHtml = await renderAsync(PasswordResetEmail({
         resetUrl,
         userEmail: email,
       }));
