@@ -22,9 +22,16 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('Password reset request received');
+    console.log('🔐 Password reset request received');
     const { email } = await request.json();
-    console.log('Email:', email);
+    console.log('📧 Email:', email);
+    
+    // Debug environment variables
+    console.log('🔧 Environment check:');
+    console.log('- RESEND_API_KEY:', process.env.RESEND_API_KEY ? '✅ Set' : '❌ Missing');
+    console.log('- FIREBASE_PROJECT_ID:', process.env.FIREBASE_PROJECT_ID ? '✅ Set' : '❌ Missing');
+    console.log('- FIREBASE_CLIENT_EMAIL:', process.env.FIREBASE_CLIENT_EMAIL ? '✅ Set' : '❌ Missing');
+    console.log('- FIREBASE_PRIVATE_KEY:', process.env.FIREBASE_PRIVATE_KEY ? '✅ Set' : '❌ Missing');
 
     if (!email) {
       console.log('No email provided');
@@ -36,9 +43,17 @@ export async function POST(request: NextRequest) {
 
     // Check if required environment variables are set
     if (!process.env.RESEND_API_KEY) {
-      console.error('RESEND_API_KEY not set');
+      console.error('❌ RESEND_API_KEY not set');
       return NextResponse.json(
-        { error: 'Email service not configured' },
+        { error: 'Email service not configured - missing RESEND_API_KEY' },
+        { status: 500 }
+      );
+    }
+    
+    if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
+      console.error('❌ Firebase credentials incomplete');
+      return NextResponse.json(
+        { error: 'Firebase service not configured - missing credentials' },
         { status: 500 }
       );
     }
@@ -78,12 +93,13 @@ export async function POST(request: NextRequest) {
     const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://studio-2881432245-f1d94.firebaseapp.com'}/reset-password?token=${resetToken}`;
 
     // Send beautiful email using Resend
-    console.log('Sending email to:', email);
-    console.log('Reset URL:', resetUrl);
-    await resend.emails.send({
-      from: 'CalAIM Application Portal <noreply@studio-2881432245-f1d94.firebaseapp.com>',
+    console.log('📤 Sending custom CalAIM branded email to:', email);
+    console.log('🔗 Reset URL:', resetUrl);
+    
+    const emailResult = await resend.emails.send({
+      from: 'Connections CalAIM Application Portal <noreply@studio-2881432245-f1d94.firebaseapp.com>',
       to: email,
-      subject: 'Reset Your CalAIM Application Portal Password',
+      subject: 'Reset Your Connections CalAIM Application Portal Password',
       html: `
         <!DOCTYPE html>
         <html lang="en">
@@ -176,14 +192,14 @@ export async function POST(request: NextRequest) {
         <body>
           <div class="container">
             <div class="header">
-              <div class="logo">🏥 CalAIM Application Portal</div>
+              <img src="${process.env.NEXT_PUBLIC_APP_URL || 'https://studio-2881432245-f1d94.firebaseapp.com'}/calaimlogopdf.png" alt="Connections CalAIM Logo" style="max-width: 300px; height: auto; margin-bottom: 20px;">
               <h1 class="title">Reset Your Password</h1>
               <p class="subtitle">We received a request to reset your password</p>
             </div>
             
             <div class="content">
               <p>Hello,</p>
-              <p>You recently requested to reset your password for your CalAIM Application Portal account. Click the button below to reset it:</p>
+              <p>You recently requested to reset your password for your Connections CalAIM Application Portal account. Click the button below to reset it:</p>
               
               <div style="text-align: center; margin: 30px 0;">
                 <a href="${resetUrl}" class="reset-button">Reset My Password</a>
@@ -205,7 +221,7 @@ export async function POST(request: NextRequest) {
             </div>
             
             <div class="footer">
-              <p><strong>CalAIM Application Portal Team</strong></p>
+              <p><strong>Connections CalAIM Application Portal Team</strong></p>
               <p>This email was sent to ${email}</p>
               <p>If you have any questions, please contact our support team.</p>
               <p style="margin-top: 20px; font-size: 12px; color: #94a3b8;">
@@ -217,11 +233,11 @@ export async function POST(request: NextRequest) {
         </html>
       `,
       text: `
-        CalAIM Application Portal - Reset Your Password
+        Connections CalAIM Application Portal - Reset Your Password
         
         Hello,
         
-        You recently requested to reset your password for your CalAIM Application Portal account.
+        You recently requested to reset your password for your Connections CalAIM Application Portal account.
         
         Click this link to reset your password: ${resetUrl}
         
@@ -229,9 +245,11 @@ export async function POST(request: NextRequest) {
         
         If you didn't request this reset, you can safely ignore this email.
         
-        CalAIM Application Portal Team
+        Connections CalAIM Application Portal Team
       `,
     });
+    
+    console.log('✅ Custom email sent successfully:', emailResult);
 
     return NextResponse.json(
       { message: 'If an account with this email exists, you will receive a password reset email.' },

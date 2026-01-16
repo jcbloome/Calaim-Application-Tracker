@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
     // Fetch ALL members from CalAIM_tbl_Members table
     const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
     const apiUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
-    const response = await fetch(`${apiUrl}?q.limit=1000`, {
+    const response = await fetch(`${apiUrl}?q.limit=5000`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
         memberMediCalNum: member.MC || '',
         memberMrn: member.MCP_CIN || '',
         memberCounty: member.Member_County || '',
-        memberHealthPlan: member.CalAIM_MCP || '',
+        memberHealthPlan: member.CalAIM_MCP || member.MC_Plan || member.Health_Plan || member.MCP || 'Unknown',
         memberStatus: member.CalAIM_Status || '',
         
         // Authorization fields - using EXACT field names from your Caspio table
