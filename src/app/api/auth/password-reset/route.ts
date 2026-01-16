@@ -1,22 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import * as admin from 'firebase-admin';
-import crypto from 'crypto';
-
-// Initialize Firebase Admin if not already initialized
-if (!admin.apps.length) {
-  try {
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-      }),
-    });
-  } catch (error) {
-    console.error('Firebase Admin initialization error:', error);
-  }
-}
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '@/firebase';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -29,9 +14,6 @@ export async function POST(request: NextRequest) {
     // Debug environment variables
     console.log('🔧 Environment check:');
     console.log('- RESEND_API_KEY:', process.env.RESEND_API_KEY ? '✅ Set' : '❌ Missing');
-    console.log('- FIREBASE_PROJECT_ID:', process.env.FIREBASE_PROJECT_ID ? '✅ Set' : '❌ Missing');
-    console.log('- FIREBASE_CLIENT_EMAIL:', process.env.FIREBASE_CLIENT_EMAIL ? '✅ Set' : '❌ Missing');
-    console.log('- FIREBASE_PRIVATE_KEY:', process.env.FIREBASE_PRIVATE_KEY ? '✅ Set' : '❌ Missing');
 
     if (!email) {
       console.log('No email provided');
@@ -41,59 +23,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if required environment variables are set
+    // Check if Resend API key is available for beautiful emails
     if (!process.env.RESEND_API_KEY) {
-      console.error('❌ RESEND_API_KEY not set');
-      return NextResponse.json(
-        { error: 'Email service not configured - missing RESEND_API_KEY' },
-        { status: 500 }
-      );
-    }
-    
-    if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
-      console.error('❌ Firebase credentials incomplete');
-      return NextResponse.json(
-        { error: 'Firebase service not configured - missing credentials' },
-        { status: 500 }
-      );
-    }
-
-    // Verify user exists in Firebase Auth
-    const auth = admin.auth();
-    const firestore = admin.firestore();
-    let userRecord;
-    
-    try {
-      userRecord = await auth.getUserByEmail(email);
-    } catch (error: any) {
-      if (error.code === 'auth/user-not-found') {
-        // Don't reveal if user exists or not for security
+      console.log('⚠️ RESEND_API_KEY not set, falling back to Firebase default');
+      // Fallback to Firebase default
+      try {
+        await sendPasswordResetEmail(auth, email);
         return NextResponse.json(
-          { message: 'If an account with this email exists, you will receive a password reset email.' },
+          { message: 'Password reset email sent (using Firebase default).' },
           { status: 200 }
         );
+      } catch (error: any) {
+        console.error('Firebase fallback failed:', error);
+        return NextResponse.json(
+          { error: 'Failed to send password reset email' },
+          { status: 500 }
+        );
       }
-      throw error;
     }
 
-    // Generate secure reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 3600000); // 1 hour from now
+    // First, trigger Firebase password reset to get the actual reset link
+    try {
+      await sendPasswordResetEmail(auth, email);
+      console.log('✅ Firebase reset email triggered - user will receive both emails');
+    } catch (error: any) {
+      console.error('Firebase reset failed:', error);
+      return NextResponse.json(
+        { error: 'Failed to generate password reset' },
+        { status: 500 }
+      );
+    }
 
-    // Store reset token in Firestore
-    await firestore.collection('passwordResets').doc(resetToken).set({
-      email: email,
-      userId: userRecord.uid,
-      expiresAt: expiresAt,
-      used: false,
-      createdAt: new Date(),
-    });
+    // Create a link to the login page since Firebase will send the actual reset link
+    const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/admin/login`;
 
-    // Create reset URL
-    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://studio-2881432245-f1d94.firebaseapp.com'}/reset-password?token=${resetToken}`;
-
-    // Send beautiful email using Resend
-    console.log('📤 Sending custom CalAIM branded email to:', email);
+    // Send beautiful email using Resend (without Firebase Admin dependency)
+    console.log('📤 Sending beautiful CalAIM branded email to:', email);
     console.log('🔗 Reset URL:', resetUrl);
     
     const emailResult = await resend.emails.send({
@@ -199,24 +164,23 @@ export async function POST(request: NextRequest) {
             
             <div class="content">
               <p>Hello,</p>
-              <p>You recently requested to reset your password for your Connections CalAIM Application Portal account. Click the button below to reset it:</p>
-              
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${resetUrl}" class="reset-button">Reset My Password</a>
-              </div>
+              <p>You recently requested to reset your password for your Connections CalAIM Application Portal account.</p>
               
               <div class="info-box">
-                <strong>🔒 Security Information:</strong>
+                <strong>📧 Next Steps:</strong>
                 <ul style="margin: 10px 0; padding-left: 20px;">
-                  <li>This link will expire in 1 hour for your security</li>
-                  <li>If you didn't request this reset, you can safely ignore this email</li>
-                  <li>Your password won't change until you create a new one</li>
+                  <li><strong>Check your email</strong> - You'll receive a second email with the actual reset link</li>
+                  <li><strong>Look for the Firebase email</strong> - It will have the functional reset button</li>
+                  <li><strong>Click the reset link</strong> in that email to change your password</li>
                 </ul>
               </div>
               
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${loginUrl}" class="reset-button">Return to Login</a>
+              </div>
+              
               <div class="security-note">
-                <strong>⚠️ Can't click the button?</strong> Copy and paste this link into your browser:<br>
-                <span style="word-break: break-all; font-family: monospace; font-size: 12px;">${resetUrl}</span>
+                <strong>🔒 Security Note:</strong> If you didn't request this reset, you can safely ignore both emails. Your password won't change unless you complete the reset process.
               </div>
             </div>
             
@@ -239,28 +203,42 @@ export async function POST(request: NextRequest) {
         
         You recently requested to reset your password for your Connections CalAIM Application Portal account.
         
-        Click this link to reset your password: ${resetUrl}
+        NEXT STEPS:
+        1. Check your email for a second email with the actual reset link
+        2. Look for the Firebase email with the functional reset button
+        3. Click the reset link in that email to change your password
         
-        This link will expire in 1 hour for your security.
+        Return to login: ${loginUrl}
         
-        If you didn't request this reset, you can safely ignore this email.
+        If you didn't request this reset, you can safely ignore both emails.
         
         Connections CalAIM Application Portal Team
       `,
     });
     
-    console.log('✅ Custom email sent successfully:', emailResult);
+    console.log('✅ Beautiful custom email sent successfully:', emailResult);
 
     return NextResponse.json(
-      { message: 'If an account with this email exists, you will receive a password reset email.' },
+      { message: 'Beautiful password reset email sent! Check your inbox for the Connections CalAIM branded email.' },
       { status: 200 }
     );
 
   } catch (error) {
-    console.error('Password reset error:', error);
-    return NextResponse.json(
-      { error: 'Failed to send password reset email' },
-      { status: 500 }
-    );
+    console.error('Beautiful email failed, trying Firebase fallback:', error);
+    
+    // Fallback to Firebase default if Resend fails
+    try {
+      await sendPasswordResetEmail(auth, email);
+      return NextResponse.json(
+        { message: 'Password reset email sent (using Firebase fallback).' },
+        { status: 200 }
+      );
+    } catch (fallbackError) {
+      console.error('Both custom and Firebase fallback failed:', fallbackError);
+      return NextResponse.json(
+        { error: 'Failed to send password reset email' },
+        { status: 500 }
+      );
+    }
   }
 }
