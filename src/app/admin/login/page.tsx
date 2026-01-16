@@ -131,43 +131,27 @@ export default function AdminLoginPage() {
 
     setIsResettingPassword(true);
     try {
-      // Try custom API first, fallback to Firebase if it fails
-      try {
-        const response = await fetch('/api/auth/password-reset', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ email: resetEmail }),
-        });
+      // Use our custom password reset API exclusively - no more ugly Firebase emails!
+      const response = await fetch('/api/auth/password-reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: resetEmail }),
+      });
 
-        const data = await response.json();
+      const data = await response.json();
 
-        if (response.ok) {
-          toast({
-            title: 'Password Reset Email Sent',
-            description: 'Check your email for a professional password reset link from the CalAIM Application Portal team.',
-            className: 'bg-green-100 text-green-900 border-green-200'
-          });
-          setResetEmail('');
-          return;
-        } else {
-          throw new Error(data.error || 'Custom API failed');
-        }
-      } catch (customApiError) {
-        console.log('Custom API failed, falling back to Firebase:', customApiError);
-        
-        // Fallback to Firebase default
-        const { sendPasswordResetEmail } = await import('firebase/auth');
-        const { auth } = await import('@/firebase');
-        
-        await sendPasswordResetEmail(auth, resetEmail);
+      if (response.ok) {
         toast({
-          title: 'Password Reset Email Sent',
-          description: 'Check your email for instructions to reset your password.',
+          title: 'Beautiful Password Reset Email Sent! 🎨',
+          description: 'Check your email for a professional, branded password reset link from the Connections CalAIM Application Portal team.',
           className: 'bg-green-100 text-green-900 border-green-200'
         });
         setResetEmail('');
+        return;
+      } else {
+        throw new Error(data.error || 'Failed to send password reset email');
       }
     } catch (err: any) {
       console.error('Password reset error:', err);

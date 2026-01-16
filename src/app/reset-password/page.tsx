@@ -19,8 +19,9 @@ function ResetPasswordContent() {
   const auth = useAuth();
   const { toast } = useToast();
   
-  const email = searchParams.get('email');
-  const oobCode = searchParams.get('oobCode');
+  const token = searchParams.get('token');
+  const oobCode = searchParams.get('oobCode'); // Keep for backward compatibility
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -32,32 +33,38 @@ function ResetPasswordContent() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    if (oobCode) {
-      // Firebase reset link with oobCode - this is valid
-      setResetValid(true);
-      setIsValidating(false);
-    } else if (email) {
-      // Custom email link - trigger Firebase reset
-      const triggerFirebaseReset = async () => {
-        try {
-          const { sendPasswordResetEmail } = await import('firebase/auth');
-          const { auth } = await import('@/firebase');
-          
-          await sendPasswordResetEmail(auth, email);
-          setError('Please check your email for the Firebase reset link and use that link instead.');
-        } catch (error) {
-          setError('Failed to send Firebase reset email. Please try the forgot password process again.');
-        } finally {
-          setIsValidating(false);
-        }
-      };
+    const validateToken = async () => {
+      if (oobCode) {
+        // Firebase reset link with oobCode - this is valid (backward compatibility)
+        setResetValid(true);
+        setIsValidating(false);
+        return;
+      }
       
-      triggerFirebaseReset();
-    } else {
-      setError('Invalid or missing reset parameters');
+      if (token) {
+        // Custom token - validate it
+        try {
+          const response = await fetch(`/api/auth/password-reset?token=${token}`);
+          const data = await response.json();
+          
+          if (response.ok && data.valid) {
+            setEmail(data.email);
+            setResetValid(true);
+          } else {
+            setError(data.error || 'Invalid or expired reset token');
+          }
+        } catch (error) {
+          setError('Failed to validate reset token');
+        }
+      } else {
+        setError('Invalid or missing reset parameters');
+      }
+      
       setIsValidating(false);
-    }
-  }, [email, oobCode]);
+    };
+
+    validateToken();
+  }, [token, oobCode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,16 +80,39 @@ function ResetPasswordContent() {
       return;
     }
 
-    if (!auth || !oobCode) {
-      setError('Authentication service not available or invalid reset link');
-      return;
-    }
-
     setIsLoading(true);
 
     try {
-      // Use Firebase's confirmPasswordReset with the oobCode
-      await confirmPasswordReset(auth, oobCode, password);
+      if (oobCode) {
+        // Firebase reset flow (backward compatibility)
+        if (!auth) {
+          setError('Authentication service not available');
+          return;
+        }
+        
+        await confirmPasswordReset(auth, oobCode, password);
+      } else if (token) {
+        // Custom token reset flow
+        const response = await fetch('/api/auth/reset-password-confirm', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            token,
+            newPassword: password,
+          }),
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to reset password');
+        }
+      } else {
+        setError('Invalid reset method');
+        return;
+      }
 
       setSuccess(true);
       toast({
