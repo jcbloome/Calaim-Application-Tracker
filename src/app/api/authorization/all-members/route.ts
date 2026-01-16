@@ -93,7 +93,12 @@ export async function GET(req: NextRequest) {
         console.log('- MC_Plan:', sample.MC_Plan);
         console.log('- Health_Plan:', sample.Health_Plan);
         console.log('- MCP:', sample.MCP);
-        console.log('- All fields:', Object.keys(sample).filter(key => key.toLowerCase().includes('plan') || key.toLowerCase().includes('mcp')));
+        console.log('- MCP_CIN:', sample.MCP_CIN);
+        console.log('- Name_Other_MCP:', sample.Name_Other_MCP);
+        console.log('- Will_Swith_To_What_MCP:', sample.Will_Swith_To_What_MCP);
+        console.log('- All MCP/Plan fields:', Object.keys(sample).filter(key => key.toLowerCase().includes('plan') || key.toLowerCase().includes('mcp') || key.toLowerCase().includes('kaiser') || key.toLowerCase().includes('health')));
+        console.log('- First 10 field names:', Object.keys(sample).slice(0, 10));
+        console.log('- Sample member data:', JSON.stringify(sample, null, 2).substring(0, 500) + '...');
       }
       
     } while (pageToken && pageCount < maxPages);
@@ -110,7 +115,7 @@ export async function GET(req: NextRequest) {
         memberMediCalNum: member.MC || '',
         memberMrn: member.MCP_CIN || '',
         memberCounty: member.Member_County || '',
-        memberHealthPlan: member.CalAIM_MCP || member.MC_Plan || member.Health_Plan || member.MCP || member.MCO || member.Plan_Name || 'Unknown',
+        memberHealthPlan: member.CalAIM_MCP || member.CalAIM_MCO || member.HealthPlan || member.MC_Plan || member.Health_Plan || member.MCP || member.MCO || member.Plan_Name || 'Unknown',
         memberStatus: member.CalAIM_Status || '',
         
         // Authorization fields - using EXACT field names from your Caspio table
