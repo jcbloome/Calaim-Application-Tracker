@@ -85,41 +85,6 @@ export function UpdateAuthorizationDialog({ member, onUpdate }: UpdateAuthorizat
     });
   };
 
-  // Quick preset buttons for common scenarios
-  const applyPreset = (preset: string) => {
-    const today = new Date();
-    const todayStr = format(today, 'yyyy-MM-dd');
-    
-    switch (preset) {
-      case 'health-net-new':
-        setAuthData({
-          authStartDateT2038: todayStr,
-          authEndDateT2038: format(addMonths(today, 6), 'yyyy-MM-dd'),
-          authStartDateH2022: todayStr,
-          authEndDateH2022: format(addMonths(today, 6), 'yyyy-MM-dd'),
-          authExtRequestDateT2038: '',
-          authExtRequestDateH2022: '',
-        });
-        break;
-      case 'kaiser-initial':
-        setAuthData({
-          authStartDateT2038: todayStr,
-          authEndDateT2038: '', // TBD for Kaiser
-          authStartDateH2022: '',
-          authEndDateH2022: '',
-          authExtRequestDateT2038: '',
-          authExtRequestDateH2022: '',
-        });
-        break;
-      case 'kaiser-h2022-placement':
-        setAuthData(prev => ({
-          ...prev,
-          authStartDateH2022: todayStr,
-          authEndDateH2022: format(addMonths(today, 6), 'yyyy-MM-dd'),
-        }));
-        break;
-    }
-  };
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -236,46 +201,6 @@ export function UpdateAuthorizationDialog({ member, onUpdate }: UpdateAuthorizat
             </CardContent>
           </Card>
 
-          {/* Quick Presets */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Quick Presets</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {isHealthNet && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => applyPreset('health-net-new')}
-                  >
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    New Health Net Member (Both Auth)
-                  </Button>
-                )}
-                {isKaiser && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => applyPreset('kaiser-initial')}
-                    >
-                      <DollarSign className="h-4 w-4 mr-2" />
-                      Kaiser Initial T2038
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => applyPreset('kaiser-h2022-placement')}
-                    >
-                      <Building className="h-4 w-4 mr-2" />
-                      Kaiser H2022 After Placement
-                    </Button>
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
 
           {/* Authorization Forms */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFunctions } from '@/firebase';
@@ -34,7 +33,6 @@ import {
   PieChart
 } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
-import { AuthorizationRulesDashboard } from '@/components/AuthorizationRulesDashboard';
 import { UpdateAuthorizationDialog } from './components/UpdateAuthorizationDialog';
 
 interface AuthorizationMember {
@@ -262,22 +260,6 @@ export default function AuthorizationTracker() {
   };
 
   // Removed auto-loading - data only loads when "Refresh Data" button is clicked
-
-  // Empty state component
-  const EmptyState = () => (
-    <div className="text-center py-12">
-      <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
-        <svg className="w-12 h-12 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-      </div>
-      <h3 className="text-lg font-semibold text-gray-900 mb-2">No Authorization Data Loaded</h3>
-      <p className="text-gray-600 mb-4">Click 'Refresh Data' to load authorization data from Caspio</p>
-      <Button onClick={fetchAuthorizationData} disabled={isLoading}>
-        {isLoading ? 'Loading...' : 'Refresh Data'}
-      </Button>
-    </div>
-  );
 
   // Handle summary card clicks for filtering
   const handleCardClick = (filterType: string) => {
@@ -545,11 +527,8 @@ export default function AuthorizationTracker() {
         </div>
       </div>
 
-      {/* Show empty state if no data loaded */}
-      {members.length === 0 && !isLoading ? (
-        <EmptyState />
-      ) : (
-        <>
+      {/* Always show the interface structure */}
+      <>
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <Card className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 'all' ? 'ring-2 ring-blue-500' : ''}`} 
@@ -811,14 +790,6 @@ export default function AuthorizationTracker() {
         </CardContent>
       </Card>
 
-      {/* Authorization Rules Dashboard */}
-      <Tabs defaultValue="tracker" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="tracker">Authorization Tracker</TabsTrigger>
-          <TabsTrigger value="rules">MCO Rules & Guidelines</TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value="tracker">
           {/* Authorization Table */}
           <Card>
         <CardHeader>
@@ -830,19 +801,6 @@ export default function AuthorizationTracker() {
               <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
               <p>Loading authorization data...</p>
             </div>
-          ) : filteredAndSortedMembers.length === 0 ? (
-            <EmptyState
-              icon={Calendar}
-              title="No Authorization Data"
-              description="No members found matching your current filters."
-              actionLabel="Clear Filters"
-              actionOnClick={() => {
-                setSearchTerm('');
-                setSelectedMCO('all');
-                setSelectedStatus('all');
-                setShowExpiringOnly(false);
-              }}
-            />
           ) : (
             <div className="overflow-x-auto">
               <Table data-testid="members-table">
@@ -929,7 +887,26 @@ export default function AuthorizationTracker() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredAndSortedMembers.map((member) => (
+                  {filteredAndSortedMembers.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={11} className="text-center py-8">
+                        {members.length === 0 ? (
+                          <div className="text-muted-foreground">
+                            <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p className="font-medium">No Authorization Data Loaded</p>
+                            <p className="text-sm">Click 'Refresh Data' to load authorization data from Caspio</p>
+                          </div>
+                        ) : (
+                          <div className="text-muted-foreground">
+                            <Filter className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p className="font-medium">No Members Match Current Filters</p>
+                            <p className="text-sm">Try adjusting your search criteria or clear filters</p>
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredAndSortedMembers.map((member) => (
                     <TableRow key={member.id} className={member.needsAttention ? 'bg-red-50' : ''}>
                       <TableCell>
                         <div>
@@ -1084,19 +1061,13 @@ export default function AuthorizationTracker() {
                         />
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )))}
                 </TableBody>
               </Table>
             </div>
           )}
         </CardContent>
       </Card>
-        </TabsContent>
-        
-        <TabsContent value="rules">
-          <AuthorizationRulesDashboard />
-        </TabsContent>
-      </Tabs>
         </>
       )}
     </div>
