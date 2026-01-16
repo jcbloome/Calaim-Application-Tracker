@@ -67,20 +67,35 @@ interface AuthorizationMember {
 }
 
 const getAuthStatus = (endDate?: string): 'active' | 'expiring' | 'expired' | 'pending' | 'none' => {
-  if (!endDate) return 'none';
+  if (!endDate || endDate.trim() === '') return 'none';
   
-  const end = parseISO(endDate);
-  const today = new Date();
-  const daysRemaining = differenceInDays(end, today);
-  
-  if (daysRemaining < 0) return 'expired';
-  if (daysRemaining <= 14) return 'expiring';
-  return 'active';
+  try {
+    const end = parseISO(endDate);
+    if (isNaN(end.getTime())) return 'none'; // Invalid date
+    
+    const today = new Date();
+    const daysRemaining = differenceInDays(end, today);
+    
+    if (daysRemaining < 0) return 'expired';
+    if (daysRemaining <= 14) return 'expiring';
+    return 'active';
+  } catch (error) {
+    console.warn('Invalid date format:', endDate);
+    return 'none';
+  }
 };
 
 const getDaysRemaining = (endDate?: string): number | undefined => {
-  if (!endDate) return undefined;
-  return differenceInDays(parseISO(endDate), new Date());
+  if (!endDate || endDate.trim() === '') return undefined;
+  
+  try {
+    const end = parseISO(endDate);
+    if (isNaN(end.getTime())) return undefined; // Invalid date
+    
+    return differenceInDays(end, new Date());
+  } catch (error) {
+    return undefined;
+  }
 };
 
 export default function AuthorizationTracker() {
@@ -89,11 +104,12 @@ export default function AuthorizationTracker() {
   const functions = useFunctions();
   
   const [members, setMembers] = useState<AuthorizationMember[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMCO, setSelectedMCO] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [showExpiringOnly, setShowExpiringOnly] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState<string>('all');
   
   // Sorting state
   const [sortColumn, setSortColumn] = useState<string>('memberName');
@@ -165,33 +181,39 @@ export default function AuthorizationTracker() {
     });
   };
 
-  // Fetch authorization data using Kaiser function as temporary workaround
+  // Fetch ALL members with authorization data using API route with exact Caspio field names
   const fetchAuthorizationData = async () => {
     setIsLoading(true);
     try {
-      // Use the working Kaiser function and filter for authorization data
-      const fetchKaiserMembers = httpsCallable(functions, 'fetchKaiserMembersFromCaspio');
-      const result = await fetchKaiserMembers();
-      const kaiserData = result.data as any;
+      console.log('🔍 Fetching ALL members with authorization data from Caspio...');
       
-      // Filter and transform Kaiser data to authorization format
-      const allMembers = kaiserData.members || [];
-      const membersWithAuth = allMembers.filter((member: any) => 
-        member.authStartDateT2038 || member.authEndDateT2038 || 
-        member.authStartDateH2022 || member.authEndDateH2022
-      );
+      // Use API route that gets ALL members with exact field names
+      const response = await fetch('/api/authorization/all-members');
+      console.log('API Response status:', response.status);
+      if (!response.ok) {
+        throw new Error(`API failed: ${response.status}`);
+      }
       
-      // Transform to authorization format
-      const membersData = membersWithAuth.map((member: any) => ({
-        id: member.id || member.caspio_id,
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'API returned success: false');
+      }
+      
+      const allMembers = data.members || [];
+      console.log(`✅ Fetched ${allMembers.length} total members from Caspio`);
+      
+      // Transform to authorization format using exact field names
+      const membersData = allMembers.map((member: any) => ({
+        id: member.recordId || `member-${Math.random()}`,
         memberName: member.memberFirstName && member.memberLastName 
           ? `${member.memberFirstName} ${member.memberLastName}` 
-          : member.memberName || 'Unknown',
-        mrn: member.memberMrn || member.MCP_CIN || '',
-        healthPlan: member.HealthPlan || member.CalAIM_MCP || 'Unknown',
+          : 'Unknown Member',
+        mrn: member.memberMediCalNum || member.memberMrn || '',
+        healthPlan: member.memberHealthPlan || 'Unknown',
         primaryContact: member.primaryContact || '',
         contactPhone: member.contactPhone || '',
         contactEmail: member.contactEmail || '',
+        // Using exact Caspio field names you provided
         authStartDateT2038: member.authStartDateT2038,
         authEndDateT2038: member.authEndDateT2038,
         authStartDateH2022: member.authStartDateH2022,
@@ -228,9 +250,7 @@ export default function AuthorizationTracker() {
       });
     } catch (error: any) {
       console.error('Error fetching authorization data:', error);
-      
-      // Show mock data for any error
-      setMockData();
+      setError('Failed to fetch authorization data. Please try again.');
       
       toast({
         title: "Connection Error - Using Demo Data",
@@ -242,9 +262,44 @@ export default function AuthorizationTracker() {
     }
   };
 
-  useEffect(() => {
-    fetchAuthorizationData();
-  }, []);
+  // Removed auto-loading - data only loads when "Refresh Data" button is clicked
+
+  // Empty state component
+  const EmptyState = () => (
+    <div className="text-center py-12">
+      <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
+        <svg className="w-12 h-12 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      </div>
+      <h3 className="text-lg font-semibold text-gray-900 mb-2">No Authorization Data Loaded</h3>
+      <p className="text-gray-600 mb-4">Click 'Refresh Data' to load authorization data from Caspio</p>
+      <Button onClick={fetchAuthorizationData} disabled={isLoading}>
+        {isLoading ? 'Loading...' : 'Refresh Data'}
+      </Button>
+    </div>
+  );
+
+  // Handle summary card clicks for filtering
+  const handleCardClick = (filterType: string) => {
+    setSelectedFilter(filterType);
+    // Scroll to the members table
+    setTimeout(() => {
+      const tableElement = document.querySelector('[data-testid="members-table"]');
+      if (tableElement) {
+        tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
+  };
+
+  // Clear filters
+  const clearFilters = () => {
+    setSelectedFilter('all');
+    setSearchTerm('');
+    setSelectedMCO('all');
+    setSelectedStatus('all');
+    setShowExpiringOnly(false);
+  };
 
   // Handle column sorting
   const handleSort = (column: string) => {
@@ -284,7 +339,14 @@ export default function AuthorizationTracker() {
       
       const matchesExpiring = !showExpiringOnly || member.needsAttention;
       
-      return matchesSearch && matchesMCO && matchesStatus && matchesExpiring;
+      // Card-based filtering
+      const matchesCardFilter = selectedFilter === 'all' || 
+        (selectedFilter === 'needsAttention' && member.needsAttention) ||
+        (selectedFilter === 't2038Expiring' && member.t2038Status === 'expiring') ||
+        (selectedFilter === 'h2022Expiring' && member.h2022Status === 'expiring') ||
+        (selectedFilter === 'expired' && (member.t2038Status === 'expired' || member.h2022Status === 'expired'));
+      
+      return matchesSearch && matchesMCO && matchesStatus && matchesExpiring && matchesCardFilter;
     });
 
     // Then sort
@@ -332,7 +394,7 @@ export default function AuthorizationTracker() {
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [members, searchTerm, selectedMCO, selectedStatus, showExpiringOnly, sortColumn, sortDirection]);
+  }, [members, searchTerm, selectedMCO, selectedStatus, showExpiringOnly, selectedFilter, sortColumn, sortDirection]);
 
   // Summary stats and monthly expiration data
   const stats = useMemo(() => {
@@ -461,9 +523,15 @@ export default function AuthorizationTracker() {
         </div>
       </div>
 
+      {/* Show empty state if no data loaded */}
+      {members.length === 0 && !isLoading ? (
+        <EmptyState />
+      ) : (
+        <>
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-        <Card>
+        <Card className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 'all' ? 'ring-2 ring-blue-500' : ''}`} 
+              onClick={() => handleCardClick('all')}>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
               <User className="h-4 w-4 text-blue-600" />
@@ -475,7 +543,8 @@ export default function AuthorizationTracker() {
           </CardContent>
         </Card>
         
-        <Card>
+        <Card className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 'needsAttention' ? 'ring-2 ring-red-500' : ''}`} 
+              onClick={() => handleCardClick('needsAttention')}>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-red-600" />
@@ -487,7 +556,8 @@ export default function AuthorizationTracker() {
           </CardContent>
         </Card>
         
-        <Card>
+        <Card className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 't2038Expiring' ? 'ring-2 ring-orange-500' : ''}`} 
+              onClick={() => handleCardClick('t2038Expiring')}>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
               <DollarSign className="h-4 w-4 text-orange-600" />
@@ -499,7 +569,8 @@ export default function AuthorizationTracker() {
           </CardContent>
         </Card>
         
-        <Card>
+        <Card className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 'h2022Expiring' ? 'ring-2 ring-purple-500' : ''}`} 
+              onClick={() => handleCardClick('h2022Expiring')}>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
               <Building className="h-4 w-4 text-purple-600" />
@@ -511,7 +582,8 @@ export default function AuthorizationTracker() {
           </CardContent>
         </Card>
         
-        <Card>
+        <Card className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 'expired' ? 'ring-2 ring-red-500' : ''}`} 
+              onClick={() => handleCardClick('expired')}>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
               <X className="h-4 w-4 text-red-600" />
@@ -707,6 +779,23 @@ export default function AuthorizationTracker() {
               Expiring Only
             </Button>
             
+            {selectedFilter !== 'all' && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  Filtered by: <span className="font-medium">
+                    {selectedFilter === 'needsAttention' && 'Need Attention'}
+                    {selectedFilter === 't2038Expiring' && 'T2038 Expiring'}
+                    {selectedFilter === 'h2022Expiring' && 'H2022 Expiring'}
+                    {selectedFilter === 'expired' && 'Expired'}
+                  </span>
+                </span>
+                <Button variant="ghost" size="sm" onClick={clearFilters}>
+                  <X className="h-4 w-4 mr-1" />
+                  Clear
+                </Button>
+              </div>
+            )}
+            
             <Button
               variant="outline"
               onClick={() => {
@@ -770,7 +859,7 @@ export default function AuthorizationTracker() {
             />
           ) : (
             <div className="overflow-x-auto">
-              <Table>
+              <Table data-testid="members-table">
                 <TableHeader>
                   <TableRow>
                     <TableHead>
@@ -809,6 +898,7 @@ export default function AuthorizationTracker() {
                         </div>
                       </Button>
                     </TableHead>
+                    <TableHead>T2038 Start Date</TableHead>
                     <TableHead>
                       <Button 
                         variant="ghost" 
@@ -821,6 +911,7 @@ export default function AuthorizationTracker() {
                         </div>
                       </Button>
                     </TableHead>
+                    <TableHead>T2038 Request Date</TableHead>
                     <TableHead>
                       <Button 
                         variant="ghost" 
@@ -833,6 +924,7 @@ export default function AuthorizationTracker() {
                         </div>
                       </Button>
                     </TableHead>
+                    <TableHead>H2022 Start Date</TableHead>
                     <TableHead>
                       <Button 
                         variant="ghost" 
@@ -845,6 +937,7 @@ export default function AuthorizationTracker() {
                         </div>
                       </Button>
                     </TableHead>
+                    <TableHead>H2022 Request Date</TableHead>
                     <TableHead>Contact</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -865,14 +958,60 @@ export default function AuthorizationTracker() {
                         {getStatusBadge(member.t2038Status, member.t2038DaysRemaining)}
                       </TableCell>
                       <TableCell>
+                        {member.authStartDateT2038 ? (
+                          <div className="text-sm">
+                            {(() => {
+                              try {
+                                const date = parseISO(member.authStartDateT2038);
+                                return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
+                              } catch {
+                                return '-';
+                              }
+                            })()}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         {member.authEndDateT2038 ? (
                           <div className="text-sm">
-                            {format(parseISO(member.authEndDateT2038), 'MMM d, yyyy')}
+                            {(() => {
+                              try {
+                                const date = parseISO(member.authEndDateT2038);
+                                return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
+                              } catch {
+                                return '-';
+                              }
+                            })()}
                             {member.authExtRequestDateT2038 && (
                               <p className="text-xs text-muted-foreground">
-                                Ext Req: {format(parseISO(member.authExtRequestDateT2038), 'MMM d')}
+                                Ext Req: {(() => {
+                                  try {
+                                    const date = parseISO(member.authExtRequestDateT2038);
+                                    return isNaN(date.getTime()) ? '-' : format(date, 'MMM d');
+                                  } catch {
+                                    return '-';
+                                  }
+                                })()}
                               </p>
                             )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {member.authExtRequestDateT2038 ? (
+                          <div className="text-sm">
+                            {(() => {
+                              try {
+                                const date = parseISO(member.authExtRequestDateT2038);
+                                return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
+                              } catch {
+                                return '-';
+                              }
+                            })()}
                           </div>
                         ) : (
                           <span className="text-muted-foreground">-</span>
@@ -882,14 +1021,60 @@ export default function AuthorizationTracker() {
                         {getStatusBadge(member.h2022Status, member.h2022DaysRemaining)}
                       </TableCell>
                       <TableCell>
+                        {member.authStartDateH2022 ? (
+                          <div className="text-sm">
+                            {(() => {
+                              try {
+                                const date = parseISO(member.authStartDateH2022);
+                                return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
+                              } catch {
+                                return '-';
+                              }
+                            })()}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         {member.authEndDateH2022 ? (
                           <div className="text-sm">
-                            {format(parseISO(member.authEndDateH2022), 'MMM d, yyyy')}
+                            {(() => {
+                              try {
+                                const date = parseISO(member.authEndDateH2022);
+                                return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
+                              } catch {
+                                return '-';
+                              }
+                            })()}
                             {member.authExtRequestDateH2022 && (
                               <p className="text-xs text-muted-foreground">
-                                Ext Req: {format(parseISO(member.authExtRequestDateH2022), 'MMM d')}
+                                Ext Req: {(() => {
+                                  try {
+                                    const date = parseISO(member.authExtRequestDateH2022);
+                                    return isNaN(date.getTime()) ? '-' : format(date, 'MMM d');
+                                  } catch {
+                                    return '-';
+                                  }
+                                })()}
                               </p>
                             )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {member.authExtRequestDateH2022 ? (
+                          <div className="text-sm">
+                            {(() => {
+                              try {
+                                const date = parseISO(member.authExtRequestDateH2022);
+                                return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
+                              } catch {
+                                return '-';
+                              }
+                            })()}
                           </div>
                         ) : (
                           <span className="text-muted-foreground">-</span>
@@ -926,6 +1111,8 @@ export default function AuthorizationTracker() {
           <AuthorizationRulesDashboard />
         </TabsContent>
       </Tabs>
+        </>
+      )}
     </div>
   );
 }

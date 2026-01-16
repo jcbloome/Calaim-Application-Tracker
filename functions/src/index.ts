@@ -533,6 +533,8 @@ export const syncKaiserStatus = onCall(async (request) => {
 
 // Fetch Kaiser members from Caspio
 export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
+  // Check if we should return ALL members (for Authorization Tracker) or just Kaiser members
+  const includeAllMembers = request.data?.includeAllMembers === true;
   try {
     console.log('📥 Fetching Kaiser members from Caspio...');
     
@@ -628,39 +630,43 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
       }))
     );
     
-    // Filter for Kaiser members using multiple possible field names
-    const kaiserMembers = allMembers.filter(member => 
+    // Filter for Kaiser members OR return all members based on parameter
+    const membersToProcess = includeAllMembers ? allMembers : allMembers.filter(member => 
       member.CalAIM_MCP === 'Kaiser' || 
       member.CalAIM_MCO === 'Kaiser' ||
       member.HealthPlan === 'Kaiser' ||
       member.Kaiser_Status // Any member with a Kaiser status
     );
     
-    console.log(`🏥 Filtered to Kaiser members: ${kaiserMembers.length} out of ${allMembers.length} total`);
+    if (includeAllMembers) {
+      console.log(`📊 Including ALL members: ${membersToProcess.length} total members`);
+    } else {
+      console.log(`🏥 Filtered to Kaiser members: ${membersToProcess.length} out of ${allMembers.length} total`);
+    }
     
     // Debug: Log first member's fields to verify correct mapping
-    if (kaiserMembers.length > 0) {
-      console.log('📋 Sample Kaiser member fields:', Object.keys(kaiserMembers[0]));
-      console.log('📋 Sample Kaiser member data with CORRECT field names:', {
-        Senior_First: kaiserMembers[0].Senior_First,
-        Senior_Last: kaiserMembers[0].Senior_Last,
-        MC: kaiserMembers[0].MC,
-        MCP_CIN: kaiserMembers[0].MCP_CIN,
-        Member_County: kaiserMembers[0].Member_County,
-        SNF_Diversion_or_Transition: kaiserMembers[0].SNF_Diversion_or_Transition,
-        CalAIM_Status: kaiserMembers[0].CalAIM_Status,
-        Kaiser_Status: kaiserMembers[0].Kaiser_Status,
-        Kaiser_User_Assignment: kaiserMembers[0].Kaiser_User_Assignment,
-        CalAIM_MCP: kaiserMembers[0].CalAIM_MCP,
-        client_ID2: kaiserMembers[0].client_ID2,
-        Client_ID2: kaiserMembers[0].Client_ID2,
-        CLIENT_ID2: kaiserMembers[0].CLIENT_ID2,
-        clientID2: kaiserMembers[0].clientID2,
-        ClientID2: kaiserMembers[0].ClientID2
+    if (membersToProcess.length > 0) {
+      console.log('📋 Sample member fields:', Object.keys(membersToProcess[0]));
+      console.log('📋 Sample member data with CORRECT field names:', {
+        Senior_First: membersToProcess[0].Senior_First,
+        Senior_Last: membersToProcess[0].Senior_Last,
+        MC: membersToProcess[0].MC,
+        MCP_CIN: membersToProcess[0].MCP_CIN,
+        Member_County: membersToProcess[0].Member_County,
+        SNF_Diversion_or_Transition: membersToProcess[0].SNF_Diversion_or_Transition,
+        CalAIM_Status: membersToProcess[0].CalAIM_Status,
+        Kaiser_Status: membersToProcess[0].Kaiser_Status,
+        Kaiser_User_Assignment: membersToProcess[0].Kaiser_User_Assignment,
+        CalAIM_MCP: membersToProcess[0].CalAIM_MCP,
+        client_ID2: membersToProcess[0].client_ID2,
+        Client_ID2: membersToProcess[0].Client_ID2,
+        CLIENT_ID2: membersToProcess[0].CLIENT_ID2,
+        clientID2: membersToProcess[0].clientID2,
+        ClientID2: membersToProcess[0].ClientID2
       });
     }
     
-    const transformedMembers = kaiserMembers.map((member: any, index: number) => {
+    const transformedMembers = membersToProcess.map((member: any, index: number) => {
       const kaiserStatus = member.Kaiser_Status || '';
       const nextStep = getNextStepForStatus(kaiserStatus);
       
@@ -708,8 +714,8 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
       authEndDateT2038: member.Authorization_End_Date_T2038 || null,
       authStartDateH2022: member.Authorization_Start_Date_H2022 || null,
       authEndDateH2022: member.Authorization_End_Date_H2022 || null,
-      authExtRequestDateT2038: member.Auth_Ext_Request_Date_T2038 || null,
-      authExtRequestDateH2022: member.Auth_Ext_Request_Date_H2022 || null,
+      authExtRequestDateT2038: member.Requested_Auth_Extension_T2038 || null,
+      authExtRequestDateH2022: member.Requested_Auth_Extension_H2022 || null,
       
       // Caspio record info
       caspio_id: member.client_ID2 || member.Client_ID2 || member.CLIENT_ID2 || member.clientID2 || member.ClientID2 || member.id || `caspio-${index}`,
@@ -858,8 +864,8 @@ export const fetchILSMembersFromCaspio = onCall(async (request) => {
       authEndDateT2038: member.Authorization_End_Date_T2038 || null,
       authStartDateH2022: member.Authorization_Start_Date_H2022 || null,
       authEndDateH2022: member.Authorization_End_Date_H2022 || null,
-      authExtRequestDateT2038: member.Auth_Ext_Request_Date_T2038 || null,
-      authExtRequestDateH2022: member.Auth_Ext_Request_Date_H2022 || null,
+      authExtRequestDateT2038: member.Requested_Auth_Extension_T2038 || null,
+      authExtRequestDateH2022: member.Requested_Auth_Extension_H2022 || null,
       
       // Raw member data for debugging
       _rawData: member
@@ -1546,3 +1552,103 @@ export const publishCsSummaryToCaspio = onCall({
 });
 // Authorization Tracker
 export { fetchAuthorizationMembers, updateMemberAuthorization } from './authorization-tracker';
+
+/**
+ * Fetch ALL members from Caspio for Authorization Tracker (Kaiser + Health Net)
+ */
+export const fetchAllMembersForAuthorization = onCall(async (request) => {
+  try {
+    console.log('🔍 Starting fetchAllMembersForAuthorization...');
+    
+    // Get OAuth token using the same method as Kaiser function
+    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+    
+    const tokenUrl = `${baseUrl}/oauth/token`;
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: 'grant_type=client_credentials',
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      console.error('❌ Caspio OAuth failed:', { status: tokenResponse.status, error: errorText });
+      throw new HttpsError('internal', 'Failed to authenticate with Caspio');
+    }
+
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    
+    console.log('✅ Got Caspio access token successfully');
+    
+    // Fetch ALL members from CalAIM_tbl_Members table
+    const apiUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
+    const response = await fetch(`${apiUrl}?q.limit=1000`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Failed to fetch members from Caspio:', { status: response.status, error: errorText });
+      throw new HttpsError('internal', 'Failed to fetch member data from Caspio');
+    }
+
+    const data = await response.json();
+    const allMembers = data.Result || [];
+    
+    console.log(`📊 Fetched ${allMembers.length} total members from Caspio`);
+    
+    // Transform data for Authorization Tracker (include ALL members, not just Kaiser)
+    const transformedMembers = allMembers.map((member: any, index: number) => {
+      return {
+        // Basic info using EXACT Caspio field names
+        memberFirstName: member.Senior_First || '',
+        memberLastName: member.Senior_Last || '',
+        memberMediCalNum: member.MC || '',
+        memberMrn: member.MCP_CIN || '',
+        memberCounty: member.Member_County || '',
+        memberHealthPlan: member.CalAIM_MCP || '',
+        memberStatus: member.CalAIM_Status || '',
+        
+        // Authorization fields (the ones you need for Authorization Tracker)
+        authStartDateT2038: member.Authorization_Start_Date_T2038 || '',
+        authEndDateT2038: member.Authorization_End_Date_T2038 || '',
+        authStartDateH2022: member.Authorization_Start_Date_H2022 || '',
+        authEndDateH2022: member.Authorization_End_Date_H2022 || '',
+        authExtRequestDateT2038: member.Requested_Auth_Extension_T2038 || '',
+        authExtRequestDateH2022: member.Requested_Auth_Extension_H2022 || '',
+        
+        // Additional useful fields
+        recordId: member.Record_ID || '',
+        primaryContact: member.Primary_Contact || '',
+        contactPhone: member.Contact_Phone || '',
+        contactEmail: member.Contact_Email || '',
+      };
+    });
+    
+    console.log(`✅ Transformed ${transformedMembers.length} members for authorization tracking`);
+    
+    return transformedMembers;
+    
+  } catch (error) {
+    console.error('❌ Error in fetchAllMembersForAuthorization:', error);
+    
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    
+    throw new HttpsError('internal', 'Failed to fetch authorization data');
+  }
+});

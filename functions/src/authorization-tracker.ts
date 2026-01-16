@@ -9,10 +9,13 @@ interface CaspioAuthResponse {
 
 interface CaspioMemberRecord {
   Record_ID: string;
-  First_Name: string;
-  Last_Name: string;
-  MRN: string;
-  Health_Plan: string;
+  Senior_First: string;
+  Senior_Last: string;
+  MC: string;
+  MCP_CIN: string;
+  CalAIM_MCP: string;
+  Member_County: string;
+  CalAIM_Status: string;
   Primary_Contact: string;
   Contact_Phone: string;
   Contact_Email: string;
@@ -22,8 +25,8 @@ interface CaspioMemberRecord {
   Authorization_End_Date_T2038?: string;
   Authorization_Start_Date_H2022?: string;
   Authorization_End_Date_H2022?: string;
-  Auth_Ext_Request_Date_T2038?: string;
-  Auth_Ext_Request_Date_H2022?: string;
+  Requested_Auth_Extension_T2038?: string;
+  Requested_Auth_Extension_H2022?: string;
 }
 
 interface AuthorizationMember {
@@ -83,10 +86,8 @@ async function fetchMembersFromCaspio(token: string): Promise<CaspioMemberRecord
   const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
   const apiUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
   
-  // Only fetch members that have at least one authorization field
-  const whereClause = `Authorization_Start_Date_T2038 IS NOT NULL OR Authorization_End_Date_T2038 IS NOT NULL OR Authorization_Start_Date_H2022 IS NOT NULL OR Authorization_End_Date_H2022 IS NOT NULL`;
-  
-  const response = await fetch(`${apiUrl}?q.where=${encodeURIComponent(whereClause)}&q.limit=1000`, {
+  // Fetch ALL members (don't filter by authorization fields here since they might be empty strings)
+  const response = await fetch(`${apiUrl}?q.limit=1000`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -110,9 +111,9 @@ async function fetchMembersFromCaspio(token: string): Promise<CaspioMemberRecord
 function transformMemberData(caspioMember: CaspioMemberRecord): AuthorizationMember {
   return {
     id: caspioMember.Record_ID,
-    memberName: `${caspioMember.First_Name || ''} ${caspioMember.Last_Name || ''}`.trim(),
-    mrn: caspioMember.MRN || '',
-    healthPlan: caspioMember.Health_Plan || '',
+    memberName: `${caspioMember.Senior_First || ''} ${caspioMember.Senior_Last || ''}`.trim(),
+    mrn: caspioMember.MC || caspioMember.MCP_CIN || '',
+    healthPlan: caspioMember.CalAIM_MCP || '',
     primaryContact: caspioMember.Primary_Contact || '',
     contactPhone: caspioMember.Contact_Phone || '',
     contactEmail: caspioMember.Contact_Email || '',
@@ -120,8 +121,8 @@ function transformMemberData(caspioMember: CaspioMemberRecord): AuthorizationMem
     authEndDateT2038: caspioMember.Authorization_End_Date_T2038,
     authStartDateH2022: caspioMember.Authorization_Start_Date_H2022,
     authEndDateH2022: caspioMember.Authorization_End_Date_H2022,
-    authExtRequestDateT2038: caspioMember.Auth_Ext_Request_Date_T2038,
-    authExtRequestDateH2022: caspioMember.Auth_Ext_Request_Date_H2022,
+    authExtRequestDateT2038: caspioMember.Requested_Auth_Extension_T2038,
+    authExtRequestDateH2022: caspioMember.Requested_Auth_Extension_H2022,
   };
 }
 
