@@ -991,7 +991,21 @@ export default function KaiserTrackerPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card 
+          className="cursor-pointer hover:shadow-md transition-all duration-200 hover:border-red-300"
+          onClick={() => {
+            const overdueMembers = filteredMembers.filter(m => isOverdue(m.next_steps_date));
+            if (overdueMembers.length > 0) {
+              openMemberModal(
+                overdueMembers,
+                'Overdue Tasks',
+                'Members with overdue next steps that need immediate attention',
+                'overdue_tasks',
+                'overdue'
+              );
+            }
+          }}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Overdue Tasks</CardTitle>
             <AlertTriangle className="h-4 w-4 text-red-600" />
@@ -1000,7 +1014,7 @@ export default function KaiserTrackerPage() {
             <div className="text-2xl font-bold text-red-600">
               {filteredMembers.filter(m => isOverdue(m.next_steps_date)).length}
             </div>
-            <p className="text-xs text-muted-foreground">Need immediate attention</p>
+            <p className="text-xs text-muted-foreground">Click to view overdue members</p>
           </CardContent>
         </Card>
 
@@ -1369,15 +1383,30 @@ export default function KaiserTrackerPage() {
                   }
                 })}
               {members.filter(m => !m.kaiser_user_assignment).length > 0 && (
-                <div className="flex items-center justify-between text-sm p-2 rounded border border-orange-200 bg-orange-50">
+                <button
+                  onClick={() => {
+                    const unassignedMembers = members.filter(m => !m.kaiser_user_assignment);
+                    openMemberModal(
+                      unassignedMembers,
+                      'Unassigned Members',
+                      'Members that need staff assignment',
+                      'staff_assignment',
+                      'unassigned'
+                    );
+                  }}
+                  className="flex items-center justify-between text-sm p-2 rounded border border-orange-200 bg-orange-50 hover:bg-orange-100 hover:border-orange-300 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1 cursor-pointer w-full"
+                >
                   <div className="flex flex-col">
                     <span className="text-orange-700 font-medium">Unassigned</span>
-                    <span className="text-xs text-orange-600">Needs assignment</span>
+                    <span className="text-xs text-orange-600">Click to assign staff</span>
                   </div>
-                  <Badge className="bg-orange-100 text-orange-800">
-                    {members.filter(m => !m.kaiser_user_assignment).length}
-                  </Badge>
-                </div>
+                  <div className="flex items-center gap-1">
+                    <Badge className="bg-orange-100 text-orange-800">
+                      {members.filter(m => !m.kaiser_user_assignment).length}
+                    </Badge>
+                    <span className="text-orange-600 text-xs">→</span>
+                  </div>
+                </button>
               )}
             </div>
           </CardContent>
@@ -1904,6 +1933,8 @@ export default function KaiserTrackerPage() {
         description={modalDescription}
         filterType={modalFilterType}
         filterValue={modalFilterValue}
+        staffMembers={staffMembers}
+        onMemberUpdate={updateMemberStatus}
       />
     </div>
   );

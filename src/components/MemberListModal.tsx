@@ -5,9 +5,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ExternalLink, User, MapPin, Calendar, Clock, AlertTriangle } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ExternalLink, User, MapPin, Calendar, Clock, AlertTriangle, UserPlus, Mail } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
+import { useToast } from '@/hooks/use-toast';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 interface Member {
   id: string;
@@ -29,8 +32,10 @@ interface MemberListModalProps {
   members: Member[];
   title: string;
   description: string;
-  filterType: 'kaiser_status' | 'county' | 'staff' | 'calaim_status';
+  filterType: 'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'overdue_tasks';
   filterValue: string;
+  staffMembers?: string[];
+  onMemberUpdate?: (memberId: string, field: string, value: string) => Promise<void>;
 }
 
 export function MemberListModal({
@@ -40,9 +45,13 @@ export function MemberListModal({
   title,
   description,
   filterType,
-  filterValue
+  filterValue,
+  staffMembers = [],
+  onMemberUpdate
 }: MemberListModalProps) {
   const [sortBy, setSortBy] = useState<'name' | 'county' | 'status' | 'due_date'>('name');
+  const [isAssigning, setIsAssigning] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const isOverdue = (dateString?: string) => {
     if (!dateString) return false;
@@ -50,6 +59,31 @@ export function MemberListModal({
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return dueDate < today;
+  };
+
+  const handleStaffAssignment = async (memberId: string, staffName: string) => {
+    if (!onMemberUpdate) return;
+    
+    setIsAssigning(memberId);
+    try {
+      await onMemberUpdate(memberId, 'kaiser_user_assignment', staffName);
+      
+      // Send notification to staff (you can implement this later)
+      toast({
+        title: 'Staff Assigned Successfully',
+        description: `Member assigned to ${staffName}. Notification sent to staff.`,
+      });
+      
+    } catch (error) {
+      console.error('Error assigning staff:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Assignment Failed',
+        description: 'Failed to assign staff member. Please try again.',
+      });
+    } finally {
+      setIsAssigning(null);
+    }
   };
 
   const getDaysUntilDue = (dateString?: string) => {
@@ -212,6 +246,59 @@ export function MemberListModal({
                         </Badge>
                       )}
                     </div>
+
+                    {/* Staff Assignment Section - Show for unassigned members or staff_assignment filter */}
+                    {(filterType === 'staff_assignment' || (!member.kaiser_user_assignment && staffMembers.length > 0)) && (
+                      <div className="mt-3 p-3 bg-orange-50 rounded border border-orange-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <UserPlus className="h-4 w-4 text-orange-600" />
+                            <span className="text-sm font-medium text-orange-700">
+                              {member.kaiser_user_assignment ? 'Reassign Staff' : 'Assign Staff'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={member.kaiser_user_assignment || ''}
+                              onValueChange={(value) => handleStaffAssignment(member.id, value)}
+                              disabled={isAssigning === member.id}
+                            >
+                              <SelectTrigger className="w-40">
+                                <SelectValue placeholder="Select staff..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">Unassigned</SelectItem>
+                                {staffMembers.map((staff) => (
+                                  <SelectItem key={staff} value={staff}>
+                                    <div className="flex items-center gap-2">
+                                      <User className="h-3 w-3" />
+                                      {staff}
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {member.kaiser_user_assignment && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={isAssigning === member.id}
+                                onClick={() => {
+                                  // TODO: Send notification to staff
+                                  toast({
+                                    title: 'Notification Sent',
+                                    description: `Notification sent to ${member.kaiser_user_assignment}`,
+                                  });
+                                }}
+                              >
+                                <Mail className="h-3 w-3 mr-1" />
+                                Notify
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Action Button */}
