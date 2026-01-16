@@ -14,7 +14,14 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight, ArrowLeft } from 'lucide-react';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
 
-const infoSections = [
+interface InfoSection {
+  title: string;
+  content: string[];
+  list?: string[];
+  website?: string;
+}
+
+const infoSections: InfoSection[] = [
   {
     title: 'What is CalAIM?',
     content: [
@@ -51,6 +58,13 @@ const infoSections = [
         "Medicare is a federal health insurance program mainly for people 65 or older. Medi-Cal is California's Medicaid program for low-income individuals. The CalAIM program is a Medi-Cal benefit. While they are different, Medicare-covered days in a facility can count toward the 60-day stay requirement for the SNF Transition pathway.",
     ],
   },
+  {
+    title: 'Benefitscal.com',
+    content: [
+        "A one stop shop to apply and review Medi-Cal benefits including possible share of cost information and to add for the member an authorized representative/power of attorney.",
+    ],
+    website: 'www.benefitscal.com',
+  },
 ];
 
 
@@ -86,6 +100,19 @@ export default function InfoPage() {
                             <li key={i}>{item}</li>
                             ))}
                         </ul>
+                        )}
+                        {section.website && (
+                        <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                            <p className="text-sm font-medium text-blue-900 mb-2">Website:</p>
+                            <a 
+                                href={`https://${section.website}`} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                            >
+                                {section.website}
+                            </a>
+                        </div>
                         )}
                     </CardContent>
                 </Card>
