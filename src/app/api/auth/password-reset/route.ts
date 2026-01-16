@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import { sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '@/firebase';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -25,39 +23,17 @@ export async function POST(request: NextRequest) {
 
     // Check if Resend API key is available for beautiful emails
     if (!process.env.RESEND_API_KEY) {
-      console.log('⚠️ RESEND_API_KEY not set, falling back to Firebase default');
-      // Fallback to Firebase default
-      try {
-        await sendPasswordResetEmail(auth, email);
-        return NextResponse.json(
-          { message: 'Password reset email sent (using Firebase default).' },
-          { status: 200 }
-        );
-      } catch (error: any) {
-        console.error('Firebase fallback failed:', error);
-        return NextResponse.json(
-          { error: 'Failed to send password reset email' },
-          { status: 500 }
-        );
-      }
-    }
-
-    // First, trigger Firebase password reset to get the actual reset link
-    try {
-      await sendPasswordResetEmail(auth, email);
-      console.log('✅ Firebase reset email triggered - user will receive both emails');
-    } catch (error: any) {
-      console.error('Firebase reset failed:', error);
+      console.log('⚠️ RESEND_API_KEY not set, cannot send beautiful email');
       return NextResponse.json(
-        { error: 'Failed to generate password reset' },
+        { error: 'Email service not configured' },
         { status: 500 }
       );
     }
 
-    // Create a link to the login page since Firebase will send the actual reset link
-    const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/admin/login`;
+    // Create a link to the reset password page
+    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/reset-password?email=${encodeURIComponent(email)}`;
 
-    // Send beautiful email using Resend (without Firebase Admin dependency)
+    // Send beautiful email using Resend
     console.log('📤 Sending beautiful CalAIM branded email to:', email);
     console.log('🔗 Reset URL:', resetUrl);
     
@@ -164,23 +140,24 @@ export async function POST(request: NextRequest) {
             
             <div class="content">
               <p>Hello,</p>
-              <p>You recently requested to reset your password for your Connections CalAIM Application Portal account.</p>
+              <p>You recently requested to reset your password for your Connections CalAIM Application Portal account. Click the button below to reset it:</p>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${resetUrl}" class="reset-button">Reset My Password</a>
+              </div>
               
               <div class="info-box">
-                <strong>📧 Next Steps:</strong>
+                <strong>🔒 Security Information:</strong>
                 <ul style="margin: 10px 0; padding-left: 20px;">
-                  <li><strong>Check your email</strong> - You'll receive a second email with the actual reset link</li>
-                  <li><strong>Look for the Firebase email</strong> - It will have the functional reset button</li>
-                  <li><strong>Click the reset link</strong> in that email to change your password</li>
+                  <li>This link will take you to the password reset page</li>
+                  <li>If you didn't request this reset, you can safely ignore this email</li>
+                  <li>Your password won't change until you create a new one</li>
                 </ul>
               </div>
               
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${loginUrl}" class="reset-button">Return to Login</a>
-              </div>
-              
               <div class="security-note">
-                <strong>🔒 Security Note:</strong> If you didn't request this reset, you can safely ignore both emails. Your password won't change unless you complete the reset process.
+                <strong>⚠️ Can't click the button?</strong> Copy and paste this link into your browser:<br>
+                <span style="word-break: break-all; font-family: monospace; font-size: 12px;">${resetUrl}</span>
               </div>
             </div>
             
@@ -203,14 +180,9 @@ export async function POST(request: NextRequest) {
         
         You recently requested to reset your password for your Connections CalAIM Application Portal account.
         
-        NEXT STEPS:
-        1. Check your email for a second email with the actual reset link
-        2. Look for the Firebase email with the functional reset button
-        3. Click the reset link in that email to change your password
+        Click this link to reset your password: ${resetUrl}
         
-        Return to login: ${loginUrl}
-        
-        If you didn't request this reset, you can safely ignore both emails.
+        If you didn't request this reset, you can safely ignore this email.
         
         Connections CalAIM Application Portal Team
       `,
@@ -224,21 +196,10 @@ export async function POST(request: NextRequest) {
     );
 
   } catch (error) {
-    console.error('Beautiful email failed, trying Firebase fallback:', error);
-    
-    // Fallback to Firebase default if Resend fails
-    try {
-      await sendPasswordResetEmail(auth, email);
-      return NextResponse.json(
-        { message: 'Password reset email sent (using Firebase fallback).' },
-        { status: 200 }
-      );
-    } catch (fallbackError) {
-      console.error('Both custom and Firebase fallback failed:', fallbackError);
-      return NextResponse.json(
-        { error: 'Failed to send password reset email' },
-        { status: 500 }
-      );
-    }
+    console.error('Beautiful email failed:', error);
+    return NextResponse.json(
+      { error: 'Failed to send password reset email' },
+      { status: 500 }
+    );
   }
 }

@@ -19,49 +19,45 @@ function ResetPasswordContent() {
   const auth = useAuth();
   const { toast } = useToast();
   
-  const token = searchParams.get('token');
+  const email = searchParams.get('email');
+  const oobCode = searchParams.get('oobCode');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(true);
-  const [tokenValid, setTokenValid] = useState(false);
+  const [resetValid, setResetValid] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    if (!token) {
-      setError('Invalid or missing reset token');
+    if (oobCode) {
+      // Firebase reset link with oobCode - this is valid
+      setResetValid(true);
       setIsValidating(false);
-      return;
-    }
-
-    // Validate token
-    const validateToken = async () => {
-      try {
-        const response = await fetch('/api/auth/validate-reset-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token }),
-        });
-
-        const data = await response.json();
-        
-        if (response.ok && data.valid) {
-          setTokenValid(true);
-        } else {
-          setError(data.error || 'Invalid or expired reset token');
+    } else if (email) {
+      // Custom email link - trigger Firebase reset
+      const triggerFirebaseReset = async () => {
+        try {
+          const { sendPasswordResetEmail } = await import('firebase/auth');
+          const { auth } = await import('@/firebase');
+          
+          await sendPasswordResetEmail(auth, email);
+          setError('Please check your email for the Firebase reset link and use that link instead.');
+        } catch (error) {
+          setError('Failed to send Firebase reset email. Please try the forgot password process again.');
+        } finally {
+          setIsValidating(false);
         }
-      } catch (error) {
-        setError('Failed to validate reset token');
-      } finally {
-        setIsValidating(false);
-      }
-    };
-
-    validateToken();
-  }, [token]);
+      };
+      
+      triggerFirebaseReset();
+    } else {
+      setError('Invalid or missing reset parameters');
+      setIsValidating(false);
+    }
+  }, [email, oobCode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,36 +73,16 @@ function ResetPasswordContent() {
       return;
     }
 
-    if (!auth || !token) {
-      setError('Authentication service not available');
+    if (!auth || !oobCode) {
+      setError('Authentication service not available or invalid reset link');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // First, get the Firebase reset code from our token
-      const response = await fetch('/api/auth/get-firebase-reset-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to process reset request');
-      }
-
-      // Use Firebase's confirmPasswordReset with the code
-      await confirmPasswordReset(auth, data.code, password);
-
-      // Mark token as used
-      await fetch('/api/auth/mark-token-used', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      });
+      // Use Firebase's confirmPasswordReset with the oobCode
+      await confirmPasswordReset(auth, oobCode, password);
 
       setSuccess(true);
       toast({
@@ -143,7 +119,7 @@ function ResetPasswordContent() {
     );
   }
 
-  if (!tokenValid || error) {
+  if (!resetValid || error) {
     return (
       <>
         <Header />
