@@ -5,6 +5,7 @@
 import '@/ai/firebase';
 
 import { Resend } from 'resend';
+import { render } from '@react-email/render';
 import ApplicationStatusEmail from '@/components/emails/ApplicationStatusEmail';
 import ReminderEmail from '@/components/emails/ReminderEmail';
 import StaffAssignmentEmail from '@/components/emails/StaffAssignmentEmail';
@@ -81,17 +82,19 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
     const bccList = await getBccRecipients();
 
     try {
+        const emailHtml = render(ApplicationStatusEmail({
+            memberName,
+            staffName,
+            message,
+            status,
+        }));
+
         const { data, error } = await resend.emails.send({
             from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
             to: [to],
             bcc: bccList,
             subject: subject,
-            react: ApplicationStatusEmail({
-                memberName,
-                staffName,
-                message,
-                status,
-            }),
+            html: emailHtml,
         });
 
         if (error) {
@@ -114,16 +117,18 @@ export const sendReminderEmail = async (payload: ReminderPayload) => {
     }
 
     try {
+        const emailHtml = render(ReminderEmail({
+            referrerName,
+            memberName,
+            applicationId,
+            incompleteItems,
+        }));
+
         const { data, error } = await resend.emails.send({
             from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
             to: [to],
             subject: subject,
-            react: ReminderEmail({
-                referrerName,
-                memberName,
-                applicationId,
-                incompleteItems,
-            }),
+            html: emailHtml,
         });
 
         if (error) {
@@ -148,21 +153,23 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
     const bccList = await getBccRecipients();
 
     try {
+        const emailHtml = render(StaffAssignmentEmail({
+            staffName,
+            memberName,
+            memberMrn,
+            memberCounty,
+            kaiserStatus,
+            calaimStatus,
+            assignedBy,
+            nextStepsDate,
+        }));
+
         const { data, error } = await resend.emails.send({
             from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
             to: [to],
             bcc: bccList,
             subject: `New CalAIM Member Assignment: ${memberName}`,
-            react: StaffAssignmentEmail({
-                staffName,
-                memberName,
-                memberMrn,
-                memberCounty,
-                kaiserStatus,
-                calaimStatus,
-                assignedBy,
-                nextStepsDate,
-            }),
+            html: emailHtml,
         });
 
         if (error) {

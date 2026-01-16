@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import PasswordResetEmail from '@/components/emails/PasswordResetEmail';
+import { render } from '@react-email/render';
 import crypto from 'crypto';
 import { resetTokenStore } from '@/lib/reset-tokens';
 
@@ -49,14 +50,17 @@ export async function POST(request: NextRequest) {
     console.log('🔗 Reset URL:', resetUrl);
     
     try {
+      // Render the React email component to HTML
+      const emailHtml = render(PasswordResetEmail({
+        resetUrl,
+        userEmail: email,
+      }));
+
       const emailResult = await resend.emails.send({
         from: 'Connections CalAIM Application Portal <noreply@carehomefinders.com>',
         to: email,
         subject: 'Reset Your Connections CalAIM Application Portal Password',
-        react: PasswordResetEmail({
-          resetUrl,
-          userEmail: email,
-        }),
+        html: emailHtml,
       });
       
       console.log('✅ Email sent successfully:', emailResult);
