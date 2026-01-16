@@ -184,11 +184,14 @@ export default function AuthorizationTracker() {
     try {
       console.log('🔍 Fetching ALL members with authorization data from Caspio...');
       
-      // Use API route that gets ALL members with exact field names (with cache busting)
-      const response = await fetch(`/api/authorization/all-members?t=${Date.now()}`, {
+      // Use API route that gets ALL members with exact field names (with aggressive cache busting)
+      const response = await fetch(`/api/authorization/all-members?t=${Date.now()}&refresh=true`, {
+        method: 'GET',
         cache: 'no-store',
         headers: {
-          'Cache-Control': 'no-cache'
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       });
       console.log('API Response status:', response.status);

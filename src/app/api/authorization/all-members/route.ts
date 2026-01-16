@@ -40,6 +40,7 @@ async function getCaspioAccessToken(): Promise<string> {
 
 export async function GET(req: NextRequest) {
   try {
+    console.log('🚀 API ROUTE CALLED - Authorization Tracker ALL MEMBERS');
     console.log('🔍 Fetching ALL members from Caspio for Authorization Tracker...');
     
     // Get OAuth token
@@ -115,7 +116,7 @@ export async function GET(req: NextRequest) {
         memberMediCalNum: member.MC || '',
         memberMrn: member.MCP_CIN || '',
         memberCounty: member.Member_County || '',
-        memberHealthPlan: member.CalAIM_MCP || member.CalAIM_MCO || member.HealthPlan || member.MC_Plan || member.Health_Plan || member.MCP || member.MCO || member.Plan_Name || 'Unknown',
+        memberHealthPlan: member.CalAIM_MCO || member.CalAIM_MCP || member.HealthPlan || member.MC_Plan || member.Health_Plan || member.MCP || member.MCO || member.Plan_Name || 'Unknown',
         memberStatus: member.CalAIM_Status || '',
         
         // Authorization fields - using EXACT field names from your Caspio table
