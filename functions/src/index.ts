@@ -664,6 +664,26 @@ export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
         clientID2: membersToProcess[0].clientID2,
         ClientID2: membersToProcess[0].ClientID2
       });
+      
+      // 🔍 DEBUG: Find all date-related fields for ILS report
+      const allFields = Object.keys(membersToProcess[0]);
+      const dateFields = allFields.filter(field => 
+        field.toLowerCase().includes('t2038') || 
+        field.toLowerCase().includes('tier') || 
+        field.toLowerCase().includes('date') ||
+        field.toLowerCase().includes('requested') ||
+        field.toLowerCase().includes('received') ||
+        field.toLowerCase().includes('rcfe') ||
+        field.toLowerCase().includes('ils')
+      );
+      
+      console.log('🗓️ ALL DATE-RELATED FIELDS found in Caspio:', dateFields);
+      console.log('🗓️ DATE FIELD VALUES for first member:', 
+        dateFields.reduce((obj, field) => {
+          obj[field] = membersToProcess[0][field];
+          return obj;
+        }, {} as any)
+      );
     }
     
     const transformedMembers = membersToProcess.map((member: any, index: number) => {

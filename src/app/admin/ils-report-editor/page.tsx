@@ -23,7 +23,8 @@ import {
   Edit,
   Eye,
   Printer,
-  MessageSquare
+  MessageSquare,
+  Database
 } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';
@@ -298,11 +299,7 @@ export default function ILSReportEditorPage() {
     }
   }, [reportDate]);
 
-  useEffect(() => {
-    if (isAdmin && !isUserLoading) {
-      loadMembers();
-    }
-  }, [isAdmin, isUserLoading]);
+  // Removed auto-loading useEffect - now only loads when "Load Members" button is pressed
 
   if (isUserLoading) {
     return (
@@ -376,13 +373,14 @@ export default function ILSReportEditorPage() {
                   onClick={loadMembers}
                   disabled={isLoading}
                   variant="outline"
+                  className="bg-green-50 hover:bg-green-100 border-green-200"
                 >
                   {isLoading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
-                    <RefreshCw className="mr-2 h-4 w-4" />
+                    <Database className="mr-2 h-4 w-4" />
                   )}
-                  Refresh Data
+                  {members.length === 0 ? 'Load Members' : 'Refresh Data'}
                 </Button>
                 
                 <Button
@@ -525,12 +523,18 @@ export default function ILSReportEditorPage() {
               <span>Loading members...</span>
             </div>
           ) : members.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No bottleneck members found</p>
-              <Button onClick={loadMembers} variant="outline" className="mt-4">
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Load Members
+            <div className="text-center py-12 text-muted-foreground">
+              <Database className="h-16 w-16 mx-auto mb-4 opacity-50" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Ready to Generate ILS Report</h3>
+              <p className="mb-6">Click "Load Members" to fetch Kaiser bottleneck members from Caspio</p>
+              <Button 
+                onClick={loadMembers} 
+                variant="default" 
+                className="bg-green-600 hover:bg-green-700"
+                size="lg"
+              >
+                <Database className="mr-2 h-4 w-4" />
+                Load Members from Caspio
               </Button>
             </div>
           ) : (
