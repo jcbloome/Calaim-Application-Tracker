@@ -30,8 +30,8 @@ export default function PasswordResetEmail({
       <Preview>{previewText}</Preview>
       <Body style={main}>
         <Container style={container}>
-          {/* Header */}
-          <Section style={header}>
+          {/* Logo Only */}
+          <Section style={logoSection}>
             <Img
               src="https://carehomefinders.com/calaimlogopdf.png"
               width="120"
@@ -39,12 +39,12 @@ export default function PasswordResetEmail({
               alt="CalAIM Logo"
               style={logo}
             />
-            <Heading style={h1}>Reset Your Password</Heading>
-            <Text style={headerSubtitle}>We received a request to reset your password</Text>
           </Section>
 
           {/* Main Content */}
           <Section style={content}>
+            <Heading style={h1}>Reset Your Password</Heading>
+            <Text style={subtitle}>We received a request to reset your password</Text>
             <Text style={greeting}>
               Hello,
             </Text>
@@ -112,34 +112,34 @@ const container = {
   maxWidth: '600px',
 };
 
-const header = {
-  padding: '32px 24px',
-  background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)',
+const logoSection = {
+  padding: '32px 24px 16px',
   textAlign: 'center' as const,
-  borderRadius: '12px 12px 0 0',
 };
 
 const logo = {
-  margin: '0 auto 16px',
+  margin: '0 auto',
 };
 
 const h1 = {
-  color: '#ffffff',
+  color: '#1f2937',
   fontSize: '28px',
   fontWeight: '700',
   lineHeight: '1.25',
   margin: '0 0 8px 0',
+  textAlign: 'center' as const,
 };
 
-const headerSubtitle = {
-  color: '#e0e7ff',
+const subtitle = {
+  color: '#6b7280',
   fontSize: '16px',
   lineHeight: '1.4',
-  margin: '0',
+  margin: '0 0 24px 0',
+  textAlign: 'center' as const,
 };
 
 const content = {
-  padding: '32px 24px',
+  padding: '0 24px 32px',
 };
 
 const greeting = {
