@@ -42,13 +42,17 @@ export function PrintableDeclarationForm({
           required
           width="half"
         />
-        <PrintableField
-          label="Medical Record Number (MRN)"
-          value={memberMrn}
-          placeholder="For Health Net use Medi-Cal number (9XXXXXXXA). For Kaiser use specific MRN."
-          required
-          width="half"
-        />
+        <div className="w-full sm:w-1/2 mb-4 print:mb-6">
+          <PrintableField
+            label="MRN"
+            value={memberMrn}
+            required
+            width="full"
+          />
+          <p className="text-xs text-gray-500 print:text-gray-700 mt-1 italic">
+            For Health Net use Medi-Cal number (9XXXXXXXA). For Kaiser use specific MRN.
+          </p>
+        </div>
       </PrintableFormSection>
 
       {/* PCP Declaration */}
