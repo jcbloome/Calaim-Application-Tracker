@@ -440,7 +440,7 @@ export default function KaiserTrackerPage() {
   // Get unique staff members for dropdown
   const staffMembers = useMemo(() => {
     try {
-      const uniqueStaff = [...new Set((members || []).map(m => m?.kaiser_user_assignment).filter(Boolean))];
+      const uniqueStaff = [...new Set((members || []).map(m => m?.kaiser_user_assignment).filter(s => s && s.trim() !== ''))];
       return uniqueStaff.sort();
     } catch (error) {
       console.error('Error getting staff members:', error);
@@ -451,10 +451,10 @@ export default function KaiserTrackerPage() {
   // Get unique values for filter dropdowns
   const filterOptions = useMemo(() => {
     try {
-      const uniqueKaiserStatuses = [...new Set((members || []).map(m => m?.Kaiser_Status).filter(Boolean))];
-      const uniqueCalaimStatuses = [...new Set((members || []).map(m => m?.CalAIM_Status).filter(Boolean))];
-      const uniqueCounties = [...new Set((members || []).map(m => m?.memberCounty).filter(Boolean))];
-      const uniqueAssignments = [...new Set((members || []).map(m => m?.kaiser_user_assignment).filter(Boolean))];
+      const uniqueKaiserStatuses = [...new Set((members || []).map(m => m?.Kaiser_Status).filter(s => s && s.trim() !== ''))];
+      const uniqueCalaimStatuses = [...new Set((members || []).map(m => m?.CalAIM_Status).filter(s => s && s.trim() !== ''))];
+      const uniqueCounties = [...new Set((members || []).map(m => m?.memberCounty).filter(s => s && s.trim() !== ''))];
+      const uniqueAssignments = [...new Set((members || []).map(m => m?.kaiser_user_assignment).filter(s => s && s.trim() !== ''))];
       
       return {
         kaiserStatuses: uniqueKaiserStatuses.sort(),
@@ -738,7 +738,7 @@ export default function KaiserTrackerPage() {
                 <SelectContent>
                   <SelectItem value="all">All Staff</SelectItem>
                   <SelectItem value="unassigned">Unassigned</SelectItem>
-                  {staffMembers.map((staff) => (
+                  {staffMembers.filter(staff => staff && staff.trim() !== '').map((staff) => (
                     <SelectItem key={staff} value={staff}>
                       {staff}
                     </SelectItem>
@@ -762,7 +762,7 @@ export default function KaiserTrackerPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
-                  {filterOptions.kaiserStatuses.map((status) => (
+                  {filterOptions.kaiserStatuses.filter(status => status && status.trim() !== '').map((status) => (
                     <SelectItem key={status} value={status}>
                       {status}
                     </SelectItem>
@@ -786,7 +786,7 @@ export default function KaiserTrackerPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
-                  {filterOptions.calaimStatuses.map((status) => (
+                  {filterOptions.calaimStatuses.filter(status => status && status.trim() !== '').map((status) => (
                     <SelectItem key={status} value={status}>
                       {status}
                     </SelectItem>
@@ -810,7 +810,7 @@ export default function KaiserTrackerPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Counties</SelectItem>
-                  {filterOptions.counties.map((county) => (
+                  {filterOptions.counties.filter(county => county && county.trim() !== '').map((county) => (
                     <SelectItem key={county} value={county}>
                       {county}
                     </SelectItem>
@@ -835,7 +835,7 @@ export default function KaiserTrackerPage() {
                 <SelectContent>
                   <SelectItem value="all">All Assignments</SelectItem>
                   <SelectItem value="unassigned">Unassigned Only</SelectItem>
-                  {filterOptions.assignments.map((assignment) => (
+                  {filterOptions.assignments.filter(assignment => assignment && assignment.trim() !== '').map((assignment) => (
                     <SelectItem key={assignment} value={assignment}>
                       {assignment}
                     </SelectItem>
@@ -1877,7 +1877,7 @@ export default function KaiserTrackerPage() {
                           <SelectValue placeholder="Assign staff member..." />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Unassigned</SelectItem>
+                          <SelectItem value="unassigned">Unassigned</SelectItem>
                           {staffMembers.map((staff) => (
                             <SelectItem key={staff} value={staff}>
                               {staff}

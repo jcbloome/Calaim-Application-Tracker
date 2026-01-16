@@ -10,6 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { useFunctions } from '@/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { format, addMonths } from 'date-fns';
 import { 
   Users, 
@@ -43,6 +45,7 @@ interface BulkAuthorizationUpdateProps {
 
 export function BulkAuthorizationUpdate({ members, onUpdate }: BulkAuthorizationUpdateProps) {
   const { toast } = useToast();
+  const functions = useFunctions();
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
@@ -200,16 +203,11 @@ export function BulkAuthorizationUpdate({ members, onUpdate }: BulkAuthorization
         }
         
         if (Object.keys(authData).length > 0) {
+          const updateMemberAuthorization = httpsCallable(functions, 'updateMemberAuthorization');
           updates.push(
-            fetch('/api/authorization/update', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                memberId,
-                authorizationData: authData
-              })
+            updateMemberAuthorization({
+              memberId,
+              authorizationData: authData
             })
           );
         }

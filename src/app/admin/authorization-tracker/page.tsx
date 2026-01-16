@@ -165,17 +165,13 @@ export default function AuthorizationTracker() {
     });
   };
 
-  // Fetch authorization data
+  // Fetch authorization data using Firebase Function (same as Kaiser Tracker)
   const fetchAuthorizationData = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/authorization/members');
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const membersData = await response.json();
+      const fetchAuthorizationMembers = httpsCallable(functions, 'fetchAuthorizationMembers');
+      const result = await fetchAuthorizationMembers();
+      const membersData = result.data as AuthorizationMember[];
       
       const processedMembers: AuthorizationMember[] = membersData.map((member: any) => {
         const t2038Status = getAuthStatus(member.authEndDateT2038);
@@ -200,7 +196,7 @@ export default function AuthorizationTracker() {
       
       toast({
         title: "Success",
-        description: `Loaded ${processedMembers.length} members with authorization data`,
+        description: `Loaded ${processedMembers.length} members with authorization data from Caspio`,
         variant: "default"
       });
     } catch (error: any) {
@@ -210,8 +206,8 @@ export default function AuthorizationTracker() {
       setMockData();
       
       toast({
-        title: "Using Demo Data",
-        description: "Could not connect to live data. Showing sample data for demonstration.",
+        title: "Connection Error - Using Demo Data",
+        description: `Error: ${error.message || 'Unknown error'}. Check console for details.`,
         variant: "destructive"
       });
     } finally {

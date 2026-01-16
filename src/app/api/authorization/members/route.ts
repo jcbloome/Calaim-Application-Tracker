@@ -51,25 +51,34 @@ async function getCaspioToken(): Promise<string> {
   
   const tokenUrl = `${baseUrl}/oauth/token`;
   
+  console.log('Making OAuth request to:', tokenUrl);
+  console.log('Client ID:', clientId);
+  
+  // Use URLSearchParams for proper form encoding
+  const params = new URLSearchParams();
+  params.append('grant_type', 'client_credentials');
+  params.append('client_id', clientId);
+  params.append('client_secret', clientSecret);
+  
   const response = await fetch(tokenUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
     },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: clientId,
-      client_secret: clientSecret,
-    }),
+    body: params.toString(),
   });
+
+  console.log('OAuth response status:', response.status);
 
   if (!response.ok) {
     const errorText = await response.text();
     console.error('Caspio OAuth failed:', { status: response.status, error: errorText });
-    throw new Error('Failed to authenticate with Caspio');
+    throw new Error(`Failed to authenticate with Caspio: ${response.status} - ${errorText}`);
   }
 
   const data: CaspioAuthResponse = await response.json();
+  console.log('OAuth token received, expires in:', data.expires_in);
   return data.access_token;
 }
 
@@ -127,22 +136,30 @@ export async function GET(request: NextRequest) {
     console.log('Fetching authorization members from Caspio via API route');
     
     // Get OAuth token
+    console.log('Getting Caspio OAuth token...');
     const token = await getCaspioToken();
+    console.log('OAuth token obtained successfully');
     
     // Fetch members with authorization data
+    console.log('Fetching members from Caspio...');
     const caspioMembers = await fetchMembersFromCaspio(token);
+    console.log(`Fetched ${caspioMembers.length} members from Caspio`);
     
     // Transform data
     const authorizationMembers = caspioMembers.map(transformMemberData);
     
-    console.log(`Successfully fetched ${authorizationMembers.length} authorization members`);
+    console.log(`Successfully transformed ${authorizationMembers.length} authorization members`);
     
     return NextResponse.json(authorizationMembers);
     
   } catch (error) {
-    console.error('Error in authorization members API:', error);
+    console.error('Detailed error in authorization members API:', error);
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     return NextResponse.json(
-      { error: 'Failed to fetch authorization data' },
+      { 
+        error: 'Failed to fetch authorization data',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }

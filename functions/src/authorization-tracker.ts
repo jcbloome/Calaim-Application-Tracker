@@ -53,16 +53,17 @@ async function getCaspioToken(): Promise<string> {
   
   const tokenUrl = `${baseUrl}/oauth/token`;
   
+  // Use Basic Auth approach (same as Kaiser Tracker)
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  
   const response = await fetch(tokenUrl, {
     method: 'POST',
     headers: {
+      'Authorization': `Basic ${credentials}`,
       'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json'
     },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: clientId,
-      client_secret: clientSecret,
-    }),
+    body: 'grant_type=client_credentials',
   });
 
   if (!response.ok) {

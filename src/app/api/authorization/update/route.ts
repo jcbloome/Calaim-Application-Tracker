@@ -16,16 +16,19 @@ async function getCaspioToken(): Promise<string> {
   
   const tokenUrl = `${baseUrl}/oauth/token`;
   
+  // Use URLSearchParams for proper form encoding
+  const params = new URLSearchParams();
+  params.append('grant_type', 'client_credentials');
+  params.append('client_id', clientId);
+  params.append('client_secret', clientSecret);
+  
   const response = await fetch(tokenUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
     },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: clientId,
-      client_secret: clientSecret,
-    }),
+    body: params.toString(),
   });
 
   if (!response.ok) {
