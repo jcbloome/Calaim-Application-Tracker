@@ -266,42 +266,6 @@ export function PrintableDeclarationForm({
           subtitle="I certify that the information provided above is accurate and that this member meets the criteria for SNF level of care as described. I recommend assisted living placement as medically appropriate for this member's needs."
         />
         
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 print:gap-8">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-              Provider Stamp/Seal (if available)
-            </label>
-            <div className="h-20 border-2 border-dashed border-gray-300 print:border-black"></div>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-              Date of Certification
-            </label>
-            <div className="h-12 border-b-2 border-gray-300 print:border-black"></div>
-          </div>
-        </div>
-      </div>
-
-      {/* Office Use Only */}
-      <div className="mt-12 print:mt-16 p-4 print:p-6 bg-gray-50 print:bg-white border print:border-black">
-        <p className="text-sm print:text-xs text-gray-600 print:text-black mb-4 font-semibold">
-          For Office Use Only
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 print:gap-6">
-          <div>
-            <label className="block text-sm font-medium mb-2">Date Received:</label>
-            <div className="h-8 border-b border-gray-300 print:border-black"></div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">Reviewed By:</label>
-            <div className="h-8 border-b border-gray-300 print:border-black"></div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">Approval Status:</label>
-            <div className="h-8 border-b border-gray-300 print:border-black"></div>
-          </div>
-        </div>
       </div>
     </PrintableFormLayout>
   );
