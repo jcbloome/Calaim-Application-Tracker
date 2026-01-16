@@ -7,7 +7,6 @@ import {
   signInWithEmailAndPassword,
   setPersistence,
   browserLocalPersistence,
-  sendPasswordResetEmail,
   type User
 } from 'firebase/auth';
 import type { AuthError } from 'firebase/auth';
@@ -132,31 +131,34 @@ export default function AdminLoginPage() {
 
     setIsResettingPassword(true);
     try {
-      await sendPasswordResetEmail(auth, resetEmail);
-      toast({
-        title: 'Password Reset Email Sent',
-        description: 'Check your email for instructions to reset your password.',
-        className: 'bg-green-100 text-green-900 border-green-200'
+      const response = await fetch('/api/auth/password-reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: resetEmail }),
       });
-      setResetEmail('');
-      setIsResettingPassword(false);
-    } catch (err) {
-      const authError = err as AuthError;
-      let errorMessage = 'Failed to send password reset email.';
-      
-      if (authError.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email address.';
-      } else if (authError.code === 'auth/invalid-email') {
-        errorMessage = 'Please enter a valid email address.';
-      } else if (authError.code === 'auth/too-many-requests') {
-        errorMessage = 'Too many password reset attempts. Please try again later.';
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: 'Password Reset Email Sent',
+          description: 'Check your email for a beautiful, professional password reset link from the CalAIM Application Portal team.',
+          className: 'bg-green-100 text-green-900 border-green-200'
+        });
+        setResetEmail('');
+      } else {
+        throw new Error(data.error || 'Failed to send password reset email');
       }
-      
+    } catch (err) {
+      console.error('Password reset error:', err);
       toast({
         variant: 'destructive',
         title: 'Password Reset Failed',
-        description: errorMessage,
+        description: 'Failed to send password reset email. Please try again.',
       });
+    } finally {
       setIsResettingPassword(false);
     }
   };

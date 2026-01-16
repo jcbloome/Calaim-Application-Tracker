@@ -38,7 +38,7 @@ import { format } from 'date-fns';
 
 
 // CLIENT-SIDE LOGIC - Replaces the need for server-side AI flows for UI data.
-import { getAuth, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { firebaseConfig } from '@/firebase/config';
 import type { Application } from '@/lib/definitions';
