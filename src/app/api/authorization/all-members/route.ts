@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
       }
       
       // Debug first few members' health plan fields
-      if (pageCount === 1 && pageMembers.length > 0) {
+      if (pageNumber === 2 && pageMembers.length > 0) { // pageNumber is already incremented, so first page is when pageNumber === 2
         console.log('🔍 Sample health plan fields from first member:');
         const sample = pageMembers[0];
         console.log('- CalAIM_MCP:', sample.CalAIM_MCP);
