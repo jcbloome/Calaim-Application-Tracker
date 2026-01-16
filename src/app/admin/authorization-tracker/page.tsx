@@ -725,7 +725,6 @@ export default function AuthorizationTracker() {
                 <SelectItem value="all">All Health Plans</SelectItem>
                 <SelectItem value="kaiser">Kaiser</SelectItem>
                 <SelectItem value="health net">Health Net</SelectItem>
-                <SelectItem value="molina">Molina</SelectItem>
                 <SelectItem value="anthem">Anthem</SelectItem>
               </SelectContent>
             </Select>
