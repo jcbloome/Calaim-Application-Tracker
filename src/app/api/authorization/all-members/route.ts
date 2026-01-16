@@ -46,27 +46,59 @@ export async function GET(req: NextRequest) {
     const accessToken = await getCaspioAccessToken();
     console.log('✅ Got Caspio access token successfully');
     
-    // Fetch ALL members from CalAIM_tbl_Members table
+    // Fetch ALL members from CalAIM_tbl_Members table with pagination
     const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
     const apiUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
-    const response = await fetch(`${apiUrl}?q.limit=5000`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Failed to fetch members from Caspio:', { status: response.status, error: errorText });
-      throw new Error('Failed to fetch member data from Caspio');
-    }
-
-    const data = await response.json();
-    const allMembers = data.Result || [];
     
-    console.log(`📊 Fetched ${allMembers.length} total members from Caspio`);
+    let allMembers: any[] = [];
+    let pageToken = '';
+    let pageCount = 0;
+    const maxPages = 10; // Safety limit
+    
+    do {
+      const url = pageToken 
+        ? `${apiUrl}?q.limit=1000&q.pageToken=${pageToken}`
+        : `${apiUrl}?q.limit=1000`;
+        
+      console.log(`📄 Fetching page ${pageCount + 1} from Caspio...`);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Failed to fetch members from Caspio:', { status: response.status, error: errorText });
+        throw new Error('Failed to fetch member data from Caspio');
+      }
+
+      const data = await response.json();
+      const pageMembers = data.Result || [];
+      allMembers = allMembers.concat(pageMembers);
+      
+      pageToken = data.NextPageToken || '';
+      pageCount++;
+      
+      console.log(`📊 Page ${pageCount}: ${pageMembers.length} members, Total so far: ${allMembers.length}`);
+      
+      // Debug first few members' health plan fields
+      if (pageCount === 1 && pageMembers.length > 0) {
+        console.log('🔍 Sample health plan fields from first member:');
+        const sample = pageMembers[0];
+        console.log('- CalAIM_MCP:', sample.CalAIM_MCP);
+        console.log('- MC_Plan:', sample.MC_Plan);
+        console.log('- Health_Plan:', sample.Health_Plan);
+        console.log('- MCP:', sample.MCP);
+        console.log('- All fields:', Object.keys(sample).filter(key => key.toLowerCase().includes('plan') || key.toLowerCase().includes('mcp')));
+      }
+      
+    } while (pageToken && pageCount < maxPages);
+    
+    console.log(`📊 Final total: ${allMembers.length} members from ${pageCount} pages`);
     
     // Transform data for Authorization Tracker (include ALL members)
     const transformedMembers = allMembers.map((member: any) => {
@@ -78,7 +110,7 @@ export async function GET(req: NextRequest) {
         memberMediCalNum: member.MC || '',
         memberMrn: member.MCP_CIN || '',
         memberCounty: member.Member_County || '',
-        memberHealthPlan: member.CalAIM_MCP || member.MC_Plan || member.Health_Plan || member.MCP || 'Unknown',
+        memberHealthPlan: member.CalAIM_MCP || member.MC_Plan || member.Health_Plan || member.MCP || member.MCO || member.Plan_Name || 'Unknown',
         memberStatus: member.CalAIM_Status || '',
         
         // Authorization fields - using EXACT field names from your Caspio table
