@@ -11,6 +11,8 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { StaffAssignmentDropdown } from '@/components/StaffAssignmentDropdown';
+import { useAuth } from '@/firebase/auth';
 
 interface Member {
   id: string;
@@ -52,6 +54,7 @@ export function MemberListModal({
   const [sortBy, setSortBy] = useState<'name' | 'county' | 'status' | 'due_date'>('name');
   const [isAssigning, setIsAssigning] = useState<string | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const isOverdue = (dateString?: string) => {
     if (!dateString) return false;
@@ -257,44 +260,14 @@ export function MemberListModal({
                               {member.kaiser_user_assignment ? 'Reassign Staff' : 'Assign Staff'}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Select
-                              value={member.kaiser_user_assignment || ''}
-                              onValueChange={(value) => handleStaffAssignment(member.id, value)}
-                              disabled={isAssigning === member.id}
-                            >
-                              <SelectTrigger className="w-40">
-                                <SelectValue placeholder="Select staff..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="">Unassigned</SelectItem>
-                                {staffMembers.map((staff) => (
-                                  <SelectItem key={staff} value={staff}>
-                                    <div className="flex items-center gap-2">
-                                      <User className="h-3 w-3" />
-                                      {staff}
-                                    </div>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            {member.kaiser_user_assignment && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={isAssigning === member.id}
-                                onClick={() => {
-                                  // TODO: Send notification to staff
-                                  toast({
-                                    title: 'Notification Sent',
-                                    description: `Notification sent to ${member.kaiser_user_assignment}`,
-                                  });
-                                }}
-                              >
-                                <Mail className="h-3 w-3 mr-1" />
-                                Notify
-                              </Button>
-                            )}
+                          <div className="flex-1 ml-4">
+                            <StaffAssignmentDropdown
+                              member={member}
+                              staffMembers={staffMembers}
+                              onAssignmentChange={onMemberUpdate || (async () => {})}
+                              currentUser={user}
+                              showEmailButton={true}
+                            />
                           </div>
                         </div>
                       </div>

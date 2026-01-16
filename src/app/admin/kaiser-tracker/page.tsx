@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
+import { useAuth } from '@/firebase/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -16,6 +17,7 @@ import { useAutoSync } from '@/hooks/use-auto-sync';
 import { MemberListModal } from '@/components/MemberListModal';
 import { MemberCardSkeleton, MemberTableSkeleton } from '@/components/MemberCardSkeleton';
 import { EmptyState } from '@/components/EmptyState';
+import { StaffAssignmentDropdown } from '@/components/StaffAssignmentDropdown';
 
 // Kaiser workflow with next steps and recommended timeframes
 const kaiserWorkflow = {
@@ -231,6 +233,7 @@ interface KaiserMember {
 
 export default function KaiserTrackerPage() {
   const { isAdmin } = useAdmin();
+  const { user } = useAuth();
   const { toast } = useToast();
 
   // State declarations
@@ -1352,29 +1355,31 @@ export default function KaiserTrackerPage() {
                         }}
                         className="flex items-center justify-between text-sm p-3 rounded-lg border hover:bg-purple-50 hover:border-purple-300 hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1 cursor-pointer w-full group"
                       >
-                        <div className="flex flex-col text-left">
-                          <span className="font-medium truncate group-hover:text-purple-700 transition-colors" title={staff}>{staff}</span>
-                          <div className="flex gap-2 text-xs">
-                            {overdue > 0 && (
-                              <span className="text-red-600 flex items-center gap-1">
-                                <AlertTriangle className="h-3 w-3" />
-                                {overdue} overdue
-                              </span>
-                            )}
-                            {dueToday > 0 && (
-                              <span className="text-orange-600 flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                {dueToday} due today
-                              </span>
-                            )}
-                            {!overdue && !dueToday && (
-                              <span className="text-muted-foreground group-hover:text-purple-600 transition-colors">
-                                Click to view members
-                              </span>
-                            )}
+                        <div className="flex-1">
+                          <div className="flex flex-col text-left">
+                            <span className="font-medium truncate group-hover:text-purple-700 transition-colors" title={staff}>{staff}</span>
+                            <div className="flex gap-2 text-xs">
+                              {overdue > 0 && (
+                                <span className="text-red-600 flex items-center gap-1">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  {overdue} overdue
+                                </span>
+                              )}
+                              {dueToday > 0 && (
+                                <span className="text-orange-600 flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {dueToday} due today
+                                </span>
+                              )}
+                              {!overdue && !dueToday && (
+                                <span className="text-muted-foreground group-hover:text-purple-600 transition-colors">
+                                  Click to view members
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
                           <Badge variant="outline" className="group-hover:border-purple-300 group-hover:bg-purple-50 transition-colors">
                             {count}
                           </Badge>
@@ -1721,35 +1726,13 @@ export default function KaiserTrackerPage() {
                         </Select>
                       </TableCell>
                       <TableCell>
-                        <Select 
-                          value={member.kaiser_user_assignment || 'unassigned'} 
-                          onValueChange={(value) => updateMemberStatus(member.id, 'kaiser_user_assignment', value === 'unassigned' ? '' : value)}
-                        >
-                          <SelectTrigger className="w-full min-w-[150px]">
-                            <SelectValue>
-                              <div className="flex items-center gap-1">
-                                <User className="h-3 w-3" />
-                                <span className="text-sm">{member.kaiser_user_assignment || 'Unassigned'}</span>
-                              </div>
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="unassigned">
-                              <div className="flex items-center gap-2">
-                                <User className="h-3 w-3 text-gray-400" />
-                                <span className="text-gray-600">Unassigned</span>
-                              </div>
-                            </SelectItem>
-                            {staffMembers.map((staff) => (
-                              <SelectItem key={staff} value={staff}>
-                                <div className="flex items-center gap-2">
-                                  <User className="h-3 w-3 text-blue-600" />
-                                  <span>{staff}</span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <StaffAssignmentDropdown
+                          member={member}
+                          staffMembers={staffMembers}
+                          onAssignmentChange={updateMemberStatus}
+                          currentUser={user}
+                          showEmailButton={true}
+                        />
                       </TableCell>
                       <TableCell>
                         <Badge 
@@ -1903,22 +1886,13 @@ export default function KaiserTrackerPage() {
 
                     {/* Assignment dropdown */}
                     <div className="pt-2 border-t">
-                      <Select 
-                        value={member.kaiser_user_assignment || ''} 
-                        onValueChange={(value) => updateMemberStatus(member.id, 'kaiser_user_assignment', value === '' ? '' : value)}
-                      >
-                        <SelectTrigger className="w-full h-8 text-xs">
-                          <SelectValue placeholder="Assign staff member..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="unassigned">Unassigned</SelectItem>
-                          {staffMembers.map((staff) => (
-                            <SelectItem key={staff} value={staff}>
-                              {staff}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <StaffAssignmentDropdown
+                        member={member}
+                        staffMembers={staffMembers}
+                        onAssignmentChange={updateMemberStatus}
+                        currentUser={user}
+                        showEmailButton={true}
+                      />
                     </div>
                   </div>
                 </Card>

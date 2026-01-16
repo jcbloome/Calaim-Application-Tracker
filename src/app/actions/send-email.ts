@@ -7,6 +7,7 @@ import '@/ai/firebase';
 import { Resend } from 'resend';
 import ApplicationStatusEmail from '@/components/emails/ApplicationStatusEmail';
 import ReminderEmail from '@/components/emails/ReminderEmail';
+import StaffAssignmentEmail from '@/components/emails/StaffAssignmentEmail';
 import * as admin from 'firebase-admin';
 
 // Note: Firebase Admin is initialized in a central file (e.g., src/ai/dev.ts).
@@ -34,6 +35,18 @@ interface ReminderPayload {
     memberName: string;
     applicationId: string;
     incompleteItems: string[];
+}
+
+interface StaffAssignmentPayload {
+    to: string;
+    staffName: string;
+    memberName: string;
+    memberMrn: string;
+    memberCounty: string;
+    kaiserStatus: string;
+    calaimStatus: string;
+    assignedBy: string;
+    nextStepsDate?: string;
 }
 
 async function getBccRecipients(): Promise<string[]> {
@@ -121,6 +134,45 @@ export const sendReminderEmail = async (payload: ReminderPayload) => {
         return data;
     } catch (error) {
         console.error('Failed to send reminder email:', error);
+        throw error;
+    }
+};
+
+export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) => {
+    const { to, staffName, memberName, memberMrn, memberCounty, kaiserStatus, calaimStatus, assignedBy, nextStepsDate } = payload;
+
+    if (!process.env.RESEND_API_KEY) {
+        throw new Error('Resend API key is not configured.');
+    }
+
+    const bccList = await getBccRecipients();
+
+    try {
+        const { data, error } = await resend.emails.send({
+            from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
+            to: [to],
+            bcc: bccList,
+            subject: `New CalAIM Member Assignment: ${memberName}`,
+            react: StaffAssignmentEmail({
+                staffName,
+                memberName,
+                memberMrn,
+                memberCounty,
+                kaiserStatus,
+                calaimStatus,
+                assignedBy,
+                nextStepsDate,
+            }),
+        });
+
+        if (error) {
+            console.error('Resend Staff Assignment Error:', error);
+            throw new Error(error.message);
+        }
+
+        return data;
+    } catch (error) {
+        console.error('Failed to send staff assignment email:', error);
         throw error;
     }
 };
