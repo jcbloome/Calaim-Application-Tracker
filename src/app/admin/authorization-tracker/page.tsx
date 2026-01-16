@@ -165,13 +165,40 @@ export default function AuthorizationTracker() {
     });
   };
 
-  // Fetch authorization data using Firebase Function (same as Kaiser Tracker)
+  // Fetch authorization data using Kaiser function as temporary workaround
   const fetchAuthorizationData = async () => {
     setIsLoading(true);
     try {
-      const fetchAuthorizationMembers = httpsCallable(functions, 'fetchAuthorizationMembers');
-      const result = await fetchAuthorizationMembers();
-      const membersData = result.data as AuthorizationMember[];
+      // Use the working Kaiser function and filter for authorization data
+      const fetchKaiserMembers = httpsCallable(functions, 'fetchKaiserMembersFromCaspio');
+      const result = await fetchKaiserMembers();
+      const kaiserData = result.data as any;
+      
+      // Filter and transform Kaiser data to authorization format
+      const allMembers = kaiserData.members || [];
+      const membersWithAuth = allMembers.filter((member: any) => 
+        member.authStartDateT2038 || member.authEndDateT2038 || 
+        member.authStartDateH2022 || member.authEndDateH2022
+      );
+      
+      // Transform to authorization format
+      const membersData = membersWithAuth.map((member: any) => ({
+        id: member.id || member.caspio_id,
+        memberName: member.memberFirstName && member.memberLastName 
+          ? `${member.memberFirstName} ${member.memberLastName}` 
+          : member.memberName || 'Unknown',
+        mrn: member.memberMrn || member.MCP_CIN || '',
+        healthPlan: member.HealthPlan || member.CalAIM_MCP || 'Unknown',
+        primaryContact: member.primaryContact || '',
+        contactPhone: member.contactPhone || '',
+        contactEmail: member.contactEmail || '',
+        authStartDateT2038: member.authStartDateT2038,
+        authEndDateT2038: member.authEndDateT2038,
+        authStartDateH2022: member.authStartDateH2022,
+        authEndDateH2022: member.authEndDateH2022,
+        authExtRequestDateT2038: member.authExtRequestDateT2038,
+        authExtRequestDateH2022: member.authExtRequestDateH2022,
+      }));
       
       const processedMembers: AuthorizationMember[] = membersData.map((member: any) => {
         const t2038Status = getAuthStatus(member.authEndDateT2038);
@@ -196,7 +223,7 @@ export default function AuthorizationTracker() {
       
       toast({
         title: "Success",
-        description: `Loaded ${processedMembers.length} members with authorization data from Caspio`,
+        description: `Loaded ${processedMembers.length} members with authorization data from Caspio (via Kaiser function)`,
         variant: "default"
       });
     } catch (error: any) {
