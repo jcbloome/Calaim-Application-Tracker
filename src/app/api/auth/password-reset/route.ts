@@ -7,7 +7,11 @@ import crypto from 'crypto';
 if (!admin.apps.length) {
   try {
     admin.initializeApp({
-      credential: admin.credential.applicationDefault(),
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      }),
     });
   } catch (error) {
     console.error('Firebase Admin initialization error:', error);
@@ -18,12 +22,24 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('Password reset request received');
     const { email } = await request.json();
+    console.log('Email:', email);
 
     if (!email) {
+      console.log('No email provided');
       return NextResponse.json(
         { error: 'Email is required' },
         { status: 400 }
+      );
+    }
+
+    // Check if required environment variables are set
+    if (!process.env.RESEND_API_KEY) {
+      console.error('RESEND_API_KEY not set');
+      return NextResponse.json(
+        { error: 'Email service not configured' },
+        { status: 500 }
       );
     }
 
@@ -62,6 +78,8 @@ export async function POST(request: NextRequest) {
     const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://studio-2881432245-f1d94.firebaseapp.com'}/reset-password?token=${resetToken}`;
 
     // Send beautiful email using Resend
+    console.log('Sending email to:', email);
+    console.log('Reset URL:', resetUrl);
     await resend.emails.send({
       from: 'CalAIM Application Portal <noreply@studio-2881432245-f1d94.firebaseapp.com>',
       to: email,

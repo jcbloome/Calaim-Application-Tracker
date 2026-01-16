@@ -119,25 +119,49 @@ export default function HomePage() {
 
     setIsResettingPassword(true);
     try {
-      const response = await fetch('/api/auth/password-reset', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email: resetEmail }),
-      });
+      // Try custom API first, fallback to Firebase if it fails
+      try {
+        const response = await fetch('/api/auth/password-reset', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email: resetEmail }),
+        });
 
-      const data = await response.json();
+        const data = await response.json();
 
-      if (response.ok) {
-        enhancedToast.success('Password Reset Email Sent', 'Check your email (including spam/junk folder) for a beautifully designed reset link. The email may take a few minutes to arrive.');
+        if (response.ok) {
+          enhancedToast.success('Password Reset Email Sent', 'Check your email (including spam/junk folder) for a beautifully designed reset link from the CalAIM Application Portal team.');
+          setResetEmail('');
+          return;
+        } else {
+          throw new Error(data.error || 'Custom API failed');
+        }
+      } catch (customApiError) {
+        console.log('Custom API failed, falling back to Firebase:', customApiError);
+        
+        // Fallback to Firebase default
+        const { sendPasswordResetEmail } = await import('firebase/auth');
+        const { auth } = await import('@/firebase');
+        
+        await sendPasswordResetEmail(auth, resetEmail);
+        enhancedToast.success('Password Reset Email Sent', 'Check your email for instructions to reset your password. Note: This is using Firebase\'s default email while we fix our custom email service.');
         setResetEmail('');
-      } else {
-        enhancedToast.error('Password Reset Failed', data.error || 'Failed to send password reset email.');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Password reset error:', error);
-      enhancedToast.error('Password Reset Failed', 'An unexpected error occurred. Please try again.');
+      let errorMessage = 'An unexpected error occurred. Please try again.';
+      
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email address.';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Please enter a valid email address.';
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many password reset attempts. Please try again later.';
+      }
+      
+      enhancedToast.error('Password Reset Failed', errorMessage);
     } finally {
       setIsResettingPassword(false);
     }
