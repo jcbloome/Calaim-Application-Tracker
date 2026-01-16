@@ -54,12 +54,16 @@ export async function GET(req: NextRequest) {
     let allMembers: any[] = [];
     let pageToken = '';
     let pageCount = 0;
+    let offset = 0;
+    const limit = 1000;
     const maxPages = 10; // Safety limit
+    let pageMembers: any[] = [];
     
     do {
+      // Try both token-based and offset-based pagination
       const url = pageToken 
-        ? `${apiUrl}?q.limit=1000&q.pageToken=${pageToken}`
-        : `${apiUrl}?q.limit=1000`;
+        ? `${apiUrl}?q.limit=${limit}&q.pageToken=${pageToken}`
+        : `${apiUrl}?q.limit=${limit}&q.offset=${offset}`;
         
       console.log(`📄 Fetching page ${pageCount + 1} from Caspio...`);
       
@@ -78,13 +82,27 @@ export async function GET(req: NextRequest) {
       }
 
       const data = await response.json();
-      const pageMembers = data.Result || [];
+      pageMembers = data.Result || [];
       allMembers = allMembers.concat(pageMembers);
       
       pageToken = data.NextPageToken || '';
       pageCount++;
+      offset += limit;
       
       console.log(`📊 Page ${pageCount}: ${pageMembers.length} members, Total so far: ${allMembers.length}`);
+      console.log(`🔍 Response metadata:`, {
+        hasNextPageToken: !!data.NextPageToken,
+        nextPageToken: data.NextPageToken,
+        resultCount: pageMembers.length,
+        responseKeys: Object.keys(data),
+        nextOffset: offset
+      });
+      
+      // If we got fewer records than the limit and no next page token, we're done
+      if (pageMembers.length < limit && !pageToken) {
+        console.log('📋 Reached end of data - fewer records than limit and no next page token');
+        break;
+      }
       
       // Debug first few members' health plan fields
       if (pageCount === 1 && pageMembers.length > 0) {
@@ -102,7 +120,7 @@ export async function GET(req: NextRequest) {
         console.log('- Sample member data:', JSON.stringify(sample, null, 2).substring(0, 500) + '...');
       }
       
-    } while (pageToken && pageCount < maxPages);
+    } while ((pageToken || pageMembers.length === limit) && pageCount < maxPages);
     
     console.log(`📊 Final total: ${allMembers.length} members from ${pageCount} pages`);
     
