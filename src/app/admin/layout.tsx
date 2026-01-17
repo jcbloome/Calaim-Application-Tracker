@@ -72,8 +72,7 @@ const adminNavLinks = [
       { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: DollarSign },
-      { href: '/admin/california-map', label: 'California Counties Map', icon: Map },
-      { href: '/admin/california-map-enhanced', label: 'Enhanced Resource Map', icon: Navigation },
+      { href: '/admin/california-map-enhanced', label: 'California Resource Map', icon: Map },
     ]
   },
   { 
