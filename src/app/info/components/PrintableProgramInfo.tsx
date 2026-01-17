@@ -50,8 +50,7 @@ export function PrintableProgramInfo() {
             <p>Medicare is a federal health insurance program mainly for people 65 or older. Medi-Cal is California's Medicaid program for low-income individuals. The CalAIM program is a Medi-Cal benefit. While they are different, Medicare-covered days in a facility can count toward the 60-day stay requirement for the SNF Transition pathway.</p>
 
             <SectionTitle>Benefitscal.com</SectionTitle>
-            <p>A one stop shop to apply and review Medi-Cal benefits including possible share of cost information and to add for the member an authorized representative/power of attorney.</p>
-            <p className="text-sm font-medium text-blue-900 mt-2">Website: <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">www.benefitscal.com</a></p>
+            <p>A one stop shop to apply and review Medi-Cal benefits including possible share of cost information and to add for the member an authorized representative/power of attorney. Website: <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">www.benefitscal.com</a>.</p>
 
             <SectionTitle>Managed Care Plans We Work With</SectionTitle>
             <p>You must be a member of one of these plans to utilize us for the CS for Assisted Transitions.</p>
