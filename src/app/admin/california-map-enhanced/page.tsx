@@ -305,8 +305,8 @@ export default function EnhancedCaliforniaMapPage() {
         </div>
       </div>
 
-      {/* Summary Statistics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+       {/* Summary Statistics */}
+       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
@@ -355,17 +355,6 @@ export default function EnhancedCaliforniaMapPage() {
           </CardContent>
         </Card>
         
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-orange-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Total Beds</p>
-                <p className="text-2xl font-bold">{summaryStats.totalCapacity}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
         
         <Card>
           <CardContent className="p-4">
