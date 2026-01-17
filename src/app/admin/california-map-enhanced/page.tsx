@@ -29,6 +29,9 @@ import {
 import { findCountyByCity, searchCities, getCitiesInCounty } from '@/lib/california-cities';
 import { useToast } from '@/hooks/use-toast';
 import GoogleMapsComponent from '@/components/GoogleMapsComponent';
+import CleanGoogleMaps from '@/components/CleanGoogleMaps';
+import SimpleMapTest from '@/components/SimpleMapTest';
+import { ResourceDetailModal } from '@/components/ResourceDetailModal';
 
 // Types
 interface StaffMember {
@@ -141,34 +144,51 @@ export default function EnhancedCaliforniaMapPage() {
   const [citySearchResults, setCitySearchResults] = useState<Array<{city: string, county: string}>>([]);
   const [activeTab, setActiveTab] = useState('staff');
   
+  // Filter states
+  const [activeFilter, setActiveFilter] = useState<'all' | 'staff' | 'socialWorkers' | 'rns' | 'rcfes'>('all');
+  const [filteredCounties, setFilteredCounties] = useState<string[]>([]);
+  
+  // Modal states
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [modalType, setModalType] = useState<'staff' | 'socialWorkers' | 'rns' | 'rcfes' | 'members'>('staff');
+  
   // Data state
   const [staffData, setStaffData] = useState<Record<string, CountyData>>({});
   const [rcfeData, setRCFEData] = useState<Record<string, RCFECountyData>>({});
+  const [memberData, setMemberData] = useState<any>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shouldLoadMap, setShouldLoadMap] = useState(true);
+  
   
   // Layer visibility
-  const [showStaffLayer, setShowStaffLayer] = useState(true);
-  const [showRCFELayer, setShowRCFELayer] = useState(false);
   const [showCountyBoundaries, setShowCountyBoundaries] = useState(true);
 
   const { toast } = useToast();
+
+  // Auto-load data on page mount
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   // Fetch data
   const fetchData = async () => {
     setLoading(true);
     setError(null);
+    setShouldLoadMap(true); // Enable map loading when data is fetched
     
     try {
-      console.log('🔄 Fetching staff and RCFE data...');
+      console.log('🔄 Fetching staff, RCFE, and member data...');
       
-      const [staffResponse, rcfeResponse] = await Promise.all([
+      const [staffResponse, rcfeResponse, memberResponse] = await Promise.all([
         fetch('/api/staff-locations'),
-        fetch('/api/rcfe-locations')
+        fetch('/api/rcfe-locations'),
+        fetch('/api/member-locations')
       ]);
 
       const staffResult = await staffResponse.json();
       const rcfeResult = await rcfeResponse.json();
+      const memberResult = await memberResponse.json();
 
       if (staffResult.success) {
         setStaffData(staffResult.data.staffByCounty);
@@ -184,9 +204,24 @@ export default function EnhancedCaliforniaMapPage() {
         console.error('❌ RCFE data error:', rcfeResult.error);
       }
 
+      if (memberResult.success) {
+        setMemberData(memberResult.data);
+        console.log('✅ Member data loaded:', memberResult.data);
+        console.log('📊 Member data summary:', {
+          totalMembers: memberResult.data?.totalMembers,
+          counties: memberResult.data?.counties,
+          rcfesWithMembers: memberResult.data?.rcfesWithMembers,
+          membersByCounty: Object.keys(memberResult.data?.membersByCounty || {}).length,
+          membersByRCFE: Object.keys(memberResult.data?.membersByRCFE || {}).length,
+          breakdown: memberResult.data?.breakdown
+        });
+      } else {
+        console.error('❌ Member data error:', memberResult.error);
+      }
+
       toast({
         title: "Data Loaded",
-        description: `Loaded staff from ${Object.keys(staffResult.data?.staffByCounty || {}).length} counties and RCFEs from ${Object.keys(rcfeResult.data?.rcfesByCounty || {}).length} counties`,
+        description: `Loaded staff from ${Object.keys(staffResult.data?.staffByCounty || {}).length} counties, RCFEs from ${Object.keys(rcfeResult.data?.rcfesByCounty || {}).length} counties, and ${memberResult.data?.totalMembers || 0} authorized members`,
       });
 
     } catch (error: any) {
@@ -255,13 +290,54 @@ export default function EnhancedCaliforniaMapPage() {
     return californiaCounties.find(c => c.name === selectedCountyFromDropdown);
   }, [selectedCountyFromDropdown]);
 
-  // Calculate summary statistics
+  // Handle card clicks for filtering and showing details
+  const handleCardClick = (filterType: 'all' | 'staff' | 'socialWorkers' | 'rns' | 'rcfes' | 'members') => {
+    // Show detailed modal for specific types
+    if (filterType !== 'all') {
+      setModalType(filterType);
+      setShowDetailModal(true);
+    }
+    setActiveFilter(filterType);
+    
+    let counties: string[] = [];
+    
+    switch (filterType) {
+      case 'staff':
+        counties = Object.keys(staffData).filter(county => staffData[county].total > 0);
+        break;
+      case 'socialWorkers':
+        counties = Object.keys(staffData).filter(county => staffData[county].socialWorkers.length > 0);
+        break;
+      case 'rns':
+        counties = Object.keys(staffData).filter(county => staffData[county].rns.length > 0);
+        break;
+      case 'rcfes':
+        counties = Object.keys(rcfeData).filter(county => rcfeData[county].facilities.length > 0);
+        break;
+      default:
+        counties = [...new Set([...Object.keys(staffData), ...Object.keys(rcfeData)])];
+    }
+    
+    setFilteredCounties(counties);
+    
+    // Layer visibility is now controlled by the map legend
+
+    toast({
+      title: "Filter Applied",
+      description: `Showing ${counties.length} counties with ${filterType === 'all' ? 'any resources' : filterType.replace(/([A-Z])/g, ' $1').toLowerCase()}`,
+    });
+  };
+
+  // Calculate summary statistics (memoized to prevent re-renders)
   const summaryStats = useMemo(() => {
-    const totalStaff = Object.values(staffData).reduce((sum, county) => sum + county.total, 0);
-    const totalSocialWorkers = Object.values(staffData).reduce((sum, county) => sum + county.socialWorkers.length, 0);
-    const totalRNs = Object.values(staffData).reduce((sum, county) => sum + county.rns.length, 0);
-    const totalRCFEs = Object.values(rcfeData).reduce((sum, county) => sum + county.facilities.length, 0);
-    const totalCapacity = Object.values(rcfeData).reduce((sum, county) => sum + county.totalCapacity, 0);
+    const staffKeys = Object.keys(staffData);
+    const rcfeKeys = Object.keys(rcfeData);
+    
+    const totalStaff = staffKeys.reduce((sum, key) => sum + (staffData[key]?.total || 0), 0);
+    const totalSocialWorkers = staffKeys.reduce((sum, key) => sum + (staffData[key]?.socialWorkers?.length || 0), 0);
+    const totalRNs = staffKeys.reduce((sum, key) => sum + (staffData[key]?.rns?.length || 0), 0);
+    const totalRCFEs = rcfeKeys.reduce((sum, key) => sum + (rcfeData[key]?.facilities?.length || 0), 0);
+    const totalCapacity = rcfeKeys.reduce((sum, key) => sum + (rcfeData[key]?.totalCapacity || 0), 0);
     
     return {
       totalStaff,
@@ -269,10 +345,10 @@ export default function EnhancedCaliforniaMapPage() {
       totalRNs,
       totalRCFEs,
       totalCapacity,
-      countiesWithStaff: Object.keys(staffData).length,
-      countiesWithRCFEs: Object.keys(rcfeData).length
+      countiesWithStaff: staffKeys.length,
+      countiesWithRCFEs: rcfeKeys.length
     };
-  }, [staffData, rcfeData]);
+  }, [Object.keys(staffData).length, Object.keys(rcfeData).length]);
 
   if (loading) {
     return (
@@ -294,7 +370,7 @@ export default function EnhancedCaliforniaMapPage() {
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Enhanced California Resource Map</h1>
+          <h1 className="text-3xl font-bold">Map Intelligence</h1>
           <p className="text-muted-foreground">Interactive map showing staff locations and RCFE facilities across California</p>
         </div>
         <div className="flex gap-2">
@@ -305,69 +381,149 @@ export default function EnhancedCaliforniaMapPage() {
         </div>
       </div>
 
-       {/* Summary Statistics */}
-       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        <Card>
+       {/* Summary Statistics - Clickable Cards */}
+       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {/* Statistics Overview Card */}
+        <Card className="bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-200">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-blue-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Total Staff</p>
-                <p className="text-2xl font-bold">{summaryStats.totalStaff}</p>
+            <div>
+              <p className="text-sm text-indigo-600 font-medium mb-3">📊 System Overview</p>
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-600">RCFEs:</span>
+                  <span className="font-semibold text-indigo-700">{summaryStats.totalRCFEs}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-600">MSWs:</span>
+                  <span className="font-semibold text-green-700">{summaryStats.totalSocialWorkers}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-600">RNs:</span>
+                  <span className="font-semibold text-red-700">{summaryStats.totalRNs}</span>
+                </div>
+                <div className="flex justify-between text-xs border-t pt-1 mt-2">
+                  <span className="text-gray-600">Members:</span>
+                  <span className="font-semibold text-orange-700">{memberData?.totalMembers || 0}</span>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
         
-        <Card>
+        <Card 
+          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 ${
+            activeFilter === 'staff' ? 'ring-2 ring-blue-500 bg-blue-50' : 'hover:bg-gray-50'
+          }`}
+          onClick={() => handleCardClick('staff')}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <UserCheck className="h-4 w-4 text-green-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Social Workers</p>
-                <p className="text-2xl font-bold">{summaryStats.totalSocialWorkers}</p>
-              </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Total Staff</p>
+              <p className="text-2xl font-bold">{summaryStats.totalStaff}</p>
+              <p className="text-xs text-gray-600 font-medium">Click for details</p>
             </div>
           </CardContent>
         </Card>
         
-        <Card>
+        <Card 
+          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 ${
+            activeFilter === 'socialWorkers' ? 'ring-2 ring-green-500 bg-green-50' : 'hover:bg-gray-50'
+          }`}
+          onClick={() => handleCardClick('socialWorkers')}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Stethoscope className="h-4 w-4 text-red-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">RNs</p>
-                <p className="text-2xl font-bold">{summaryStats.totalRNs}</p>
-              </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Social Workers</p>
+              <p className="text-2xl font-bold">{summaryStats.totalSocialWorkers}</p>
+              <p className="text-xs text-gray-600 font-medium">Click for details</p>
             </div>
           </CardContent>
         </Card>
         
-        <Card>
+        <Card 
+          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 ${
+            activeFilter === 'rns' ? 'ring-2 ring-red-500 bg-red-50' : 'hover:bg-gray-50'
+          }`}
+          onClick={() => handleCardClick('rns')}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Home className="h-4 w-4 text-purple-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">RCFEs</p>
-                <p className="text-2xl font-bold">{summaryStats.totalRCFEs}</p>
-              </div>
+            <div>
+              <p className="text-sm text-muted-foreground">RNs</p>
+              <p className="text-2xl font-bold">{summaryStats.totalRNs}</p>
+              <p className="text-xs text-gray-600 font-medium">Click for details</p>
             </div>
           </CardContent>
         </Card>
         
-        
-        <Card>
+        <Card 
+          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 ${
+            activeFilter === 'rcfes' ? 'ring-2 ring-purple-500 bg-purple-50' : 'hover:bg-gray-50'
+          }`}
+          onClick={() => handleCardClick('rcfes')}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-indigo-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Counties</p>
-                <p className="text-2xl font-bold">{Math.max(summaryStats.countiesWithStaff, summaryStats.countiesWithRCFEs)}</p>
-              </div>
+            <div>
+              <p className="text-sm text-muted-foreground">RCFEs</p>
+              <p className="text-2xl font-bold">{summaryStats.totalRCFEs}</p>
+              <p className="text-xs text-gray-600 font-medium">Click for details</p>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card 
+          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 ${
+            activeFilter === 'all' ? 'ring-2 ring-indigo-500 bg-indigo-50' : 'hover:bg-gray-50'
+          }`}
+          onClick={() => handleCardClick('all')}
+        >
+          <CardContent className="p-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Counties</p>
+              <p className="text-2xl font-bold">{Math.max(summaryStats.countiesWithStaff, summaryStats.countiesWithRCFEs)}</p>
+              <p className="text-xs text-gray-600 font-medium">Show all</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card 
+          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 ${
+            activeFilter === 'members' ? 'ring-2 ring-orange-500 bg-orange-50' : 'hover:bg-gray-50'
+          }`}
+          onClick={() => handleCardClick('members')}
+        >
+          <CardContent className="p-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Authorized Members</p>
+              <p className="text-2xl font-bold">{memberData?.totalMembers || 0}</p>
+              <p className="text-xs text-gray-600 font-medium">Click for details</p>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Active Filter Display */}
+      {activeFilter !== 'all' && (
+        <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <Filter className="h-4 w-4 text-blue-600" />
+          <span className="text-sm font-medium text-blue-800">
+            Active Filter: {activeFilter === 'socialWorkers' ? 'Social Workers' : 
+                          activeFilter === 'rns' ? 'Registered Nurses' : 
+                          activeFilter === 'rcfes' ? 'RCFE Facilities' : 
+                          activeFilter === 'staff' ? 'All Staff' : 'All Resources'}
+          </span>
+          <span className="text-sm text-blue-600">
+            ({filteredCounties.length} counties)
+          </span>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => handleCardClick('all')}
+            className="ml-auto"
+          >
+            Clear Filter
+          </Button>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -428,24 +584,8 @@ export default function EnhancedCaliforniaMapPage() {
 
               {/* Layer Controls */}
               <div className="space-y-3">
-                <Label className="text-sm font-medium">Map Layers</Label>
+                <Label className="text-sm font-medium">Map Options</Label>
                 <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="staff-layer"
-                      checked={showStaffLayer}
-                      onCheckedChange={setShowStaffLayer}
-                    />
-                    <Label htmlFor="staff-layer" className="text-sm">Staff Locations</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="rcfe-layer"
-                      checked={showRCFELayer}
-                      onCheckedChange={setShowRCFELayer}
-                    />
-                    <Label htmlFor="rcfe-layer" className="text-sm">RCFE Facilities</Label>
-                  </div>
                   <div className="flex items-center space-x-2">
                     <Switch
                       id="county-boundaries"
@@ -539,6 +679,11 @@ export default function EnhancedCaliforniaMapPage() {
                 <TabsContent value="staff" className="space-y-4">
                   <div className="max-h-96 overflow-y-auto space-y-2">
                     {Object.entries(staffData)
+                      .filter(([countyName]) => 
+                        activeFilter === 'all' || 
+                        filteredCounties.length === 0 || 
+                        filteredCounties.includes(countyName)
+                      )
                       .sort(([a], [b]) => a.localeCompare(b))
                       .map(([countyName, data]) => (
                         <div
@@ -564,12 +709,28 @@ export default function EnhancedCaliforniaMapPage() {
                           </div>
                         </div>
                       ))}
+                    {Object.entries(staffData)
+                      .filter(([countyName]) => 
+                        activeFilter === 'all' || 
+                        filteredCounties.length === 0 || 
+                        filteredCounties.includes(countyName)
+                      ).length === 0 && (
+                      <div className="text-center py-8 text-gray-500">
+                        <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p>No staff data matches the current filter</p>
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
                 
                 <TabsContent value="rcfe" className="space-y-4">
                   <div className="max-h-96 overflow-y-auto space-y-2">
                     {Object.entries(rcfeData)
+                      .filter(([countyName]) => 
+                        activeFilter === 'all' || 
+                        filteredCounties.length === 0 || 
+                        filteredCounties.includes(countyName)
+                      )
                       .sort(([a], [b]) => a.localeCompare(b))
                       .map(([countyName, data]) => (
                         <div
@@ -595,6 +756,17 @@ export default function EnhancedCaliforniaMapPage() {
                           </div>
                         </div>
                       ))}
+                    {Object.entries(rcfeData)
+                      .filter(([countyName]) => 
+                        activeFilter === 'all' || 
+                        filteredCounties.length === 0 || 
+                        filteredCounties.includes(countyName)
+                      ).length === 0 && (
+                      <div className="text-center py-8 text-gray-500">
+                        <Home className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p>No RCFE data matches the current filter</p>
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
               </Tabs>
@@ -606,25 +778,32 @@ export default function EnhancedCaliforniaMapPage() {
         <div className="lg:col-span-2">
           <Card className="h-full">
             <CardHeader>
-              <CardTitle>Interactive California Map</CardTitle>
+              <CardTitle>Map Intelligence</CardTitle>
               <CardDescription>
                 Click on counties to view staff and RCFE details. Toggle layers to show different data.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="relative rounded-lg overflow-hidden" style={{ height: '600px' }}>
-                <GoogleMapsComponent
-                  center={{ lat: 36.7783, lng: -119.4179 }}
-                  zoom={6}
-                  staffData={staffData}
-                  rcfeData={rcfeData}
-                  showStaffLayer={showStaffLayer}
-                  showRCFELayer={showRCFELayer}
-                  onCountySelect={(county) => {
-                    setSelectedCounty(county);
-                    setSelectedCountyFromDropdown(county);
-                  }}
-                />
+                {/* Google Maps - Now Working! */}
+                <SimpleMapTest 
+            shouldLoadMap={shouldLoadMap}
+            resourceCounts={{
+              socialWorkers: summaryStats.totalSocialWorkers,
+              registeredNurses: summaryStats.totalRNs,
+              rcfeFacilities: summaryStats.totalRCFEs,
+              authorizedMembers: memberData?.totalMembers || 0
+            }}
+          />
+                
+                {/* Debug Info */}
+                <div className="absolute bottom-16 right-4 bg-white p-2 rounded shadow text-xs z-10 max-w-xs">
+                  <div className="font-semibold mb-1">Debug Info:</div>
+                  <div>Staff Counties: {Object.keys(staffData).length}</div>
+                  <div>RCFE Counties: {Object.keys(rcfeData).length}</div>
+                  <div>API Key: {process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ? '✅ Set' : '❌ Missing'}</div>
+                  <div className="text-xs text-green-600 mt-1">✅ Google Maps Working!</div>
+                </div>
 
                 {/* Legend */}
                 <div className="absolute bottom-4 left-4 bg-white p-3 rounded-lg shadow-lg z-10">
@@ -645,19 +824,6 @@ export default function EnhancedCaliforniaMapPage() {
                   </div>
                 </div>
 
-                {/* Layer Status */}
-                <div className="absolute top-4 right-4 bg-white p-2 rounded shadow text-xs z-10">
-                  <div className="flex items-center gap-2">
-                    {showStaffLayer && <Eye className="h-3 w-3 text-green-600" />}
-                    {!showStaffLayer && <EyeOff className="h-3 w-3 text-gray-400" />}
-                    <span>Staff</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {showRCFELayer && <Eye className="h-3 w-3 text-purple-600" />}
-                    {!showRCFELayer && <EyeOff className="h-3 w-3 text-gray-400" />}
-                    <span>RCFEs</span>
-                  </div>
-                </div>
               </div>
             </CardContent>
           </Card>
@@ -769,6 +935,16 @@ export default function EnhancedCaliforniaMapPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Resource Detail Modal */}
+      <ResourceDetailModal
+        isOpen={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+        type={modalType}
+        staffData={staffData}
+        rcfeData={rcfeData}
+        memberData={memberData}
+      />
     </div>
   );
 }

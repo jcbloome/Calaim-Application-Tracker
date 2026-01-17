@@ -129,10 +129,11 @@ export async function GET(request: NextRequest) {
             console.log('📋 Sample RCFE record:', allRecords[0]);
             
             // Show first 5 records to understand the data structure
-            console.log('🏠 First 5 RCFE records:');
+            console.log('🏠 First 5 RCFE records with registered IDs:');
             allRecords.slice(0, 5).forEach((record, index) => {
               console.log(`RCFE ${index + 1}:`, {
-                Name: record.Name,
+                Name: record.Name || record.RCFE_Name,
+                RegisteredID: record.RCFE_Registered_ID || record.ID || record.id,
                 County: record.County,
                 City: record.City,
                 Address: record.Address,
@@ -220,7 +221,8 @@ export async function GET(request: NextRequest) {
                            record.primary_contact || record.Administrator || record.Primary_Contact || '';
 
       return {
-        id: record.ID || record.id || record.facility_id || Math.random().toString(36),
+        id: record.ID || record.id || record.facility_id || record.RCFE_Registered_ID || Math.random().toString(36),
+        registeredId: record.RCFE_Registered_ID || record.ID || record.id,
         name,
         county,
         city,

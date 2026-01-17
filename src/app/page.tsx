@@ -226,12 +226,6 @@ export default function HomePage() {
             {/* Forgot Password Section */}
             <div className="mt-6 pt-4 border-t border-gray-200">
               <p className="text-sm text-gray-600 mb-3">Forgot your password?</p>
-              <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <p className="text-xs text-blue-800">
-                  <strong>✨ New:</strong> We now send beautiful, professional password reset emails! 
-                  Check your inbox (and spam folder) for a nicely designed email from the CalAIM Application Portal team.
-                </p>
-              </div>
               <form onSubmit={handleForgotPassword} className="space-y-3">
                 <Input
                   type="email"

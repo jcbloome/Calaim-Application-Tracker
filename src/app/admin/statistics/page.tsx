@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useFirestore } from '@/firebase';
 import { collection, query, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Users, Building2, Stethoscope, UserCheck } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -63,6 +63,13 @@ export default function AdminStatisticsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  // Resource data state
+  const [staffData, setStaffData] = useState<any>({});
+  const [rcfeData, setRCFEData] = useState<any>({});
+  const [memberData, setMemberData] = useState<any>(null);
+  const [resourceLoading, setResourceLoading] = useState(false);
+  const [resourceError, setResourceError] = useState<string | null>(null);
+
   const fetchApps = useCallback(async () => {
     if (isAdminLoading || !firestore || !isAdmin) {
         if (!isAdminLoading) setIsLoading(false);
@@ -86,9 +93,72 @@ export default function AdminStatisticsPage() {
     }
   }, [firestore, isAdmin, isAdminLoading]);
 
+  // Fetch resource data (staff, RCFEs, members)
+  const fetchResourceData = useCallback(async () => {
+    if (!isAdmin) return;
+
+    setResourceLoading(true);
+    setResourceError(null);
+    
+    try {
+      const [staffResponse, rcfeResponse, memberResponse] = await Promise.all([
+        fetch('/api/staff-locations'),
+        fetch('/api/rcfe-locations'),
+        fetch('/api/member-locations')
+      ]);
+
+      const staffResult = await staffResponse.json();
+      const rcfeResult = await rcfeResponse.json();
+      const memberResult = await memberResponse.json();
+
+      if (staffResult.success) {
+        setStaffData(staffResult.data.staffByCounty);
+      } else {
+        console.error('Staff data error:', staffResult.error);
+      }
+
+      if (rcfeResult.success) {
+        setRCFEData(rcfeResult.data.rcfesByCounty);
+      } else {
+        console.error('RCFE data error:', rcfeResult.error);
+      }
+
+      if (memberResult.success) {
+        setMemberData(memberResult.data);
+      } else {
+        console.error('Member data error:', memberResult.error);
+      }
+
+    } catch (error: any) {
+      console.error('Error fetching resource data:', error);
+      setResourceError(error.message);
+    } finally {
+      setResourceLoading(false);
+    }
+  }, [isAdmin]);
+
   useEffect(() => {
     fetchApps();
-  }, [fetchApps]);
+    fetchResourceData();
+  }, [fetchApps, fetchResourceData]);
+
+  // Calculate resource statistics
+  const resourceStats = useMemo(() => {
+    const staffKeys = Object.keys(staffData);
+    const rcfeKeys = Object.keys(rcfeData);
+    
+    const totalSocialWorkers = staffKeys.reduce((sum, key) => sum + (staffData[key]?.socialWorkers?.length || 0), 0);
+    const totalRNs = staffKeys.reduce((sum, key) => sum + (staffData[key]?.rns?.length || 0), 0);
+    const totalRCFEs = rcfeKeys.reduce((sum, key) => sum + (rcfeData[key]?.facilities?.length || 0), 0);
+    const totalAuthorizedMembers = memberData?.totalMembers || 0;
+    
+    return {
+      totalSocialWorkers,
+      totalRNs,
+      totalRCFEs,
+      totalAuthorizedMembers
+    };
+  }, [staffData, rcfeData, memberData]);
 
   // -- ADDED: Calculation for topCities, below! --
   const { stats, availableYears, topCities } = useMemo(() => {
@@ -193,11 +263,72 @@ export default function AdminStatisticsPage() {
   return (
     <div className="space-y-6">
         <div>
-            <h1 className="text-3xl font-bold">Application Statistics</h1>
+            <h1 className="text-3xl font-bold">Statistics Dashboard</h1>
             <p className="text-muted-foreground">
-                A visual breakdown of all applications in the system.
+                Comprehensive overview of system resources and applications.
             </p>
         </div>
+
+        {/* Resource Statistics */}
+        <div>
+            <h2 className="text-xl font-semibold mb-4">System Resources</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <StatCard title="Total RCFEs" borderColor="border-purple-500">
+                    <div className="flex items-center gap-3">
+                        <Building2 className="h-8 w-8 text-purple-600" />
+                        <div>
+                            <p className="text-2xl font-bold text-purple-700">
+                                {resourceLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : resourceStats.totalRCFEs}
+                            </p>
+                            <p className="text-xs text-muted-foreground">Residential Care Facilities</p>
+                        </div>
+                    </div>
+                </StatCard>
+
+                <StatCard title="Social Workers (MSW)" borderColor="border-green-500">
+                    <div className="flex items-center gap-3">
+                        <Users className="h-8 w-8 text-green-600" />
+                        <div>
+                            <p className="text-2xl font-bold text-green-700">
+                                {resourceLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : resourceStats.totalSocialWorkers}
+                            </p>
+                            <p className="text-xs text-muted-foreground">Licensed Social Workers</p>
+                        </div>
+                    </div>
+                </StatCard>
+
+                <StatCard title="Registered Nurses (RN)" borderColor="border-blue-500">
+                    <div className="flex items-center gap-3">
+                        <Stethoscope className="h-8 w-8 text-blue-600" />
+                        <div>
+                            <p className="text-2xl font-bold text-blue-700">
+                                {resourceLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : resourceStats.totalRNs}
+                            </p>
+                            <p className="text-xs text-muted-foreground">Licensed Nurses</p>
+                        </div>
+                    </div>
+                </StatCard>
+
+                <StatCard title="Authorized Members" borderColor="border-orange-500">
+                    <div className="flex items-center gap-3">
+                        <UserCheck className="h-8 w-8 text-orange-600" />
+                        <div>
+                            <p className="text-2xl font-bold text-orange-700">
+                                {resourceLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : resourceStats.totalAuthorizedMembers}
+                            </p>
+                            <p className="text-xs text-muted-foreground">CalAIM Members</p>
+                        </div>
+                    </div>
+                </StatCard>
+            </div>
+            {resourceError && (
+                <p className="text-sm text-destructive mt-2">Error loading resource data: {resourceError}</p>
+            )}
+        </div>
+
+        {/* Application Statistics */}
+        <div>
+            <h2 className="text-xl font-semibold mb-4">Application Statistics</h2>
         {/* 
             Grid changed from "grid-cols-1 md:grid-cols-2 xl:grid-cols-3" to 
             "grid-cols-1 md:grid-cols-2 xl:grid-cols-4"
@@ -292,6 +423,7 @@ export default function AdminStatisticsPage() {
                 </CardContent>
             </Card>
 
+        </div>
         </div>
     </div>
   );

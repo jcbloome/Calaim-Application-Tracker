@@ -188,6 +188,32 @@ export default function CaliforniaCountiesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Left Sidebar */}
         <div className="lg:col-span-1 space-y-4">
+          {/* California Map */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <MapPin className="h-5 w-5" />
+                California Counties Map
+              </CardTitle>
+              <CardDescription>
+                Visual reference map of California counties
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="relative">
+                <img 
+                  src="https://www.suncatcherstudio.com/uploads/2/8/9/4/28949970/california-county-map-color_orig.png"
+                  alt="California Counties Map"
+                  className="w-full h-auto rounded-lg border shadow-sm"
+                  style={{ maxHeight: '400px', objectFit: 'contain' }}
+                />
+                <div className="absolute bottom-2 right-2 text-xs text-gray-500 bg-white bg-opacity-90 px-2 py-1 rounded">
+                  Reference Map
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* City Search */}
           <Card>
             <CardHeader>

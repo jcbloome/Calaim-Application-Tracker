@@ -38,7 +38,9 @@ import {
   Calendar,
   DollarSign,
   Navigation,
-  Wrench
+  Wrench,
+  UserPlus,
+  CalendarCheck
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -74,7 +76,10 @@ const adminNavLinks = [
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: DollarSign },
       { href: '/admin/california-counties', label: 'California Counties & Cities', icon: Map },
-      { href: '/admin/california-map-enhanced', label: 'Staff & RCFE Resource Map', icon: Navigation },
+      { href: '/admin/california-map-enhanced', label: 'Map Intelligence', icon: Navigation },
+      { href: '/admin/social-worker-assignments', label: 'Social Worker Assignments', icon: UserPlus },
+      { href: '/admin/monthly-visits', label: 'Monthly Visits', icon: CalendarCheck },
+      { href: '/admin/test-google-maps', label: 'Test Google Maps', icon: TestTube2 },
       { href: '/admin/form-separator', label: 'Form Separator Tool', icon: Scissors },
     ]
   },

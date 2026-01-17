@@ -116,11 +116,39 @@ export async function GET(req: NextRequest) {
     
     console.log(`📊 Final total: ${allMembers.length} members from ${pageNumber - 1} pages`);
     
-    // Transform data for Authorization Tracker (include ALL members)
-    const transformedMembers = allMembers.map((member: any) => {
+    // Debug: Show CalAIM_Status values with unique ID fields
+    if (allMembers.length > 0) {
+      console.log('🔍 First 5 members CalAIM_Status values with unique IDs:');
+      allMembers.slice(0, 5).forEach((member, index) => {
+        console.log(`Member ${index + 1}:`, {
+          Name: `${member.Senior_First} ${member.Senior_Last}`,
+          Record_ID: member.Record_ID,
+          Senior_Last_First_ID: member.Senior_Last_First_ID,
+          Client_ID2: member.Client_ID2,
+          CalAIM_Status: member.CalAIM_Status,
+          statusType: typeof member.CalAIM_Status,
+          statusLength: member.CalAIM_Status ? member.CalAIM_Status.length : 0
+        });
+      });
+      
+      const uniqueStatuses = [...new Set(allMembers.map(m => m.CalAIM_Status).filter(Boolean))];
+      console.log('📊 Unique CalAIM_Status values in authorization data:', uniqueStatuses);
+    }
+
+    // Filter to only include authorized members
+    const authorizedMembers = allMembers.filter(member => 
+      member.CalAIM_Status === 'Authorized'
+    );
+    
+    console.log(`📊 Total members: ${allMembers.length}, Authorized members: ${authorizedMembers.length}`);
+
+    // Transform data for Authorization Tracker (only authorized members)
+    const transformedMembers = authorizedMembers.map((member: any) => {
       return {
-        // Basic info using EXACT Caspio field names
+        // Basic info using EXACT Caspio field names with proper unique IDs
         recordId: member.Record_ID || '',
+        seniorLastFirstId: member.Senior_Last_First_ID || '',
+        clientId2: member.Client_ID2 || '',
         memberFirstName: member.Senior_First || '',
         memberLastName: member.Senior_Last || '',
         memberMediCalNum: member.MC || '',
