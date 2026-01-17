@@ -18,18 +18,26 @@ interface RCFE {
 export async function GET(request: NextRequest) {
   try {
     console.log('🏠 Fetching RCFE locations from Caspio...');
-
-    // Get Caspio access token
-    const tokenResponse = await fetch(`${process.env.CASPIO_BASE_URL}/oauth/token`, {
+    
+    // Use exact same authentication pattern as working Kaiser tracker
+    const dataBaseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+    
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const tokenUrl = 'https://c7ebl500.caspio.com/oauth/token';
+    
+    console.log('🔐 Using Kaiser tracker auth pattern');
+    console.log('🔐 OAuth URL:', tokenUrl);
+    console.log('🔐 Data API URL:', dataBaseUrl);
+    
+    const tokenResponse = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: process.env.CASPIO_CLIENT_ID!,
-        client_secret: process.env.CASPIO_CLIENT_SECRET!,
-      }),
+      body: 'grant_type=client_credentials'
     });
 
     if (!tokenResponse.ok) {
@@ -56,38 +64,73 @@ export async function GET(request: NextRequest) {
 
     for (const tableName of possibleTables) {
       try {
-        const rcfeUrl = `${process.env.CASPIO_BASE_URL}/tables/${tableName}/records`;
+        // Fetch all records using pagination (optimized for speed)
+        let allRecords: any[] = [];
+        let pageNumber = 1;
+        const pageSize = 100; // Smaller pages for faster response
+        const maxPages = 10; // Up to 1,000 records (should cover your 250+ RCFEs)
+        let pageRecords: any[] = [];
+
         console.log('🔍 Trying table:', tableName);
-        console.log('🌐 Full URL:', rcfeUrl);
 
-        const rcfeResponse = await fetch(rcfeUrl, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        });
+        do {
+          // Use Caspio's correct pagination parameters (same as authorization tracker)
+          const rcfeUrl = `${dataBaseUrl}/tables/${tableName}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
+          console.log(`🌐 Fetching page ${pageNumber} from ${tableName} (pageSize: ${pageSize})...`);
 
-        console.log(`📡 Response status for ${tableName}:`, rcfeResponse.status);
-        if (!rcfeResponse.ok) {
-          const errorText = await rcfeResponse.text();
-          console.log(`❌ Error response for ${tableName}:`, errorText);
-        }
+          const rcfeResponse = await fetch(rcfeUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          });
 
-        if (rcfeResponse.ok) {
+          console.log(`📡 Response status for ${tableName} page ${pageNumber}:`, rcfeResponse.status);
+          
+          if (!rcfeResponse.ok) {
+            const errorText = await rcfeResponse.text();
+            console.log(`❌ Error response for ${tableName} page ${pageNumber}:`, errorText);
+            break;
+          }
+
           const rcfeData = await rcfeResponse.json();
-          rcfeRecords = rcfeData.Result || [];
+          pageRecords = rcfeData.Result || [];
+          
+          console.log(`📄 Retrieved ${pageRecords.length} records from ${tableName} page ${pageNumber}`);
+          
+          if (pageRecords.length > 0) {
+            allRecords = allRecords.concat(pageRecords);
+            pageNumber++;
+          }
+
+          // If we got fewer records than pageSize, we've reached the end
+          if (pageRecords.length < pageSize) {
+            console.log(`📋 Reached end of data - got ${pageRecords.length} records (less than pageSize ${pageSize})`);
+            break;
+          }
+
+          // Safety check to prevent infinite loops
+          if (pageNumber > maxPages) {
+            console.log(`⚠️ Reached maximum pages limit (${maxPages})`);
+            break;
+          }
+          
+        } while (pageRecords.length === pageSize && pageNumber <= maxPages);
+
+        if (allRecords.length > 0) {
+          rcfeRecords = allRecords;
           successfulTable = tableName;
-          console.log(`✅ Found RCFE data in table: ${tableName} (${rcfeRecords.length} records)`);
+          console.log(`✅ Found RCFE data in table: ${tableName} (${allRecords.length} total records from ${pageNumber - 1} pages)`);
           
           // Debug: Show available fields in the first record
-          if (rcfeRecords.length > 0) {
-            console.log('🔍 Available RCFE fields:', Object.keys(rcfeRecords[0]));
-            console.log('📋 Sample RCFE record:', rcfeRecords[0]);
+          if (allRecords.length > 0) {
+            console.log('🔍 Available RCFE fields:', Object.keys(allRecords[0]));
+            console.log('📋 Sample RCFE record:', allRecords[0]);
             
             // Show first 5 records to understand the data structure
             console.log('🏠 First 5 RCFE records:');
-            rcfeRecords.slice(0, 5).forEach((record, index) => {
+            allRecords.slice(0, 5).forEach((record, index) => {
               console.log(`RCFE ${index + 1}:`, {
                 Name: record.Name,
                 County: record.County,
@@ -101,7 +144,7 @@ export async function GET(request: NextRequest) {
           break;
         }
       } catch (error) {
-        console.log(`❌ Table ${tableName} not found or accessible`);
+        console.log(`❌ Table ${tableName} not found or accessible:`, error);
         continue;
       }
     }

@@ -15,22 +15,33 @@ interface StaffMember {
 export async function GET(request: NextRequest) {
   try {
     console.log('🏥 Fetching staff locations from Caspio...');
-
-    // Get Caspio access token
-    const tokenResponse = await fetch(`${process.env.CASPIO_BASE_URL}/oauth/token`, {
+    
+    // Use exact same authentication pattern as working Kaiser tracker
+    const dataBaseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+    
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const tokenUrl = 'https://c7ebl500.caspio.com/oauth/token';
+    
+    console.log('🔐 Using Kaiser tracker auth pattern');
+    console.log('🔐 OAuth URL:', tokenUrl);
+    console.log('🔐 Data API URL:', dataBaseUrl);
+    
+    const tokenResponse = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: process.env.CASPIO_CLIENT_ID!,
-        client_secret: process.env.CASPIO_CLIENT_SECRET!,
-      }),
+      body: 'grant_type=client_credentials'
     });
 
+    console.log('🔐 Token response status:', tokenResponse.status);
     if (!tokenResponse.ok) {
-      throw new Error('Failed to get Caspio access token');
+      const errorText = await tokenResponse.text();
+      console.log('❌ Token error response:', errorText);
+      throw new Error(`Failed to get access token: ${tokenResponse.status} - ${errorText}`);
     }
 
     const tokenData = await tokenResponse.json();
@@ -52,39 +63,80 @@ export async function GET(request: NextRequest) {
 
     for (const tableName of possibleStaffTables) {
       try {
-        const staffUrl = `${process.env.CASPIO_BASE_URL}/tables/${tableName}/records`;
+        // Fetch all records using pagination (optimized for speed)
+        let allRecords: any[] = [];
+        let pageNumber = 1;
+        const pageSize = 100; // Smaller pages for faster response
+        const maxPages = 10; // Up to 1,000 records
+        let pageRecords: any[] = [];
+
         console.log('🔍 Trying staff table:', tableName);
-        console.log('🌐 Full URL:', staffUrl);
 
-        const staffResponse = await fetch(staffUrl, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        });
+        do {
+          // Use Caspio's correct pagination parameters (same as authorization tracker)
+          const staffUrl = `${dataBaseUrl}/tables/${tableName}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
+          console.log(`🌐 Fetching page ${pageNumber} from ${tableName} (pageSize: ${pageSize})...`);
 
-        console.log(`📡 Response status for ${tableName}:`, staffResponse.status);
-        if (!staffResponse.ok) {
-          const errorText = await staffResponse.text();
-          console.log(`❌ Error response for ${tableName}:`, errorText);
-        }
+          const staffResponse = await fetch(staffUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          });
 
-        if (staffResponse.ok) {
+          console.log(`📡 Response status for ${tableName} page ${pageNumber}:`, staffResponse.status);
+          
+          if (!staffResponse.ok) {
+            const errorText = await staffResponse.text();
+            console.log(`❌ Error response for ${tableName} page ${pageNumber}:`, errorText);
+            break;
+          }
+
           const staffData = await staffResponse.json();
-          staffRecords = staffData.Result || [];
+          pageRecords = staffData.Result || [];
+          
+          console.log(`📄 Retrieved ${pageRecords.length} records from ${tableName} page ${pageNumber}`);
+          
+          if (pageRecords.length > 0) {
+            allRecords = allRecords.concat(pageRecords);
+            pageNumber++;
+          }
+
+          // If we got fewer records than pageSize, we've reached the end
+          if (pageRecords.length < pageSize) {
+            console.log(`📋 Reached end of data - got ${pageRecords.length} records (less than pageSize ${pageSize})`);
+            break;
+          }
+
+          // Safety check to prevent infinite loops
+          if (pageNumber > maxPages) {
+            console.log(`⚠️ Reached maximum pages limit (${maxPages})`);
+            break;
+          }
+          
+        } while (pageRecords.length === pageSize && pageNumber <= maxPages);
+
+        if (allRecords.length > 0) {
+          staffRecords = allRecords;
           successfulStaffTable = tableName;
-          console.log(`✅ Found staff data in table: ${tableName} (${staffRecords.length} records)`);
+          console.log(`✅ Found staff data in table: ${tableName} (${allRecords.length} total records from ${pageNumber - 1} pages)`);
           
           // Debug: Show available fields in the first record
-          if (staffRecords.length > 0) {
-            console.log('🔍 Available Staff fields:', Object.keys(staffRecords[0]));
-            console.log('📋 Sample Staff record:', staffRecords[0]);
+          if (allRecords.length > 0) {
+            console.log('🔍 Available Staff fields:', Object.keys(allRecords[0]));
+            console.log('📋 Sample Staff record:', JSON.stringify(allRecords[0], null, 2));
+            
+            // Show first 3 records to understand the data structure
+            console.log('📋 First 3 staff records:');
+            allRecords.slice(0, 3).forEach((record, index) => {
+              console.log(`Record ${index + 1}:`, JSON.stringify(record, null, 2));
+            });
           }
           break;
         }
       } catch (error) {
-        console.log(`❌ Staff table ${tableName} not found or accessible`);
+        console.log(`❌ Staff table ${tableName} not found or accessible:`, error);
         continue;
       }
     }
@@ -165,9 +217,10 @@ export async function GET(request: NextRequest) {
         const role = record.Role || record.role || record.user_role || record.Position || record.position || 
                     record.User_Role || record.Job_Title || record.Title;
         const name = record.Name || record.name || record.full_name || record.Full_Name ||
+                    (record.User_First && record.User_Last ? record.User_First + ' ' + record.User_Last : '') ||
                     (record.FirstName && record.LastName ? record.FirstName + ' ' + record.LastName : '') ||
                     (record.first_name && record.last_name ? record.first_name + ' ' + record.last_name : '') ||
-                    record.Display_Name || 'Unknown';
+                    record.Display_Name || record.User_First || record.FirstName || 'Unknown';
         const county = record.County || record.county || record.work_county || record.service_area || 
                       record.assigned_county || record.Work_County || record.Service_Area || 
                       record.Assigned_County || 'Unknown';
@@ -189,7 +242,15 @@ export async function GET(request: NextRequest) {
           status: status === 'Inactive' ? 'Inactive' : 'Active'
         };
       })
-      .filter((staff: StaffMember) => staff.county !== 'Unknown' && staff.name !== 'Unknown');
+      .filter((staff: StaffMember) => {
+        const isValid = staff.county !== 'Unknown' && staff.name !== 'Unknown' && staff.name !== '';
+        if (!isValid) {
+          console.log(`❌ Filtered out staff: name="${staff.name}", county="${staff.county}"`);
+        } else {
+          console.log(`✅ Keeping staff: name="${staff.name}", county="${staff.county}"`);
+        }
+        return isValid;
+      });
 
     console.log(`✅ Processed ${staffMembers.length} valid staff members`);
     if (staffMembers.length > 0) {

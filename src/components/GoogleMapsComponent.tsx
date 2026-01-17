@@ -27,54 +27,75 @@ export default function GoogleMapsComponent({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if Google Maps is already loaded
-    if (typeof window !== 'undefined' && window.google) {
-      initializeMap();
-      return;
-    }
-
-    // Check if script is already being loaded
-    const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
-    if (existingScript) {
-      // Script already exists, wait for it to load
-      const checkGoogleMaps = () => {
-        if (window.google) {
-          setIsLoaded(true);
-          initializeMap();
-        } else {
-          setTimeout(checkGoogleMaps, 100);
+    let mounted = true;
+    
+    const loadGoogleMaps = async () => {
+      try {
+        // Check if API key is available
+        if (!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) {
+          if (mounted) setError('Google Maps API key not configured');
+          return;
         }
-      };
-      checkGoogleMaps();
-      return;
-    }
 
-    // Load Google Maps API
-    const loadGoogleMaps = () => {
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places&loading=async`;
-      script.async = true;
-      script.defer = true;
-      
-      script.onload = () => {
-        setIsLoaded(true);
-        initializeMap();
-      };
-      
-      script.onerror = () => {
-        setError('Failed to load Google Maps API');
-      };
-      
-      document.head.appendChild(script);
+        // Check if Google Maps is already loaded
+        if (typeof window !== 'undefined' && window.google && window.google.maps) {
+          if (mounted) {
+            setIsLoaded(true);
+            initializeMap();
+          }
+          return;
+        }
+
+        // Check if script is already being loaded
+        let existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
+        
+        if (!existingScript) {
+          // Create and load the script
+          const script = document.createElement('script');
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`;
+          script.async = true;
+          script.defer = true;
+          
+          script.onload = () => {
+            if (mounted && window.google && window.google.maps) {
+              setIsLoaded(true);
+              initializeMap();
+            }
+          };
+          
+          script.onerror = () => {
+            if (mounted) setError('Failed to load Google Maps API');
+          };
+          
+          document.head.appendChild(script);
+          existingScript = script;
+        }
+
+        // Wait for existing script to load
+        if (existingScript) {
+          const checkGoogleMaps = () => {
+            if (!mounted) return;
+            
+            if (window.google && window.google.maps) {
+              setIsLoaded(true);
+              initializeMap();
+            } else {
+              setTimeout(checkGoogleMaps, 100);
+            }
+          };
+          checkGoogleMaps();
+        }
+
+      } catch (err: any) {
+        if (mounted) setError(`Failed to load Google Maps: ${err.message}`);
+      }
     };
 
-    // Check if API key is available
-    if (!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) {
-      setError('Google Maps API key not configured');
-      return;
-    }
-
     loadGoogleMaps();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const initializeMap = () => {
