@@ -103,71 +103,9 @@ export function PrintableDeclarationForm({
             </div>
           </div>
 
-          <PrintableField
-            label="Current medical conditions requiring SNF level of care"
-            type="textarea"
-            rows={4}
-            width="full"
-          />
-
-          <PrintableField
-            label="Specific medical services/treatments needed"
-            type="textarea"
-            rows={3}
-            width="full"
-          />
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <PrintableField
-              label="Date of Assessment"
-              type="date"
-              required
-              width="full"
-            />
-            <PrintableField
-              label="Next Review Date"
-              type="date"
-              width="full"
-            />
-          </div>
         </div>
       </PrintableFormSection>
 
-      {/* Clinical Criteria */}
-      <PrintableFormSection title="Clinical Criteria Checklist">
-        <div className="col-span-full">
-          <p className="text-sm print:text-xs mb-4">
-            Please check all that apply to confirm the member meets SNF level of care criteria:
-          </p>
-          
-          <PrintableField
-            label="Medical Conditions (check all that apply):"
-            type="checkbox"
-            options={[
-              'Requires skilled nursing observation and assessment',
-              'Complex medication management requiring professional oversight',
-              'Wound care requiring skilled nursing intervention',
-              'IV therapy or injections requiring skilled administration',
-              'Respiratory therapy or oxygen management',
-              'Physical therapy requiring skilled intervention',
-              'Occupational therapy for functional restoration',
-              'Speech therapy for swallowing or communication disorders',
-              'Diabetes management requiring skilled monitoring',
-              'Cardiac monitoring and management',
-              'Post-surgical care requiring skilled nursing',
-              'Other (specify below)'
-            ]}
-            width="full"
-          />
-
-          <PrintableField
-            label="If 'Other' selected, please specify:"
-            type="textarea"
-            rows={2}
-            width="full"
-          />
-        </div>
-      </PrintableFormSection>
 
       {/* Functional Assessment */}
       <PrintableFormSection title="Functional Assessment">
