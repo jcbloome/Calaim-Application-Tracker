@@ -23,7 +23,6 @@ import {
   Eye,
   EyeOff,
   Filter,
-  BarChart3,
   ChevronDown
 } from 'lucide-react';
 import { findCountyByCity, searchCities, getCitiesInCounty } from '@/lib/california-cities';
@@ -382,33 +381,7 @@ export default function EnhancedCaliforniaMapPage() {
       </div>
 
        {/* Summary Statistics - Clickable Cards */}
-       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {/* Statistics Overview Card */}
-        <Card className="bg-gradient-to-br from-indigo-50 to-purple-50 border-indigo-200">
-          <CardContent className="p-4">
-            <div>
-              <p className="text-sm text-indigo-600 font-medium mb-3">📊 System Overview</p>
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">RCFEs:</span>
-                  <span className="font-semibold text-indigo-700">{summaryStats.totalRCFEs}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">MSWs:</span>
-                  <span className="font-semibold text-green-700">{summaryStats.totalSocialWorkers}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">RNs:</span>
-                  <span className="font-semibold text-red-700">{summaryStats.totalRNs}</span>
-                </div>
-                <div className="flex justify-between text-xs border-t pt-1 mt-2">
-                  <span className="text-gray-600">Members:</span>
-                  <span className="font-semibold text-orange-700">{memberData?.totalMembers || 0}</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         
         <Card 
           className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 ${
