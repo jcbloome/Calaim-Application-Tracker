@@ -36,7 +36,8 @@ import {
   Scissors,
   Map,
   Calendar,
-  DollarSign
+  DollarSign,
+  Navigation
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -72,6 +73,7 @@ const adminNavLinks = [
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: DollarSign },
       { href: '/admin/california-map', label: 'California Counties Map', icon: Map },
+      { href: '/admin/california-map-enhanced', label: 'Enhanced Resource Map', icon: Navigation },
     ]
   },
   { 
