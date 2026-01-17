@@ -66,13 +66,15 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } 
 
 const adminNavLinks = [
   { 
-    label: 'Overview', 
-    icon: LayoutDashboard, 
+    label: 'Tools', 
+    icon: Wrench, 
     isSubmenu: true,
     submenuItems: [
       { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: DollarSign },
+      { href: '/admin/california-map-enhanced', label: 'California Resource Map', icon: Map },
+      { href: '/admin/form-separator', label: 'Form Separator Tool', icon: Scissors },
     ]
   },
   { 
@@ -102,15 +104,6 @@ const adminNavLinks = [
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
       { href: '/admin/daily-tasks', label: 'Daily Task Board', icon: Calendar },
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
-    ]
-  },
-  { 
-    label: 'Tools', 
-    icon: Wrench, 
-    isSubmenu: true,
-    submenuItems: [
-      { href: '/admin/california-map-enhanced', label: 'California Resource Map', icon: Map },
-      { href: '/admin/form-separator', label: 'Form Separator Tool', icon: Scissors },
     ]
   },
 ];
