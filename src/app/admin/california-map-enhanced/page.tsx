@@ -144,7 +144,7 @@ export default function EnhancedCaliforniaMapPage() {
   // Data state
   const [staffData, setStaffData] = useState<Record<string, CountyData>>({});
   const [rcfeData, setRCFEData] = useState<Record<string, RCFECountyData>>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   // Layer visibility
