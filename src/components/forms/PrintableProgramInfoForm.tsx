@@ -333,11 +333,11 @@ export function PrintableProgramInfoForm({
             <ul className="list-disc list-inside space-y-1 text-sm print:text-xs text-gray-700 print:text-black">
               <li>CS Summary Form</li>
               <li>Declaration of Eligibility (signed by PCP)</li>
-              <li>Recent Hospital Discharge Summary (if applicable)</li>
               <li>Current Medication List</li>
-              <li>Insurance Cards (front and back)</li>
-              <li>Photo ID</li>
-              <li>Social Security Card</li>
+              <li>HIPAA Authorization Form</li>
+              <li>Liability Release Forms</li>
+              <li>Form 602 (Medi-Cal Application)</li>
+              <li>Proof of Income (Social Security Annual Award Letter OR 3 months of bank statements showing Social Security income)</li>
             </ul>
           </div>
 
@@ -354,9 +354,10 @@ export function PrintableProgramInfoForm({
               <li>Current Care Plan from SNF</li>
               <li>Recent Progress Notes</li>
               <li>Current Medication List</li>
-              <li>Insurance Cards (front and back)</li>
-              <li>Photo ID</li>
-              <li>Social Security Card</li>
+              <li>HIPAA Authorization Form</li>
+              <li>Liability Release Forms</li>
+              <li>Form 602 (Medi-Cal Application)</li>
+              <li>Proof of Income (Social Security Annual Award Letter OR 3 months of bank statements showing Social Security income)</li>
             </ul>
           </div>
         </div>
