@@ -46,6 +46,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/firebase';
 import { NotificationManager } from '@/components/CursorStyleNotification';
+import NotificationSystem from '@/components/NotificationSystem';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -100,6 +101,8 @@ const adminNavLinks = [
     submenuItems: [
       { href: '/admin/tasks', label: 'Task Management', icon: ClipboardList },
       { href: '/admin/staff-notes', label: 'My Notes', icon: MessageSquareText },
+      { href: '/admin/client-notes', label: 'Client Notes & Communication', icon: MessageSquareText },
+      { href: '/admin/client-notes-demo', label: 'Notes System Demo', icon: TestTube2 },
     ]
   },
   { 
@@ -262,13 +265,19 @@ function AdminHeader() {
 
         <div className="flex items-center gap-4">
           {user && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="rounded-full hidden lg:inline-flex">
-                  <UserIcon className="h-5 w-5" />
-                  <span className="sr-only">User menu</span>
-                </Button>
-              </DropdownMenuTrigger>
+            <>
+              {/* Notification System */}
+              <NotificationSystem userId={user.uid} />
+              
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" className="rounded-full hidden lg:inline-flex">
+                    <UserIcon className="h-5 w-5" />
+                    <span className="sr-only">User menu</span>
+                  </Button>
+                </DropdownMenuTrigger>
+            </>
+          )}
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>{user?.displayName || user?.email}</DropdownMenuLabel>
                 <DropdownMenuSeparator />

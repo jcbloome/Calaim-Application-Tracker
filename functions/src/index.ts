@@ -1589,6 +1589,14 @@ export const publishCsSummaryToCaspio = onCall({
 // Authorization Tracker
 export { fetchAuthorizationMembers, updateMemberAuthorization } from './authorization-tracker';
 
+// Export Client Note Notification functions
+export {
+  sendNoteNotification,
+  getUserNotifications,
+  markNotificationRead,
+  registerFCMToken
+} from './client-note-notifications';
+
 /**
  * Fetch ALL members from Caspio for Authorization Tracker (Kaiser + Health Net)
  */
