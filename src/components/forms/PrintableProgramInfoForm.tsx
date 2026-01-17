@@ -108,13 +108,41 @@ export function PrintableProgramInfoForm({
         </div>
       </div>
 
+      {/* Medicare vs. Medi-Cal */}
+      <div className="col-span-full mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
+          Medicare vs. Medi-Cal
+        </h2>
+        <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+          Medicare is a federal health insurance program mainly for people 65 or older. Medi-Cal is California's 
+          Medicaid program for low-income individuals. The CalAIM program is a Medi-Cal benefit. While they are 
+          different, Medicare-covered days in a facility can count toward the 60-day stay requirement for the 
+          SNF Transition pathway.
+        </p>
+      </div>
+
+      {/* Benefitscal.com */}
+      <div className="col-span-full mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
+          Benefitscal.com
+        </h2>
+        <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+          A one stop shop to apply and review Medi-Cal benefits including possible share of cost information 
+          and to add for the member an authorized representative/power of attorney.
+        </p>
+        <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed mt-2">
+          Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-black hover:underline">www.benefitscal.com</a> for more information.
+        </p>
+      </div>
+
       {/* Managed Care Plans */}
       <div className="col-span-full mb-8">
         <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
           Managed Care Plans We Work With
         </h2>
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed mb-4">
-          You must be a member of one of these plans to utilize us for the CS for Assisted Transitions:
+          Connections currently is only contracted with Kaiser and Health Net for the CS for Assisted Living Transitions. 
+          You must switch to one of these plans if you would like to work with Connections.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="p-4 print:p-4 border print:border-black">
@@ -126,7 +154,62 @@ export function PrintableProgramInfoForm({
           <div className="p-4 print:p-4 border print:border-black">
             <h3 className="font-semibold text-gray-900 print:text-black">Kaiser Permanente</h3>
             <p className="text-sm print:text-xs text-gray-700 print:text-black">
-              Serving members in various counties throughout California.
+              Connections is contracted for the CS for Kaiser Permanente through a subcontract with Independent Living Systems (ILS), which manages the program for Kaiser.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Switching to Health Net or Kaiser */}
+      <div className="col-span-full mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
+          Switching to Health Net or Kaiser
+        </h2>
+        <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
+          <p>If you are in another Medi-Cal managed care plan and you would like to work with Connections, you will need to switch.</p>
+          <p>You can change your health plan by contacting <a href="https://www.healthcareoptions.dhcs.ca.gov/en/enroll" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-black hover:underline">California Health Care Options</a> at 1-800-430-4263 or visiting their website.</p>
+          <p>Generally, changes made by the end of the month are effective on the first day of the following month.</p>
+        </div>
+      </div>
+
+      {/* Applying for Health Net (and being assigned to Molina) */}
+      <div className="col-span-full mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
+          Applying for Health Net (and being assigned to Molina)
+        </h2>
+        <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+          When applying for Medi-Cal with Health Net sometimes people are automatically assigned to Molina instead, 
+          you will need to call Health Net (800-675-6110) and request to be switched to Health Net.
+        </p>
+      </div>
+
+      {/* Expedited Disenrollment from Molina */}
+      <div className="col-span-full mb-8 p-4 print:p-6 bg-orange-50 print:bg-white border print:border-black">
+        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4">
+          Expedited Disenrollment from Molina
+        </h2>
+        <p className="text-sm print:text-xs text-gray-700 print:text-black mb-4">
+          If you were randomly assigned to Molina and need to switch to Health Net urgently (especially for SNF residents 
+          needing CalAIM transition services), here are three escalation options:
+        </p>
+        <div className="space-y-4">
+          <div className="p-3 print:p-4 border print:border-black">
+            <h3 className="font-semibold text-gray-900 print:text-black mb-2">1. Request "Expedited Disenrollment" via Health Care Options (HCO)</h3>
+            <p className="text-sm print:text-xs text-gray-700 print:text-black mb-2">
+              Call Health Care Options and explicitly use the phrase "Expedited Disenrollment due to an urgent medical/social need."
+            </p>
+            <p className="text-sm print:text-xs text-gray-700 print:text-black"><strong>Phone:</strong> 1-800-430-4263 (Mon–Fri, 8 a.m. to 6 p.m.)</p>
+          </div>
+          <div className="p-3 print:p-4 border print:border-black">
+            <h3 className="font-semibold text-gray-900 print:text-black mb-2">2. Contact the Medi-Cal Managed Care Ombudsman</h3>
+            <p className="text-sm print:text-xs text-gray-700 print:text-black mb-2">
+              <strong>Phone:</strong> 1-888-452-8609 | <strong>Email:</strong> MMCDOmbudsmanOffice@dhcs.ca.gov
+            </p>
+          </div>
+          <div className="p-3 print:p-4 border print:border-black">
+            <h3 className="font-semibold text-gray-900 print:text-black mb-2">3. File an "Expedited Grievance" with Molina</h3>
+            <p className="text-sm print:text-xs text-gray-700 print:text-black">
+              Request that Molina either provide equivalent CalAIM transition services immediately or help with immediate plan transfer to Health Net.
             </p>
           </div>
         </div>
@@ -234,37 +317,54 @@ export function PrintableProgramInfoForm({
         </p>
       </div>
 
-      {/* Acknowledgment Section */}
-      <div className="col-span-full mt-12 print:mt-16 p-4 print:p-6 border-2 print:border-black">
+      {/* Next Steps: Required Forms by Pathway */}
+      <div className="col-span-full mb-8 p-4 print:p-6 bg-green-50 print:bg-white border print:border-black">
         <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4">
-          Program Information Acknowledgment
+          Required Forms by Pathway
         </h2>
-        <p className="text-sm print:text-xs text-gray-700 print:text-black mb-6">
-          By signing below, I acknowledge that I have read and understood the CalAIM Program Information 
-          provided above. I understand the requirements, processes, and my responsibilities as outlined in this document.
-        </p>
         
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 print:gap-8">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-              Member/Representative Signature *
-            </label>
-            <div className="h-16 border-b-2 border-gray-300 print:border-black"></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          {/* SNF Diversion Pathway */}
+          <div className="p-4 print:p-4 border print:border-black">
+            <h3 className="font-semibold text-gray-900 print:text-black mb-3">SNF Diversion Pathway</h3>
+            <p className="text-sm print:text-xs text-gray-700 print:text-black mb-3">
+              <em>For members at risk of SNF placement who want to go directly to assisted living</em>
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-sm print:text-xs text-gray-700 print:text-black">
+              <li>CS Summary Form</li>
+              <li>Declaration of Eligibility (signed by PCP)</li>
+              <li>Recent Hospital Discharge Summary (if applicable)</li>
+              <li>Current Medication List</li>
+              <li>Insurance Cards (front and back)</li>
+              <li>Photo ID</li>
+              <li>Social Security Card</li>
+            </ul>
           </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-              Date *
-            </label>
-            <div className="h-16 border-b-2 border-gray-300 print:border-black"></div>
+
+          {/* SNF Transition Pathway */}
+          <div className="p-4 print:p-4 border print:border-black">
+            <h3 className="font-semibold text-gray-900 print:text-black mb-3">SNF Transition Pathway</h3>
+            <p className="text-sm print:text-xs text-gray-700 print:text-black mb-3">
+              <em>For members currently in a SNF who want to transition to assisted living</em>
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-sm print:text-xs text-gray-700 print:text-black">
+              <li>CS Summary Form</li>
+              <li>Declaration of Eligibility (signed by PCP)</li>
+              <li>SNF Admission Documentation</li>
+              <li>Current Care Plan from SNF</li>
+              <li>Recent Progress Notes</li>
+              <li>Current Medication List</li>
+              <li>Insurance Cards (front and back)</li>
+              <li>Photo ID</li>
+              <li>Social Security Card</li>
+            </ul>
           </div>
         </div>
-        
-        <div className="mt-6">
-          <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-            Print Name
-          </label>
-          <div className="h-12 border-b-2 border-gray-300 print:border-black"></div>
+
+        <div className="mt-4 p-3 print:p-4 bg-blue-50 print:bg-white border print:border-black">
+          <p className="text-sm print:text-xs text-gray-700 print:text-black">
+            <strong>Note:</strong> Additional documents may be requested based on your specific situation and managed care plan requirements.
+          </p>
         </div>
       </div>
     </PrintableFormLayout>
