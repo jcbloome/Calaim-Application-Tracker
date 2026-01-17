@@ -128,7 +128,7 @@ export function StaffAssignmentDropdown({
   return (
     <div className="flex items-center gap-2">
       <Select
-        value={member.kaiser_user_assignment || 'unassigned'}
+        value={member.kaiser_user_assignment && member.kaiser_user_assignment.trim() !== '' ? member.kaiser_user_assignment : 'unassigned'}
         onValueChange={handleStaffAssignment}
         disabled={isAssigning}
       >

@@ -254,7 +254,7 @@ export default function KaiserTrackerPage() {
     calaimStatus: 'all',
     county: 'all',
     assignment: 'all',
-    staffAssigned: '',
+    staffAssigned: 'all',
     overdueOnly: false
   });
 
@@ -518,7 +518,7 @@ export default function KaiserTrackerPage() {
       }
       
       // Staff Assigned filter (from clicking staff cards)
-      if (filters.staffAssigned) {
+      if (filters.staffAssigned && filters.staffAssigned !== 'all') {
         filtered = filtered.filter(m => m?.kaiser_user_assignment === filters.staffAssigned);
       }
       
@@ -881,7 +881,7 @@ export default function KaiserTrackerPage() {
               filters.calaimStatus !== 'all' || 
               filters.county !== 'all' || 
               filters.assignment !== 'all' || 
-              filters.staffAssigned ||
+              filters.staffAssigned !== 'all' ||
               filters.overdueOnly) && (
               <Button 
                 variant="outline" 
@@ -893,7 +893,7 @@ export default function KaiserTrackerPage() {
                     calaimStatus: 'all',
                     county: 'all',
                     assignment: 'all',
-                    staffAssigned: '',
+                    staffAssigned: 'all',
                     overdueOnly: false
                   });
                 }}
@@ -952,12 +952,12 @@ export default function KaiserTrackerPage() {
                 />
               </Badge>
             )}
-            {filters.staffAssigned && (
+            {filters.staffAssigned && filters.staffAssigned !== 'all' && (
               <Badge variant="secondary" className="flex items-center gap-1 bg-purple-100 text-purple-800">
                 Staff: {filters.staffAssigned}
                 <X 
                   className="h-3 w-3 cursor-pointer" 
-                  onClick={() => setFilters(prev => ({...prev, staffAssigned: ''}))}
+                  onClick={() => setFilters(prev => ({...prev, staffAssigned: 'all'}))}
                 />
               </Badge>
             )}
@@ -1523,7 +1523,7 @@ export default function KaiserTrackerPage() {
                   calaimStatus: 'all',
                   county: 'all',
                   assignment: 'all',
-                  staffAssigned: '',
+                  staffAssigned: 'all',
                   overdueOnly: false
                 });
               }}
