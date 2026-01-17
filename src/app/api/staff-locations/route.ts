@@ -120,14 +120,25 @@ export async function GET(request: NextRequest) {
       successfulStaffTable = 'mock_data';
     }
 
-    console.log(`📋 Retrieved ${staffRecords.length} staff records`);
-    console.log('🔍 Sample record keys:', Object.keys(staffRecords[0] || {}));
+    console.log(`📋 Retrieved ${staffRecords.length} staff records from table: ${successfulStaffTable}`);
+    if (staffRecords.length > 0) {
+      console.log('🔍 Sample record keys:', Object.keys(staffRecords[0]));
+      console.log('📄 Sample record data:', staffRecords[0]);
+      console.log('👥 All roles found:', [...new Set(staffRecords.map((r: any) => r.Role || r.role || r.user_role || r.Position || r.position || 'Unknown'))]);
+    }
 
     // Filter and map staff data
+    console.log('🔍 Filtering staff records...');
     const staffMembers: StaffMember[] = staffRecords
       .filter((record: any) => {
         const role = record.Role || record.role || record.user_role || record.Position || record.position;
-        return role === 'MSW' || role === 'RN' || role === 'Social Worker' || role === 'Registered Nurse';
+        const isValidRole = role === 'MSW' || role === 'RN' || role === 'Social Worker' || role === 'Registered Nurse';
+        if (!isValidRole) {
+          console.log(`❌ Filtered out record with role: "${role}"`);
+        } else {
+          console.log(`✅ Keeping record with role: "${role}"`);
+        }
+        return isValidRole;
       })
       .map((record: any) => {
         // Map various possible field names from Caspio user registration table
@@ -161,6 +172,12 @@ export async function GET(request: NextRequest) {
       .filter((staff: StaffMember) => staff.county !== 'Unknown' && staff.name !== 'Unknown');
 
     console.log(`✅ Processed ${staffMembers.length} valid staff members`);
+    if (staffMembers.length > 0) {
+      console.log('👥 Sample processed staff member:', staffMembers[0]);
+      console.log('🗺️ Counties found:', [...new Set(staffMembers.map(s => s.county))]);
+    } else {
+      console.log('⚠️ No valid staff members found after filtering and processing');
+    }
 
     // Group by county and role
     const staffByCounty = staffMembers.reduce((acc: any, staff) => {

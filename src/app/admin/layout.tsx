@@ -117,7 +117,7 @@ const superAdminNavLinks = [
         { href: '/admin/super', label: 'Admin Panel', icon: Shield },
         { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
         { href: '/admin/login-activity', label: 'Login Activity', icon: Activity },
-        { isDivider: true, label: 'Caspio Tools' },
+        { isDivider: true, label: 'Caspio Integration' },
         { href: '/admin/caspio-field-mapping', label: 'Field Mapping Configuration', icon: Map },
         { href: '/admin/caspio-test', label: 'Sync Testing & Development', icon: Database },
         { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
@@ -127,7 +127,7 @@ const superAdminNavLinks = [
         { href: '/admin/system-note-log', label: 'System Note Log', icon: MessageSquareText },
         { href: '/admin/super-admin-notes', label: 'Complete Note Log', icon: FileText },
         { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell },
-        { isDivider: true, label: 'Development Tools' },
+        { isDivider: true, label: 'Development' },
         { href: '/admin/user-diagnostics', label: 'User Side Diagnostic Tools', icon: TestTube2 },
         { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
       ]
