@@ -72,6 +72,12 @@ export async function GET(request: NextRequest) {
           rcfeRecords = rcfeData.Result || [];
           successfulTable = tableName;
           console.log(`✅ Found RCFE data in table: ${tableName} (${rcfeRecords.length} records)`);
+          
+          // Debug: Show available fields in the first record
+          if (rcfeRecords.length > 0) {
+            console.log('🔍 Available RCFE fields:', Object.keys(rcfeRecords[0]));
+            console.log('📋 Sample RCFE record:', rcfeRecords[0]);
+          }
           break;
         }
       } catch (error) {

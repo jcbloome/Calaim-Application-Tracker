@@ -68,6 +68,12 @@ export async function GET(request: NextRequest) {
           staffRecords = staffData.Result || [];
           successfulStaffTable = tableName;
           console.log(`✅ Found staff data in table: ${tableName} (${staffRecords.length} records)`);
+          
+          // Debug: Show available fields in the first record
+          if (staffRecords.length > 0) {
+            console.log('🔍 Available Staff fields:', Object.keys(staffRecords[0]));
+            console.log('📋 Sample Staff record:', staffRecords[0]);
+          }
           break;
         }
       } catch (error) {
