@@ -81,7 +81,15 @@ export const createMemberTask = onCall(async (request) => {
   }
 });
 
-export const getMemberTasks = onCall(async (request) => {
+export const getMemberTasks = onCall({
+  cors: [
+    /localhost/,
+    /\.vercel\.app$/,
+    /\.netlify\.app$/,
+    /\.firebaseapp\.com$/,
+    /connectcalaim\.com$/
+  ]
+}, async (request) => {
   try {
     const { memberId } = request.data;
 
@@ -312,7 +320,15 @@ export const createMemberNote = onCall(async (request) => {
   }
 });
 
-export const getMemberNotes = onCall(async (request) => {
+export const getMemberNotes = onCall({
+  cors: [
+    /localhost/,
+    /\.vercel\.app$/,
+    /\.netlify\.app$/,
+    /\.firebaseapp\.com$/,
+    /connectcalaim\.com$/
+  ]
+}, async (request) => {
   try {
     const { memberId, includeArchived } = request.data;
 

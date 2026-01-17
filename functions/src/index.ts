@@ -352,7 +352,15 @@ export const testCaspioConnection = onCall(async (request) => {
 });
 
 // Update Kaiser status in Caspio
-export const updateKaiserStatusInCaspio = onCall(async (request) => {
+export const updateKaiserStatusInCaspio = onCall({
+  cors: [
+    /localhost/,
+    /\.vercel\.app$/,
+    /\.netlify\.app$/,
+    /\.firebaseapp\.com$/,
+    /connectcalaim\.com$/
+  ]
+}, async (request) => {
   try {
     const { client_ID2, Kaiser_Status, CalAIM_Status, kaiser_user_assignment, next_steps_date } = request.data;
     
@@ -532,7 +540,15 @@ export const syncKaiserStatus = onCall(async (request) => {
 });
 
 // Fetch Kaiser members from Caspio
-export const fetchKaiserMembersFromCaspio = onCall(async (request) => {
+export const fetchKaiserMembersFromCaspio = onCall({
+  cors: [
+    /localhost/,
+    /\.vercel\.app$/,
+    /\.netlify\.app$/,
+    /\.firebaseapp\.com$/,
+    /connectcalaim\.com$/
+  ]
+}, async (request) => {
   // Check if we should return ALL members (for Authorization Tracker) or just Kaiser members
   const includeAllMembers = request.data?.includeAllMembers === true;
   try {

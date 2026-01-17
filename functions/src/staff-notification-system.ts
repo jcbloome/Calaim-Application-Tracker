@@ -40,7 +40,15 @@ interface SystemNote {
 }
 
 // Get staff notification settings
-export const getStaffNotificationSettings = onCall(async (request) => {
+export const getStaffNotificationSettings = onCall({
+  cors: [
+    /localhost/,
+    /\.vercel\.app$/,
+    /\.netlify\.app$/,
+    /\.firebaseapp\.com$/,
+    /connectcalaim\.com$/
+  ]
+}, async (request) => {
   try {
     const { uid } = request.auth || {};
     if (!uid) {
