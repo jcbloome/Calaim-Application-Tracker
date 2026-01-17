@@ -127,24 +127,30 @@ export async function GET(request: NextRequest) {
     const staffMembers: StaffMember[] = staffRecords
       .filter((record: any) => {
         const role = record.Role || record.role || record.user_role || record.Position || record.position;
-        return role === 'Social Worker' || role === 'RN' || role === 'Registered Nurse';
+        return role === 'MSW' || role === 'RN' || role === 'Social Worker' || role === 'Registered Nurse';
       })
       .map((record: any) => {
-        // Map various possible field names from Caspio
-        const role = record.Role || record.role || record.user_role || record.Position || record.position;
-        const name = record.Name || record.name || record.full_name || record.FirstName + ' ' + record.LastName || 
-                    record.first_name + ' ' + record.last_name || 'Unknown';
+        // Map various possible field names from Caspio user registration table
+        const role = record.Role || record.role || record.user_role || record.Position || record.position || 
+                    record.User_Role || record.Job_Title || record.Title;
+        const name = record.Name || record.name || record.full_name || record.Full_Name ||
+                    (record.FirstName && record.LastName ? record.FirstName + ' ' + record.LastName : '') ||
+                    (record.first_name && record.last_name ? record.first_name + ' ' + record.last_name : '') ||
+                    record.Display_Name || 'Unknown';
         const county = record.County || record.county || record.work_county || record.service_area || 
-                      record.assigned_county || 'Unknown';
-        const city = record.City || record.city || record.work_city || '';
-        const email = record.Email || record.email || record.email_address || '';
-        const phone = record.Phone || record.phone || record.phone_number || record.contact_phone || '';
-        const status = record.Status || record.status || record.active_status || 'Active';
+                      record.assigned_county || record.Work_County || record.Service_Area || 
+                      record.Assigned_County || 'Unknown';
+        const city = record.City || record.city || record.work_city || record.Work_City || '';
+        const email = record.Email || record.email || record.email_address || record.Email_Address || '';
+        const phone = record.Phone || record.phone || record.phone_number || record.contact_phone || 
+                     record.Phone_Number || record.Contact_Phone || '';
+        const status = record.Status || record.status || record.active_status || record.Active_Status || 'Active';
 
         return {
           id: record.ID || record.id || record.user_id || Math.random().toString(36),
           name,
-          role: role === 'Registered Nurse' ? 'RN' : role as 'Social Worker' | 'RN',
+          role: (role === 'MSW' || role === 'Social Worker') ? 'Social Worker' : 
+                (role === 'RN' || role === 'Registered Nurse') ? 'RN' : role as 'Social Worker' | 'RN',
           county,
           city,
           email,

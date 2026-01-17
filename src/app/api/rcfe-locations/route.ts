@@ -134,20 +134,24 @@ export async function GET(request: NextRequest) {
 
     // Map RCFE data
     const rcfes: RCFE[] = rcfeRecords.map((record: any) => {
-      // Map various possible field names from Caspio
+      // Map various possible field names from Caspio (CalAIM_tbl_New_RCFE_Registration)
       const name = record.Name || record.name || record.facility_name || record.FacilityName || 
-                  record.rcfe_name || 'Unknown Facility';
+                  record.rcfe_name || record.Facility_Name || record.Business_Name || 'Unknown Facility';
       const county = record.County || record.county || record.service_county || record.location_county || 
-                    'Unknown';
-      const city = record.City || record.city || record.location_city || '';
-      const address = record.Address || record.address || record.street_address || record.full_address || '';
-      const phone = record.Phone || record.phone || record.contact_phone || record.phone_number || '';
-      const capacity = record.Capacity || record.capacity || record.bed_count || record.licensed_beds || 0;
-      const status = record.Status || record.status || record.active_status || 'Active';
+                    record.Service_County || record.Location_County || 'Unknown';
+      const city = record.City || record.city || record.location_city || record.Service_City || 
+                  record.Location_City || '';
+      const address = record.Address || record.address || record.street_address || record.full_address || 
+                     record.Street_Address || record.Full_Address || record.Physical_Address || '';
+      const phone = record.Phone || record.phone || record.contact_phone || record.phone_number || 
+                   record.Contact_Phone || record.Phone_Number || '';
+      const capacity = record.Capacity || record.capacity || record.bed_count || record.licensed_beds || 
+                      record.Licensed_Beds || record.Bed_Count || 0;
+      const status = record.Status || record.status || record.active_status || record.Active_Status || 'Active';
       const licenseNumber = record.License_Number || record.license_number || record.license_id || 
-                           record.facility_license || '';
+                           record.facility_license || record.Facility_License || record.RCFE_License || '';
       const contactPerson = record.Contact_Person || record.contact_person || record.administrator || 
-                           record.primary_contact || '';
+                           record.primary_contact || record.Administrator || record.Primary_Contact || '';
 
       return {
         id: record.ID || record.id || record.facility_id || Math.random().toString(36),

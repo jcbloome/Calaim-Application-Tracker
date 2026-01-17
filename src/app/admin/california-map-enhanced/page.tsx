@@ -202,9 +202,7 @@ export default function EnhancedCaliforniaMapPage() {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  // Data loads only when refresh button is pressed - no automatic loading
 
   // Handle city search
   const handleCitySearch = (value: string) => {

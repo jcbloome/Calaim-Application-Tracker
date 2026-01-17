@@ -37,7 +37,8 @@ import {
   Map,
   Calendar,
   DollarSign,
-  Navigation
+  Navigation,
+  Wrench
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -65,14 +66,13 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } 
 
 const adminNavLinks = [
   { 
-    label: 'Tools', 
+    label: 'Overview', 
     icon: LayoutDashboard, 
     isSubmenu: true,
     submenuItems: [
       { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: DollarSign },
-      { href: '/admin/california-map-enhanced', label: 'California Resource Map', icon: Map },
     ]
   },
   { 
@@ -83,7 +83,6 @@ const adminNavLinks = [
       { href: '/admin/applications', label: 'All Applications', icon: FolderKanban },
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/forms/review', label: 'Form Review', icon: FileEdit },
-      { href: '/admin/form-separator', label: 'Form Separator Tool', icon: Scissors },
     ]
   },
   { 
@@ -103,6 +102,15 @@ const adminNavLinks = [
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
       { href: '/admin/daily-tasks', label: 'Daily Task Board', icon: Calendar },
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
+    ]
+  },
+  { 
+    label: 'Tools', 
+    icon: Wrench, 
+    isSubmenu: true,
+    submenuItems: [
+      { href: '/admin/california-map-enhanced', label: 'California Resource Map', icon: Map },
+      { href: '/admin/form-separator', label: 'Form Separator Tool', icon: Scissors },
     ]
   },
 ];
