@@ -1,0 +1,34 @@
+name: 📊 Status Check
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    # Run every hour to check status
+    - cron: '0 * * * *'
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 📊 Repository Status
+      run: |
+        echo "📊 CalAIM Application Status Report"
+        echo "=================================="
+        echo "🕐 Timestamp: $(date)"
+        echo "🔗 Repository: ${{ github.repository }}"
+        echo "🌿 Branch: ${{ github.ref_name }}"
+        echo "📝 Latest Commit: ${{ github.sha }}"
+        echo "👤 Triggered by: ${{ github.actor }}"
+        echo ""
+        echo "📁 Repository Structure:"
+        ls -la
+        echo ""
+        echo "📦 Package.json exists: $([ -f package.json ] && echo '✅ Yes' || echo '❌ No')"
+        echo "🏗️ Next.js config exists: $([ -f next.config.js ] && echo '✅ Yes' || echo '❌ No')"
+        echo ""
+        echo "🎯 Status: Repository is active and monitored"
