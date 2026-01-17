@@ -90,22 +90,12 @@ export function PrintableGlossaryForm({
           <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-3">
             Need Help?
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm print:text-xs text-gray-700 print:text-black">
+          <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
             <div>
-              <p className="font-medium mb-2">For application assistance:</p>
-              <ul className="space-y-1 list-disc list-inside ml-4">
-                <li>Contact your assigned case worker</li>
-                <li>Call the CalAIM support line</li>
-                <li>Visit our website for resources</li>
-              </ul>
-            </div>
-            <div>
-              <p className="font-medium mb-2">For medical questions:</p>
-              <ul className="space-y-1 list-disc list-inside ml-4">
-                <li>Speak with your Primary Care Provider</li>
-                <li>Contact your health plan directly</li>
-                <li>Ask your facility's nursing staff</li>
-              </ul>
+              <p className="font-semibold mb-2">Contact Connections:</p>
+              <p>Email: <strong>calaim@carehomefinders.com</strong></p>
+              <p className="text-xs italic">(Please do not send any application forms here and use our secure online upload portal)</p>
+              <p>Phone: <strong>800-330-5993</strong></p>
             </div>
           </div>
         </div>
@@ -113,23 +103,12 @@ export function PrintableGlossaryForm({
         {/* Quick Reference Section */}
         <div className="p-4 print:p-6 bg-gray-50 print:bg-white border print:border-black">
           <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-3">
-            Quick Reference - Key Contact Types
+            Quick Reference Phone Numbers
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div>
-              <h4 className="font-medium text-gray-900 print:text-black mb-2">Health Plans:</h4>
-              <ul className="text-sm print:text-xs text-gray-700 print:text-black space-y-1">
-                <li><strong>Kaiser Permanente:</strong> Integrated health system</li>
-                <li><strong>Health Net:</strong> Managed care organization</li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-900 print:text-black mb-2">Care Levels:</h4>
-              <ul className="text-sm print:text-xs text-gray-700 print:text-black space-y-1">
-                <li><strong>SNF:</strong> 24/7 skilled nursing care</li>
-                <li><strong>RCFE/ARF:</strong> Assisted living with support</li>
-              </ul>
-            </div>
+          <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
+            <p><strong>Health Net Member Services:</strong> 800-675-6110</p>
+            <p><strong>California Health Care Options:</strong> 800-430-4263</p>
+            <p><strong>Kaiser Member Services:</strong> 1-800-464-4000</p>
           </div>
         </div>
       </div>
