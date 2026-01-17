@@ -179,11 +179,16 @@ export function PrintableFullPackage({
         </p>
         
         <div className="space-y-4 text-xs print:text-xs text-gray-500 print:text-black">
-          <div>
-            <p className="font-semibold mb-2">Need Help?</p>
-            <p>Email Connections: <strong>calaim@carehomefinders.com</strong></p>
-            <p className="text-xs italic">(Please do not send any application forms here and use our secure online upload portal)</p>
-            <p>Or call: <strong>800-330-5993</strong></p>
+          <div className="p-3 bg-yellow-50 print:bg-gray-100 border border-yellow-200 print:border-gray-400 rounded print:rounded-none">
+            <p className="font-bold mb-2">Need Help?</p>
+            <p className="font-semibold">Contact Connections Care Home Consultants:</p>
+            <p className="font-semibold">Phone: 800-330-5593</p>
+            <p className="font-semibold">Email: calaim@carehomefinders.com</p>
+            <p className="text-xs mt-2 font-medium">
+              <strong>Important:</strong> This email is only for information about the program. 
+              Please do not send any application forms here and instead use our 
+              online secure document upload portal at: <strong>connectcalaim.com/forms/printable-package</strong>
+            </p>
           </div>
 
           <div>

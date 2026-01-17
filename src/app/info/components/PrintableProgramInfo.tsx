@@ -74,10 +74,8 @@ export function PrintableProgramInfo() {
             <p>If you were randomly assigned to Molina and need to switch to Health Net urgently (especially for SNF residents needing CalAIM transition services), here are three escalation options:</p>
             <ul className="list-disc pl-5 space-y-4">
                 <li>
-                    <strong>1. Request "Expedited Disenrollment" via Health Care Options (HCO)</strong><br />
-                    The standard transfer process takes until the first day of the following month (or the month after that if done late in the 30-day cycle). Families should call Health Care Options and explicitly use the phrase "Expedited Disenrollment due to an urgent medical/social need."<br />
-                    <strong>Phone:</strong> 1-800-430-4263 (Mon–Fri, 8 a.m. to 6 p.m.)<br />
-                    <strong>The Argument:</strong> Explain that the member is currently in a SNF and the plan they were assigned (Molina) cannot provide the specific CalAIM transition services required for a safe discharge to the community, whereas Health Net can.
+                    <strong>1. Call Health Net directly: 1-800-675-6110</strong><br />
+                    Contact Health Net Member Services directly to request an expedited transfer from Molina to Health Net.
                 </li>
                 <li>
                     <strong>2. Contact the Medi-Cal Managed Care <a href="mailto:MMCDOmbudsmanOffice@dhcs.ca.gov">Ombudsman</a></strong><br />

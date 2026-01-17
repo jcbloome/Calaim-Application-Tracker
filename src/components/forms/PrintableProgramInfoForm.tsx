@@ -194,11 +194,10 @@ export function PrintableProgramInfoForm({
         </p>
         <div className="space-y-4">
           <div className="p-3 print:p-4 border print:border-black">
-            <h3 className="font-semibold text-gray-900 print:text-black mb-2">1. Request "Expedited Disenrollment" via Health Care Options (HCO)</h3>
+            <h3 className="font-semibold text-gray-900 print:text-black mb-2">1. Call Health Net directly: 1-800-675-6110</h3>
             <p className="text-sm print:text-xs text-gray-700 print:text-black mb-2">
-              Call Health Care Options and explicitly use the phrase "Expedited Disenrollment due to an urgent medical/social need."
+              Contact Health Net Member Services directly to request an expedited transfer from Molina to Health Net.
             </p>
-            <p className="text-sm print:text-xs text-gray-700 print:text-black"><strong>Phone:</strong> 1-800-430-4263 (Mon–Fri, 8 a.m. to 6 p.m.)</p>
           </div>
           <div className="p-3 print:p-4 border print:border-black">
             <h3 className="font-semibold text-gray-900 print:text-black mb-2">2. Contact the Medi-Cal Managed Care Ombudsman</h3>
