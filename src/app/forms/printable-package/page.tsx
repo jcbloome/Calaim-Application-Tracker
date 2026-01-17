@@ -27,7 +27,7 @@ const individualForms = [
     icon: FileText,
   },
   {
-    title: 'Room and Board Obligation Statement',
+    title: 'Room and Board Commitment',
     href: '/forms/room-board-obligation',
     icon: FileText,
   },
@@ -51,7 +51,7 @@ const individualForms = [
 const uploadableDocumentTypes = [
   "CS Member Summary",
   "Waivers & Authorizations",
-  "Room and Board Obligation Statement",
+  "Room and Board Commitment",
   "Proof of Income",
   "LIC 602A - Physician's Report",
   "Medicine List",

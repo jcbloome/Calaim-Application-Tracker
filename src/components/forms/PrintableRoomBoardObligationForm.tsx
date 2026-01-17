@@ -21,7 +21,7 @@ export function PrintableRoomBoardObligationForm({
 }: PrintableRoomBoardObligationFormProps) {
   return (
     <PrintableFormLayout
-      title="Room and Board Obligation Statement"
+      title="Room and Board Commitment"
       subtitle="CalAIM Community Support for Assisted Living Transitions"
       formType="room-board-obligation"
       applicationData={{ id: applicationId }}
@@ -122,7 +122,7 @@ export function PrintableRoomBoardObligationForm({
           </h3>
           <div className="space-y-4 text-sm print:text-xs text-gray-700 print:text-black">
             <p>
-              By signing below, I acknowledge that I have read and understood this Room and Board Obligation Statement. 
+              By signing below, I acknowledge that I have read and understood this Room and Board Commitment. 
               I understand my financial responsibilities and agree to pay the room and board portion as outlined above.
             </p>
             <p>

@@ -338,7 +338,7 @@ export function PrintableProgramInfoForm({
               <li>Freedom of Choice Form</li>
               <li>HIPAA Authorization Form</li>
               <li>Form 602 (Medi-Cal Application)</li>
-              <li>Room and Board Obligation Statement (must include monthly Social Security income amount)</li>
+              <li>Room and Board Commitment (must include monthly Social Security income amount)</li>
               <li>Proof of Income (Social Security Annual Award Letter OR 3 months of bank statements showing Social Security income)</li>
             </ul>
           </div>
@@ -358,7 +358,7 @@ export function PrintableProgramInfoForm({
               <li>Freedom of Choice Form</li>
               <li>HIPAA Authorization Form</li>
               <li>Form 602 (Medi-Cal Application)</li>
-              <li>Room and Board Obligation Statement (must include monthly Social Security income amount)</li>
+              <li>Room and Board Commitment (must include monthly Social Security income amount)</li>
               <li>Proof of Income (Social Security Annual Award Letter OR 3 months of bank statements showing Social Security income)</li>
             </ul>
           </div>
@@ -366,7 +366,7 @@ export function PrintableProgramInfoForm({
 
         <div className="mt-4 p-3 print:p-4 bg-blue-50 print:bg-white border print:border-black">
           <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
-            <p><strong>Room and Board Obligation Statement:</strong> This form explains that the member is required to pay the room and board portion to the RCFE. The member must fill in their monthly Social Security income amount on this form.</p>
+            <p><strong>Room and Board Commitment:</strong> This form explains that the member is required to pay the room and board portion to the RCFE. The member must fill in their monthly Social Security income amount on this form.</p>
             <p><strong>Note:</strong> Additional documents may be requested based on your specific situation and managed care plan requirements.</p>
           </div>
         </div>

@@ -136,7 +136,7 @@ export function PrintableFullPackage({
       {/* Page Break */}
       <div className="page-break print:page-break-before"></div>
 
-      {/* Room and Board Obligation Statement */}
+      {/* Room and Board Commitment */}
       <PrintableRoomBoardObligationForm 
         memberName={applicationData.memberFirstName && applicationData.memberLastName 
           ? `${applicationData.memberFirstName} ${applicationData.memberLastName}` 
