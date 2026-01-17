@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
       try {
         const staffUrl = `${process.env.CASPIO_BASE_URL}/tables/${tableName}/records`;
         console.log('🔍 Trying staff table:', tableName);
+        console.log('🌐 Full URL:', staffUrl);
 
         const staffResponse = await fetch(staffUrl, {
           method: 'GET',
@@ -62,6 +63,12 @@ export async function GET(request: NextRequest) {
             'Content-Type': 'application/json',
           },
         });
+
+        console.log(`📡 Response status for ${tableName}:`, staffResponse.status);
+        if (!staffResponse.ok) {
+          const errorText = await staffResponse.text();
+          console.log(`❌ Error response for ${tableName}:`, errorText);
+        }
 
         if (staffResponse.ok) {
           const staffData = await staffResponse.json();

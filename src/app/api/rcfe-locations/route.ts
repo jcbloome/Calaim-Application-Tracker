@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
       try {
         const rcfeUrl = `${process.env.CASPIO_BASE_URL}/tables/${tableName}/records`;
         console.log('🔍 Trying table:', tableName);
+        console.log('🌐 Full URL:', rcfeUrl);
 
         const rcfeResponse = await fetch(rcfeUrl, {
           method: 'GET',
@@ -66,6 +67,12 @@ export async function GET(request: NextRequest) {
             'Content-Type': 'application/json',
           },
         });
+
+        console.log(`📡 Response status for ${tableName}:`, rcfeResponse.status);
+        if (!rcfeResponse.ok) {
+          const errorText = await rcfeResponse.text();
+          console.log(`❌ Error response for ${tableName}:`, errorText);
+        }
 
         if (rcfeResponse.ok) {
           const rcfeData = await rcfeResponse.json();
@@ -147,15 +154,18 @@ export async function GET(request: NextRequest) {
 
     // Map RCFE data
     const rcfes: RCFE[] = rcfeRecords.map((record: any) => {
-      // Map various possible field names from Caspio (CalAIM_tbl_New_RCFE_Registration)
-      const name = record.Name || record.name || record.facility_name || record.FacilityName || 
-                  record.rcfe_name || record.Facility_Name || record.Business_Name || 'Unknown Facility';
-      const county = record.County || record.county || record.service_county || record.location_county || 
+      // Map field names from CalAIM_tbl_New_RCFE_Registration (user-confirmed field names)
+      const name = record.RCFE_Name || record.Name || record.name || record.facility_name || record.FacilityName || 
+                  record.Facility_Name || record.Business_Name || 'Unknown Facility';
+      const county = record.RCFE_County || record.County || record.county || record.service_county || record.location_county || 
                     record.Service_County || record.Location_County || 'Unknown';
-      const city = record.City || record.city || record.location_city || record.Service_City || 
+      const city = record.RCFE_City || record.City || record.city || record.location_city || record.Service_City || 
                   record.Location_City || '';
-      const address = record.Address || record.address || record.street_address || record.full_address || 
+      const state = record.RCFE_State || record.State || record.state || 'CA';
+      const street = record.RCFE_Street || record.Address || record.address || record.street_address || record.full_address || 
                      record.Street_Address || record.Full_Address || record.Physical_Address || '';
+      const zip = record.RCFE_Zip || record.Zip || record.zip || record.ZipCode || record.postal_code || '';
+      const address = street ? `${street}${city ? ', ' + city : ''}${state ? ', ' + state : ''}${zip ? ' ' + zip : ''}` : 'Unknown';
       const phone = record.Phone || record.phone || record.contact_phone || record.phone_number || 
                    record.Contact_Phone || record.Phone_Number || '';
       const capacity = record.Capacity || record.capacity || record.bed_count || record.licensed_beds || 
