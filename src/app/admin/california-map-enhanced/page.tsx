@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   Search, 
   MapPin, 
@@ -22,7 +23,8 @@ import {
   Eye,
   EyeOff,
   Filter,
-  BarChart3
+  BarChart3,
+  ChevronDown
 } from 'lucide-react';
 import { findCountyByCity, searchCities, getCitiesInCounty } from '@/lib/california-cities';
 import { useToast } from '@/hooks/use-toast';
@@ -132,9 +134,9 @@ const californiaCounties = [
 
 export default function EnhancedCaliforniaMapPage() {
   // State management
-  const [searchTerm, setSearchTerm] = useState('');
   const [citySearchTerm, setCitySearchTerm] = useState('');
   const [selectedCounty, setSelectedCounty] = useState<string | null>(null);
+  const [selectedCountyFromDropdown, setSelectedCountyFromDropdown] = useState<string>('');
   const [citySearchResults, setCitySearchResults] = useState<Array<{city: string, county: string}>>([]);
   const [activeTab, setActiveTab] = useState('staff');
   
@@ -217,7 +219,16 @@ export default function EnhancedCaliforniaMapPage() {
   // Handle city selection
   const handleCitySelect = (city: string, county: string) => {
     setSelectedCounty(county);
+    setSelectedCountyFromDropdown(county);
     setCitySearchTerm(`${city} → ${county} County`);
+    setCitySearchResults([]);
+  };
+
+  // Handle county dropdown selection
+  const handleCountyDropdownChange = (county: string) => {
+    setSelectedCountyFromDropdown(county);
+    setSelectedCounty(county);
+    setCitySearchTerm('');
     setCitySearchResults([]);
   };
 
@@ -232,24 +243,18 @@ export default function EnhancedCaliforniaMapPage() {
     };
   };
 
-  // Filter counties based on search and data availability
-  const filteredCounties = useMemo(() => {
-    return californiaCounties.filter(county => {
-      const matchesSearch = county.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           county.region.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      if (!matchesSearch) return false;
-      
-      // Show counties that have data in the active tab
-      if (activeTab === 'staff') {
-        return staffData[county.name] && staffData[county.name].total > 0;
-      } else if (activeTab === 'rcfe') {
-        return rcfeData[county.name] && rcfeData[county.name].facilities.length > 0;
-      }
-      
-      return true;
-    });
-  }, [searchTerm, staffData, rcfeData, activeTab]);
+
+  // Get cities in selected county
+  const citiesInSelectedCounty = useMemo(() => {
+    if (!selectedCountyFromDropdown) return [];
+    return getCitiesInCounty(selectedCountyFromDropdown);
+  }, [selectedCountyFromDropdown]);
+
+  // Get selected county data
+  const selectedCountyData = useMemo(() => {
+    if (!selectedCountyFromDropdown) return null;
+    return californiaCounties.find(c => c.name === selectedCountyFromDropdown);
+  }, [selectedCountyFromDropdown]);
 
   // Calculate summary statistics
   const summaryStats = useMemo(() => {
@@ -389,15 +394,23 @@ export default function EnhancedCaliforniaMapPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* County Search */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search counties or regions..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
+              {/* County Dropdown */}
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Select County</Label>
+                <Select value={selectedCountyFromDropdown} onValueChange={handleCountyDropdownChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a county..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {californiaCounties
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((county) => (
+                        <SelectItem key={county.name} value={county.name}>
+                          {county.name} County
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* City Search */}
@@ -458,6 +471,71 @@ export default function EnhancedCaliforniaMapPage() {
             </CardContent>
           </Card>
 
+          {/* Selected County Cities */}
+          {selectedCountyFromDropdown && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MapPin className="h-5 w-5" />
+                  {selectedCountyFromDropdown} County
+                </CardTitle>
+                <CardDescription>
+                  Cities and location information
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {selectedCountyData && (
+                  <div className="space-y-4">
+                    {/* County Info */}
+                    <div className="p-3 bg-blue-50 rounded-lg border">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium">Region:</span>
+                        <span className="text-sm text-gray-600">{selectedCountyData.region}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">Coordinates:</span>
+                        <span className="text-sm text-gray-600">
+                          {selectedCountyData.lat.toFixed(4)}, {selectedCountyData.lng.toFixed(4)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Cities List */}
+                    <div>
+                      <h4 className="font-medium mb-2">Major Cities ({citiesInSelectedCounty.length})</h4>
+                      {citiesInSelectedCounty.length > 0 ? (
+                        <div className="max-h-48 overflow-y-auto">
+                          <div className="grid grid-cols-1 gap-1">
+                            {citiesInSelectedCounty.map((city, index) => (
+                              <div 
+                                key={index} 
+                                className="p-2 text-sm capitalize text-gray-700 hover:bg-gray-50 rounded border-b border-gray-100 last:border-b-0"
+                              >
+                                {city}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500">No major cities found in our database</p>
+                      )}
+                    </div>
+
+                    {/* View on Map Button */}
+                    <Button 
+                      onClick={() => setSelectedCounty(selectedCountyFromDropdown)}
+                      className="w-full"
+                      variant="outline"
+                    >
+                      <MapPin className="h-4 w-4 mr-2" />
+                      Center Map on {selectedCountyFromDropdown}
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Data Tabs */}
           <Card>
             <CardHeader>
@@ -472,63 +550,63 @@ export default function EnhancedCaliforniaMapPage() {
                 
                 <TabsContent value="staff" className="space-y-4">
                   <div className="max-h-96 overflow-y-auto space-y-2">
-                    {filteredCounties.map((county) => {
-                      const data = getCountyDisplayData(county.name);
-                      if (data.staff.total === 0) return null;
-                      
-                      return (
+                    {Object.entries(staffData)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([countyName, data]) => (
                         <div
-                          key={county.name}
-                          onClick={() => setSelectedCounty(county.name)}
+                          key={countyName}
+                          onClick={() => {
+                            setSelectedCounty(countyName);
+                            setSelectedCountyFromDropdown(countyName);
+                          }}
                           className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                            selectedCounty === county.name
+                            selectedCounty === countyName
                               ? 'border-blue-500 bg-blue-50'
                               : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                           }`}
                         >
                           <div className="flex items-center justify-between">
                             <div>
-                              <div className="font-medium">{county.name} County</div>
+                              <div className="font-medium">{countyName} County</div>
                               <div className="text-sm text-gray-600">
-                                {data.staff.socialWorkers.length} SW, {data.staff.rns.length} RN
+                                {data.socialWorkers.length} SW, {data.rns.length} RN
                               </div>
                             </div>
-                            <Badge variant="secondary">{data.staff.total}</Badge>
+                            <Badge variant="secondary">{data.total}</Badge>
                           </div>
                         </div>
-                      );
-                    })}
+                      ))}
                   </div>
                 </TabsContent>
                 
                 <TabsContent value="rcfe" className="space-y-4">
                   <div className="max-h-96 overflow-y-auto space-y-2">
-                    {filteredCounties.map((county) => {
-                      const data = getCountyDisplayData(county.name);
-                      if (data.rcfe.facilities.length === 0) return null;
-                      
-                      return (
+                    {Object.entries(rcfeData)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([countyName, data]) => (
                         <div
-                          key={county.name}
-                          onClick={() => setSelectedCounty(county.name)}
+                          key={countyName}
+                          onClick={() => {
+                            setSelectedCounty(countyName);
+                            setSelectedCountyFromDropdown(countyName);
+                          }}
                           className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                            selectedCounty === county.name
+                            selectedCounty === countyName
                               ? 'border-blue-500 bg-blue-50'
                               : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                           }`}
                         >
                           <div className="flex items-center justify-between">
                             <div>
-                              <div className="font-medium">{county.name} County</div>
+                              <div className="font-medium">{countyName} County</div>
                               <div className="text-sm text-gray-600">
-                                {data.rcfe.facilities.length} facilities, {data.rcfe.totalCapacity} beds
+                                {data.facilities.length} facilities, {data.totalCapacity} beds
                               </div>
                             </div>
-                            <Badge variant="secondary">{data.rcfe.activeCount}</Badge>
+                            <Badge variant="secondary">{data.activeCount}</Badge>
                           </div>
                         </div>
-                      );
-                    })}
+                      ))}
                   </div>
                 </TabsContent>
               </Tabs>
