@@ -30,55 +30,28 @@ export default function PasswordResetEmail({
       <Preview>{previewText}</Preview>
       <Body style={main}>
         <Container style={container}>
-          {/* Logo Only */}
-          <Section style={logoSection}>
-            <Img
-              src="https://carehomefinders.com/calaimlogopdf.png"
-              width="120"
-              height="40"
-              alt="CalAIM Logo"
-              style={logo}
-            />
-          </Section>
-
           {/* Main Content */}
           <Section style={content}>
-            <Heading style={h1}>Reset Your Password</Heading>
-            <Text style={subtitle}>We received a request to reset your password</Text>
-            <Text style={greeting}>
+            <Heading style={h1}>Change Your Password</Heading>
+            
+            <Text style={paragraph}>
               Hello,
             </Text>
             
             <Text style={paragraph}>
-              You recently requested to reset your password for your <strong>Connections CalAIM Application Portal</strong> account. Click the button below to create a new password:
+              You requested to change your password for your <strong>Connections CalAIM Application Portal</strong> account. Click the button below to create a new password:
             </Text>
 
             {/* Reset Button */}
             <Section style={buttonContainer}>
               <Button href={resetUrl} style={resetButton}>
-                Reset My Password
+                Create New Password
               </Button>
             </Section>
 
-            {/* Security Information */}
-            <Section style={infoBox}>
-              <Text style={infoTitle}>🔒 Security Information:</Text>
-              <ul style={infoList}>
-                <li>This link will take you to the password reset page</li>
-                <li>If you didn't request this reset, you can safely ignore this email</li>
-                <li>Your password won't change until you create a new one</li>
-                <li>This link is secure and will expire after use</li>
-              </ul>
-            </Section>
-
-            {/* Backup Link */}
-            <Section style={backupSection}>
-              <Text style={backupTitle}>⚠️ Can't click the button?</Text>
-              <Text style={backupText}>
-                Copy and paste this link into your browser:
-              </Text>
-              <Text style={backupLink}>{resetUrl}</Text>
-            </Section>
+            <Text style={securityNote}>
+              If you didn't request this, you can safely ignore this email. Your password won't change until you create a new one.
+            </Text>
 
             <Hr style={hr} />
             
@@ -112,41 +85,17 @@ const container = {
   maxWidth: '600px',
 };
 
-const logoSection = {
-  padding: '32px 24px 16px',
-  textAlign: 'center' as const,
-};
-
-const logo = {
-  margin: '0 auto',
-};
-
 const h1 = {
   color: '#1f2937',
   fontSize: '28px',
   fontWeight: '700',
   lineHeight: '1.25',
-  margin: '0 0 8px 0',
-  textAlign: 'center' as const,
-};
-
-const subtitle = {
-  color: '#6b7280',
-  fontSize: '16px',
-  lineHeight: '1.4',
   margin: '0 0 24px 0',
   textAlign: 'center' as const,
 };
 
 const content = {
-  padding: '0 24px 32px',
-};
-
-const greeting = {
-  fontSize: '16px',
-  lineHeight: '1.4',
-  color: '#374151',
-  margin: '0 0 16px 0',
+  padding: '32px 24px',
 };
 
 const paragraph = {
@@ -174,57 +123,12 @@ const resetButton = {
   boxShadow: '0 4px 14px 0 rgba(30, 64, 175, 0.3)',
 };
 
-const infoBox = {
-  backgroundColor: '#f1f5f9',
-  border: '1px solid #cbd5e1',
-  borderLeft: '4px solid #1e40af',
-  borderRadius: '6px',
-  padding: '20px',
-  margin: '24px 0',
-};
-
-const infoTitle = {
-  fontSize: '14px',
-  fontWeight: '600',
-  color: '#1e40af',
-  margin: '0 0 12px 0',
-};
-
-const infoList = {
+const securityNote = {
   fontSize: '14px',
   lineHeight: '1.5',
-  color: '#475569',
-  margin: '0',
-  paddingLeft: '20px',
-};
-
-const backupSection = {
-  backgroundColor: '#fef3c7',
-  border: '1px solid #f59e0b',
-  borderRadius: '6px',
-  padding: '16px',
-  margin: '24px 0',
-};
-
-const backupTitle = {
-  fontSize: '14px',
-  fontWeight: '600',
-  color: '#92400e',
-  margin: '0 0 8px 0',
-};
-
-const backupText = {
-  fontSize: '14px',
-  color: '#92400e',
-  margin: '0 0 8px 0',
-};
-
-const backupLink = {
-  fontSize: '12px',
-  fontFamily: 'monospace',
-  color: '#92400e',
-  wordBreak: 'break-all' as const,
-  margin: '0',
+  color: '#6b7280',
+  textAlign: 'center' as const,
+  margin: '24px 0 0 0',
 };
 
 const hr = {
