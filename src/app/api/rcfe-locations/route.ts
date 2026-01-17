@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
 
     // Try multiple possible RCFE table names
     const possibleTables = [
+      'CalAIM_tbl_New_RCFE_Registration',
       'connect_tbl_rcfe',
       'tbl_rcfe',
       'rcfe_facilities',

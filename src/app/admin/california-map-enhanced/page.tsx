@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { findCountyByCity, searchCities, getCitiesInCounty } from '@/lib/california-cities';
 import { useToast } from '@/hooks/use-toast';
+import GoogleMapsComponent from '@/components/GoogleMapsComponent';
 
 // Types
 interface StaffMember {
@@ -624,32 +625,22 @@ export default function EnhancedCaliforniaMapPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="relative bg-gradient-to-b from-blue-50 to-green-50 rounded-lg overflow-hidden" style={{ height: '600px' }}>
-                {/* Placeholder for Google Maps integration */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center p-8 bg-white rounded-lg shadow-lg">
-                    <MapPin className="h-12 w-12 mx-auto mb-4 text-blue-600" />
-                    <h3 className="text-lg font-semibold mb-2">Google Maps Integration</h3>
-                    <p className="text-gray-600 mb-4">
-                      This will be replaced with an interactive Google Maps component showing:
-                    </p>
-                    <ul className="text-sm text-gray-600 space-y-1 text-left">
-                      <li>• Staff locations by county with role indicators</li>
-                      <li>• RCFE facilities with capacity information</li>
-                      <li>• Interactive markers and popups</li>
-                      <li>• Real-time data from Caspio tables</li>
-                      <li>• Clustering for better performance</li>
-                    </ul>
-                    <div className="mt-4 p-3 bg-blue-50 rounded">
-                      <p className="text-xs text-blue-800">
-                        <strong>Next Step:</strong> Add Google Maps API key and implement the map component
-                      </p>
-                    </div>
-                  </div>
-                </div>
+              <div className="relative rounded-lg overflow-hidden" style={{ height: '600px' }}>
+                <GoogleMapsComponent
+                  center={{ lat: 36.7783, lng: -119.4179 }}
+                  zoom={6}
+                  staffData={staffData}
+                  rcfeData={rcfeData}
+                  showStaffLayer={showStaffLayer}
+                  showRCFELayer={showRCFELayer}
+                  onCountySelect={(county) => {
+                    setSelectedCounty(county);
+                    setSelectedCountyFromDropdown(county);
+                  }}
+                />
 
                 {/* Legend */}
-                <div className="absolute bottom-4 left-4 bg-white p-3 rounded-lg shadow-lg">
+                <div className="absolute bottom-4 left-4 bg-white p-3 rounded-lg shadow-lg z-10">
                   <h4 className="font-semibold text-sm mb-2">Legend</h4>
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 text-xs">
@@ -668,7 +659,7 @@ export default function EnhancedCaliforniaMapPage() {
                 </div>
 
                 {/* Layer Status */}
-                <div className="absolute top-4 right-4 bg-white p-2 rounded shadow text-xs">
+                <div className="absolute top-4 right-4 bg-white p-2 rounded shadow text-xs z-10">
                   <div className="flex items-center gap-2">
                     {showStaffLayer && <Eye className="h-3 w-3 text-green-600" />}
                     {!showStaffLayer && <EyeOff className="h-3 w-3 text-gray-400" />}
