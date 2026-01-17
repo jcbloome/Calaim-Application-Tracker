@@ -47,6 +47,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/firebase';
 import { NotificationManager } from '@/components/CursorStyleNotification';
 import NotificationSystem from '@/components/NotificationSystem';
+import PushNotificationManager from '@/components/PushNotificationManager';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -102,6 +103,7 @@ const adminNavLinks = [
       { href: '/admin/tasks', label: 'Task Management', icon: ClipboardList },
       { href: '/admin/staff-notes', label: 'My Notes', icon: MessageSquareText },
       { href: '/admin/client-notes', label: 'Client Notes & Communication', icon: MessageSquareText },
+      { href: '/admin/notification-settings', label: 'Notification Settings', icon: Bell },
       { href: '/admin/client-notes-demo', label: 'Notes System Demo', icon: TestTube2 },
     ]
   },
@@ -473,6 +475,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
           {children}
         </main>
+        <PushNotificationManager />
       </div>
     </NotificationManager>
   );

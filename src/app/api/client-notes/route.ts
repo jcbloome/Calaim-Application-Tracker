@@ -30,9 +30,16 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const clientId2 = searchParams.get('clientId2');
     const userId = searchParams.get('userId');
-    const since = searchParams.get('since'); // Timestamp for new notes only
+    const since = searchParams.get('since'); // Timestamp for incremental sync
+    const includeAll = searchParams.get('includeAll') === 'true'; // For initial sync
     
-    console.log('📝 Fetching client notes from Caspio...', { clientId2, userId, since });
+    console.log('📝 Fetching client notes from Caspio...', { 
+      clientId2, 
+      userId, 
+      since, 
+      includeAll,
+      syncType: includeAll ? 'INITIAL_SYNC' : since ? 'INCREMENTAL_SYNC' : 'STANDARD_FETCH'
+    });
     
     // Use same authentication pattern as other APIs
     const dataBaseUrl = 'https://c7ebl500.caspio.com/rest/v2';
@@ -73,16 +80,26 @@ export async function GET(request: NextRequest) {
     do {
       let notesUrl = `${dataBaseUrl}/tables/${notesTable}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
       
-      // Add filters if provided
+      // Add filters based on sync type
+      const filters = [];
+      
       if (clientId2) {
-        notesUrl += `&q.where=Client_ID2='${clientId2}'`;
+        filters.push(`Client_ID2='${clientId2}'`);
       }
       if (userId) {
-        notesUrl += clientId2 ? `%20AND%20User_ID='${userId}'` : `&q.where=User_ID='${userId}'`;
+        filters.push(`User_ID='${userId}'`);
       }
-      if (since) {
-        const whereClause = clientId2 || userId ? '%20AND%20' : '&q.where=';
-        notesUrl += `${whereClause}Time_Stamp>'${since}'`;
+      
+      // For incremental sync, only get notes after the timestamp
+      if (since && !includeAll) {
+        filters.push(`Time_Stamp>'${since}'`);
+        console.log(`📅 Incremental sync: fetching notes after ${since}`);
+      } else if (includeAll) {
+        console.log(`📦 Initial sync: fetching ALL notes for member ${clientId2}`);
+      }
+      
+      if (filters.length > 0) {
+        notesUrl += `&q.where=${filters.join('%20AND%20')}`;
       }
       
       console.log(`🌐 Fetching page ${pageNumber} from ${notesTable}...`);
@@ -418,9 +435,50 @@ export async function POST(request: NextRequest) {
     const insertResult = await insertResponse.json();
     console.log('✅ Note created successfully:', insertResult);
 
+    // If note is assigned to staff, send push notification
+    if (noteData.userId && noteData.followUpAssignment) {
+      try {
+        console.log('📱 Sending push notification for assigned note...');
+        
+        // This would call your Firebase function to send the notification
+        const notificationResponse = await fetch('/api/firebase-function', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            functionName: 'sendNoteNotification',
+            data: {
+              noteData: {
+                noteId: insertResult.Result?.Note_ID || 'new-note',
+                clientId2: noteData.clientId2,
+                clientName: `Client ${noteData.clientId2}`, // You could look this up from clients table
+                assignedUserId: noteData.followUpAssignment,
+                assignedUserName: 'Staff Member', // You could look this up from users table
+                comments: noteData.comments,
+                followUpDate: noteData.followUpDate,
+                createdBy: 'Current User', // You could get this from auth
+                createdAt: new Date().toISOString()
+              },
+              notificationType: noteData.followUpDate ? 'followup' : 'assignment'
+            }
+          }),
+        });
+
+        if (notificationResponse.ok) {
+          console.log('✅ Push notification sent successfully');
+        } else {
+          console.warn('⚠️ Push notification failed, but note was created');
+        }
+      } catch (notificationError) {
+        console.error('❌ Error sending push notification:', notificationError);
+        // Don't fail the note creation if notification fails
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      message: 'Note created successfully',
+      message: 'Note created successfully' + (noteData.followUpAssignment ? ' and notification sent' : ''),
       data: {
         noteId: insertResult.Result?.Note_ID,
         ...caspioNoteData

@@ -91,7 +91,7 @@ export const sendNoteNotification = onCall(
       await notificationRef.set(notification);
       logger.info('✅ Notification saved to Firestore', { notificationId: notificationRef.id });
 
-      // Send real-time notification via FCM if enabled
+      // Send push notification via FCM if enabled (works even when app is closed)
       if (staffPrefs.enablePushNotifications) {
         try {
           // Get user's FCM tokens
@@ -104,38 +104,107 @@ export const sendNoteNotification = onCall(
             const tokens = userTokensDoc.data()?.tokens || [];
             
             if (tokens.length > 0) {
-              const message = {
+              // Enhanced push notification message
+              const pushMessage = {
                 notification: {
                   title: notification.title,
                   body: notification.message,
-                  icon: '/calaimlogopdf.png'
+                  icon: '/calaimlogopdf.png',
+                  badge: '/calaimlogopdf.png'
                 },
                 data: {
                   type: 'client_note',
+                  subType: notificationType,
                   noteId: noteData.noteId,
                   clientId2: noteData.clientId2,
-                  notificationId: notificationRef.id
+                  clientName: noteData.clientName,
+                  notificationId: notificationRef.id,
+                  priority: notificationType === 'followup' ? 'high' : 'normal',
+                  url: `/admin/client-notes?client=${noteData.clientId2}`,
+                  timestamp: new Date().toISOString()
+                },
+                android: {
+                  notification: {
+                    sound: 'default',
+                    priority: 'high',
+                    defaultSound: true,
+                    channelId: 'calaim_notes'
+                  }
+                },
+                apns: {
+                  payload: {
+                    aps: {
+                      sound: 'default',
+                      badge: 1,
+                      alert: {
+                        title: notification.title,
+                        body: notification.message
+                      }
+                    }
+                  }
+                },
+                webpush: {
+                  notification: {
+                    title: notification.title,
+                    body: notification.message,
+                    icon: '/calaimlogopdf.png',
+                    badge: '/calaimlogopdf.png',
+                    tag: `note-${noteData.noteId}`,
+                    requireInteraction: notificationType === 'followup',
+                    silent: false,
+                    vibrate: [200, 100, 200],
+                    actions: [
+                      {
+                        action: 'view',
+                        title: 'View Note'
+                      },
+                      {
+                        action: 'dismiss',
+                        title: 'Dismiss'
+                      }
+                    ]
+                  },
+                  fcmOptions: {
+                    link: `/admin/client-notes?client=${noteData.clientId2}`
+                  }
                 },
                 tokens: tokens
               };
 
-              const response = await admin.messaging().sendEachForMulticast(message);
-              logger.info('📱 FCM notifications sent', { 
+              const response = await admin.messaging().sendEachForMulticast(pushMessage);
+              logger.info('📱 Push notifications sent to all devices', { 
                 successCount: response.successCount,
-                failureCount: response.failureCount 
+                failureCount: response.failureCount,
+                totalTokens: tokens.length
               });
 
               // Clean up invalid tokens
               if (response.failureCount > 0) {
-                const validTokens = tokens.filter((_, index) => 
-                  response.responses[index].success
-                );
-                await userTokensDoc.ref.update({ tokens: validTokens });
+                const validTokens: string[] = [];
+                response.responses.forEach((resp, index) => {
+                  if (resp.success) {
+                    validTokens.push(tokens[index]);
+                  } else {
+                    logger.warn('❌ Invalid FCM token removed', { 
+                      error: resp.error?.message,
+                      token: tokens[index].substring(0, 20) + '...'
+                    });
+                  }
+                });
+                
+                await userTokensDoc.ref.update({ 
+                  tokens: validTokens,
+                  lastCleaned: admin.firestore.FieldValue.serverTimestamp()
+                });
               }
+            } else {
+              logger.warn('⚠️ No FCM tokens found for user', { userId: noteData.assignedUserId });
             }
+          } else {
+            logger.warn('⚠️ No FCM token document found for user', { userId: noteData.assignedUserId });
           }
         } catch (fcmError) {
-          logger.error('❌ FCM notification failed', fcmError);
+          logger.error('❌ Push notification failed', fcmError);
           // Don't throw - continue with other notification methods
         }
       }

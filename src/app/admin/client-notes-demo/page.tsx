@@ -20,6 +20,7 @@ import {
   Info
 } from 'lucide-react';
 import MemberNotesModal from '@/components/MemberNotesModal';
+import SyncStatusDashboard from '@/components/SyncStatusDashboard';
 
 export default function ClientNotesDemoPage() {
   const [showMemberNotesModal, setShowMemberNotesModal] = useState(false);
@@ -106,10 +107,11 @@ export default function ClientNotesDemoPage() {
       </Alert>
 
       <Tabs defaultValue="features" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="features">System Features</TabsTrigger>
           <TabsTrigger value="members">Member Notes</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
+          <TabsTrigger value="sync">Smart Sync</TabsTrigger>
           <TabsTrigger value="workflow">Workflow Demo</TabsTrigger>
         </TabsList>
 
@@ -326,6 +328,11 @@ export default function ClientNotesDemoPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* Smart Sync Tab */}
+        <TabsContent value="sync" className="space-y-6">
+          <SyncStatusDashboard />
         </TabsContent>
 
         {/* Workflow Demo Tab */}

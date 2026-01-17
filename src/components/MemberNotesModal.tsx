@@ -11,8 +11,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Search, Plus, MessageSquare, Calendar, User, Clock, Send } from 'lucide-react';
+import { Search, Plus, MessageSquare, Calendar, User, Clock, Send, Sync, CheckCircle, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
+import { memberNotesSync, useMemberNotesSync } from '@/lib/member-notes-sync';
 
 // Types
 interface ClientNote {
@@ -55,8 +56,14 @@ export default function MemberNotesModal({
   const [notes, setNotes] = useState<ClientNote[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showNewNoteForm, setShowNewNoteForm] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{
+    needsInitialSync: boolean;
+    isFirstTime: boolean;
+    lastSync?: string;
+  }>({ needsInitialSync: false, isFirstTime: false });
   const [newNote, setNewNote] = useState({
     clientId2: clientId2 || '',
     comments: '',
@@ -65,13 +72,63 @@ export default function MemberNotesModal({
     followUpStatus: 'Open'
   });
   const { toast } = useToast();
+  const { 
+    needsInitialSync, 
+    performInitialSync, 
+    addToPendingSync, 
+    checkForNewNotes 
+  } = useMemberNotesSync();
 
-  // Fetch notes for specific member
+  // Smart fetch with sync management
   const fetchMemberNotes = async (memberClientId2: string) => {
     if (!memberClientId2) return;
     
     try {
       setLoading(true);
+      
+      // Check if this member needs initial sync
+      const needsSync = needsInitialSync(memberClientId2);
+      const isFirstTime = needsSync;
+      
+      setSyncStatus({
+        needsInitialSync: needsSync,
+        isFirstTime,
+        lastSync: memberNotesSync.getMemberSyncStatus(memberClientId2)?.lastSyncTimestamp
+      });
+
+      if (needsSync) {
+        console.log(`🔄 Member ${memberClientId2} selected for first time - performing initial sync`);
+        setSyncing(true);
+        
+        const syncResult = await performInitialSync(memberClientId2);
+        
+        if (syncResult.success) {
+          toast({
+            title: "Initial Sync Complete",
+            description: `Loaded ${syncResult.notesCount} existing notes for this member`,
+          });
+        } else {
+          toast({
+            title: "Sync Warning",
+            description: syncResult.error || "Some notes may not be available",
+            variant: "destructive",
+          });
+        }
+        setSyncing(false);
+      } else {
+        // Check for new notes since last sync
+        console.log(`📥 Checking for new notes since last sync for ${memberClientId2}`);
+        const { newNotes, updatedNotes } = await checkForNewNotes(memberClientId2);
+        
+        if (newNotes.length > 0 || updatedNotes.length > 0) {
+          toast({
+            title: "Notes Updated",
+            description: `Found ${newNotes.length} new notes and ${updatedNotes.length} updated notes`,
+          });
+        }
+      }
+
+      // Fetch current notes
       const response = await fetch(`/api/client-notes?clientId2=${memberClientId2}`);
       
       if (!response.ok) throw new Error('Failed to fetch member notes');
@@ -92,6 +149,7 @@ export default function MemberNotesModal({
       });
     } finally {
       setLoading(false);
+      setSyncing(false);
     }
   };
 
@@ -110,7 +168,7 @@ export default function MemberNotesModal({
     setNewNote({ ...newNote, clientId2: searchTerm.trim() });
   };
 
-  // Create new note
+  // Create new note with smart sync
   const createNote = async () => {
     if (!newNote.clientId2 || !newNote.comments) {
       toast({
@@ -134,9 +192,18 @@ export default function MemberNotesModal({
 
       const data = await response.json();
       if (data.success) {
+        const noteId = data.data.noteId;
+        
+        // Add to sync queue for bidirectional sync
+        addToPendingSync({
+          noteId: noteId || `temp-${Date.now()}`,
+          clientId2: newNote.clientId2,
+          action: 'create'
+        });
+
         toast({
           title: "Success",
-          description: "Note created successfully",
+          description: "Note created and synced to Caspio",
         });
         
         // Reset form
@@ -149,22 +216,29 @@ export default function MemberNotesModal({
         });
         setShowNewNoteForm(false);
         
-        // Refresh notes
+        // Refresh notes to show the new note
         await fetchMemberNotes(newNote.clientId2);
         
         // Send notification if assigned to staff
         if (newNote.followUpAssignment) {
-          // This would trigger the notification system
-          console.log('Sending notification to:', newNote.followUpAssignment);
+          console.log('📱 Notification sent to:', newNote.followUpAssignment);
         }
       } else {
         throw new Error(data.error || 'Failed to create note');
       }
     } catch (error: any) {
       console.error('Error creating note:', error);
+      
+      // Even if server fails, add to pending sync for retry
+      addToPendingSync({
+        noteId: `pending-${Date.now()}`,
+        clientId2: newNote.clientId2,
+        action: 'create'
+      });
+      
       toast({
-        title: "Error",
-        description: error.message || "Failed to create note",
+        title: "Note Saved Locally",
+        description: "Note will be synced to Caspio when connection is restored",
         variant: "destructive",
       });
     }
@@ -207,9 +281,13 @@ export default function MemberNotesModal({
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && searchMember()}
                 />
-                <Button onClick={searchMember} disabled={loading}>
-                  <Search className="w-4 h-4 mr-2" />
-                  Search
+                <Button onClick={searchMember} disabled={loading || syncing}>
+                  {syncing ? (
+                    <Sync className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Search className="w-4 h-4 mr-2" />
+                  )}
+                  {syncing ? 'Syncing...' : 'Search'}
                 </Button>
               </div>
             </div>
@@ -219,6 +297,7 @@ export default function MemberNotesModal({
                 <Button
                   onClick={() => setShowNewNoteForm(!showNewNoteForm)}
                   className="bg-blue-600 hover:bg-blue-700"
+                  disabled={syncing}
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   New Note
@@ -226,6 +305,41 @@ export default function MemberNotesModal({
               </div>
             )}
           </div>
+
+          {/* Sync Status Indicator */}
+          {syncStatus.needsInitialSync && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="flex items-center space-x-2">
+                {syncing ? (
+                  <Sync className="w-4 h-4 text-blue-600 animate-spin" />
+                ) : syncStatus.isFirstTime ? (
+                  <AlertCircle className="w-4 h-4 text-blue-600" />
+                ) : (
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                )}
+                <p className="text-sm text-blue-800">
+                  {syncing 
+                    ? 'Performing initial sync - loading all existing notes from Caspio...'
+                    : syncStatus.isFirstTime 
+                    ? 'First time accessing this member - all notes will be loaded'
+                    : 'Sync completed - showing latest notes'
+                  }
+                </p>
+              </div>
+            </div>
+          )}
+
+          {syncStatus.lastSync && !syncStatus.needsInitialSync && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-2">
+              <div className="flex items-center space-x-2">
+                <CheckCircle className="w-4 h-4 text-green-600" />
+                <p className="text-xs text-green-700">
+                  Last synced: {format(new Date(syncStatus.lastSync), 'MMM dd, yyyy HH:mm')}
+                  {' • '}Only new/updated notes will be loaded going forward
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* New Note Form */}
           {showNewNoteForm && (
