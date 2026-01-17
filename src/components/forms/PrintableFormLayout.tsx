@@ -154,27 +154,6 @@ export function PrintableFormLayout({
           </div>
         </div>
 
-        {/* Instructions - Print optimized */}
-        <div className="p-8 print:p-6 bg-blue-50 print:bg-white border-b print:border-b print:border-gray-300">
-          <div className="flex items-start gap-3">
-            <FileText className="h-5 w-5 text-blue-600 print:text-black mt-0.5 shrink-0" />
-            <div className="text-sm print:text-xs text-blue-800 print:text-black">
-              <p className="font-medium mb-2">📋 Instructions for Referral Agencies & Staff:</p>
-              <ul className="space-y-1 list-disc list-inside">
-                <li><strong>This is a static form for signature collection only</strong></li>
-                <li>Have the member/POA complete and sign this printed form by hand</li>
-                <li>Use black or blue ink when filling out by hand</li>
-                <li>Upload the signed form through the online application portal</li>
-                <li><strong>Members should complete the full application online at the portal</strong></li>
-              </ul>
-              <div className="mt-3 p-2 bg-yellow-100 print:bg-gray-100 border border-yellow-300 print:border-gray-400 rounded print:rounded-none">
-                <p className="text-xs font-medium text-yellow-800 print:text-black">
-                  ⚠️ Note: This printable form is NOT fillable online. It's designed for physical completion and signature collection.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
 
         {/* Form Content */}
         <div className="p-8 print:p-6">
