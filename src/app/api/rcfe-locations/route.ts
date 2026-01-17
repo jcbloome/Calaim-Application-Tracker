@@ -77,6 +77,19 @@ export async function GET(request: NextRequest) {
           if (rcfeRecords.length > 0) {
             console.log('🔍 Available RCFE fields:', Object.keys(rcfeRecords[0]));
             console.log('📋 Sample RCFE record:', rcfeRecords[0]);
+            
+            // Show first 5 records to understand the data structure
+            console.log('🏠 First 5 RCFE records:');
+            rcfeRecords.slice(0, 5).forEach((record, index) => {
+              console.log(`RCFE ${index + 1}:`, {
+                Name: record.Name,
+                County: record.County,
+                City: record.City,
+                Address: record.Address,
+                Capacity: record.Capacity,
+                allFields: Object.keys(record)
+              });
+            });
           }
           break;
         }

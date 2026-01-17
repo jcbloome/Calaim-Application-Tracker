@@ -125,6 +125,19 @@ export async function GET(request: NextRequest) {
       console.log('🔍 Sample record keys:', Object.keys(staffRecords[0]));
       console.log('📄 Sample record data:', staffRecords[0]);
       console.log('👥 All roles found:', [...new Set(staffRecords.map((r: any) => r.Role || r.role || r.user_role || r.Position || r.position || 'Unknown'))]);
+      
+      // Show first 5 records to understand the data structure
+      console.log('📋 First 5 staff records:');
+      staffRecords.slice(0, 5).forEach((record, index) => {
+        console.log(`Record ${index + 1}:`, {
+          Role: record.Role,
+          Name: record.Name,
+          County: record.County,
+          City: record.City,
+          Email: record.Email,
+          allFields: Object.keys(record)
+        });
+      });
     }
 
     // Filter and map staff data

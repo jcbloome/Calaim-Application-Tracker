@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, ZoomIn, ZoomOut, RotateCcw, MapPin, Users, Building2, Navigation } from 'lucide-react';
+import { Search, RotateCcw, MapPin, Users, Building2, Navigation } from 'lucide-react';
 import { findCountyByCity, searchCities, getCitiesInCounty } from '@/lib/california-cities';
 
 // California counties data with coordinates and basic info
@@ -86,8 +86,6 @@ export default function CaliforniaCountiesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedCounty, setSelectedCounty] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
 
   // Filter counties based on search and region
   const filteredCounties = useMemo(() => {
@@ -142,8 +140,6 @@ export default function CaliforniaCountiesPage() {
   }, [selectedCounty]);
 
   const resetView = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
     setSelectedRegion(null);
     setSelectedCounty(null);
     setSearchTerm('');
@@ -180,23 +176,10 @@ export default function CaliforniaCountiesPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setZoom(Math.min(zoom + 0.2, 3))}
-            >
-              <ZoomIn className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setZoom(Math.max(zoom - 0.2, 0.5))}
-            >
-              <ZoomOut className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
               onClick={resetView}
             >
               <RotateCcw className="h-4 w-4" />
+              Reset Filters
             </Button>
           </div>
         </div>
@@ -352,89 +335,79 @@ export default function CaliforniaCountiesPage() {
           )}
         </div>
 
-        {/* Main Map Area */}
+        {/* County Cards Grid */}
         <div className="lg:col-span-3">
-          <Card className="h-full">
+          <Card>
             <CardHeader>
-              <CardTitle>Interactive California Map</CardTitle>
+              <CardTitle>California Counties ({filteredCounties.length})</CardTitle>
               <CardDescription>
-                Click county dots to view details • Search cities to find their counties • Filter by regions using buttons • Use zoom controls to explore
+                Click on any county card to view detailed information and city list
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="relative bg-gradient-to-b from-blue-50 to-green-50 rounded-lg overflow-hidden" style={{ height: '600px' }}>
-                {/* California outline SVG with county dots */}
-                <svg
-                  viewBox="0 0 800 600"
-                  className="w-full h-full"
-                  style={{
-                    transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
-                    cursor: 'grab'
-                  }}
-                >
-                  {/* California state outline */}
-                  <path
-                    d="M150 100 L200 80 L250 85 L300 90 L350 95 L400 100 L450 110 L500 120 L550 140 L580 160 L600 180 L620 200 L640 220 L650 250 L660 280 L670 310 L680 340 L690 370 L700 400 L710 430 L720 460 L730 490 L740 520 L750 550 L740 580 L720 600 L690 610 L660 620 L630 630 L600 640 L570 650 L540 660 L510 670 L480 680 L450 690 L420 700 L390 710 L360 720 L330 730 L300 740 L270 750 L240 760 L210 770 L180 780 L150 790 L120 800 L90 790 L60 780 L30 770 L20 760 L10 750 L5 740 L2 730 L1 720 L2 710 L5 700 L10 690 L20 680 L30 670 L40 660 L50 650 L60 640 L70 630 L80 620 L90 610 L100 600 L110 590 L120 580 L130 570 L140 560 L145 550 L148 540 L150 530 L152 520 L154 510 L156 500 L158 490 L160 480 L162 470 L164 460 L166 450 L168 440 L170 430 L172 420 L174 410 L176 400 L178 390 L180 380 L182 370 L184 360 L186 350 L188 340 L190 330 L192 320 L194 310 L196 300 L198 290 L200 280 L202 270 L204 260 L206 250 L208 240 L210 230 L212 220 L214 210 L216 200 L218 190 L220 180 L222 170 L224 160 L226 150 L228 140 L230 130 L232 120 L234 110 L236 100 Z"
-                    fill="rgba(255, 255, 255, 0.8)"
-                    stroke="#4A5568"
-                    strokeWidth="2"
-                  />
-
-                  {/* County dots */}
-                  {filteredCounties.map((county) => {
-                    // Convert lat/lng to SVG coordinates (simplified mapping)
-                    const x = ((county.lng + 124.4) / (114.1 + 124.4)) * 800;
-                    const y = ((42.0 - county.lat) / (42.0 - 32.5)) * 600;
-                    
-                    const isSelected = selectedCounty === county.name;
-                    
-                    return (
-                      <g key={county.name}>
-                        <circle
-                          cx={x}
-                          cy={y}
-                          r={isSelected ? 8 : 6}
-                          fill={county.color}
-                          stroke="white"
-                          strokeWidth={isSelected ? 3 : 2}
-                          className="cursor-pointer hover:r-8 transition-all duration-200"
-                          onClick={() => setSelectedCounty(isSelected ? null : county.name)}
-                        />
-                        {isSelected && (
-                          <text
-                            x={x}
-                            y={y - 15}
-                            textAnchor="middle"
-                            className="fill-gray-800 text-sm font-semibold"
-                            style={{ fontSize: '12px' }}
-                          >
-                            {county.name}
-                          </text>
-                        )}
-                      </g>
-                    );
-                  })}
-                </svg>
-
-                {/* Legend */}
-                <div className="absolute bottom-4 left-4 bg-white p-3 rounded-lg shadow-lg">
-                  <h4 className="font-semibold text-sm mb-2">Regions</h4>
-                  <div className="space-y-1">
-                    {Object.entries(regionColors).map(([region, color]) => (
-                      <div key={region} className="flex items-center gap-2 text-xs">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
-                        <span>{region}</span>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[600px] overflow-y-auto">
+                {filteredCounties.map((county) => (
+                  <Card
+                    key={county.name}
+                    className={`cursor-pointer transition-all duration-200 hover:shadow-lg ${
+                      selectedCounty === county.name
+                        ? 'ring-2 ring-blue-500 bg-blue-50'
+                        : 'hover:bg-gray-50'
+                    }`}
+                    onClick={() => setSelectedCounty(selectedCounty === county.name ? null : county.name)}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded-full" 
+                            style={{ backgroundColor: county.color }}
+                          />
+                          <h3 className="font-semibold text-sm">{county.name}</h3>
+                        </div>
+                        <Badge variant="secondary" className="text-xs">
+                          {county.region}
+                        </Badge>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                      
+                      <div className="space-y-1 text-xs text-gray-600">
+                        <div className="flex items-center gap-1">
+                          <Users className="h-3 w-3" />
+                          <span>{county.population}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          <span>{county.lat.toFixed(2)}, {county.lng.toFixed(2)}</span>
+                        </div>
+                      </div>
 
-                {/* Controls overlay */}
-                <div className="absolute top-4 right-4 bg-white p-2 rounded shadow">
-                  <div className="text-xs text-gray-600">
-                    Zoom: {(zoom * 100).toFixed(0)}%
-                  </div>
-                </div>
+                      {selectedCounty === county.name && citiesInSelectedCounty.length > 0 && (
+                        <div className="mt-3 pt-3 border-t">
+                          <div className="text-xs font-medium text-gray-700 mb-2">
+                            Cities ({citiesInSelectedCounty.length})
+                          </div>
+                          <div className="max-h-32 overflow-y-auto">
+                            <div className="grid grid-cols-1 gap-1">
+                              {citiesInSelectedCounty.slice(0, 8).map((city, index) => (
+                                <div 
+                                  key={index} 
+                                  className="text-xs px-2 py-1 bg-white rounded border text-gray-600"
+                                >
+                                  {city}
+                                </div>
+                              ))}
+                              {citiesInSelectedCounty.length > 8 && (
+                                <div className="text-xs px-2 py-1 text-gray-500 italic">
+                                  +{citiesInSelectedCounty.length - 8} more cities
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
             </CardContent>
           </Card>
