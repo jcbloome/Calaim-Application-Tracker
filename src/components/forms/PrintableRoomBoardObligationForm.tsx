@@ -70,6 +70,24 @@ export function PrintableRoomBoardObligationForm({
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
+                If Social Security is not received, what is your source of monthly income?
+              </label>
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <span className="w-24 text-sm">Source:</span>
+                  <div className="flex-1 h-8 border-b border-gray-300 print:border-black"></div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="w-24 text-sm">Amount:</span>
+                  <span className="text-lg font-semibold">$</span>
+                  <div className="w-32 h-8 border-b border-gray-300 print:border-black"></div>
+                  <span className="text-sm text-gray-600 print:text-black">per month</span>
+                </div>
+              </div>
+            </div>
+
             <div className="mt-4 p-3 print:p-4 border print:border-black bg-gray-50 print:bg-white">
               <p className="text-sm print:text-xs text-gray-700 print:text-black">
                 <strong>Note:</strong> Proof of income (3 months of bank statements showing Social Security income OR Social Security annual award letter) will need to be uploaded with your application.
@@ -89,7 +107,6 @@ export function PrintableRoomBoardObligationForm({
             </p>
             <ul className="list-disc list-inside space-y-2 ml-4">
               <li>I am required to pay the room and board portion of my assisted living costs directly to the facility.</li>
-              <li>The amount I can pay for room and board will determine which facilities are available to me.</li>
               <li>If I am eligible for SSI/SSP and the Non-Medical Out of Home Care (NMOHC) payment, my SSI/SSP will be increased to $1,626.07 per month.</li>
               <li>I will typically retain $182 for personal needs, and the remaining amount will go toward room and board.</li>
               <li>If I cannot pay any room and board portion, I may not be eligible for this Community Support program.</li>
