@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, ZoomIn, ZoomOut, RotateCcw, MapPin, Users, Building2 } from 'lucide-react';
+import { Search, ZoomIn, ZoomOut, RotateCcw, MapPin, Users, Building2, Navigation } from 'lucide-react';
+import { findCountyByCity, searchCities, getCitiesInCounty } from '@/lib/california-cities';
 
 // California counties data with coordinates and basic info
 const californiaCounties = [
@@ -82,9 +83,11 @@ const regions = [
 
 export default function CaliforniaMapPage() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [citySearchTerm, setCitySearchTerm] = useState('');
   const [selectedCounty, setSelectedCounty] = useState<typeof californiaCounties[0] | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [citySearchResults, setCitySearchResults] = useState<Array<{city: string, county: string}>>([]);
 
   const filteredCounties = californiaCounties.filter(county =>
     county.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -102,7 +105,36 @@ export default function CaliforniaMapPage() {
     setSelectedCounty(null);
     setSelectedRegion(null);
     setSearchTerm('');
+    setCitySearchTerm('');
+    setCitySearchResults([]);
   };
+
+  // Handle city search
+  const handleCitySearch = (value: string) => {
+    setCitySearchTerm(value);
+    if (value.length >= 2) {
+      const results = searchCities(value);
+      setCitySearchResults(results);
+    } else {
+      setCitySearchResults([]);
+    }
+  };
+
+  // Handle city selection
+  const handleCitySelect = (city: string, county: string) => {
+    const countyData = californiaCounties.find(c => c.name === county);
+    if (countyData) {
+      setSelectedCounty(countyData);
+      setCitySearchTerm(`${city} → ${county} County`);
+      setCitySearchResults([]);
+    }
+  };
+
+  // Get cities in selected county
+  const citiesInSelectedCounty = useMemo(() => {
+    if (!selectedCounty) return [];
+    return getCitiesInCounty(selectedCounty.name);
+  }, [selectedCounty]);
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -116,11 +148,11 @@ export default function CaliforniaMapPage() {
                 California Counties Map
               </CardTitle>
               <CardDescription>
-                Interactive map of all 58 California counties with population data and regional groupings.
+                Interactive map of all 58 California counties with city lookup functionality.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Search */}
+              {/* County Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
@@ -129,6 +161,31 @@ export default function CaliforniaMapPage() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
                 />
+              </div>
+
+              {/* City Search */}
+              <div className="relative">
+                <Navigation className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Search cities to find their county..."
+                  value={citySearchTerm}
+                  onChange={(e) => handleCitySearch(e.target.value)}
+                  className="pl-10"
+                />
+                {citySearchResults.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-md shadow-lg z-10 max-h-60 overflow-y-auto">
+                    {citySearchResults.map((result, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleCitySelect(result.city, result.county)}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="font-medium capitalize">{result.city}</div>
+                        <div className="text-sm text-gray-600">{result.county} County</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Zoom Controls */}
@@ -184,7 +241,7 @@ export default function CaliforniaMapPage() {
                   {selectedCounty.name} County
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-4">
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4" />
                   <span className="font-medium">Population:</span>
@@ -200,6 +257,27 @@ export default function CaliforniaMapPage() {
                 <div className="text-sm text-gray-600">
                   <span className="font-medium">Coordinates:</span> {selectedCounty.lat.toFixed(4)}, {selectedCounty.lng.toFixed(4)}
                 </div>
+                
+                {/* Cities in County */}
+                {citiesInSelectedCounty.length > 0 && (
+                  <div>
+                    <h4 className="font-medium mb-2">Major Cities ({citiesInSelectedCounty.length}):</h4>
+                    <div className="max-h-32 overflow-y-auto">
+                      <div className="grid grid-cols-1 gap-1 text-sm">
+                        {citiesInSelectedCounty.slice(0, 10).map((city, index) => (
+                          <div key={index} className="capitalize text-gray-600">
+                            {city}
+                          </div>
+                        ))}
+                        {citiesInSelectedCounty.length > 10 && (
+                          <div className="text-xs text-gray-500 italic">
+                            +{citiesInSelectedCounty.length - 10} more cities
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -241,14 +319,14 @@ export default function CaliforniaMapPage() {
         <div className="lg:w-2/3">
           <Card className="h-full">
             <CardHeader>
-              <CardTitle>Interactive Map</CardTitle>
+              <CardTitle>Interactive California Map</CardTitle>
               <CardDescription>
-                Click on counties to view details. Use zoom controls to explore different areas.
+                Click on counties to view details. Search for cities to find their counties.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="relative bg-gradient-to-b from-blue-100 to-green-100 rounded-lg overflow-hidden" style={{ height: '600px' }}>
-                {/* Simple SVG-based California outline with county dots */}
+              <div className="relative bg-gradient-to-b from-blue-50 to-green-50 rounded-lg overflow-hidden" style={{ height: '700px' }}>
+                {/* Proper California SVG Map */}
                 <div 
                   className="absolute inset-0 transition-transform duration-300"
                   style={{ 
@@ -256,46 +334,48 @@ export default function CaliforniaMapPage() {
                     transformOrigin: 'center center'
                   }}
                 >
-                  {/* California state outline (simplified) */}
+                  {/* California state outline (more accurate) */}
                   <svg
-                    viewBox="0 0 800 1000"
+                    viewBox="0 0 600 800"
                     className="absolute inset-0 w-full h-full"
                     style={{ filter: 'drop-shadow(2px 2px 4px rgba(0,0,0,0.1))' }}
                   >
+                    {/* More accurate California outline */}
                     <path
-                      d="M150 100 L200 80 L300 90 L400 100 L500 120 L600 150 L650 200 L680 300 L700 400 L720 500 L700 600 L680 700 L650 800 L600 850 L500 900 L400 920 L300 900 L200 880 L150 850 L100 800 L80 700 L60 600 L50 500 L60 400 L80 300 L100 200 Z"
-                      fill="#f8fafc"
+                      d="M158 50 L180 45 L200 48 L220 52 L250 58 L280 65 L310 75 L340 85 L370 95 L400 110 L420 125 L440 145 L455 170 L465 200 L470 230 L475 260 L478 290 L480 320 L482 350 L485 380 L488 410 L490 440 L492 470 L495 500 L498 530 L500 560 L502 590 L505 620 L508 650 L510 680 L512 710 L510 740 L505 760 L495 775 L480 785 L460 790 L440 792 L420 790 L400 785 L380 778 L360 770 L340 760 L320 748 L300 735 L280 720 L260 703 L240 685 L220 665 L200 643 L185 620 L172 595 L162 568 L155 540 L150 510 L148 480 L147 450 L146 420 L145 390 L144 360 L143 330 L142 300 L141 270 L140 240 L142 210 L145 180 L150 150 L155 120 L158 90 Z"
+                      fill="#ffffff"
                       stroke="#e2e8f0"
                       strokeWidth="2"
+                      className="drop-shadow-sm"
                     />
                   </svg>
 
                   {/* County markers */}
                   {displayedCounties.map((county) => {
-                    // Convert lat/lng to SVG coordinates (simplified projection)
-                    const x = ((county.lng + 125) / 15) * 800;
-                    const y = ((42 - county.lat) / 10) * 1000;
+                    // Better coordinate mapping for California
+                    const x = ((county.lng + 125) / 15) * 600;
+                    const y = ((42 - county.lat) / 10) * 800;
                     
                     return (
                       <div
                         key={county.name}
                         onClick={() => setSelectedCounty(county)}
-                        className="absolute cursor-pointer transform -translate-x-1/2 -translate-y-1/2 transition-all duration-200 hover:scale-125"
+                        className="absolute cursor-pointer transform -translate-x-1/2 -translate-y-1/2 transition-all duration-200 hover:scale-125 hover:z-10"
                         style={{
-                          left: `${x}px`,
-                          top: `${y}px`,
+                          left: `${Math.max(20, Math.min(580, x))}px`,
+                          top: `${Math.max(20, Math.min(780, y))}px`,
                         }}
                       >
                         <div
-                          className={`w-3 h-3 rounded-full border-2 border-white shadow-lg ${
-                            selectedCounty?.name === county.name ? 'ring-2 ring-blue-500 ring-offset-2' : ''
+                          className={`w-4 h-4 rounded-full border-2 border-white shadow-lg ${
+                            selectedCounty?.name === county.name ? 'ring-2 ring-blue-500 ring-offset-2 scale-125' : ''
                           }`}
                           style={{ backgroundColor: county.color }}
                           title={`${county.name} County - ${county.population}`}
                         />
                         {selectedCounty?.name === county.name && (
-                          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white px-2 py-1 rounded shadow-lg text-xs font-medium whitespace-nowrap">
-                            {county.name}
+                          <div className="absolute top-6 left-1/2 transform -translate-x-1/2 bg-white px-2 py-1 rounded shadow-lg text-xs font-medium whitespace-nowrap z-20">
+                            {county.name} County
                           </div>
                         )}
                       </div>
@@ -322,6 +402,17 @@ export default function CaliforniaMapPage() {
                 {/* Zoom indicator */}
                 <div className="absolute top-4 right-4 bg-white px-2 py-1 rounded shadow text-sm">
                   Zoom: {Math.round(zoomLevel * 100)}%
+                </div>
+
+                {/* Instructions */}
+                <div className="absolute top-4 left-4 bg-white p-3 rounded-lg shadow-lg max-w-xs">
+                  <h4 className="font-semibold text-sm mb-1">How to Use:</h4>
+                  <ul className="text-xs text-gray-600 space-y-1">
+                    <li>• Click county dots to view details</li>
+                    <li>• Search cities to find their counties</li>
+                    <li>• Filter by regions using buttons</li>
+                    <li>• Use zoom controls to explore</li>
+                  </ul>
                 </div>
               </div>
             </CardContent>
