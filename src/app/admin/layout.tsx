@@ -64,13 +64,14 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } 
 
 const adminNavLinks = [
   { 
-    label: 'Overview', 
+    label: 'Tools', 
     icon: LayoutDashboard, 
     isSubmenu: true,
     submenuItems: [
       { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: DollarSign },
+      { href: '/admin/california-map', label: 'California Counties Map', icon: Map },
     ]
   },
   { 

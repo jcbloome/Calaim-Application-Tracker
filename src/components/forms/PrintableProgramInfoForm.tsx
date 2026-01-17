@@ -205,12 +205,6 @@ export function PrintableProgramInfoForm({
               <strong>Phone:</strong> 1-888-452-8609 | <strong>Email:</strong> MMCDOmbudsmanOffice@dhcs.ca.gov
             </p>
           </div>
-          <div className="p-3 print:p-4 border print:border-black">
-            <h3 className="font-semibold text-gray-900 print:text-black mb-2">3. File an "Expedited Grievance" with Molina</h3>
-            <p className="text-sm print:text-xs text-gray-700 print:text-black">
-              Request that Molina either provide equivalent CalAIM transition services immediately or help with immediate plan transfer to Health Net.
-            </p>
-          </div>
         </div>
       </div>
 

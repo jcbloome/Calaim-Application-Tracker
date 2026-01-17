@@ -56,12 +56,6 @@ const infoSections = [
         <strong>Email:</strong> Available via link above<br />
         <strong>What to say:</strong> "The member was randomly assigned to Molina despite requesting Health Net. This error is preventing access to CalAIM SNF-to-community transition services, effectively keeping the member institutionalized longer than necessary."
       </>,
-      <>
-        <strong>3. File an "Expedited Grievance" with Molina</strong><br />
-        Since the member is currently assigned to Molina, Molina is technically responsible for their care. You can call Molina's Member Services and file an Expedited Grievance.<br />
-        <strong>The Goal:</strong> Request that Molina either provide the equivalent CalAIM transition services immediately or, if they cannot, that they "concur" with an immediate plan transfer to Health Net.<br />
-        <strong>Note:</strong> If Molina cannot meet the member's needs (i.e., they don't have the specific CalAIM Enhanced Care Management or Community Supports contract), they are legally required to help resolve the access issue.
-      </>,
     ],
   },
 ];
