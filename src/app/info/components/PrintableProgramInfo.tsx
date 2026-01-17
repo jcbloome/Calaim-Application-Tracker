@@ -31,16 +31,18 @@ export function PrintableProgramInfo() {
             </div>
 
             <SectionTitle>What is CalAIM?</SectionTitle>
-            <p>California Advancing and Innovating Medi-Cal (CalAIM) is California's long-term initiative to transform the Medi-Cal program by improving quality outcomes, reducing health disparities, and creating a more seamless and consistent system. It aims to achieve this through a focus on "whole person care," which includes addressing social determinants of health, integrating physical, mental, and social services, and launching new programs like Enhanced Care Management (ECM) and Community Supports. CS and ECM are administered through managed care plans (MCPs).</p>
+            <p>California Advancing and Innovating Medi-Cal (CalAIM) is California's long-term initiative to transform the Medi-Cal program by improving quality outcomes, reducing health disparities, and creating a more seamless and consistent system. It aims to achieve this through a focus on 'whole person care,' which includes addressing social determinants of health, integrating physical, mental, and social services, and launching new programs like Enhanced Care Management (ECM) and Community Supports (CS). ECM and CS are administered through managed care plans (MCPs).</p>
             
             <SectionTitle>Community Support for Assisted Living Transitions</SectionTitle>
-            <p>There are 14 Community Supports (CS), and this application portal is for one of them, called Assisted Living Transitions. This CS gives eligible members the choice to reside in an assisted living setting—such as a Residential Care Facility for the Elderly (RCFE) or an Adult Residential Facility (ARF)—as a safe alternative to a skilled nursing facility (SNF), promoting greater independence and community integration. The CS is either for SNF Diversion (e.g. for members coming from a community-based setting (e.g., from home or hospital) at risk of premature institutionalization or SNF Transitions (e.g., for members residing in SNFs) eligible to reside in assisted living settings.</p>
+            <p>There are 14 Community Supports (CS), and this application portal is for one of them, called Assisted Living Transitions. This CS gives eligible members the choice to reside in an assisted living setting—such as a Residential Care Facility for the Elderly (RCFE) or an Adult Residential Facility (ARF)—as a safe alternative to a skilled nursing facility (SNF), promoting greater independence and community integration.</p>
+            <p>The CS is either for SNF Diversion (e.g. for members coming from a community-based setting (e.g., from home or hospital) at risk of premature institutionalization or SNF Transitions (e.g., for members residing in SNFs) eligible to reside in assisted living settings.</p>
             
             <SectionTitle>The Role of Connections Care Home Consultants</SectionTitle>
-            <p>For 35 years Connections has helped private paid families find care homes. We are excited to now be partnered with MCPs as a CS Provider that assists with understanding the program, finding participating facilities, coordinating paperwork and assessments, and liaising with your Managed Care Plan to request authorization for the CS. Once a member is placed, we also send a MSW to visit the member at the RCFE/ARF for monthly quality control checks and provide ongoing care coordination.</p>
+            <p>For 35 years Connections has helped private paid families find care homes. We are excited to now be partnered with MCPs as a CS Provider that assists with understanding the program, finding participating facilities, coordinating paperwork and assessments, and liaising with your Managed Care Plan to request authorization for the CS.</p>
+            <p>Once a member is placed, we also send a MSW to visit the member at the RCFE/ARF for monthly quality control checks and provide ongoing care coordination.</p>
 
             <SectionTitle>Types of Assisted Living (RCFEs/ARFs)</SectionTitle>
-             <p>Assisted Living facilities (RCFEs or ARFs) come in various sizes, each offering a different environment. Connections can help you find a setting that best suits your needs:</p>
+            <p>Assisted Living facilities (RCFEs or ARFs) come in various sizes, each offering a different environment. Connections can help you find a setting that best suits your needs:</p>
             <ul className="list-disc pl-5 space-y-2">
                 <li><strong>Small, Home-Like Settings:</strong> These are typically 4-6 bed homes that provide a high staff-to-resident ratio. This environment offers more personalized attention and a quieter, more intimate living experience.</li>
                 <li><strong>Large, Community Settings:</strong> These are often 100+ bed facilities that feature amenities like group dining rooms, a wide variety of planned activities, and social opportunities. Staff is available as needed to provide care and support.</li>
@@ -54,30 +56,56 @@ export function PrintableProgramInfo() {
             <p>Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">www.benefitscal.com</a> for more information.</p>
 
             <SectionTitle>Managed Care Plans We Work With</SectionTitle>
-            <p>You must be a member of one of these plans to utilize us for the CS for Assisted Transitions.</p>
-            <ul className="list-disc pl-5">
+            <p>Connections currently is only contracted with Kaiser and Health Net for the CS for Assisted Living Transitions. You must switch to one of these plans if you would like to work with Connections.</p>
+            <ul className="list-disc pl-5 space-y-2">
                 <li><strong>Health Net:</strong> Serving members in Sacramento and Los Ángeles counties.</li>
-                <li><strong>Kaiser Permanente:</strong> Serving members in various counties throughout California.</li>
+                <li><strong>Kaiser Permanente:</strong> Connections is contracted for the CS for Kaiser Permanente through a subcontract with Independent Living Systems (ILS), which manages the program for Kaiser.</li>
             </ul>
-            
+
             <SectionTitle>Switching to Health Net or Kaiser</SectionTitle>
             <p>If you are in another Medi-Cal managed care plan and you would like to work with Connections, you will need to switch.</p>
-            <p>You can change your health plan by contacting <a href="https://www.healthcareoptions.dhcs.ca.gov/en/enroll" target="_blank" rel="noopener noreferrer">California Health Care Options</a> at 1-800-430-4263 or visiting their website. Generally, changes made by the end of the month are effective on the first day of the following month.</p>
-            
+            <p>You can change your health plan by contacting <a href="https://www.healthcareoptions.dhcs.ca.gov/en/enroll" target="_blank" rel="noopener noreferrer">California Health Care Options</a> at 1-800-430-4263 or visiting their website.</p>
+            <p>Generally, changes made by the end of the month are effective on the first day of the following month.</p>
+
             <SectionTitle>Applying for Health Net (and being assigned to Molina)</SectionTitle>
             <p>When applying for Medi-Cal with Health Net sometimes people are automatically assigned to Molina instead, you will need to call Health Net (800-675-6110) and request to be switched to Health Net.</p>
-            
-            <SectionTitle>Share of Cost (SOC)</SectionTitle>
-            <p>A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay. This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.</p>
-            <p>Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.</p>
-            <p>Read more about eliminating share of cost at the <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer">California Advocates for Nursing Home Reform (CANHR)</a>.</p>
-            
+
+            <SectionTitle>Expedited Disenrollment from Molina</SectionTitle>
+            <p>If you were randomly assigned to Molina and need to switch to Health Net urgently (especially for SNF residents needing CalAIM transition services), here are three escalation options:</p>
+            <ul className="list-disc pl-5 space-y-4">
+                <li>
+                    <strong>1. Request "Expedited Disenrollment" via Health Care Options (HCO)</strong><br />
+                    The standard transfer process takes until the first day of the following month (or the month after that if done late in the 30-day cycle). Families should call Health Care Options and explicitly use the phrase "Expedited Disenrollment due to an urgent medical/social need."<br />
+                    <strong>Phone:</strong> 1-800-430-4263 (Mon–Fri, 8 a.m. to 6 p.m.)<br />
+                    <strong>The Argument:</strong> Explain that the member is currently in a SNF and the plan they were assigned (Molina) cannot provide the specific CalAIM transition services required for a safe discharge to the community, whereas Health Net can.
+                </li>
+                <li>
+                    <strong>2. Contact the Medi-Cal Managed Care <a href="mailto:MMCDOmbudsmanOffice@dhcs.ca.gov">Ombudsman</a></strong><br />
+                    If HCO says they cannot speed up the process, the Medi-Cal Managed Care Ombudsman is the "escalation" office. They have the authority to investigate enrollment errors and can sometimes manually override an assignment if it is preventing a member from receiving necessary care or a safe discharge.<br />
+                    <strong>Phone:</strong> 1-888-452-8609<br />
+                    <strong>Email:</strong> Available via link above<br />
+                    <strong>What to say:</strong> "The member was randomly assigned to Molina despite requesting Health Net. This error is preventing access to CalAIM SNF-to-community transition services, effectively keeping the member institutionalized longer than necessary."
+                </li>
+                <li>
+                    <strong>3. File an "Expedited Grievance" with Molina</strong><br />
+                    Since the member is currently assigned to Molina, Molina is technically responsible for their care. You can call Molina's Member Services and file an Expedited Grievance.<br />
+                    <strong>The Goal:</strong> Request that Molina either provide the equivalent CalAIM transition services immediately or, if they cannot, that they "concur" with an immediate plan transfer to Health Net.<br />
+                    <strong>Note:</strong> If Molina cannot meet the member's needs (i.e., they don't have the specific CalAIM Enhanced Care Management or Community Supports contract), they are legally required to help resolve the access issue.
+                </li>
+            </ul>
+
             <SectionTitle>Room &amp; Board Payments</SectionTitle>
             <p>The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is responsible for paying the RCFE the 'assisted living' portion. Some areas in California are quite expensive and impractical for CalAIM. Also, many RCFEs might choose not to work with CalAIM.</p>
-            <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for “room and board”. Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for "room and board" for a private room or to open up RCFEs in more expensive areas.</p>
-            <p>Members not eligible for the NMOHC will still have a “room and board” obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>
-            <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a "room and board” payment from the member (or their family).</p>
-            
+            <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for 'room and board' for a private room or to open up RCFEs in more expensive areas.</p>
+            <p>Members not eligible for the NMOHC will still have a 'room and board' obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>
+            <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a 'room and board' payment from the member (or their family).</p>
+
+            <SectionTitle>Share of Cost (SOC)</SectionTitle>
+            <p>A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay.</p>
+            <p>This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.</p>
+            <p>Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.</p>
+            <p>Read more about eliminating share of cost at the <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer">California Advocates for Nursing Home Reform (CANHR)</a>.</p>
+
             <SectionTitle>What is an Individual Service Plan (ISP)?</SectionTitle>
             <p>An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP) clinical team to determine the member's care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the 'assisted living' portion). For Health Net, the tiered level is determined by Connections. For Kaiser, the tiered level is determined by Kaiser.</p>
 
@@ -99,6 +127,10 @@ export function PrintableProgramInfo() {
                 <li>Receive tier level and recommend RCFEs to family.</li>
                 <li>Once RCFE is selected sent RCFE to Kaiser for contracting and when RCFE receives Kaiser contract member can move into the RCFE.</li>
             </ol>
+
+            <SectionTitle>Next Steps: The Application</SectionTitle>
+            <p>The next section is for filling out the CS Summary Form. This is the core of your application.</p>
+            <p>Based on the selections you make in the summary form (like the pathway), a personalized list of other required documents will be generated for you to upload.</p>
             
         </article>
     );
