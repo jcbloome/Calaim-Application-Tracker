@@ -104,6 +104,15 @@ export function PrintableFullPackage({
       
       <div ref={printableRef} className="space-y-12 print:space-y-16">
 
+      {/* Acronym Glossary - First */}
+      <PrintableGlossaryForm 
+        applicationId={applicationId}
+        showPrintButton={false}
+      />
+
+      {/* Page Break */}
+      <div className="page-break print:page-break-before"></div>
+
       {/* Program Information */}
       <PrintableProgramInfoForm 
         applicationId={applicationId}
@@ -162,24 +171,32 @@ export function PrintableFullPackage({
         </>
       )}
 
-      {/* Page Break */}
-      <div className="page-break print:page-break-before"></div>
-
-      {/* Acronym Glossary */}
-      <PrintableGlossaryForm 
-        applicationId={applicationId}
-        showPrintButton={false}
-      />
 
       {/* Package Footer */}
-      <div className="mt-12 print:mt-16 p-4 print:p-6 bg-gray-50 print:bg-white border print:border-black text-center">
-        <p className="text-sm print:text-xs text-gray-600 print:text-black mb-2">
+      <div className="mt-12 print:mt-16 p-4 print:p-6 bg-gray-50 print:bg-white border print:border-black">
+        <p className="text-sm print:text-xs text-gray-600 print:text-black mb-4 text-center">
           <strong>End of CalAIM Application Package</strong>
         </p>
-        <p className="text-xs print:text-xs text-gray-500 print:text-black">
-          For questions or assistance, please contact your assigned case worker or visit our website.
-        </p>
-        <div className="mt-4 pt-4 border-t print:border-t print:border-gray-300">
+        
+        <div className="space-y-4 text-xs print:text-xs text-gray-500 print:text-black">
+          <div>
+            <p className="font-semibold mb-2">Need Help?</p>
+            <p>Email Connections: <strong>calaim@carehomefinders.com</strong></p>
+            <p className="text-xs italic">(Please do not send any application forms here and use our secure online upload portal)</p>
+            <p>Or call: <strong>800-330-5993</strong></p>
+          </div>
+
+          <div>
+            <p className="font-semibold mb-2">Quick Reference:</p>
+            <ul className="space-y-1">
+              <li><strong>Health Net Member Services:</strong> 800-675-6110</li>
+              <li><strong>California Health Care Options:</strong> 800-430-4263</li>
+              <li><strong>Kaiser Member Services:</strong> 1-800-464-4000</li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="mt-4 pt-4 border-t print:border-t print:border-gray-300 text-center">
           <p className="text-xs print:text-xs text-gray-500 print:text-black">
             Package generated on {new Date().toLocaleDateString()} • Application ID: {applicationId || 'N/A'}
           </p>
