@@ -31,6 +31,39 @@ export function PrintableProgramInfoFormSpanish({
           </p>
         </div>
 
+        {/* Room & Board Payments */}
+        <div className="p-4 print:p-6 bg-yellow-50 print:bg-white border print:border-black">
+          <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
+            Importante: Pagos de Alojamiento y Comida
+          </h3>
+          <div className="space-y-4 text-sm print:text-xs text-gray-700 print:text-black">
+            <p>
+              El miembro del MCP es responsable de pagar al RCFE la porción de 'alojamiento y comida' y el MCP es 
+              responsable de pagar al RCFE la porción de 'vida asistida'.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <h4 className="font-semibold text-gray-900 print:text-black mb-2">Con SSI/SSP y NMOHC:</h4>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>SSI/SSP aumentado a $1,626.07</li>
+                  <li>El miembro retiene $182 para necesidades personales</li>
+                  <li>RCFE recibe $1,444.07 para alojamiento y comida</li>
+                  <li>Pago mínimo: $1,447.00</li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="font-semibold text-gray-900 print:text-black mb-2">Sin NMOHC:</h4>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>Aún tienen obligación de alojamiento y comida</li>
+                  <li>La cantidad puede ser flexible</li>
+                  <li>Depende del RCFE y nivel de nivel</li>
+                  <li>No puede pagar = generalmente no elegible</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Share of Cost */}
         <div className="p-4 print:p-6 bg-red-50 print:bg-white border print:border-black">
           <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">

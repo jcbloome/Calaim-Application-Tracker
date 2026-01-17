@@ -241,6 +241,26 @@ export function PrintableProgramInfoForm({
         </div>
       </div>
 
+      {/* Share of Cost */}
+      <div className="col-span-full mb-8 p-4 print:p-6 bg-red-50 print:bg-white border print:border-black">
+        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4">
+          Important: Share of Cost (SOC)
+        </h2>
+        <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
+          <p>
+            A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you 
+            may have to pay each month towards medical-related services before your Medi-Cal coverage begins to pay.
+          </p>
+          <p className="font-semibold text-red-700 print:text-black">
+            Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply.
+          </p>
+          <p>
+            For information on eliminating share of cost, visit the California Advocates for Nursing Home 
+            Reform (CANHR) website at <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-blue-800 hover:underline">https://canhr.org/understanding-the-share-of-cost-for-medi-cal/</a> or contact your case worker.
+          </p>
+        </div>
+      </div>
+
       {/* CalAIM Turnaround Time */}
       <div className="col-span-full mb-8">
         <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
@@ -271,26 +291,6 @@ export function PrintableProgramInfoForm({
               <li>RCFE contracts with Kaiser, member moves in</li>
             </ol>
           </div>
-        </div>
-      </div>
-
-      {/* Share of Cost */}
-      <div className="col-span-full mb-8 p-4 print:p-6 bg-red-50 print:bg-white border print:border-black">
-        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4">
-          Important: Share of Cost (SOC)
-        </h2>
-        <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
-          <p>
-            A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you 
-            may have to pay each month towards medical-related services before your Medi-Cal coverage begins to pay.
-          </p>
-          <p className="font-semibold text-red-700 print:text-black">
-            Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply.
-          </p>
-          <p>
-            For information on eliminating share of cost, visit the California Advocates for Nursing Home 
-            Reform (CANHR) website at <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-blue-800 hover:underline">https://canhr.org/understanding-the-share-of-cost-for-medi-cal/</a> or contact your case worker.
-          </p>
         </div>
       </div>
 
