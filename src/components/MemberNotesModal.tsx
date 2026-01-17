@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Search, Plus, MessageSquare, Calendar, User, Clock, Send, Sync, CheckCircle, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { memberNotesSync, useMemberNotesSync } from '@/lib/member-notes-sync';
+import { useActivityTracking } from '@/hooks/use-activity-tracking';
 
 // Types
 interface ClientNote {
@@ -78,6 +79,8 @@ export default function MemberNotesModal({
     addToPendingSync, 
     checkForNewNotes 
   } = useMemberNotesSync();
+  
+  const { trackNoteCreation } = useActivityTracking();
 
   // Smart fetch with sync management
   const fetchMemberNotes = async (memberClientId2: string) => {
@@ -201,9 +204,16 @@ export default function MemberNotesModal({
           action: 'create'
         });
 
+        // Track note creation activity
+        trackNoteCreation(
+          newNote.clientId2,
+          newNote.comments,
+          newNote.followUpAssignment
+        );
+
         toast({
           title: "Success",
-          description: "Note created and synced to Caspio",
+          description: "Note created, synced to Caspio, and activity logged",
         });
         
         // Reset form

@@ -40,7 +40,8 @@ import {
   Navigation,
   Wrench,
   UserPlus,
-  CalendarCheck
+  CalendarCheck,
+  Activity
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -103,6 +104,7 @@ const adminNavLinks = [
       { href: '/admin/tasks', label: 'Task Management', icon: ClipboardList },
       { href: '/admin/staff-notes', label: 'My Notes', icon: MessageSquareText },
       { href: '/admin/client-notes', label: 'Client Notes & Communication', icon: MessageSquareText },
+      { href: '/admin/member-activity', label: 'Member Activity Tracking', icon: Activity },
       { href: '/admin/notification-settings', label: 'Notification Settings', icon: Bell },
       { href: '/admin/client-notes-demo', label: 'Notes System Demo', icon: TestTube2 },
     ]
