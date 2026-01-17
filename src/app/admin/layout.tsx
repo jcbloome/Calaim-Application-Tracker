@@ -73,7 +73,8 @@ const adminNavLinks = [
       { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: DollarSign },
-      { href: '/admin/california-map-enhanced', label: 'California Resource Map', icon: Map },
+      { href: '/admin/california-counties', label: 'California Counties & Cities', icon: Map },
+      { href: '/admin/california-map-enhanced', label: 'Staff & RCFE Resource Map', icon: Navigation },
       { href: '/admin/form-separator', label: 'Form Separator Tool', icon: Scissors },
     ]
   },
