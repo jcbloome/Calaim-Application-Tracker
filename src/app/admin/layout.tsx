@@ -108,17 +108,6 @@ const adminNavLinks = [
 
 const superAdminNavLinks = [
     { 
-      label: 'Caspio Tools', 
-      icon: Database, 
-      isSubmenu: true,
-      submenuItems: [
-        { href: '/admin/caspio-field-mapping', label: 'Field Mapping Configuration', icon: Map },
-        { href: '/admin/caspio-test', label: 'Sync Testing & Development', icon: Database },
-        { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
-        { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain },
-      ]
-    },
-    { 
       label: 'Super Admin', 
       icon: Shield, 
       isSubmenu: true,
@@ -126,6 +115,11 @@ const superAdminNavLinks = [
         { href: '/admin/super', label: 'Admin Panel', icon: Shield },
         { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
         { href: '/admin/login-activity', label: 'Login Activity', icon: Activity },
+        { isDivider: true, label: 'Caspio Tools' },
+        { href: '/admin/caspio-field-mapping', label: 'Field Mapping Configuration', icon: Map },
+        { href: '/admin/caspio-test', label: 'Sync Testing & Development', icon: Database },
+        { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync },
+        { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain },
         { isDivider: true, label: 'Notifications' },
         { href: '/admin/notification-settings', label: 'Notification Settings', icon: Settings },
         { href: '/admin/system-note-log', label: 'System Note Log', icon: MessageSquareText },
