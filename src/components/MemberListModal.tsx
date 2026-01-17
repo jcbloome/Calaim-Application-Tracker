@@ -12,7 +12,7 @@ import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { StaffAssignmentDropdown } from '@/components/StaffAssignmentDropdown';
-import { useAuth } from '@/firebase/auth';
+import { useAuth } from '@/firebase';
 
 interface Member {
   id: string;

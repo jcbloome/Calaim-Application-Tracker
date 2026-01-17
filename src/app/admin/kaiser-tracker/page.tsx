@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
-import { useAuth } from '@/firebase/auth';
+import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
