@@ -455,6 +455,8 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
         { type: 'RCFE', name: 'Sample RCFE Facility', lat: 34.0422, lng: -118.2537, county: 'Los Angeles', beds: 12 }
       ];
 
+      const createdMarkers: any[] = [];
+
       // Add sample markers
       sampleData.forEach(item => {
         let icon, title, content;
