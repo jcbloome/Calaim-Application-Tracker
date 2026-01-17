@@ -228,13 +228,20 @@ export default function PrintablePackagePage() {
                                     </Button>
                                 </li>
                             ))}
-                             <li className="pt-2 border-t mt-2">
+                             <li className="pt-2 border-t mt-2 space-y-1">
                                 <Button
                                     variant="link"
-                                    className="p-0 h-auto text-sm font-bold text-primary"
+                                    className="p-0 h-auto text-sm font-bold text-primary block"
                                     onClick={() => handlePrint('/forms/printable-package/full-package')}
                                 >
-                                    Print Full Application Package
+                                    Print Full Application Package (English)
+                                </Button>
+                                <Button
+                                    variant="link"
+                                    className="p-0 h-auto text-sm font-bold text-primary block"
+                                    onClick={() => handlePrint('/forms/printable-package/spanish')}
+                                >
+                                    Imprimir Paquete Completo (Español)
                                 </Button>
                             </li>
                           </ul>

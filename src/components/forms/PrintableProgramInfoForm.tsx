@@ -289,7 +289,7 @@ export function PrintableProgramInfoForm({
           </p>
           <p>
             For information on eliminating share of cost, visit the California Advocates for Nursing Home 
-            Reform (CANHR) website or contact your case worker.
+            Reform (CANHR) website at <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-blue-800 hover:underline">https://canhr.org/understanding-the-share-of-cost-for-medi-cal/</a> or contact your case worker.
           </p>
         </div>
       </div>

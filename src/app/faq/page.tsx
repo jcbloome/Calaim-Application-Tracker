@@ -34,7 +34,7 @@ const faqs = [
   },
   {
     question: "What is a Share of Cost (SOC) and can I have one?",
-    answer: "A Share of Cost is a monthly amount you may have to pay for medical services if your income is above the limit for free Medi-Cal. Members participating in this program cannot have a SOC. It must be eliminated, often by purchasing supplemental insurance to lower your countable income."
+    answer: <>A Share of Cost is a monthly amount you may have to pay for medical services if your income is above the limit for free Medi-Cal. Members participating in this program cannot have a SOC. It must be eliminated, often by purchasing supplemental insurance to lower your countable income. For detailed information on eliminating share of cost, visit the <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">California Advocates for Nursing Home Reform (CANHR)</a> website.</>
   },
   {
     question: "What is the Room & Board Obligation?",
