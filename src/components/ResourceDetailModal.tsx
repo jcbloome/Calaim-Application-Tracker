@@ -143,17 +143,35 @@ export function ResourceDetailModal({
   const filteredData = useMemo(() => {
     let filtered = allData;
 
+    // For members, require a search term to show results (don't show all members by default)
+    if (type === 'members') {
+      if (!searchTerm && !rcfeSearchTerm) {
+        return []; // Return empty array if no search terms provided
+      }
+    }
+
     // Filter by search term
     if (searchTerm) {
       filtered = filtered.filter(item => {
         if (type === 'members') {
           const member = item as Member;
+          const searchLower = searchTerm.toLowerCase();
+          
+          // For single character searches, only match last names that START with that character
+          if (searchTerm.length === 1) {
+            return member.lastName && member.lastName.toLowerCase().startsWith(searchLower);
+          }
+          
+          // For longer searches, use more flexible matching
           return (
-            `${member.firstName} ${member.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            member.county.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (member.city && member.city.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (member.healthPlan && member.healthPlan.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (member.clientId2 && member.clientId2.toLowerCase().includes(searchTerm.toLowerCase()))
+            // Last name starts with search term (highest priority)
+            (member.lastName && member.lastName.toLowerCase().startsWith(searchLower)) ||
+            // First name starts with search term
+            (member.firstName && member.firstName.toLowerCase().startsWith(searchLower)) ||
+            // Client ID matches exactly
+            (member.clientId2 && String(member.clientId2).toLowerCase() === searchLower) ||
+            // For 3+ characters, allow partial name matching
+            (searchTerm.length >= 3 && `${member.firstName} ${member.lastName}`.toLowerCase().includes(searchLower))
           );
         } else {
           return (
@@ -172,8 +190,7 @@ export function ResourceDetailModal({
         const member = item as Member;
         return (
           (member.rcfeName && member.rcfeName.toLowerCase().includes(rcfeSearchTerm.toLowerCase())) ||
-          (member.rcfeAddress && member.rcfeAddress.toLowerCase().includes(rcfeSearchTerm.toLowerCase())) ||
-          (member.rcfeRegisteredId && member.rcfeRegisteredId.toLowerCase().includes(rcfeSearchTerm.toLowerCase()))
+          (member.rcfeRegisteredId && String(member.rcfeRegisteredId).toLowerCase().includes(rcfeSearchTerm.toLowerCase()))
         );
       });
     }
@@ -248,7 +265,7 @@ export function ResourceDetailModal({
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
-                placeholder={type === 'members' ? "Search by member name, ID, or location..." : "Search by name, email, or location..."}
+                placeholder={type === 'members' ? "Type 'G' for last names starting with G, or full name/ID..." : "Search by name, email, or location..."}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -260,7 +277,7 @@ export function ResourceDetailModal({
               <div className="relative">
                 <Home className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
-                  placeholder="Search by RCFE name, ID, or address..."
+                  placeholder="Search by RCFE facility name or ID..."
                   value={rcfeSearchTerm}
                   onChange={(e) => setRcfeSearchTerm(e.target.value)}
                   className="pl-10"
@@ -326,7 +343,58 @@ export function ResourceDetailModal({
 
         {/* Results */}
         <div className="flex-1 overflow-y-auto max-h-96">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {type === 'members' ? (
+            /* Compact single-line format for members */
+            <div className="space-y-1">
+              {filteredData.map((item) => {
+                const member = item as Member;
+                return (
+                  <div key={item.id} className="flex items-center justify-between p-2 border-b hover:bg-gray-50 text-sm">
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                      {/* Name */}
+                      <div className="font-medium text-gray-900 min-w-0 flex-shrink-0">
+                        {member.firstName} {member.lastName}
+                      </div>
+                      
+                      {/* Client ID */}
+                      {member.clientId2 && (
+                        <div className="text-gray-600 flex-shrink-0">
+                          ID: {member.clientId2}
+                        </div>
+                      )}
+                      
+                      {/* Health Plan */}
+                      {member.healthPlan && (
+                        <div className="text-blue-600 flex-shrink-0">
+                          {member.healthPlan}
+                        </div>
+                      )}
+                      
+                      {/* Location */}
+                      <div className="text-gray-500 flex-shrink-0">
+                        {member.city ? `${member.city}, ${member.county}` : member.county}
+                      </div>
+                      
+                      {/* RCFE Info */}
+                      {member.rcfeName && (
+                        <div className="text-gray-700 truncate min-w-0 flex-1">
+                          🏠 {member.rcfeName}
+                          {member.rcfeAddress && ` - ${member.rcfeAddress}`}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Status */}
+                    <Badge variant="default" className="ml-2 flex-shrink-0">
+                      Authorized
+                    </Badge>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* Keep existing card format for staff/RCFEs */
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filteredData.map((item) => (
               <div key={item.id} className="p-4 border rounded-lg hover:bg-gray-50">
                 <div className="flex items-start justify-between">
@@ -472,15 +540,25 @@ export function ResourceDetailModal({
                 </div>
               </div>
             ))}
-          </div>
+            </div>
+          )}
 
           {filteredData.length === 0 && (
             <div className="text-center py-8 text-gray-500">
               <div className="mb-2">{getIcon()}</div>
-              <p>No {getTitle().toLowerCase()} match your current filters</p>
-              <Button variant="outline" onClick={clearFilters} className="mt-2">
-                Clear Filters
-              </Button>
+              {type === 'members' && !searchTerm && !rcfeSearchTerm ? (
+                <div>
+                  <p className="mb-2">Search for authorized members</p>
+                  <p className="text-sm text-gray-400">Enter a member name, ID, or RCFE name to find members</p>
+                </div>
+              ) : (
+                <div>
+                  <p>No {getTitle().toLowerCase()} match your current filters</p>
+                  <Button variant="outline" onClick={clearFilters} className="mt-2">
+                    Clear Filters
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>
