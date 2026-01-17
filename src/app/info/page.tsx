@@ -102,17 +102,16 @@ export default function InfoPage() {
                         </ul>
                         )}
                         {section.website && (
-                        <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                            <p className="text-sm font-medium text-blue-900 mb-2">Website:</p>
-                            <a 
+                        <p className="mt-4 text-sm text-gray-700">
+                            Visit <a 
                                 href={`https://${section.website}`} 
                                 target="_blank" 
                                 rel="noopener noreferrer" 
                                 className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
                             >
                                 {section.website}
-                            </a>
-                        </div>
+                            </a> for more information.
+                        </p>
                         )}
                     </CardContent>
                 </Card>
