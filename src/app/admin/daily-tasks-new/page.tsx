@@ -335,9 +335,9 @@ export default function DailyTasksPage() {
         <div className="flex items-center gap-3">
           <Calendar className="h-8 w-8 text-primary" />
           <div>
-            <h1 className="text-3xl font-bold">Daily Task Tracker</h1>
+            <h1 className="text-3xl font-bold">Daily Task Board</h1>
             <p className="text-muted-foreground">
-              Manage and track daily tasks for all staff across CalAIM health plans - {format(new Date(), 'PPPP')}
+              CalAIM member tasks for all health plans - {format(new Date(), 'PPPP')}
             </p>
           </div>
         </div>
@@ -566,10 +566,10 @@ export default function DailyTasksPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calendar className="h-5 w-5" />
-            Daily Task Tracker ({tasks.length})
+            Daily Task Board ({tasks.length})
           </CardTitle>
           <CardDescription>
-            Track and manage daily tasks for all staff across CalAIM health plans (Kaiser, Health Net, and other health plans)
+            Daily tasks and upcoming deadlines for all CalAIM members (Kaiser, Health Net, and other health plans)
           </CardDescription>
         </CardHeader>
         <CardContent>

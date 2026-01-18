@@ -17,7 +17,7 @@ import { format, parse, differenceInHours } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AlertTriangle, Sparkles, Calendar, User, FileText } from 'lucide-react';
+import { AlertTriangle, Sparkles, Calendar, User, FileText, UserCheck, ExternalLink } from 'lucide-react';
 import type { Application } from '@/lib/definitions';
 import { ApplicationCardSkeleton, ApplicationTableSkeleton } from '@/components/ApplicationCardSkeleton';
 import { EmptyState } from '@/components/EmptyState';
@@ -32,6 +32,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 type ApplicationStatusType = Application['status'];
 
@@ -104,16 +105,32 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
     return (
          <Dialog>
             <DialogTrigger asChild>
-                <Button variant="link" className="text-sm font-medium text-primary hover:underline p-0 h-auto">View</Button>
+                <Button variant="link" className="text-sm font-medium text-primary hover:underline p-0 h-auto">
+                    <FileText className="h-3 w-3 mr-1" />
+                    Quick View
+                </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-4xl">
-                <DialogHeader>
-                    <DialogTitle>Summary: {application.memberFirstName} {application.memberLastName}</DialogTitle>
-                    <DialogDescription>
-                        A quick overview of the CS Member Summary form data.
-                    </DialogDescription>
+            <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+                <DialogHeader className="flex-shrink-0">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <DialogTitle className="text-xl">CS Summary: {application.memberFirstName} {application.memberLastName}</DialogTitle>
+                            <DialogDescription>
+                                Complete CS Member Summary form data • {application.healthPlan} • {application.pathway}
+                            </DialogDescription>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" asChild>
+                                <Link href={`/admin/applications/${application.id}?userId=${application.userId}`}>
+                                    <ExternalLink className="h-4 w-4 mr-2" />
+                                    Full Details
+                                </Link>
+                            </Button>
+                        </div>
+                    </div>
                 </DialogHeader>
-                <div className="space-y-6 py-4 max-h-[70vh] overflow-y-auto px-2">
+                <div className="flex-grow overflow-y-auto">
+                    <div className="space-y-6 py-4 px-2">
                     <Section title="Member Information">
                         <QuickViewField label="First Name" value={application.memberFirstName} />
                         <QuickViewField label="Last Name" value={application.memberLastName} />
@@ -172,6 +189,40 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
                         <QuickViewField label="Has Preferred RCFE?" value={application.hasPrefRCFE} />
                         <QuickViewField label="RCFE Name" value={application.rcfeName} fullWidth />
                     </Section>
+
+                    <Section title="Medical & Care Information">
+                        <QuickViewField label="Diagnosis" value={application.diagnosis} fullWidth />
+                        <QuickViewField label="Current Care Level" value={application.currentCareLevel} />
+                        <QuickViewField label="Mobility" value={application.mobility} />
+                        <QuickViewField label="Cognitive Status" value={application.cognitiveStatus} />
+                        <QuickViewField label="Behavioral Concerns" value={application.behavioralConcerns} />
+                        <QuickViewField label="Special Needs" value={application.specialNeeds} fullWidth />
+                    </Section>
+
+                    <Section title="Financial Information">
+                        <QuickViewField label="Income Source" value={application.incomeSource} />
+                        <QuickViewField label="Monthly Income" value={application.monthlyIncome} />
+                        <QuickViewField label="Has Medi-Cal" value={application.hasMediCal ? 'Yes' : 'No'} />
+                        <QuickViewField label="Medi-Cal Number" value={application.memberMediCalNum} />
+                        <QuickViewField label="Share of Cost" value={application.shareOfCost} />
+                    </Section>
+
+                    <Section title="Application Status & Tracking">
+                        <QuickViewField label="Submission Status" value={application.status} />
+                        <QuickViewField label="Submitted Date" value={application.submissionDate ? format((application.submissionDate as Timestamp).toDate(), 'PPP p') : 'N/A'} />
+                        <QuickViewField label="Last Updated" value={application.lastUpdated ? format((application.lastUpdated as Timestamp).toDate(), 'PPP p') : 'N/A'} />
+                        <QuickViewField label="Submitted By" value={application.referrerName || 'N/A'} />
+                        <QuickViewField label="Application ID" value={application.id} fullWidth />
+                    </Section>
+
+                    {/* Additional Notes Section */}
+                    {(application.additionalNotes || application.specialInstructions) && (
+                        <Section title="Additional Information">
+                            {application.additionalNotes && <QuickViewField label="Additional Notes" value={application.additionalNotes} fullWidth />}
+                            {application.specialInstructions && <QuickViewField label="Special Instructions" value={application.specialInstructions} fullWidth />}
+                        </Section>
+                    )}
+                    </div>
                 </div>
             </DialogContent>
         </Dialog>
@@ -218,17 +269,15 @@ export const AdminApplicationsTable = ({
               </TableHead>
             )}
             <TableHead>Member</TableHead>
-            <TableHead className="hidden sm:table-cell">Submitted By</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="hidden lg:table-cell">Plan & Pathway</TableHead>
-            <TableHead className="hidden md:table-cell">Dates</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
+              <TableCell colSpan={onSelectionChange ? 5 : 4} className="h-24 text-center">
                 Loading applications...
               </TableCell>
             </TableRow>
@@ -239,9 +288,15 @@ export const AdminApplicationsTable = ({
               const lastUpdatedDate = app.lastUpdated ? (app.lastUpdated as Timestamp).toDate() : null;
               const servicesDeclined = app.forms?.find(f => f.name === 'Waivers & Authorizations')?.choice === 'decline';
               const isNew = submissionDate && differenceInHours(new Date(), submissionDate) < 24;
+              const isRecentlyUpdated = lastUpdatedDate && submissionDate && 
+                differenceInHours(new Date(), lastUpdatedDate) < 24 && 
+                differenceInHours(lastUpdatedDate, submissionDate) > 1;
 
               return (
-              <TableRow key={app.id}>
+              <TableRow key={app.id} className={cn(
+                isNew && "bg-blue-50 border-l-4 border-l-blue-400",
+                isRecentlyUpdated && "bg-amber-50 border-l-4 border-l-amber-400"
+              )}>
                 {onSelectionChange && selected && (
                   <TableCell>
                       <Checkbox
@@ -252,13 +307,19 @@ export const AdminApplicationsTable = ({
                   </TableCell>
                 )}
                 <TableCell className="font-medium">
-                  <div className="flex items-center gap-2">
-                    {`${app.memberFirstName} ${app.memberLastName}`}
-                    {isNew && <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200"><Sparkles className="h-3 w-3 mr-1" /> New</Badge>}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      {`${app.memberFirstName} ${app.memberLastName}`}
+                      {isNew && <Badge className="bg-blue-100 text-blue-800 border-blue-200"><Sparkles className="h-3 w-3 mr-1" /> New</Badge>}
+                      {isRecentlyUpdated && <Badge className="bg-amber-100 text-amber-800 border-amber-200">Updated</Badge>}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yyyy')}` : 'Created: N/A'}
+                      {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yyyy')}`}
+                      • By: {referrerName || (app.userId ? `user-ID: ...${app.userId.substring(app.userId.length - 4)}` : 'Unknown')}
+                      {(app as any).assignedStaff && ` • Staff: ${(app as any).assignedStaff}`}
+                    </div>
                   </div>
-                </TableCell>
-                <TableCell className="hidden sm:table-cell">
-                   {referrerName}
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline" className={getBadgeVariant(app.status)}>
@@ -268,14 +329,6 @@ export const AdminApplicationsTable = ({
                  <TableCell className="hidden lg:table-cell">
                     <div>{app.healthPlan}</div>
                     <div className="text-xs text-muted-foreground">{app.pathway}</div>
-                </TableCell>
-                <TableCell className="hidden md:table-cell">
-                  <div>
-                    {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yyyy')}`: <span>Created: N/A</span>}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {lastUpdatedDate ? `Updated: ${format(lastUpdatedDate, 'MM/dd/yyyy')}` : <span>Updated: N/A</span>}
-                  </div>
                 </TableCell>
                 <TableCell className="text-right space-x-4">
                   <QuickViewDialog application={app} />
@@ -292,8 +345,9 @@ export const AdminApplicationsTable = ({
                             </Tooltip>
                         </TooltipProvider>
                     )}
+                    <QuickViewDialog application={app} />
                     <Button asChild variant="link" className="text-sm font-medium text-primary hover:underline p-0 h-auto">
-                        <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>Details</Link>
+                        <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View Details</Link>
                     </Button>
                   </div>
                 </TableCell>
@@ -301,7 +355,7 @@ export const AdminApplicationsTable = ({
             )})
           ) : (
             <TableRow>
-              <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
+              <TableCell colSpan={onSelectionChange ? 5 : 4} className="h-24 text-center">
                 <EmptyState
                   icon={FileText}
                   title="No Applications Found"
@@ -315,100 +369,55 @@ export const AdminApplicationsTable = ({
       </Table>
       </div>
 
-      {/* Mobile Card View */}
-      <div className="lg:hidden space-y-4">
+      {/* Mobile Single-Line View */}
+      <div className="lg:hidden space-y-2">
         {isLoading ? (
-          Array.from({ length: 3 }).map((_, i) => (
-            <ApplicationCardSkeleton key={i} />
-          ))
+          <div className="text-center py-8">Loading applications...</div>
         ) : sortedApplications.length > 0 ? (
           sortedApplications.map(app => {
-            const referrerName = app.referrerName;
-            const submittedDate = app.createdAt ? format(app.createdAt.toDate(), 'MMM d, yyyy') : 'Unknown';
-            const lastUpdatedDate = app.lastUpdated ? format(app.lastUpdated.toDate(), 'MMM d, yyyy') : submittedDate;
-            const servicesDeclined = app.servicesDeclined === true;
+            const referrerName = app.referrerName || `${app.referrerFirstName || ''} ${app.referrerLastName || ''}`.trim();
+            const submissionDate = app.submissionDate ? (app.submissionDate as Timestamp).toDate() : null;
+            const lastUpdatedDate = app.lastUpdated ? (app.lastUpdated as Timestamp).toDate() : null;
+            const isNew = submissionDate && differenceInHours(new Date(), submissionDate) < 24;
+            const isRecentlyUpdated = lastUpdatedDate && submissionDate && 
+              differenceInHours(new Date(), lastUpdatedDate) < 24 && 
+              differenceInHours(lastUpdatedDate, submissionDate) > 1;
 
             return (
-              <div key={app.id} className="bg-white border rounded-lg p-4 shadow-sm">
-                {onSelectionChange && selected && (
-                  <div className="flex items-center mb-3">
-                    <Checkbox
-                      checked={selected.includes(app.id)}
-                      onCheckedChange={(checked) => onSelectionChange(app.id, !!checked)}
-                      aria-label={`Select application for ${app.memberFirstName} ${app.memberLastName}`}
-                    />
-                    <span className="ml-2 text-sm text-muted-foreground">Select</span>
-                  </div>
-                )}
-                
-                <div className="space-y-3">
-                  {/* Header with member name and status */}
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="font-semibold text-lg">
+              <div key={app.id} className={cn(
+                "bg-white border rounded-lg p-3 shadow-sm",
+                isNew && "border-l-4 border-l-blue-400 bg-blue-50",
+                isRecentlyUpdated && "border-l-4 border-l-amber-400 bg-amber-50"
+              )}>
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      {onSelectionChange && selected && (
+                        <Checkbox
+                          checked={selected.includes(app.id)}
+                          onCheckedChange={(checked) => onSelectionChange(app.id, !!checked)}
+                          aria-label={`Select application for ${app.memberFirstName} ${app.memberLastName}`}
+                        />
+                      )}
+                      <h3 className="font-medium truncate">
                         {app.memberFirstName} {app.memberLastName}
                       </h3>
-                      <p className="text-sm text-muted-foreground flex items-center gap-1">
-                        <User className="h-3 w-3" />
-                        {referrerName || 'Unknown'}
-                      </p>
+                      {isNew && <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs"><Sparkles className="h-3 w-3 mr-1" /> New</Badge>}
+                      {isRecentlyUpdated && <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs">Updated</Badge>}
                     </div>
-                    <div className="flex items-center gap-2">
-                      {servicesDeclined && (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <AlertTriangle className="h-4 w-4 text-destructive" />
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Services were declined by member.</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      )}
-                      <Badge variant={
-                        app.status === 'Completed & Submitted' ? 'default' :
-                        app.status === 'Approved' ? 'secondary' :
-                        app.status === 'Requires Revision' ? 'destructive' :
-                        'outline'
-                      }>
-                        {app.status}
-                      </Badge>
+                    <div className="text-xs text-muted-foreground">
+                      {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yy')}` : 'Created: N/A'}
+                      {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yy')}`}
+                      • By: {referrerName || (app.userId ? `user-ID: ...${app.userId.substring(app.userId.length - 4)}` : 'Unknown')}
+                      {(app as any).assignedStaff && ` • Staff: ${(app as any).assignedStaff}`}
                     </div>
                   </div>
-
-                  {/* Health plan and pathway */}
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                      {app.healthPlan || app.existingHealthPlan || 'Unknown Plan'}
+                  <div className="flex items-center gap-2 ml-2">
+                    <Badge variant="outline" className={getBadgeVariant(app.status)}>
+                      {app.status}
                     </Badge>
-                    <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-                      {app.pathway || 'Unknown Pathway'}
-                    </Badge>
-                  </div>
-
-                  {/* Dates */}
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        Submitted:
-                      </span>
-                      <p className="font-medium">{submittedDate}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <FileText className="h-3 w-3" />
-                        Updated:
-                      </span>
-                      <p className="font-medium">{lastUpdatedDate}</p>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center justify-between pt-2 border-t">
                     <QuickViewDialog application={app} />
-                    <Button asChild variant="default" size="sm">
+                    <Button asChild size="sm" variant="outline">
                       <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>
                         View Details
                       </Link>

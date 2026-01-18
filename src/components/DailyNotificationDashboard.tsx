@@ -235,7 +235,7 @@ export function DailyNotificationDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Daily Activity Dashboard</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Recent Activity</h2>
           <p className="text-muted-foreground">
             {format(new Date(), 'EEEE, MMMM do, yyyy')}
           </p>

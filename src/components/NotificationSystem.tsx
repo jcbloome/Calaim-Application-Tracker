@@ -39,6 +39,11 @@ export default function NotificationSystem({ userId, className = '' }: Notificat
   const { toast } = useToast();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Don't render if no userId provided
+  if (!userId) {
+    return null;
+  }
+
   // Fetch notifications
   const fetchNotifications = async (includeRead = false) => {
     try {

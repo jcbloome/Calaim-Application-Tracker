@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useCallback } from 'react';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -48,8 +50,16 @@ import {
 import { PDFDocument } from 'pdf-lib';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-// Set up PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+// Set up PDF.js worker with proper error handling
+if (typeof window !== 'undefined') {
+  try {
+    pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+  } catch (error) {
+    console.warn('PDF.js worker setup failed:', error);
+    // Fallback worker source
+    pdfjs.GlobalWorkerOptions.workerSrc = '//unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  }
+}
 
 interface SeparatedForm {
   id: string;
@@ -73,6 +83,41 @@ const FORM_TYPES = [
   'Other'
 ] as const;
 
+// Error Boundary Component for PDF rendering
+class PDFErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallback?: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode; fallback?: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('PDF rendering error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <div className="flex items-center justify-center p-8 text-red-600 border border-red-200 rounded-lg bg-red-50">
+          <AlertCircle className="h-8 w-8 mr-2" />
+          <div>
+            <p className="font-medium">PDF Rendering Error</p>
+            <p className="text-sm">Unable to display PDF. Please try refreshing or use a different file.</p>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function FormSeparatorPage() {
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
@@ -85,6 +130,7 @@ export default function FormSeparatorPage() {
   const [previewForm, setPreviewForm] = useState<SeparatedForm | null>(null);
   const [selectedPages, setSelectedPages] = useState<Set<number>>(new Set());
   const [newFormType, setNewFormType] = useState<string>('');
+  const [useFallbackViewer, setUseFallbackViewer] = useState(false);
   const [newFormName, setNewFormName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -126,6 +172,52 @@ export default function FormSeparatorPage() {
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
+  };
+
+  // Fallback PDF viewer using iframe
+  const FallbackPDFViewer = ({ file }: { file: File }) => {
+    const [pdfUrl, setPdfUrl] = useState<string>('');
+
+    React.useEffect(() => {
+      const url = URL.createObjectURL(file);
+      setPdfUrl(url);
+      return () => URL.revokeObjectURL(url);
+    }, [file]);
+
+    return (
+      <div className="space-y-4">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
+            <p className="text-yellow-800">
+              PDF preview unavailable. Using fallback viewer.
+            </p>
+          </div>
+        </div>
+        <iframe
+          src={pdfUrl}
+          className="w-full h-96 border rounded-lg"
+          title="PDF Preview"
+        />
+        <div className="text-center">
+          <p className="text-sm text-muted-foreground mb-4">
+            Select pages manually using the page numbers below:
+          </p>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {Array.from({ length: numPages }, (_, i) => i + 1).map((pageNum) => (
+              <Button
+                key={pageNum}
+                variant={selectedPages.has(pageNum) ? "default" : "outline"}
+                size="sm"
+                onClick={() => togglePageSelection(pageNum)}
+              >
+                Page {pageNum}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const togglePageSelection = (pageNum: number) => {
@@ -347,10 +439,47 @@ export default function FormSeparatorPage() {
                   </div>
                   
                   <div className="max-h-96 overflow-y-auto border rounded-lg p-4">
-                    <Document
+                    {useFallbackViewer ? (
+                      <FallbackPDFViewer file={file} />
+                    ) : (
+                      <PDFErrorBoundary
+                        fallback={
+                          <div className="text-center p-8">
+                            <AlertCircle className="h-12 w-12 text-yellow-600 mx-auto mb-4" />
+                            <p className="text-lg font-medium mb-2">PDF Viewer Error</p>
+                            <p className="text-muted-foreground mb-4">
+                              The advanced PDF viewer encountered an error.
+                            </p>
+                            <Button onClick={() => setUseFallbackViewer(true)}>
+                              Use Simple Viewer
+                            </Button>
+                          </div>
+                        }
+                      >
+                        <Document
                       file={file}
                       onLoadSuccess={onDocumentLoadSuccess}
+                      onLoadError={(error) => {
+                        console.error('PDF load error:', error);
+                        toast({
+                          title: "PDF Load Error",
+                          description: "Failed to load PDF. Please try a different file.",
+                          variant: "destructive"
+                        });
+                      }}
                       className="space-y-4"
+                      loading={
+                        <div className="flex items-center justify-center p-8">
+                          <Loader2 className="h-8 w-8 animate-spin" />
+                          <span className="ml-2">Loading PDF...</span>
+                        </div>
+                      }
+                      error={
+                        <div className="flex items-center justify-center p-8 text-red-600">
+                          <AlertCircle className="h-8 w-8 mr-2" />
+                          <span>Failed to load PDF</span>
+                        </div>
+                      }
                     >
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                         {Array.from({ length: numPages }, (_, i) => i + 1).map((pageNum) => (
@@ -368,6 +497,16 @@ export default function FormSeparatorPage() {
                               width={150}
                               renderTextLayer={false}
                               renderAnnotationLayer={false}
+                              loading={
+                                <div className="flex items-center justify-center h-32 bg-gray-100">
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                </div>
+                              }
+                              error={
+                                <div className="flex items-center justify-center h-32 bg-red-50 text-red-600">
+                                  <AlertCircle className="h-4 w-4" />
+                                </div>
+                              }
                             />
                             <div className="absolute top-2 left-2 bg-black bg-opacity-75 text-white px-2 py-1 rounded text-xs">
                               Page {pageNum}
@@ -380,7 +519,9 @@ export default function FormSeparatorPage() {
                           </div>
                         ))}
                       </div>
-                    </Document>
+                        </Document>
+                      </PDFErrorBoundary>
+                    )}
                   </div>
                 </div>
               </CardContent>

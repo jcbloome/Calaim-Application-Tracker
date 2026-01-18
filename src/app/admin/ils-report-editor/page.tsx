@@ -9,7 +9,6 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { 
   FileText, 
   Download, 
@@ -65,11 +64,13 @@ export default function ILSReportEditorPage() {
   const loadMembers = async () => {
     setIsLoading(true);
     try {
-      const functions = getFunctions();
-      const fetchMembers = httpsCallable(functions, 'fetchKaiserMembersFromCaspio');
+      const response = await fetch('/api/kaiser-members');
       
-      const result = await fetchMembers({});
-      const data = result.data as any;
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
       
       if (data.success && data.members) {
         console.log('🔍 ILS REPORT DEBUG - First member fields:', Object.keys(data.members[0] || {}));

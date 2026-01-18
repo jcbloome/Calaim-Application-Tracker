@@ -702,6 +702,8 @@ function ApplicationDetailPageContent() {
     'Declaration of Eligibility': false,
   });
 
+  const [isUpdatingProgression, setIsUpdatingProgression] = useState(false);
+
   const docRef = useMemoFirebase(() => {
     if (isUserLoading || !firestore || !applicationId || !appUserId) return null;
     return doc(firestore, `users/${appUserId}/applications`, applicationId);
@@ -948,6 +950,38 @@ function ApplicationDetailPageContent() {
       { id: 'facesheet-check', name: 'SNF Facesheet' },
       { id: 'decl-elig-check', name: 'Declaration of Eligibility' },
   ].filter(doc => pathwayRequirements.some(req => req.title === doc.name));
+
+  // Update application progression status
+  const updateProgressionStatus = async (status: string, statusType: 'kaiser' | 'healthNet') => {
+    if (!docRef || !application) return;
+    
+    setIsUpdatingProgression(true);
+    try {
+      const updateData = statusType === 'kaiser' 
+        ? { kaiserStatus: status }
+        : { healthNetStatus: status };
+      
+      await setDoc(docRef, updateData, { merge: true });
+      
+      // Update local state
+      setApplication(prev => prev ? { ...prev, ...updateData } : null);
+      
+      toast({
+        title: "Status Updated",
+        description: `${statusType === 'kaiser' ? 'Kaiser' : 'Health Net'} progression status updated to: ${status}`,
+        className: "bg-green-100 text-green-900 border-green-200",
+      });
+    } catch (error: any) {
+      console.error('Error updating progression status:', error);
+      toast({
+        variant: "destructive",
+        title: "Update Failed",
+        description: "Could not update progression status. Please try again.",
+      });
+    } finally {
+      setIsUpdatingProgression(false);
+    }
+  };
   
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
@@ -1090,7 +1124,61 @@ function ApplicationDetailPageContent() {
             <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
                 <div className="truncate"><strong>Application ID:</strong> <span className="font-mono text-xs">{application.id}</span></div>
-                <div><strong>Status:</strong> <span className="font-semibold">{application.status}</span></div>
+                <div><strong>Submission Status:</strong> <span className="font-semibold">{application.status}</span></div>
+            </div>
+            
+            {/* Application Progression Field */}
+            <div className="border-t pt-4">
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">Application Progression</label>
+                        <span className="text-xs text-muted-foreground">
+                            {application.healthPlan} Workflow Status
+                        </span>
+                    </div>
+                    
+                    {application.healthPlan?.toLowerCase().includes('kaiser') ? (
+                        <Select 
+                            value={(application as any)?.kaiserStatus || kaiserSteps[0]} 
+                            onValueChange={(value) => updateProgressionStatus(value, 'kaiser')}
+                            disabled={isUpdatingProgression}
+                        >
+                            <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select Kaiser status" />
+                                {isUpdatingProgression && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
+                            </SelectTrigger>
+                            <SelectContent>
+                                {kaiserSteps.map((step) => (
+                                    <SelectItem key={step} value={step}>
+                                        {step}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    ) : application.healthPlan?.toLowerCase().includes('health net') ? (
+                        <Select 
+                            value={(application as any)?.healthNetStatus || healthNetSteps[0]} 
+                            onValueChange={(value) => updateProgressionStatus(value, 'healthNet')}
+                            disabled={isUpdatingProgression}
+                        >
+                            <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select Health Net status" />
+                                {isUpdatingProgression && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
+                            </SelectTrigger>
+                            <SelectContent>
+                                {healthNetSteps.map((step) => (
+                                    <SelectItem key={step} value={step}>
+                                        {step}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    ) : (
+                        <div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-md">
+                            Application progression tracking is available for Kaiser and Health Net members only.
+                        </div>
+                    )}
+                </div>
             </div>
             <div>
                 <div className="flex justify-between text-sm text-muted-foreground mb-1">

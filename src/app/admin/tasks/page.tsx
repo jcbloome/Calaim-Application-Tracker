@@ -8,288 +8,500 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Bell, Target, CalendarDays, ListTodo } from 'lucide-react';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Bell, Target, CalendarDays, ListTodo, MessageSquare, FileText, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format, isToday, isTomorrow, isYesterday, addDays, startOfDay, endOfDay } from 'date-fns';
 import Link from 'next/link';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
-interface KaiserTask {
+interface MyTask {
   id: string;
-  memberFirstName: string;
-  memberLastName: string;
-  memberMrn: string;
-  memberCounty: string;
-  client_ID2: string;
-  Kaiser_Status: string;
-  CalAIM_Status: string;
-  next_steps_date: string;
-  kaiser_user_assignment: string;
-  pathway: string;
-  daysUntilDue: number;
-  isOverdue: boolean;
-  nextAction: string;
-}
-
-interface DailyTask {
-  id: string;
-  memberId: string;
-  memberName: string;
-  currentStep: string;
-  nextStep: string;
-  followUpDate: Date;
-  assignedTo: string;
+  title: string;
+  description?: string;
+  memberName?: string;
+  memberClientId?: string;
+  healthPlan?: string;
+  taskType: 'note_assignment' | 'follow_up' | 'review' | 'contact' | 'administrative' | 'kaiser_status';
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
-  status: 'Pending' | 'In Progress' | 'Completed' | 'Overdue';
+  status: 'pending' | 'in_progress' | 'completed' | 'overdue';
+  dueDate: string;
+  assignedBy: string;
+  assignedByName: string;
+  assignedTo: string;
+  assignedToName: string;
+  createdAt: string;
+  updatedAt: string;
   notes?: string;
-  daysOverdue?: number;
-  memberCounty?: string;
+  source: 'notes' | 'applications' | 'manual';
   kaiserStatus?: string;
+  currentKaiserStatus?: string;
 }
 
-// Next actions for each Kaiser status
-const nextActions: Record<string, string> = {
-  "Pre-T2038, Compiling Docs": "Compile required documentation and submit T2038 request",
-  "T2038 Requested": "Follow up on T2038 approval status with Kaiser",
-  "T2038 Received": "Schedule RN/MSW visit for member assessment",
-  "RN Visit Scheduled": "Conduct RN/MSW visit and complete assessment",
-  "RN Visit Complete": "Review assessment and determine tier level requirements",
-  "Need Tier Level": "Submit tier level request to Kaiser",
-  "Tier Level Requested": "Follow up on tier level determination",
-  "Tier Level Received": "Begin RCFE location process",
-  "Locating RCFEs": "Continue searching for suitable RCFE placement",
-  "Found RCFE": "Submit room and board request",
-  "R&B Requested": "Follow up on room and board approval",
-  "R&B Signed": "Initiate RCFE/ILS contracting process",
-  "RCFE/ILS for Invoicing": "Complete ILS contracting and setup",
-  "ILS Contracted (Complete)": "Confirm services are in place",
-  "Confirm ILS Contracted": "Finalize case completion",
-  "Complete": "Case completed - no further action needed",
-  "T2038 email but need auth sheet": "Obtain authorization sheet and resubmit T2038",
-  "Tier Level Revision Request": "Submit revised tier level request",
-  "Tier Level Appeal": "Process tier level appeal",
-  "On-Hold": "Review hold status and determine next steps",
-  "Non-active": "Review case status and determine reactivation steps"
-};
+interface MemberNote {
+  id: string;
+  clientId2: string;
+  memberName: string;
+  noteText: string;
+  noteType: 'General' | 'Medical' | 'Social' | 'Administrative' | 'Follow-up' | 'Emergency';
+  createdBy: string;
+  createdByName: string;
+  assignedTo?: string;
+  assignedToName?: string;
+  createdAt: string;
+  updatedAt: string;
+  source: 'Caspio' | 'App' | 'Admin';
+  isRead: boolean;
+  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  followUpDate?: string;
+  tags?: string[];
+}
 
-const PRIORITY_COLORS = {
-  'Low': 'bg-gray-100 text-gray-800 border-gray-200',
-  'Medium': 'bg-blue-100 text-blue-800 border-blue-200',
-  'High': 'bg-orange-100 text-orange-800 border-orange-200',
-  'Urgent': 'bg-red-100 text-red-800 border-red-200'
-};
+interface MemberCardData {
+  clientId2: string;
+  memberName: string;
+  healthPlan: string;
+  notes: MemberNote[];
+  isFirstTimeLoad: boolean;
+  lastSyncTime?: string;
+}
 
-const STATUS_COLORS = {
-  'Pending': 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  'In Progress': 'bg-blue-100 text-blue-800 border-blue-200',
-  'Completed': 'bg-green-100 text-green-800 border-green-200',
-  'Overdue': 'bg-red-100 text-red-800 border-red-200'
-};
-
-export default function TasksPage() {
-  const { isAdmin, user: currentUser } = useAdmin();
+export default function MyTasksPage() {
+  const { user, isAdmin } = useAdmin();
   const { toast } = useToast();
-  const [kaiserTasks, setKaiserTasks] = useState<KaiserTask[]>([]);
-  const [dailyTasks, setDailyTasks] = useState<DailyTask[]>([]);
+  
+  const [tasks, setTasks] = useState<MyTask[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedStaff, setSelectedStaff] = useState<string>('all');
-  const [selectedDate, setSelectedDate] = useState<string>('today');
-  const [staffMembers, setStaffMembers] = useState<Array<{ id: string; name: string; role: string }>>([]);
+  const [selectedTab, setSelectedTab] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  
+  // Member card modal state
+  const [selectedMember, setSelectedMember] = useState<MemberCardData | null>(null);
+  const [isMemberCardOpen, setIsMemberCardOpen] = useState(false);
+  const [isLoadingNotes, setIsLoadingNotes] = useState(false);
+  const [newNote, setNewNote] = useState({
+    noteText: '',
+    noteType: 'General' as MemberNote['noteType'],
+    priority: 'Medium' as MemberNote['priority'],
+    assignedTo: '',
+    assignedToName: '',
+    followUpDate: ''
+  });
 
-  // Helper functions
-  const getDaysUntilDue = (dateString: string): number => {
-    if (!dateString) return 999;
-    const dueDate = new Date(dateString);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const diffTime = dueDate.getTime() - today.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  };
+  useEffect(() => {
+    if (user?.uid) {
+      fetchMyTasks();
+    }
+  }, [user?.uid]);
 
-  const formatDate = (dateString: string | Date): string => {
-    if (!dateString) return 'No date set';
-    const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
-    });
-  };
-
-  const getUrgencyColor = (daysUntilDue: number, isOverdue: boolean): string => {
-    if (isOverdue) return 'bg-red-100 text-red-800 border-red-200';
-    if (daysUntilDue <= 0) return 'bg-red-100 text-red-800 border-red-200';
-    if (daysUntilDue <= 1) return 'bg-orange-100 text-orange-800 border-orange-200';
-    if (daysUntilDue <= 3) return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-    return 'bg-green-100 text-green-800 border-green-200';
-  };
-
-  const getUrgencyIcon = (daysUntilDue: number, isOverdue: boolean) => {
-    if (isOverdue || daysUntilDue <= 0) return <AlertTriangle className="h-3 w-3" />;
-    if (daysUntilDue <= 3) return <Clock className="h-3 w-3" />;
-    return <CheckCircle className="h-3 w-3" />;
-  };
-
-  // Fetch Kaiser tasks assigned to current user
-  const fetchMyKaiserTasks = async () => {
-    if (!currentUser?.email) return;
+  const fetchMyTasks = async () => {
+    if (!user?.uid) return;
     
     setIsLoading(true);
     try {
-      const functions = getFunctions();
-      const fetchMembers = httpsCallable(functions, 'fetchKaiserMembersFromCaspio');
-      
-      const result = await fetchMembers({});
-      const data = result.data as any;
-      
-      if (data.success && data.members) {
-        const myTasks: KaiserTask[] = data.members
-          .filter((member: any) => 
-            member.kaiser_user_assignment === currentUser.email ||
-            member.kaiser_user_assignment === currentUser.displayName
-          )
-          .map((member: any) => {
-            const daysUntilDue = getDaysUntilDue(member.next_steps_date);
-            return {
-              id: member.id,
-              memberFirstName: member.memberFirstName,
-              memberLastName: member.memberLastName,
-              memberMrn: member.memberMrn,
-              memberCounty: member.memberCounty,
-              client_ID2: member.client_ID2,
-              Kaiser_Status: member.Kaiser_Status,
-              CalAIM_Status: member.CalAIM_Status,
-              next_steps_date: member.next_steps_date,
-              kaiser_user_assignment: member.kaiser_user_assignment,
-              pathway: member.pathway,
-              daysUntilDue,
-              isOverdue: daysUntilDue < 0,
-              nextAction: nextActions[member.Kaiser_Status] || 'Review case and determine next steps'
-            };
-          });
-        
-        // Sort by urgency (overdue first, then by days until due)
-        myTasks.sort((a, b) => {
-          if (a.isOverdue && !b.isOverdue) return -1;
-          if (!a.isOverdue && b.isOverdue) return 1;
-          return a.daysUntilDue - b.daysUntilDue;
-        });
-        
-        setKaiserTasks(myTasks);
-        
-        toast({
-          title: 'Kaiser Tasks Loaded',
-          description: `Found ${myTasks.length} Kaiser cases assigned to you`,
-          className: 'bg-green-100 text-green-900 border-green-200',
-        });
-      }
-    } catch (error: any) {
-      console.error('Error fetching Kaiser tasks:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: error.message || 'Failed to load Kaiser tasks',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Load daily tasks
-  const loadDailyTasks = async () => {
-    setIsLoading(true);
-    try {
-      const functions = getFunctions();
-      const getTasks = httpsCallable(functions, 'getDailyTasks');
-      
-      let dateFilter = new Date();
-      if (selectedDate === 'tomorrow') {
-        dateFilter = addDays(new Date(), 1);
-      } else if (selectedDate === 'yesterday') {
-        dateFilter = addDays(new Date(), -1);
-      } else if (selectedDate === 'week') {
-        dateFilter = addDays(new Date(), 7);
-      }
-      
-      const result = await getTasks({ 
-        staffFilter: selectedStaff === 'all' ? null : selectedStaff,
-        dateFilter: selectedDate,
-        startDate: startOfDay(dateFilter).toISOString(),
-        endDate: endOfDay(dateFilter).toISOString()
-      });
-      
-      const data = result.data as any;
-      
-      if (data.success && data.tasks) {
-        const loadedTasks = data.tasks.map((task: any) => ({
-          ...task,
-          followUpDate: new Date(task.followUpDate),
-          daysOverdue: task.daysOverdue || 0
-        }));
-        
-        setDailyTasks(loadedTasks);
-        
-        if (data.staffMembers) {
-          setStaffMembers(data.staffMembers);
+      // Sample tasks data - in production this would come from API
+      const sampleTasks: MyTask[] = [
+        {
+          id: '1',
+          title: 'Follow up with John Doe medication management',
+          description: 'Coordinate with facility nurse regarding medication timing confusion',
+          memberName: 'John Doe',
+          memberClientId: 'KAI-12345',
+          healthPlan: 'Kaiser',
+          taskType: 'note_assignment',
+          priority: 'High',
+          status: 'pending',
+          dueDate: '2026-01-20T00:00:00Z',
+          assignedBy: 'mike_wilson',
+          assignedByName: 'Dr. Mike Wilson, RN',
+          assignedTo: user.uid,
+          assignedToName: user.displayName || user.email || 'Current User',
+          createdAt: '2026-01-17T14:15:00Z',
+          updatedAt: '2026-01-17T14:15:00Z',
+          source: 'notes'
+        },
+        {
+          id: '2',
+          title: 'Review care plan for Jane Smith',
+          description: 'Coordinate with family for upcoming visit',
+          memberName: 'Jane Smith',
+          memberClientId: 'HN-67890',
+          healthPlan: 'Health Net',
+          taskType: 'review',
+          priority: 'Medium',
+          status: 'in_progress',
+          dueDate: '2026-01-22T00:00:00Z',
+          assignedBy: 'sarah_johnson',
+          assignedByName: 'Sarah Johnson, MSW',
+          assignedTo: user.uid,
+          assignedToName: user.displayName || user.email || 'Current User',
+          createdAt: '2026-01-16T10:30:00Z',
+          updatedAt: '2026-01-17T09:15:00Z',
+          source: 'notes'
+        },
+        {
+          id: '3',
+          title: 'Complete monthly report',
+          description: 'Compile statistics and member progress for monthly reporting',
+          taskType: 'administrative',
+          priority: 'Low',
+          status: 'pending',
+          dueDate: '2026-01-24T00:00:00Z',
+          assignedBy: 'admin',
+          assignedByName: 'System Administrator',
+          assignedTo: user.uid,
+          assignedToName: user.displayName || user.email || 'Current User',
+          createdAt: '2026-01-15T09:00:00Z',
+          updatedAt: '2026-01-15T09:00:00Z',
+          source: 'manual'
+        },
+        {
+          id: '4',
+          title: 'URGENT: Contact Robert Johnson family',
+          description: 'Member has requested immediate transfer to different facility',
+          memberName: 'Robert Johnson',
+          memberClientId: 'KAI-11111',
+          healthPlan: 'Kaiser',
+          taskType: 'contact',
+          priority: 'Urgent',
+          status: 'overdue',
+          dueDate: '2026-01-18T00:00:00Z',
+          assignedBy: 'admin',
+          assignedByName: 'System Administrator',
+          assignedTo: user.uid,
+          assignedToName: user.displayName || user.email || 'Current User',
+          createdAt: '2026-01-17T16:45:00Z',
+          updatedAt: '2026-01-17T16:45:00Z',
+          source: 'notes'
+        },
+        {
+          id: '5',
+          title: 'Update Kaiser status for Maria Garcia',
+          description: 'Member ready to move from Assessment to Authorization',
+          memberName: 'Maria Garcia',
+          memberClientId: 'KAI-22222',
+          healthPlan: 'Kaiser',
+          taskType: 'kaiser_status',
+          priority: 'Medium',
+          status: 'pending',
+          dueDate: '2026-01-19T00:00:00Z',
+          assignedBy: 'supervisor',
+          assignedByName: 'Supervisor',
+          assignedTo: user.uid,
+          assignedToName: user.displayName || user.email || 'Current User',
+          currentKaiserStatus: 'Assessment',
+          createdAt: '2026-01-17T11:30:00Z',
+          updatedAt: '2026-01-17T11:30:00Z',
+          source: 'applications'
+        },
+        {
+          id: '6',
+          title: 'Process Kaiser authorization for David Chen',
+          description: 'All documentation received, ready for final authorization',
+          memberName: 'David Chen',
+          memberClientId: 'KAI-33333',
+          healthPlan: 'Kaiser',
+          taskType: 'kaiser_status',
+          priority: 'High',
+          status: 'pending',
+          dueDate: '2026-01-18T00:00:00Z',
+          assignedBy: 'case_manager',
+          assignedByName: 'Case Manager',
+          assignedTo: user.uid,
+          assignedToName: user.displayName || user.email || 'Current User',
+          currentKaiserStatus: 'Pending Authorization',
+          createdAt: '2026-01-17T09:00:00Z',
+          updatedAt: '2026-01-17T09:00:00Z',
+          source: 'applications'
         }
-        
-        toast({
-          title: 'Daily Tasks Loaded',
-          description: `Found ${loadedTasks.length} tasks for ${selectedDate}`,
-          className: 'bg-green-100 text-green-900 border-green-200',
-        });
-      }
+      ];
+
+      setTasks(sampleTasks);
+      
+      toast({
+        title: 'Tasks Loaded',
+        description: `Found ${sampleTasks.length} tasks assigned to you`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      
     } catch (error: any) {
-      console.error('Error loading daily tasks:', error);
+      console.error('Error fetching my tasks:', error);
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: error.message || 'Failed to load daily tasks',
+        description: error.message || 'Failed to load your tasks',
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (currentUser?.email) {
-      fetchMyKaiserTasks();
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(task => {
+      // Tab filter
+      if (selectedTab === 'overdue' && task.status !== 'overdue') return false;
+      if (selectedTab === 'today') {
+        const taskDate = new Date(task.dueDate);
+        if (!isToday(taskDate)) return false;
+      }
+      if (selectedTab === 'upcoming') {
+        const taskDate = new Date(task.dueDate);
+        const tomorrow = addDays(new Date(), 1);
+        if (taskDate <= tomorrow) return false;
+      }
+      if (selectedTab === 'completed' && task.status !== 'completed') return false;
+
+      // Priority filter
+      if (priorityFilter !== 'all' && task.priority !== priorityFilter) return false;
+
+      // Status filter
+      if (statusFilter !== 'all' && task.status !== statusFilter) return false;
+
+      return true;
+    });
+  }, [tasks, selectedTab, priorityFilter, statusFilter]);
+
+  const taskCounts = useMemo(() => {
+    const now = new Date();
+    return {
+      all: tasks.length,
+      overdue: tasks.filter(t => t.status === 'overdue').length,
+      today: tasks.filter(t => isToday(new Date(t.dueDate)) && t.status !== 'completed').length,
+      upcoming: tasks.filter(t => new Date(t.dueDate) > addDays(now, 1) && t.status !== 'completed').length,
+      completed: tasks.filter(t => t.status === 'completed').length
+    };
+  }, [tasks]);
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'bg-green-100 text-green-800 border-green-200';
+      case 'in_progress': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'overdue': return 'bg-red-100 text-red-800 border-red-200';
+      case 'pending': return 'bg-gray-100 text-gray-800 border-gray-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
-  }, [currentUser]);
+  };
 
-  useEffect(() => {
-    loadDailyTasks();
-  }, [selectedStaff, selectedDate]);
+  const getTaskTypeIcon = (taskType: string) => {
+    switch (taskType) {
+      case 'note_assignment': return <MessageSquare className="h-4 w-4" />;
+      case 'follow_up': return <Calendar className="h-4 w-4" />;
+      case 'review': return <CheckCircle className="h-4 w-4" />;
+      case 'contact': return <Bell className="h-4 w-4" />;
+      case 'administrative': return <ListTodo className="h-4 w-4" />;
+      case 'kaiser_status': return <Target className="h-4 w-4" />;
+      default: return <Target className="h-4 w-4" />;
+    }
+  };
 
-  // Group Kaiser tasks by urgency
-  const kaiserTaskGroups = useMemo(() => {
-    const overdue = kaiserTasks.filter(t => t.isOverdue);
-    const dueToday = kaiserTasks.filter(t => !t.isOverdue && t.daysUntilDue <= 0);
-    const dueThisWeek = kaiserTasks.filter(t => !t.isOverdue && t.daysUntilDue > 0 && t.daysUntilDue <= 7);
-    const future = kaiserTasks.filter(t => !t.isOverdue && t.daysUntilDue > 7);
+  const kaiserStatusOptions = [
+    'Assessment',
+    'Pending Authorization',
+    'Authorized',
+    'Active',
+    'On-Hold',
+    'Discharged',
+    'Denied',
+    'Cancelled',
+    'ILS Sent for Contract',
+    'ILS Contract Received',
+    'ILS Active'
+  ];
+
+  const handleKaiserStatusChange = async (taskId: string, newStatus: string) => {
+    try {
+      // Update the task status
+      setTasks(prev => prev.map(task => 
+        task.id === taskId 
+          ? { ...task, kaiserStatus: newStatus, status: 'completed', updatedAt: new Date().toISOString() }
+          : task
+      ));
+
+      toast({
+        title: 'Kaiser Status Updated',
+        description: `Status changed to: ${newStatus}`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+
+      // In production, this would also update the member's Kaiser status in Caspio
+      console.log(`Updating Kaiser status for task ${taskId} to ${newStatus}`);
+
+    } catch (error: any) {
+      console.error('Error updating Kaiser status:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to update Kaiser status',
+      });
+    }
+  };
+
+  const handleMemberClick = async (clientId2: string, memberName: string, healthPlan: string) => {
+    setIsLoadingNotes(true);
+    setIsMemberCardOpen(true);
     
-    return { overdue, dueToday, dueThisWeek, future };
-  }, [kaiserTasks]);
+    try {
+      // Check if this is the first time loading notes for this member
+      const response = await fetch(`/api/member-notes?clientId2=${clientId2}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setSelectedMember({
+          clientId2,
+          memberName,
+          healthPlan,
+          notes: data.notes || [],
+          isFirstTimeLoad: !data.fromCache,
+          lastSyncTime: data.lastSync
+        });
+        
+        toast({
+          title: data.fromCache ? "Notes Loaded from Cache" : "Notes Synced from Caspio",
+          description: `${data.notes?.length || 0} notes loaded for ${memberName}`,
+        });
+      } else {
+        throw new Error(data.error || 'Failed to load notes');
+      }
+      
+    } catch (error: any) {
+      console.error('Error loading member notes:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to load member notes",
+        variant: "destructive"
+      });
+      
+      // Still open the modal with empty notes
+      setSelectedMember({
+        clientId2,
+        memberName,
+        healthPlan,
+        notes: [],
+        isFirstTimeLoad: true
+      });
+    } finally {
+      setIsLoadingNotes(false);
+    }
+  };
 
-  // Group daily tasks by status
-  const dailyTaskGroups = useMemo(() => {
-    const pending = dailyTasks.filter(t => t.status === 'Pending');
-    const inProgress = dailyTasks.filter(t => t.status === 'In Progress');
-    const completed = dailyTasks.filter(t => t.status === 'Completed');
-    const overdue = dailyTasks.filter(t => t.status === 'Overdue');
-    
-    return { pending, inProgress, completed, overdue };
-  }, [dailyTasks]);
+  const handleCreateNote = async () => {
+    if (!selectedMember || !newNote.noteText.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter note content",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const noteData = {
+        clientId2: selectedMember.clientId2,
+        memberName: selectedMember.memberName,
+        noteText: newNote.noteText,
+        noteType: newNote.noteType,
+        priority: newNote.priority,
+        assignedTo: newNote.assignedTo || undefined,
+        assignedToName: newNote.assignedToName || undefined,
+        followUpDate: newNote.followUpDate || undefined,
+        createdBy: user?.uid || 'current-user',
+        createdByName: user?.displayName || user?.email || 'Current User'
+      };
+
+      const response = await fetch('/api/member-notes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(noteData),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Update the selected member's notes
+        setSelectedMember(prev => prev ? {
+          ...prev,
+          notes: [data.note, ...prev.notes]
+        } : null);
+
+        // Reset form
+        setNewNote({
+          noteText: '',
+          noteType: 'General',
+          priority: 'Medium',
+          assignedTo: '',
+          assignedToName: '',
+          followUpDate: ''
+        });
+
+        toast({
+          title: "Note Created",
+          description: `Note added for ${selectedMember.memberName}${newNote.assignedToName ? ` and assigned to ${newNote.assignedToName}` : ''}`,
+        });
+
+        // Show notification if assigned
+        if (newNote.assignedTo) {
+          toast({
+            title: "Notification Sent",
+            description: `${newNote.assignedToName} has been notified`,
+          });
+        }
+      } else {
+        throw new Error(data.error || 'Failed to create note');
+      }
+
+    } catch (error: any) {
+      console.error('Error creating note:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create note",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'Urgent': return 'bg-red-100 text-red-800 border-red-200';
+      case 'High': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'Medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'Low': return 'bg-green-100 text-green-800 border-green-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const getSourceColor = (source: string) => {
+    switch (source) {
+      case 'Caspio': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'App': return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'Admin': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const formatDueDate = (dateString: string) => {
+    const date = new Date(dateString);
+    if (isToday(date)) return 'Today';
+    if (isTomorrow(date)) return 'Tomorrow';
+    if (isYesterday(date)) return 'Yesterday';
+    return format(date, 'MMM d, yyyy');
+  };
 
   if (!isAdmin) {
     return (
-      <div className="container mx-auto py-8">
+      <div className="container mx-auto p-6">
         <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>You need admin access to view tasks.</p>
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">Access Denied</h3>
+              <p className="text-muted-foreground">You need admin privileges to view this page.</p>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -297,402 +509,496 @@ export default function TasksPage() {
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Task Management</h1>
-          <p className="text-muted-foreground">
-            Manage your Kaiser assignments and daily tasks
-          </p>
+        <div className="flex items-center gap-3">
+          <ListTodo className="h-8 w-8 text-primary" />
+          <div>
+            <h1 className="text-3xl font-bold">My Tasks</h1>
+            <p className="text-muted-foreground">
+              Tasks and assignments assigned to you
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={fetchMyKaiserTasks} disabled={isLoading} variant="outline">
-            {isLoading ? (
-              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
-            Refresh
-          </Button>
-        </div>
+        <Button onClick={fetchMyTasks} disabled={isLoading}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
       </div>
 
-      {/* Task Type Tabs */}
-      <Tabs defaultValue="kaiser" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="kaiser" className="flex items-center gap-2">
-            <Target className="h-4 w-4" />
-            My Kaiser Tasks ({kaiserTasks.length})
-          </TabsTrigger>
-          <TabsTrigger value="daily" className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4" />
-            Daily Tasks ({dailyTasks.length})
-          </TabsTrigger>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">All Tasks</p>
+                <p className="text-2xl font-bold">{taskCounts.all}</p>
+              </div>
+              <ListTodo className="h-8 w-8 text-muted-foreground" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Overdue</p>
+                <p className="text-2xl font-bold text-red-600">{taskCounts.overdue}</p>
+              </div>
+              <AlertTriangle className="h-8 w-8 text-red-500" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Due Today</p>
+                <p className="text-2xl font-bold text-orange-600">{taskCounts.today}</p>
+              </div>
+              <Clock className="h-8 w-8 text-orange-500" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Upcoming</p>
+                <p className="text-2xl font-bold text-blue-600">{taskCounts.upcoming}</p>
+              </div>
+              <CalendarDays className="h-8 w-8 text-blue-500" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Completed</p>
+                <p className="text-2xl font-bold text-green-600">{taskCounts.completed}</p>
+              </div>
+              <CheckCircle className="h-8 w-8 text-green-500" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Filters</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-4">
+            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Priority</SelectItem>
+                <SelectItem value="Urgent">Urgent</SelectItem>
+                <SelectItem value="High">High</SelectItem>
+                <SelectItem value="Medium">Medium</SelectItem>
+                <SelectItem value="Low">Low</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="overdue">Overdue</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tasks Tabs */}
+      <Tabs value={selectedTab} onValueChange={setSelectedTab}>
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="all">All ({taskCounts.all})</TabsTrigger>
+          <TabsTrigger value="overdue">Overdue ({taskCounts.overdue})</TabsTrigger>
+          <TabsTrigger value="today">Today ({taskCounts.today})</TabsTrigger>
+          <TabsTrigger value="upcoming">Upcoming ({taskCounts.upcoming})</TabsTrigger>
+          <TabsTrigger value="completed">Completed ({taskCounts.completed})</TabsTrigger>
         </TabsList>
 
-        {/* Kaiser Tasks Tab */}
-        <TabsContent value="kaiser" className="space-y-6">
-          {/* Kaiser Task Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-2xl font-bold text-red-600">{kaiserTaskGroups.overdue.length}</p>
-                    <p className="text-xs text-muted-foreground">Overdue</p>
-                  </div>
-                  <AlertTriangle className="h-4 w-4 text-red-600" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-2xl font-bold text-orange-600">{kaiserTaskGroups.dueToday.length}</p>
-                    <p className="text-xs text-muted-foreground">Due Today</p>
-                  </div>
-                  <Clock className="h-4 w-4 text-orange-600" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-2xl font-bold text-yellow-600">{kaiserTaskGroups.dueThisWeek.length}</p>
-                    <p className="text-xs text-muted-foreground">This Week</p>
-                  </div>
-                  <Calendar className="h-4 w-4 text-yellow-600" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-2xl font-bold text-green-600">{kaiserTaskGroups.future.length}</p>
-                    <p className="text-xs text-muted-foreground">Future</p>
-                  </div>
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Kaiser Tasks Table with Tabs */}
-          <Tabs defaultValue="all" className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="all">All ({kaiserTasks.length})</TabsTrigger>
-              <TabsTrigger value="overdue" className="text-red-600">
-                Overdue ({kaiserTaskGroups.overdue.length})
-              </TabsTrigger>
-              <TabsTrigger value="today" className="text-orange-600">
-                Due Today ({kaiserTaskGroups.dueToday.length})
-              </TabsTrigger>
-              <TabsTrigger value="week" className="text-yellow-600">
-                This Week ({kaiserTaskGroups.dueThisWeek.length})
-              </TabsTrigger>
-              <TabsTrigger value="future">
-                Future ({kaiserTaskGroups.future.length})
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="all">
-              <KaiserTaskTable tasks={kaiserTasks} />
-            </TabsContent>
-            <TabsContent value="overdue">
-              <KaiserTaskTable tasks={kaiserTaskGroups.overdue} />
-            </TabsContent>
-            <TabsContent value="today">
-              <KaiserTaskTable tasks={kaiserTaskGroups.dueToday} />
-            </TabsContent>
-            <TabsContent value="week">
-              <KaiserTaskTable tasks={kaiserTaskGroups.dueThisWeek} />
-            </TabsContent>
-            <TabsContent value="future">
-              <KaiserTaskTable tasks={kaiserTaskGroups.future} />
-            </TabsContent>
-          </Tabs>
-        </TabsContent>
-
-        {/* Daily Tasks Tab */}
-        <TabsContent value="daily" className="space-y-6">
-          {/* Daily Task Controls */}
-          <div className="flex items-center gap-4">
-            <Select value={selectedStaff} onValueChange={setSelectedStaff}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filter by staff" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Staff</SelectItem>
-                {staffMembers.map((staff) => (
-                  <SelectItem key={staff.id} value={staff.id}>
-                    {staff.name} ({staff.role})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={selectedDate} onValueChange={setSelectedDate}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Select date range" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="yesterday">Yesterday</SelectItem>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="tomorrow">Tomorrow</SelectItem>
-                <SelectItem value="week">This Week</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Button onClick={loadDailyTasks} disabled={isLoading} variant="outline">
+        <TabsContent value={selectedTab} className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {selectedTab === 'all' && 'All Tasks'}
+                {selectedTab === 'overdue' && 'Overdue Tasks'}
+                {selectedTab === 'today' && 'Tasks Due Today'}
+                {selectedTab === 'upcoming' && 'Upcoming Tasks'}
+                {selectedTab === 'completed' && 'Completed Tasks'}
+              </CardTitle>
+              <CardDescription>
+                {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''} found
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
               {isLoading ? (
-                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                <div className="text-center py-8">
+                  <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
+                  <p className="text-muted-foreground">Loading your tasks...</p>
+                </div>
+              ) : filteredTasks.length === 0 ? (
+                <div className="text-center py-8">
+                  <ListTodo className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-medium mb-2">No Tasks Found</h3>
+                  <p className="text-muted-foreground">
+                    {selectedTab === 'all' ? 'You have no tasks assigned to you at this time.' :
+                     selectedTab === 'overdue' ? 'No overdue tasks.' :
+                     selectedTab === 'today' ? 'No tasks due today.' :
+                     selectedTab === 'upcoming' ? 'No upcoming tasks.' :
+                     'No completed tasks.'}
+                  </p>
+                </div>
               ) : (
-                <RefreshCw className="mr-2 h-4 w-4" />
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Task</TableHead>
+                      <TableHead>Member</TableHead>
+                      <TableHead>Assigned To</TableHead>
+                      <TableHead>Priority</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Due Date</TableHead>
+                      <TableHead>Assigned By</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTasks.map((task) => (
+                      <TableRow key={task.id}>
+                        <TableCell>
+                          <div className="flex items-start gap-3">
+                            <div className="mt-1">
+                              {getTaskTypeIcon(task.taskType)}
+                            </div>
+                            <div>
+                              <p className="font-medium">{task.title}</p>
+                              {task.description && (
+                                <p className="text-sm text-muted-foreground">{task.description}</p>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {task.memberName && task.memberClientId ? (
+                            <div 
+                              className="cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors"
+                              onClick={() => handleMemberClick(task.memberClientId!, task.memberName!, task.healthPlan || 'Unknown')}
+                            >
+                              <p className="font-medium text-blue-600 hover:text-blue-800">{task.memberName}</p>
+                              <p className="text-sm text-muted-foreground">{task.memberClientId}</p>
+                              {task.healthPlan && (
+                                <Badge variant="outline" className="text-xs">
+                                  {task.healthPlan}
+                                </Badge>
+                              )}
+                              {task.currentKaiserStatus && (
+                                <p className="text-xs text-blue-600 mt-1">
+                                  Current: {task.currentKaiserStatus}
+                                </p>
+                              )}
+                              <p className="text-xs text-blue-500 mt-1 flex items-center gap-1">
+                                <MessageSquare className="h-3 w-3" />
+                                Click to view/add notes
+                              </p>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium text-sm">{task.assignedToName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {task.assignedTo === user?.uid ? 'You' : 'Other Staff'}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                            {task.priority}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={getStatusColor(task.status)}>
+                            {task.status.replace('_', ' ')}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className={`font-medium ${task.status === 'overdue' ? 'text-red-600' : ''}`}>
+                            {formatDueDate(task.dueDate)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-sm">{task.assignedByName}</p>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            {task.taskType === 'kaiser_status' && task.healthPlan === 'Kaiser' && task.status !== 'completed' ? (
+                              <Select 
+                                value={task.kaiserStatus || task.currentKaiserStatus || ''} 
+                                onValueChange={(value) => handleKaiserStatusChange(task.id, value)}
+                              >
+                                <SelectTrigger className="w-48">
+                                  <SelectValue placeholder="Update Kaiser Status..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {kaiserStatusOptions.map((status) => (
+                                    <SelectItem key={status} value={status}>
+                                      {status}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <>
+                                <Button variant="outline" size="sm">
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                {task.status !== 'completed' && (
+                                  <Button variant="outline" size="sm">
+                                    <CheckCircle className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
-              Refresh
-            </Button>
-          </div>
-
-          {/* Daily Task Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-2xl font-bold text-yellow-600">{dailyTaskGroups.pending.length}</p>
-                    <p className="text-xs text-muted-foreground">Pending</p>
-                  </div>
-                  <Clock className="h-4 w-4 text-yellow-600" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-2xl font-bold text-blue-600">{dailyTaskGroups.inProgress.length}</p>
-                    <p className="text-xs text-muted-foreground">In Progress</p>
-                  </div>
-                  <ListTodo className="h-4 w-4 text-blue-600" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-2xl font-bold text-green-600">{dailyTaskGroups.completed.length}</p>
-                    <p className="text-xs text-muted-foreground">Completed</p>
-                  </div>
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-2xl font-bold text-red-600">{dailyTaskGroups.overdue.length}</p>
-                    <p className="text-xs text-muted-foreground">Overdue</p>
-                  </div>
-                  <AlertTriangle className="h-4 w-4 text-red-600" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Daily Tasks Table */}
-          <DailyTaskTable tasks={dailyTasks} />
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
-    </div>
-  );
-}
 
-// Kaiser Task Table Component
-function KaiserTaskTable({ tasks }: { tasks: KaiserTask[] }) {
-  const getDaysUntilDue = (dateString: string): number => {
-    if (!dateString) return 999;
-    const dueDate = new Date(dateString);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const diffTime = dueDate.getTime() - today.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  };
+      {/* Member Notes Modal */}
+      <Dialog open={isMemberCardOpen} onOpenChange={setIsMemberCardOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              {selectedMember?.memberName} - Member Notes
+            </DialogTitle>
+            <DialogDescription>
+              {selectedMember?.clientId2} • {selectedMember?.healthPlan}
+              {selectedMember?.lastSyncTime && (
+                <span className="ml-2 text-xs">
+                  Last sync: {format(new Date(selectedMember.lastSyncTime), 'MMM d, yyyy h:mm a')}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
 
-  const formatDate = (dateString: string): string => {
-    if (!dateString) return 'No date set';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
-    });
-  };
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[70vh]">
+            {/* Notes List */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium">Notes History</h3>
+                <Badge variant="outline">
+                  {selectedMember?.notes.length || 0} notes
+                </Badge>
+              </div>
 
-  const getUrgencyColor = (daysUntilDue: number, isOverdue: boolean): string => {
-    if (isOverdue) return 'bg-red-100 text-red-800 border-red-200';
-    if (daysUntilDue <= 0) return 'bg-red-100 text-red-800 border-red-200';
-    if (daysUntilDue <= 1) return 'bg-orange-100 text-orange-800 border-orange-200';
-    if (daysUntilDue <= 3) return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-    return 'bg-green-100 text-green-800 border-green-200';
-  };
-
-  const getUrgencyIcon = (daysUntilDue: number, isOverdue: boolean) => {
-    if (isOverdue || daysUntilDue <= 0) return <AlertTriangle className="h-3 w-3" />;
-    if (daysUntilDue <= 3) return <Clock className="h-3 w-3" />;
-    return <CheckCircle className="h-3 w-3" />;
-  };
-
-  if (tasks.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-8">
-          <p className="text-center text-muted-foreground">No Kaiser tasks in this category.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardContent className="p-0 overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Member</TableHead>
-              <TableHead>MRN</TableHead>
-              <TableHead>County</TableHead>
-              <TableHead>Kaiser Status</TableHead>
-              <TableHead>Due Date</TableHead>
-              <TableHead>Urgency</TableHead>
-              <TableHead>Next Action</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {tasks.map((task) => (
-              <TableRow key={task.id}>
-                <TableCell className="font-medium">
-                  {task.memberFirstName} {task.memberLastName}
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="text-xs">
-                    {task.memberMrn}
-                  </Badge>
-                </TableCell>
-                <TableCell>{task.memberCounty}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="text-xs">
-                    {task.Kaiser_Status}
-                  </Badge>
-                </TableCell>
-                <TableCell>{formatDate(task.next_steps_date)}</TableCell>
-                <TableCell>
-                  <Badge className={getUrgencyColor(task.daysUntilDue, task.isOverdue)}>
-                    {getUrgencyIcon(task.daysUntilDue, task.isOverdue)}
-                    <span className="ml-1">
-                      {task.isOverdue 
-                        ? `${Math.abs(task.daysUntilDue)} days overdue`
-                        : task.daysUntilDue === 0 
-                        ? 'Due today'
-                        : `${task.daysUntilDue} days`
-                      }
-                    </span>
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground max-w-xs">
-                  {task.nextAction}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Link href={`/admin/applications/${task.id}`}>
-                      <Button size="sm" variant="outline">
-                        <Edit className="mr-2 h-3 w-3" />
-                        View
-                      </Button>
-                    </Link>
+              {isLoadingNotes ? (
+                <div className="text-center py-8">
+                  <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
+                  <p className="text-muted-foreground">
+                    {selectedMember?.isFirstTimeLoad ? 'Importing all notes from Caspio...' : 'Loading notes...'}
+                  </p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[50vh]">
+                  <div className="space-y-3">
+                    {selectedMember?.notes.length === 0 ? (
+                      <div className="text-center py-8">
+                        <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-medium mb-2">No Notes Found</h3>
+                        <p className="text-muted-foreground">
+                          No notes have been created for this member yet.
+                        </p>
+                      </div>
+                    ) : (
+                      selectedMember?.notes.map((note) => (
+                        <div key={note.id} className={`p-4 border rounded-lg ${!note.isRead ? 'border-blue-200 bg-blue-50' : ''}`}>
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex gap-2">
+                              <Badge variant="outline" className={getPriorityColor(note.priority)}>
+                                {note.priority}
+                              </Badge>
+                              <Badge variant="outline">
+                                {note.noteType}
+                              </Badge>
+                              <Badge variant="outline" className={getSourceColor(note.source)}>
+                                {note.source}
+                              </Badge>
+                              {!note.isRead && (
+                                <Badge className="bg-blue-600">
+                                  <Bell className="h-3 w-3 mr-1" />
+                                  New
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {format(new Date(note.createdAt), 'MMM d, yyyy h:mm a')}
+                            </div>
+                          </div>
+                          
+                          <p className="text-sm mb-3">{note.noteText}</p>
+                          
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <div>
+                              <span className="font-medium">By:</span> {note.createdByName}
+                              {note.assignedToName && (
+                                <>
+                                  <span className="mx-2">•</span>
+                                  <span className="font-medium">Assigned to:</span> {note.assignedToName}
+                                </>
+                              )}
+                            </div>
+                            {note.followUpDate && (
+                              <div className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3" />
+                                Follow-up: {format(new Date(note.followUpDate), 'MMM d, yyyy')}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  );
-}
+                </ScrollArea>
+              )}
+            </div>
 
-// Daily Task Table Component
-function DailyTaskTable({ tasks }: { tasks: DailyTask[] }) {
-  if (tasks.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-8">
-          <p className="text-center text-muted-foreground">No daily tasks found for the selected criteria.</p>
-        </CardContent>
-      </Card>
-    );
-  }
+            {/* Add New Note */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Add New Note</h3>
+              
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="noteType">Note Type</Label>
+                    <Select 
+                      value={newNote.noteType} 
+                      onValueChange={(value: MemberNote['noteType']) => 
+                        setNewNote(prev => ({ ...prev, noteType: value }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="General">General</SelectItem>
+                        <SelectItem value="Medical">Medical</SelectItem>
+                        <SelectItem value="Social">Social</SelectItem>
+                        <SelectItem value="Administrative">Administrative</SelectItem>
+                        <SelectItem value="Follow-up">Follow-up</SelectItem>
+                        <SelectItem value="Emergency">Emergency</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="priority">Priority</Label>
+                    <Select 
+                      value={newNote.priority} 
+                      onValueChange={(value: MemberNote['priority']) => 
+                        setNewNote(prev => ({ ...prev, priority: value }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Low">Low</SelectItem>
+                        <SelectItem value="Medium">Medium</SelectItem>
+                        <SelectItem value="High">High</SelectItem>
+                        <SelectItem value="Urgent">Urgent</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Daily Tasks</CardTitle>
-        <CardDescription>
-          Tasks scheduled for the selected time period
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="p-0 overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Member</TableHead>
-              <TableHead>Current Step</TableHead>
-              <TableHead>Next Step</TableHead>
-              <TableHead>Follow-up Date</TableHead>
-              <TableHead>Assigned To</TableHead>
-              <TableHead>Priority</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Notes</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {tasks.map((task) => (
-              <TableRow key={task.id}>
-                <TableCell className="font-medium">{task.memberName}</TableCell>
-                <TableCell>{task.currentStep}</TableCell>
-                <TableCell>{task.nextStep}</TableCell>
-                <TableCell>{format(task.followUpDate, 'MMM dd, yyyy')}</TableCell>
-                <TableCell>{task.assignedTo}</TableCell>
-                <TableCell>
-                  <Badge className={PRIORITY_COLORS[task.priority]}>
-                    {task.priority}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge className={STATUS_COLORS[task.status]}>
-                    {task.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
-                  {task.notes || '-'}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+                <div className="space-y-2">
+                  <Label htmlFor="noteText">Note Content</Label>
+                  <Textarea
+                    id="noteText"
+                    value={newNote.noteText}
+                    onChange={(e) => setNewNote(prev => ({ ...prev, noteText: e.target.value }))}
+                    placeholder="Enter note content..."
+                    rows={4}
+                    className="resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="assignedToName">Assign to Staff (Optional)</Label>
+                    <Input
+                      id="assignedToName"
+                      value={newNote.assignedToName}
+                      onChange={(e) => setNewNote(prev => ({ ...prev, assignedToName: e.target.value }))}
+                      placeholder="Staff member name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="followUpDate">Follow-up Date (Optional)</Label>
+                    <Input
+                      id="followUpDate"
+                      type="date"
+                      value={newNote.followUpDate}
+                      onChange={(e) => setNewNote(prev => ({ ...prev, followUpDate: e.target.value }))}
+                      min={format(new Date(), 'yyyy-MM-dd')}
+                    />
+                  </div>
+                </div>
+
+                <Button 
+                  onClick={handleCreateNote} 
+                  disabled={!newNote.noteText.trim()}
+                  className="w-full"
+                >
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                  Add Note
+                </Button>
+
+                {selectedMember?.isFirstTimeLoad && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center gap-2 text-blue-800 mb-1">
+                      <CheckCircle className="h-4 w-4" />
+                      <span className="font-medium">Smart Sync Active</span>
+                    </div>
+                    <p className="text-xs text-blue-700">
+                      All existing notes have been imported from Caspio. Future updates will sync automatically.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

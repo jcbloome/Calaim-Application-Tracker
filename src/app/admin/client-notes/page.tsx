@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { useAdmin } from '@/hooks/use-admin';
 import { Search, Plus, MessageSquare, Bell, Calendar, User, Clock, Filter } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -51,6 +52,7 @@ interface NotesData {
 }
 
 export default function ClientNotesPage() {
+  const { user, isAdmin } = useAdmin();
   const [notesData, setNotesData] = useState<NotesData | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -162,8 +164,8 @@ export default function ClientNotesPage() {
         note.userFullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         note.clientId2.toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchesClient = selectedClient === '' || note.clientId2 === selectedClient;
-      const matchesUser = selectedUser === '' || note.userId === selectedUser;
+      const matchesClient = selectedClient === '' || selectedClient === 'all' || note.clientId2 === selectedClient;
+      const matchesUser = selectedUser === '' || selectedUser === 'all' || note.userId === selectedUser;
       
       const matchesStatus = statusFilter === 'all' || 
         (statusFilter === 'open' && note.followUpStatus === 'Open') ||
@@ -185,14 +187,18 @@ export default function ClientNotesPage() {
   }, [notesData]);
 
   useEffect(() => {
-    fetchNotes();
-  }, []);
+    if (user && isAdmin) {
+      fetchNotes();
+    }
+  }, [user, isAdmin]);
 
-  if (loading) {
+  if (!user || !isAdmin || loading) {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
-          <div className="text-lg">Loading client notes...</div>
+          <div className="text-lg">
+            {!user || !isAdmin ? 'Checking authentication...' : 'Loading client notes...'}
+          </div>
         </div>
       </div>
     );
@@ -364,7 +370,7 @@ export default function ClientNotesPage() {
                   <SelectValue placeholder="All clients" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All clients</SelectItem>
+                  <SelectItem value="all">All clients</SelectItem>
                   {uniqueClients.map((client) => (
                     <SelectItem key={client.clientId2} value={client.clientId2}>
                       {client.seniorFullName} ({client.clientId2})
@@ -381,7 +387,7 @@ export default function ClientNotesPage() {
                   <SelectValue placeholder="All staff" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All staff</SelectItem>
+                  <SelectItem value="all">All staff</SelectItem>
                   {notesData?.users.map((user) => (
                     <SelectItem key={user.userId} value={user.userId}>
                       {user.userFullName} ({user.role})

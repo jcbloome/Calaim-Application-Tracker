@@ -4,8 +4,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAdmin } from '@/hooks/use-admin';
 import { Button } from '@/components/ui/button';
-import { Loader2, Calendar, AlertTriangle, CheckCircle, Clock, Plus, Edit, Trash2, Filter } from 'lucide-react';
-import { format } from 'date-fns';
+import Link from 'next/link';
+import { Loader2, Calendar, AlertTriangle, CheckCircle, Clock, ArrowLeft, User, Plus, Edit, Trash2, Filter } from 'lucide-react';
+import { format, isToday, isBefore, startOfDay } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -276,7 +277,6 @@ export default function DailyTasksPage() {
   const todayTasks = tasks.filter(task => task.dueDate === today && task.status !== 'completed');
   const overdueTasks = tasks.filter(task => task.dueDate < today && task.status !== 'completed');
   const upcomingTasks = tasks.filter(task => task.dueDate > today && task.status !== 'completed');
-  const completedTasks = tasks.filter(task => task.status === 'completed');
 
   const getPriorityColor = (priority: 'high' | 'medium' | 'low') => {
     switch (priority) {
@@ -304,40 +304,44 @@ export default function DailyTasksPage() {
     }
   };
 
-  if (isAdminLoading) {
+  if (isLoading || isAdminLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="ml-4">Loading your daily tasks...</p>
       </div>
     );
   }
 
   if (!isAdmin) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Alert variant="destructive">
+      <div className="flex items-center justify-center h-full">
+        <Alert className="max-w-md">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            Access denied. Admin privileges required.
+            You need admin access to view daily tasks.
           </AlertDescription>
         </Alert>
       </div>
     );
   }
 
+  const todayTasks = tasks.filter(task => isToday(new Date(task.nextStepDate)));
+  const overdueTasks = tasks.filter(task => task.daysOverdue && task.daysOverdue > 0);
+  const upcomingTasks = tasks.filter(task => 
+    !isToday(new Date(task.nextStepDate)) && 
+    (!task.daysOverdue || task.daysOverdue === 0)
+  );
+
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Calendar className="h-8 w-8 text-primary" />
           <div>
-            <h1 className="text-3xl font-bold">Daily Task Tracker</h1>
+            <h1 className="text-3xl font-bold">Daily Task Board</h1>
             <p className="text-muted-foreground">
-              Manage and track daily tasks for all staff across CalAIM health plans - {format(new Date(), 'PPPP')}
+              CalAIM member tasks for all health plans - {format(new Date(), 'PPPP')}
             </p>
           </div>
         </div>
@@ -515,7 +519,7 @@ export default function DailyTasksPage() {
       </Card>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Due Today</CardTitle>
@@ -541,22 +545,11 @@ export default function DailyTasksPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Upcoming</CardTitle>
-            <Calendar className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{upcomingTasks.length}</div>
-            <p className="text-xs text-muted-foreground">Future tasks</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
             <CheckCircle className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{completedTasks.length}</div>
-            <p className="text-xs text-muted-foreground">Tasks finished</p>
+            <div className="text-2xl font-bold text-green-600">{upcomingTasks.length}</div>
+            <p className="text-xs text-muted-foreground">Future tasks</p>
           </CardContent>
         </Card>
       </div>
@@ -566,10 +559,10 @@ export default function DailyTasksPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calendar className="h-5 w-5" />
-            Daily Task Tracker ({tasks.length})
+            Daily Task Board ({tasks.length})
           </CardTitle>
           <CardDescription>
-            Track and manage daily tasks for all staff across CalAIM health plans (Kaiser, Health Net, and other health plans)
+            Daily tasks and upcoming deadlines for all CalAIM members (Kaiser, Health Net, and other health plans)
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -596,98 +589,63 @@ export default function DailyTasksPage() {
                         <span className="ml-1 capitalize">{task.priority}</span>
                       </Badge>
                     </TableCell>
+                    <TableCell className="font-medium">{task.memberName}</TableCell>
                     <TableCell>
-                      <div className="font-medium">{task.title}</div>
-                      {task.description && (
-                        <div className="text-sm text-muted-foreground mt-1">{task.description}</div>
-                      )}
+                      <Badge variant="outline" className={
+                        task.healthPlan === 'Kaiser' ? 'bg-green-50 text-green-700 border-green-200' :
+                        task.healthPlan === 'Health Net' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                        'bg-gray-50 text-gray-700 border-gray-200'
+                      }>
+                        {task.healthPlan}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{task.memberMrn}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                        {task.currentStatus}
+                      </Badge>
                     </TableCell>
                     <TableCell>
-                      {task.memberName ? (
-                        <div>
-                          <div className="font-medium">{task.memberName}</div>
-                          {task.memberClientId && (
-                            <div className="text-sm text-muted-foreground">ID: {task.memberClientId}</div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">No member assigned</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {task.healthPlan ? (
-                        <Badge variant="outline" className={
-                          task.healthPlan === 'Kaiser' ? 'bg-green-50 text-green-700 border-green-200' :
-                          task.healthPlan === 'Health Net' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                          'bg-gray-50 text-gray-700 border-gray-200'
-                        }>
-                          {task.healthPlan}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">{task.assignedToName || 'Unassigned'}</div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={getStatusColor(task.status)}>
-                        {task.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                        {task.nextStep}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       <div className={`text-sm ${
-                        task.dueDate < today && task.status !== 'completed' ? 'text-red-600 font-medium' : 
-                        task.dueDate === today ? 'text-orange-600 font-medium' : 
+                        task.daysOverdue ? 'text-red-600 font-medium' : 
+                        isToday(new Date(task.nextStepDate)) ? 'text-orange-600 font-medium' : 
                         'text-gray-600'
                       }`}>
-                        {format(new Date(task.dueDate), 'MMM d, yyyy')}
+                        {format(new Date(task.nextStepDate), 'MMM d, yyyy')}
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEditDialog(task)}
-                        >
-                          <Edit className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleUpdateTask(task.id!, { 
-                            status: task.status === 'completed' ? 'pending' : 'completed' 
-                          })}
-                        >
-                          <CheckCircle className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDeleteTask(task.id!)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
+                      {task.daysOverdue ? (
+                        <Badge variant="destructive">
+                          <AlertTriangle className="h-3 w-3 mr-1" />
+                          {task.daysOverdue}d overdue
+                        </Badge>
+                      ) : isToday(new Date(task.nextStepDate)) ? (
+                        <Badge className="bg-orange-100 text-orange-800 border-orange-200">
+                          <Clock className="h-3 w-3 mr-1" />
+                          Due today
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          On track
+                        </Badge>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           ) : (
-            <div className="text-center py-8">
-              <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">No tasks found</h3>
-              <p className="text-muted-foreground mb-4">
-                {isLoading ? 'Loading tasks...' : 'Create your first daily task to get started.'}
-              </p>
-              {!isLoading && (
-                <Button onClick={() => setIsCreateDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Task
-                </Button>
-              )}
+            <div className="text-center text-muted-foreground py-10">
+              <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p className="text-lg font-medium mb-2">No Tasks Assigned</p>
+              <p>You don't have any Kaiser member tasks assigned to you at the moment.</p>
             </div>
           )}
         </CardContent>

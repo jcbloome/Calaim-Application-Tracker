@@ -24,7 +24,6 @@ import {
   Bell
 } from 'lucide-react';
 import { format, addDays, isAfter, isBefore, isToday } from 'date-fns';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 
 interface Task {
   id: string;
@@ -96,11 +95,8 @@ export default function TaskScheduler({ memberId, memberName, currentAssignee, o
   const loadTasks = async () => {
     setIsLoading(true);
     try {
-      const functions = getFunctions();
-      const getTasks = httpsCallable(functions, 'getMemberTasks');
-      
-      const result = await getTasks({ memberId });
-      const data = result.data as any;
+      const response = await fetch(`/api/member-tasks?memberId=${memberId}`);
+      const data = await response.json();
       
       if (data.success && data.tasks) {
         const loadedTasks = data.tasks.map((task: any) => ({
@@ -127,22 +123,11 @@ export default function TaskScheduler({ memberId, memberName, currentAssignee, o
   // Load staff members
   const loadStaffMembers = async () => {
     try {
-      const functions = getFunctions();
-      const getStaff = httpsCallable(functions, 'getStaffMembers');
-      
-      const result = await getStaff({});
-      const data = result.data as any;
+      const response = await fetch('/api/staff-members');
+      const data = await response.json();
       
       if (data.success && data.staff) {
-        // Sort with Super Admins first
-        const sortedStaff = data.staff.sort((a: any, b: any) => {
-          if (a.role === 'Super Admin' && b.role !== 'Super Admin') return -1;
-          if (b.role === 'Super Admin' && a.role !== 'Super Admin') return 1;
-          if (a.role === 'Admin' && b.role !== 'Admin' && b.role !== 'Super Admin') return -1;
-          if (b.role === 'Admin' && a.role !== 'Admin' && a.role !== 'Super Admin') return 1;
-          return a.name.localeCompare(b.name);
-        });
-        setStaffMembers(sortedStaff);
+        setStaffMembers(data.staff);
       }
     } catch (error: any) {
       console.error('Error loading staff:', error);
@@ -175,9 +160,6 @@ export default function TaskScheduler({ memberId, memberName, currentAssignee, o
 
     setIsSaving(true);
     try {
-      const functions = getFunctions();
-      const createTask = httpsCallable(functions, 'createMemberTask');
-      
       const taskData = {
         memberId,
         memberName,
@@ -189,8 +171,15 @@ export default function TaskScheduler({ memberId, memberName, currentAssignee, o
         notes: newTask.notes
       };
       
-      const result = await createTask(taskData);
-      const data = result.data as any;
+      const response = await fetch('/api/member-tasks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(taskData),
+      });
+      
+      const data = await response.json();
       
       if (data.success) {
         const createdTask: Task = {
@@ -236,11 +225,15 @@ export default function TaskScheduler({ memberId, memberName, currentAssignee, o
   // Update task status
   const updateTaskStatus = async (taskId: string, status: Task['status']) => {
     try {
-      const functions = getFunctions();
-      const updateTask = httpsCallable(functions, 'updateMemberTask');
+      const response = await fetch('/api/member-tasks', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ taskId, updates: { status } }),
+      });
       
-      const result = await updateTask({ taskId, updates: { status } });
-      const data = result.data as any;
+      const data = await response.json();
       
       if (data.success) {
         setTasks(prev => prev.map(task => 

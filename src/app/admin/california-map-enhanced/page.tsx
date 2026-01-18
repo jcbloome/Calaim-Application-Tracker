@@ -9,6 +9,8 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { 
   Search, 
   MapPin, 
@@ -23,900 +25,636 @@ import {
   Eye,
   EyeOff,
   Filter,
-  ChevronDown
+  ChevronDown,
+  Calendar,
+  Clock,
+  CheckCircle,
+  AlertTriangle,
+  Plus,
+  Edit,
+  Download,
+  Upload,
+  Bell,
+  UserPlus,
+  ArrowRightLeft
 } from 'lucide-react';
 import { findCountyByCity, searchCities, getCitiesInCounty } from '@/lib/california-cities';
 import { useToast } from '@/hooks/use-toast';
 import GoogleMapsComponent from '@/components/GoogleMapsComponent';
-import CleanGoogleMaps from '@/components/CleanGoogleMaps';
-import SimpleMapTest from '@/components/SimpleMapTest';
 import { ResourceDetailModal } from '@/components/ResourceDetailModal';
 
-// Types
+interface ResourceCounts {
+  rcfes: number;
+  socialWorkers: number;
+  registeredNurses: number;
+  authorizedMembers: number;
+}
+
+interface Visit {
+  id: string;
+  memberName: string;
+  memberClientId: string;
+  healthPlan: string;
+  visitType: 'Initial Assessment' | 'Follow-up' | 'Monthly Check' | 'Emergency';
+  scheduledDate: string;
+  scheduledTime: string;
+  status: 'Scheduled' | 'Completed' | 'Cancelled' | 'Rescheduled';
+  assignedStaff: string;
+  location: string;
+  notes?: string;
+  completedDate?: string;
+  duration?: number; // in minutes
+}
+
 interface StaffMember {
   id: string;
   name: string;
-  role: 'Social Worker' | 'RN';
-  county: string;
-  city?: string;
-  email?: string;
-  phone?: string;
-  status: 'Active' | 'Inactive';
+  role: string;
+  location: string;
+  assignedMembers: number;
+  capacity: number;
+  workload: 'Low' | 'Medium' | 'High' | 'Overloaded';
 }
 
-interface RCFE {
-  id: string;
-  name: string;
-  county: string;
-  city?: string;
-  address?: string;
-  phone?: string;
-  capacity?: number;
-  licensedBeds?: number;
-  status: 'Active' | 'Inactive';
-  licenseNumber?: string;
-  contactPerson?: string;
-}
-
-interface CountyData {
-  county: string;
-  socialWorkers: StaffMember[];
-  rns: StaffMember[];
-  total: number;
-}
-
-interface RCFECountyData {
-  county: string;
-  facilities: RCFE[];
-  totalCapacity: number;
-  activeCount: number;
-  inactiveCount: number;
-}
-
-// California counties with coordinates
-const californiaCounties = [
-  { name: 'Alameda', lat: 37.6017, lng: -121.7195, region: 'Bay Area' },
-  { name: 'Alpine', lat: 38.7596, lng: -119.8138, region: 'Sierra Nevada' },
-  { name: 'Amador', lat: 38.4580, lng: -120.6532, region: 'Central Valley' },
-  { name: 'Butte', lat: 39.6395, lng: -121.6168, region: 'Northern California' },
-  { name: 'Calaveras', lat: 38.2096, lng: -120.5687, region: 'Central Valley' },
-  { name: 'Colusa', lat: 39.2149, lng: -122.2094, region: 'Central Valley' },
-  { name: 'Contra Costa', lat: 37.9161, lng: -121.9364, region: 'Bay Area' },
-  { name: 'Del Norte', lat: 41.7056, lng: -124.1287, region: 'North Coast' },
-  { name: 'El Dorado', lat: 38.7265, lng: -120.5624, region: 'Sierra Nevada' },
-  { name: 'Fresno', lat: 36.7378, lng: -119.7871, region: 'Central Valley' },
-  { name: 'Glenn', lat: 39.5918, lng: -122.3894, region: 'Central Valley' },
-  { name: 'Humboldt', lat: 40.7450, lng: -123.8695, region: 'North Coast' },
-  { name: 'Imperial', lat: 32.8394, lng: -115.3617, region: 'Desert' },
-  { name: 'Inyo', lat: 36.8008, lng: -118.2273, region: 'Sierra Nevada' },
-  { name: 'Kern', lat: 35.3738, lng: -118.9597, region: 'Central Valley' },
-  { name: 'Kings', lat: 36.1015, lng: -119.9624, region: 'Central Valley' },
-  { name: 'Lake', lat: 39.0840, lng: -122.8084, region: 'North Coast' },
-  { name: 'Lassen', lat: 40.4780, lng: -120.5542, region: 'Northern California' },
-  { name: 'Los Angeles', lat: 34.0522, lng: -118.2437, region: 'Southern California' },
-  { name: 'Madera', lat: 37.0611, lng: -119.8897, region: 'Central Valley' },
-  { name: 'Marin', lat: 38.0834, lng: -122.7633, region: 'Bay Area' },
-  { name: 'Mariposa', lat: 37.4849, lng: -119.9663, region: 'Sierra Nevada' },
-  { name: 'Mendocino', lat: 39.3080, lng: -123.4384, region: 'North Coast' },
-  { name: 'Merced', lat: 37.3022, lng: -120.4829, region: 'Central Valley' },
-  { name: 'Modoc', lat: 41.5949, lng: -120.1696, region: 'Northern California' },
-  { name: 'Mono', lat: 37.8585, lng: -118.9648, region: 'Sierra Nevada' },
-  { name: 'Monterey', lat: 36.2677, lng: -121.4018, region: 'Central Coast' },
-  { name: 'Napa', lat: 38.5025, lng: -122.2654, region: 'Bay Area' },
-  { name: 'Nevada', lat: 39.2362, lng: -121.0159, region: 'Sierra Nevada' },
-  { name: 'Orange', lat: 33.7175, lng: -117.8311, region: 'Southern California' },
-  { name: 'Placer', lat: 39.0916, lng: -120.8039, region: 'Sierra Nevada' },
-  { name: 'Plumas', lat: 39.9266, lng: -120.8347, region: 'Sierra Nevada' },
-  { name: 'Riverside', lat: 33.7537, lng: -116.3755, region: 'Southern California' },
-  { name: 'Sacramento', lat: 38.4747, lng: -121.3542, region: 'Central Valley' },
-  { name: 'San Benito', lat: 36.5761, lng: -120.9876, region: 'Central Coast' },
-  { name: 'San Bernardino', lat: 34.8394, lng: -116.2394, region: 'Southern California' },
-  { name: 'San Diego', lat: 32.7157, lng: -117.1611, region: 'Southern California' },
-  { name: 'San Francisco', lat: 37.7749, lng: -122.4194, region: 'Bay Area' },
-  { name: 'San Joaquin', lat: 37.9357, lng: -121.2907, region: 'Central Valley' },
-  { name: 'San Luis Obispo', lat: 35.2828, lng: -120.6596, region: 'Central Coast' },
-  { name: 'San Mateo', lat: 37.5630, lng: -122.3255, region: 'Bay Area' },
-  { name: 'Santa Barbara', lat: 34.4208, lng: -119.6982, region: 'Central Coast' },
-  { name: 'Santa Clara', lat: 37.3541, lng: -121.9552, region: 'Bay Area' },
-  { name: 'Santa Cruz', lat: 37.0513, lng: -121.9858, region: 'Central Coast' },
-  { name: 'Shasta', lat: 40.7751, lng: -122.2047, region: 'Northern California' },
-  { name: 'Sierra', lat: 39.5777, lng: -120.5135, region: 'Sierra Nevada' },
-  { name: 'Siskiyou', lat: 41.8057, lng: -122.7108, region: 'Northern California' },
-  { name: 'Solano', lat: 38.3105, lng: -121.8308, region: 'Bay Area' },
-  { name: 'Sonoma', lat: 38.5816, lng: -122.8678, region: 'Bay Area' },
-  { name: 'Stanislaus', lat: 37.5091, lng: -120.9876, region: 'Central Valley' },
-  { name: 'Sutter', lat: 39.0282, lng: -121.6169, region: 'Central Valley' },
-  { name: 'Tehama', lat: 40.0274, lng: -122.1958, region: 'Northern California' },
-  { name: 'Trinity', lat: 40.6221, lng: -123.1351, region: 'Northern California' },
-  { name: 'Tulare', lat: 36.2077, lng: -118.8597, region: 'Central Valley' },
-  { name: 'Tuolumne', lat: 37.9502, lng: -120.2624, region: 'Sierra Nevada' },
-  { name: 'Ventura', lat: 34.3705, lng: -119.1391, region: 'Southern California' },
-  { name: 'Yolo', lat: 38.7646, lng: -121.9018, region: 'Central Valley' },
-  { name: 'Yuba', lat: 39.2735, lng: -121.4944, region: 'Central Valley' },
-];
-
-export default function EnhancedCaliforniaMapPage() {
-  // State management
-  const [citySearchTerm, setCitySearchTerm] = useState('');
-  const [selectedCounty, setSelectedCounty] = useState<string | null>(null);
-  const [selectedCountyFromDropdown, setSelectedCountyFromDropdown] = useState<string>('');
-  const [citySearchResults, setCitySearchResults] = useState<Array<{city: string, county: string}>>([]);
-  const [activeTab, setActiveTab] = useState('staff');
-  
-  // Filter states
-  const [activeFilter, setActiveFilter] = useState<'all' | 'staff' | 'socialWorkers' | 'rns' | 'rcfes'>('all');
-  const [filteredCounties, setFilteredCounties] = useState<string[]>([]);
-  
-  // Modal states
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [modalType, setModalType] = useState<'staff' | 'socialWorkers' | 'rns' | 'rcfes' | 'members'>('staff');
-  
-  // Data state
-  const [staffData, setStaffData] = useState<Record<string, CountyData>>({});
-  const [rcfeData, setRCFEData] = useState<Record<string, RCFECountyData>>({});
-  const [memberData, setMemberData] = useState<any>({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [shouldLoadMap, setShouldLoadMap] = useState(true);
-  
-  
-  // Layer visibility
-  const [showCountyBoundaries, setShowCountyBoundaries] = useState(true);
-
+export default function MapIntelligencePage() {
   const { toast } = useToast();
+  
+  // Map state
+  const [resourceCounts, setResourceCounts] = useState<ResourceCounts>({
+    rcfes: 0,
+    socialWorkers: 0,
+    registeredNurses: 0,
+    authorizedMembers: 0
+  });
+  const [isMapLoading, setIsMapLoading] = useState(false);
+  const [selectedResource, setSelectedResource] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Auto-load data on page mount
+  // Monthly Visits state
+  const [visits, setVisits] = useState<Visit[]>([]);
+  const [isVisitsLoading, setIsVisitsLoading] = useState(false);
+  const [visitFilter, setVisitFilter] = useState({
+    status: 'all',
+    healthPlan: 'all',
+    dateRange: 'thisMonth'
+  });
+
+  // Staff Reassignment state
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [selectedStaff, setSelectedStaff] = useState<string>('');
+  const [reassignmentTarget, setReassignmentTarget] = useState<string>('');
+  const [isReassigning, setIsReassigning] = useState(false);
+
+  // Sample data for visits
   useEffect(() => {
-    fetchData();
+    const sampleVisits: Visit[] = [
+      {
+        id: '1',
+        memberName: 'John Doe',
+        memberClientId: 'KAI-12345',
+        healthPlan: 'Kaiser',
+        visitType: 'Monthly Check',
+        scheduledDate: '2026-01-20',
+        scheduledTime: '10:00',
+        status: 'Scheduled',
+        assignedStaff: 'Sarah Johnson',
+        location: 'Los Angeles, CA',
+        notes: 'Regular monthly assessment'
+      },
+      {
+        id: '2',
+        memberName: 'Jane Smith',
+        memberClientId: 'HN-67890',
+        healthPlan: 'Health Net',
+        visitType: 'Follow-up',
+        scheduledDate: '2026-01-18',
+        scheduledTime: '14:30',
+        status: 'Completed',
+        assignedStaff: 'Mike Wilson',
+        location: 'San Diego, CA',
+        completedDate: '2026-01-18',
+        duration: 45,
+        notes: 'Member doing well, no issues'
+      },
+      {
+        id: '3',
+        memberName: 'Robert Johnson',
+        memberClientId: 'KAI-11111',
+        healthPlan: 'Kaiser',
+        visitType: 'Initial Assessment',
+        scheduledDate: '2026-01-22',
+        scheduledTime: '09:00',
+        status: 'Scheduled',
+        assignedStaff: 'Emily Davis',
+        location: 'San Francisco, CA',
+        notes: 'New member intake assessment'
+      }
+    ];
+    setVisits(sampleVisits);
+
+    // Sample staff data
+    const sampleStaff: StaffMember[] = [
+      {
+        id: '1',
+        name: 'Sarah Johnson',
+        role: 'Social Worker (MSW)',
+        location: 'Los Angeles County',
+        assignedMembers: 25,
+        capacity: 30,
+        workload: 'High'
+      },
+      {
+        id: '2',
+        name: 'Mike Wilson',
+        role: 'Registered Nurse',
+        location: 'San Diego County',
+        assignedMembers: 15,
+        capacity: 25,
+        workload: 'Medium'
+      },
+      {
+        id: '3',
+        name: 'Emily Davis',
+        role: 'Social Worker (MSW)',
+        location: 'San Francisco County',
+        assignedMembers: 32,
+        capacity: 30,
+        workload: 'Overloaded'
+      },
+      {
+        id: '4',
+        name: 'David Chen',
+        role: 'Registered Nurse',
+        location: 'Orange County',
+        assignedMembers: 12,
+        capacity: 25,
+        workload: 'Low'
+      }
+    ];
+    setStaffMembers(sampleStaff);
   }, []);
 
-  // Fetch data
-  const fetchData = async () => {
-    setLoading(true);
-    setError(null);
-    setShouldLoadMap(true); // Enable map loading when data is fetched
-    
-    try {
-      console.log('🔄 Fetching staff, RCFE, and member data...');
-      
-      const [staffResponse, rcfeResponse, memberResponse] = await Promise.all([
-        fetch('/api/staff-locations'),
-        fetch('/api/rcfe-locations'),
-        fetch('/api/member-locations')
-      ]);
-
-      const staffResult = await staffResponse.json();
-      const rcfeResult = await rcfeResponse.json();
-      const memberResult = await memberResponse.json();
-
-      if (staffResult.success) {
-        setStaffData(staffResult.data.staffByCounty);
-        console.log('✅ Staff data loaded:', staffResult.data);
-      } else {
-        console.error('❌ Staff data error:', staffResult.error);
-      }
-
-      if (rcfeResult.success) {
-        setRCFEData(rcfeResult.data.rcfesByCounty);
-        console.log('✅ RCFE data loaded:', rcfeResult.data);
-      } else {
-        console.error('❌ RCFE data error:', rcfeResult.error);
-      }
-
-      if (memberResult.success) {
-        setMemberData(memberResult.data);
-        console.log('✅ Member data loaded:', memberResult.data);
-        console.log('📊 Member data summary:', {
-          totalMembers: memberResult.data?.totalMembers,
-          counties: memberResult.data?.counties,
-          rcfesWithMembers: memberResult.data?.rcfesWithMembers,
-          membersByCounty: Object.keys(memberResult.data?.membersByCounty || {}).length,
-          membersByRCFE: Object.keys(memberResult.data?.membersByRCFE || {}).length,
-          breakdown: memberResult.data?.breakdown
-        });
-      } else {
-        console.error('❌ Member data error:', memberResult.error);
-      }
-
-      toast({
-        title: "Data Loaded",
-        description: `Loaded staff from ${Object.keys(staffResult.data?.staffByCounty || {}).length} counties, RCFEs from ${Object.keys(rcfeResult.data?.rcfesByCounty || {}).length} counties, and ${memberResult.data?.totalMembers || 0} authorized members`,
-      });
-
-    } catch (error: any) {
-      console.error('❌ Error fetching data:', error);
-      setError(error.message);
-      toast({
-        title: "Error Loading Data",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
+  const handleResourceUpdate = (counts: ResourceCounts) => {
+    setResourceCounts(counts);
   };
 
-  // Data loads only when refresh button is pressed - no automatic loading
-
-  // Handle city search
-  const handleCitySearch = (value: string) => {
-    setCitySearchTerm(value);
-    if (value.length >= 2) {
-      const results = searchCities(value);
-      setCitySearchResults(results);
-    } else {
-      setCitySearchResults([]);
-    }
+  const handleResourceClick = (resourceType: string) => {
+    setSelectedResource(resourceType);
+    setIsModalOpen(true);
   };
 
-  // Handle city selection
-  const handleCitySelect = (city: string, county: string) => {
-    setSelectedCounty(county);
-    setSelectedCountyFromDropdown(county);
-    setCitySearchTerm(`${city} → ${county} County`);
-    setCitySearchResults([]);
-  };
-
-  // Handle county dropdown selection
-  const handleCountyDropdownChange = (county: string) => {
-    setSelectedCountyFromDropdown(county);
-    setSelectedCounty(county);
-    setCitySearchTerm('');
-    setCitySearchResults([]);
-  };
-
-  // Get county data for display
-  const getCountyDisplayData = (countyName: string) => {
-    const staff = staffData[countyName];
-    const rcfe = rcfeData[countyName];
-    
-    return {
-      staff: staff || { county: countyName, socialWorkers: [], rns: [], total: 0 },
-      rcfe: rcfe || { county: countyName, facilities: [], totalCapacity: 0, activeCount: 0, inactiveCount: 0 }
-    };
-  };
-
-
-  // Get cities in selected county
-  const citiesInSelectedCounty = useMemo(() => {
-    if (!selectedCountyFromDropdown) return [];
-    return getCitiesInCounty(selectedCountyFromDropdown);
-  }, [selectedCountyFromDropdown]);
-
-  // Get selected county data
-  const selectedCountyData = useMemo(() => {
-    if (!selectedCountyFromDropdown) return null;
-    return californiaCounties.find(c => c.name === selectedCountyFromDropdown);
-  }, [selectedCountyFromDropdown]);
-
-  // Handle card clicks for filtering and showing details
-  const handleCardClick = (filterType: 'all' | 'staff' | 'socialWorkers' | 'rns' | 'rcfes' | 'members') => {
-    // Show detailed modal for specific types
-    if (filterType !== 'all') {
-      setModalType(filterType);
-      setShowDetailModal(true);
-    }
-    setActiveFilter(filterType);
-    
-    let counties: string[] = [];
-    
-    switch (filterType) {
-      case 'staff':
-        counties = Object.keys(staffData).filter(county => staffData[county].total > 0);
-        break;
-      case 'socialWorkers':
-        counties = Object.keys(staffData).filter(county => staffData[county].socialWorkers.length > 0);
-        break;
-      case 'rns':
-        counties = Object.keys(staffData).filter(county => staffData[county].rns.length > 0);
-        break;
-      case 'rcfes':
-        counties = Object.keys(rcfeData).filter(county => rcfeData[county].facilities.length > 0);
-        break;
-      default:
-        counties = [...new Set([...Object.keys(staffData), ...Object.keys(rcfeData)])];
-    }
-    
-    setFilteredCounties(counties);
-    
-    // Layer visibility is now controlled by the map legend
-
+  const handleScheduleVisit = () => {
     toast({
-      title: "Filter Applied",
-      description: `Showing ${counties.length} counties with ${filterType === 'all' ? 'any resources' : filterType.replace(/([A-Z])/g, ' $1').toLowerCase()}`,
+      title: "Visit Scheduled",
+      description: "New visit has been added to the calendar."
     });
   };
 
-  // Calculate summary statistics (memoized to prevent re-renders)
-  const summaryStats = useMemo(() => {
-    const staffKeys = Object.keys(staffData);
-    const rcfeKeys = Object.keys(rcfeData);
-    
-    const totalStaff = staffKeys.reduce((sum, key) => sum + (staffData[key]?.total || 0), 0);
-    const totalSocialWorkers = staffKeys.reduce((sum, key) => sum + (staffData[key]?.socialWorkers?.length || 0), 0);
-    const totalRNs = staffKeys.reduce((sum, key) => sum + (staffData[key]?.rns?.length || 0), 0);
-    const totalRCFEs = rcfeKeys.reduce((sum, key) => sum + (rcfeData[key]?.facilities?.length || 0), 0);
-    const totalCapacity = rcfeKeys.reduce((sum, key) => sum + (rcfeData[key]?.totalCapacity || 0), 0);
-    
-    return {
-      totalStaff,
-      totalSocialWorkers,
-      totalRNs,
-      totalRCFEs,
-      totalCapacity,
-      countiesWithStaff: staffKeys.length,
-      countiesWithRCFEs: rcfeKeys.length
-    };
-  }, [Object.keys(staffData).length, Object.keys(rcfeData).length]);
+  const handleReassignStaff = async () => {
+    if (!selectedStaff || !reassignmentTarget) {
+      toast({
+        title: "Error",
+        description: "Please select both source and target staff members.",
+        variant: "destructive"
+      });
+      return;
+    }
 
-  if (loading) {
-    return (
-      <div className="container mx-auto p-6">
-        <Card>
-          <CardContent className="flex items-center justify-center p-12">
-            <div className="text-center">
-              <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-              <p>Loading staff and RCFE data from Caspio...</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+    setIsReassigning(true);
+    
+    // Simulate API call
+    setTimeout(() => {
+      toast({
+        title: "Staff Reassignment Complete",
+        description: "Members have been successfully reassigned based on location proximity."
+      });
+      setIsReassigning(false);
+      setSelectedStaff('');
+      setReassignmentTarget('');
+    }, 2000);
+  };
+
+  const getWorkloadColor = (workload: string) => {
+    switch (workload) {
+      case 'Low': return 'bg-green-100 text-green-800 border-green-200';
+      case 'Medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'High': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'Overloaded': return 'bg-red-100 text-red-800 border-red-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Scheduled': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'Completed': return 'bg-green-100 text-green-800 border-green-200';
+      case 'Cancelled': return 'bg-red-100 text-red-800 border-red-200';
+      case 'Rescheduled': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const filteredVisits = useMemo(() => {
+    return visits.filter(visit => {
+      if (visitFilter.status !== 'all' && visit.status !== visitFilter.status) return false;
+      if (visitFilter.healthPlan !== 'all' && visit.healthPlan !== visitFilter.healthPlan) return false;
+      return true;
+    });
+  }, [visits, visitFilter]);
 
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Map Intelligence</h1>
-          <p className="text-muted-foreground">Interactive map showing staff locations and RCFE facilities across California</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Navigation className="h-8 w-8 text-primary" />
+          <div>
+            <h1 className="text-3xl font-bold">Map Intelligence & Monthly Visits</h1>
+            <p className="text-muted-foreground">
+              Interactive mapping, visit scheduling, and staff management for CalAIM members
+            </p>
+          </div>
         </div>
         <div className="flex gap-2">
-          <Button onClick={fetchData} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
+          <Button variant="outline" onClick={() => setIsMapLoading(true)}>
+            <RefreshCw className="mr-2 h-4 w-4" />
             Refresh Data
           </Button>
         </div>
       </div>
 
-       {/* Summary Statistics - Clickable Cards */}
-       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        
-        <Card 
-          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 ${
-            activeFilter === 'staff' ? 'ring-2 ring-blue-500 bg-blue-50' : 'hover:bg-gray-50'
-          }`}
-          onClick={() => handleCardClick('staff')}
-        >
-          <CardContent className="p-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Total Staff</p>
-              <p className="text-2xl font-bold">{summaryStats.totalStaff}</p>
-              <p className="text-xs text-gray-600 font-medium">Click for details</p>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card 
-          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 ${
-            activeFilter === 'socialWorkers' ? 'ring-2 ring-green-500 bg-green-50' : 'hover:bg-gray-50'
-          }`}
-          onClick={() => handleCardClick('socialWorkers')}
-        >
-          <CardContent className="p-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Social Workers</p>
-              <p className="text-2xl font-bold">{summaryStats.totalSocialWorkers}</p>
-              <p className="text-xs text-gray-600 font-medium">Click for details</p>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card 
-          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 ${
-            activeFilter === 'rns' ? 'ring-2 ring-red-500 bg-red-50' : 'hover:bg-gray-50'
-          }`}
-          onClick={() => handleCardClick('rns')}
-        >
-          <CardContent className="p-4">
-            <div>
-              <p className="text-sm text-muted-foreground">RNs</p>
-              <p className="text-2xl font-bold">{summaryStats.totalRNs}</p>
-              <p className="text-xs text-gray-600 font-medium">Click for details</p>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card 
-          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 ${
-            activeFilter === 'rcfes' ? 'ring-2 ring-purple-500 bg-purple-50' : 'hover:bg-gray-50'
-          }`}
-          onClick={() => handleCardClick('rcfes')}
-        >
-          <CardContent className="p-4">
-            <div>
-              <p className="text-sm text-muted-foreground">RCFEs</p>
-              <p className="text-2xl font-bold">{summaryStats.totalRCFEs}</p>
-              <p className="text-xs text-gray-600 font-medium">Click for details</p>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card 
-          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 ${
-            activeFilter === 'all' ? 'ring-2 ring-indigo-500 bg-indigo-50' : 'hover:bg-gray-50'
-          }`}
-          onClick={() => handleCardClick('all')}
-        >
-          <CardContent className="p-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Counties</p>
-              <p className="text-2xl font-bold">{Math.max(summaryStats.countiesWithStaff, summaryStats.countiesWithRCFEs)}</p>
-              <p className="text-xs text-gray-600 font-medium">Show all</p>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Tabs for different views */}
+      <Tabs defaultValue="map" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="map">Interactive Map</TabsTrigger>
+          <TabsTrigger value="visits">Monthly Visits</TabsTrigger>
+          <TabsTrigger value="staff">Staff Reassignment</TabsTrigger>
+        </TabsList>
 
-        <Card 
-          className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 ${
-            activeFilter === 'members' ? 'ring-2 ring-orange-500 bg-orange-50' : 'hover:bg-gray-50'
-          }`}
-          onClick={() => handleCardClick('members')}
-        >
-          <CardContent className="p-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Authorized Members</p>
-              <p className="text-2xl font-bold">{memberData?.totalMembers || 0}</p>
-              <p className="text-xs text-gray-600 font-medium">Click for details</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Active Filter Display */}
-      {activeFilter !== 'all' && (
-        <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <Filter className="h-4 w-4 text-blue-600" />
-          <span className="text-sm font-medium text-blue-800">
-            Active Filter: {activeFilter === 'socialWorkers' ? 'Social Workers' : 
-                          activeFilter === 'rns' ? 'Registered Nurses' : 
-                          activeFilter === 'rcfes' ? 'RCFE Facilities' : 
-                          activeFilter === 'staff' ? 'All Staff' : 'All Resources'}
-          </span>
-          <span className="text-sm text-blue-600">
-            ({filteredCounties.length} counties)
-          </span>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => handleCardClick('all')}
-            className="ml-auto"
-          >
-            Clear Filter
-          </Button>
-        </div>
-      )}
-
-      {/* Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Panel - Controls and Data */}
-        <div className="lg:col-span-1 space-y-6">
-          {/* Search Controls */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Search className="h-5 w-5" />
-                Search & Filters
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* County Dropdown */}
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Select County</Label>
-                <Select value={selectedCountyFromDropdown} onValueChange={handleCountyDropdownChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a county..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {californiaCounties
-                      .sort((a, b) => a.name.localeCompare(b.name))
-                      .map((county) => (
-                        <SelectItem key={county.name} value={county.name}>
-                          {county.name} County
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* City Search */}
-              <div className="relative">
-                <Navigation className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search cities to find their county..."
-                  value={citySearchTerm}
-                  onChange={(e) => handleCitySearch(e.target.value)}
-                  className="pl-10"
-                />
-                {citySearchResults.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-md shadow-lg z-10 max-h-60 overflow-y-auto">
-                    {citySearchResults.map((result, index) => (
-                      <button
-                        key={index}
-                        onClick={() => handleCitySelect(result.city, result.county)}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                      >
-                        <div className="font-medium capitalize">{result.city}</div>
-                        <div className="text-sm text-gray-600">{result.county} County</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Layer Controls */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">Map Options</Label>
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="county-boundaries"
-                      checked={showCountyBoundaries}
-                      onCheckedChange={setShowCountyBoundaries}
-                    />
-                    <Label htmlFor="county-boundaries" className="text-sm">County Boundaries</Label>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Selected County Cities */}
-          {selectedCountyFromDropdown && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MapPin className="h-5 w-5" />
-                  {selectedCountyFromDropdown} County
-                </CardTitle>
-                <CardDescription>
-                  Cities and location information
-                </CardDescription>
+        {/* Interactive Map Tab */}
+        <TabsContent value="map" className="space-y-6">
+          {/* Resource Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleResourceClick('rcfes')}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">RCFEs</CardTitle>
+                <Building2 className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                {selectedCountyData && (
-                  <div className="space-y-4">
-                    {/* County Info */}
-                    <div className="p-3 bg-blue-50 rounded-lg border">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium">Region:</span>
-                        <span className="text-sm text-gray-600">{selectedCountyData.region}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">Coordinates:</span>
-                        <span className="text-sm text-gray-600">
-                          {selectedCountyData.lat.toFixed(4)}, {selectedCountyData.lng.toFixed(4)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Cities List */}
-                    <div>
-                      <h4 className="font-medium mb-2">Major Cities ({citiesInSelectedCounty.length})</h4>
-                      {citiesInSelectedCounty.length > 0 ? (
-                        <div className="max-h-48 overflow-y-auto">
-                          <div className="grid grid-cols-1 gap-1">
-                            {citiesInSelectedCounty.map((city, index) => (
-                              <div 
-                                key={index} 
-                                className="p-2 text-sm capitalize text-gray-700 hover:bg-gray-50 rounded border-b border-gray-100 last:border-b-0"
-                              >
-                                {city}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-gray-500">No major cities found in our database</p>
-                      )}
-                    </div>
-
-                    {/* View on Map Button */}
-                    <Button 
-                      onClick={() => setSelectedCounty(selectedCountyFromDropdown)}
-                      className="w-full"
-                      variant="outline"
-                    >
-                      <MapPin className="h-4 w-4 mr-2" />
-                      Center Map on {selectedCountyFromDropdown}
-                    </Button>
-                  </div>
-                )}
+                <div className="text-2xl font-bold">{resourceCounts.rcfes}</div>
+                <p className="text-xs text-muted-foreground">Registered facilities</p>
               </CardContent>
             </Card>
-          )}
 
-          {/* Data Tabs */}
+            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleResourceClick('socialWorkers')}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Social Workers</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{resourceCounts.socialWorkers}</div>
+                <p className="text-xs text-muted-foreground">MSW professionals</p>
+              </CardContent>
+            </Card>
+
+            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleResourceClick('registeredNurses')}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Registered Nurses</CardTitle>
+                <Stethoscope className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{resourceCounts.registeredNurses}</div>
+                <p className="text-xs text-muted-foreground">RN professionals</p>
+              </CardContent>
+            </Card>
+
+            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleResourceClick('authorizedMembers')}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Authorized Members</CardTitle>
+                <UserCheck className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{resourceCounts.authorizedMembers}</div>
+                <p className="text-xs text-muted-foreground">Active CalAIM members</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Google Maps Component */}
           <Card>
             <CardHeader>
-              <CardTitle>Resource Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="staff">Staff</TabsTrigger>
-                  <TabsTrigger value="rcfe">RCFEs</TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="staff" className="space-y-4">
-                  <div className="max-h-96 overflow-y-auto space-y-2">
-                    {Object.entries(staffData)
-                      .filter(([countyName]) => 
-                        activeFilter === 'all' || 
-                        filteredCounties.length === 0 || 
-                        filteredCounties.includes(countyName)
-                      )
-                      .sort(([a], [b]) => a.localeCompare(b))
-                      .map(([countyName, data]) => (
-                        <div
-                          key={countyName}
-                          onClick={() => {
-                            setSelectedCounty(countyName);
-                            setSelectedCountyFromDropdown(countyName);
-                          }}
-                          className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                            selectedCounty === countyName
-                              ? 'border-blue-500 bg-blue-50'
-                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-medium">{countyName} County</div>
-                              <div className="text-sm text-gray-600">
-                                {data.socialWorkers.length} SW, {data.rns.length} RN
-                              </div>
-                            </div>
-                            <Badge variant="secondary">{data.total}</Badge>
-                          </div>
-                        </div>
-                      ))}
-                    {Object.entries(staffData)
-                      .filter(([countyName]) => 
-                        activeFilter === 'all' || 
-                        filteredCounties.length === 0 || 
-                        filteredCounties.includes(countyName)
-                      ).length === 0 && (
-                      <div className="text-center py-8 text-gray-500">
-                        <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p>No staff data matches the current filter</p>
-                      </div>
-                    )}
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="rcfe" className="space-y-4">
-                  <div className="max-h-96 overflow-y-auto space-y-2">
-                    {Object.entries(rcfeData)
-                      .filter(([countyName]) => 
-                        activeFilter === 'all' || 
-                        filteredCounties.length === 0 || 
-                        filteredCounties.includes(countyName)
-                      )
-                      .sort(([a], [b]) => a.localeCompare(b))
-                      .map(([countyName, data]) => (
-                        <div
-                          key={countyName}
-                          onClick={() => {
-                            setSelectedCounty(countyName);
-                            setSelectedCountyFromDropdown(countyName);
-                          }}
-                          className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                            selectedCounty === countyName
-                              ? 'border-blue-500 bg-blue-50'
-                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-medium">{countyName} County</div>
-                              <div className="text-sm text-gray-600">
-                                {data.facilities.length} facilities, {data.totalCapacity} beds
-                              </div>
-                            </div>
-                            <Badge variant="secondary">{data.activeCount}</Badge>
-                          </div>
-                        </div>
-                      ))}
-                    {Object.entries(rcfeData)
-                      .filter(([countyName]) => 
-                        activeFilter === 'all' || 
-                        filteredCounties.length === 0 || 
-                        filteredCounties.includes(countyName)
-                      ).length === 0 && (
-                      <div className="text-center py-8 text-gray-500">
-                        <Home className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p>No RCFE data matches the current filter</p>
-                      </div>
-                    )}
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right Panel - Map */}
-        <div className="lg:col-span-2">
-          <Card className="h-full">
-            <CardHeader>
-              <CardTitle>Map Intelligence</CardTitle>
+              <CardTitle>California CalAIM Resource Map</CardTitle>
               <CardDescription>
-                Click on counties to view staff and RCFE details. Toggle layers to show different data.
+                Interactive map showing RCFEs, social workers, nurses, and authorized members across California
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="relative rounded-lg overflow-hidden" style={{ height: '600px' }}>
-                {/* Google Maps - Now Working! */}
-                <SimpleMapTest 
-            shouldLoadMap={shouldLoadMap}
-            resourceCounts={{
-              socialWorkers: summaryStats.totalSocialWorkers,
-              registeredNurses: summaryStats.totalRNs,
-              rcfeFacilities: summaryStats.totalRCFEs,
-              authorizedMembers: memberData?.totalMembers || 0
-            }}
-          />
-                
-                {/* Debug Info */}
-                <div className="absolute bottom-16 right-4 bg-white p-2 rounded shadow text-xs z-10 max-w-xs">
-                  <div className="font-semibold mb-1">Debug Info:</div>
-                  <div>Staff Counties: {Object.keys(staffData).length}</div>
-                  <div>RCFE Counties: {Object.keys(rcfeData).length}</div>
-                  <div>API Key: {process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ? '✅ Set' : '❌ Missing'}</div>
-                  <div className="text-xs text-green-600 mt-1">✅ Google Maps Working!</div>
-                </div>
-
-                {/* Legend */}
-                <div className="absolute bottom-4 left-4 bg-white p-3 rounded-lg shadow-lg z-10">
-                  <h4 className="font-semibold text-sm mb-2">Legend</h4>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-xs">
-                      <div className="w-3 h-3 rounded-full bg-green-500" />
-                      <span>Social Workers</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <div className="w-3 h-3 rounded-full bg-red-500" />
-                      <span>Registered Nurses</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <div className="w-3 h-3 rounded-full bg-purple-500" />
-                      <span>RCFE Facilities</span>
-                    </div>
-                  </div>
-                </div>
-
+              <div className="h-[600px] w-full">
+                <GoogleMapsComponent onResourceUpdate={handleResourceUpdate} />
               </div>
             </CardContent>
           </Card>
-        </div>
-      </div>
+        </TabsContent>
 
-      {/* Selected County Details */}
-      {selectedCounty && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
-              {selectedCounty} County Details
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="staff-details">
-              <TabsList>
-                <TabsTrigger value="staff-details">Staff Details</TabsTrigger>
-                <TabsTrigger value="rcfe-details">RCFE Details</TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="staff-details" className="space-y-4">
-                {(() => {
-                  const data = getCountyDisplayData(selectedCounty);
-                  return (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {/* Social Workers */}
-                      <div>
-                        <h4 className="font-semibold mb-2 flex items-center gap-2">
-                          <UserCheck className="h-4 w-4 text-green-600" />
-                          Social Workers ({data.staff.socialWorkers.length})
-                        </h4>
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {data.staff.socialWorkers.map((sw) => (
-                            <div key={sw.id} className="p-2 bg-green-50 rounded border">
-                              <div className="font-medium">{sw.name}</div>
-                              {sw.city && <div className="text-sm text-gray-600">{sw.city}</div>}
-                              {sw.email && <div className="text-xs text-gray-500">{sw.email}</div>}
-                            </div>
-                          ))}
-                          {data.staff.socialWorkers.length === 0 && (
-                            <p className="text-gray-500 text-sm">No social workers in this county</p>
-                          )}
-                        </div>
-                      </div>
+        {/* Monthly Visits Tab */}
+        <TabsContent value="visits" className="space-y-6">
+          {/* Visit Filters */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Filter className="h-5 w-5" />
+                Visit Filters
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-4">
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select value={visitFilter.status} onValueChange={(value) => setVisitFilter(prev => ({ ...prev, status: value }))}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="Scheduled">Scheduled</SelectItem>
+                      <SelectItem value="Completed">Completed</SelectItem>
+                      <SelectItem value="Cancelled">Cancelled</SelectItem>
+                      <SelectItem value="Rescheduled">Rescheduled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Health Plan</Label>
+                  <Select value={visitFilter.healthPlan} onValueChange={(value) => setVisitFilter(prev => ({ ...prev, healthPlan: value }))}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Plans</SelectItem>
+                      <SelectItem value="Kaiser">Kaiser</SelectItem>
+                      <SelectItem value="Health Net">Health Net</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end">
+                  <Button onClick={handleScheduleVisit}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Schedule Visit
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-                      {/* RNs */}
-                      <div>
-                        <h4 className="font-semibold mb-2 flex items-center gap-2">
-                          <Stethoscope className="h-4 w-4 text-red-600" />
-                          Registered Nurses ({data.staff.rns.length})
-                        </h4>
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {data.staff.rns.map((rn) => (
-                            <div key={rn.id} className="p-2 bg-red-50 rounded border">
-                              <div className="font-medium">{rn.name}</div>
-                              {rn.city && <div className="text-sm text-gray-600">{rn.city}</div>}
-                              {rn.email && <div className="text-xs text-gray-500">{rn.email}</div>}
-                            </div>
-                          ))}
-                          {data.staff.rns.length === 0 && (
-                            <p className="text-gray-500 text-sm">No RNs in this county</p>
-                          )}
+          {/* Visits Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Monthly Visits ({filteredVisits.length})
+              </CardTitle>
+              <CardDescription>
+                Scheduled and completed visits for CalAIM members
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Member</TableHead>
+                    <TableHead>Health Plan</TableHead>
+                    <TableHead>Visit Type</TableHead>
+                    <TableHead>Date & Time</TableHead>
+                    <TableHead>Assigned Staff</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredVisits.map((visit) => (
+                    <TableRow key={visit.id}>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{visit.memberName}</div>
+                          <div className="text-sm text-muted-foreground">{visit.memberClientId}</div>
                         </div>
-                      </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={
+                          visit.healthPlan === 'Kaiser' ? 'bg-green-50 text-green-700 border-green-200' :
+                          'bg-orange-50 text-orange-700 border-orange-200'
+                        }>
+                          {visit.healthPlan}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{visit.visitType}</TableCell>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{visit.scheduledDate}</div>
+                          <div className="text-sm text-muted-foreground">{visit.scheduledTime}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>{visit.assignedStaff}</TableCell>
+                      <TableCell>{visit.location}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={getStatusColor(visit.status)}>
+                          {visit.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="outline">
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button size="sm" variant="outline">
+                            <Eye className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Staff Reassignment Tab */}
+        <TabsContent value="staff" className="space-y-6">
+          {/* Staff Overview Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {staffMembers.map((staff) => (
+              <Card key={staff.id}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">{staff.name}</CardTitle>
+                  <CardDescription className="text-xs">{staff.role}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Members:</span>
+                      <span className="font-medium">{staff.assignedMembers}/{staff.capacity}</span>
                     </div>
-                  );
-                })()}
-              </TabsContent>
+                    <div className="flex justify-between text-sm">
+                      <span>Location:</span>
+                      <span className="text-xs">{staff.location}</span>
+                    </div>
+                    <Badge variant="outline" className={getWorkloadColor(staff.workload)}>
+                      {staff.workload} Workload
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Staff Reassignment Tool */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ArrowRightLeft className="h-5 w-5" />
+                Staff Reassignment by Location
+              </CardTitle>
+              <CardDescription>
+                Reassign members between staff based on geographic proximity and workload
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                <div className="space-y-2">
+                  <Label>From Staff Member</Label>
+                  <Select value={selectedStaff} onValueChange={setSelectedStaff}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select staff to reassign from" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {staffMembers.filter(s => s.assignedMembers > 0).map((staff) => (
+                        <SelectItem key={staff.id} value={staff.id}>
+                          {staff.name} ({staff.assignedMembers} members)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>To Staff Member</Label>
+                  <Select value={reassignmentTarget} onValueChange={setReassignmentTarget}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select target staff" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {staffMembers.filter(s => s.id !== selectedStaff && s.assignedMembers < s.capacity).map((staff) => (
+                        <SelectItem key={staff.id} value={staff.id}>
+                          {staff.name} ({staff.capacity - staff.assignedMembers} available)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button 
+                  onClick={handleReassignStaff} 
+                  disabled={!selectedStaff || !reassignmentTarget || isReassigning}
+                >
+                  {isReassigning ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Reassigning...
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="mr-2 h-4 w-4" />
+                      Reassign Members
+                    </>
+                  )}
+                </Button>
+              </div>
               
-              <TabsContent value="rcfe-details" className="space-y-4">
-                {(() => {
-                  const data = getCountyDisplayData(selectedCounty);
-                  return (
-                    <div>
-                      <h4 className="font-semibold mb-2 flex items-center gap-2">
-                        <Home className="h-4 w-4 text-purple-600" />
-                        RCFE Facilities ({data.rcfe.facilities.length})
-                      </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
-                        {data.rcfe.facilities.map((facility) => (
-                          <div key={facility.id} className="p-3 bg-purple-50 rounded border">
-                            <div className="font-medium">{facility.name}</div>
-                            {facility.city && <div className="text-sm text-gray-600">{facility.city}</div>}
-                            {facility.address && <div className="text-xs text-gray-500">{facility.address}</div>}
-                            {facility.capacity && (
-                              <div className="text-xs text-purple-700 mt-1">
-                                Capacity: {facility.capacity} beds
-                              </div>
-                            )}
-                            <Badge 
-                              variant={facility.status === 'Active' ? 'default' : 'secondary'}
-                              className="mt-1"
-                            >
-                              {facility.status}
-                            </Badge>
+              {selectedStaff && reassignmentTarget && (
+                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                  <h4 className="font-medium text-blue-900 mb-2">Reassignment Preview</h4>
+                  <p className="text-sm text-blue-700">
+                    This will automatically reassign members from the selected staff to the target staff based on:
+                  </p>
+                  <ul className="text-sm text-blue-700 mt-2 ml-4 list-disc">
+                    <li>Geographic proximity (same county/region priority)</li>
+                    <li>Target staff capacity and current workload</li>
+                    <li>Member care continuity considerations</li>
+                  </ul>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Staff Performance Summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Staff Performance Summary</CardTitle>
+              <CardDescription>
+                Overview of staff workload distribution and capacity utilization
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Staff Member</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Assigned Members</TableHead>
+                    <TableHead>Capacity</TableHead>
+                    <TableHead>Utilization</TableHead>
+                    <TableHead>Workload Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {staffMembers.map((staff) => {
+                    const utilization = Math.round((staff.assignedMembers / staff.capacity) * 100);
+                    return (
+                      <TableRow key={staff.id}>
+                        <TableCell className="font-medium">{staff.name}</TableCell>
+                        <TableCell>{staff.role}</TableCell>
+                        <TableCell>{staff.location}</TableCell>
+                        <TableCell>{staff.assignedMembers}</TableCell>
+                        <TableCell>{staff.capacity}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="w-20 bg-gray-200 rounded-full h-2">
+                              <div 
+                                className={`h-2 rounded-full ${
+                                  utilization >= 100 ? 'bg-red-500' :
+                                  utilization >= 80 ? 'bg-orange-500' :
+                                  utilization >= 60 ? 'bg-yellow-500' :
+                                  'bg-green-500'
+                                }`}
+                                style={{ width: `${Math.min(utilization, 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-sm">{utilization}%</span>
                           </div>
-                        ))}
-                        {data.rcfe.facilities.length === 0 && (
-                          <p className="text-gray-500 text-sm col-span-full">No RCFE facilities in this county</p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
-      )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={getWorkloadColor(staff.workload)}>
+                            {staff.workload}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Resource Detail Modal */}
-      <ResourceDetailModal
-        isOpen={showDetailModal}
-        onClose={() => setShowDetailModal(false)}
-        type={modalType}
-        staffData={staffData}
-        rcfeData={rcfeData}
-        memberData={memberData}
+      <ResourceDetailModal 
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        resourceType={selectedResource}
       />
     </div>
   );
