@@ -94,47 +94,60 @@ export default function MemberNotesPage() {
     tags: [] as string[]
   });
 
-  // Fetch members from API
-  useEffect(() => {
-    const fetchMembers = async () => {
-      setIsLoading(true);
-      try {
-        const response = await fetch('/api/members?limit=100');
-        const data = await response.json();
-        
-        if (data.success) {
-          setMembers(data.members);
-        } else {
-          toast({
-            title: "Error",
-            description: "Failed to load members",
-            variant: "destructive"
-          });
-        }
-      } catch (error) {
-        console.error('Error fetching members:', error);
+  // Fetch members from Caspio API with search
+  const fetchMembers = useCallback(async (search: string = '') => {
+    setIsLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (search.trim()) {
+        params.append('search', search.trim());
+      }
+      params.append('limit', '100');
+      
+      const response = await fetch(`/api/members?${params.toString()}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setMembers(data.members);
+        console.log(`✅ Loaded ${data.members.length} CalAIM members from Caspio`);
+      } else {
+        console.error('❌ Failed to load members:', data.error);
         toast({
-          title: "Error",
-          description: "Failed to load members",
+          title: "Error Loading Members",
+          description: data.error || "Failed to load CalAIM members from Caspio",
           variant: "destructive"
         });
-      } finally {
-        setIsLoading(false);
+        setMembers([]); // Clear members on error
       }
-    };
-
-    fetchMembers();
+    } catch (error) {
+      console.error('❌ Error fetching members:', error);
+      toast({
+        title: "Connection Error",
+        description: "Unable to connect to Caspio. Please check your connection.",
+        variant: "destructive"
+      });
+      setMembers([]); // Clear members on error
+    } finally {
+      setIsLoading(false);
+    }
   }, [toast]);
 
-  const filteredMembers = members.filter(member => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      member.firstName.toLowerCase().includes(searchLower) ||
-      member.lastName.toLowerCase().includes(searchLower) ||
-      member.clientId2.toLowerCase().includes(searchLower) ||
-      (member.rcfeName && member.rcfeName.toLowerCase().includes(searchLower))
-    );
-  });
+  // Initial load of members
+  useEffect(() => {
+    fetchMembers();
+  }, [fetchMembers]);
+
+  // Search members when search term changes (with debounce)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      fetchMembers(searchTerm);
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, fetchMembers]);
+
+  // Since we're doing server-side search, we don't need client-side filtering
+  const filteredMembers = members;
 
   const handleMemberSelect = async (member: Member) => {
     setSelectedMember(member);
@@ -297,46 +310,80 @@ export default function MemberNotesPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="search">Search Members</Label>
-              <Input
-                id="search"
-                placeholder="Search by name, Client ID, or RCFE..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+              <Label htmlFor="search">Search CalAIM Members</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="search"
+                  placeholder="Search CalAIM members by name, Client ID, or RCFE name..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+                {isLoading && (
+                  <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin text-muted-foreground" />
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {searchTerm.trim() ? 
+                  `Searching Caspio for "${searchTerm}"...` : 
+                  'Enter search terms to find CalAIM members from Caspio database'
+                }
+              </p>
             </div>
 
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {filteredMembers.map((member) => (
-                <div
-                  key={member.clientId2}
-                  className={`p-3 border rounded-lg cursor-pointer transition-colors hover:bg-gray-50 ${
-                    selectedMember?.clientId2 === member.clientId2 ? 'border-primary bg-primary/5' : ''
-                  }`}
-                  onClick={() => handleMemberSelect(member)}
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-medium">{member.firstName} {member.lastName}</p>
-                      <p className="text-sm text-muted-foreground">{member.clientId2}</p>
-                      {member.rcfeName && (
-                        <p className="text-xs text-muted-foreground">{member.rcfeName}</p>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <Badge variant="outline" className={
-                        member.healthPlan === 'Kaiser' ? 'bg-green-50 text-green-700 border-green-200' :
-                        'bg-orange-50 text-orange-700 border-orange-200'
-                      }>
-                        {member.healthPlan}
-                      </Badge>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {member.noteCount} notes
-                      </p>
+              {isLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                  <span className="text-muted-foreground">Loading CalAIM members from Caspio...</span>
+                </div>
+              ) : filteredMembers.length > 0 ? (
+                filteredMembers.map((member) => (
+                  <div
+                    key={member.clientId2}
+                    className={`p-3 border rounded-lg cursor-pointer transition-colors hover:bg-gray-50 ${
+                      selectedMember?.clientId2 === member.clientId2 ? 'border-primary bg-primary/5' : ''
+                    }`}
+                    onClick={() => handleMemberSelect(member)}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-medium">{member.firstName} {member.lastName}</p>
+                        <p className="text-sm text-muted-foreground">{member.clientId2}</p>
+                        {member.rcfeName && (
+                          <p className="text-xs text-muted-foreground">{member.rcfeName}</p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <Badge variant="outline" className={
+                          member.healthPlan === 'Kaiser' ? 'bg-green-50 text-green-700 border-green-200' :
+                          member.healthPlan === 'Health Net' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                          'bg-gray-50 text-gray-700 border-gray-200'
+                        }>
+                          {member.healthPlan}
+                        </Badge>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Status: {member.status}
+                        </p>
+                      </div>
                     </div>
                   </div>
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">
+                    {searchTerm.trim() ? 
+                      `No CalAIM members found for "${searchTerm}"` : 
+                      'Enter a search term to find CalAIM members'
+                    }
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Search by member name, Client ID, or RCFE name
+                  </p>
                 </div>
-              ))}
+              )}
             </div>
           </CardContent>
         </Card>
