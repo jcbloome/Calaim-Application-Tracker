@@ -43,11 +43,31 @@ export async function POST(request: NextRequest) {
     console.log('🔑 Generated reset token for:', email);
 
     // Create a link to the custom reset password page
-    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+    // Clean up the base URL to handle potential concatenation issues
+    let baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    
+    // Handle cases where NEXT_PUBLIC_APP_URL might contain multiple URLs or be malformed
+    if (baseUrl.includes(',')) {
+      // If there are multiple URLs separated by commas, use the first one
+      baseUrl = baseUrl.split(',')[0].trim();
+    }
+    
+    // Ensure the URL doesn't end with a slash
+    baseUrl = baseUrl.replace(/\/$/, '');
+    
+    // For development, always use localhost:3000 to avoid Firebase URL issues
+    if (process.env.NODE_ENV === 'development') {
+      baseUrl = 'http://localhost:3000';
+    }
+    
+    const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`;
 
     // Send email using Resend with React component
     console.log('📤 Sending CalAIM branded email to:', email);
     console.log('🔗 Reset URL:', resetUrl);
+    console.log('🌐 Base URL used:', baseUrl);
+    console.log('🔧 Original NEXT_PUBLIC_APP_URL:', process.env.NEXT_PUBLIC_APP_URL);
+    console.log('🏗️ NODE_ENV:', process.env.NODE_ENV);
     
     try {
       // Render the React email component to HTML

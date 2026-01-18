@@ -15,7 +15,23 @@ export async function POST(request: NextRequest) {
 
     if (type === 'password-reset') {
       // Test password reset email
-      const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/reset-password?email=${encodeURIComponent(email)}`;
+      // Clean up the base URL to handle potential concatenation issues
+      let baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      
+      // Handle cases where NEXT_PUBLIC_APP_URL might contain multiple URLs or be malformed
+      if (baseUrl.includes(',')) {
+        baseUrl = baseUrl.split(',')[0].trim();
+      }
+      
+      // Ensure the URL doesn't end with a slash
+      baseUrl = baseUrl.replace(/\/$/, '');
+      
+      // For development, always use localhost:3000 to avoid Firebase URL issues
+      if (process.env.NODE_ENV === 'development') {
+        baseUrl = 'http://localhost:3000';
+      }
+      
+      const resetUrl = `${baseUrl}/reset-password?email=${encodeURIComponent(email)}`;
       
       const result = await resend.emails.send({
         from: 'Connections CalAIM Application Portal <noreply@carehomefinders.com>',
