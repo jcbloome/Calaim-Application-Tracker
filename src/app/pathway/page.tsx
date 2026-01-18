@@ -466,6 +466,47 @@ function PathwayPageContent() {
             status: 'Completed & Submitted',
             lastUpdated: serverTimestamp(),
         }, { merge: true });
+
+        // Trigger Health Net notifications if this is a Health Net application
+        if (application?.healthPlan === 'Health Net') {
+          try {
+            console.log('🏥 Triggering Health Net notifications for:', application.memberFirstName, application.memberLastName);
+            
+            const notificationData = {
+              memberName: `${application.memberFirstName} ${application.memberLastName}`.trim(),
+              memberClientId: application.memberMediCalNum || application.memberMrn,
+              applicationId: applicationId,
+              submittedBy: application.referrerName || `${application.referrerFirstName} ${application.referrerLastName}`.trim(),
+              submittedDate: new Date().toLocaleDateString(),
+              pathway: application.pathway,
+              currentLocation: `${application.currentCity}, ${application.currentState}`.trim(),
+              healthPlan: application.healthPlan,
+              applicationUrl: `${window.location.origin}/admin/applications/${applicationId}?userId=${application.userId}`,
+            };
+
+            // Send Health Net notifications (email + system tray + bell)
+            fetch('/api/notifications/health-net', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(notificationData),
+            }).then(response => {
+              if (response.ok) {
+                console.log('✅ Health Net notifications sent successfully');
+              } else {
+                console.error('❌ Failed to send Health Net notifications');
+              }
+            }).catch(error => {
+              console.error('❌ Health Net notification error:', error);
+            });
+
+          } catch (notificationError) {
+            console.error('❌ Health Net notification setup error:', notificationError);
+            // Don't block the submission if notifications fail
+          }
+        }
+
         router.push('/applications/completed');
     } catch (e: any) {
         console.error(e);

@@ -168,7 +168,8 @@ const superAdminNavLinks = [
       { href: '/admin/user-diagnostics', label: 'User Side Diagnostic Tools', icon: TestTube2 },
       { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
       { href: '/admin/test-emails', label: 'Email Testing', icon: Mail },
-      { href: '/admin/test-google-maps', label: 'Google Maps Testing', icon: Map }
+      { href: '/admin/test-google-maps', label: 'Google Maps Testing', icon: Map },
+      { href: '/admin/test-notifications', label: 'System Tray Notifications Test', icon: Bell }
     ]
   }
 ];
