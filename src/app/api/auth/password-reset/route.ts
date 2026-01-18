@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     console.log('🔑 Generated reset token for:', email);
 
     // Create a link to the custom reset password page
-    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'}/reset-password?token=${resetToken}`;
+    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
 
     // Send email using Resend with React component
     console.log('📤 Sending CalAIM branded email to:', email);
