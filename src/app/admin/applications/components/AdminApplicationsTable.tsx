@@ -346,6 +346,9 @@ export const AdminApplicationsTable = ({
                         </TooltipProvider>
                     )}
                     <QuickViewDialog application={app} />
+                    <Button asChild variant="link" className="text-sm font-medium text-primary hover:underline p-0 h-auto">
+                        <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View Details</Link>
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -414,6 +417,11 @@ export const AdminApplicationsTable = ({
                       {app.status}
                     </Badge>
                     <QuickViewDialog application={app} />
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>
+                        View Details
+                      </Link>
+                    </Button>
                   </div>
                 </div>
               </div>
