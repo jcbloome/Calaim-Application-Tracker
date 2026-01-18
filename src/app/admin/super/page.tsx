@@ -16,6 +16,7 @@ import { useFunctions } from '@/firebase';
 import { ref, uploadBytesResumable, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import { NotificationManager } from '@/components/NotificationManager';
 import NotificationSettings from '@/components/NotificationSettings';
+import StaffAssignmentNotificationSystem from '@/components/StaffAssignmentNotificationSystem';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -2105,6 +2106,9 @@ export default function SuperAdminPage() {
                         <NotificationManager />
                     </CardContent>
                 </Card>
+
+                {/* Staff Assignment Notification System */}
+                <StaffAssignmentNotificationSystem />
 
                 {/* Advanced Notification Settings */}
                 <NotificationSettings />

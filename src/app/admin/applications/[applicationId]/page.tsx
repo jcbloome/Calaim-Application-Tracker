@@ -754,6 +754,32 @@ function ApplicationDetailPageContent() {
 
     return () => unsubscribe();
   }, [docRef, isUserLoading]);
+
+  // Auto-assign staff if not already assigned and auto-assignment is enabled
+  useEffect(() => {
+    const checkAutoAssignment = async () => {
+      if (!application || (application as any)?.assignedStaff) return;
+      
+      // Check if auto-assignment is enabled
+      const settings = localStorage.getItem('staffAssignmentNotificationSettings');
+      if (settings) {
+        try {
+          const parsedSettings = JSON.parse(settings);
+          if (parsedSettings.enabled && parsedSettings.autoAssignmentEnabled) {
+            console.log('🤖 Auto-assigning staff for application:', application.id);
+            // Small delay to ensure the page has loaded
+            setTimeout(() => {
+              handleStaffAssignment();
+            }, 2000);
+          }
+        } catch (error) {
+          console.error('Error parsing auto-assignment settings:', error);
+        }
+      }
+    };
+
+    checkAutoAssignment();
+  }, [application]);
   
     const handleFormStatusUpdate = async (updates: Partial<FormStatusType>[]) => {
       if (!docRef || !application) return;
@@ -982,6 +1008,72 @@ function ApplicationDetailPageContent() {
       setIsUpdatingProgression(false);
     }
   };
+
+  // Handle staff assignment
+  const handleStaffAssignment = async () => {
+    if (!docRef || !application) return;
+    
+    setIsUpdatingProgression(true);
+    try {
+      const response = await fetch('/api/staff-assignment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          applicationId: application.id,
+          memberName: `${application.memberFirstName} ${application.memberLastName}`,
+          memberEmail: application.memberEmail || '',
+          healthPlan: application.healthPlan,
+          pathway: application.pathway
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        const updateData = {
+          assignedStaff: data.assignedStaff,
+          assignedDate: new Date().toISOString(),
+          assignmentNumber: data.assignmentNumber
+        };
+        
+        await setDoc(docRef, updateData, { merge: true });
+        
+        // Update local state
+        setApplication(prev => prev ? { ...prev, ...updateData } : null);
+        
+        toast({
+          title: "Staff Assigned",
+          description: `Application assigned to ${data.assignedStaff.name} (${data.assignedStaff.email})${data.notificationSent ? ' • Notification sent' : ''}`,
+          className: "bg-green-100 text-green-900 border-green-200",
+        });
+
+        // Show success notification with assignment details
+        if (data.notificationSent) {
+          setTimeout(() => {
+            toast({
+              title: "🔔 Notification Sent",
+              description: `${data.assignedStaff.name} has been notified of the new assignment via email and system notifications.`,
+              className: "bg-blue-100 text-blue-900 border-blue-200",
+            });
+          }, 1500);
+        }
+        
+      } else {
+        throw new Error(data.error || 'Failed to assign staff');
+      }
+    } catch (error: any) {
+      console.error('Error assigning staff:', error);
+      toast({
+        variant: "destructive",
+        title: "Assignment Failed",
+        description: "Could not assign staff. Please try again.",
+      });
+    } finally {
+      setIsUpdatingProgression(false);
+    }
+  };
   
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
@@ -1125,6 +1217,58 @@ function ApplicationDetailPageContent() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
                 <div className="truncate"><strong>Application ID:</strong> <span className="font-mono text-xs">{application.id}</span></div>
                 <div><strong>Submission Status:</strong> <span className="font-semibold">{application.status}</span></div>
+            </div>
+            
+            {/* Staff Assignment Display */}
+            <div className="border-t pt-4">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <User className="h-5 w-5 text-muted-foreground" />
+                        <div>
+                            <div className="text-sm font-medium">Assigned Staff</div>
+                            <div className="text-xs text-muted-foreground">
+                                {(application as any)?.assignedStaff ? (
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-medium text-primary">
+                                            {(application as any).assignedStaff.name}
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                            ({(application as any).assignedStaff.email})
+                                        </span>
+                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                                            Assigned
+                                        </Badge>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-muted-foreground">Not yet assigned</span>
+                                        <Button 
+                                            size="sm" 
+                                            variant="outline"
+                                            onClick={() => handleStaffAssignment()}
+                                            disabled={isUpdatingProgression}
+                                        >
+                                            {isUpdatingProgression ? (
+                                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                            ) : (
+                                                <User className="h-3 w-3 mr-1" />
+                                            )}
+                                            Auto-Assign Staff
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    {(application as any)?.assignedStaff && (
+                        <div className="text-xs text-muted-foreground">
+                            Assigned: {(application as any).assignedDate ? 
+                                format(new Date((application as any).assignedDate), 'PPP p') : 
+                                'Recently'
+                            }
+                        </div>
+                    )}
+                </div>
             </div>
             
             {/* Application Progression Field */}
