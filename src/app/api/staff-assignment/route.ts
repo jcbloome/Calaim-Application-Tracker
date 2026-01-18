@@ -1,60 +1,109 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminDb } from '@/firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 
-// Staff rotation order
-const STAFF_ROTATION = [
-  {
-    name: 'Nick',
-    email: 'nick@carehomefinders.com',
-    id: 'nick-staff'
-  },
-  {
-    name: 'John',
-    email: 'john@carehomefinders.com',
-    id: 'john-staff'
-  },
-  {
-    name: 'Jessie',
-    email: 'jessie@carehomefinders.com',
-    id: 'jessie-staff'
+// Fetch real MSW staff from Caspio
+async function fetchCaspioStaff() {
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/caspio-staff`);
+    const data = await response.json();
+    
+    if (data.success && data.staff.length > 0) {
+      return data.staff.filter((staff: any) => staff.isActive !== false); // Only active staff
+    }
+    
+    // Fallback to default staff if no Caspio staff found
+    console.log('⚠️ No Caspio staff found, using fallback staff');
+    return [
+      {
+        id: 'nick-staff',
+        name: 'Nick',
+        email: 'nick@carehomefinders.com',
+        sw_id: 'nick-staff',
+        assignedMemberCount: 0
+      },
+      {
+        id: 'john-staff', 
+        name: 'John',
+        email: 'john@carehomefinders.com',
+        sw_id: 'john-staff',
+        assignedMemberCount: 0
+      },
+      {
+        id: 'jessie-staff',
+        name: 'Jessie', 
+        email: 'jessie@carehomefinders.com',
+        sw_id: 'jessie-staff',
+        assignedMemberCount: 0
+      }
+    ];
+  } catch (error) {
+    console.error('❌ Error fetching Caspio staff:', error);
+    // Return fallback staff on error
+    return [
+      {
+        id: 'nick-staff',
+        name: 'Nick',
+        email: 'nick@carehomefinders.com',
+        sw_id: 'nick-staff',
+        assignedMemberCount: 0
+      },
+      {
+        id: 'john-staff',
+        name: 'John', 
+        email: 'john@carehomefinders.com',
+        sw_id: 'john-staff',
+        assignedMemberCount: 0
+      },
+      {
+        id: 'jessie-staff',
+        name: 'Jessie',
+        email: 'jessie@carehomefinders.com', 
+        sw_id: 'jessie-staff',
+        assignedMemberCount: 0
+      }
+    ];
   }
-];
-
-// In-memory storage for assignment tracking (replace with database in production)
-let assignmentCounter = 0;
+}
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const applicationId = searchParams.get('applicationId');
 
+    // Fetch real MSW staff from Caspio
+    const staff = await fetchCaspioStaff();
+    
+    // Get current assignment settings from Firestore
+    const settingsRef = adminDb.collection('settings').doc('staffAssignment');
+    const settingsSnap = await settingsRef.get();
+    const settings = settingsSnap.data();
+    
+    const autoAssignEnabled = settings?.autoAssignEnabled ?? false;
+    const lastAssignedIndex = settings?.lastAssignedIndex ?? -1;
+
     if (!applicationId) {
-      return NextResponse.json(
-        { success: false, error: 'Application ID is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({
+        success: true,
+        staff: staff,
+        autoAssignEnabled,
+        currentAssignmentIndex: lastAssignedIndex,
+        nextStaff: staff[(lastAssignedIndex + 1) % staff.length] || staff[0]
+      });
     }
 
-    // Get next staff member in rotation
-    const staffIndex = assignmentCounter % STAFF_ROTATION.length;
-    const assignedStaff = STAFF_ROTATION[staffIndex];
-    
-    // Increment counter for next assignment
-    assignmentCounter++;
-
+    // For specific application, return staff list and settings
     return NextResponse.json({
       success: true,
-      assignedStaff,
-      assignmentNumber: assignmentCounter
+      staff: staff,
+      autoAssignEnabled,
+      message: `Found ${staff.length} MSW staff members from Caspio`
     });
 
   } catch (error: any) {
-    console.error('Error getting staff assignment:', error);
+    console.error('❌ Error fetching MSW staff assignment:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to get staff assignment',
-        details: error.message 
-      },
+      { success: false, error: error.message || 'Failed to fetch MSW staff assignment' },
       { status: 500 }
     );
   }
@@ -63,50 +112,86 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { applicationId, memberName, memberEmail, healthPlan, pathway } = body;
+    const { applicationId, memberFirstName, memberLastName, healthPlan, userId, userName } = body;
 
-    if (!applicationId || !memberName) {
+    if (!applicationId || !memberFirstName || !memberLastName) {
       return NextResponse.json(
         { success: false, error: 'Application ID and member name are required' },
         { status: 400 }
       );
     }
 
-    // Get next staff member in rotation
-    const staffIndex = assignmentCounter % STAFF_ROTATION.length;
-    const assignedStaff = STAFF_ROTATION[staffIndex];
+    // Fetch real MSW staff from Caspio
+    const staff = await fetchCaspioStaff();
     
-    // Increment counter for next assignment
-    assignmentCounter++;
+    if (staff.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'No MSW staff available for assignment' },
+        { status: 404 }
+      );
+    }
 
-    // Here you would typically:
-    // 1. Save the assignment to database
-    // 2. Send notification to assigned staff
-    // 3. Log the assignment
+    // Get current assignment settings from Firestore
+    const settingsRef = adminDb.collection('settings').doc('staffAssignment');
+    const settingsSnap = await settingsRef.get();
+    const settings = settingsSnap.data();
+    
+    const autoAssignEnabled = settings?.autoAssignEnabled ?? false;
+    
+    if (!autoAssignEnabled) {
+      return NextResponse.json(
+        { success: false, error: 'Auto-assignment is not enabled' },
+        { status: 403 }
+      );
+    }
 
-    console.log(`📋 New Application Assignment:
+    // Get next staff member in rotation (round-robin based on workload)
+    const lastAssignedIndex = settings?.lastAssignedIndex ?? -1;
+    const nextIndex = (lastAssignedIndex + 1) % staff.length;
+    const assignedStaff = staff[nextIndex];
+
+    // Update application with assigned staff in Firestore
+    const applicationRef = adminDb.collection('users').doc(userId).collection('applications').doc(applicationId);
+    await applicationRef.update({
+      assignedStaffId: assignedStaff.sw_id,
+      assignedStaffName: assignedStaff.name,
+      assignedStaffEmail: assignedStaff.email,
+      assignmentDate: FieldValue.serverTimestamp(),
+      lastUpdated: FieldValue.serverTimestamp(),
+    });
+
+    // Update last assigned index in settings
+    await settingsRef.set({ 
+      lastAssignedIndex: nextIndex, 
+      autoAssignEnabled: true 
+    }, { merge: true });
+
+    const memberName = `${memberFirstName} ${memberLastName}`;
+    
+    console.log(`📋 MSW Staff Assignment:
     - Application: ${applicationId}
     - Member: ${memberName}
     - Assigned to: ${assignedStaff.name} (${assignedStaff.email})
+    - SW_ID: ${assignedStaff.sw_id}
     - Health Plan: ${healthPlan}
-    - Pathway: ${pathway}
-    - Assignment #: ${assignmentCounter}`);
+    - Current Workload: ${assignedStaff.assignedMemberCount} members`);
 
     // Send notification to assigned staff
     try {
-      const notificationResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/staff-notifications`, {
+      const notificationResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/staff-notifications`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          staffEmail: assignedStaff.email,
-          staffName: assignedStaff.name,
-          memberName,
-          applicationId,
-          healthPlan: healthPlan || 'Unknown',
-          pathway: pathway || 'Unknown',
-          assignmentNumber: assignmentCounter
+          recipientId: assignedStaff.sw_id,
+          recipientEmail: assignedStaff.email,
+          title: `New Application Assigned: ${memberName}`,
+          message: `You have been assigned a new application for ${memberName} (${healthPlan}).`,
+          link: `/admin/applications/${applicationId}?userId=${userId}`,
+          type: 'assignment',
+          applicationId: applicationId,
+          assignedBy: userName || 'System',
         }),
       });
 
@@ -118,18 +203,19 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      assignedStaff,
-      assignmentNumber: assignmentCounter,
-      message: `Application assigned to ${assignedStaff.name}`,
-      notificationSent: true
+      assignedStaffName: assignedStaff.name,
+      assignedStaffEmail: assignedStaff.email,
+      assignedStaffId: assignedStaff.sw_id,
+      message: `Application assigned to ${assignedStaff.name} (MSW)`,
+      workloadInfo: `${assignedStaff.name} now has ${assignedStaff.assignedMemberCount + 1} assigned members`
     });
 
   } catch (error: any) {
-    console.error('Error assigning staff:', error);
+    console.error('❌ Error assigning MSW staff:', error);
     return NextResponse.json(
       { 
         success: false, 
-        error: 'Failed to assign staff',
+        error: 'Failed to assign MSW staff',
         details: error.message 
       },
       { status: 500 }
