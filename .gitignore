@@ -43,3 +43,6 @@ next.config.original.ts
 
 # sensitive files
 service-account_key.json
+
+# temporary development files
+.tmp-reset-tokens.json

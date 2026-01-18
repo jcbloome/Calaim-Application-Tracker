@@ -111,7 +111,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const token = searchParams.get('token');
     
+    console.log('🔍 Token validation request received');
+    console.log('📝 Token:', token ? `${token.substring(0, 8)}...` : 'null');
+    
     if (!token) {
+      console.log('❌ No token provided');
       return NextResponse.json(
         { error: 'Token is required' },
         { status: 400 }
@@ -121,13 +125,23 @@ export async function GET(request: NextRequest) {
     const tokenData = resetTokenStore.get(token);
     
     if (!tokenData) {
+      console.log('❌ Token not found in store');
       return NextResponse.json(
         { error: 'Invalid or expired token' },
         { status: 400 }
       );
     }
 
-    if (Date.now() > tokenData.expires) {
+    const now = Date.now();
+    const timeRemaining = tokenData.expires - now;
+    
+    console.log('⏰ Token validation details:');
+    console.log('  - Email:', tokenData.email);
+    console.log('  - Expires:', new Date(tokenData.expires).toLocaleString());
+    console.log('  - Time remaining:', Math.round(timeRemaining / 1000 / 60), 'minutes');
+
+    if (now > tokenData.expires) {
+      console.log('❌ Token has expired');
       resetTokenStore.delete(token);
       return NextResponse.json(
         { error: 'Token has expired' },
@@ -135,13 +149,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    console.log('✅ Token is valid');
     return NextResponse.json(
       { email: tokenData.email, valid: true },
       { status: 200 }
     );
 
   } catch (error) {
-    console.error('Token validation failed:', error);
+    console.error('❌ Token validation failed:', error);
     return NextResponse.json(
       { error: 'Failed to validate token' },
       { status: 500 }
