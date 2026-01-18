@@ -40,7 +40,7 @@ import {
 } from 'lucide-react';
 import { findCountyByCity, searchCities, getCitiesInCounty } from '@/lib/california-cities';
 import { useToast } from '@/hooks/use-toast';
-import GoogleMapsComponent from '@/components/GoogleMapsComponent';
+import SimpleMapTest from '@/components/SimpleMapTest';
 import { ResourceDetailModal } from '@/components/ResourceDetailModal';
 
 interface ResourceCounts {
@@ -104,6 +104,50 @@ export default function MapIntelligencePage() {
   const [selectedStaff, setSelectedStaff] = useState<string>('');
   const [reassignmentTarget, setReassignmentTarget] = useState<string>('');
   const [isReassigning, setIsReassigning] = useState(false);
+
+  // Load resource counts from APIs
+  useEffect(() => {
+    const loadResourceCounts = async () => {
+      setIsMapLoading(true);
+      try {
+        // Fetch data from all the API endpoints
+        const [rcfeResponse, staffResponse, memberResponse] = await Promise.all([
+          fetch('/api/rcfe-locations'),
+          fetch('/api/staff-locations'), 
+          fetch('/api/member-locations')
+        ]);
+
+        const [rcfeData, staffData, memberData] = await Promise.all([
+          rcfeResponse.json(),
+          staffResponse.json(),
+          memberResponse.json()
+        ]);
+
+        // Count resources
+        const counts: ResourceCounts = {
+          rcfes: rcfeData.success ? rcfeData.locations?.length || 0 : 0,
+          socialWorkers: staffData.success ? staffData.locations?.filter((s: any) => s.role === 'Social Worker')?.length || 0 : 0,
+          registeredNurses: staffData.success ? staffData.locations?.filter((s: any) => s.role === 'Registered Nurse')?.length || 0 : 0,
+          authorizedMembers: memberData.success ? memberData.locations?.length || 0 : 0
+        };
+
+        setResourceCounts(counts);
+        console.log('✅ Resource counts loaded:', counts);
+
+      } catch (error) {
+        console.error('❌ Error loading resource counts:', error);
+        toast({
+          title: "Data Loading Error",
+          description: "Failed to load resource counts from APIs",
+          variant: "destructive"
+        });
+      } finally {
+        setIsMapLoading(false);
+      }
+    };
+
+    loadResourceCounts();
+  }, [toast]);
 
   // Sample data for visits
   useEffect(() => {
@@ -194,9 +238,7 @@ export default function MapIntelligencePage() {
     setStaffMembers(sampleStaff);
   }, []);
 
-  const handleResourceUpdate = (counts: ResourceCounts) => {
-    setResourceCounts(counts);
-  };
+  // Resource counts are now loaded directly from APIs in useEffect
 
   const handleResourceClick = (resourceType: string) => {
     setSelectedResource(resourceType);
@@ -276,9 +318,54 @@ export default function MapIntelligencePage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setIsMapLoading(true)}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh Data
+          <Button 
+            variant="outline" 
+            onClick={async () => {
+              setIsMapLoading(true);
+              try {
+                // Fetch data from all the API endpoints
+                const [rcfeResponse, staffResponse, memberResponse] = await Promise.all([
+                  fetch('/api/rcfe-locations'),
+                  fetch('/api/staff-locations'), 
+                  fetch('/api/member-locations')
+                ]);
+
+                const [rcfeData, staffData, memberData] = await Promise.all([
+                  rcfeResponse.json(),
+                  staffResponse.json(),
+                  memberResponse.json()
+                ]);
+
+                // Count resources
+                const counts: ResourceCounts = {
+                  rcfes: rcfeData.success ? rcfeData.locations?.length || 0 : 0,
+                  socialWorkers: staffData.success ? staffData.locations?.filter((s: any) => s.role === 'Social Worker')?.length || 0 : 0,
+                  registeredNurses: staffData.success ? staffData.locations?.filter((s: any) => s.role === 'Registered Nurse')?.length || 0 : 0,
+                  authorizedMembers: memberData.success ? memberData.locations?.length || 0 : 0
+                };
+
+                setResourceCounts(counts);
+                toast({
+                  title: "Data Refreshed",
+                  description: `Loaded ${counts.rcfes} RCFEs, ${counts.socialWorkers} social workers, ${counts.registeredNurses} nurses, and ${counts.authorizedMembers} authorized members`,
+                  className: 'bg-green-100 text-green-900 border-green-200',
+                });
+
+              } catch (error) {
+                console.error('❌ Error refreshing data:', error);
+                toast({
+                  title: "Refresh Failed",
+                  description: "Failed to refresh resource data",
+                  variant: "destructive"
+                });
+              } finally {
+                setIsMapLoading(false);
+              }
+            }}
+            disabled={isMapLoading}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${isMapLoading ? 'animate-spin' : ''}`} />
+            {isMapLoading ? 'Refreshing...' : 'Refresh Data'}
           </Button>
         </div>
       </div>
@@ -350,7 +437,15 @@ export default function MapIntelligencePage() {
             </CardHeader>
             <CardContent>
               <div className="h-[600px] w-full">
-                <GoogleMapsComponent onResourceUpdate={handleResourceUpdate} />
+                <SimpleMapTest 
+                  shouldLoadMap={true}
+                  resourceCounts={{
+                    socialWorkers: resourceCounts.socialWorkers,
+                    registeredNurses: resourceCounts.registeredNurses,
+                    rcfeFacilities: resourceCounts.rcfes,
+                    authorizedMembers: resourceCounts.authorizedMembers
+                  }}
+                />
               </div>
             </CardContent>
           </Card>
