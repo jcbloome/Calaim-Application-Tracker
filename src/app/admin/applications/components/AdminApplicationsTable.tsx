@@ -330,8 +330,7 @@ export const AdminApplicationsTable = ({
                     <div>{app.healthPlan}</div>
                     <div className="text-xs text-muted-foreground">{app.pathway}</div>
                 </TableCell>
-                <TableCell className="text-right space-x-4">
-                  <QuickViewDialog application={app} />
+                <TableCell className="text-right">
                    <div className="inline-flex items-center gap-2">
                     {servicesDeclined && (
                         <TooltipProvider>
@@ -416,12 +415,14 @@ export const AdminApplicationsTable = ({
                     <Badge variant="outline" className={getBadgeVariant(app.status)}>
                       {app.status}
                     </Badge>
-                    <QuickViewDialog application={app} />
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>
-                        View Details
-                      </Link>
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <QuickViewDialog application={app} />
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>
+                          View Details
+                        </Link>
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
