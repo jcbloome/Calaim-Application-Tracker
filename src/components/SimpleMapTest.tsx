@@ -100,13 +100,16 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
 
             // Store map instance for zoom controls
             setMapInstance(map);
+            setMapLoaded(true);
 
             // Add CalAIM overlays
             addCalAIMOverlays(map);
             
             
           } catch (err: any) {
-            setError('Map creation failed: ' + err.message);
+            console.error('❌ Map initialization error:', err);
+            setError(`Map loading failed: ${err.message}`);
+            setMapLoaded(false);
           }
         };
 
@@ -529,11 +532,43 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
   };
 
   if (error) {
+    const isApiKeyError = error.includes('API key not configured') || error.includes('Failed to load Google Maps script');
+    
     return (
       <div className="w-full h-96 bg-red-50 border border-red-200 rounded-lg flex items-center justify-center">
-        <div className="text-center p-4">
-          <div className="text-red-600 font-semibold mb-2">❌ Error</div>
-          <div className="text-sm text-red-700">{error}</div>
+        <div className="text-center p-6 max-w-md">
+          <div className="text-red-600 font-semibold mb-3">🗺️ Map Loading Error</div>
+          <div className="text-sm text-red-700 mb-4">{error}</div>
+          
+          {isApiKeyError && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-left">
+              <h4 className="font-semibold text-yellow-800 mb-2">🔑 Google Maps API Setup Required</h4>
+              <div className="text-xs text-yellow-700 space-y-1">
+                <p>To enable the interactive map:</p>
+                <ol className="list-decimal list-inside space-y-1 mt-2">
+                  <li>Get a Google Maps API key from Google Cloud Console</li>
+                  <li>Enable Maps JavaScript API</li>
+                  <li>Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in environment variables</li>
+                  <li>Add localhost:3000 to API key restrictions</li>
+                </ol>
+                <p className="mt-2 font-medium">See GOOGLE_MAPS_SETUP.md for detailed instructions</p>
+              </div>
+            </div>
+          )}
+          
+          <div className="mt-4">
+            <button
+              onClick={() => {
+                setError(null);
+                setMapLoaded(false);
+                // Retry loading
+                window.location.reload();
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            >
+              🔄 Retry Loading Map
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -541,6 +576,17 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
 
   return (
     <div className="w-full h-96 bg-gray-100 rounded-lg relative">
+      {/* Loading overlay */}
+      {!mapLoaded && !error && (
+        <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-10 rounded-lg">
+          <div className="text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-3" />
+            <p className="text-sm text-gray-600">Loading California CalAIM Map...</p>
+            <p className="text-xs text-gray-500 mt-1">Initializing Google Maps and fetching resource data</p>
+          </div>
+        </div>
+      )}
+      
       <div 
         ref={mapRef} 
         className="w-full h-full rounded-lg bg-white"
