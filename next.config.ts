@@ -19,6 +19,18 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'images.squarespace-cdn.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'upload.wikimedia.org',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'www.suncatcherstudio.com',
+        port: '',
+        pathname: '/**',
       }
     ]
   },

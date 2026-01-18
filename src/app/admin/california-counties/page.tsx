@@ -86,6 +86,8 @@ export default function CaliforniaCountiesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedCounty, setSelectedCounty] = useState<string | null>(null);
+  const [mapImageLoading, setMapImageLoading] = useState(true);
+  const [mapImageError, setMapImageError] = useState(false);
 
   // Filter counties based on search and region
   const filteredCounties = useMemo(() => {
@@ -201,15 +203,47 @@ export default function CaliforniaCountiesPage() {
             </CardHeader>
             <CardContent>
               <div className="relative">
-                <img 
-                  src="https://www.suncatcherstudio.com/uploads/2/8/9/4/28949970/california-county-map-color_orig.png"
-                  alt="California Counties Map"
-                  className="w-full h-auto rounded-lg border shadow-sm"
-                  style={{ maxHeight: '400px', objectFit: 'contain' }}
-                />
-                <div className="absolute bottom-2 right-2 text-xs text-gray-500 bg-white bg-opacity-90 px-2 py-1 rounded">
-                  Reference Map
-                </div>
+                {mapImageLoading && !mapImageError && (
+                  <div className="w-full h-64 bg-gray-100 rounded-lg border shadow-sm flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                      <p className="text-sm text-gray-500">Loading California map...</p>
+                    </div>
+                  </div>
+                )}
+                
+                {mapImageError ? (
+                  <div className="w-full h-64 bg-gray-100 rounded-lg border shadow-sm flex items-center justify-center flex-col text-gray-500">
+                    <MapPin className="h-16 w-16 mb-4" />
+                    <p className="text-sm font-medium">California Counties Map</p>
+                    <p className="text-xs">Interactive county data available below</p>
+                  </div>
+                ) : (
+                  <img 
+                    src="https://www.suncatcherstudio.com/uploads/2/8/9/4/28949970/california-county-map-color_orig.png"
+                    alt="California Counties Map"
+                    className={`w-full h-auto rounded-lg border shadow-sm ${mapImageLoading ? 'hidden' : ''}`}
+                    style={{ maxHeight: '400px', objectFit: 'contain' }}
+                    onLoad={() => setMapImageLoading(false)}
+                    onError={(e) => {
+                      // Try fallback image
+                      const target = e.target as HTMLImageElement;
+                      if (target.src.includes('suncatcherstudio')) {
+                        target.src = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/California_county_map_%28labeled%29.svg/800px-California_county_map_%28labeled%29.svg.png";
+                      } else {
+                        // Both images failed
+                        setMapImageError(true);
+                        setMapImageLoading(false);
+                      }
+                    }}
+                  />
+                )}
+                
+                {!mapImageError && !mapImageLoading && (
+                  <div className="absolute bottom-2 right-2 text-xs text-gray-500 bg-white bg-opacity-90 px-2 py-1 rounded">
+                    Reference Map
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
