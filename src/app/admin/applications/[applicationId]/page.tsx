@@ -70,13 +70,10 @@ import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import { DuplicateClientChecker } from '@/components/DuplicateClientChecker';
 import TaskScheduler from '@/components/TaskScheduler';
 import NoteTracker from '@/components/NoteTracker';
+import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusProgress } from '@/lib/kaiser-status-progression';
 
-const kaiserSteps = [
-  "Pre-T2038, Compiling Docs",
-  "T2038 Requested",
-  "T2038 Received",
-  "T2038 received, Need First Contact",
-  "T2038 received, doc collection",
+// Get Kaiser statuses in proper sort order
+const kaiserSteps = getKaiserStatusesInOrder().map(status => status.status);
   "Needs RN Visit",
   "RN/MSW Scheduled",
   "RN Visit Complete",
@@ -807,27 +804,95 @@ function ApplicationDetailPageContent() {
   };
 
   const doUpload = async (files: File[], requirementTitle: string) => {
-      if (!appUserId || !applicationId) return null;
+      if (!storage || !appUserId || !applicationId) {
+        console.error('Upload prerequisites missing:', { storage: !!storage, appUserId, applicationId });
+        throw new Error('Upload configuration error: Missing storage, user ID, or application ID');
+      }
 
       const file = files[0];
-      const storagePath = `user_uploads/${appUserId}/${applicationId}/${requirementTitle}/${file.name}`;
+      
+      // Validate file
+      if (!file) {
+        throw new Error('No file selected');
+      }
+      
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        throw new Error('File size exceeds 10MB limit');
+      }
+
+      const allowedTypes = [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'image/jpeg',
+        'image/jpg', 
+        'image/png',
+        'image/gif'
+      ];
+
+      if (!allowedTypes.includes(file.type)) {
+        throw new Error(`File type "${file.type}" not supported. Please upload PDF, Word documents, or images.`);
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const storagePath = `user_uploads/${appUserId}/${applicationId}/${requirementTitle}/${timestamp}_${file.name}`;
       const storageRef = ref(storage, storagePath);
+
+      console.log('🔄 Starting file upload:', {
+        fileName: file.name,
+        fileSize: `${(file.size / 1024 / 1024).toFixed(2)}MB`,
+        fileType: file.type,
+        storagePath,
+        appUserId,
+        applicationId
+      });
 
       return new Promise<{ downloadURL: string, path: string }>((resolve, reject) => {
           const uploadTask = uploadBytesResumable(storageRef, file);
 
+          // Set timeout for upload
+          const timeout = setTimeout(() => {
+            console.error('❌ Upload timeout after 5 minutes');
+            reject(new Error('Upload timeout - please try again with a smaller file'));
+          }, 5 * 60 * 1000);
+
           uploadTask.on('state_changed',
               (snapshot) => {
                   const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                  console.log(`📊 Upload progress: ${progress.toFixed(1)}%`);
                   setUploadProgress(prev => ({ ...prev, [requirementTitle]: progress }));
               },
               (error) => {
-                  console.error("Upload failed:", error);
-                  reject(error);
+                  clearTimeout(timeout);
+                  console.error('❌ Upload error:', error);
+                  
+                  // Provide more specific error messages
+                  let errorMessage = 'Upload failed';
+                  if (error.code === 'storage/unauthorized') {
+                    errorMessage = 'Upload permission denied. Please contact support.';
+                  } else if (error.code === 'storage/canceled') {
+                    errorMessage = 'Upload was canceled';
+                  } else if (error.code === 'storage/unknown') {
+                    errorMessage = 'Unknown upload error. Please try again.';
+                  } else if (error.code === 'storage/invalid-format') {
+                    errorMessage = 'Invalid file format';
+                  } else if (error.code === 'storage/invalid-argument') {
+                    errorMessage = 'Invalid upload parameters';
+                  }
+                  
+                  reject(new Error(errorMessage));
               },
               async () => {
-                  const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                  resolve({ downloadURL, path: storagePath });
+                  clearTimeout(timeout);
+                  try {
+                      console.log('✅ Upload completed, getting download URL...');
+                      const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                      console.log('✅ Download URL obtained:', downloadURL);
+                      resolve({ downloadURL, path: storagePath });
+                  } catch (error) {
+                      console.error('❌ Error getting download URL:', error);
+                      reject(new Error('Upload completed but failed to get download URL'));
+                  }
               }
           );
       });
@@ -1292,9 +1357,25 @@ function ApplicationDetailPageContent() {
                                 {isUpdatingProgression && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
                             </SelectTrigger>
                             <SelectContent>
-                                {kaiserSteps.map((step) => (
-                                    <SelectItem key={step} value={step}>
-                                        {step}
+                                {getKaiserStatusesInOrder().map((status) => (
+                                    <SelectItem key={status.id} value={status.status}>
+                                        <div className="flex items-center justify-between w-full">
+                                            <span>{status.status}</span>
+                                            <div className="flex items-center gap-2 ml-2">
+                                                <span className="text-xs text-muted-foreground">#{status.sortOrder}</span>
+                                                <span className={cn(
+                                                    "text-xs px-2 py-0.5 rounded-full",
+                                                    status.category === 'initial' && "bg-blue-100 text-blue-700",
+                                                    status.category === 'assessment' && "bg-purple-100 text-purple-700",
+                                                    status.category === 'authorization' && "bg-orange-100 text-orange-700",
+                                                    status.category === 'placement' && "bg-green-100 text-green-700",
+                                                    status.category === 'completion' && "bg-gray-100 text-gray-700",
+                                                    status.category === 'inactive' && "bg-red-100 text-red-700"
+                                                )}>
+                                                    {status.category}
+                                                </span>
+                                            </div>
+                                        </div>
                                     </SelectItem>
                                 ))}
                             </SelectContent>

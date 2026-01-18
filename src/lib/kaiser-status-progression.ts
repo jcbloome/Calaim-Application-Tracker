@@ -1,94 +1,259 @@
-// Kaiser Status Progression with Sort Order and Next Steps
-export interface KaiserStatusStep {
+// Kaiser Status Progression System
+// Based on Caspio Kaiser_ID_Status table with sort order
+
+export interface KaiserStatus {
   id: number;
   status: string;
   sortOrder: number;
-  nextStep?: string;
   description?: string;
-  category: 'T2038' | 'RN' | 'TierLevel' | 'RCFE' | 'RB' | 'ILS' | 'Other';
+  category: 'initial' | 'assessment' | 'authorization' | 'placement' | 'completion' | 'inactive';
+  isActive: boolean;
 }
 
-export const KAISER_STATUS_PROGRESSION: KaiserStatusStep[] = [
-  // T2038 Process (Initial Authorization) - Note: ID 36 not visible in current table
-  { id: 35, status: 'T2038 Request Ready', sortOrder: 1, nextStep: 'T2038 Requested', category: 'T2038' },
-  { id: 1, status: 'T2038 Requested', sortOrder: 2, nextStep: 'T2038 received, Need First Contact', category: 'T2038' },
-  { id: 21, status: 'T2038 received, Need First Contact', sortOrder: 4, nextStep: 'T2038 received, doc collection', category: 'T2038' },
-  { id: 20, status: 'T2038 received, doc collection', sortOrder: 5, nextStep: 'T2038 Auth Only Email', category: 'T2038' },
-  { id: 33, status: 'T2038 Auth Only Email', sortOrder: 5.4, nextStep: 'RN Visit Needed', category: 'T2038' },
-  
-  // RN Process (Nursing Assessment)
-  { id: 40, status: 'RN Visit Needed', sortOrder: 6.5, nextStep: 'RN/MSW Scheduled', category: 'RN' },
-  { id: 12, status: 'RN/MSW Scheduled', sortOrder: 7, nextStep: 'RN Visit Complete', category: 'RN' },
-  { id: 4, status: 'RN Visit Complete', sortOrder: 8, nextStep: 'Tier Level Request Needed', category: 'RN' },
-  
-  // Tier Level Process (Care Level Determination)
-  { id: 31, status: 'Tier Level Request Needed', sortOrder: 9, nextStep: 'Tier Level Requested', category: 'TierLevel' },
-  { id: 5, status: 'Tier Level Requested', sortOrder: 10, nextStep: 'Tier Level Received', category: 'TierLevel' },
-  { id: 6, status: 'Tier Level Received', sortOrder: 11, nextStep: 'Tier Level Appeal', category: 'TierLevel' },
-  { id: 26, status: 'Tier Level Appeal', sortOrder: 11.2, nextStep: 'RCFE Needed', category: 'TierLevel' },
-  
-  // RCFE Process (Residential Care Facility)
-  { id: 37, status: 'RCFE Needed', sortOrder: 12, nextStep: 'RCFE_Located', category: 'RCFE' },
-  { id: 41, status: 'RCFE_Located', sortOrder: 14, nextStep: 'R&B Needed', category: 'RCFE' },
-  
-  // R&B Process (Room & Board)
-  { id: 39, status: 'R&B Needed', sortOrder: 14.1, nextStep: 'R&B Requested', category: 'RB' },
-  { id: 14, status: 'R&B Requested', sortOrder: 14.2, nextStep: 'R&B Signed', category: 'RB' },
-  { id: 15, status: 'R&B Signed', sortOrder: 14.3, nextStep: 'ILS Contract Email Needed', category: 'RB' },
-  
-  // ILS Process (Independent Living Services)
-  { id: 47, status: 'ILS Contract Email Needed', sortOrder: 15.5, nextStep: 'ILS Sent for Contract', category: 'ILS' },
-  { id: 38, status: 'ILS Sent for Contract', sortOrder: 16, nextStep: null, category: 'ILS' },
-  
-  // Final Statuses
-  { id: 22, status: 'Non-active', sortOrder: 22, nextStep: null, category: 'Other' },
-  { id: 25, status: 'On-Hold', sortOrder: 23, nextStep: null, category: 'Other' },
+export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
+  // Initial Request Phase
+  {
+    id: 35,
+    status: 'T2038 Request Received',
+    sortOrder: 1,
+    description: 'Initial T2038 request has been received and logged',
+    category: 'initial',
+    isActive: true
+  },
+  {
+    id: 1,
+    status: 'T2038 Requested',
+    sortOrder: 2,
+    description: 'T2038 authorization has been formally requested',
+    category: 'initial',
+    isActive: true
+  },
+  {
+    id: 21,
+    status: 'T2038 received, pending review',
+    sortOrder: 4,
+    description: 'T2038 documentation received and awaiting review',
+    category: 'initial',
+    isActive: true
+  },
+  {
+    id: 20,
+    status: 'T2038 received, pending review',
+    sortOrder: 5,
+    description: 'T2038 documentation received and pending review process',
+    category: 'initial',
+    isActive: true
+  },
+  {
+    id: 33,
+    status: 'T2038 Auth Only',
+    sortOrder: 5.4,
+    description: 'T2038 authorization only, no additional services',
+    category: 'authorization',
+    isActive: true
+  },
+  {
+    id: 40,
+    status: 'RN Visit Needed',
+    sortOrder: 6.5,
+    description: 'Registered Nurse visit required for assessment',
+    category: 'assessment',
+    isActive: true
+  },
+  {
+    id: 12,
+    status: 'RN/MSW Scheduled',
+    sortOrder: 7,
+    description: 'RN/MSW assessment visit has been scheduled',
+    category: 'assessment',
+    isActive: true
+  },
+  {
+    id: 4,
+    status: 'RN Visit',
+    sortOrder: 8,
+    description: 'RN visit completed for member assessment',
+    category: 'assessment',
+    isActive: true
+  },
+  {
+    id: 31,
+    status: 'Tier Level Requested',
+    sortOrder: 9,
+    description: 'Tier level determination has been requested',
+    category: 'assessment',
+    isActive: true
+  },
+  {
+    id: 5,
+    status: 'Tier Level Requested',
+    sortOrder: 10,
+    description: 'Tier level assessment requested for member',
+    category: 'assessment',
+    isActive: true
+  },
+  {
+    id: 6,
+    status: 'Tier Level Received',
+    sortOrder: 11,
+    description: 'Tier level determination has been received',
+    category: 'assessment',
+    isActive: true
+  },
+  {
+    id: 26,
+    status: 'Tier Level Appeal',
+    sortOrder: 11.2,
+    description: 'Tier level determination is being appealed',
+    category: 'assessment',
+    isActive: true
+  },
+  {
+    id: 37,
+    status: 'RCFE Needed',
+    sortOrder: 12,
+    description: 'RCFE placement is needed for the member',
+    category: 'placement',
+    isActive: true
+  },
+  {
+    id: 41,
+    status: 'RCFE_Located',
+    sortOrder: 14,
+    description: 'Appropriate RCFE facility has been located',
+    category: 'placement',
+    isActive: true
+  },
+  {
+    id: 39,
+    status: 'R&B Needed',
+    sortOrder: 14.1,
+    description: 'Room and Board authorization needed',
+    category: 'authorization',
+    isActive: true
+  },
+  {
+    id: 14,
+    status: 'R&B Requested',
+    sortOrder: 14.2,
+    description: 'Room and Board authorization has been requested',
+    category: 'authorization',
+    isActive: true
+  },
+  {
+    id: 15,
+    status: 'R&B Signed',
+    sortOrder: 14.3,
+    description: 'Room and Board authorization has been signed',
+    category: 'authorization',
+    isActive: true
+  },
+  {
+    id: 47,
+    status: 'ILS Contract Emailed',
+    sortOrder: 15.5,
+    description: 'Independent Living Services contract has been emailed',
+    category: 'authorization',
+    isActive: true
+  },
+  {
+    id: 38,
+    status: 'ILS Sent for Contract',
+    sortOrder: 16,
+    description: 'ILS documentation sent for contract processing',
+    category: 'authorization',
+    isActive: true
+  },
+  {
+    id: 22,
+    status: 'Non-active',
+    sortOrder: 22,
+    description: 'Case is currently non-active',
+    category: 'inactive',
+    isActive: false
+  },
+  {
+    id: 25,
+    status: 'On-Hold',
+    sortOrder: 23,
+    description: 'Case is temporarily on hold',
+    category: 'inactive',
+    isActive: false
+  },
+  {
+    id: 36,
+    status: 'T2038, Not Required',
+    sortOrder: 0,
+    description: 'T2038 authorization determined not required',
+    category: 'completion',
+    isActive: false
+  }
 ];
 
 // Helper functions
-export function getKaiserStatusById(id: number): KaiserStatusStep | undefined {
-  return KAISER_STATUS_PROGRESSION.find(step => step.id === id);
-}
+export const getKaiserStatusById = (id: number): KaiserStatus | undefined => {
+  return KAISER_STATUS_PROGRESSION.find(status => status.id === id);
+};
 
-export function getKaiserStatusByName(status: string): KaiserStatusStep | undefined {
-  return KAISER_STATUS_PROGRESSION.find(step => step.status === status);
-}
+export const getKaiserStatusByName = (statusName: string): KaiserStatus | undefined => {
+  return KAISER_STATUS_PROGRESSION.find(status => status.status === statusName);
+};
 
-export function getNextStep(currentStatus: string): string | null {
-  const currentStep = getKaiserStatusByName(currentStatus);
-  return currentStep?.nextStep || null;
-}
+export const getKaiserStatusesByCategory = (category: KaiserStatus['category']): KaiserStatus[] => {
+  return KAISER_STATUS_PROGRESSION.filter(status => status.category === category);
+};
 
-export function getSortedKaiserStatuses(): KaiserStatusStep[] {
+export const getActiveKaiserStatuses = (): KaiserStatus[] => {
+  return KAISER_STATUS_PROGRESSION.filter(status => status.isActive);
+};
+
+export const getKaiserStatusesInOrder = (): KaiserStatus[] => {
   return [...KAISER_STATUS_PROGRESSION].sort((a, b) => a.sortOrder - b.sortOrder);
-}
+};
 
-export function getKaiserStatusesByCategory(category: KaiserStatusStep['category']): KaiserStatusStep[] {
-  return KAISER_STATUS_PROGRESSION.filter(step => step.category === category);
-}
-
-// Get the next logical step in the progression
-export function getNextStepInProgression(currentStatus: string): KaiserStatusStep | null {
-  const currentStep = getKaiserStatusByName(currentStatus);
-  if (!currentStep || !currentStep.nextStep) return null;
+export const getNextKaiserStatus = (currentStatusId: number): KaiserStatus | undefined => {
+  const currentStatus = getKaiserStatusById(currentStatusId);
+  if (!currentStatus) return undefined;
   
-  return getKaiserStatusByName(currentStep.nextStep) || null;
-}
-
-// Check if a status is a final status (no next step)
-export function isFinalStatus(status: string): boolean {
-  const step = getKaiserStatusByName(status);
-  return step ? !step.nextStep : false;
-}
-
-// Get all possible next steps for a given status
-export function getPossibleNextSteps(currentStatus: string): KaiserStatusStep[] {
-  const currentStep = getKaiserStatusByName(currentStatus);
-  if (!currentStep) return [];
+  const orderedStatuses = getKaiserStatusesInOrder();
+  const currentIndex = orderedStatuses.findIndex(status => status.id === currentStatusId);
   
-  // Return steps that come after the current step in sort order
-  return KAISER_STATUS_PROGRESSION.filter(step => 
-    step.sortOrder > currentStep.sortOrder && 
-    step.category !== 'Other'
-  ).slice(0, 3); // Limit to next 3 logical steps
-}
+  if (currentIndex === -1 || currentIndex === orderedStatuses.length - 1) return undefined;
+  
+  return orderedStatuses[currentIndex + 1];
+};
+
+export const getPreviousKaiserStatus = (currentStatusId: number): KaiserStatus | undefined => {
+  const currentStatus = getKaiserStatusById(currentStatusId);
+  if (!currentStatus) return undefined;
+  
+  const orderedStatuses = getKaiserStatusesInOrder();
+  const currentIndex = orderedStatuses.findIndex(status => status.id === currentStatusId);
+  
+  if (currentIndex <= 0) return undefined;
+  
+  return orderedStatuses[currentIndex - 1];
+};
+
+export const getKaiserStatusProgress = (currentStatusId: number): {
+  current: KaiserStatus;
+  progress: number;
+  totalSteps: number;
+  category: string;
+} | undefined => {
+  const currentStatus = getKaiserStatusById(currentStatusId);
+  if (!currentStatus) return undefined;
+  
+  const activeStatuses = getActiveKaiserStatuses();
+  const orderedActiveStatuses = activeStatuses.sort((a, b) => a.sortOrder - b.sortOrder);
+  const currentIndex = orderedActiveStatuses.findIndex(status => status.id === currentStatusId);
+  
+  if (currentIndex === -1) return undefined;
+  
+  return {
+    current: currentStatus,
+    progress: currentIndex + 1,
+    totalSteps: orderedActiveStatuses.length,
+    category: currentStatus.category
+  };
+};
