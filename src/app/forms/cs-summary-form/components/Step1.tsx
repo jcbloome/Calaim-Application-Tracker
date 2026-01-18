@@ -106,6 +106,23 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
 
   return (
     <div className="space-y-6">
+      {/* What is CalAIM Information Card */}
+      <Card className="border-l-4 border-blue-500 bg-blue-50">
+        <CardHeader>
+          <CardTitle className="text-blue-900">What is CalAIM?</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-blue-800 leading-relaxed">
+            California Advancing and Innovating Medi-Cal (CalAIM) is California's long-term initiative to 
+            transform the Medi-Cal program by improving quality outcomes, reducing health disparities, and 
+            creating a more seamless and consistent system. It aims to achieve this through a focus on 
+            "whole person care," which includes addressing social determinants of health, integrating physical, 
+            mental, and social services, and launching new programs like Enhanced Care Management (ECM) and 
+            Community Supports. CS and ECM are administered through managed care plans (MCPs). Please refer to our Acronym Glossary above for a full list of acronyms.
+          </p>
+        </CardContent>
+      </Card>
+
       <FormSection 
         title="Member Information" 
         icon={User} 

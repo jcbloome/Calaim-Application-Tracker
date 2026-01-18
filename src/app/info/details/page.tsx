@@ -18,7 +18,7 @@ const infoSections = [
   {
     title: 'Managed Care Plans We Work With',
     content: [
-      'Connections currently is only contracted with Kaiser and Health Net for the CS for Assisted Living Transitions. You must switch to one of these plans if you would like to work with Connections.',
+      'Connections currently is only contracted with Health Net and Kaiser for the CS for Assisted Living Transitions. You must switch to one of these plans if you would like to work with Connections.',
     ],
     list: [
       'Health Net: Serving members in Sacramento and Los Ángeles counties.',
@@ -42,7 +42,7 @@ const infoSections = [
   {
     title: 'Expedited Disenrollment from Molina',
     content: [
-      'If you were randomly assigned to Molina and need to switch to Health Net urgently (especially for SNF residents needing CalAIM transition services), here are three escalation options:',
+      'If you were randomly assigned to Molina and need to switch to Health Net urgently (especially for SNF residents needing CalAIM transition services), here are two escalation options:',
     ],
     list: [
       <>

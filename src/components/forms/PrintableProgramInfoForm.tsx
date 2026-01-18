@@ -75,8 +75,7 @@ export function PrintableProgramInfoForm({
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
           For 35 years Connections has helped private paid families find care homes. We are excited to now 
           be partnered with MCPs as a CS Provider that assists with understanding the program, finding 
-          participating facilities, coordinating paperwork and assessments, and liaising with your Managed 
-          Care Plan to request authorization for the CS. Once a member is placed, we also send a MSW to 
+          participating facilities, coordinating paperwork and assessments, and liaising with your MCP to request authorization for the CS. Once a member is placed, we also send a MSW to 
           visit the member at the RCFE/ARF for monthly quality control checks and provide ongoing care coordination.
         </p>
       </div>
@@ -141,7 +140,7 @@ export function PrintableProgramInfoForm({
           Managed Care Plans We Work With
         </h2>
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed mb-4">
-          Connections currently is only contracted with Kaiser and Health Net for the CS for Assisted Living Transitions. 
+          Connections currently is only contracted with <strong>Health Net</strong> and <strong>Kaiser</strong> for the CS for Assisted Living Transitions. 
           You must switch to one of these plans if you would like to work with Connections.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -190,7 +189,7 @@ export function PrintableProgramInfoForm({
         </h2>
         <p className="text-sm print:text-xs text-gray-700 print:text-black mb-4">
           If you were randomly assigned to Molina and need to switch to Health Net urgently (especially for SNF residents 
-          needing CalAIM transition services), here are three escalation options:
+          needing CalAIM transition services), here are two escalation options:
         </p>
         <div className="space-y-4">
           <div className="p-3 print:p-4 border print:border-black">
@@ -297,7 +296,7 @@ export function PrintableProgramInfoForm({
       {/* Individual Service Plan */}
       <div className="col-span-full mb-8">
         <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
-          What is an Individual Service Plan (ISP)?
+          Individual Service Plan (ISP)
         </h2>
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
           An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's 

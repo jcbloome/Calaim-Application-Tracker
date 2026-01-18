@@ -25,7 +25,7 @@ const faqs = [
     answer: "For 35 years Connections has helped private paid families find care homes. We are now partnered with Managed Care Plans (MCPs) as a Community Supports (CS) Provider. We assist with understanding the program, finding participating facilities, coordinating paperwork and assessments, and liaising with your MCP to request authorization for the CS. Once a member is placed, we also send a MSW to visit for monthly quality control checks and provide ongoing care coordination."
   },
   {
-    question: "What is an Individual Service Plan (ISP)?",
+    question: "Individual Service Plan (ISP)",
     answer: "An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP) clinical team to determine the member's care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the 'assisted living' portion)."
   },
   {
