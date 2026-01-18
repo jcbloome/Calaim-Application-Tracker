@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useAuth } from '@/firebase';
-import { useWindowsNotifications } from '@/components/WindowsNotification';
+import { useGlobalNotifications } from '@/components/NotificationProvider';
 
 interface Note {
   id: string;
@@ -109,7 +109,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
   const [showArchived, setShowArchived] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
-  const { showNotification } = useWindowsNotifications();
+  const { showNotification } = useGlobalNotifications();
   const notesEndRef = useRef<HTMLDivElement>(null);
 
   // New note form state

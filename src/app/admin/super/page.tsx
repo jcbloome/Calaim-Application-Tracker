@@ -1595,9 +1595,9 @@ export default function SuperAdminPage() {
             
              <Card>
                 <CardHeader>
-                    <CardTitle className="text-2xl">Daily Activity Dashboard</CardTitle>
+                    <CardTitle className="text-2xl">Super Admin Tools</CardTitle>
                     <CardDescription>
-                        Monitor daily activities, manage staff roles, and oversee system operations.
+                        Advanced administrative tools for system management, staff roles, and operational oversight.
                     </CardDescription>
                 </CardHeader>
             </Card>

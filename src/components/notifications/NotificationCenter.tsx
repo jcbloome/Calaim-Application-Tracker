@@ -106,7 +106,7 @@ export function NotificationCenter({
         </Button>
       </PopoverTrigger>
       
-      <PopoverContent className="w-80 sm:w-96 p-0" align="end" sideOffset={8}
+      <PopoverContent className="w-80 sm:w-96 p-0" align="end" sideOffset={8}>
         <Card className="border-0 shadow-none">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">

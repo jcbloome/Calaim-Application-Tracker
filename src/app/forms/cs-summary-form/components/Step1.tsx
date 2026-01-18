@@ -231,7 +231,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} />
                   </FormControl>
-                  <FormDescription className="text-sm text-muted-foreground bg-blue-50 border border-blue-200 rounded-md p-3 mt-2">
+                  <div className="text-sm text-muted-foreground bg-blue-50 border border-blue-200 rounded-md p-3 mt-2">
                     <div className="flex items-start gap-2">
                       <div className="text-blue-600 mt-0.5">💡</div>
                       <div>
@@ -242,7 +242,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                         </ul>
                       </div>
                     </div>
-                  </FormDescription>
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
@@ -494,7 +494,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 name="hasLegalRep"
                 render={({ field }) => (
                     <FormItem className="space-y-3">
-                    <FormLabel>Does member have a legal representative?</FormLabel>
+                    <FormLabel>Does member have a legal representative? <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
                         <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col space-y-2">
                             <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="notApplicable" /></FormControl><FormLabel className="font-normal">No, member has capacity and does not need legal representative</FormLabel></FormItem>

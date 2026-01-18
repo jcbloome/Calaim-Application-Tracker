@@ -2,7 +2,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
-import { WindowsNotificationContainer } from '@/components/WindowsNotification';
+import { NotificationProvider } from '@/components/NotificationProvider';
 import { CursorNotificationContainer } from '@/components/CursorStyleNotification';
 import { RealTimeNotifications } from '@/components/RealTimeNotifications';
 import LoginTrackingProvider from '@/components/LoginTrackingProvider';
@@ -36,18 +36,19 @@ export default function RootLayout({
       <body className="min-h-screen flex flex-col">
         <React.Suspense fallback={<div className="flex h-screen w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
           <FirebaseClientProvider>
-            <SessionManager>
-              <LoginTrackingProvider>
-                <AutoLogoutProvider>
-                  {children}
-                </AutoLogoutProvider>
-              </LoginTrackingProvider>
-            </SessionManager>
-            <RealTimeNotifications />
+            <NotificationProvider>
+              <SessionManager>
+                <LoginTrackingProvider>
+                  <AutoLogoutProvider>
+                    {children}
+                  </AutoLogoutProvider>
+                </LoginTrackingProvider>
+              </SessionManager>
+              <RealTimeNotifications />
+            </NotificationProvider>
           </FirebaseClientProvider>
         </React.Suspense>
         <Toaster />
-        <WindowsNotificationContainer />
         <CursorNotificationContainer />
       </body>
     </html>

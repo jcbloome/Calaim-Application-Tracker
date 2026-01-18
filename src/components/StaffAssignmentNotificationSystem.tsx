@@ -17,7 +17,7 @@ import {
   AlertCircle,
   Loader2
 } from 'lucide-react';
-import { useWindowsNotifications } from '@/components/WindowsNotification';
+import { useGlobalNotifications } from '@/components/NotificationProvider';
 
 interface NotificationSettings {
   enabled: boolean;
@@ -37,7 +37,7 @@ interface StaffMember {
 
 export default function StaffAssignmentNotificationSystem() {
   const { toast } = useToast();
-  const { showNotification } = useWindowsNotifications();
+  const { showNotification } = useGlobalNotifications();
   
   const [settings, setSettings] = useState<NotificationSettings>({
     enabled: false,
@@ -85,6 +85,8 @@ export default function StaffAssignmentNotificationSystem() {
     setTestNotificationSent(true);
     
     try {
+      console.log('🔔 Sending test notification...', { settings });
+      
       // Bell notification
       if (settings.bellNotificationEnabled) {
         toast({
@@ -96,34 +98,77 @@ export default function StaffAssignmentNotificationSystem() {
 
       // System tray notification
       if (settings.systemTrayEnabled) {
-        showNotification({
-          type: 'assignment',
+        console.log('📋 Showing system tray notification...');
+        const notificationId = showNotification({
+          type: 'task',
           title: 'New Application Assignment! 📋',
           message: 'Test Member (Kaiser - SNF Transition) has been assigned to you.',
           author: 'CalAIM System',
           memberName: 'Test Member',
-          duration: 5000,
+          priority: 'High',
+          duration: 0, // Stay until manually dismissed
           sound: settings.soundEnabled,
-          soundType: 'notification',
-          animation: 'bounce'
+          soundType: 'arrow-target',
+          animation: 'slide' // More subtle than bounce
         });
+        console.log('✅ System tray notification created with ID:', notificationId);
       }
 
-      toast({
-        title: "Test Notification Sent",
-        description: "Check your system tray and bell notifications!",
-        className: "bg-green-100 text-green-900 border-green-200",
-      });
+        toast({
+          title: "Test Notification Sent",
+          description: "Check your system tray, bell notifications, and email!",
+          className: "bg-green-100 text-green-900 border-green-200",
+        });
 
     } catch (error) {
+      console.error('❌ Test notification failed:', error);
       toast({
         variant: "destructive",
         title: "Test Failed",
-        description: "Could not send test notification.",
+        description: "Could not send test notification. Check console for details.",
       });
     }
 
     setTimeout(() => setTestNotificationSent(false), 3000);
+  };
+
+  const sendTestCaspioNote = async () => {
+    try {
+      console.log('🧪 Sending test Caspio note...');
+      
+      const response = await fetch('/api/test-caspio-note', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          staffMember: 'nick', // Test with Nick
+          memberName: 'Test Member (Caspio)',
+          noteContent: 'This is a test note assigned from Caspio to verify system tray notifications work for Caspio-originated notes.',
+          priority: 'high'
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: "Test Caspio Note Sent",
+          description: "Check for system tray notification and email from Caspio note assignment!",
+          className: "bg-purple-100 text-purple-900 border-purple-200",
+        });
+      } else {
+        throw new Error(result.error || 'Failed to send test Caspio note');
+      }
+
+    } catch (error) {
+      console.error('❌ Test Caspio note failed:', error);
+      toast({
+        variant: "destructive",
+        title: "Test Failed",
+        description: "Could not send test Caspio note. Check console for details.",
+      });
+    }
   };
 
   // Load settings on component mount
@@ -238,12 +283,12 @@ export default function StaffAssignmentNotificationSystem() {
             </div>
           </div>
 
-          {/* Test Notification */}
-          <div className="border-t pt-4">
+          {/* Test Notifications */}
+          <div className="border-t pt-4 space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <Label className="text-sm font-medium">Test Notifications</Label>
-                <p className="text-xs text-muted-foreground">Send a test notification to verify settings</p>
+                <Label className="text-sm font-medium">Test Staff Assignment</Label>
+                <p className="text-xs text-muted-foreground">Send a test staff assignment notification</p>
               </div>
               <Button 
                 variant="outline" 
@@ -259,9 +304,25 @@ export default function StaffAssignmentNotificationSystem() {
                 ) : (
                   <>
                     <Bell className="h-3 w-3 mr-1" />
-                    Send Test
+                    Test Assignment
                   </>
                 )}
+              </Button>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm font-medium">Test Caspio Note</Label>
+                <p className="text-xs text-muted-foreground">Simulate a note assigned from Caspio</p>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={sendTestCaspioNote}
+                disabled={!settings.enabled}
+              >
+                <Bell className="h-3 w-3 mr-1" />
+                Test Caspio Note
               </Button>
             </div>
           </div>

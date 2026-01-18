@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/firebase';
 import { CursorStyleNotification } from './CursorStyleNotification';
+import { useGlobalNotifications } from './NotificationProvider';
 
 interface StaffNotification {
   id: string;
@@ -43,6 +44,7 @@ interface NotificationData {
 
 export function RealTimeNotifications() {
   const { user } = useAuth();
+  const { showNotification } = useGlobalNotifications();
   const [notifications, setNotifications] = useState<NotificationData[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -87,6 +89,22 @@ export function RealTimeNotifications() {
 
         if (newNotifications.length > 0) {
           setNotifications(prev => [...newNotifications, ...prev]);
+          
+          // Show system tray notification for each new notification
+          newNotifications.forEach(notification => {
+            showNotification({
+              type: notification.type === 'assignment' ? 'task' : 'note',
+              title: notification.title,
+              message: notification.message,
+              author: notification.senderName,
+              memberName: notification.memberName,
+              priority: notification.priority === 'high' ? 'High' : notification.priority === 'medium' ? 'Medium' : 'Low',
+              duration: 0, // Stay until dismissed
+              sound: true,
+              soundType: 'arrow-target',
+              animation: 'slide'
+            });
+          });
           
           // Play notification sound if enabled
           playNotificationSound();

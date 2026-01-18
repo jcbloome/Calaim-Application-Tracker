@@ -421,12 +421,12 @@ export default function WindowsNotification({
 
   // Animation classes
   const getAnimationClasses = () => {
-    const base = 'transition-all duration-300 ease-out';
+    const base = 'transition-all duration-500 ease-in-out';
     
     if (isClosing) {
       switch (animation) {
         case 'slide':
-          return `${base} transform translate-x-full opacity-0`;
+          return `${base} transform translate-y-full opacity-0`;
         case 'bounce':
           return `${base} transform scale-75 opacity-0`;
         case 'fade':
@@ -434,14 +434,14 @@ export default function WindowsNotification({
         case 'pulse':
           return `${base} transform scale-90 opacity-0`;
         default:
-          return `${base} transform translate-x-full opacity-0`;
+          return `${base} transform translate-y-full opacity-0`;
       }
     }
 
     if (!isVisible) {
       switch (animation) {
         case 'slide':
-          return `${base} transform translate-x-full opacity-0`;
+          return `${base} transform translate-y-full opacity-0`;
         case 'bounce':
           return `${base} transform scale-75 opacity-0`;
         case 'fade':
@@ -449,7 +449,7 @@ export default function WindowsNotification({
         case 'pulse':
           return `${base} transform scale-110 opacity-0`;
         default:
-          return `${base} transform translate-x-full opacity-0`;
+          return `${base} transform translate-y-full opacity-0`;
       }
     }
 
@@ -459,7 +459,7 @@ export default function WindowsNotification({
       case 'pulse':
         return `${base} transform scale-100 opacity-100 animate-pulse`;
       default:
-        return `${base} transform translate-x-0 opacity-100`;
+        return `${base} transform translate-y-0 opacity-100`;
     }
   };
 
@@ -485,8 +485,7 @@ export default function WindowsNotification({
   return (
     <Card 
       className={cn(
-        'fixed top-4 right-4 z-50 w-80 cursor-pointer shadow-lg border-2',
-        config.bgColor,
+        'fixed bottom-4 right-4 z-50 w-80 cursor-pointer shadow-lg border border-gray-600 bg-gray-900 text-white',
         getAnimationClasses()
       )}
       onClick={handleClick}
@@ -495,15 +494,15 @@ export default function WindowsNotification({
         {/* Header */}
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2">
-            <div className={cn('p-1.5 rounded-full', config.color)}>
+            <div className="p-1.5 rounded-full bg-blue-500">
               <IconComponent className="h-4 w-4 text-white" />
             </div>
             <div className="flex items-center gap-2">
-              <span className={cn('font-semibold text-sm', config.textColor)}>
+              <span className="font-semibold text-sm text-white">
                 {title}
               </span>
               {priority && (
-                <Badge className={cn('text-xs', PRIORITY_COLORS[priority])}>
+                <Badge className="text-xs bg-orange-500 text-white border-orange-400">
                   {priority}
                 </Badge>
               )}
@@ -512,7 +511,7 @@ export default function WindowsNotification({
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 w-6 p-0 hover:bg-gray-200"
+            className="h-6 w-6 p-0 hover:bg-gray-700 text-gray-300 hover:text-white"
             onClick={(e) => {
               e.stopPropagation();
               handleClose();
@@ -524,10 +523,10 @@ export default function WindowsNotification({
 
         {/* Content */}
         <div className="space-y-2">
-          <p className={cn('text-sm', config.textColor)}>{message}</p>
+          <p className="text-sm text-gray-200">{message}</p>
           
           {/* Author and Member info */}
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <div className="flex items-center gap-4 text-xs text-gray-400">
             {author && (
               <div className="flex items-center gap-1">
                 <User className="h-3 w-3" />

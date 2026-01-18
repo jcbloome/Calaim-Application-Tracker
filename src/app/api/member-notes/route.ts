@@ -85,9 +85,25 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { clientId2, noteText, noteType, priority, assignedTo, assignedToName, followUpDate, createdBy, createdByName } = body;
+    const { 
+      clientId2, 
+      noteText, 
+      noteType, 
+      priority, 
+      assignedTo, 
+      assignedToName, 
+      followUpDate, 
+      createdBy, 
+      createdByName,
+      recipientIds,
+      sendNotification,
+      authorId,
+      authorName,
+      memberName,
+      category
+    } = body;
 
-    if (!clientId2 || !noteText || !createdBy) {
+    if (!clientId2 || !noteText || !authorId) {
       return NextResponse.json(
         { success: false, error: 'Missing required fields' },
         { status: 400 }
@@ -99,17 +115,17 @@ export async function POST(request: NextRequest) {
     const newNote: MemberNote = {
       id: `app_${Date.now()}`,
       clientId2,
-      memberName: body.memberName || 'Unknown Member',
+      memberName: memberName || 'Unknown Member',
       noteText,
-      noteType: noteType || 'General',
-      createdBy,
-      createdByName: createdByName || 'Unknown User',
+      noteType: category || noteType || 'General',
+      createdBy: authorId || createdBy,
+      createdByName: authorName || createdByName || 'Unknown User',
       assignedTo,
       assignedToName,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       source: 'App',
-      isRead: !assignedTo, // Unread if assigned to someone else
+      isRead: !assignedTo && (!recipientIds || recipientIds.length === 0), // Unread if assigned to someone else
       priority: priority || 'Medium',
       followUpDate,
       tags: body.tags || []
@@ -124,7 +140,19 @@ export async function POST(request: NextRequest) {
     // In production, also sync to Caspio
     await syncNoteToCaspio(newNote);
 
-    // Send notification if assigned to someone
+    // Send notifications to all recipients if sendNotification is true
+    if (sendNotification && recipientIds && recipientIds.length > 0) {
+      for (const recipientId of recipientIds) {
+        const noteForRecipient = {
+          ...newNote,
+          assignedTo: recipientId,
+          assignedToName: `Staff Member ${recipientId}` // In production, lookup actual name
+        };
+        await sendNoteNotification(noteForRecipient);
+      }
+    }
+
+    // Also send notification if specifically assigned to someone
     if (assignedTo && assignedToName) {
       await sendNoteNotification(newNote);
     }
@@ -249,30 +277,75 @@ async function sendNoteNotification(note: MemberNote): Promise<void> {
 
     console.log(`🔔 Sending notification to ${note.assignedToName} for note: ${note.id}`);
     
-    // In production, this would:
-    // 1. Create a notification record in Firestore
-    // 2. Send push notification via FCM
-    // 3. Send email notification if configured
+    // Create a notification record in Firestore for real-time notifications
+    const { getFirestore } = await import('firebase-admin/firestore');
+    const { adminDb } = await import('@/firebase-admin');
     
     const notification = {
       userId: note.assignedTo,
+      noteId: note.id,
       title: 'New Note Assigned',
       message: `You have been assigned a new ${note.priority.toLowerCase()} priority note for ${note.memberName}`,
+      senderName: note.createdByName,
+      memberName: note.memberName,
       type: 'note_assignment',
-      noteId: note.id,
-      clientId2: note.clientId2,
-      createdAt: new Date().toISOString(),
-      isRead: false
+      priority: note.priority.toLowerCase() as 'low' | 'medium' | 'high',
+      timestamp: getFirestore().Timestamp.now(),
+      isRead: false,
+      applicationId: note.clientId2
     };
 
-    // Simulate notification creation
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // Save to Firestore for real-time notifications
+    await adminDb.collection('staff_notifications').add(notification);
     
-    console.log(`✅ Notification sent to ${note.assignedToName}`);
+    // Send email notification
+    try {
+      // Get staff email (in production, this would be a database lookup)
+      const staffEmail = getStaffEmail(note.assignedTo);
+      
+      if (staffEmail) {
+        const { sendNoteAssignmentEmail } = await import('@/app/actions/send-email');
+        
+        await sendNoteAssignmentEmail({
+          to: staffEmail,
+          staffName: note.assignedToName,
+          memberName: note.memberName,
+          noteContent: note.noteText,
+          priority: note.priority.toLowerCase() as 'low' | 'medium' | 'high',
+          assignedBy: note.createdByName,
+          noteType: note.noteType,
+          source: 'portal',
+          clientId2: note.clientId2
+        });
+        
+        console.log(`📧 Email sent to ${staffEmail} for note assignment`);
+      } else {
+        console.warn(`⚠️ No email found for staff ID: ${note.assignedTo}`);
+      }
+    } catch (emailError) {
+      console.error('❌ Failed to send email notification:', emailError);
+      // Don't throw error - notification was still saved to Firestore
+    }
+    
+    console.log(`✅ Notification saved to Firestore for ${note.assignedToName}`);
 
   } catch (error) {
     console.error('Error sending note notification:', error);
   }
+}
+
+function getStaffEmail(staffId: string): string | null {
+  // Staff email mapping (in production, this would be a database lookup)
+  const staffEmailMap: { [key: string]: string } = {
+    'nick-staff': 'nick@carehomefinders.com',
+    'john-staff': 'john@carehomefinders.com',
+    'jessie-staff': 'jessie@carehomefinders.com',
+    'jason-admin': 'jason@carehomefinders.com',
+    'monica-staff': 'monica@carehomefinders.com',
+    'leidy-staff': 'leidy@carehomefinders.com'
+  };
+  
+  return staffEmailMap[staffId] || null;
 }
 
 function getUserDisplayName(userId: string): string {

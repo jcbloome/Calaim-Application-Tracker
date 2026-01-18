@@ -9,6 +9,7 @@ import { renderAsync } from '@react-email/render';
 import ApplicationStatusEmail from '@/components/emails/ApplicationStatusEmail';
 import ReminderEmail from '@/components/emails/ReminderEmail';
 import StaffAssignmentEmail from '@/components/emails/StaffAssignmentEmail';
+import NoteAssignmentEmail from '@/components/emails/NoteAssignmentEmail';
 import * as admin from 'firebase-admin';
 
 // Note: Firebase Admin is initialized in a central file (e.g., src/ai/dev.ts).
@@ -48,6 +49,18 @@ interface StaffAssignmentPayload {
     calaimStatus: string;
     assignedBy: string;
     nextStepsDate?: string;
+}
+
+interface NoteAssignmentPayload {
+    to: string;
+    staffName: string;
+    memberName: string;
+    noteContent: string;
+    priority: 'low' | 'medium' | 'high';
+    assignedBy: string;
+    noteType?: string;
+    source?: 'portal' | 'caspio';
+    clientId2?: string;
 }
 
 async function getBccRecipients(): Promise<string[]> {
@@ -180,6 +193,66 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
         return data;
     } catch (error) {
         console.error('Failed to send staff assignment email:', error);
+        throw error;
+    }
+};
+
+export const sendNoteAssignmentEmail = async (payload: NoteAssignmentPayload) => {
+    if (!process.env.RESEND_API_KEY) {
+        console.warn("RESEND_API_KEY is not set. Skipping note assignment email.");
+        return null;
+    }
+
+    try {
+        const { 
+            to, 
+            staffName, 
+            memberName, 
+            noteContent, 
+            priority, 
+            assignedBy, 
+            noteType = 'General',
+            source = 'portal',
+            clientId2 
+        } = payload;
+
+        console.log(`📧 Sending note assignment email to ${staffName} (${to})`);
+
+        const emailHtml = await renderAsync(
+            NoteAssignmentEmail({
+                staffName,
+                memberName,
+                noteContent,
+                priority,
+                assignedBy,
+                noteType,
+                source,
+                clientId2
+            })
+        );
+
+        // BCC admin emails for tracking
+        const bccList = [
+            'jason@carehomefinders.com'
+        ].filter(email => email !== to); // Don't BCC if it's the same as TO
+
+        const { data, error } = await resend.emails.send({
+            from: 'CalAIM Notes <noreply@carehomefinders.com>',
+            to: [to],
+            bcc: bccList,
+            subject: `📝 New ${priority.toUpperCase()} Priority Note Assignment: ${memberName}`,
+            html: emailHtml,
+        });
+
+        if (error) {
+            console.error('Resend Note Assignment Error:', error);
+            throw new Error(error.message);
+        }
+
+        console.log(`✅ Note assignment email sent successfully to ${to}`);
+        return data;
+    } catch (error) {
+        console.error('Failed to send note assignment email:', error);
         throw error;
     }
 };

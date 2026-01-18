@@ -255,7 +255,6 @@ export default function AuthorizationTracker() {
       });
     } catch (error: any) {
       console.error('Error fetching authorization data:', error);
-      setError('Failed to fetch authorization data. Please try again.');
       
       toast({
         title: "Connection Error - Using Demo Data",
@@ -1075,8 +1074,7 @@ export default function AuthorizationTracker() {
           )}
         </CardContent>
       </Card>
-        </>
-      )}
+      </>
     </div>
   );
 }
