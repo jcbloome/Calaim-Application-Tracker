@@ -11,6 +11,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { PhoneInput } from '@/components/ui/phone-input';
 import { FormSection } from '@/components/FormSection';
 import { User, Phone, Mail, Shield } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 
 
 export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
@@ -18,6 +19,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
   
   const memberDob = watch('memberDob');
   const hasLegalRep = watch('hasLegalRep');
+  const isPrimaryContactSameAsReferrer = watch('isPrimaryContactSameAsReferrer');
 
   useEffect(() => {
     if (memberDob && /^\d{2}\/\d{2}\/\d{4}$/.test(memberDob)) {
@@ -80,6 +82,18 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
     }
 
   }, [hasLegalRep, setValue, getValues, clearErrors]);
+
+  // Auto-fill primary contact when checkbox is checked
+  useEffect(() => {
+    if (isPrimaryContactSameAsReferrer) {
+      setValue('bestContactFirstName', getValues('referrerFirstName') || '');
+      setValue('bestContactLastName', getValues('referrerLastName') || '');
+      setValue('bestContactPhone', getValues('referrerPhone') || '');
+      setValue('bestContactEmail', getValues('referrerEmail') || '');
+      setValue('bestContactRelationship', getValues('referrerRelationship') || '');
+      clearErrors(['bestContactFirstName', 'bestContactLastName', 'bestContactPhone', 'bestContactEmail', 'bestContactRelationship']);
+    }
+  }, [isPrimaryContactSameAsReferrer, setValue, getValues, clearErrors]);
   
   const formatName = (value: string) => {
     if (!value) return '';
@@ -364,6 +378,30 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
         description="Provide contact details for the member's main point of contact. If member is primary contact reinput member name and put N/A in relationship field."
       >
           <div className="p-4 border rounded-md space-y-4">
+              {/* Checkbox to use referrer as primary contact */}
+              <FormField
+                control={control}
+                name="isPrimaryContactSameAsReferrer"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel className="text-sm font-medium">
+                        Primary contact is the same person inputting this form
+                      </FormLabel>
+                      <FormDescription className="text-xs text-muted-foreground">
+                        Check this box to automatically fill in your information as the primary contact
+                      </FormDescription>
+                    </div>
+                  </FormItem>
+                )}
+              />
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={control} name="bestContactFirstName" render={({ field }) => (
                       <FormItem><FormLabel>First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
@@ -406,8 +444,6 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
         badge="Optional"
         badgeVariant="secondary"
         description="Provide details for a secondary point of contact if available."
-        collapsible={true}
-        defaultCollapsed={true}
       >
              <div className="p-4 border rounded-md space-y-4 mt-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -452,8 +488,6 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
         badge="Optional"
         badgeVariant="outline"
         description="A legal representative (e.g., with Power of Attorney) might be distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role."
-        collapsible={true}
-        defaultCollapsed={true}
       >
             <FormField
                 control={control}

@@ -74,26 +74,6 @@ import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusPro
 
 // Get Kaiser statuses in proper sort order
 const kaiserSteps = getKaiserStatusesInOrder().map(status => status.status);
-  "Needs RN Visit",
-  "RN/MSW Scheduled",
-  "RN Visit Complete",
-  "Need Tier Level",
-  "Tier Level Requested",
-  "Tier Level Received",
-  "Locating RCFEs",
-  "Found RCFE",
-  "R&B Requested",
-  "R&B Signed",
-  "RCFE/ILS for Invoicing",
-  "ILS Contracted (Complete)",
-  "Confirm ILS Contracted",
-  "Complete",
-  "Tier Level Revision Request",
-  "On-Hold",
-  "Tier Level Appeal",
-  "T2038 email but need auth sheet",
-  "Non-active",
-];
 
 const healthNetSteps = [
   "Application Being Reviewed",

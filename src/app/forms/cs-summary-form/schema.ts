@@ -54,6 +54,7 @@ export const formSchema = z.object({
     agency: optionalString,
 
     // Step 1 - Primary Contact Person
+    isPrimaryContactSameAsReferrer: z.boolean().optional(),
     bestContactFirstName: requiredString,
     bestContactLastName: requiredString,
     bestContactRelationship: requiredString,
