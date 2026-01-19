@@ -5,7 +5,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Loader2, Users, Bell, Save, Trash2, ShieldCheck, Mail, UserPlus, RotateCcw } from 'lucide-react';
+import { Loader2, Users, Bell, Save, Trash2, ShieldCheck, Mail, UserPlus, RotateCcw, UserMinus, MoreHorizontal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
@@ -380,26 +380,26 @@ export default function StaffManagementPage() {
                                             {staff.uid !== currentUser?.uid && (
                                                 <AlertDialog>
                                                     <AlertDialogTrigger asChild>
-                                                        <Button variant="destructive" size="sm">
-                                                            <Trash2 className="h-4 w-4 mr-2" />
-                                                            Revoke Access
+                                                        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-red-600 hover:bg-red-50">
+                                                            <UserMinus className="h-4 w-4 mr-2" />
+                                                            Manage Access
                                                         </Button>
                                                     </AlertDialogTrigger>
                                                     <AlertDialogContent>
                                                         <AlertDialogHeader>
-                                                            <AlertDialogTitle>Revoke Admin Access</AlertDialogTitle>
+                                                            <AlertDialogTitle>Remove Admin Access</AlertDialogTitle>
                                                             <AlertDialogDescription>
-                                                                This will remove all admin permissions for {staff.firstName} {staff.lastName}. 
-                                                                They will no longer be able to access the admin portal.
+                                                                This will remove admin permissions for {staff.firstName} {staff.lastName}. 
+                                                                They will no longer have access to the admin portal. This action can be reversed by re-adding them as an admin.
                                                             </AlertDialogDescription>
                                                         </AlertDialogHeader>
                                                         <AlertDialogFooter>
                                                             <AlertDialogCancel>Cancel</AlertDialogCancel>
                                                             <AlertDialogAction 
                                                                 onClick={() => handleRevokeStaff(staff.uid)}
-                                                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                                                className="bg-red-600 text-white hover:bg-red-700"
                                                             >
-                                                                Revoke Access
+                                                                Remove Access
                                                             </AlertDialogAction>
                                                         </AlertDialogFooter>
                                                     </AlertDialogContent>
