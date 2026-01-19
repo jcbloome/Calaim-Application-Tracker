@@ -35,12 +35,26 @@ export default function AdminDashboardPage() {
     setIsLoadingApps(true);
     setError(null);
     try {
-        const appsQuery = collectionGroup(firestore, 'applications');
-        const snapshot = await getDocs(appsQuery).catch(e => {
+        // Query both user applications and admin-created applications
+        const userAppsQuery = collectionGroup(firestore, 'applications');
+        const adminAppsQuery = collection(firestore, 'applications');
+        
+        const [userAppsSnapshot, adminAppsSnapshot] = await Promise.all([
+          getDocs(userAppsQuery).catch(e => {
             errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' }));
             throw e;
-        });
-        const apps = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as WithId<Application & FormValues>[];
+          }),
+          getDocs(adminAppsQuery).catch(e => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection)', operation: 'list' }));
+            throw e;
+          })
+        ]);
+
+        // Combine both user and admin applications
+        const userApps = userAppsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as WithId<Application & FormValues>[];
+        const adminApps = adminAppsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as WithId<Application & FormValues>[];
+        const apps = [...userApps, ...adminApps];
+        
         setAllApplications(apps);
     } catch (err: any) {
         setError(err);

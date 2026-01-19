@@ -87,21 +87,27 @@ export default function ProgressTrackerPage() {
     setIsLoading(true);
     setError(null);
     try {
-        const appsQuery = collectionGroup(firestore, 'applications');
+        // Query both user applications and admin-created applications
+        const userAppsQuery = collectionGroup(firestore, 'applications');
+        const adminAppsQuery = collection(firestore, 'applications');
         const trackersQuery = collectionGroup(firestore, 'staffTrackers');
         const adminRolesQuery = collection(firestore, 'roles_admin');
         const superAdminRolesQuery = collection(firestore, 'roles_super_admin');
         const usersQuery = collection(firestore, 'users');
 
-        const [appsSnap, trackersSnap, adminRolesSnap, superAdminRolesSnap, usersSnap] = await Promise.all([
-            getDocs(appsQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' })); throw e; }),
+        const [userAppsSnap, adminAppsSnap, trackersSnap, adminRolesSnap, superAdminRolesSnap, usersSnap] = await Promise.all([
+            getDocs(userAppsQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' })); throw e; }),
+            getDocs(adminAppsQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection)', operation: 'list' })); throw e; }),
             getDocs(trackersQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'staffTrackers (collection group)', operation: 'list' })); throw e; }),
             getDocs(adminRolesQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'roles_admin (collection)', operation: 'list' })); throw e; }),
             getDocs(superAdminRolesQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'roles_super_admin (collection)', operation: 'list' })); throw e; }),
             getDocs(usersQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'users (collection)', operation: 'list' })); throw e; }),
         ]);
 
-        const apps = appsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Application[];
+        // Combine both user and admin applications
+        const userApps = userAppsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Application[];
+        const adminApps = adminAppsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Application[];
+        const apps = [...userApps, ...adminApps];
         const trackersMap = new Map(trackersSnap.docs.map(doc => [doc.data().applicationId, doc.data() as StaffTracker]));
         
         const adminIds = new Set(adminRolesSnap.docs.map(d => d.id));
@@ -259,7 +265,13 @@ export default function ProgressTrackerPage() {
                                     ))}
                                     <TableCell className="text-right">
                                         <Button asChild variant="outline" size="sm">
-                                            <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View</Link>
+                                            <Link href={
+                                                app.userId 
+                                                    ? `/admin/applications/${app.id}?userId=${app.userId}`
+                                                    : `/admin/applications/${app.id}`
+                                            }>
+                                                View
+                                            </Link>
                                         </Button>
                                     </TableCell>
                                 </TableRow>
