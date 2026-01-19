@@ -380,7 +380,7 @@ export default function StaffManagementPage() {
                                             {staff.uid !== currentUser?.uid && (
                                                 <AlertDialog>
                                                     <AlertDialogTrigger asChild>
-                                                        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-red-600 hover:bg-red-50">
+                                                        <Button variant="outline" size="sm" className="text-muted-foreground border-muted-foreground/30 hover:text-red-600 hover:border-red-300 hover:bg-red-50">
                                                             <UserMinus className="h-4 w-4 mr-2" />
                                                             Manage Access
                                                         </Button>
