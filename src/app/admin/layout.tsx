@@ -76,6 +76,7 @@ const adminNavLinks = [
     isSubmenu: true,
     submenuItems: [
       { href: '/admin/applications', label: 'All Applications', icon: FolderKanban },
+      { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/form-separator', label: 'Form Separator Tool', icon: Scissors }

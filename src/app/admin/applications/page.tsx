@@ -9,7 +9,7 @@ import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
 import { Button } from '@/components/ui/button';
-import { Filter, Trash2, List, FileCheck2, Database, AlertTriangle } from 'lucide-react';
+import { Filter, Trash2, List, FileCheck2, Database, AlertTriangle, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -224,6 +224,13 @@ export default function AdminApplicationsPage() {
             <h1 className="text-3xl font-bold">All Applications</h1>
             <p className="text-muted-foreground">Browse and manage all applications submitted to the platform.</p>
           </div>
+          <div className="flex items-center gap-2">
+            <Button asChild>
+              <Link href="/admin/applications/create">
+                <Plus className="mr-2 h-4 w-4" />
+                Create Application
+              </Link>
+            </Button>
            {selected.length > 0 && isSuperAdmin && (
               <div className="flex gap-2">
                 <Button 
@@ -257,6 +264,7 @@ export default function AdminApplicationsPage() {
                 </AlertDialog>
               </div>
           )}
+          </div>
         </div>
         
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
