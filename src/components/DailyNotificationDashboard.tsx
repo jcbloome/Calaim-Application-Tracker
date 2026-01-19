@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useFirestore } from '@/firebase';
-import { collection, query, where, onSnapshot, orderBy, Timestamp } from 'firebase/firestore';
+import { collection, collectionGroup, query, where, onSnapshot, orderBy, Timestamp } from 'firebase/firestore';
 import { 
   FileText, 
   Upload, 
