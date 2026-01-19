@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Table,
@@ -17,7 +17,7 @@ import { format, parse, differenceInHours } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AlertTriangle, Sparkles, Calendar, User, FileText, UserCheck, ExternalLink } from 'lucide-react';
+import { AlertTriangle, Sparkles, Calendar, User, FileText, UserCheck, ExternalLink, CheckCircle2, Loader2 } from 'lucide-react';
 import type { Application } from '@/lib/definitions';
 import { ApplicationCardSkeleton, ApplicationTableSkeleton } from '@/components/ApplicationCardSkeleton';
 import { EmptyState } from '@/components/EmptyState';
@@ -33,6 +33,8 @@ import {
 } from "@/components/ui/dialog"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
+import { useAdmin } from '@/hooks/use-admin';
 
 type ApplicationStatusType = Application['status'];
 
@@ -240,6 +242,54 @@ export const AdminApplicationsTable = ({
   onSelectionChange?: (id: string, checked: boolean) => void;
   selected?: string[];
 }) => {
+  const { toast } = useToast();
+  const { user } = useAdmin();
+  const [confirmingApps, setConfirmingApps] = useState<Set<string>>(new Set());
+
+  const handleConfirmCsSummary = async (app: WithId<Application & FormValues>) => {
+    if (confirmingApps.has(app.id)) return;
+
+    setConfirmingApps(prev => new Set(prev).add(app.id));
+    
+    try {
+      const response = await fetch('/api/admin/confirm-cs-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationId: app.id,
+          userId: app.userId,
+          confirmedBy: user?.displayName || user?.email || 'Admin'
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: 'CS Summary Confirmed',
+          description: `Successfully confirmed CS Summary for ${app.memberFirstName} ${app.memberLastName}`,
+        });
+        
+        // Refresh the page to show updated status
+        window.location.reload();
+      } else {
+        throw new Error(result.error || 'Failed to confirm CS Summary');
+      }
+    } catch (error: any) {
+      console.error('Error confirming CS Summary:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to confirm CS Summary',
+        variant: 'destructive',
+      });
+    } finally {
+      setConfirmingApps(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(app.id);
+        return newSet;
+      });
+    }
+  };
     
     const sortedApplications = useMemo(() => {
         if (!applications) return [];
@@ -344,6 +394,31 @@ export const AdminApplicationsTable = ({
                             </Tooltip>
                         </TooltipProvider>
                     )}
+                    {/* CS Summary Confirm Button - Show only for In Progress apps without csSummaryComplete */}
+                    {app.status === 'In Progress' && !(app as any).csSummaryComplete && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleConfirmCsSummary(app)}
+                              disabled={confirmingApps.has(app.id)}
+                              className="text-xs px-2 py-1 h-auto bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                            >
+                              {confirmingApps.has(app.id) ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="h-3 w-3" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Confirm CS Summary for {app.memberFirstName} {app.memberLastName}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
                     <QuickViewDialog application={app} />
                     <Button asChild variant="link" className="text-sm font-medium text-primary hover:underline p-0 h-auto">
                         <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View Details</Link>
@@ -416,6 +491,31 @@ export const AdminApplicationsTable = ({
                       {app.status}
                     </Badge>
                     <div className="flex items-center gap-1">
+                      {/* CS Summary Confirm Button - Mobile */}
+                      {app.status === 'In Progress' && !(app as any).csSummaryComplete && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleConfirmCsSummary(app)}
+                                disabled={confirmingApps.has(app.id)}
+                                className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                              >
+                                {confirmingApps.has(app.id) ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <CheckCircle2 className="h-3 w-3" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Confirm CS Summary</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
                       <QuickViewDialog application={app} />
                       <Button asChild size="sm" variant="outline">
                         <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>
