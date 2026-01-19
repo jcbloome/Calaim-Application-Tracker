@@ -104,9 +104,19 @@ export default function ProgressTrackerPage() {
             getDocs(usersQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'users (collection)', operation: 'list' })); throw e; }),
         ]);
 
-        // Combine both user and admin applications
-        const userApps = userAppsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Application[];
-        const adminApps = adminAppsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })) as Application[];
+        // Combine both user and admin applications with unique keys
+        const userApps = userAppsSnap.docs.map(doc => ({ 
+            ...doc.data(), 
+            id: doc.id,
+            uniqueKey: `user-${doc.id}`,
+            source: 'user'
+        })) as Application[];
+        const adminApps = adminAppsSnap.docs.map(doc => ({ 
+            ...doc.data(), 
+            id: doc.id,
+            uniqueKey: `admin-${doc.id}`,
+            source: 'admin'
+        })) as Application[];
         const apps = [...userApps, ...adminApps];
         const trackersMap = new Map(trackersSnap.docs.map(doc => [doc.data().applicationId, doc.data() as StaffTracker]));
         
@@ -236,7 +246,7 @@ export default function ProgressTrackerPage() {
                             const assignedStaff = tracker?.assignedStaffId ? staff.get(tracker.assignedStaffId) : null;
                             
                             return (
-                                <TableRow key={app.id}>
+                                <TableRow key={app.uniqueKey || app.id}>
                                     <TableCell>
                                         <div className="font-medium">{`${app.memberFirstName} ${app.memberLastName}`}</div>
                                         <div className="text-xs text-muted-foreground">
@@ -256,7 +266,7 @@ export default function ProgressTrackerPage() {
                                         )}
                                     </TableCell>
                                     {trackedComponents.map(c => (
-                                        <TableCell key={c.key} className="text-center">
+                                        <TableCell key={`${app.uniqueKey || app.id}-${c.key}`} className="text-center">
                                             <StatusIndicator 
                                                 status={getComponentStatus(app, c.key)}
                                                 formName={c.key}

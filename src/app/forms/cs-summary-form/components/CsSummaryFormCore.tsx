@@ -175,7 +175,7 @@ function CsSummaryFormComponent() {
         if (!docId) {
             if (isAdminCreatedApp) {
                 // This shouldn't happen for admin-created apps, but handle it just in case
-                docId = `admin_app_${Date.now()}`;
+                docId = `admin_app_${Date.now()}_${Math.random().toString(36).substring(7)}`;
                 setInternalApplicationId(docId);
                 isNewDoc = true;
             } else {

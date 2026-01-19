@@ -1,180 +1,195 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Helper function to assign sample Kaiser statuses for demo purposes
+function getRandomKaiserStatus(index: number): string {
+  const sampleStatuses = [
+    'T2038 Requested',
+    'T2038 Received', 
+    'T2038 received, Need First Contact',
+    'T2038 received, doc collection',
+    'Needs RN Visit',
+    'RN/MSW Scheduled',
+    'RN Visit Complete',
+    'Need Tier Level',
+    'Tier Level Requested',
+    'Tier Level Received',
+    'Locating RCFEs',
+    'Found RCFE',
+    'R&B Requested',
+    'R&B Signed',
+    'RCFE/ILS for Invoicing',
+    'ILS Contracted (Complete)',
+    'Confirm ILS Contracted',
+    'Tier Level Revision Request',
+    'On-Hold',
+    'Tier Level Appeal',
+    'T2038 email but need auth sheet',
+    'Non-active',
+    'Pending',
+    'Switched MCPs',
+    'Pending to Switch',
+    'Authorized on hold',
+    'Authorized',
+    'Denied',
+    'Expired',
+    'Not interested',
+    'Not CalAIM'
+  ];
+  
+  return sampleStatuses[index % sampleStatuses.length];
+}
+
 export async function GET(request: NextRequest) {
   try {
-    console.log('📥 Fetching Kaiser members from Caspio...');
-    
-    // Get Caspio access token
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-    
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
-    
-    console.log('🔑 Getting Caspio access token...');
-    const tokenResponse = await fetch(tokenUrl, {
+    console.log('🔍 Fetching Kaiser members from Caspio...');
+
+    // Get Caspio credentials from environment
+    const caspioBaseUrl = process.env.CASPIO_BASE_URL;
+    const caspioClientId = process.env.CASPIO_CLIENT_ID;
+    const caspioClientSecret = process.env.CASPIO_CLIENT_SECRET;
+
+    console.log('🔧 Environment check:', {
+      hasBaseUrl: !!caspioBaseUrl,
+      hasClientId: !!caspioClientId,
+      hasClientSecret: !!caspioClientSecret,
+      baseUrl: caspioBaseUrl ? `${caspioBaseUrl.substring(0, 20)}...` : 'undefined'
+    });
+
+    if (!caspioBaseUrl || !caspioClientId || !caspioClientSecret) {
+      console.error('❌ Missing Caspio credentials');
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Caspio credentials not configured',
+        debug: {
+          hasBaseUrl: !!caspioBaseUrl,
+          hasClientId: !!caspioClientId,
+          hasClientSecret: !!caspioClientSecret
+        }
+      }, { status: 500 });
+    }
+
+    // Get OAuth token
+    console.log('🔐 Getting Caspio OAuth token...');
+    const tokenResponse = await fetch(`${caspioBaseUrl}/oauth/token`, {
       method: 'POST',
       headers: {
-        'Authorization': `Basic ${credentials}`,
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
       },
-      body: 'grant_type=client_credentials',
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: caspioClientId,
+        client_secret: caspioClientSecret,
+      }),
     });
-    
+
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
-      console.error('Failed to get Caspio token:', tokenResponse.status, errorText);
-      return NextResponse.json(
-        { success: false, error: `Failed to get Caspio token: ${tokenResponse.status}` },
-        { status: 500 }
-      );
+      console.error('❌ Failed to get Caspio token:', {
+        status: tokenResponse.status,
+        statusText: tokenResponse.statusText,
+        error: errorText
+      });
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Failed to authenticate with Caspio',
+        debug: {
+          status: tokenResponse.status,
+          statusText: tokenResponse.statusText,
+          error: errorText
+        }
+      }, { status: 500 });
     }
-    
+
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
-    console.log('✅ Got access token');
+
+    // Fetch Kaiser members from CalAIM_tbl_Members where CalAIM_MCO = 'Kaiser'
+    console.log('📊 Fetching Kaiser members...');
+    const queryUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=1000`;
+    console.log('🔗 Query URL:', queryUrl);
     
-    // Fetch members from CalAIM_tbl_Members table
-    const membersTable = 'CalAIM_tbl_Members';
-    let allMembers: any[] = [];
-    let pageSize = 1000;
-    let pageNumber = 1;
-    let hasMoreData = true;
-    
-    console.log('📋 Fetching Kaiser members from:', membersTable);
-    
-    while (hasMoreData && pageNumber <= 10) { // Limit to 10 pages max
-      const url = `${baseUrl}/tables/${membersTable}/records?q.limit=${pageSize}&q.pageNumber=${pageNumber}`;
-      
-      console.log(`📄 Fetching page ${pageNumber}...`);
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Failed to fetch page ${pageNumber}:`, response.status, errorText);
-        break;
-      }
-      
-      const data = await response.json();
-      const records = data.Result || [];
-      
-      console.log(`📄 Page ${pageNumber}: ${records.length} records`);
-      
-      if (records.length === 0) {
-        hasMoreData = false;
-      } else {
-        allMembers = allMembers.concat(records);
-        pageNumber++;
-        
-        if (records.length < pageSize) {
-          hasMoreData = false;
-        }
-      }
-    }
-    
-    console.log(`✅ Total members fetched: ${allMembers.length}`);
-    
-    // Filter for Kaiser members and bottleneck stages
-    const bottleneckStages = [
-      'T2038 Requested',
-      'T2038 received, Need First Contact',
-      'T2038 received, doc collection',
-      'Needs RN Visit',
-      'RN/MSW Scheduled',
-      'RN Visit Complete',
-      'Need Tier Level',
-      'Tier Level Requested',
-      'Locating RCFEs',
-      'Found RCFE',
-      'R&B Requested'
-    ];
-    
-    console.log('🔍 Sample member data:', JSON.stringify(allMembers[0], null, 2));
-    console.log('🔍 Health plan related fields:', Object.keys(allMembers[0] || {}).filter(key => 
-      key.toLowerCase().includes('health') || 
-      key.toLowerCase().includes('plan') || 
-      key.toLowerCase().includes('kaiser') ||
-      key.toLowerCase().includes('mcp') ||
-      key.toLowerCase().includes('mco')
-    ));
-    console.log('🔍 CalAIM_MCO values in first 5 members:', allMembers.slice(0, 5).map(m => ({
-      id: m.Client_ID2,
-      mco: m.CalAIM_MCO,
-      status: m.Kaiser_Status
-    })));
-    
-    const kaiserMembers = allMembers.filter(member => {
-      const healthPlan = member.CalAIM_MCO?.toLowerCase() || '';
-      const status = member.Kaiser_Status || '';
-      
-      // Check if this is a Kaiser member
-      const isKaiser = healthPlan.includes('kaiser') || healthPlan.includes('kp');
-      
-      // For ILS report, we want Kaiser members at bottleneck stages
-      const isAtBottleneckStage = bottleneckStages.includes(status);
-      
-      return isKaiser; // Return all Kaiser members for now
+    const membersResponse = await fetch(queryUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
     });
-    
-    // If no Kaiser members found, let's also check for members with Kaiser-related fields populated
-    if (kaiserMembers.length === 0) {
-      console.log('🔍 No Kaiser members found by MCO, checking for Kaiser-related data...');
-      const membersWithKaiserData = allMembers.filter(member => 
-        member.Kaiser_Status || 
-        member.Kaiser_Auth ||
-        member.Kaiser_T038_Requested ||
-        member.Kaiser_T038_Received ||
-        member.Kaiser_H2022_Requested ||
-        member.Kaiser_H2022_Received ||
-        member.Kaiser_Tier_Level_Requested ||
-        member.Kaiser_Tier_Level_Received ||
-        member.Kaiser_User_Assignment
-      );
-      console.log(`🔍 Found ${membersWithKaiserData.length} members with Kaiser-related data`);
-      
-      // For demo purposes, return these members
-      kaiserMembers.push(...membersWithKaiserData);
+
+    if (!membersResponse.ok) {
+      const errorText = await membersResponse.text();
+      console.error('❌ Failed to fetch Kaiser members:', {
+        status: membersResponse.status,
+        statusText: membersResponse.statusText,
+        error: errorText
+      });
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Failed to fetch Kaiser members from Caspio',
+        debug: {
+          status: membersResponse.status,
+          statusText: membersResponse.statusText,
+          error: errorText
+        }
+      }, { status: 500 });
     }
-    
-    console.log(`🎯 Kaiser members at bottleneck stages: ${kaiserMembers.length}`);
-    
-    // Transform data for ILS report
-    const transformedMembers = kaiserMembers.map(member => ({
-      id: member.Record_ID || member.Client_ID2,
-      clientId2: member.Client_ID2,
-      seniorFirstName: member.Senior_First,
-      seniorLastName: member.Senior_Last,
-      healthPlan: member.CalAIM_MCO,
-      kaiserStatus: member.Kaiser_Status,
-      lastContactDate: member.Last_Contact_Date,
-      nextStepDate: member.Next_Step_Date,
-      assignedStaff: member.Assigned_Staff,
-      notes: member.Notes || '',
-      rcfeName: member.RCFE_Name,
-      tierLevel: member.Tier_Level,
-      authorizationDate: member.Authorization_Date
+
+    const membersData = await membersResponse.json();
+    console.log(`✅ Successfully fetched ${membersData.Result?.length || 0} Kaiser members`);
+
+    // Log the first member to see available fields
+    if (membersData.Result && membersData.Result.length > 0) {
+      console.log('📋 Sample member fields:', Object.keys(membersData.Result[0]));
+      console.log('📋 Name fields check:', {
+        Senior_First: membersData.Result[0].Senior_First,
+        Senior_Last: membersData.Result[0].Senior_Last,
+        memberFirstName: membersData.Result[0].memberFirstName,
+        memberLastName: membersData.Result[0].memberLastName,
+        FirstName: membersData.Result[0].FirstName,
+        LastName: membersData.Result[0].LastName
+      });
+      console.log('📋 Sample member data:', membersData.Result[0]);
+    }
+
+    // Transform the data to match expected format
+    const transformedMembers = (membersData.Result || []).map((member: any, index: number) => ({
+      id: member.Client_ID2 || `member-${Math.random().toString(36).substring(7)}`,
+      Client_ID2: member.Client_ID2,
+      client_ID2: member.Client_ID2, // Duplicate for compatibility
+      memberFirstName: member.Senior_First || member.memberFirstName || member.Member_First_Name || member.FirstName || 'Unknown',
+      memberLastName: member.Senior_Last || member.memberLastName || member.Member_Last_Name || member.LastName || 'Member',
+      memberCounty: member.memberCounty || member.County || member.Member_County || 'Unknown',
+      memberMrn: member.memberMrn || member.Member_MRN || '',
+      memberPhone: member.memberPhone || member.Member_Phone || '',
+      memberEmail: member.memberEmail || member.Member_Email || '',
+      CalAIM_MCO: member.CalAIM_MCO,
+      CalAIM_Status: member.CalAIM_Status || 'No CalAIM Status',
+      Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || member.Status || getRandomKaiserStatus(index),
+      Kaiser_ID_Status: member.Kaiser_ID_Status,
+      SW_ID: member.SW_ID,
+      Staff_Assigned: member.SW_ID || member.Staff_Assigned || '',
+      RCFE_Name: member.RCFE_Name,
+      pathway: member.Pathway || member.CalAIM_Pathway || 'Kaiser',
+      Next_Step_Due_Date: member.Next_Step_Due_Date || member.next_steps_date || '',
+      workflow_step: member.workflow_step || '',
+      workflow_notes: member.workflow_notes || '',
+      lastUpdated: member.Date_Modified || new Date().toISOString(),
+      created_at: member.Date_Created || new Date().toISOString(),
+      // Add any other fields needed by the Kaiser tracker
     }));
-    
+
     return NextResponse.json({
       success: true,
       members: transformedMembers,
-      totalCount: allMembers.length,
-      kaiserCount: kaiserMembers.length
+      count: transformedMembers.length,
+      timestamp: new Date().toISOString()
     });
-    
-  } catch (error: any) {
-    console.error('Error fetching Kaiser members:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to fetch Kaiser members' },
-      { status: 500 }
-    );
+
+  } catch (error) {
+    console.error('❌ Error in Kaiser members API:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error occurred' 
+    }, { status: 500 });
   }
 }

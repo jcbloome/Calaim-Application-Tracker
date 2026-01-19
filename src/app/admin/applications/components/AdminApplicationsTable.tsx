@@ -293,7 +293,7 @@ export const AdminApplicationsTable = ({
                 differenceInHours(lastUpdatedDate, submissionDate) > 1;
 
               return (
-              <TableRow key={app.id} className={cn(
+              <TableRow key={app.uniqueKey || `app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
                 isNew && "bg-blue-50 border-l-4 border-l-blue-400",
                 isRecentlyUpdated && "bg-amber-50 border-l-4 border-l-amber-400"
               )}>
@@ -383,7 +383,7 @@ export const AdminApplicationsTable = ({
               differenceInHours(lastUpdatedDate, submissionDate) > 1;
 
             return (
-              <div key={app.id} className={cn(
+              <div key={app.uniqueKey || `mobile-app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
                 "bg-white border rounded-lg p-3 shadow-sm",
                 isNew && "border-l-4 border-l-blue-400 bg-blue-50",
                 isRecentlyUpdated && "border-l-4 border-l-amber-400 bg-amber-50"

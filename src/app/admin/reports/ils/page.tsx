@@ -3,9 +3,7 @@
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useFunctions } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
-import { httpsCallable } from 'firebase/functions';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { Loader2, Printer, ArrowLeft, Users, AlertCircle } from 'lucide-react';
@@ -33,7 +31,6 @@ type ILSMember = {
 };
 
 export default function IlsReportPage() {
-  const functions = useFunctions();
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
 
   const [ilsMembers, setIlsMembers] = useState<ILSMember[]>([]);
@@ -41,7 +38,7 @@ export default function IlsReportPage() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchILSMembers = useCallback(async () => {
-    if (isAdminLoading || !functions || !isSuperAdmin) {
+    if (isAdminLoading || !isSuperAdmin) {
       if (!isAdminLoading) setIsLoading(false);
       return;
     }
@@ -50,11 +47,14 @@ export default function IlsReportPage() {
     setError(null);
     
     try {
-      console.log('📥 Fetching ILS members from Caspio...');
-      const fetchILSMembersFunction = httpsCallable(functions, 'fetchILSMembersFromCaspio');
-      const result = await fetchILSMembersFunction({});
+      console.log('📥 Fetching ILS members from API...');
+      const response = await fetch('/api/ils-members');
       
-      const data = result.data as any;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
       
       if (data.success && data.members) {
         console.log(`✅ Successfully fetched ${data.count} ILS members`);
@@ -69,7 +69,7 @@ export default function IlsReportPage() {
         setIlsMembers(sortedMembers);
       } else {
         console.error('❌ Failed to fetch ILS members:', data);
-        setError('Failed to fetch ILS members from Caspio');
+        setError(data.error || 'Failed to fetch ILS members from Caspio');
       }
     } catch (error) {
       console.error('❌ Error fetching ILS members:', error);
@@ -77,7 +77,7 @@ export default function IlsReportPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [functions, isSuperAdmin, isAdminLoading]);
+  }, [isSuperAdmin, isAdminLoading]);
 
   useEffect(() => {
     fetchILSMembers();

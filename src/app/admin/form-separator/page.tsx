@@ -53,11 +53,17 @@ import { Document, Page, pdfjs } from 'react-pdf';
 // Set up PDF.js worker with proper error handling
 if (typeof window !== 'undefined') {
   try {
-    pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+    // Use a more stable CDN and version
+    pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   } catch (error) {
     console.warn('PDF.js worker setup failed:', error);
-    // Fallback worker source
-    pdfjs.GlobalWorkerOptions.workerSrc = '//unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    // Multiple fallback options
+    try {
+      pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+    } catch (fallbackError) {
+      console.warn('Fallback PDF.js worker setup failed:', fallbackError);
+      pdfjs.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    }
   }
 }
 
@@ -132,7 +138,20 @@ export default function FormSeparatorPage() {
   const [newFormType, setNewFormType] = useState<string>('');
   const [useFallbackViewer, setUseFallbackViewer] = useState(false);
   const [newFormName, setNewFormName] = useState<string>('');
+  const [pdfLoadError, setPdfLoadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize PDF.js worker on component mount
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && !pdfjs.GlobalWorkerOptions.workerSrc) {
+      try {
+        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      } catch (error) {
+        console.warn('Failed to set PDF.js worker:', error);
+        setUseFallbackViewer(true);
+      }
+    }
+  }, []);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -174,9 +193,11 @@ export default function FormSeparatorPage() {
     setNumPages(numPages);
   };
 
-  // Fallback PDF viewer using iframe
+  // Enhanced fallback PDF viewer with image conversion
   const FallbackPDFViewer = ({ file }: { file: File }) => {
     const [pdfUrl, setPdfUrl] = useState<string>('');
+    const [pageImages, setPageImages] = useState<{ [key: number]: string }>({});
+    const [loadingImages, setLoadingImages] = useState<Set<number>>(new Set());
 
     React.useEffect(() => {
       const url = URL.createObjectURL(file);
@@ -184,24 +205,103 @@ export default function FormSeparatorPage() {
       return () => URL.revokeObjectURL(url);
     }, [file]);
 
+    // Convert PDF page to image for better preview
+    const convertPageToImage = async (pageNum: number) => {
+      if (pageImages[pageNum] || loadingImages.has(pageNum)) return;
+
+      setLoadingImages(prev => new Set([...prev, pageNum]));
+      
+      try {
+        // Use PDF.js to render page as canvas, then convert to image
+        const loadingTask = pdfjs.getDocument(file);
+        const pdf = await loadingTask.promise;
+        const page = await pdf.getPage(pageNum);
+        
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d')!;
+        const viewport = page.getViewport({ scale: 1.5 });
+        
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        await page.render({ canvasContext: context, viewport }).promise;
+        
+        const imageUrl = canvas.toDataURL('image/jpeg', 0.8);
+        setPageImages(prev => ({ ...prev, [pageNum]: imageUrl }));
+        
+      } catch (error) {
+        console.error(`Failed to convert page ${pageNum} to image:`, error);
+      } finally {
+        setLoadingImages(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(pageNum);
+          return newSet;
+        });
+      }
+    };
+
     return (
       <div className="space-y-4">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="flex items-center">
-            <AlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
-            <p className="text-yellow-800">
-              PDF preview unavailable. Using fallback viewer.
+            <AlertCircle className="h-5 w-5 text-blue-600 mr-2" />
+            <p className="text-blue-800">
+              Using enhanced page viewer. Click pages to select them for form creation.
             </p>
           </div>
         </div>
-        <iframe
-          src={pdfUrl}
-          className="w-full h-96 border rounded-lg"
-          title="PDF Preview"
-        />
+        
+        {/* Page Grid with Image Previews */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {Array.from({ length: numPages }, (_, i) => i + 1).map((pageNum) => (
+            <div
+              key={pageNum}
+              className={`relative border-2 rounded cursor-pointer transition-all ${
+                selectedPages.has(pageNum)
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-400'
+              }`}
+              onClick={() => togglePageSelection(pageNum)}
+              onMouseEnter={() => convertPageToImage(pageNum)}
+            >
+              <div className="aspect-[3/4] bg-gray-100 rounded flex items-center justify-center relative overflow-hidden">
+                {pageImages[pageNum] ? (
+                  <img
+                    src={pageImages[pageNum]}
+                    alt={`Page ${pageNum}`}
+                    className="w-full h-full object-contain"
+                  />
+                ) : loadingImages.has(pageNum) ? (
+                  <div className="flex flex-col items-center">
+                    <Loader2 className="h-6 w-6 animate-spin mb-2" />
+                    <span className="text-xs">Loading...</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center text-gray-500">
+                    <FileText className="h-8 w-8 mb-2" />
+                    <span className="text-xs">Page {pageNum}</span>
+                    <span className="text-xs opacity-75">Hover to preview</span>
+                  </div>
+                )}
+              </div>
+              
+              <div className="absolute top-2 left-2 bg-black bg-opacity-75 text-white px-2 py-1 rounded text-xs">
+                {pageNum}
+              </div>
+              
+              {selectedPages.has(pageNum) && (
+                <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center">
+                  <CheckCircle className="h-4 w-4" />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Manual Selection Buttons */}
         <div className="text-center">
           <p className="text-sm text-muted-foreground mb-4">
-            Select pages manually using the page numbers below:
+            Or select pages manually:
           </p>
           <div className="flex flex-wrap gap-2 justify-center">
             {Array.from({ length: numPages }, (_, i) => i + 1).map((pageNum) => (
@@ -211,7 +311,7 @@ export default function FormSeparatorPage() {
                 size="sm"
                 onClick={() => togglePageSelection(pageNum)}
               >
-                Page {pageNum}
+                {pageNum}
               </Button>
             ))}
           </div>
@@ -457,30 +557,39 @@ export default function FormSeparatorPage() {
                         }
                       >
                         <Document
-                      file={file}
-                      onLoadSuccess={onDocumentLoadSuccess}
-                      onLoadError={(error) => {
-                        console.error('PDF load error:', error);
-                        toast({
-                          title: "PDF Load Error",
-                          description: "Failed to load PDF. Please try a different file.",
-                          variant: "destructive"
-                        });
-                      }}
-                      className="space-y-4"
-                      loading={
-                        <div className="flex items-center justify-center p-8">
-                          <Loader2 className="h-8 w-8 animate-spin" />
-                          <span className="ml-2">Loading PDF...</span>
-                        </div>
-                      }
-                      error={
-                        <div className="flex items-center justify-center p-8 text-red-600">
-                          <AlertCircle className="h-8 w-8 mr-2" />
-                          <span>Failed to load PDF</span>
-                        </div>
-                      }
-                    >
+                          file={file}
+                          onLoadSuccess={(pdf) => {
+                            setNumPages(pdf.numPages);
+                            setPdfLoadError(null);
+                            console.log('PDF loaded successfully:', pdf.numPages, 'pages');
+                          }}
+                          onLoadError={(error) => {
+                            console.error('PDF load error:', error);
+                            setPdfLoadError(error.message || 'Failed to load PDF');
+                            setUseFallbackViewer(true);
+                            toast({
+                              title: "PDF Load Error",
+                              description: "Switching to fallback viewer. You can still select pages manually.",
+                              variant: "destructive"
+                            });
+                          }}
+                          className="space-y-4"
+                          loading={
+                            <div className="flex items-center justify-center p-8">
+                              <Loader2 className="h-8 w-8 animate-spin" />
+                              <span className="ml-2">Loading PDF...</span>
+                            </div>
+                          }
+                          error={
+                            <div className="flex flex-col items-center justify-center p-8 text-red-600">
+                              <AlertCircle className="h-8 w-8 mb-2" />
+                              <span className="mb-4">Failed to load PDF: {pdfLoadError}</span>
+                              <Button onClick={() => setUseFallbackViewer(true)} variant="outline">
+                                Use Manual Page Selection
+                              </Button>
+                            </div>
+                          }
+                        >
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                         {Array.from({ length: numPages }, (_, i) => i + 1).map((pageNum) => (
                           <div

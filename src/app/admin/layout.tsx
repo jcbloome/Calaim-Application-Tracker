@@ -70,6 +70,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } 
 
 const adminNavLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/admin/activity-log', label: 'Activity Log', icon: Activity },
   { 
     label: 'Application Management', 
     icon: FolderKanban, 

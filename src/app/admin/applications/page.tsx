@@ -70,9 +70,19 @@ export default function AdminApplicationsPage() {
         })
       ]);
 
-      // Combine both user and admin applications
-      const userApps = userAppsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as WithId<Application & FormValues>[];
-      const adminApps = adminAppsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as WithId<Application & FormValues>[];
+      // Combine both user and admin applications with unique keys
+      const userApps = userAppsSnapshot.docs.map((doc, index) => ({ 
+        ...doc.data(), 
+        id: doc.id,
+        uniqueKey: `user-${doc.id}-${index}`,
+        source: 'user'
+      })) as WithId<Application & FormValues>[];
+      const adminApps = adminAppsSnapshot.docs.map((doc, index) => ({ 
+        ...doc.data(), 
+        id: doc.id,
+        uniqueKey: `admin-${doc.id}-${index}`,
+        source: 'admin'
+      })) as WithId<Application & FormValues>[];
       const apps = [...userApps, ...adminApps];
       
       setAllApplications(apps);

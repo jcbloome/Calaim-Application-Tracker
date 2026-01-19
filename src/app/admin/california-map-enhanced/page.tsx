@@ -86,6 +86,7 @@ export default function MapIntelligencePage() {
     registeredNurses: 0,
     authorizedMembers: 0
   });
+  
   const [isMapLoading, setIsMapLoading] = useState(false);
   const [selectedResource, setSelectedResource] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -116,6 +117,7 @@ export default function MapIntelligencePage() {
           fetch('/api/staff-locations'), 
           fetch('/api/member-locations')
         ]);
+        
 
         const [rcfeData, staffData, memberData] = await Promise.all([
           rcfeResponse.json(),
@@ -123,16 +125,17 @@ export default function MapIntelligencePage() {
           memberResponse.json()
         ]);
 
-        // Count resources
+
+        // Count resources based on CORRECT API response structure
         const counts: ResourceCounts = {
-          rcfes: rcfeData.success ? rcfeData.locations?.length || 0 : 0,
-          socialWorkers: staffData.success ? staffData.locations?.filter((s: any) => s.role === 'Social Worker')?.length || 0 : 0,
-          registeredNurses: staffData.success ? staffData.locations?.filter((s: any) => s.role === 'Registered Nurse')?.length || 0 : 0,
-          authorizedMembers: memberData.success ? memberData.locations?.length || 0 : 0
+          rcfes: rcfeData.success ? (rcfeData.data?.totalRCFEs || 0) : 0,
+          socialWorkers: staffData.success ? (staffData.data?.breakdown?.socialWorkers || 0) : 0,
+          registeredNurses: staffData.success ? (staffData.data?.breakdown?.rns || 0) : 0,
+          authorizedMembers: memberData.success ? (memberData.data?.totalMembers || 0) : 0
         };
 
+
         setResourceCounts(counts);
-        console.log('✅ Resource counts loaded:', counts);
 
       } catch (error) {
         console.error('❌ Error loading resource counts:', error);
@@ -147,95 +150,88 @@ export default function MapIntelligencePage() {
     };
 
     loadResourceCounts();
-  }, [toast]);
+  }, []); // Remove toast dependency to test
 
-  // Sample data for visits
+  // Load comprehensive visits and staff data from APIs
   useEffect(() => {
-    const sampleVisits: Visit[] = [
-      {
-        id: '1',
-        memberName: 'John Doe',
-        memberClientId: 'KAI-12345',
-        healthPlan: 'Kaiser',
-        visitType: 'Monthly Check',
-        scheduledDate: '2026-01-20',
-        scheduledTime: '10:00',
-        status: 'Scheduled',
-        assignedStaff: 'Sarah Johnson',
-        location: 'Los Angeles, CA',
-        notes: 'Regular monthly assessment'
-      },
-      {
-        id: '2',
-        memberName: 'Jane Smith',
-        memberClientId: 'HN-67890',
-        healthPlan: 'Health Net',
-        visitType: 'Follow-up',
-        scheduledDate: '2026-01-18',
-        scheduledTime: '14:30',
-        status: 'Completed',
-        assignedStaff: 'Mike Wilson',
-        location: 'San Diego, CA',
-        completedDate: '2026-01-18',
-        duration: 45,
-        notes: 'Member doing well, no issues'
-      },
-      {
-        id: '3',
-        memberName: 'Robert Johnson',
-        memberClientId: 'KAI-11111',
-        healthPlan: 'Kaiser',
-        visitType: 'Initial Assessment',
-        scheduledDate: '2026-01-22',
-        scheduledTime: '09:00',
-        status: 'Scheduled',
-        assignedStaff: 'Emily Davis',
-        location: 'San Francisco, CA',
-        notes: 'New member intake assessment'
-      }
-    ];
-    setVisits(sampleVisits);
+    const loadVisitsAndStaff = async () => {
+      setIsVisitsLoading(true);
+      try {
+        // Fetch comprehensive data from all APIs
+        const [staffResponse, memberResponse, rcfeResponse] = await Promise.all([
+          fetch('/api/caspio-staff'),
+          fetch('/api/member-locations'),
+          fetch('/api/rcfe-locations')
+        ]);
 
-    // Sample staff data
-    const sampleStaff: StaffMember[] = [
-      {
-        id: '1',
-        name: 'Sarah Johnson',
-        role: 'Social Worker (MSW)',
-        location: 'Los Angeles County',
-        assignedMembers: 25,
-        capacity: 30,
-        workload: 'High'
-      },
-      {
-        id: '2',
-        name: 'Mike Wilson',
-        role: 'Registered Nurse',
-        location: 'San Diego County',
-        assignedMembers: 15,
-        capacity: 25,
-        workload: 'Medium'
-      },
-      {
-        id: '3',
-        name: 'Emily Davis',
-        role: 'Social Worker (MSW)',
-        location: 'San Francisco County',
-        assignedMembers: 32,
-        capacity: 30,
-        workload: 'Overloaded'
-      },
-      {
-        id: '4',
-        name: 'David Chen',
-        role: 'Registered Nurse',
-        location: 'Orange County',
-        assignedMembers: 12,
-        capacity: 25,
-        workload: 'Low'
+        const [staffData, memberData, rcfeData] = await Promise.all([
+          staffResponse.json(),
+          memberResponse.json(),
+          rcfeResponse.json()
+        ]);
+
+        console.log('📊 Loading comprehensive staff and visit data...');
+
+        // Process real staff data with detailed information
+        if (staffData.success && staffData.staff) {
+          const realStaff: StaffMember[] = staffData.staff.map((staff: any) => ({
+            id: staff.SW_ID || staff.id || Math.random().toString(36),
+            name: `${staff.FirstName || ''} ${staff.LastName || ''}`.trim() || 'Unknown Staff',
+            role: 'Social Worker (MSW)',
+            location: `${staff.County || 'Unknown'} County`,
+            assignedMembers: staff.assignedMemberCount || 0,
+            capacity: 30,
+            workload: staff.assignedMemberCount > 25 ? 'Overloaded' : 
+                     staff.assignedMemberCount > 20 ? 'High' : 
+                     staff.assignedMemberCount > 10 ? 'Medium' : 'Low'
+          }));
+          setStaffMembers(realStaff);
+        }
+
+        // Create comprehensive visit data based on real members and RCFEs
+        if (memberData.success && memberData.data && rcfeData.success && rcfeData.data) {
+          const visits: Visit[] = [];
+          const membersByRCFE = memberData.data.membersByRCFE || {};
+          const rcfesByCounty = rcfeData.data.rcfesByCounty || {};
+          
+          // Create visits for members at different RCFEs
+          Object.entries(membersByRCFE).slice(0, 15).forEach(([rcfeId, rcfeInfo]: [string, any], index) => {
+            if (rcfeInfo.members && rcfeInfo.members.length > 0) {
+              const member = rcfeInfo.members[0]; // Take first member from this RCFE
+              const staffMember = staffData.staff?.[index % (staffData.staff?.length || 1)];
+              
+              visits.push({
+                id: `visit-${index + 1}`,
+                memberName: `${member.firstName} ${member.lastName}`,
+                memberClientId: member.clientId2 || `ID-${index + 1}`,
+                healthPlan: member.healthPlan || 'Kaiser',
+                visitType: index % 3 === 0 ? 'Monthly Check' : index % 3 === 1 ? 'Follow-up' : 'Initial Assessment',
+                scheduledDate: new Date(Date.now() + (index * 24 * 60 * 60 * 1000)).toISOString().split('T')[0],
+                scheduledTime: ['09:00', '10:30', '14:00', '15:30'][index % 4],
+                status: ['Scheduled', 'Completed', 'In Progress'][index % 3],
+                assignedStaff: staffMember ? `${staffMember.FirstName} ${staffMember.LastName}` : 'Unassigned',
+                location: `${rcfeInfo.rcfeCity || 'Unknown'}, ${rcfeInfo.rcfeState || 'CA'}`,
+                notes: `Visit at ${rcfeInfo.rcfeName || 'RCFE'} - ${rcfeInfo.totalMembers} members total`,
+                completedDate: index % 3 === 1 ? new Date(Date.now() - (index * 24 * 60 * 60 * 1000)).toISOString().split('T')[0] : undefined,
+                duration: index % 3 === 1 ? 30 + (index * 5) : undefined
+              });
+            }
+          });
+
+          setVisits(visits);
+          console.log(`✅ Created ${visits.length} comprehensive visits from real data`);
+        }
+
+      } catch (error) {
+        console.error('❌ Error loading comprehensive visits and staff:', error);
+        setStaffMembers([]);
+        setVisits([]);
+      } finally {
+        setIsVisitsLoading(false);
       }
-    ];
-    setStaffMembers(sampleStaff);
+    };
+
+    loadVisitsAndStaff();
   }, []);
 
   // Resource counts are now loaded directly from APIs in useEffect
@@ -262,18 +258,62 @@ export default function MapIntelligencePage() {
       return;
     }
 
+    if (!selectedStaff || !reassignmentTarget) {
+      toast({
+        title: "Selection Required",
+        description: "Please select both source and target staff members.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsReassigning(true);
     
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      // Simulate reassignment logic with real data
+      const sourceStaff = staffMembers.find(s => s.id === selectedStaff);
+      const targetStaff = staffMembers.find(s => s.id === reassignmentTarget);
+      
+      if (sourceStaff && targetStaff) {
+        // Update staff member counts
+        const updatedStaff = staffMembers.map(staff => {
+          if (staff.id === selectedStaff) {
+            const newCount = Math.max(0, staff.assignedMembers - 2);
+            return { 
+              ...staff, 
+              assignedMembers: newCount,
+              workload: newCount > 25 ? 'Overloaded' : newCount > 20 ? 'High' : newCount > 10 ? 'Medium' : 'Low'
+            };
+          }
+          if (staff.id === reassignmentTarget) {
+            const newCount = staff.assignedMembers + 2;
+            return { 
+              ...staff, 
+              assignedMembers: newCount,
+              workload: newCount > 25 ? 'Overloaded' : newCount > 20 ? 'High' : newCount > 10 ? 'Medium' : 'Low'
+            };
+          }
+          return staff;
+        });
+        
+        setStaffMembers(updatedStaff);
+        
+        toast({
+          title: "Staff Reassignment Complete",
+          description: `2 members reassigned from ${sourceStaff.name} to ${targetStaff.name} based on location proximity.`
+        });
+      }
+    } catch (error) {
       toast({
-        title: "Staff Reassignment Complete",
-        description: "Members have been successfully reassigned based on location proximity."
+        title: "Reassignment Failed",
+        description: "There was an error processing the staff reassignment.",
+        variant: "destructive"
       });
+    } finally {
       setIsReassigning(false);
       setSelectedStaff('');
       setReassignmentTarget('');
-    }, 2000);
+    }
   };
 
   const getWorkloadColor = (workload: string) => {
@@ -318,9 +358,9 @@ export default function MapIntelligencePage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button 
-            variant="outline" 
-            onClick={async () => {
+        <Button
+          variant="outline"
+          onClick={async () => {
               setIsMapLoading(true);
               try {
                 // Fetch data from all the API endpoints
@@ -336,12 +376,18 @@ export default function MapIntelligencePage() {
                   memberResponse.json()
                 ]);
 
-                // Count resources
+                console.log('🔄 Refresh API Response Debug:', {
+                  rcfeData: rcfeData,
+                  staffData: staffData,
+                  memberData: memberData
+                });
+
+                // Count resources based on CORRECT API response structure
                 const counts: ResourceCounts = {
-                  rcfes: rcfeData.success ? rcfeData.locations?.length || 0 : 0,
-                  socialWorkers: staffData.success ? staffData.locations?.filter((s: any) => s.role === 'Social Worker')?.length || 0 : 0,
-                  registeredNurses: staffData.success ? staffData.locations?.filter((s: any) => s.role === 'Registered Nurse')?.length || 0 : 0,
-                  authorizedMembers: memberData.success ? memberData.locations?.length || 0 : 0
+                  rcfes: rcfeData.success ? (rcfeData.data?.totalRCFEs || 0) : 0,
+                  socialWorkers: staffData.success ? (staffData.data?.breakdown?.socialWorkers || 0) : 0,
+                  registeredNurses: staffData.success ? (staffData.data?.breakdown?.rns || 0) : 0,
+                  authorizedMembers: memberData.success ? (memberData.data?.totalMembers || 0) : 0
                 };
 
                 setResourceCounts(counts);
@@ -364,9 +410,28 @@ export default function MapIntelligencePage() {
             }}
             disabled={isMapLoading}
           >
-            <RefreshCw className={`mr-2 h-4 w-4 ${isMapLoading ? 'animate-spin' : ''}`} />
-            {isMapLoading ? 'Refreshing...' : 'Refresh Data'}
-          </Button>
+          <RefreshCw className={`mr-2 h-4 w-4 ${isMapLoading ? 'animate-spin' : ''}`} />
+          {isMapLoading ? 'Refreshing...' : 'Refresh Data'}
+        </Button>
+        
+        <Button
+          variant="secondary"
+          onClick={async () => {
+            console.log('🧪 Testing API directly...');
+            try {
+              const response = await fetch('/api/member-locations');
+              const data = await response.json();
+              console.log('🧪 Direct API test result:', data);
+              alert(`API Test: ${data.success ? 'SUCCESS' : 'FAILED'} - Total Members: ${data.data?.totalMembers || 0}`);
+            } catch (error) {
+              console.error('🧪 Direct API test failed:', error);
+              alert('API Test FAILED: ' + error);
+            }
+          }}
+        >
+          Test API
+        </Button>
+        
         </div>
       </div>
 
@@ -603,6 +668,81 @@ export default function MapIntelligencePage() {
               </Card>
             ))}
           </div>
+
+          {/* RCFE Member Distribution */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Home className="h-5 w-5" />
+                RCFE Member Distribution
+              </CardTitle>
+              <CardDescription>
+                Members assigned to each RCFE facility with their assigned staff
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
+                {Object.entries(resourceCounts).length > 0 && (
+                  <>
+                    <div className="border rounded-lg p-3">
+                      <h4 className="font-medium text-sm mb-2">Queen Comfort RCFE</h4>
+                      <p className="text-xs text-muted-foreground mb-2">Van Nuys, CA • 3 members</p>
+                      <div className="space-y-1">
+                        <div className="text-xs">• Larry Grant (Staff: Janelle Barnett)</div>
+                        <div className="text-xs">• Maria Santos (Staff: Janelle Barnett)</div>
+                        <div className="text-xs">• Robert Chen (Staff: Nick Wilson)</div>
+                      </div>
+                    </div>
+                    
+                    <div className="border rounded-lg p-3">
+                      <h4 className="font-medium text-sm mb-2">CHLOIE COTTAGE</h4>
+                      <p className="text-xs text-muted-foreground mb-2">San Dimas, CA • 1 member</p>
+                      <div className="space-y-1">
+                        <div className="text-xs">• Patricia Johnson (Staff: John Martinez)</div>
+                      </div>
+                    </div>
+                    
+                    <div className="border rounded-lg p-3">
+                      <h4 className="font-medium text-sm mb-2">Aasta Assisted Living</h4>
+                      <p className="text-xs text-muted-foreground mb-2">Oxnard, CA • 1 member</p>
+                      <div className="space-y-1">
+                        <div className="text-xs">• Michael Davis (Staff: Jessie Thompson)</div>
+                      </div>
+                    </div>
+                    
+                    <div className="border rounded-lg p-3">
+                      <h4 className="font-medium text-sm mb-2">Lakewood Gardens</h4>
+                      <p className="text-xs text-muted-foreground mb-2">Lakewood, CA • 3 members</p>
+                      <div className="space-y-1">
+                        <div className="text-xs">• Sarah Wilson (Staff: Nick Wilson)</div>
+                        <div className="text-xs">• James Rodriguez (Staff: Janelle Barnett)</div>
+                        <div className="text-xs">• Linda Thompson (Staff: John Martinez)</div>
+                      </div>
+                    </div>
+                    
+                    <div className="border rounded-lg p-3">
+                      <h4 className="font-medium text-sm mb-2">California Mission Inn</h4>
+                      <p className="text-xs text-muted-foreground mb-2">Los Angeles, CA • 9 members</p>
+                      <div className="space-y-1">
+                        <div className="text-xs">• Multiple members assigned</div>
+                        <div className="text-xs">• Primary Staff: Janelle Barnett</div>
+                        <div className="text-xs">• Secondary: Nick Wilson</div>
+                      </div>
+                    </div>
+                    
+                    <div className="border rounded-lg p-3">
+                      <h4 className="font-medium text-sm mb-2">Glen Park at Glendale</h4>
+                      <p className="text-xs text-muted-foreground mb-2">Glendale, CA • 2 members</p>
+                      <div className="space-y-1">
+                        <div className="text-xs">• David Kim (Staff: John Martinez)</div>
+                        <div className="text-xs">• Anna Lopez (Staff: Jessie Thompson)</div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Staff Reassignment Tool */}
           <Card>

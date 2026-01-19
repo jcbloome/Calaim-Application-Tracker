@@ -50,9 +50,19 @@ export default function AdminDashboardPage() {
           })
         ]);
 
-        // Combine both user and admin applications
-        const userApps = userAppsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as WithId<Application & FormValues>[];
-        const adminApps = adminAppsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as WithId<Application & FormValues>[];
+        // Combine both user and admin applications with unique keys
+        const userApps = userAppsSnapshot.docs.map(doc => ({ 
+          ...doc.data(), 
+          id: doc.id,
+          uniqueKey: `user-${doc.id}`,
+          source: 'user'
+        })) as WithId<Application & FormValues>[];
+        const adminApps = adminAppsSnapshot.docs.map(doc => ({ 
+          ...doc.data(), 
+          id: doc.id,
+          uniqueKey: `admin-${doc.id}`,
+          source: 'admin'
+        })) as WithId<Application & FormValues>[];
         const apps = [...userApps, ...adminApps];
         
         setAllApplications(apps);
@@ -173,7 +183,7 @@ export default function AdminDashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Daily Activity Dashboard</h1>
+        <h1 className="text-3xl font-bold">Activity Dashboard</h1>
         <p className="text-muted-foreground">
           Daily dashboard with notifications, statistics, and recent applications.
         </p>

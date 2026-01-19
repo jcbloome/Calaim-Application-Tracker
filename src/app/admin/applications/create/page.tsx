@@ -67,7 +67,7 @@ export default function CreateApplicationPage() {
     setIsCreating(true);
     try {
       // Create a unique application ID for this member
-      const applicationId = `admin_app_${Date.now()}`;
+      const applicationId = `admin_app_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       const applicationRef = doc(firestore, 'applications', applicationId);
       
       // Create the application document with initial member and contact information

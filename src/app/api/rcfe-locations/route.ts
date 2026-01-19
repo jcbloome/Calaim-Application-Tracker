@@ -19,25 +19,27 @@ export async function GET(request: NextRequest) {
   try {
     console.log('🏠 Fetching RCFE locations from Caspio...');
     
-    // Use exact same authentication pattern as working Kaiser tracker
-    const dataBaseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+    // Use environment variables for Caspio credentials
+    const caspioBaseUrl = process.env.CASPIO_BASE_URL;
+    const caspioClientId = process.env.CASPIO_CLIENT_ID;
+    const caspioClientSecret = process.env.CASPIO_CLIENT_SECRET;
+
+    if (!caspioBaseUrl || !caspioClientId || !caspioClientSecret) {
+      throw new Error('Missing Caspio environment variables');
+    }
     
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = 'https://c7ebl500.caspio.com/oauth/token';
+    console.log('🔐 Getting Caspio access token...');
     
-    console.log('🔐 Using Kaiser tracker auth pattern');
-    console.log('🔐 OAuth URL:', tokenUrl);
-    console.log('🔐 Data API URL:', dataBaseUrl);
-    
-    const tokenResponse = await fetch(tokenUrl, {
+    const tokenResponse = await fetch(`${caspioBaseUrl}/oauth/token`, {
       method: 'POST',
       headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: 'grant_type=client_credentials'
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: caspioClientId,
+        client_secret: caspioClientSecret,
+      }),
     });
 
     if (!tokenResponse.ok) {
@@ -75,7 +77,7 @@ export async function GET(request: NextRequest) {
 
         do {
           // Use Caspio's correct pagination parameters (same as authorization tracker)
-          const rcfeUrl = `${dataBaseUrl}/tables/${tableName}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
+          const rcfeUrl = `${caspioBaseUrl}/rest/v2/tables/${tableName}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
           console.log(`🌐 Fetching page ${pageNumber} from ${tableName} (pageSize: ${pageSize})...`);
 
           const rcfeResponse = await fetch(rcfeUrl, {

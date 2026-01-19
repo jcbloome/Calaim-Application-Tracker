@@ -45,9 +45,19 @@ interface ILSReportMember {
 }
 
 const BOTTLENECK_STATUSES = [
+  // Kaiser workflow bottleneck statuses (these should be in Kaiser_Status field)
   'T2038 Requested',
   'Tier Level Requested', 
-  'RCFE/ILS for Contracting'
+  'Need Tier Level',
+  'Locating RCFEs',
+  'Found RCFE',
+  'R&B Requested',
+  'RCFE/ILS for Contracting',
+  'RCFE/ILS for Invoicing',
+  // Common bottleneck indicators
+  'RN/MSW Scheduled',
+  'RN Visit Complete',
+  'Needs RN Visit'
 ];
 
 export default function ILSReportEditorPage() {
@@ -92,12 +102,25 @@ export default function ILSReportEditorPage() {
           Kaiser_Tier_Level_Requested_Date: data.members[0]?.Kaiser_Tier_Level_Requested_Date
         });
         
+        // Debug: Show all unique statuses in the data
+        const allKaiserStatuses = [...new Set(data.members.map((m: any) => m.Kaiser_Status).filter(Boolean))];
+        const allCalAIMStatuses = [...new Set(data.members.map((m: any) => m.CalAIM_Status).filter(Boolean))];
+        console.log('🔍 ILS REPORT DEBUG - All available Kaiser_Status values:', allKaiserStatuses);
+        console.log('🔍 ILS REPORT DEBUG - All available CalAIM_Status values:', allCalAIMStatuses);
+        console.log('🔍 ILS REPORT DEBUG - Looking for bottleneck statuses:', BOTTLENECK_STATUSES);
+        
         // Filter for bottleneck statuses
         const bottleneckMembers = data.members
           .filter((member: any) => 
             BOTTLENECK_STATUSES.includes(member.Kaiser_Status)
-          )
-          .map((member: any) => ({
+          );
+          
+        console.log('🔍 ILS REPORT DEBUG - Found bottleneck members:', bottleneckMembers.length);
+        console.log('🔍 ILS REPORT DEBUG - Bottleneck member statuses:', 
+          bottleneckMembers.map((m: any) => m.Kaiser_Status)
+        );
+        
+        const processedMembers = bottleneckMembers.map((member: any) => ({
             id: member.id,
             memberName: `${member.memberFirstName} ${member.memberLastName}`,
             memberMrn: member.memberMrn,
@@ -116,7 +139,7 @@ export default function ILSReportEditorPage() {
             kaiser_user_assignment: member.kaiser_user_assignment
           }));
         
-        setMembers(bottleneckMembers);
+        setMembers(processedMembers);
         
         toast({
           title: 'Members Loaded',
