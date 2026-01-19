@@ -79,6 +79,11 @@ export function Header() {
                     <Link href={link.href}>{link.label}</Link>
                 </Button>
             ))}
+            
+            {/* Contact Us on the right side */}
+            <Button variant="outline" asChild className="ml-4">
+                <Link href="/contact">Contact Us</Link>
+            </Button>
 
            {(isUserLoading || isAdminLoading) ? (
             <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
@@ -139,6 +144,9 @@ export function Header() {
                                     {link.label}
                                 </Link>
                             ))}
+                            <Link href="/contact" className="text-lg font-medium text-primary border-t pt-4 mt-2" onClick={() => setSheetOpen(false)}>
+                                Contact Us
+                            </Link>
                         </nav>
                         <div className="mt-auto border-t pt-6">
                              {(isUserLoading || isAdminLoading) ? (
