@@ -31,6 +31,29 @@ export default function CreateApplicationPage() {
     notes: ''
   });
 
+  // Phone number formatting function
+  const formatPhoneNumber = (value: string) => {
+    // Remove all non-numeric characters
+    const phoneNumber = value.replace(/\D/g, '');
+    
+    // Limit to 10 digits
+    const limitedPhoneNumber = phoneNumber.substring(0, 10);
+    
+    // Format as xxx.xxx.xxxx
+    if (limitedPhoneNumber.length >= 6) {
+      return `${limitedPhoneNumber.substring(0, 3)}.${limitedPhoneNumber.substring(3, 6)}.${limitedPhoneNumber.substring(6)}`;
+    } else if (limitedPhoneNumber.length >= 3) {
+      return `${limitedPhoneNumber.substring(0, 3)}.${limitedPhoneNumber.substring(3)}`;
+    } else {
+      return limitedPhoneNumber;
+    }
+  };
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formattedPhone = formatPhoneNumber(e.target.value);
+    setMemberData({ ...memberData, contactPhone: formattedPhone });
+  };
+
   const createApplicationForMember = async () => {
     if (!firestore || !memberData.memberFirstName || !memberData.memberLastName || !memberData.contactFirstName || !memberData.contactLastName || !memberData.contactPhone) {
       toast({
@@ -101,7 +124,8 @@ export default function CreateApplicationPage() {
                      memberData.memberLastName && 
                      memberData.contactFirstName && 
                      memberData.contactLastName && 
-                     memberData.contactPhone;
+                     memberData.contactPhone && 
+                     memberData.contactPhone.replace(/\D/g, '').length === 10;
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
@@ -198,9 +222,9 @@ export default function CreateApplicationPage() {
                 <Input
                   id="contactPhone"
                   type="tel"
-                  placeholder="(555) 123-4567"
+                  placeholder="555.123.4567"
                   value={memberData.contactPhone}
-                  onChange={(e) => setMemberData({ ...memberData, contactPhone: e.target.value })}
+                  onChange={handlePhoneChange}
                 />
               </div>
               <div>
@@ -257,9 +281,12 @@ export default function CreateApplicationPage() {
           </Button>
 
           {!isFormValid && (
-            <p className="text-sm text-gray-500 text-center">
-              Please fill in all required fields (marked with *) to continue
-            </p>
+            <div className="text-sm text-gray-500 text-center space-y-1">
+              <p>Please fill in all required fields (marked with *) to continue</p>
+              {memberData.contactPhone && memberData.contactPhone.replace(/\D/g, '').length < 10 && (
+                <p className="text-red-500">Phone number must be 10 digits (xxx.xxx.xxxx)</p>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
