@@ -18,6 +18,23 @@ interface CaspioNote {
   Assigned_First?: string;
 }
 
+interface CaspioILSNote {
+  table_ID: number;
+  User_ID: number;
+  User_First: string;
+  User_Last: string;
+  Note_ID: number;
+  Senior_First: string;
+  Senior_Last: string;
+  Note: string;
+  Timestamp: string;
+  Client_ID2: number;
+  Senior__Last_First_ID2: string;
+  User_First_Last: string;
+  User_Role: string;
+  Senior_First_Last: string;
+}
+
 interface MemberNote {
   id: string;
   clientId2: string;
@@ -30,13 +47,14 @@ interface MemberNote {
   assignedToName?: string;
   createdAt: string;
   updatedAt: string;
-  source: 'Caspio' | 'App' | 'Admin';
+  source: 'Caspio' | 'ILS' | 'App' | 'Admin';
   isRead: boolean;
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   followUpDate?: string;
   tags?: string[];
   isLegacy?: boolean; // Tag for notes imported from Caspio
   syncedAt?: string; // When this note was synced from Caspio
+  isILSNote?: boolean; // Tag for ILS-specific notes
 }
 
 // Caspio configuration - hardcoded for development
@@ -116,6 +134,8 @@ export async function GET(request: NextRequest) {
       newNotesCount,
       totalNotes: notes.length,
       legacyNotes: notes.filter(n => n.isLegacy).length,
+      regularNotes: notes.filter(n => n.source === 'Caspio').length,
+      ilsNotes: notes.filter(n => n.source === 'ILS').length,
       appNotes: notes.filter(n => n.source === 'App' || n.source === 'Admin').length
     });
 
@@ -221,36 +241,56 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Sync ALL notes from Caspio for a member (first time sync)
+// Sync ALL notes from both Caspio tables for a member (first time sync)
 async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
   try {
     console.log(`🔄 First-time sync: importing all legacy notes for Client_ID2: ${clientId2}`);
     
     const token = await getCaspioToken();
-    const apiUrl = `${CASPIO_BASE_URL}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}'&q.orderBy=Time_Stamp DESC&q.limit=1000`;
     
-    const response = await fetch(apiUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    // Fetch from regular notes table
+    const regularNotesUrl = `${CASPIO_BASE_URL}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}'&q.orderBy=Time_Stamp DESC&q.limit=1000`;
+    
+    // Fetch from ILS notes table
+    const ilsNotesUrl = `${CASPIO_BASE_URL}/rest/v2/tables/CalAIM_Member_Notes_ILS/records?q.where=Client_ID2='${clientId2}'&q.orderBy=Timestamp DESC&q.limit=1000`;
+    
+    const [regularResponse, ilsResponse] = await Promise.all([
+      fetch(regularNotesUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      }),
+      fetch(ilsNotesUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+    ]);
 
-    if (!response.ok) {
-      throw new Error(`Caspio API error: ${response.status} ${response.statusText}`);
+    if (!regularResponse.ok) {
+      throw new Error(`Caspio API error (regular notes): ${regularResponse.status} ${regularResponse.statusText}`);
+    }
+    if (!ilsResponse.ok) {
+      throw new Error(`Caspio API error (ILS notes): ${ilsResponse.status} ${ilsResponse.statusText}`);
     }
 
-    const data = await response.json();
-    const caspioNotes: CaspioNote[] = data.Result || [];
+    const regularData = await regularResponse.json();
+    const ilsData = await ilsResponse.json();
     
-    console.log(`📥 Retrieved ${caspioNotes.length} legacy notes from Caspio for Client_ID2: ${clientId2}`);
+    const caspioNotes: CaspioNote[] = regularData.Result || [];
+    const ilsNotes: CaspioILSNote[] = ilsData.Result || [];
+    
+    console.log(`📥 Retrieved ${caspioNotes.length} regular notes + ${ilsNotes.length} ILS notes for Client_ID2: ${clientId2}`);
 
     const syncTime = new Date().toISOString();
     let importedCount = 0;
 
-    // Transform and cache notes (temporary until Firestore is configured)
-    const transformedNotes: MemberNote[] = caspioNotes.map(caspioNote => ({
+    // Transform regular Caspio notes
+    const transformedRegularNotes: MemberNote[] = caspioNotes.map(caspioNote => ({
       id: `caspio_${caspioNote.PK_ID}`,
       clientId2: caspioNote.Client_ID2.toString(),
       memberName: caspioNote.Senior_Full_Name || 'Unknown Member',
@@ -268,23 +308,53 @@ async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
       followUpDate: caspioNote.Follow_Up_Date,
       tags: [],
       isLegacy: true, // Tag as legacy note
-      syncedAt: syncTime
+      syncedAt: syncTime,
+      isILSNote: false
     }));
 
+    // Transform ILS notes
+    const transformedILSNotes: MemberNote[] = ilsNotes.map(ilsNote => ({
+      id: `ils_${ilsNote.table_ID}`,
+      clientId2: ilsNote.Client_ID2.toString(),
+      memberName: ilsNote.Senior_First_Last || `${ilsNote.Senior_First} ${ilsNote.Senior_Last}` || 'Unknown Member',
+      noteText: ilsNote.Note || '',
+      noteType: 'Administrative', // ILS notes are administrative
+      createdBy: ilsNote.User_ID.toString(),
+      createdByName: ilsNote.User_First_Last || `${ilsNote.User_First} ${ilsNote.User_Last}` || `User ${ilsNote.User_ID}`,
+      assignedTo: undefined, // ILS notes don't have assignments
+      assignedToName: undefined,
+      createdAt: ilsNote.Timestamp || syncTime,
+      updatedAt: ilsNote.Timestamp || syncTime,
+      source: 'ILS',
+      isRead: true, // Legacy notes are considered read
+      priority: 'Medium', // ILS notes are medium priority
+      followUpDate: undefined,
+      tags: ['ILS', 'JHernandez@ilshealth.com'],
+      isLegacy: true, // Tag as legacy note
+      syncedAt: syncTime,
+      isILSNote: true
+    }));
+
+    // Combine all notes and sort by timestamp
+    const allTransformedNotes = [...transformedRegularNotes, ...transformedILSNotes];
+    allTransformedNotes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
     // Store in cache
-    memberNotesCache[clientId2] = transformedNotes;
-    importedCount = transformedNotes.length;
+    memberNotesCache[clientId2] = allTransformedNotes;
+    importedCount = allTransformedNotes.length;
 
     // Update sync status in cache
     syncStatusCache[clientId2] = {
       clientId2,
       lastSyncAt: syncTime,
       totalLegacyNotes: importedCount,
+      regularNotes: transformedRegularNotes.length,
+      ilsNotes: transformedILSNotes.length,
       firstSyncCompleted: true,
       updatedAt: syncTime
     };
 
-    console.log(`✅ Imported ${importedCount} legacy notes for Client_ID2: ${clientId2}`);
+    console.log(`✅ Imported ${importedCount} total notes (${transformedRegularNotes.length} regular + ${transformedILSNotes.length} ILS) for Client_ID2: ${clientId2}`);
     return importedCount;
 
   } catch (error) {
@@ -293,42 +363,60 @@ async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
   }
 }
 
-// Sync only NEW notes since last sync (incremental sync)
+// Sync only NEW notes since last sync from both tables (incremental sync)
 async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Promise<number> {
   try {
     console.log(`🔄 Incremental sync: checking for new notes since ${lastSyncAt} for Client_ID2: ${clientId2}`);
     
     const token = await getCaspioToken();
     
-    // Query for notes newer than last sync timestamp
-    const apiUrl = `${CASPIO_BASE_URL}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}' AND Time_Stamp>'${lastSyncAt}'&q.orderBy=Time_Stamp DESC`;
+    // Query for new regular notes
+    const regularNotesUrl = `${CASPIO_BASE_URL}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}' AND Time_Stamp>'${lastSyncAt}'&q.orderBy=Time_Stamp DESC`;
     
-    const response = await fetch(apiUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    // Query for new ILS notes
+    const ilsNotesUrl = `${CASPIO_BASE_URL}/rest/v2/tables/CalAIM_Member_Notes_ILS/records?q.where=Client_ID2='${clientId2}' AND Timestamp>'${lastSyncAt}'&q.orderBy=Timestamp DESC`;
+    
+    const [regularResponse, ilsResponse] = await Promise.all([
+      fetch(regularNotesUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      }),
+      fetch(ilsNotesUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+    ]);
 
-    if (!response.ok) {
-      throw new Error(`Caspio API error: ${response.status} ${response.statusText}`);
+    if (!regularResponse.ok) {
+      throw new Error(`Caspio API error (regular notes): ${regularResponse.status} ${regularResponse.statusText}`);
+    }
+    if (!ilsResponse.ok) {
+      throw new Error(`Caspio API error (ILS notes): ${ilsResponse.status} ${ilsResponse.statusText}`);
     }
 
-    const data = await response.json();
-    const newCaspioNotes: CaspioNote[] = data.Result || [];
+    const regularData = await regularResponse.json();
+    const ilsData = await ilsResponse.json();
     
-    console.log(`📥 Found ${newCaspioNotes.length} new notes since last sync for Client_ID2: ${clientId2}`);
+    const newCaspioNotes: CaspioNote[] = regularData.Result || [];
+    const newILSNotes: CaspioILSNote[] = ilsData.Result || [];
+    
+    console.log(`📥 Found ${newCaspioNotes.length} new regular notes + ${newILSNotes.length} new ILS notes since last sync for Client_ID2: ${clientId2}`);
 
-    if (newCaspioNotes.length === 0) {
+    if (newCaspioNotes.length === 0 && newILSNotes.length === 0) {
       return 0; // No new notes
     }
 
     const syncTime = new Date().toISOString();
     let importedCount = 0;
 
-    // Transform new notes and add to cache
-    const newTransformedNotes: MemberNote[] = newCaspioNotes.map(caspioNote => ({
+    // Transform new regular notes
+    const newTransformedRegularNotes: MemberNote[] = newCaspioNotes.map(caspioNote => ({
       id: `caspio_${caspioNote.PK_ID}`,
       clientId2: caspioNote.Client_ID2.toString(),
       memberName: caspioNote.Senior_Full_Name || 'Unknown Member',
@@ -346,13 +434,43 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
       followUpDate: caspioNote.Follow_Up_Date,
       tags: [],
       isLegacy: false, // These are new notes, not legacy
-      syncedAt: syncTime
+      syncedAt: syncTime,
+      isILSNote: false
     }));
 
-    // Add new notes to existing cache
+    // Transform new ILS notes
+    const newTransformedILSNotes: MemberNote[] = newILSNotes.map(ilsNote => ({
+      id: `ils_${ilsNote.table_ID}`,
+      clientId2: ilsNote.Client_ID2.toString(),
+      memberName: ilsNote.Senior_First_Last || `${ilsNote.Senior_First} ${ilsNote.Senior_Last}` || 'Unknown Member',
+      noteText: ilsNote.Note || '',
+      noteType: 'Administrative',
+      createdBy: ilsNote.User_ID.toString(),
+      createdByName: ilsNote.User_First_Last || `${ilsNote.User_First} ${ilsNote.User_Last}` || `User ${ilsNote.User_ID}`,
+      assignedTo: undefined,
+      assignedToName: undefined,
+      createdAt: ilsNote.Timestamp || syncTime,
+      updatedAt: ilsNote.Timestamp || syncTime,
+      source: 'ILS',
+      isRead: false, // New notes are unread
+      priority: 'Medium',
+      followUpDate: undefined,
+      tags: ['ILS', 'JHernandez@ilshealth.com'],
+      isLegacy: false, // These are new notes, not legacy
+      syncedAt: syncTime,
+      isILSNote: true
+    }));
+
+    // Combine new notes
+    const allNewNotes = [...newTransformedRegularNotes, ...newTransformedILSNotes];
+    
+    // Add new notes to existing cache and sort
     const existingNotes = memberNotesCache[clientId2] || [];
-    memberNotesCache[clientId2] = [...existingNotes, ...newTransformedNotes];
-    importedCount = newTransformedNotes.length;
+    const combinedNotes = [...existingNotes, ...allNewNotes];
+    combinedNotes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    memberNotesCache[clientId2] = combinedNotes;
+    importedCount = allNewNotes.length;
 
     // Update sync status in cache
     if (syncStatusCache[clientId2]) {
@@ -360,7 +478,7 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
       syncStatusCache[clientId2].updatedAt = syncTime;
     }
 
-    console.log(`✅ Imported ${importedCount} new notes for Client_ID2: ${clientId2}`);
+    console.log(`✅ Imported ${importedCount} new notes (${newTransformedRegularNotes.length} regular + ${newTransformedILSNotes.length} ILS) for Client_ID2: ${clientId2}`);
     return importedCount;
 
   } catch (error) {

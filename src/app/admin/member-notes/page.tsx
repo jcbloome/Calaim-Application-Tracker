@@ -82,6 +82,10 @@ export default function MemberNotesPage() {
     source: 'all'
   });
 
+  // ILS permissions state
+  const [hasILSPermission, setHasILSPermission] = useState(false);
+  const [isCheckingILSPermission, setIsCheckingILSPermission] = useState(false);
+
   // New note dialog state
   const [isNewNoteDialogOpen, setIsNewNoteDialogOpen] = useState(false);
   const [newNote, setNewNote] = useState({
@@ -135,6 +139,29 @@ export default function MemberNotesPage() {
       setIsLoading(false);
     }
   }, [toast]);
+
+  // Check ILS permissions on mount
+  useEffect(() => {
+    const checkILSPermissions = async () => {
+      if (!user?.uid) return;
+      
+      setIsCheckingILSPermission(true);
+      try {
+        const response = await fetch(`/api/admin/ils-permissions?userId=${user.uid}`);
+        const data = await response.json();
+        
+        if (data.success) {
+          setHasILSPermission(data.hasILSPermission);
+        }
+      } catch (error) {
+        console.error('Error checking ILS permissions:', error);
+      } finally {
+        setIsCheckingILSPermission(false);
+      }
+    };
+
+    checkILSPermissions();
+  }, [user?.uid]);
 
   // Don't load members on mount - only when searching
   // Search members when search term changes (with debounce)
@@ -283,6 +310,7 @@ export default function MemberNotesPage() {
   const getSourceColor = (source: string) => {
     switch (source) {
       case 'Caspio': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'ILS': return 'bg-green-100 text-green-800 border-green-200';
       case 'App': return 'bg-purple-100 text-purple-800 border-purple-200';
       case 'Admin': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
       default: return 'bg-gray-100 text-gray-800 border-gray-200';
@@ -300,6 +328,11 @@ export default function MemberNotesPage() {
             <p className="text-muted-foreground">
               Search and manage notes for CalAIM members across all health plans
             </p>
+            {hasILSPermission && (
+              <Badge className="bg-green-100 text-green-800 border-green-200 mt-2">
+                ✓ ILS Note Permissions Enabled
+              </Badge>
+            )}
           </div>
         </div>
       </div>
@@ -439,6 +472,9 @@ export default function MemberNotesPage() {
                               <SelectItem value="Administrative">Administrative</SelectItem>
                               <SelectItem value="Follow-up">Follow-up</SelectItem>
                               <SelectItem value="Emergency">Emergency</SelectItem>
+                              {hasILSPermission && (
+                                <SelectItem value="ILS">ILS Note (to JHernandez@ilshealth.com)</SelectItem>
+                              )}
                             </SelectContent>
                           </Select>
                         </div>
@@ -600,6 +636,7 @@ export default function MemberNotesPage() {
                     <SelectContent>
                       <SelectItem value="all">All Sources</SelectItem>
                       <SelectItem value="Caspio">Caspio</SelectItem>
+                      <SelectItem value="ILS">ILS</SelectItem>
                       <SelectItem value="App">App</SelectItem>
                       <SelectItem value="Admin">Admin</SelectItem>
                     </SelectContent>

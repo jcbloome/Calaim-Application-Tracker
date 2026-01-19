@@ -173,6 +173,7 @@ export default function SuperAdminPage() {
     const [notificationRecipients, setNotificationRecipients] = useState<string[]>([]);
     const [healthNetRecipients, setHealthNetRecipients] = useState<string[]>([]);
     const [kaiserRecipients, setKaiserRecipients] = useState<string[]>([]);
+    const [ilsNotePermissions, setIlsNotePermissions] = useState<string[]>([]);
     const [isSavingNotifications, setIsSavingNotifications] = useState(false);
     const [isSendingReminders, setIsSendingReminders] = useState(false);
     const [newStaffFirstName, setNewStaffFirstName] = useState('');
@@ -524,6 +525,7 @@ export default function SuperAdminPage() {
                 setNotificationRecipients(data?.recipientUids || []);
                 setHealthNetRecipients(data?.healthNetRecipients || []);
                 setKaiserRecipients(data?.kaiserRecipients || []);
+                setIlsNotePermissions(data?.ilsNotePermissions || []);
             }
         } catch (error) {
              console.error("Error fetching notification settings:", error);
@@ -678,6 +680,12 @@ export default function SuperAdminPage() {
         );
     };
 
+    const handleIlsNoteToggle = (uid: string, checked: boolean) => {
+        setIlsNotePermissions(prev => 
+            checked ? [...prev, uid] : prev.filter(id => id !== uid)
+        );
+    };
+
     const handleSaveNotifications = async () => {
         if (!firestore) return;
         setIsSavingNotifications(true);
@@ -686,7 +694,8 @@ export default function SuperAdminPage() {
             const data = { 
                 recipientUids: notificationRecipients,
                 healthNetRecipients: healthNetRecipients,
-                kaiserRecipients: kaiserRecipients
+                kaiserRecipients: kaiserRecipients,
+                ilsNotePermissions: ilsNotePermissions
             };
             await setDoc(settingsRef, data, { merge: true }).catch(e => {
                 errorEmitter.emit('permission-error', new FirestorePermissionError({ path: settingsRef.path, operation: 'update', requestResourceData: data }));
@@ -2076,6 +2085,13 @@ export default function SuperAdminPage() {
                                                 <Label htmlFor={`kaiser-${staff.uid}`} className="text-sm font-medium">Kaiser Applications</Label>
                                             </div>
                                             <Checkbox id={`kaiser-${staff.uid}`} checked={kaiserRecipients.includes(staff.uid)} onCheckedChange={(checked) => handleKaiserToggle(staff.uid, !!checked)} aria-label={`Toggle Kaiser notifications for ${staff.email}`} />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4">
+                                            <div className="flex items-center gap-2">
+                                                <Mail className={`h-4 w-4 ${ilsNotePermissions.includes(staff.uid) ? 'text-green-600' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`ils-${staff.uid}`} className="text-sm font-medium">ILS Note Permissions</Label>
+                                            </div>
+                                            <Checkbox id={`ils-${staff.uid}`} checked={ilsNotePermissions.includes(staff.uid)} onCheckedChange={(checked) => handleIlsNoteToggle(staff.uid, !!checked)} aria-label={`Toggle ILS note permissions for ${staff.email}`} />
                                         </div>
                                     </div>
                                 </div>
