@@ -48,6 +48,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
+import { MultiUploadCard } from '@/components/MultiUploadCard';
 import { useAdmin } from '@/hooks/use-admin';
 import {
   Dialog,
@@ -1454,6 +1455,41 @@ function ApplicationDetailPageContent() {
                   </CardContent>
               </Card>
             )}
+
+            {/* Multi Upload Card */}
+            <MultiUploadCard
+                applicationComponents={pathwayRequirements
+                    .filter(req => req.type === 'Upload')
+                    .map(req => ({
+                        id: req.id,
+                        title: req.title,
+                        description: req.description,
+                        required: true
+                    }))
+                }
+                onUploadComplete={(files) => {
+                    // Handle the uploaded files
+                    console.log('Uploaded files:', files);
+                    // TODO: Update form status for each component
+                    files.forEach(({ components, url }) => {
+                        const updates = components.map(componentId => {
+                            const requirement = pathwayRequirements.find(req => req.id === componentId);
+                            return {
+                                name: requirement?.title,
+                                status: 'Completed' as const,
+                                uploadUrl: url
+                            };
+                        });
+                        handleFormStatusUpdate(updates);
+                    });
+                    
+                    toast({
+                        title: "Documents Uploaded",
+                        description: "Your documents have been successfully uploaded and assigned to the application components.",
+                    });
+                }}
+                className="md:col-span-2"
+            />
         </div>
       </div>
 

@@ -38,6 +38,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
+import { MultiUploadCard } from '@/components/MultiUploadCard';
 
 const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => {
   const commonRequirements = [
@@ -106,14 +107,24 @@ function PathwayPageContent() {
     'SNF Facesheet': false,
   });
 
+  const isAdminCreatedApp = applicationId?.startsWith('admin_app_');
+  
   const docRef = useMemoFirebase(() => {
-    if (!firestore || !applicationId || !user) return null;
+    if (!firestore || !applicationId) return null;
+    
+    // Admin-created applications are stored directly in the applications collection
+    if (isAdminCreatedApp) {
+      return doc(firestore, 'applications', applicationId);
+    }
+    
+    // Regular user applications are stored in user subcollections
+    if (!user) return null;
     return doc(firestore, `users/${user.uid}/applications`, applicationId);
-  }, [firestore, applicationId, user]);
+  }, [firestore, applicationId, user, isAdminCreatedApp]);
 
   useEffect(() => {
     if (!docRef) {
-      if (!isUserLoading) setIsLoading(false);
+      if (!isUserLoading || isAdminCreatedApp) setIsLoading(false);
       return;
     }
 
@@ -136,10 +147,15 @@ function PathwayPageContent() {
   }, [docRef, isUserLoading]);
 
   useEffect(() => {
-    if (!isLoading && !application && !isUserLoading) {
-      router.push('/applications');
+    if (!isLoading && !application && (!isUserLoading || isAdminCreatedApp)) {
+      // For admin-created applications, redirect to admin applications page
+      if (isAdminCreatedApp) {
+        router.push('/admin/applications');
+      } else {
+        router.push('/applications');
+      }
     }
-  }, [isLoading, application, isUserLoading, router]);
+  }, [isLoading, application, isUserLoading, router, isAdminCreatedApp]);
 
   useEffect(() => {
     if (application && docRef && application.pathway && (!application.forms || application.forms.length === 0)) {
@@ -781,6 +797,43 @@ function PathwayPageContent() {
                             <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || isReadOnly || !isAnyConsolidatedChecked} multiple />
                         </CardContent>
                     </Card>
+                )}
+
+                {/* Multi Upload Card */}
+                {!isReadOnly && (
+                    <MultiUploadCard
+                        applicationComponents={pathwayRequirements
+                            .filter(req => req.type === 'Upload')
+                            .map(req => ({
+                                id: req.id,
+                                title: req.title,
+                                description: req.description,
+                                required: true
+                            }))
+                        }
+                        onUploadComplete={(files) => {
+                            // Handle the uploaded files
+                            console.log('Uploaded files:', files);
+                            // TODO: Update form status for each component
+                            files.forEach(({ components, url }) => {
+                                const updates = components.map(componentId => {
+                                    const requirement = pathwayRequirements.find(req => req.id === componentId);
+                                    return {
+                                        name: requirement?.title,
+                                        status: 'Completed' as const,
+                                        uploadUrl: url
+                                    };
+                                });
+                                handleFormStatusUpdate(updates);
+                            });
+                            
+                            toast({
+                                title: "Documents Uploaded",
+                                description: "Your documents have been successfully uploaded and assigned to the application components.",
+                            });
+                        }}
+                        className="md:col-span-2"
+                    />
                 )}
             </div>
         </div>
