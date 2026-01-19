@@ -126,7 +126,7 @@ export const sendNoteNotification = onCall(
                 android: {
                   notification: {
                     sound: 'default',
-                    priority: 'high',
+                    priority: 'high' as const,
                     defaultSound: true,
                     channelId: 'calaim_notes'
                   }
@@ -212,8 +212,9 @@ export const sendNoteNotification = onCall(
       // Send email notification if enabled
       if (staffPrefs.enableEmailNotifications && staffPrefs.email) {
         try {
-          // Call email service function
-          await admin.functions().httpsCallable('sendNoteEmailNotification')({
+          // Email notification would be handled by a separate email service
+          // For now, we'll log this as a placeholder
+          logger.info('📧 Email notification would be sent', {
             to: staffPrefs.email,
             staffName: noteData.assignedUserName,
             clientName: noteData.clientName,
