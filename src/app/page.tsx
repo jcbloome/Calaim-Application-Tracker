@@ -185,9 +185,16 @@ export default function HomePage() {
                     priority
                   />
                 </div>
-                {/* Wolf Icon Placeholder - Add your wolf icon here */}
-                <div className="w-24 h-24 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-full flex items-center justify-center shadow-lg">
-                  <Heart className="w-12 h-12 text-white" />
+                {/* CalAIM Wolf Mascot */}
+                <div className="relative">
+                  <Image
+                    src="/wolf mascotsmall.jpg"
+                    alt="CalAIM Wolf Mascot"
+                    width={120}
+                    height={120}
+                    className="w-30 h-30 object-contain drop-shadow-lg"
+                    priority
+                  />
                 </div>
               </div>
 
@@ -338,13 +345,22 @@ export default function HomePage() {
           <div className="container mx-auto px-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <div className="space-y-4">
-                <Image
-                  src="/calaimlogopdf.png"
-                  alt="Connect CalAIM Logo"
-                  width={200}
-                  height={56}
-                  className="w-48 h-auto object-contain brightness-0 invert"
-                />
+                <div className="flex items-center space-x-4">
+                  <Image
+                    src="/wolf mascotsmall.jpg"
+                    alt="CalAIM Wolf Mascot"
+                    width={60}
+                    height={60}
+                    className="w-15 h-15 object-contain"
+                  />
+                  <Image
+                    src="/calaimlogopdf.png"
+                    alt="Connect CalAIM Logo"
+                    width={180}
+                    height={50}
+                    className="w-44 h-auto object-contain brightness-0 invert"
+                  />
+                </div>
                 <p className="text-gray-300">
                   Transforming Medi-Cal to better serve California's most vulnerable populations.
                 </p>
