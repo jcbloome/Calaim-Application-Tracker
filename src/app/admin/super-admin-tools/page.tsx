@@ -5,7 +5,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Settings, Database, TestTube, FileText, Upload, Sync, HardDrive, Globe, Zap, Code, Bug, Wrench } from 'lucide-react';
+import { Loader2, Settings, Database, TestTube, FileText, Upload, RefreshCw, HardDrive, Globe, Zap, Code, Bug, Wrench } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
@@ -49,7 +49,7 @@ const tools: ToolCard[] = [
     {
         title: 'Caspio Sync',
         description: 'Synchronize member data between Caspio tables',
-        icon: <Sync className="h-6 w-6" />,
+        icon: <RefreshCw className="h-6 w-6" />,
         href: '/admin/caspio-sync',
         category: 'integration',
         status: 'active'
@@ -57,7 +57,7 @@ const tools: ToolCard[] = [
     {
         title: 'Smart Sync System',
         description: 'Intelligent data synchronization with conflict resolution',
-        icon: <Zap className="h-6 w-6" />,
+        icon: <RefreshCw className="h-6 w-6" />,
         href: '/admin/smart-sync',
         category: 'integration',
         status: 'beta'
