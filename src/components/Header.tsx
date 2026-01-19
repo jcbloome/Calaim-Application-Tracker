@@ -63,26 +63,26 @@ export function Header() {
   return (
     <header className="bg-card/80 backdrop-blur-sm border-b sticky top-0 z-40">
       <div className="container mx-auto flex items-center justify-between h-20 px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2 font-bold text-lg text-primary">
+        <Link href="/" className="flex items-center gap-2 font-bold text-lg text-primary flex-shrink-0">
           <Image
               src="/calaimlogopdf.png"
               alt="Connect CalAIM Logo"
               width={240}
               height={67}
-              className="w-48 h-auto object-contain"
+              className="w-32 sm:w-40 lg:w-48 h-auto object-contain"
               priority
             />
         </Link>
-        <nav className="hidden md:flex items-center gap-2">
+        <nav className="hidden lg:flex items-center gap-1 xl:gap-2">
             {navLinks.map(link => (
-                 <Button key={link.href} variant="ghost" asChild>
-                    <Link href={link.href}>{link.label}</Link>
+                 <Button key={link.href} variant="ghost" size="sm" asChild>
+                    <Link href={link.href} className="text-sm">{link.label}</Link>
                 </Button>
             ))}
             
             {/* Contact Us on the right side */}
-            <Button variant="outline" asChild className="ml-4">
-                <Link href="/contact">Contact Us</Link>
+            <Button variant="outline" size="sm" asChild className="ml-2 xl:ml-4">
+                <Link href="/contact" className="text-sm">Contact Us</Link>
             </Button>
 
            {(isUserLoading || isAdminLoading) ? (
@@ -124,7 +124,7 @@ export function Header() {
             </div>
           )}
         </nav>
-        <div className="md:hidden">
+        <div className="lg:hidden">
             <Sheet open={isSheetOpen} onOpenChange={setSheetOpen}>
                 <SheetTrigger asChild>
                     <Button variant="outline" size="icon">
