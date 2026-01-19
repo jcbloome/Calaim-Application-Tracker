@@ -20,7 +20,7 @@ import {
   CheckCircle2,
   AlertTriangle
 } from 'lucide-react';
-import { format, startOfDay, endOfDay, isToday, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
+import { format, startOfDay, endOfDay, isToday, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, startOfMonth, endOfMonth, eachWeekOfInterval, getWeek, isWeekend } from 'date-fns';
 import Link from 'next/link';
 
 interface DailyStats {
@@ -40,6 +40,26 @@ interface WeeklyStats {
   };
 }
 
+interface MonthlyStats {
+  [key: string]: {
+    weekStart: Date;
+    weekEnd: Date;
+    newDocuments: number;
+    completedCsSummaries: number;
+    totalApplications: number;
+    weekNumber: number;
+    isCurrentWeek: boolean;
+  };
+}
+
+interface CsUploadLog {
+  date: Date;
+  memberName: string;
+  applicationId: string;
+  isWeekend: boolean;
+  weekNumber: number;
+}
+
 interface NotificationItem {
   id: string;
   type: 'document_upload' | 'cs_summary_complete';
@@ -52,7 +72,7 @@ interface NotificationItem {
 }
 
 export function DailyNotificationDashboard() {
-  const [viewMode, setViewMode] = useState<'daily' | 'weekly'>('daily');
+  const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [dailyStats, setDailyStats] = useState<DailyStats>({
     newDocuments: 0,
     completedCsSummaries: 0,
@@ -60,6 +80,8 @@ export function DailyNotificationDashboard() {
     pendingReview: 0
   });
   const [weeklyStats, setWeeklyStats] = useState<WeeklyStats>({});
+  const [monthlyStats, setMonthlyStats] = useState<MonthlyStats>({});
+  const [csUploadLogs, setCsUploadLogs] = useState<CsUploadLog[]>([]);
   const [notificationItems, setNotificationItems] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
@@ -127,6 +149,31 @@ export function DailyNotificationDashboard() {
         };
       });
 
+      // Initialize monthly stats (by weeks)
+      const monthlyData: MonthlyStats = {};
+      const monthStart = startOfMonth(today);
+      const monthEnd = endOfMonth(today);
+      const monthWeeks = eachWeekOfInterval({ start: monthStart, end: monthEnd });
+      
+      monthWeeks.forEach((weekStartDate, index) => {
+        const weekEndDate = endOfWeek(weekStartDate);
+        const weekKey = `week-${index + 1}`;
+        const currentWeekStart = startOfWeek(today);
+        
+        monthlyData[weekKey] = {
+          weekStart: weekStartDate,
+          weekEnd: weekEndDate,
+          newDocuments: 0,
+          completedCsSummaries: 0,
+          totalApplications: 0,
+          weekNumber: index + 1,
+          isCurrentWeek: weekStartDate.getTime() === currentWeekStart.getTime()
+        };
+      });
+
+      // Initialize CS upload logs
+      const csLogs: CsUploadLog[] = [];
+
       const items: NotificationItem[] = [];
       let todayActivityCount = 0;
 
@@ -167,6 +214,16 @@ export function DailyNotificationDashboard() {
               weeklyData[dayKey].newDocuments += data.newDocumentCount;
             }
           }
+
+          // Add to monthly stats if within this month
+          if (docUploadDate >= monthStart && docUploadDate <= monthEnd) {
+            const docWeekStart = startOfWeek(docUploadDate);
+            Object.entries(monthlyData).forEach(([weekKey, weekData]) => {
+              if (weekData.weekStart.getTime() === docWeekStart.getTime()) {
+                weekData.newDocuments += data.newDocumentCount;
+              }
+            });
+          }
         }
 
         // Count completed CS summaries (check recent completions)
@@ -202,6 +259,37 @@ export function DailyNotificationDashboard() {
               weeklyData[dayKey].completedCsSummaries++;
             }
           }
+
+          // Add to monthly stats if within this month
+          if (csCompletedAt && csCompletedAt >= monthStart && csCompletedAt <= monthEnd) {
+            // Find which week this completion falls into
+            const completionWeekStart = startOfWeek(csCompletedAt);
+            Object.entries(monthlyData).forEach(([weekKey, weekData]) => {
+              if (weekData.weekStart.getTime() === completionWeekStart.getTime()) {
+                weekData.completedCsSummaries++;
+              }
+            });
+
+            // Add to CS upload log
+            csLogs.push({
+              date: csCompletedAt,
+              memberName,
+              applicationId: doc.id,
+              isWeekend: isWeekend(csCompletedAt),
+              weekNumber: getWeek(csCompletedAt)
+            });
+
+            // Enhanced logging for tracking
+            const logType = isWeekend(csCompletedAt) ? 'WEEKEND' : 'WEEKDAY';
+            console.log(`📊 CS Summary Upload Log [${logType}]:`, {
+              memberName,
+              applicationId: doc.id,
+              completedAt: format(csCompletedAt, 'PPP p'),
+              dayOfWeek: format(csCompletedAt, 'EEEE'),
+              weekNumber: getWeek(csCompletedAt),
+              isWeekend: isWeekend(csCompletedAt)
+            });
+          }
         }
 
         // Count pending review items
@@ -228,8 +316,36 @@ export function DailyNotificationDashboard() {
         weeklyData[dayKey].totalApplications = dayActivityCount;
       });
 
+      // Update monthly stats with total applications for each week
+      Object.keys(monthlyData).forEach(weekKey => {
+        const weekData = monthlyData[weekKey];
+        const weekActivityCount = allDocs.filter(doc => {
+          const data = doc.data();
+          const lastModified = data.lastModified?.toDate() || data.createdAt?.toDate() || new Date();
+          return lastModified >= weekData.weekStart && lastModified <= weekData.weekEnd;
+        }).length;
+        
+        weekData.totalApplications = weekActivityCount;
+      });
+
+      // Log CS Summary statistics
+      const todayLogs = csLogs.filter(log => isToday(log.date));
+      const weekendLogs = csLogs.filter(log => log.isWeekend);
+      const weekdayLogs = csLogs.filter(log => !log.isWeekend);
+
+      console.log('📈 CS Summary Upload Statistics:', {
+        today: todayLogs.length,
+        thisWeek: csLogs.filter(log => log.date >= weekStart && log.date <= weekEnd).length,
+        thisMonth: csLogs.length,
+        weekendUploads: weekendLogs.length,
+        weekdayUploads: weekdayLogs.length,
+        logs: csLogs
+      });
+
       setDailyStats(stats);
       setWeeklyStats(weeklyData);
+      setMonthlyStats(monthlyData);
+      setCsUploadLogs(csLogs);
       setNotificationItems(items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()));
       setIsLoading(false);
     };
@@ -294,13 +410,14 @@ export function DailyNotificationDashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">
-            {viewMode === 'daily' ? 'Daily Activity Dashboard' : 'Weekly Activity Dashboard'}
+            {viewMode === 'daily' && 'Daily Activity Dashboard'}
+            {viewMode === 'weekly' && 'Weekly Activity Dashboard'}
+            {viewMode === 'monthly' && 'Monthly Activity Dashboard'}
           </h2>
           <p className="text-muted-foreground">
-            {viewMode === 'daily' 
-              ? `Real-time overview of today's application activity • ${format(new Date(), 'EEEE, MMMM do, yyyy')}`
-              : `Weekly breakdown of application activity by day • ${format(startOfWeek(new Date()), 'MMM do')} - ${format(endOfWeek(new Date()), 'MMM do, yyyy')}`
-            }
+            {viewMode === 'daily' && `Real-time overview of today's application activity • ${format(new Date(), 'EEEE, MMMM do, yyyy')}`}
+            {viewMode === 'weekly' && `Weekly breakdown of application activity by day • ${format(startOfWeek(new Date()), 'MMM do')} - ${format(endOfWeek(new Date()), 'MMM do, yyyy')}`}
+            {viewMode === 'monthly' && `Monthly breakdown of application activity by week • ${format(startOfMonth(new Date()), 'MMMM yyyy')}`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -319,6 +436,14 @@ export function DailyNotificationDashboard() {
           >
             <TrendingUp className="mr-2 h-4 w-4" />
             Weekly
+          </Button>
+          <Button
+            variant={viewMode === 'monthly' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('monthly')}
+          >
+            <Users className="mr-2 h-4 w-4" />
+            Monthly
           </Button>
         </div>
       </div>
@@ -624,7 +749,151 @@ export function DailyNotificationDashboard() {
             </CardContent>
           </Card>
         </div>
-      )}
+      ) : viewMode === 'monthly' ? (
+        /* Monthly View */
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {Object.entries(monthlyStats).map(([weekKey, weekData]) => (
+              <Card key={weekKey} className={`${weekData.isCurrentWeek ? 'ring-2 ring-blue-500' : ''}`}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-center">
+                    Week {weekData.weekNumber}
+                  </CardTitle>
+                  <CardDescription className="text-xs text-center">
+                    {format(weekData.weekStart, 'MMM d')} - {format(weekData.weekEnd, 'MMM d')}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="space-y-2 text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <Upload className="h-3 w-3 text-blue-600" />
+                      <span className="text-sm font-semibold text-blue-600">
+                        {weekData.newDocuments}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center gap-1">
+                      <FileText className="h-3 w-3 text-green-600" />
+                      <span className="text-sm font-semibold text-green-600">
+                        {weekData.completedCsSummaries}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center gap-1">
+                      <Users className="h-3 w-3 text-gray-600" />
+                      <span className="text-sm font-semibold text-gray-600">
+                        {weekData.totalApplications}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          
+          {/* Monthly Summary & CS Upload Logs */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Monthly Summary */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Monthly Summary</CardTitle>
+                <CardDescription>
+                  Activity summary for {format(startOfMonth(new Date()), 'MMMM yyyy')}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <div className="flex items-center justify-center gap-2 mb-1">
+                      <Upload className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm font-medium">Documents</span>
+                    </div>
+                    <p className="text-2xl font-bold text-blue-600">
+                      {Object.values(monthlyStats).reduce((sum, week) => sum + week.newDocuments, 0)}
+                    </p>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-center gap-2 mb-1">
+                      <FileText className="h-4 w-4 text-green-600" />
+                      <span className="text-sm font-medium">CS Summaries</span>
+                    </div>
+                    <p className="text-2xl font-bold text-green-600">
+                      {Object.values(monthlyStats).reduce((sum, week) => sum + week.completedCsSummaries, 0)}
+                    </p>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-center gap-2 mb-1">
+                      <Users className="h-4 w-4 text-gray-600" />
+                      <span className="text-sm font-medium">Applications</span>
+                    </div>
+                    <p className="text-2xl font-bold text-gray-600">
+                      {Object.values(monthlyStats).reduce((sum, week) => sum + week.totalApplications, 0)}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* CS Upload Activity Log */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-green-600" />
+                  CS Summary Upload Log
+                </CardTitle>
+                <CardDescription>
+                  Daily, weekend, and monthly CS Summary form uploads
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {/* Summary Stats */}
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div className="p-2 bg-green-50 rounded">
+                      <p className="text-sm font-medium text-green-700">Today</p>
+                      <p className="text-lg font-bold text-green-600">
+                        {csUploadLogs.filter(log => isToday(log.date)).length}
+                      </p>
+                    </div>
+                    <div className="p-2 bg-blue-50 rounded">
+                      <p className="text-sm font-medium text-blue-700">Weekend</p>
+                      <p className="text-lg font-bold text-blue-600">
+                        {csUploadLogs.filter(log => log.isWeekend).length}
+                      </p>
+                    </div>
+                    <div className="p-2 bg-purple-50 rounded">
+                      <p className="text-sm font-medium text-purple-700">Month</p>
+                      <p className="text-lg font-bold text-purple-600">
+                        {csUploadLogs.length}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Recent Uploads */}
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {csUploadLogs
+                      .sort((a, b) => b.date.getTime() - a.date.getTime())
+                      .slice(0, 5)
+                      .map((log, index) => (
+                        <div key={index} className="flex items-center justify-between p-2 border rounded text-sm">
+                          <div className="flex-1">
+                            <p className="font-medium">{log.memberName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {format(log.date, 'PPP p')} • {log.isWeekend ? 'Weekend' : 'Weekday'}
+                            </p>
+                          </div>
+                          <Link href={`/admin/applications/${log.applicationId}`}>
+                            <Button size="sm" variant="outline">
+                              <ExternalLink className="h-3 w-3" />
+                            </Button>
+                          </Link>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
