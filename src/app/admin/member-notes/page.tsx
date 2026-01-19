@@ -96,47 +96,47 @@ export default function MemberNotesPage() {
 
   // Fetch members from Caspio API with search
   const fetchMembers = useCallback(async (search: string = '') => {
+    // Only search if there's a search term (don't load all members by default)
+    if (!search.trim()) {
+      setMembers([]);
+      return;
+    }
+
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
-      if (search.trim()) {
-        params.append('search', search.trim());
-      }
-      params.append('limit', '100');
+      params.append('search', search.trim());
+      params.append('limit', '20'); // Reduced limit for faster searches
       
       const response = await fetch(`/api/members?${params.toString()}`);
       const data = await response.json();
       
       if (data.success) {
         setMembers(data.members);
-        console.log(`✅ Loaded ${data.members.length} CalAIM members from Caspio`);
+        console.log(`✅ Found ${data.members.length} CalAIM members matching "${search}"`);
       } else {
-        console.error('❌ Failed to load members:', data.error);
+        console.error('❌ Failed to search members:', data.error);
         toast({
-          title: "Error Loading Members",
-          description: data.error || "Failed to load CalAIM members from Caspio",
+          title: "Search Error",
+          description: data.error || "Failed to search CalAIM members",
           variant: "destructive"
         });
-        setMembers([]); // Clear members on error
+        setMembers([]);
       }
     } catch (error) {
-      console.error('❌ Error fetching members:', error);
+      console.error('❌ Error searching members:', error);
       toast({
         title: "Connection Error",
         description: "Unable to connect to Caspio. Please check your connection.",
         variant: "destructive"
       });
-      setMembers([]); // Clear members on error
+      setMembers([]);
     } finally {
       setIsLoading(false);
     }
   }, [toast]);
 
-  // Initial load of members
-  useEffect(() => {
-    fetchMembers();
-  }, [fetchMembers]);
-
+  // Don't load members on mount - only when searching
   // Search members when search term changes (with debounce)
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -149,20 +149,28 @@ export default function MemberNotesPage() {
   // Since we're doing server-side search, we don't need client-side filtering
   const filteredMembers = members;
 
-  const handleMemberSelect = async (member: Member) => {
+  const handleMemberSelect = (member: Member) => {
     setSelectedMember(member);
+    setMemberNotes([]); // Clear notes when selecting a new member
+  };
+
+  const handleRequestNotes = async (member: Member) => {
     setIsNotesLoading(true);
     
     try {
-      const response = await fetch(`/api/member-notes?clientId2=${member.clientId2}`);
+      const response = await fetch(`/api/member-notes?clientId2=${member.clientId2}&forceSync=true`);
       const data = await response.json();
       
       if (data.success) {
         setMemberNotes(data.notes);
         
+        const syncType = data.isFirstSync ? 'imported from Caspio' : 
+                        data.newNotesCount > 0 ? `synced ${data.newNotesCount} new notes` : 
+                        'already up to date';
+        
         toast({
           title: "Notes Loaded",
-          description: `Loaded ${data.notes.length} notes for ${member.firstName} ${member.lastName}${data.fromCache ? ' (from cache)' : ' (synced from Caspio)'}`,
+          description: `${data.notes.length} notes for ${member.firstName} ${member.lastName} - ${syncType}`,
         });
       } else {
         throw new Error(data.error || 'Failed to load notes');
@@ -507,8 +515,54 @@ export default function MemberNotesPage() {
                 <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
                 <p className="text-muted-foreground">Loading notes...</p>
               </div>
+            ) : memberNotes.length === 0 ? (
+              <div className="text-center py-12">
+                <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-medium mb-2">No Notes Loaded</h3>
+                <p className="text-muted-foreground mb-6">
+                  Click "Request Notes" to load notes for {selectedMember.firstName} {selectedMember.lastName}
+                </p>
+                <Button 
+                  onClick={() => handleRequestNotes(selectedMember)}
+                  disabled={isNotesLoading}
+                  size="lg"
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {isNotesLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Loading Notes...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="mr-2 h-4 w-4" />
+                      Request Notes
+                    </>
+                  )}
+                </Button>
+              </div>
             ) : (
               <div className="space-y-4">
+                {/* Refresh Notes Button */}
+                <div className="flex justify-between items-center">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {memberNotes.length} notes for {selectedMember.firstName} {selectedMember.lastName}
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => handleRequestNotes(selectedMember)}
+                    disabled={isNotesLoading}
+                  >
+                    {isNotesLoading ? (
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-3 w-3" />
+                    )}
+                    Sync Notes
+                  </Button>
+                </div>
+
                 {/* Note Filters */}
                 <div className="flex gap-4 p-4 bg-gray-50 rounded-lg">
                   <Select value={noteFilter.type} onValueChange={(value) => setNoteFilter(prev => ({ ...prev, type: value }))}>

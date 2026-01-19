@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminDb } from '@/firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 
 interface CaspioNote {
   PK_ID: number;
@@ -32,6 +34,8 @@ interface MemberNote {
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   followUpDate?: string;
   tags?: string[];
+  isLegacy?: boolean; // Tag for notes imported from Caspio
+  syncedAt?: string; // When this note was synced from Caspio
 }
 
 // Caspio configuration - hardcoded for development
@@ -61,9 +65,9 @@ async function getCaspioToken() {
   return data.access_token;
 }
 
-// In-memory storage for caching (in production, use Firestore)
-let memberNotesCache: { [clientId2: string]: MemberNote[] } = {};
-let lastSyncTimestamp: { [clientId2: string]: string } = {};
+// Firestore collections
+const NOTES_COLLECTION = 'member-notes';
+const SYNC_STATUS_COLLECTION = 'member-notes-sync-status';
 
 export async function GET(request: NextRequest) {
   try {
@@ -78,30 +82,47 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`📥 Fetching notes for member: ${clientId2}`);
+    console.log(`📥 Fetching notes for member: ${clientId2} (forceSync: ${forceSync})`);
 
-    // Check if we need to sync from Caspio (first time or forced sync)
-    const needsSync = forceSync || !memberNotesCache[clientId2] || !lastSyncTimestamp[clientId2];
+    // Get sync status from Firestore
+    const syncStatusRef = adminDb.collection(SYNC_STATUS_COLLECTION).doc(clientId2);
+    const syncStatusDoc = await syncStatusRef.get();
+    const syncStatus = syncStatusDoc.data();
 
-    if (needsSync) {
-      console.log(`🔄 Syncing notes from Caspio for ${clientId2}`);
-      await syncNotesFromCaspio(clientId2);
-    } else {
-      // Check for new notes since last sync
-      await syncNewNotesFromCaspio(clientId2);
+    const isFirstSync = !syncStatus || !syncStatus.lastSyncAt;
+    let newNotesCount = 0;
+
+    if (forceSync) {
+      if (isFirstSync) {
+        console.log(`🆕 First time sync for member ${clientId2} - importing all legacy notes`);
+        newNotesCount = await syncAllNotesFromCaspio(clientId2);
+      } else {
+        console.log(`🔄 Incremental sync for member ${clientId2} - checking for new notes`);
+        newNotesCount = await syncNewNotesFromCaspio(clientId2, syncStatus.lastSyncAt);
+      }
     }
 
-    const notes = memberNotesCache[clientId2] || [];
+    // Get notes from Firestore (both legacy and new)
+    const notesQuery = adminDb.collection(NOTES_COLLECTION)
+      .where('clientId2', '==', clientId2)
+      .orderBy('createdAt', 'desc');
     
-    // Sort notes by creation date (newest first)
-    notes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const notesSnapshot = await notesQuery.get();
+    const notes = notesSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as MemberNote[];
+
+    console.log(`📋 Returning ${notes.length} notes for member ${clientId2}`);
 
     return NextResponse.json({
       success: true,
       notes,
+      isFirstSync,
+      newNotesCount,
       totalNotes: notes.length,
-      lastSync: lastSyncTimestamp[clientId2] || null,
-      fromCache: !needsSync
+      legacyNotes: notes.filter(n => n.isLegacy).length,
+      appNotes: notes.filter(n => n.source === 'App' || n.source === 'Admin').length
     });
 
   } catch (error: any) {
@@ -207,14 +228,13 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function syncNotesFromCaspio(clientId2: string): Promise<void> {
+// Sync ALL notes from Caspio for a member (first time sync)
+async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
   try {
-    console.log(`🔄 Syncing notes from connect_tbl_clientnotes for Client_ID2: ${clientId2}`);
+    console.log(`🔄 First-time sync: importing all legacy notes for Client_ID2: ${clientId2}`);
     
     const token = await getCaspioToken();
-    
-    // Fetch notes from connect_tbl_clientnotes table
-    const apiUrl = `${CASPIO_BASE_URL}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}'&q.orderBy=Time_Stamp DESC`;
+    const apiUrl = `${CASPIO_BASE_URL}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}'&q.orderBy=Time_Stamp DESC&q.limit=1000`;
     
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -231,53 +251,145 @@ async function syncNotesFromCaspio(clientId2: string): Promise<void> {
     const data = await response.json();
     const caspioNotes: CaspioNote[] = data.Result || [];
     
-    console.log(`📥 Retrieved ${caspioNotes.length} notes from Caspio for Client_ID2: ${clientId2}`);
+    console.log(`📥 Retrieved ${caspioNotes.length} legacy notes from Caspio for Client_ID2: ${clientId2}`);
 
-    // Convert Caspio notes to our format
-    const convertedNotes: MemberNote[] = caspioNotes.map(caspioNote => ({
-      id: `caspio_${caspioNote.PK_ID}`,
-      clientId2: caspioNote.Client_ID2.toString(),
-      memberName: caspioNote.Senior_Full_Name || 'Unknown Member',
-      noteText: caspioNote.Comments || '',
-      noteType: 'General', // Default since no specific type field
-      createdBy: caspioNote.User_ID.toString(),
-      createdByName: caspioNote.User_Full_Name || `User ${caspioNote.User_ID}`,
-      assignedTo: caspioNote.Follow_Up_Assignment || undefined,
-      assignedToName: caspioNote.Assigned_First || undefined,
-      createdAt: caspioNote.Time_Stamp || new Date().toISOString(),
-      updatedAt: caspioNote.Time_Stamp || new Date().toISOString(),
-      source: 'Caspio',
-      isRead: true, // Existing notes are considered read
-      priority: caspioNote.Follow_Up_Status?.includes('🟢') ? 'Medium' : 'Low',
-      followUpDate: caspioNote.Follow_Up_Date
-    }));
+    const syncTime = new Date().toISOString();
+    let importedCount = 0;
 
-    // Store in cache (in production, save to Firestore)
-    memberNotesCache[clientId2] = convertedNotes;
-    lastSyncTimestamp[clientId2] = new Date().toISOString();
+    // Import each note to Firestore with legacy tag
+    for (const caspioNote of caspioNotes) {
+      const noteId = `caspio_${caspioNote.PK_ID}`;
+      
+      // Check if note already exists
+      const existingNote = await adminDb.collection(NOTES_COLLECTION).doc(noteId).get();
+      if (existingNote.exists) {
+        continue; // Skip if already imported
+      }
 
-    console.log(`✅ Synced ${convertedNotes.length} notes from Caspio for Client_ID2: ${clientId2}`);
+      const transformedNote: MemberNote = {
+        id: noteId,
+        clientId2: caspioNote.Client_ID2.toString(),
+        memberName: caspioNote.Senior_Full_Name || 'Unknown Member',
+        noteText: caspioNote.Comments || '',
+        noteType: 'General',
+        createdBy: caspioNote.User_ID.toString(),
+        createdByName: caspioNote.User_Full_Name || `User ${caspioNote.User_ID}`,
+        assignedTo: caspioNote.Follow_Up_Assignment || undefined,
+        assignedToName: caspioNote.Assigned_First || undefined,
+        createdAt: caspioNote.Time_Stamp || syncTime,
+        updatedAt: caspioNote.Time_Stamp || syncTime,
+        source: 'Caspio',
+        isRead: true, // Legacy notes are considered read
+        priority: caspioNote.Follow_Up_Status?.includes('🟢') ? 'Medium' : 'Low',
+        followUpDate: caspioNote.Follow_Up_Date,
+        tags: [],
+        isLegacy: true, // Tag as legacy note
+        syncedAt: syncTime
+      };
+
+      await adminDb.collection(NOTES_COLLECTION).doc(noteId).set(transformedNote);
+      importedCount++;
+    }
+
+    // Update sync status
+    await adminDb.collection(SYNC_STATUS_COLLECTION).doc(clientId2).set({
+      clientId2,
+      lastSyncAt: syncTime,
+      totalLegacyNotes: importedCount,
+      firstSyncCompleted: true,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+
+    console.log(`✅ Imported ${importedCount} legacy notes for Client_ID2: ${clientId2}`);
+    return importedCount;
 
   } catch (error) {
-    console.error('❌ Error syncing notes from Caspio:', error);
+    console.error('❌ Error importing legacy notes from Caspio:', error);
     throw error;
   }
 }
 
-async function syncNewNotesFromCaspio(clientId2: string): Promise<void> {
+// Sync only NEW notes since last sync (incremental sync)
+async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Promise<number> {
   try {
-    const lastSync = lastSyncTimestamp[clientId2];
-    if (!lastSync) return;
+    console.log(`🔄 Incremental sync: checking for new notes since ${lastSyncAt} for Client_ID2: ${clientId2}`);
+    
+    const token = await getCaspioToken();
+    
+    // Query for notes newer than last sync timestamp
+    const apiUrl = `${CASPIO_BASE_URL}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}' AND Time_Stamp>'${lastSyncAt}'&q.orderBy=Time_Stamp DESC`;
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
 
-    console.log(`🔄 Checking for new notes since ${lastSync} for ${clientId2}`);
+    if (!response.ok) {
+      throw new Error(`Caspio API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const newCaspioNotes: CaspioNote[] = data.Result || [];
     
-    // In production, this would query Caspio for notes newer than lastSync
-    // For now, we'll simulate no new notes
-    
-    lastSyncTimestamp[clientId2] = new Date().toISOString();
+    console.log(`📥 Found ${newCaspioNotes.length} new notes since last sync for Client_ID2: ${clientId2}`);
+
+    if (newCaspioNotes.length === 0) {
+      return 0; // No new notes
+    }
+
+    const syncTime = new Date().toISOString();
+    let importedCount = 0;
+
+    // Import each new note to Firestore
+    for (const caspioNote of newCaspioNotes) {
+      const noteId = `caspio_${caspioNote.PK_ID}`;
+      
+      // Check if note already exists (shouldn't, but safety check)
+      const existingNote = await adminDb.collection(NOTES_COLLECTION).doc(noteId).get();
+      if (existingNote.exists) {
+        continue;
+      }
+
+      const transformedNote: MemberNote = {
+        id: noteId,
+        clientId2: caspioNote.Client_ID2.toString(),
+        memberName: caspioNote.Senior_Full_Name || 'Unknown Member',
+        noteText: caspioNote.Comments || '',
+        noteType: 'General',
+        createdBy: caspioNote.User_ID.toString(),
+        createdByName: caspioNote.User_Full_Name || `User ${caspioNote.User_ID}`,
+        assignedTo: caspioNote.Follow_Up_Assignment || undefined,
+        assignedToName: caspioNote.Assigned_First || undefined,
+        createdAt: caspioNote.Time_Stamp || syncTime,
+        updatedAt: caspioNote.Time_Stamp || syncTime,
+        source: 'Caspio',
+        isRead: false, // New notes are unread
+        priority: caspioNote.Follow_Up_Status?.includes('🟢') ? 'Medium' : 'Low',
+        followUpDate: caspioNote.Follow_Up_Date,
+        tags: [],
+        isLegacy: false, // These are new notes, not legacy
+        syncedAt: syncTime
+      };
+
+      await adminDb.collection(NOTES_COLLECTION).doc(noteId).set(transformedNote);
+      importedCount++;
+    }
+
+    // Update sync status
+    await adminDb.collection(SYNC_STATUS_COLLECTION).doc(clientId2).update({
+      lastSyncAt: syncTime,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+
+    console.log(`✅ Imported ${importedCount} new notes for Client_ID2: ${clientId2}`);
+    return importedCount;
 
   } catch (error) {
-    console.error('Error syncing new notes from Caspio:', error);
+    console.error('❌ Error syncing new notes from Caspio:', error);
+    throw error;
   }
 }
 
