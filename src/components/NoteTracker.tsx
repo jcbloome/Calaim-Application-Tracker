@@ -129,7 +129,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
   const loadNotes = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/member-notes?clientId2=${memberId}&includeArchived=${showArchived}`);
+      const response = await fetch(`/api/member-notes?clientId2=${encodeURIComponent(memberId)}&includeArchived=${encodeURIComponent(showArchived)}`);
       const data = await response.json();
       
       if (data.success && data.notes) {

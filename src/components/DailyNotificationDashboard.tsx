@@ -138,30 +138,31 @@ export function DailyNotificationDashboard() {
           }
         }
 
-        // Count completed CS summaries - Enhanced debugging
+        // Count completed CS summaries - Include both confirmed and in-progress forms
+        const isCSCompleted = data.csSummaryComplete || data.status === 'In Progress';
+        const csCompletedAt = data.csSummaryCompletedAt?.toDate() || data.lastUpdated?.toDate() || data.createdAt?.toDate();
+        
         console.log(`🔍 CS Summary Debug for ${memberName}:`, {
           applicationId: doc.id,
           status: data.status,
           csSummaryComplete: data.csSummaryComplete,
-          csSummaryCompletedAt: data.csSummaryCompletedAt,
-          csSummaryNotificationSent: data.csSummaryNotificationSent,
+          isCSCompleted,
+          csCompletedAt,
           lastUpdated: data.lastUpdated,
-          createdAt: data.createdAt,
-          allFields: Object.keys(data)
+          createdAt: data.createdAt
         });
 
-        if (data.csSummaryComplete) {
-          const csCompletedAt = data.csSummaryCompletedAt?.toDate();
-          const csCompletedToday = csCompletedAt && isToday(csCompletedAt);
-          const csCompletedThisWeek = csCompletedAt && isThisWeek(csCompletedAt);
-          const csCompletedThisMonth = csCompletedAt && isThisMonth(csCompletedAt);
+        if (isCSCompleted && csCompletedAt) {
+          const csCompletedToday = isToday(csCompletedAt);
+          const csCompletedThisWeek = isThisWeek(csCompletedAt);
+          const csCompletedThisMonth = isThisMonth(csCompletedAt);
           
-          console.log(`✅ CS Summary FOUND for ${memberName}:`, {
+          console.log(`✅ CS Summary COUNTED for ${memberName}:`, {
             csCompletedAt,
             csCompletedToday,
             csCompletedThisWeek,
             csCompletedThisMonth,
-            today: new Date()
+            reason: data.csSummaryComplete ? 'Confirmed' : 'In Progress'
           });
           
           if (csCompletedToday) {
@@ -170,7 +171,7 @@ export function DailyNotificationDashboard() {
           }
 
           // Add to CS Upload logs for monthly view
-          if (csCompletedAt && csCompletedThisMonth) {
+          if (csCompletedThisMonth) {
             const dayOfWeek = format(csCompletedAt, 'EEEE');
             const weekNumber = Math.ceil((csCompletedAt.getDate() + startOfMonth(csCompletedAt).getDay()) / 7);
             
@@ -185,22 +186,11 @@ export function DailyNotificationDashboard() {
           }
 
           // Update weekly stats
-          if (csCompletedAt && csCompletedThisWeek) {
+          if (csCompletedThisWeek) {
             const dayKey = format(csCompletedAt, 'EEEE');
             if (weeklyData[dayKey]) {
               weeklyData[dayKey].completedCsSummaries++;
             }
-          }
-        } else {
-          // Check if this is Jacqueline and see what status indicates completion
-          if (memberName.toLowerCase().includes('jacqueline')) {
-            console.log(`🔍 JACQUELINE SPECIFIC DEBUG:`, {
-              status: data.status,
-              hasStatus: !!data.status,
-              statusValue: data.status,
-              isInProgress: data.status === 'In Progress',
-              allData: data
-            });
           }
         }
 

@@ -11,17 +11,13 @@ interface Member {
   noteCount: number;
 }
 
-// Caspio configuration
-const CASPIO_BASE_URL = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com';
-const CASPIO_CLIENT_ID = process.env.CASPIO_CLIENT_ID;
-const CASPIO_CLIENT_SECRET = process.env.CASPIO_CLIENT_SECRET;
+// Caspio configuration - hardcoded for development
+const CASPIO_BASE_URL = 'https://c7ebl500.caspio.com';
+const CASPIO_CLIENT_ID = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+const CASPIO_CLIENT_SECRET = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
 
 // Get Caspio access token
 async function getCaspioToken() {
-  if (!CASPIO_CLIENT_ID || !CASPIO_CLIENT_SECRET) {
-    throw new Error('Caspio credentials not configured');
-  }
-
   const tokenUrl = `${CASPIO_BASE_URL}/oauth/token`;
   const credentials = Buffer.from(`${CASPIO_CLIENT_ID}:${CASPIO_CLIENT_SECRET}`).toString('base64');
 
@@ -55,8 +51,8 @@ async function fetchCaspioMembers(search?: string, healthPlan?: string, status?:
     
     // Add search filters
     if (search) {
-      // Search in first name, last name, or Client_ID2
-      queryParams.append('q.where', `memberFirstName LIKE '%${search}%' OR memberLastName LIKE '%${search}%' OR Client_ID2 LIKE '%${search}%'`);
+      // Search in first name, last name, or Client_ID2 - using correct field names
+      queryParams.append('q.where', `Senior_First LIKE '%${search}%' OR Senior_Last LIKE '%${search}%' OR Client_ID2 LIKE '%${search}%'`);
     }
     
     // Add health plan filter
@@ -83,8 +79,8 @@ async function fetchCaspioMembers(search?: string, healthPlan?: string, status?:
     queryParams.append('q.limit', limit.toString());
     queryParams.append('q.skip', offset.toString());
     
-    // Add ordering
-    queryParams.append('q.orderBy', 'memberLastName ASC, memberFirstName ASC');
+    // Add ordering - using correct field names
+    queryParams.append('q.orderBy', 'Senior_Last ASC, Senior_First ASC');
     
     if (queryParams.toString()) {
       apiUrl += `?${queryParams.toString()}`;
@@ -128,11 +124,11 @@ export async function GET(request: NextRequest) {
     // Fetch members from Caspio
     const caspioMembers = await fetchCaspioMembers(search, healthPlan, status, limit, offset);
 
-    // Transform Caspio data to our Member interface
+    // Transform Caspio data to our Member interface - using correct field names
     const transformedMembers: Member[] = caspioMembers.map((member: any) => ({
       clientId2: member.Client_ID2 || '',
-      firstName: member.memberFirstName || '',
-      lastName: member.memberLastName || '',
+      firstName: member.Senior_First || '',
+      lastName: member.Senior_Last || '',
       healthPlan: member.CalAIM_MCO || 'Unknown',
       status: member.CalAIM_Status || 'Unknown',
       rcfeName: member.RCFE_Name || undefined,
@@ -161,6 +157,11 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('❌ Error fetching CalAIM members:', error);
     
+    // Get the parameters again for error response
+    const { searchParams } = new URL(request.url);
+    const errorLimit = parseInt(searchParams.get('limit') || '50');
+    const errorOffset = parseInt(searchParams.get('offset') || '0');
+    
     // Fallback to empty result with error message
     return NextResponse.json({
       success: false,
@@ -169,8 +170,8 @@ export async function GET(request: NextRequest) {
       totalMembers: 0,
       hasMore: false,
       pagination: {
-        limit,
-        offset,
+        limit: errorLimit,
+        offset: errorOffset,
         total: 0
       }
     }, { status: 500 });

@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     // Fetch Caspio MSW staff if requested
     if (includeCaspioStaff) {
       try {
-        const caspioResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/caspio-staff`);
+        const caspioResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/api/caspio-staff`);
         const caspioData = await caspioResponse.json();
         
         if (caspioData.success && caspioData.staff.length > 0) {
