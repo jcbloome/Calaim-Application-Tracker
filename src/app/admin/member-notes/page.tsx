@@ -90,13 +90,16 @@ export default function MemberNotesPage() {
   const [isNewNoteDialogOpen, setIsNewNoteDialogOpen] = useState(false);
   const [newNote, setNewNote] = useState({
     noteText: '',
-    noteType: 'General' as MemberNote['noteType'],
     assignedTo: '',
     assignedToName: '',
     priority: 'Medium' as MemberNote['priority'],
     followUpDate: '',
     tags: [] as string[]
   });
+
+  // Staff list for dropdown
+  const [staffList, setStaffList] = useState<Array<{uid: string, name: string, email: string}>>([]);
+  const [isLoadingStaff, setIsLoadingStaff] = useState(false);
 
   // Fetch members from Caspio API with search
   const fetchMembers = useCallback(async (search: string = '') => {
@@ -140,6 +143,23 @@ export default function MemberNotesPage() {
     }
   }, [toast]);
 
+  // Load staff members for assignment dropdown
+  const loadStaffMembers = useCallback(async () => {
+    setIsLoadingStaff(true);
+    try {
+      const response = await fetch('/api/staff-members?includeFirebaseAdmins=true&includeCaspioStaff=true');
+      const data = await response.json();
+      
+      if (data.success) {
+        setStaffList(data.staff || []);
+      }
+    } catch (error) {
+      console.error('Error loading staff members:', error);
+    } finally {
+      setIsLoadingStaff(false);
+    }
+  }, []);
+
   // Check ILS permissions on mount
   useEffect(() => {
     const checkILSPermissions = async () => {
@@ -161,7 +181,8 @@ export default function MemberNotesPage() {
     };
 
     checkILSPermissions();
-  }, [user?.uid]);
+    loadStaffMembers();
+  }, [user?.uid, loadStaffMembers]);
 
   // Don't load members on mount - only when searching
   // Search members when search term changes (with debounce)
@@ -230,11 +251,12 @@ export default function MemberNotesPage() {
         clientId2: selectedMember.clientId2,
         memberName: `${selectedMember.firstName} ${selectedMember.lastName}`,
         noteText: newNote.noteText,
-        noteType: newNote.noteType,
         priority: newNote.priority,
         assignedTo: newNote.assignedTo || undefined,
         assignedToName: newNote.assignedToName || undefined,
         followUpDate: newNote.followUpDate || undefined,
+        authorId: user?.uid || 'current-user', // Required field
+        authorName: user?.displayName || user?.email || 'Current User', // Required field
         createdBy: user?.uid || 'current-user',
         createdByName: user?.displayName || user?.email || 'Current User',
         tags: newNote.tags
@@ -255,7 +277,6 @@ export default function MemberNotesPage() {
         setIsNewNoteDialogOpen(false);
         setNewNote({
           noteText: '',
-          noteType: 'General',
           assignedTo: '',
           assignedToName: '',
           priority: 'Medium',
@@ -458,40 +479,19 @@ export default function MemberNotesPage() {
                       </DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="noteType">Note Type</Label>
-                          <Select value={newNote.noteType} onValueChange={(value: MemberNote['noteType']) => setNewNote(prev => ({ ...prev, noteType: value }))}>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="General">General</SelectItem>
-                              <SelectItem value="Medical">Medical</SelectItem>
-                              <SelectItem value="Social">Social</SelectItem>
-                              <SelectItem value="Administrative">Administrative</SelectItem>
-                              <SelectItem value="Follow-up">Follow-up</SelectItem>
-                              <SelectItem value="Emergency">Emergency</SelectItem>
-                              {hasILSPermission && (
-                                <SelectItem value="ILS">ILS Note (to JHernandez@ilshealth.com)</SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="priority">Priority</Label>
-                          <Select value={newNote.priority} onValueChange={(value: MemberNote['priority']) => setNewNote(prev => ({ ...prev, priority: value }))}>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Low">Low</SelectItem>
-                              <SelectItem value="Medium">Medium</SelectItem>
-                              <SelectItem value="High">High</SelectItem>
-                              <SelectItem value="Urgent">Urgent</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="priority">Priority</Label>
+                        <Select value={newNote.priority} onValueChange={(value: MemberNote['priority']) => setNewNote(prev => ({ ...prev, priority: value }))}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Low">Low</SelectItem>
+                            <SelectItem value="Medium">Medium</SelectItem>
+                            <SelectItem value="High">High</SelectItem>
+                            <SelectItem value="Urgent">Urgent</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="noteText">Note Content</Label>
@@ -505,13 +505,30 @@ export default function MemberNotesPage() {
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label htmlFor="assignedToName">Assign to Staff (Optional)</Label>
-                          <Input
-                            id="assignedToName"
-                            value={newNote.assignedToName}
-                            onChange={(e) => setNewNote(prev => ({ ...prev, assignedToName: e.target.value }))}
-                            placeholder="Staff member name"
-                          />
+                          <Label htmlFor="assignedTo">Assign to Staff (Optional)</Label>
+                          <Select 
+                            value={newNote.assignedTo} 
+                            onValueChange={(value) => {
+                              const selectedStaff = staffList.find(s => s.uid === value);
+                              setNewNote(prev => ({ 
+                                ...prev, 
+                                assignedTo: value,
+                                assignedToName: selectedStaff?.name || ''
+                              }));
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select staff member" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">No assignment</SelectItem>
+                              {staffList.map((staff) => (
+                                <SelectItem key={staff.uid} value={staff.uid}>
+                                  {staff.name} ({staff.email})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="followUpDate">Follow-up Date (Optional)</Label>
