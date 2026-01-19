@@ -22,7 +22,7 @@ import {
   Loader2,
   RefreshCw
 } from 'lucide-react';
-import { format, startOfDay, endOfDay } from 'date-fns';
+import { format, startOfDay, endOfDay, isToday } from 'date-fns';
 import Link from 'next/link';
 
 interface DailyStats {
@@ -136,15 +136,25 @@ export function DailyNotificationDashboard() {
 
         // Count completed CS summaries (check recent completions)
         if (data.csSummaryComplete) {
-          const csCompletedToday = data.csSummaryCompletedAt?.toDate() >= startOfToday;
-          if (csCompletedToday || (!data.csSummaryNotificationSent && isToday)) {
+          const csCompletedAt = data.csSummaryCompletedAt?.toDate();
+          const csCompletedToday = csCompletedAt && isToday(csCompletedAt);
+          
+          // Debug logging for CS Summary completion
+          console.log(`🔍 CS Summary Debug for ${memberName}:`, {
+            csSummaryComplete: data.csSummaryComplete,
+            csSummaryCompletedAt: csCompletedAt,
+            csCompletedToday,
+            today: new Date()
+          });
+          
+          if (csCompletedToday) {
             stats.completedCsSummaries++;
             items.push({
               id: `${doc.id}-cs-summary`,
               type: 'cs_summary_complete',
               applicationId: doc.id,
               memberName,
-              timestamp: data.csSummaryCompletedAt?.toDate() || timestamp,
+              timestamp: csCompletedAt || timestamp,
               csSummaryComplete: true
             });
           }
