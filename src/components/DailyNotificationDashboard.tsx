@@ -71,6 +71,17 @@ export function DailyNotificationDashboard() {
     let userDocs: any[] = [];
     let adminDocs: any[] = [];
     
+    // Define error handler first
+    const handleError = (error: any) => {
+      console.error('❌ Error loading daily dashboard:', error);
+      setIsLoading(false);
+      toast({
+        title: 'Error Loading Dashboard',
+        description: 'Failed to load daily activity data. Please try refreshing the page.',
+        variant: 'destructive',
+      });
+    };
+    
     // Listen to both user applications and admin applications
     const unsubscribeUser = onSnapshot(userApplicationsQuery, (userSnapshot) => {
       userDocs = userSnapshot.docs;
@@ -151,16 +162,6 @@ export function DailyNotificationDashboard() {
       setDailyStats(stats);
       setNotificationItems(items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()));
       setIsLoading(false);
-    };
-    
-    const handleError = (error: any) => {
-      console.error('❌ Error loading daily dashboard:', error);
-      setIsLoading(false);
-      toast({
-        variant: 'destructive',
-        title: 'Loading Error',
-        description: 'Could not load daily dashboard data',
-      });
     };
 
     return () => {
