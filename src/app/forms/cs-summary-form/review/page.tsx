@@ -104,10 +104,21 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
     const targetUserId = isAdminView ? appUserId : user?.uid;
 
     const applicationDocRef = useMemoFirebase(() => {
-        if (isUserLoading || !targetUserId || !firestore || !applicationId) {
+        if (isUserLoading || !firestore || !applicationId) {
             return null;
         }
-        return doc(firestore, `users/${targetUserId}/applications`, applicationId);
+        
+        // Handle admin-created applications (stored in root applications collection)
+        if (!targetUserId && applicationId?.startsWith('admin_app_')) {
+            return doc(firestore, 'applications', applicationId);
+        }
+        
+        // Handle user applications
+        if (targetUserId) {
+            return doc(firestore, `users/${targetUserId}/applications`, applicationId);
+        }
+        
+        return null;
     }, [targetUserId, firestore, applicationId, isUserLoading]);
 
     const { data: application, isLoading } = useDoc<Application & FormValues>(applicationDocRef);
@@ -121,7 +132,11 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
             await setDoc(applicationDocRef, {
                 status: 'In Progress',
                 forms: requiredForms,
-                lastUpdated: serverTimestamp()
+                lastUpdated: serverTimestamp(),
+                // Mark CS Summary as completed for dashboard tracking
+                csSummaryComplete: true,
+                csSummaryCompletedAt: serverTimestamp(),
+                csSummaryNotificationSent: false // Reset notification flag
             }, { merge: true });
 
             toast({

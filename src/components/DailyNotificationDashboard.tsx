@@ -64,10 +64,25 @@ export function DailyNotificationDashboard() {
     const startOfToday = startOfDay(today);
     const endOfToday = endOfDay(today);
 
-    // Query for all applications to get comprehensive stats
-    const allApplicationsQuery = collection(firestore, 'applications');
+    // Query for both user applications and admin-created applications
+    const userApplicationsQuery = collectionGroup(firestore, 'applications');
+    const adminApplicationsQuery = collection(firestore, 'applications');
 
-    const unsubscribe = onSnapshot(allApplicationsQuery, (snapshot) => {
+    let userDocs: any[] = [];
+    let adminDocs: any[] = [];
+    
+    // Listen to both user applications and admin applications
+    const unsubscribeUser = onSnapshot(userApplicationsQuery, (userSnapshot) => {
+      userDocs = userSnapshot.docs;
+      processAllApplications();
+    }, handleError);
+    
+    const unsubscribeAdmin = onSnapshot(adminApplicationsQuery, (adminSnapshot) => {
+      adminDocs = adminSnapshot.docs;
+      processAllApplications();
+    }, handleError);
+    
+    const processAllApplications = () => {
       const stats: DailyStats = {
         newDocuments: 0,
         completedCsSummaries: 0,
@@ -78,7 +93,9 @@ export function DailyNotificationDashboard() {
       const items: NotificationItem[] = [];
       let todayActivityCount = 0;
 
-      snapshot.forEach((doc) => {
+      // Process both user and admin applications
+      const allDocs = [...userDocs, ...adminDocs];
+      allDocs.forEach((doc) => {
         const data = doc.data();
         const memberName = `${data.memberFirstName || 'Unknown'} ${data.memberLastName || 'Member'}`;
         const lastModified = data.lastModified?.toDate() || data.createdAt?.toDate() || new Date();
@@ -134,7 +151,9 @@ export function DailyNotificationDashboard() {
       setDailyStats(stats);
       setNotificationItems(items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()));
       setIsLoading(false);
-    }, (error) => {
+    };
+    
+    const handleError = (error: any) => {
       console.error('❌ Error loading daily dashboard:', error);
       setIsLoading(false);
       toast({
@@ -142,9 +161,12 @@ export function DailyNotificationDashboard() {
         title: 'Loading Error',
         description: 'Could not load daily dashboard data',
       });
-    });
+    };
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeUser();
+      unsubscribeAdmin();
+    };
   }, [firestore, toast]);
 
   const refreshData = async () => {
