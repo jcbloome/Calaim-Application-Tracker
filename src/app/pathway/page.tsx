@@ -194,6 +194,10 @@ function PathwayPageContent() {
           await setDoc(docRef, {
               forms: updatedForms,
               lastUpdated: serverTimestamp(),
+              // Track new document uploads for dashboard
+              hasNewDocuments: true,
+              newDocumentCount: updates.length,
+              lastDocumentUpload: serverTimestamp(),
           }, { merge: true });
       } catch (e: any) {
           console.error("Failed to update form status:", e);

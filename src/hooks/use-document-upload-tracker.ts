@@ -6,12 +6,14 @@ import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 interface DocumentUploadTrackerOptions {
   applicationId: string;
+  userId?: string; // Optional for admin-created applications
   uploadedFiles: any[];
   onNewUpload?: (newFiles: any[]) => void;
 }
 
 export function useDocumentUploadTracker({
   applicationId,
+  userId,
   uploadedFiles,
   onNewUpload
 }: DocumentUploadTrackerOptions) {
@@ -35,10 +37,16 @@ export function useDocumentUploadTracker({
       
       // Flag new documents in Firestore
       if (firestore && applicationId) {
-        updateDoc(doc(firestore, 'applications', applicationId), {
+        // Determine the correct document path
+        const docPath = userId 
+          ? `users/${userId}/applications/${applicationId}`
+          : `applications/${applicationId}`;
+        
+        updateDoc(doc(firestore, docPath), {
           hasNewDocuments: true,
           lastDocumentUpload: serverTimestamp(),
-          newDocumentCount: newFiles.length
+          newDocumentCount: newFiles.length,
+          lastModified: serverTimestamp() // Ensure activity tracking
         }).catch(error => {
           console.error('Error flagging new documents:', error);
         });
@@ -58,7 +66,12 @@ export function useDocumentUploadTracker({
     if (!firestore || !applicationId) return;
 
     try {
-      await updateDoc(doc(firestore, 'applications', applicationId), {
+      // Determine the correct document path
+      const docPath = userId 
+        ? `users/${userId}/applications/${applicationId}`
+        : `applications/${applicationId}`;
+        
+      await updateDoc(doc(firestore, docPath), {
         hasNewDocuments: false,
         newDocumentCount: 0
       });
