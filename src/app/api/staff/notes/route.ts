@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { app } from '@/firebase';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
-    const limit = searchParams.get('limit') || '50';
-    const offset = searchParams.get('offset') || '0';
 
     if (!userId) {
       return NextResponse.json(
@@ -16,16 +12,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const functions = getFunctions(app);
-    const getStaffNotes = httpsCallable(functions, 'getStaffNotes');
-    
-    const result = await getStaffNotes({ 
-      userId, 
-      limit: parseInt(limit), 
-      offset: parseInt(offset) 
+    // For now, return empty notes array since the Firebase Function doesn't exist
+    // In production, this would fetch notes from Firestore or Caspio
+    return NextResponse.json({
+      success: true,
+      notes: [],
+      notifications: [],
+      message: 'No notes found for this user'
     });
-    
-    return NextResponse.json(result.data);
   } catch (error: any) {
     console.error('Error getting staff notes:', error);
     return NextResponse.json(

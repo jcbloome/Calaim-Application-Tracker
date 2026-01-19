@@ -103,136 +103,31 @@ export default function MyTasksPage() {
     
     setIsLoading(true);
     try {
-      // Sample tasks data - in production this would come from API
-      const sampleTasks: MyTask[] = [
-        {
-          id: '1',
-          title: 'Follow up with John Doe medication management',
-          description: 'Coordinate with facility nurse regarding medication timing confusion',
-          memberName: 'John Doe',
-          memberClientId: 'KAI-12345',
-          healthPlan: 'Kaiser',
-          taskType: 'note_assignment',
-          priority: 'High',
-          status: 'pending',
-          dueDate: '2026-01-20T00:00:00Z',
-          assignedBy: 'mike_wilson',
-          assignedByName: 'Dr. Mike Wilson, RN',
-          assignedTo: user.uid,
-          assignedToName: user.displayName || user.email || 'Current User',
-          createdAt: '2026-01-17T14:15:00Z',
-          updatedAt: '2026-01-17T14:15:00Z',
-          source: 'notes'
-        },
-        {
-          id: '2',
-          title: 'Review care plan for Jane Smith',
-          description: 'Coordinate with family for upcoming visit',
-          memberName: 'Jane Smith',
-          memberClientId: 'HN-67890',
-          healthPlan: 'Health Net',
-          taskType: 'review',
-          priority: 'Medium',
-          status: 'in_progress',
-          dueDate: '2026-01-22T00:00:00Z',
-          assignedBy: 'sarah_johnson',
-          assignedByName: 'Sarah Johnson, MSW',
-          assignedTo: user.uid,
-          assignedToName: user.displayName || user.email || 'Current User',
-          createdAt: '2026-01-16T10:30:00Z',
-          updatedAt: '2026-01-17T09:15:00Z',
-          source: 'notes'
-        },
-        {
-          id: '3',
-          title: 'Complete monthly report',
-          description: 'Compile statistics and member progress for monthly reporting',
-          taskType: 'administrative',
-          priority: 'Low',
-          status: 'pending',
-          dueDate: '2026-01-24T00:00:00Z',
-          assignedBy: 'admin',
-          assignedByName: 'System Administrator',
-          assignedTo: user.uid,
-          assignedToName: user.displayName || user.email || 'Current User',
-          createdAt: '2026-01-15T09:00:00Z',
-          updatedAt: '2026-01-15T09:00:00Z',
-          source: 'manual'
-        },
-        {
-          id: '4',
-          title: 'URGENT: Contact Robert Johnson family',
-          description: 'Member has requested immediate transfer to different facility',
-          memberName: 'Robert Johnson',
-          memberClientId: 'KAI-11111',
-          healthPlan: 'Kaiser',
-          taskType: 'contact',
-          priority: 'Urgent',
-          status: 'overdue',
-          dueDate: '2026-01-18T00:00:00Z',
-          assignedBy: 'admin',
-          assignedByName: 'System Administrator',
-          assignedTo: user.uid,
-          assignedToName: user.displayName || user.email || 'Current User',
-          createdAt: '2026-01-17T16:45:00Z',
-          updatedAt: '2026-01-17T16:45:00Z',
-          source: 'notes'
-        },
-        {
-          id: '5',
-          title: 'Update Kaiser status for Maria Garcia',
-          description: 'Member ready to move from Assessment to Authorization',
-          memberName: 'Maria Garcia',
-          memberClientId: 'KAI-22222',
-          healthPlan: 'Kaiser',
-          taskType: 'kaiser_status',
-          priority: 'Medium',
-          status: 'pending',
-          dueDate: '2026-01-19T00:00:00Z',
-          assignedBy: 'supervisor',
-          assignedByName: 'Supervisor',
-          assignedTo: user.uid,
-          assignedToName: user.displayName || user.email || 'Current User',
-          currentKaiserStatus: 'Assessment',
-          createdAt: '2026-01-17T11:30:00Z',
-          updatedAt: '2026-01-17T11:30:00Z',
-          source: 'applications'
-        },
-        {
-          id: '6',
-          title: 'Process Kaiser authorization for David Chen',
-          description: 'All documentation received, ready for final authorization',
-          memberName: 'David Chen',
-          memberClientId: 'KAI-33333',
-          healthPlan: 'Kaiser',
-          taskType: 'kaiser_status',
-          priority: 'High',
-          status: 'pending',
-          dueDate: '2026-01-18T00:00:00Z',
-          assignedBy: 'case_manager',
-          assignedByName: 'Case Manager',
-          assignedTo: user.uid,
-          assignedToName: user.displayName || user.email || 'Current User',
-          currentKaiserStatus: 'Pending Authorization',
-          createdAt: '2026-01-17T09:00:00Z',
-          updatedAt: '2026-01-17T09:00:00Z',
-          source: 'applications'
-        }
-      ];
-
-      setTasks(sampleTasks);
+      // Fetch tasks from API
+      const response = await fetch(`/api/staff/tasks?userId=${user.uid}`);
+      const data = await response.json();
       
-      toast({
-        title: 'Tasks Loaded',
-        description: `Found ${sampleTasks.length} tasks assigned to you`,
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
+      if (data.success) {
+        setTasks(data.tasks || []);
+        
+        toast({
+          title: 'Tasks Loaded',
+          description: `Found ${data.tasks?.length || 0} tasks assigned to you`,
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      } else {
+        throw new Error(data.error || 'Failed to load tasks');
+      }
       
     } catch (error: any) {
       console.error('Error fetching my tasks:', error);
+      
+      // Set empty tasks array on error
+      setTasks([]);
+      
       toast({
         variant: 'destructive',
-        title: 'Error',
+        title: 'Error Loading Tasks',
         description: error.message || 'Failed to load your tasks',
       });
     } finally {
