@@ -41,7 +41,9 @@ import {
   Wrench,
   UserPlus,
   CalendarCheck,
-  RefreshCw
+  RefreshCw,
+  Users,
+  RotateCcw
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -118,15 +120,26 @@ const adminNavLinks = [
 
 const superAdminNavLinks = [
   { 
-    label: 'Super Admin', 
-    icon: Shield, 
+    label: 'Staff Management', 
+    icon: Users, 
     isSubmenu: true,
     submenuItems: [
-      { href: '/admin/super', label: 'Super Admin Tools', icon: Shield },
+      { href: '/admin/staff-management', label: 'Staff Management', icon: Users },
       { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
       { href: '/admin/daily-tasks', label: 'Daily Task Tracker', icon: Calendar },
       { href: '/admin/login-activity', label: 'Login Activity', icon: Activity },
       { href: '/admin/profile', label: 'Profile Management', icon: UserIcon }
+    ]
+  },
+  { 
+    label: 'Super Admin Tools', 
+    icon: Wrench, 
+    isSubmenu: true,
+    submenuItems: [
+      { href: '/admin/super-admin-tools', label: 'All Tools', icon: Wrench },
+      { href: '/admin/caspio-test', label: 'Caspio API Test', icon: TestTube2 },
+      { href: '/admin/migrate-drive', label: 'Google Drive Test', icon: FolderSync },
+      { href: '/admin/form-separator', label: 'Form Separator', icon: Scissors }
     ]
   },
   { 
