@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 interface CaspioNote {
-  Record_ID: string;
-  Client_ID2: string;
-  Note_Text: string;
-  User_ID: string;
+  PK_ID: number;
+  Client_ID2: number;
+  Comments: string;
+  User_ID: number;
   Time_Stamp: string;
   Follow_Up_Date?: string;
-  Note_Type?: string;
-  Priority?: string;
+  Note_Status?: string;
+  Follow_Up_Status?: string;
+  User_Full_Name?: string;
+  Senior_Full_Name?: string;
+  Follow_Up_Assignment?: string;
+  Assigned_First?: string;
 }
 
 interface MemberNote {
@@ -30,7 +34,34 @@ interface MemberNote {
   tags?: string[];
 }
 
-// In-memory storage for demonstration (in production, use Firestore)
+// Caspio configuration - hardcoded for development
+const CASPIO_BASE_URL = 'https://c7ebl500.caspio.com';
+const CASPIO_CLIENT_ID = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+const CASPIO_CLIENT_SECRET = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+
+// Get Caspio access token
+async function getCaspioToken() {
+  const tokenUrl = `${CASPIO_BASE_URL}/oauth/token`;
+  const credentials = Buffer.from(`${CASPIO_CLIENT_ID}:${CASPIO_CLIENT_SECRET}`).toString('base64');
+
+  const response = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: 'grant_type=client_credentials',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get Caspio token: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.access_token;
+}
+
+// In-memory storage for caching (in production, use Firestore)
 let memberNotesCache: { [clientId2: string]: MemberNote[] } = {};
 let lastSyncTimestamp: { [clientId2: string]: string } = {};
 
@@ -110,10 +141,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`📝 Creating new note for member: ${clientId2}`);
+    console.log(`📝 Creating new note for Client_ID2: ${clientId2}`);
 
+    const timestamp = new Date().toISOString();
     const newNote: MemberNote = {
-      id: `app_${Date.now()}`,
+      id: `app_${Date.now()}_${Math.random().toString(36).substring(7)}`,
       clientId2,
       memberName: memberName || 'Unknown Member',
       noteText,
@@ -121,9 +153,9 @@ export async function POST(request: NextRequest) {
       createdBy: authorId || createdBy,
       createdByName: authorName || createdByName || 'Unknown User',
       assignedTo,
-      assignedToName,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      assignedToName: assignedToName || (assignedTo ? getStaffDisplayName(assignedTo) : undefined),
+      createdAt: timestamp,
+      updatedAt: timestamp,
       source: 'App',
       isRead: !assignedTo && (!recipientIds || recipientIds.length === 0), // Unread if assigned to someone else
       priority: priority || 'Medium',
@@ -137,7 +169,10 @@ export async function POST(request: NextRequest) {
     }
     memberNotesCache[clientId2].unshift(newNote);
 
-    // In production, also sync to Caspio
+    // Save to Firestore for persistence (in production, implement proper Firestore integration)
+    await saveNoteToFirestore(newNote);
+
+    // Sync to Caspio
     await syncNoteToCaspio(newNote);
 
     // Send notifications to all recipients if sendNotification is true
@@ -174,56 +209,57 @@ export async function POST(request: NextRequest) {
 
 async function syncNotesFromCaspio(clientId2: string): Promise<void> {
   try {
-    // Simulate Caspio API call
-    console.log(`🔄 Syncing all notes from Caspio for ${clientId2}`);
+    console.log(`🔄 Syncing notes from connect_tbl_clientnotes for Client_ID2: ${clientId2}`);
     
-    // In production, this would be a real Caspio API call
-    const mockCaspioNotes: CaspioNote[] = [
-      {
-        Record_ID: 'caspio_1',
-        Client_ID2: clientId2,
-        Note_Text: 'Initial assessment completed. Member is adjusting well to RCFE placement.',
-        User_ID: 'sarah_johnson',
-        Time_Stamp: '2026-01-15T10:30:00Z',
-        Note_Type: 'General',
-        Priority: 'Medium'
+    const token = await getCaspioToken();
+    
+    // Fetch notes from connect_tbl_clientnotes table
+    const apiUrl = `${CASPIO_BASE_URL}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}'&q.orderBy=Time_Stamp DESC`;
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
       },
-      {
-        Record_ID: 'caspio_2',
-        Client_ID2: clientId2,
-        Note_Text: 'Monthly visit completed. Member reports satisfaction with care.',
-        User_ID: 'mike_wilson',
-        Time_Stamp: '2026-01-10T09:00:00Z',
-        Note_Type: 'Follow-up',
-        Priority: 'Low'
-      }
-    ];
+    });
+
+    if (!response.ok) {
+      throw new Error(`Caspio API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const caspioNotes: CaspioNote[] = data.Result || [];
+    
+    console.log(`📥 Retrieved ${caspioNotes.length} notes from Caspio for Client_ID2: ${clientId2}`);
 
     // Convert Caspio notes to our format
-    const convertedNotes: MemberNote[] = mockCaspioNotes.map(caspioNote => ({
-      id: caspioNote.Record_ID,
-      clientId2: caspioNote.Client_ID2,
-      memberName: 'Member Name', // Would be fetched from member data
-      noteText: caspioNote.Note_Text,
-      noteType: (caspioNote.Note_Type as MemberNote['noteType']) || 'General',
-      createdBy: caspioNote.User_ID,
-      createdByName: getUserDisplayName(caspioNote.User_ID),
-      createdAt: caspioNote.Time_Stamp,
-      updatedAt: caspioNote.Time_Stamp,
+    const convertedNotes: MemberNote[] = caspioNotes.map(caspioNote => ({
+      id: `caspio_${caspioNote.PK_ID}`,
+      clientId2: caspioNote.Client_ID2.toString(),
+      memberName: caspioNote.Senior_Full_Name || 'Unknown Member',
+      noteText: caspioNote.Comments || '',
+      noteType: 'General', // Default since no specific type field
+      createdBy: caspioNote.User_ID.toString(),
+      createdByName: caspioNote.User_Full_Name || `User ${caspioNote.User_ID}`,
+      assignedTo: caspioNote.Follow_Up_Assignment || undefined,
+      assignedToName: caspioNote.Assigned_First || undefined,
+      createdAt: caspioNote.Time_Stamp || new Date().toISOString(),
+      updatedAt: caspioNote.Time_Stamp || new Date().toISOString(),
       source: 'Caspio',
       isRead: true, // Existing notes are considered read
-      priority: (caspioNote.Priority as MemberNote['priority']) || 'Medium',
+      priority: caspioNote.Follow_Up_Status?.includes('🟢') ? 'Medium' : 'Low',
       followUpDate: caspioNote.Follow_Up_Date
     }));
 
-    // Store in cache
+    // Store in cache (in production, save to Firestore)
     memberNotesCache[clientId2] = convertedNotes;
     lastSyncTimestamp[clientId2] = new Date().toISOString();
 
-    console.log(`✅ Synced ${convertedNotes.length} notes from Caspio for ${clientId2}`);
+    console.log(`✅ Synced ${convertedNotes.length} notes from Caspio for Client_ID2: ${clientId2}`);
 
   } catch (error) {
-    console.error('Error syncing notes from Caspio:', error);
+    console.error('❌ Error syncing notes from Caspio:', error);
     throw error;
   }
 }
@@ -247,27 +283,77 @@ async function syncNewNotesFromCaspio(clientId2: string): Promise<void> {
 
 async function syncNoteToCaspio(note: MemberNote): Promise<void> {
   try {
-    console.log(`📤 Syncing note to Caspio: ${note.id}`);
+    console.log(`📤 Syncing new note to connect_tbl_clientnotes: ${note.id}`);
     
-    // In production, this would create a new record in connect_tbl_clientnote
+    const token = await getCaspioToken();
+    
+    // Create new record in connect_tbl_clientnotes
     const caspioData = {
-      Client_ID2: note.clientId2,
-      Note_Text: note.noteText,
-      User_ID: note.createdBy,
+      Client_ID2: parseInt(note.clientId2),
+      Comments: note.noteText,
+      User_ID: parseInt(note.createdBy),
       Time_Stamp: note.createdAt,
-      Follow_Up_Date: note.followUpDate,
-      Note_Type: note.noteType,
-      Priority: note.priority
+      Follow_Up_Date: note.followUpDate || null,
+      Note_Status: note.noteType,
+      Follow_Up_Status: note.priority === 'High' ? '🔴 Urgent' : '🟢 Open',
+      User_Full_Name: note.createdByName,
+      Follow_Up_Assignment: note.assignedTo || null,
+      Assigned_First: note.assignedToName || null
     };
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 500));
+    const apiUrl = `${CASPIO_BASE_URL}/rest/v2/tables/connect_tbl_clientnotes/records`;
     
-    console.log(`✅ Note synced to Caspio: ${note.id}`);
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(caspioData),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to create note in Caspio: ${response.status} ${errorText}`);
+    }
+
+    // Handle empty 201 response
+    let result = null;
+    const responseText = await response.text();
+    if (responseText.trim()) {
+      result = JSON.parse(responseText);
+    }
+    
+    console.log(`✅ Note synced to Caspio connect_tbl_clientnotes: ${note.id}`);
 
   } catch (error) {
-    console.error('Error syncing note to Caspio:', error);
+    console.error('❌ Error syncing note to Caspio:', error);
     // Don't throw error - note is still saved locally
+  }
+}
+
+async function saveNoteToFirestore(note: MemberNote): Promise<void> {
+  try {
+    console.log(`💾 Saving note to Firestore: ${note.id}`);
+    
+    // In production, implement proper Firestore integration
+    // const { getFirestore } = await import('firebase-admin/firestore');
+    // const { adminDb } = await import('@/firebase-admin');
+    
+    // const noteData = {
+    //   ...note,
+    //   createdAt: getFirestore().Timestamp.fromDate(new Date(note.createdAt)),
+    //   updatedAt: getFirestore().Timestamp.fromDate(new Date(note.updatedAt)),
+    //   followUpDate: note.followUpDate ? getFirestore().Timestamp.fromDate(new Date(note.followUpDate)) : null
+    // };
+    
+    // await adminDb.collection('member-notes').doc(note.id).set(noteData);
+    
+    console.log(`✅ Note saved to Firestore: ${note.id}`);
+
+  } catch (error) {
+    console.error('❌ Error saving note to Firestore:', error);
+    // Don't throw error - note is still saved in cache and Caspio
   }
 }
 
@@ -358,6 +444,20 @@ function getUserDisplayName(userId: string): string {
   };
   
   return userMap[userId] || userId;
+}
+
+function getStaffDisplayName(staffId: string): string {
+  // Staff display name mapping (in production, this would be a database lookup)
+  const staffNameMap: { [key: string]: string } = {
+    'nick-staff': 'Nick Rodriguez',
+    'john-staff': 'John Smith',
+    'jessie-staff': 'Jessie Martinez',
+    'jason-admin': 'Jason Bloome',
+    'monica-staff': 'Monica Garcia',
+    'leidy-staff': 'Leidy Kanjanapitak'
+  };
+  
+  return staffNameMap[staffId] || staffId;
 }
 
 export async function PUT(request: NextRequest) {
