@@ -6,88 +6,33 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, UserPlus, Search, Loader2 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { ArrowLeft, FileText, Loader2, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
-import { collection, query, where, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-
-interface User {
-  uid: string;
-  email: string;
-  displayName?: string;
-  firstName?: string;
-  lastName?: string;
-}
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function CreateApplicationPage() {
   const router = useRouter();
   const { toast } = useToast();
   const firestore = useFirestore();
   
-  const [searchEmail, setSearchEmail] = useState('');
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [searchResults, setSearchResults] = useState<User[]>([]);
-  const [createNewUser, setCreateNewUser] = useState(false);
-  const [newUserData, setNewUserData] = useState({
-    email: '',
-    firstName: '',
-    lastName: '',
-    displayName: ''
+  const [memberData, setMemberData] = useState({
+    memberFirstName: '',
+    memberLastName: '',
+    contactFirstName: '',
+    contactLastName: '',
+    contactPhone: '',
+    contactEmail: '',
+    contactRelationship: '',
+    notes: ''
   });
 
-  const searchUsers = async () => {
-    if (!searchEmail.trim() || !firestore) return;
-    
-    setIsSearching(true);
-    try {
-      const usersRef = collection(firestore, 'users');
-      const q = query(usersRef, where('email', '==', searchEmail.trim().toLowerCase()));
-      const querySnapshot = await getDocs(q);
-      
-      const users: User[] = [];
-      querySnapshot.forEach((doc) => {
-        const userData = doc.data();
-        users.push({
-          uid: doc.id,
-          email: userData.email,
-          displayName: userData.displayName,
-          firstName: userData.firstName,
-          lastName: userData.lastName,
-        });
-      });
-      
-      setSearchResults(users);
-      
-      if (users.length === 0) {
-        toast({
-          title: "No User Found",
-          description: "No user found with that email address. You can create a new user below.",
-          variant: "default",
-        });
-        setCreateNewUser(true);
-        setNewUserData({ ...newUserData, email: searchEmail.trim() });
-      } else {
-        setCreateNewUser(false);
-      }
-    } catch (error) {
-      console.error('Error searching users:', error);
-      toast({
-        title: "Search Error",
-        description: "Failed to search for users. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  const createUserAndApplication = async () => {
-    if (!firestore || !newUserData.email || !newUserData.firstName || !newUserData.lastName) {
+  const createApplicationForMember = async () => {
+    if (!firestore || !memberData.memberFirstName || !memberData.memberLastName || !memberData.contactFirstName || !memberData.contactLastName || !memberData.contactPhone) {
       toast({
         title: "Missing Information",
         description: "Please fill in all required fields.",
@@ -98,27 +43,53 @@ export default function CreateApplicationPage() {
 
     setIsCreating(true);
     try {
-      // Create a new user document (this is just for tracking, not Firebase Auth)
-      const userId = `admin_created_${Date.now()}`;
-      const userRef = doc(firestore, 'users', userId);
+      // Create a unique application ID for this member
+      const applicationId = `admin_app_${Date.now()}`;
+      const applicationRef = doc(firestore, 'applications', applicationId);
       
-      await setDoc(userRef, {
-        email: newUserData.email.toLowerCase(),
-        firstName: newUserData.firstName,
-        lastName: newUserData.lastName,
-        displayName: newUserData.displayName || `${newUserData.firstName} ${newUserData.lastName}`,
+      // Create the application document with initial member and contact information
+      await setDoc(applicationRef, {
+        // Member information
+        memberFirstName: memberData.memberFirstName,
+        memberLastName: memberData.memberLastName,
+        
+        // Contact/Referrer information (person helping with application)
+        referrerFirstName: memberData.contactFirstName,
+        referrerLastName: memberData.contactLastName,
+        referrerPhone: memberData.contactPhone,
+        referrerRelationship: memberData.contactRelationship,
+        
+        // Best contact defaults to same as referrer for admin-created applications
+        bestContactFirstName: memberData.contactFirstName,
+        bestContactLastName: memberData.contactLastName,
+        bestContactPhone: memberData.contactPhone,
+        bestContactRelationship: memberData.contactRelationship,
+        bestContactEmail: memberData.contactEmail || '',
+        
+        // Application metadata
         createdAt: serverTimestamp(),
         createdByAdmin: true,
+        status: 'draft',
+        currentStep: 1,
+        adminNotes: memberData.notes,
+        
+        // Mark as incomplete - will be completed through the form
+        isComplete: false,
       });
 
-      // Redirect to CS Summary form with the new user ID
-      router.push(`/admin/applications/create/cs-summary?userId=${userId}`);
+      toast({
+        title: "Application Created",
+        description: `Application created for ${memberData.memberFirstName} ${memberData.memberLastName}. Redirecting to CS Summary form.`,
+      });
+
+      // Redirect to CS Summary form with the application ID
+      router.push(`/admin/applications/create/cs-summary?applicationId=${applicationId}`);
       
     } catch (error) {
-      console.error('Error creating user:', error);
+      console.error('Error creating application:', error);
       toast({
         title: "Creation Error",
-        description: "Failed to create user. Please try again.",
+        description: "Failed to create application. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -126,9 +97,11 @@ export default function CreateApplicationPage() {
     }
   };
 
-  const createApplicationForUser = (user: User) => {
-    router.push(`/admin/applications/create/cs-summary?userId=${user.uid}`);
-  };
+  const isFormValid = memberData.memberFirstName && 
+                     memberData.memberLastName && 
+                     memberData.contactFirstName && 
+                     memberData.contactLastName && 
+                     memberData.contactPhone;
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
@@ -143,146 +116,151 @@ export default function CreateApplicationPage() {
       </div>
 
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Create New Application</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Create Application for Member</h1>
         <p className="text-gray-600 mt-2">
-          Create a CS Summary form for an existing user or create a new user account.
+          Create a CS Summary application on behalf of a member/family. This is for families who need assistance completing their application or don't have email access.
         </p>
       </div>
 
-      {/* User Search */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Search className="mr-2 h-5 w-5" />
-            Find Existing User
-          </CardTitle>
-          <CardDescription>
-            Search for an existing user by email address to create an application for them.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <Label htmlFor="searchEmail">Email Address</Label>
-              <Input
-                id="searchEmail"
-                type="email"
-                placeholder="Enter user's email address"
-                value={searchEmail}
-                onChange={(e) => setSearchEmail(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && searchUsers()}
-              />
-            </div>
-            <div className="flex items-end">
-              <Button onClick={searchUsers} disabled={isSearching || !searchEmail.trim()}>
-                {isSearching ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Search className="h-4 w-4" />
-                )}
-                Search
-              </Button>
-            </div>
-          </div>
+      {/* Information Alert */}
+      <Alert className="mb-6">
+        <Users className="h-4 w-4" />
+        <AlertDescription>
+          <strong>Admin Application Creation:</strong> Use this form when families request help completing their CalAIM application. 
+          You'll provide basic member and contact information, then complete the full CS Summary form on their behalf.
+        </AlertDescription>
+      </Alert>
 
-          {/* Search Results */}
-          {searchResults.length > 0 && (
-            <div className="space-y-2">
-              <Label>Found Users:</Label>
-              {searchResults.map((user) => (
-                <div key={user.uid} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div>
-                    <p className="font-medium">{user.displayName || `${user.firstName} ${user.lastName}`}</p>
-                    <p className="text-sm text-gray-600">{user.email}</p>
-                  </div>
-                  <Button onClick={() => createApplicationForUser(user)}>
-                    Create Application
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Create New User */}
+      {/* Member & Contact Information */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center">
-            <UserPlus className="mr-2 h-5 w-5" />
-            Create New User
+            <FileText className="mr-2 h-5 w-5" />
+            Member & Contact Information
           </CardTitle>
           <CardDescription>
-            Create a new user account and then create an application for them.
+            Provide basic information about the member and the primary contact person (family member, caregiver, etc.)
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {createNewUser && (
-            <Alert>
-              <AlertTitle>User Not Found</AlertTitle>
-              <AlertDescription>
-                No user found with email "{searchEmail}". You can create a new user with this email below.
-              </AlertDescription>
-            </Alert>
-          )}
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="newEmail">Email Address *</Label>
-              <Input
-                id="newEmail"
-                type="email"
-                placeholder="user@example.com"
-                value={newUserData.email}
-                onChange={(e) => setNewUserData({ ...newUserData, email: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="displayName">Display Name</Label>
-              <Input
-                id="displayName"
-                placeholder="Full Name"
-                value={newUserData.displayName}
-                onChange={(e) => setNewUserData({ ...newUserData, displayName: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="firstName">First Name *</Label>
-              <Input
-                id="firstName"
-                placeholder="First Name"
-                value={newUserData.firstName}
-                onChange={(e) => setNewUserData({ ...newUserData, firstName: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="lastName">Last Name *</Label>
-              <Input
-                id="lastName"
-                placeholder="Last Name"
-                value={newUserData.lastName}
-                onChange={(e) => setNewUserData({ ...newUserData, lastName: e.target.value })}
-              />
+        <CardContent className="space-y-6">
+          {/* Member Information */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Member Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="memberFirstName">Member First Name *</Label>
+                <Input
+                  id="memberFirstName"
+                  placeholder="Member's first name"
+                  value={memberData.memberFirstName}
+                  onChange={(e) => setMemberData({ ...memberData, memberFirstName: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="memberLastName">Member Last Name *</Label>
+                <Input
+                  id="memberLastName"
+                  placeholder="Member's last name"
+                  value={memberData.memberLastName}
+                  onChange={(e) => setMemberData({ ...memberData, memberLastName: e.target.value })}
+                />
+              </div>
             </div>
           </div>
 
+          {/* Contact Information */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Primary Contact Person</h3>
+            <p className="text-sm text-gray-600 mb-3">
+              This is the person helping with the application (family member, caregiver, case worker, etc.)
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="contactFirstName">Contact First Name *</Label>
+                <Input
+                  id="contactFirstName"
+                  placeholder="Contact person's first name"
+                  value={memberData.contactFirstName}
+                  onChange={(e) => setMemberData({ ...memberData, contactFirstName: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="contactLastName">Contact Last Name *</Label>
+                <Input
+                  id="contactLastName"
+                  placeholder="Contact person's last name"
+                  value={memberData.contactLastName}
+                  onChange={(e) => setMemberData({ ...memberData, contactLastName: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="contactPhone">Contact Phone *</Label>
+                <Input
+                  id="contactPhone"
+                  type="tel"
+                  placeholder="(555) 123-4567"
+                  value={memberData.contactPhone}
+                  onChange={(e) => setMemberData({ ...memberData, contactPhone: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label htmlFor="contactRelationship">Relationship to Member</Label>
+                <Input
+                  id="contactRelationship"
+                  placeholder="e.g., Daughter, Son, Case Manager"
+                  value={memberData.contactRelationship}
+                  onChange={(e) => setMemberData({ ...memberData, contactRelationship: e.target.value })}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <Label htmlFor="contactEmail">Contact Email (Optional)</Label>
+                <Input
+                  id="contactEmail"
+                  type="email"
+                  placeholder="contact@example.com (leave blank if no email)"
+                  value={memberData.contactEmail}
+                  onChange={(e) => setMemberData({ ...memberData, contactEmail: e.target.value })}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Admin Notes */}
+          <div>
+            <Label htmlFor="notes">Admin Notes (Optional)</Label>
+            <Textarea
+              id="notes"
+              placeholder="Any additional notes about this application or special circumstances..."
+              value={memberData.notes}
+              onChange={(e) => setMemberData({ ...memberData, notes: e.target.value })}
+              rows={3}
+            />
+          </div>
+
           <Button 
-            onClick={createUserAndApplication}
-            disabled={isCreating || !newUserData.email || !newUserData.firstName || !newUserData.lastName}
+            onClick={createApplicationForMember}
+            disabled={isCreating || !isFormValid}
             className="w-full"
+            size="lg"
           >
             {isCreating ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating User & Application...
+                Creating Application...
               </>
             ) : (
               <>
-                <UserPlus className="mr-2 h-4 w-4" />
-                Create User & Start Application
+                <FileText className="mr-2 h-4 w-4" />
+                Create Application & Continue to CS Summary Form
               </>
             )}
           </Button>
+
+          {!isFormValid && (
+            <p className="text-sm text-gray-500 text-center">
+              Please fill in all required fields (marked with *) to continue
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

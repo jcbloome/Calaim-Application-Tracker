@@ -71,12 +71,21 @@ function CsSummaryFormComponent() {
 
   const targetUserId = appUserId || user?.uid;
   const isAdminView = !!appUserId;
+  const isAdminCreatedApp = internalApplicationId?.startsWith('admin_app_');
   const backLink = isAdminView ? `/admin/applications/${internalApplicationId}?userId=${appUserId}` : `/applications`;
   
   const docRef = useMemoFirebase(() => {
-    if (!firestore || !targetUserId || !internalApplicationId) return null;
+    if (!firestore || !internalApplicationId) return null;
+    
+    // Admin-created applications are stored directly in the applications collection
+    if (isAdminCreatedApp) {
+      return doc(firestore, 'applications', internalApplicationId);
+    }
+    
+    // Regular user applications are stored in user subcollections
+    if (!targetUserId) return null;
     return doc(firestore, `users/${targetUserId}/applications`, internalApplicationId);
-  }, [firestore, targetUserId, internalApplicationId]);
+  }, [firestore, targetUserId, internalApplicationId, isAdminCreatedApp]);
 
   useEffect(() => {
     // This is the fix. If auth has loaded and there's no user, and it's not an admin view,
@@ -150,7 +159,12 @@ function CsSummaryFormComponent() {
 
   const saveProgress = (isNavigating: boolean = false): Promise<string | null> => {
     return new Promise((resolve, reject) => {
-        if (!targetUserId || !firestore) {
+        if (!firestore) {
+            return resolve(null);
+        }
+
+        // For admin-created applications, we don't need a targetUserId
+        if (!isAdminCreatedApp && !targetUserId) {
             return resolve(null);
         }
 
@@ -159,12 +173,22 @@ function CsSummaryFormComponent() {
         let isNewDoc = false;
 
         if (!docId) {
-            docId = doc(collection(firestore, `users/${targetUserId}/applications`)).id;
-            setInternalApplicationId(docId);
-            isNewDoc = true;
+            if (isAdminCreatedApp) {
+                // This shouldn't happen for admin-created apps, but handle it just in case
+                docId = `admin_app_${Date.now()}`;
+                setInternalApplicationId(docId);
+                isNewDoc = true;
+            } else {
+                docId = doc(collection(firestore, `users/${targetUserId}/applications`)).id;
+                setInternalApplicationId(docId);
+                isNewDoc = true;
+            }
         }
 
-        const docRef = doc(firestore, `users/${targetUserId}/applications`, docId);
+        // Determine the correct document reference
+        const docRef = isAdminCreatedApp 
+            ? doc(firestore, 'applications', docId)
+            : doc(firestore, `users/${targetUserId}/applications`, docId);
 
         const sanitizedData = Object.fromEntries(
             Object.entries(currentData).map(([key, value]) => [key, value === undefined ? null : value])
@@ -181,6 +205,11 @@ function CsSummaryFormComponent() {
 
         if (isNewDoc) {
             dataToSave.submissionDate = serverTimestamp();
+        }
+
+        // For admin-created applications, mark them as such
+        if (isAdminCreatedApp) {
+            dataToSave.createdByAdmin = true;
         }
 
         setDoc(docRef, dataToSave, { merge: true })
