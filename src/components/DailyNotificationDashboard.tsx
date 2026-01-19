@@ -18,11 +18,9 @@ import {
   TrendingUp,
   Clock,
   CheckCircle2,
-  AlertTriangle,
-  Loader2,
-  RefreshCw
+  AlertTriangle
 } from 'lucide-react';
-import { format, startOfDay, endOfDay, isToday } from 'date-fns';
+import { format, startOfDay, endOfDay, isToday, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
 import Link from 'next/link';
 
 interface DailyStats {
@@ -30,6 +28,16 @@ interface DailyStats {
   completedCsSummaries: number;
   totalApplications: number;
   pendingReview: number;
+}
+
+interface WeeklyStats {
+  [key: string]: {
+    date: Date;
+    newDocuments: number;
+    completedCsSummaries: number;
+    totalApplications: number;
+    dayName: string;
+  };
 }
 
 interface NotificationItem {
@@ -44,15 +52,16 @@ interface NotificationItem {
 }
 
 export function DailyNotificationDashboard() {
+  const [viewMode, setViewMode] = useState<'daily' | 'weekly'>('daily');
   const [dailyStats, setDailyStats] = useState<DailyStats>({
     newDocuments: 0,
     completedCsSummaries: 0,
     totalApplications: 0,
     pendingReview: 0
   });
+  const [weeklyStats, setWeeklyStats] = useState<WeeklyStats>({});
   const [notificationItems, setNotificationItems] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
   const firestore = useFirestore();
 
@@ -101,6 +110,23 @@ export function DailyNotificationDashboard() {
         pendingReview: 0
       };
 
+      // Initialize weekly stats
+      const weeklyData: WeeklyStats = {};
+      const weekStart = startOfWeek(today);
+      const weekEnd = endOfWeek(today);
+      const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
+      
+      weekDays.forEach(day => {
+        const dayKey = format(day, 'yyyy-MM-dd');
+        weeklyData[dayKey] = {
+          date: day,
+          newDocuments: 0,
+          completedCsSummaries: 0,
+          totalApplications: 0,
+          dayName: format(day, 'EEE')
+        };
+      });
+
       const items: NotificationItem[] = [];
       let todayActivityCount = 0;
 
@@ -120,8 +146,8 @@ export function DailyNotificationDashboard() {
 
         // Count new documents (focus on recent activity)
         if (data.hasNewDocuments && data.newDocumentCount > 0) {
-          stats.newDocuments += data.newDocumentCount;
           if (isToday) {
+            stats.newDocuments += data.newDocumentCount;
             items.push({
               id: `${doc.id}-documents`,
               type: 'document_upload',
@@ -131,6 +157,15 @@ export function DailyNotificationDashboard() {
               hasNewDocuments: true,
               newDocumentCount: data.newDocumentCount
             });
+          }
+
+          // Add to weekly stats if within this week
+          const docUploadDate = data.lastDocumentUpload?.toDate() || timestamp;
+          if (docUploadDate >= weekStart && docUploadDate <= weekEnd) {
+            const dayKey = format(docUploadDate, 'yyyy-MM-dd');
+            if (weeklyData[dayKey]) {
+              weeklyData[dayKey].newDocuments += data.newDocumentCount;
+            }
           }
         }
 
@@ -144,7 +179,8 @@ export function DailyNotificationDashboard() {
             csSummaryComplete: data.csSummaryComplete,
             csSummaryCompletedAt: csCompletedAt,
             csCompletedToday,
-            today: new Date()
+            today: new Date(),
+            applicationId: doc.id
           });
           
           if (csCompletedToday) {
@@ -158,6 +194,14 @@ export function DailyNotificationDashboard() {
               csSummaryComplete: true
             });
           }
+
+          // Add to weekly stats if within this week
+          if (csCompletedAt && csCompletedAt >= weekStart && csCompletedAt <= weekEnd) {
+            const dayKey = format(csCompletedAt, 'yyyy-MM-dd');
+            if (weeklyData[dayKey]) {
+              weeklyData[dayKey].completedCsSummaries++;
+            }
+          }
         }
 
         // Count pending review items
@@ -169,7 +213,23 @@ export function DailyNotificationDashboard() {
       // Set total applications to today's activity count for more relevant stats
       stats.totalApplications = todayActivityCount;
 
+      // Update weekly stats with total applications for each day
+      Object.keys(weeklyData).forEach(dayKey => {
+        const dayDate = weeklyData[dayKey].date;
+        const dayStart = startOfDay(dayDate);
+        const dayEnd = endOfDay(dayDate);
+        
+        const dayActivityCount = allDocs.filter(doc => {
+          const data = doc.data();
+          const lastModified = data.lastModified?.toDate() || data.createdAt?.toDate() || new Date();
+          return lastModified >= dayStart && lastModified <= dayEnd;
+        }).length;
+        
+        weeklyData[dayKey].totalApplications = dayActivityCount;
+      });
+
       setDailyStats(stats);
+      setWeeklyStats(weeklyData);
       setNotificationItems(items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()));
       setIsLoading(false);
     };
@@ -180,41 +240,6 @@ export function DailyNotificationDashboard() {
     };
   }, [firestore, toast]);
 
-  const refreshData = async () => {
-    setIsRefreshing(true);
-    try {
-      if (!firestore) {
-        throw new Error('Firestore not available');
-      }
-
-      // Force refresh by re-querying Firestore data
-      const today = new Date();
-      const startOfToday = startOfDay(today);
-      const endOfToday = endOfDay(today);
-
-      // Since we have real-time listeners, just show a refresh message
-      // The onSnapshot listener will automatically provide fresh data
-      console.log('🔄 Refreshing dashboard data...');
-      
-      // Small delay to show the refresh state
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      toast({
-        title: 'Data Refreshed',
-        description: 'Dashboard updated with latest activity',
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
-    } catch (error: any) {
-      console.error('❌ Refresh error:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Refresh Failed',
-        description: error.message || 'Could not refresh data',
-      });
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
 
   const sendNotifications = async (type: 'documents' | 'summaries') => {
     try {
@@ -268,27 +293,40 @@ export function DailyNotificationDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Recent Activity</h2>
+          <h2 className="text-2xl font-bold tracking-tight">
+            {viewMode === 'daily' ? 'Daily Activity Dashboard' : 'Weekly Activity Dashboard'}
+          </h2>
           <p className="text-muted-foreground">
-            {format(new Date(), 'EEEE, MMMM do, yyyy')}
+            {viewMode === 'daily' 
+              ? `Real-time overview of today's application activity • ${format(new Date(), 'EEEE, MMMM do, yyyy')}`
+              : `Weekly breakdown of application activity by day • ${format(startOfWeek(new Date()), 'MMM do')} - ${format(endOfWeek(new Date()), 'MMM do, yyyy')}`
+            }
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={refreshData}
-          disabled={isRefreshing}
-        >
-          {isRefreshing ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="mr-2 h-4 w-4" />
-          )}
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={viewMode === 'daily' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('daily')}
+          >
+            <Calendar className="mr-2 h-4 w-4" />
+            Daily
+          </Button>
+          <Button
+            variant={viewMode === 'weekly' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('weekly')}
+          >
+            <TrendingUp className="mr-2 h-4 w-4" />
+            Weekly
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {viewMode === 'daily' ? (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Daily Stats Cards */}
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -504,6 +542,88 @@ export function DailyNotificationDashboard() {
             </div>
           </CardContent>
         </Card>
+      </div>
+      ) : (
+        /* Weekly View */
+        <div className="space-y-6">
+          <div className="grid grid-cols-7 gap-4">
+            {Object.entries(weeklyStats).map(([dayKey, dayData]) => (
+              <Card key={dayKey} className={`${isSameDay(dayData.date, new Date()) ? 'ring-2 ring-blue-500' : ''}`}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-center">
+                    {dayData.dayName}
+                  </CardTitle>
+                  <CardDescription className="text-xs text-center">
+                    {format(dayData.date, 'MMM d')}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="space-y-2 text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <Upload className="h-3 w-3 text-blue-600" />
+                      <span className="text-sm font-semibold text-blue-600">
+                        {dayData.newDocuments}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center gap-1">
+                      <FileText className="h-3 w-3 text-green-600" />
+                      <span className="text-sm font-semibold text-green-600">
+                        {dayData.completedCsSummaries}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center gap-1">
+                      <Users className="h-3 w-3 text-gray-600" />
+                      <span className="text-sm font-semibold text-gray-600">
+                        {dayData.totalApplications}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          
+          {/* Weekly Summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Weekly Summary</CardTitle>
+              <CardDescription>
+                Activity summary for {format(startOfWeek(new Date()), 'MMM do')} - {format(endOfWeek(new Date()), 'MMM do, yyyy')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <Upload className="h-4 w-4 text-blue-600" />
+                    <span className="text-sm font-medium">Documents</span>
+                  </div>
+                  <p className="text-2xl font-bold text-blue-600">
+                    {Object.values(weeklyStats).reduce((sum, day) => sum + day.newDocuments, 0)}
+                  </p>
+                </div>
+                <div>
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <FileText className="h-4 w-4 text-green-600" />
+                    <span className="text-sm font-medium">CS Summaries</span>
+                  </div>
+                  <p className="text-2xl font-bold text-green-600">
+                    {Object.values(weeklyStats).reduce((sum, day) => sum + day.completedCsSummaries, 0)}
+                  </p>
+                </div>
+                <div>
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <Users className="h-4 w-4 text-gray-600" />
+                    <span className="text-sm font-medium">Applications</span>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-600">
+                    {Object.values(weeklyStats).reduce((sum, day) => sum + day.totalApplications, 0)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );
