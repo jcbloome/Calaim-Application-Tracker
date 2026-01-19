@@ -1407,7 +1407,6 @@ function ApplicationDetailPageContent() {
                         <CardHeader className="pb-4">
                             <div className="flex justify-between items-start gap-4">
                                 <CardTitle className="text-lg">{req.title}</CardTitle>
-                                <req.icon className="h-5 w-5 text-muted-foreground shrink-0" />
                             </div>
                             <CardDescription>{req.description}</CardDescription>
                         </CardHeader>
