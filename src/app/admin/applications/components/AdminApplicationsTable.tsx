@@ -17,7 +17,7 @@ import { format, parse, differenceInHours } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AlertTriangle, Sparkles, Calendar, User, FileText, UserCheck, ExternalLink, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertTriangle, Sparkles, Calendar, User, FileText, UserCheck, ExternalLink, CheckCircle2, Loader2, Mail } from 'lucide-react';
 import type { Application } from '@/lib/definitions';
 import { ApplicationCardSkeleton, ApplicationTableSkeleton } from '@/components/ApplicationCardSkeleton';
 import { EmptyState } from '@/components/EmptyState';
@@ -245,6 +245,7 @@ export const AdminApplicationsTable = ({
   const { toast } = useToast();
   const { user } = useAdmin();
   const [confirmingApps, setConfirmingApps] = useState<Set<string>>(new Set());
+  const [sendingReminders, setSendingReminders] = useState<Set<string>>(new Set());
 
   const handleConfirmCsSummary = async (app: WithId<Application & FormValues>) => {
     if (confirmingApps.has(app.id)) return;
@@ -284,6 +285,48 @@ export const AdminApplicationsTable = ({
       });
     } finally {
       setConfirmingApps(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(app.id);
+        return newSet;
+      });
+    }
+  };
+
+  const handleSendReminder = async (app: WithId<Application & FormValues>) => {
+    if (sendingReminders.has(app.id)) return;
+
+    setSendingReminders(prev => new Set(prev).add(app.id));
+    
+    try {
+      const response = await fetch('/api/admin/send-cs-reminder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationId: app.id,
+          userId: app.userId,
+          reminderType: 'email'
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast({
+          title: 'Reminder Sent',
+          description: `CS Summary reminder sent to ${result.userEmail || 'user'} for ${app.memberFirstName} ${app.memberLastName}`,
+        });
+      } else {
+        throw new Error(result.error || 'Failed to send reminder');
+      }
+    } catch (error: any) {
+      console.error('Error sending reminder:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to send reminder',
+        variant: 'destructive',
+      });
+    } finally {
+      setSendingReminders(prev => {
         const newSet = new Set(prev);
         newSet.delete(app.id);
         return newSet;
@@ -394,30 +437,54 @@ export const AdminApplicationsTable = ({
                             </Tooltip>
                         </TooltipProvider>
                     )}
-                    {/* CS Summary Confirm Button - Show only for In Progress apps without csSummaryComplete */}
+                    {/* CS Summary Actions - Show only for In Progress apps without csSummaryComplete */}
                     {app.status === 'In Progress' && !(app as any).csSummaryComplete && (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleConfirmCsSummary(app)}
-                              disabled={confirmingApps.has(app.id)}
-                              className="text-xs px-2 py-1 h-auto bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
-                            >
-                              {confirmingApps.has(app.id) ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <CheckCircle2 className="h-3 w-3" />
-                              )}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Confirm CS Summary for {app.memberFirstName} {app.memberLastName}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleSendReminder(app)}
+                                disabled={sendingReminders.has(app.id)}
+                                className="text-xs px-2 py-1 h-auto bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+                              >
+                                {sendingReminders.has(app.id) ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Mail className="h-3 w-3" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Send reminder to complete CS Summary</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleConfirmCsSummary(app)}
+                                disabled={confirmingApps.has(app.id)}
+                                className="text-xs px-2 py-1 h-auto bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                              >
+                                {confirmingApps.has(app.id) ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <CheckCircle2 className="h-3 w-3" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Confirm CS Summary for {app.memberFirstName} {app.memberLastName}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </>
                     )}
                     <QuickViewDialog application={app} />
                     <Button asChild variant="link" className="text-sm font-medium text-primary hover:underline p-0 h-auto">
@@ -491,30 +558,54 @@ export const AdminApplicationsTable = ({
                       {app.status}
                     </Badge>
                     <div className="flex items-center gap-1">
-                      {/* CS Summary Confirm Button - Mobile */}
+                      {/* CS Summary Actions - Mobile */}
                       {app.status === 'In Progress' && !(app as any).csSummaryComplete && (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleConfirmCsSummary(app)}
-                                disabled={confirmingApps.has(app.id)}
-                                className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
-                              >
-                                {confirmingApps.has(app.id) ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <CheckCircle2 className="h-3 w-3" />
-                                )}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Confirm CS Summary</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        <>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleSendReminder(app)}
+                                  disabled={sendingReminders.has(app.id)}
+                                  className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+                                >
+                                  {sendingReminders.has(app.id) ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Mail className="h-3 w-3" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Send reminder</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleConfirmCsSummary(app)}
+                                  disabled={confirmingApps.has(app.id)}
+                                  className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                                >
+                                  {confirmingApps.has(app.id) ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="h-3 w-3" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Confirm CS Summary</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </>
                       )}
                       <QuickViewDialog application={app} />
                       <Button asChild size="sm" variant="outline">

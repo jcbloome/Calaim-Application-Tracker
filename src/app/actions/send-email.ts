@@ -10,6 +10,7 @@ import ApplicationStatusEmail from '@/components/emails/ApplicationStatusEmail';
 import ReminderEmail from '@/components/emails/ReminderEmail';
 import StaffAssignmentEmail from '@/components/emails/StaffAssignmentEmail';
 import NoteAssignmentEmail from '@/components/emails/NoteAssignmentEmail';
+import { CsSummaryReminderEmail, getCsSummaryReminderEmailText } from '@/components/emails/CsSummaryReminderEmail';
 import * as admin from 'firebase-admin';
 
 // Note: Firebase Admin is initialized in a central file (e.g., src/ai/dev.ts).
@@ -61,6 +62,15 @@ interface NoteAssignmentPayload {
     noteType?: string;
     source?: 'portal' | 'caspio';
     clientId2?: string;
+}
+
+interface CsSummaryReminderPayload {
+    to: string;
+    userName: string;
+    memberName: string;
+    applicationId: string;
+    confirmationUrl: string;
+    supportEmail: string;
 }
 
 async function getBccRecipients(): Promise<string[]> {
@@ -253,6 +263,51 @@ export const sendNoteAssignmentEmail = async (payload: NoteAssignmentPayload) =>
         return data;
     } catch (error) {
         console.error('Failed to send note assignment email:', error);
+        throw error;
+    }
+};
+
+export const sendCsSummaryReminderEmail = async (payload: CsSummaryReminderPayload) => {
+    const { to, userName, memberName, applicationId, confirmationUrl, supportEmail } = payload;
+
+    if (!process.env.RESEND_API_KEY) {
+        throw new Error('Resend API key is not configured.');
+    }
+
+    try {
+        const emailHtml = await renderAsync(CsSummaryReminderEmail({
+            userName,
+            memberName,
+            applicationId,
+            confirmationUrl,
+            supportEmail,
+        }));
+
+        const emailText = getCsSummaryReminderEmailText({
+            userName,
+            memberName,
+            applicationId,
+            confirmationUrl,
+            supportEmail,
+        });
+
+        const { data, error } = await resend.emails.send({
+            from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
+            to: [to],
+            subject: `Action Required: Complete Your CalAIM Application for ${memberName}`,
+            html: emailHtml,
+            text: emailText,
+        });
+
+        if (error) {
+            console.error('Resend CS Summary Reminder Error:', error);
+            throw new Error(error.message);
+        }
+
+        console.log(`✅ CS Summary reminder email sent successfully to ${to}`);
+        return data;
+    } catch (error) {
+        console.error('Failed to send CS Summary reminder email:', error);
         throw error;
     }
 };
