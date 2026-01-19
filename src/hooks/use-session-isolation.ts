@@ -1,22 +1,48 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useAuth } from '@/firebase';
+import { useAuth, useFirestore } from '@/firebase';
 import { usePathname, useRouter } from 'next/navigation';
+import { doc, getDoc } from 'firebase/firestore';
 
 type SessionType = 'admin' | 'user';
 
 /**
  * Hook to enforce session isolation between admin and user sides
  * Prevents crossover between admin and user authentication states
+ * Prevents admin users from accessing the user side
  */
 export function useSessionIsolation(currentSessionType: SessionType) {
   const auth = useAuth();
+  const firestore = useFirestore();
   const pathname = usePathname();
   const router = useRouter();
 
   useEffect(() => {
-    if (!auth) return;
+    if (!auth || !firestore) return;
+
+    const checkIfUserIsAdmin = async (userEmail: string, userId: string): Promise<boolean> => {
+      try {
+        // Check hardcoded admin email
+        if (userEmail === 'jason@carehomefinders.com') {
+          return true;
+        }
+
+        // Check Firestore admin roles
+        const adminRoleRef = doc(firestore, 'roles_admin', userId);
+        const superAdminRoleRef = doc(firestore, 'roles_super_admin', userId);
+
+        const [adminDoc, superAdminDoc] = await Promise.all([
+          getDoc(adminRoleRef),
+          getDoc(superAdminRoleRef)
+        ]);
+
+        return adminDoc.exists() || superAdminDoc.exists();
+      } catch (error) {
+        console.error('Error checking admin status:', error);
+        return false;
+      }
+    };
 
     const handleSessionIsolation = async () => {
       const isAdminPath = pathname.startsWith('/admin');
@@ -25,6 +51,24 @@ export function useSessionIsolation(currentSessionType: SessionType) {
       // Store the intended session type in localStorage
       const storedSessionType = localStorage.getItem('calaim_session_type');
       const newSessionType = isAdminPath ? 'admin' : 'user';
+
+      // If user is logged in and trying to access user side, check if they're an admin
+      if (auth.currentUser && isUserPath) {
+        const isAdmin = await checkIfUserIsAdmin(auth.currentUser.email || '', auth.currentUser.uid);
+        
+        if (isAdmin) {
+          console.log('Session isolation: Admin user attempting to access user side, redirecting to admin');
+          
+          // Clear session data and redirect to admin
+          localStorage.removeItem('calaim_session_type');
+          localStorage.removeItem('calaim_admin_context');
+          sessionStorage.clear();
+          
+          await auth.signOut();
+          router.push('/admin/login');
+          return;
+        }
+      }
 
       // If switching between admin and user sides, force logout
       if (storedSessionType && storedSessionType !== newSessionType && auth.currentUser) {
@@ -54,7 +98,7 @@ export function useSessionIsolation(currentSessionType: SessionType) {
     };
 
     handleSessionIsolation();
-  }, [auth, pathname, router, currentSessionType]);
+  }, [auth, firestore, pathname, router, currentSessionType]);
 
   // Utility functions for session management
   const switchToAdminMode = async () => {
