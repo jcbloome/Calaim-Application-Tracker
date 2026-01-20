@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +20,7 @@ import {
 import { useAdmin } from '@/hooks/use-admin';
 
 export default function MorningDashboardPage() {
+  const router = useRouter();
   const { isAdmin, user, isLoading } = useAdmin();
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -145,6 +147,7 @@ export default function MorningDashboardPage() {
 
   // Show loading while authentication is being checked
   if (isLoading) {
+    console.log('🔄 Morning Dashboard: Still loading authentication...');
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -156,22 +159,21 @@ export default function MorningDashboardPage() {
   }
 
   if (!isAdmin) {
+    console.log('❌ Morning Dashboard: User is not admin', { isAdmin, user: user?.email });
     return (
-      <div className="container mx-auto p-6">
-        <Card>
-          <CardContent className="flex items-center justify-center h-64">
-            <div className="text-center">
-              <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">Access Restricted</h3>
-              <p className="text-muted-foreground">
-                You need admin permissions to access the morning dashboard.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="text-red-600 mb-4">Access Denied</div>
+          <p className="text-muted-foreground">You need admin permissions to access this page.</p>
+          <Button onClick={() => router.push('/admin/login')} className="mt-4">
+            Go to Login
+          </Button>
+        </div>
       </div>
     );
   }
+
+  console.log('✅ Morning Dashboard: User authenticated as admin', { isAdmin, user: user?.email });
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -336,7 +338,7 @@ export default function MorningDashboardPage() {
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => window.location.href = '/admin/member-notes'}>
+        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/admin/member-notes')}>
           <CardContent className="p-4">
             <div className="flex items-center space-x-3">
               <MessageSquare className="h-8 w-8 text-blue-600" />
@@ -348,7 +350,7 @@ export default function MorningDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => window.location.href = '/admin/my-notes'}>
+        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/admin/my-notes')}>
           <CardContent className="p-4">
             <div className="flex items-center space-x-3">
               <Bell className="h-8 w-8 text-purple-600" />
@@ -360,7 +362,7 @@ export default function MorningDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => window.location.href = '/admin/applications'}>
+        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/admin/applications')}>
           <CardContent className="p-4">
             <div className="flex items-center space-x-3">
               <Users className="h-8 w-8 text-green-600" />
@@ -372,7 +374,7 @@ export default function MorningDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => window.location.href = '/admin/activity-dashboard'}>
+        <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push('/admin')}>
           <CardContent className="p-4">
             <div className="flex items-center space-x-3">
               <Activity className="h-8 w-8 text-orange-600" />

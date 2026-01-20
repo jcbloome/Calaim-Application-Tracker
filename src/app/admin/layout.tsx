@@ -443,6 +443,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, loading, isAdmin } = useAdmin();
   const [showAlert, setShowAlert] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
 
   // Allow access to login page without authentication
   const isLoginPage = pathname === '/admin/login';
@@ -466,11 +467,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }
 
   // Redirect to login if user is not an admin (but not if already on login page)
-  if (!isAdmin && !isLoginPage) {
-    // Redirect to login page instead of showing access denied
-    if (typeof window !== 'undefined') {
-      window.location.href = '/admin/login';
-    }
+  if (!loading && !isAdmin && !isLoginPage) {
+    // Use Next.js router for client-side navigation to prevent loops
+    console.log('🔄 AdminLayout: Redirecting non-admin user to login');
+    router.push('/admin/login');
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">

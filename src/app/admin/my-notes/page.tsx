@@ -6,9 +6,11 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { useFirebaseAuth, useFirestoreCollection } from '@/modules/firebase-integration';
+import { useAdmin } from '@/hooks/use-admin';
+import { useFirestore } from '@/firebase';
+import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, writeBatch } from 'firebase/firestore';
 
 interface StaffNotification {
   id: string;
@@ -20,7 +22,7 @@ interface StaffNotification {
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   isPrivate: boolean;
   isRead: boolean;
-  createdAt: Timestamp;
+  createdAt: any; // Firebase Timestamp
   authorName: string;
   authorId: string;
   recipientId: string;
@@ -29,28 +31,15 @@ interface StaffNotification {
 }
 
 export default function MyNotesPage() {
-  const { user, isAdmin, isLoading } = useFirebaseAuth();
+  const { user, isAdmin, loading } = useAdmin();
+  const firestore = useFirestore();
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
+  const [notifications, setNotifications] = useState<StaffNotification[]>([]);
+  const [isLoadingNotes, setIsLoadingNotes] = useState(true);
 
-  // Use new Firebase module for notifications
-  const { 
-    documents: notifications, 
-    isLoading: isLoadingNotes, 
-    error, 
-    updateDocument, 
-    refresh 
-  } = useFirestoreCollection<StaffNotification>('notifications', {
-    where: user?.uid ? [
-      { field: 'recipientIds', operator: 'array-contains', value: user.uid }
-    ] : [],
-    orderBy: [{ field: 'createdAt', direction: 'desc' }],
-    autoSubscribe: true, // Real-time updates
-    limit: 100
-  });
-
-  // Load notes created by this user from Firestore
+  // Load notifications from Firestore
   useEffect(() => {
     if (!firestore || !user?.uid) {
       setIsLoadingNotes(false);
@@ -62,8 +51,8 @@ export default function MyNotesPage() {
     try {
       // Query notifications sent TO the current user
       const notificationsQuery = query(
-        collection(firestore, 'staff-notifications'),
-        where('recipientId', '==', user.uid)
+        collection(firestore, 'notifications'),
+        where('recipientIds', 'array-contains', user.uid)
       );
 
       const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
@@ -75,240 +64,327 @@ export default function MyNotesPage() {
             id: doc.id,
             type: data.type || 'individual',
             title: data.title || 'Notification',
-            content: data.content || '',
+            content: data.content || data.message || '',
             memberName: data.memberName || undefined,
             memberId: data.memberId || undefined,
             priority: data.priority || 'Medium',
             isPrivate: data.isPrivate || false,
-            isRead: data.isRead || false,
-            createdAt: data.createdAt,
-            authorName: data.authorName || 'System',
-            authorId: data.authorId || 'system',
+            isRead: data.read || false,
+            createdAt: data.createdAt || data.timestamp,
+            authorName: data.authorName || data.senderName || 'System',
+            authorId: data.authorId || data.senderId || 'system',
             recipientId: data.recipientId || user.uid,
             requiresStaffAction: data.requiresStaffAction || false,
             category: data.category || 'notification'
           });
         });
-        
-        // Sort notifications by creation date and read status
+
+        // Sort by creation date (newest first)
         userNotifications.sort((a, b) => {
-          // Unread first, then by date
-          if (a.isRead !== b.isRead) {
-            return a.isRead ? 1 : -1;
-          }
-          const aTime = a.createdAt?.toDate?.()?.getTime() || 0;
-          const bTime = b.createdAt?.toDate?.()?.getTime() || 0;
-          return bTime - aTime; // Newest first
+          const aTime = a.createdAt?.toDate?.() || new Date(0);
+          const bTime = b.createdAt?.toDate?.() || new Date(0);
+          return bTime.getTime() - aTime.getTime();
         });
-        
+
         setNotifications(userNotifications);
         setIsLoadingNotes(false);
         
-        if (userNotifications.length === 0) {
-          toast({
-            title: 'No Notifications',
-            description: 'You have no notifications at this time.',
-            className: 'bg-blue-100 text-blue-900 border-blue-200',
-          });
-        }
+        console.log(`📋 Loaded ${userNotifications.length} notifications for user`);
       }, (error) => {
-        console.error('Error loading notifications:', error);
+        console.error('❌ Error loading notifications:', error);
         setIsLoadingNotes(false);
         toast({
-          variant: 'destructive',
-          title: 'Error Loading Notifications',
-          description: 'Failed to load your notifications. Please try again.',
+          title: "Error",
+          description: "Failed to load notifications. Please refresh the page.",
+          variant: "destructive"
         });
       });
 
       return () => unsubscribe();
     } catch (error) {
-      console.error('Error setting up notes listener:', error);
+      console.error('❌ Error setting up notifications listener:', error);
       setIsLoadingNotes(false);
+      toast({
+        title: "Error", 
+        description: "Failed to load notifications. Please refresh the page.",
+        variant: "destructive"
+      });
     }
   }, [firestore, user?.uid, toast]);
 
+  // Mark notification as read
+  const markAsRead = async (notificationId: string) => {
+    if (!firestore) return;
+    
+    try {
+      await updateDoc(doc(firestore, 'notifications', notificationId), { read: true });
+      toast({
+        title: "Success",
+        description: "Notification marked as read",
+      });
+    } catch (error) {
+      console.error('❌ Failed to mark notification as read:', error);
+      toast({
+        title: "Error",
+        description: "Failed to mark notification as read",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Mark all notifications as read
+  const markAllAsRead = async () => {
+    if (!firestore) return;
+    
+    try {
+      const unreadNotifications = notifications.filter(n => !n.isRead);
+      
+      if (unreadNotifications.length === 0) {
+        toast({
+          title: "Info",
+          description: "No unread notifications to mark",
+        });
+        return;
+      }
+
+      const batch = writeBatch(firestore);
+      unreadNotifications.forEach(notification => {
+        batch.update(doc(firestore, 'notifications', notification.id), { read: true });
+      });
+      
+      await batch.commit();
+      
+      toast({
+        title: "Success",
+        description: `Marked ${unreadNotifications.length} notifications as read`,
+      });
+    } catch (error) {
+      console.error('❌ Failed to mark all notifications as read:', error);
+      toast({
+        title: "Error",
+        description: "Failed to mark notifications as read",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Refresh notifications
+  const refresh = () => {
+    setIsLoadingNotes(true);
+    // The useEffect will handle reloading
+  };
+
   // Filter notifications based on search term
-  const filteredNotifications = notifications.filter(notification => 
-    notification.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    notification.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (notification.memberName && notification.memberName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    notification.authorName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredNotifications = notifications.filter(notification => {
+    if (!searchTerm) return true;
+    
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      notification.title?.toLowerCase().includes(searchLower) ||
+      notification.content?.toLowerCase().includes(searchLower) ||
+      notification.memberName?.toLowerCase().includes(searchLower) ||
+      notification.authorName?.toLowerCase().includes(searchLower)
+    );
+  });
 
-  // Count unread notifications
-  const unreadCount = notifications.filter(n => !n.isRead).length;
+  // Get priority color
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'Urgent': return 'bg-red-100 text-red-800 border-red-200';
+      case 'High': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'Medium': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'Low': return 'bg-gray-100 text-gray-800 border-gray-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
 
-  if (isLoading) {
+  // Format timestamp
+  const formatTimestamp = (timestamp: any) => {
+    if (!timestamp) return 'Unknown time';
+    
+    try {
+      const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    } catch (error) {
+      return 'Invalid date';
+    }
+  };
+
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading notifications...</p>
+        </div>
       </div>
     );
   }
 
   if (!isAdmin) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h1>
-          <p className="text-gray-600">You need administrator privileges to access this page.</p>
-        </div>
+      <div className="container mx-auto p-6">
+        <Card>
+          <CardContent className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <MessageSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">Access Restricted</h3>
+              <p className="text-muted-foreground">
+                You need admin permissions to access notifications.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-8">
-      <div className="space-y-2">
-        <h1 className="text-3xl font-bold">Notification Center</h1>
-        <p className="text-muted-foreground">
-          Your central hub for staff notifications, member alerts, and system messages.
-        </p>
-      </div>
-      
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5" />
-                Notifications ({filteredNotifications.length})
-                {unreadCount > 0 && (
-                  <Badge className="bg-red-100 text-red-800 border-red-200">
-                    {unreadCount} unread
-                  </Badge>
-                )}
-              </CardTitle>
-              <CardDescription>
-                Staff notifications, member alerts, and system messages
-              </CardDescription>
-            </div>
-            <Button 
-              onClick={() => window.location.reload()} 
-              variant="outline" 
-              size="sm"
-              disabled={isLoadingNotes}
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingNotes ? 'animate-spin' : ''}`} />
-              Refresh
+    <div className="container mx-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">My Notifications</h1>
+          <p className="text-muted-foreground">
+            View and manage your personal notifications and member-related alerts
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button onClick={refresh} variant="outline" size="sm">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+          {filteredNotifications.some(n => !n.isRead) && (
+            <Button onClick={markAllAsRead} variant="outline" size="sm">
+              Mark All Read
             </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Search */}
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search notifications..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-          </div>
+          )}
+        </div>
+      </div>
 
-          {/* Notes List */}
-          {isLoadingNotes ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-muted-foreground">Loading notifications...</span>
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search notifications..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-10"
+        />
+      </div>
+
+      {/* Loading State */}
+      {isLoadingNotes && (
+        <Card>
+          <CardContent className="flex items-center justify-center h-32">
+            <div className="text-center">
+              <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">Loading notifications...</p>
             </div>
-          ) : filteredNotifications.length === 0 ? (
-            <div className="text-center py-8">
-              <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-muted-foreground mb-2">
-                {searchTerm ? 'No matching notifications found' : 'No notifications yet'}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {searchTerm 
-                  ? 'Try adjusting your search terms'
-                  : 'Notifications sent to you will appear here'
-                }
-              </p>
-            </div>
+          </CardContent>
+        </Card>
+      )}
+
+
+      {/* Notifications List */}
+      {!isLoadingNotes && (
+        <div className="space-y-4">
+          {filteredNotifications.length === 0 ? (
+            <Card>
+              <CardContent className="flex items-center justify-center h-32">
+                <div className="text-center">
+                  <MessageSquare className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-muted-foreground">
+                    {searchTerm ? 'No notifications match your search' : 'No notifications found'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
           ) : (
-            <div className="space-y-4">
-              {filteredNotifications.map((notification) => (
-                <Card 
-                  key={notification.id} 
-                  className={`border-l-4 ${
-                    notification.isRead 
-                      ? 'border-l-gray-300 bg-gray-50' 
-                      : notification.priority === 'High' || notification.priority === 'Urgent'
-                        ? 'border-l-red-500 bg-red-50'
-                        : 'border-l-blue-500 bg-blue-50'
-                  }`}
-                >
-                  <CardContent className="pt-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        {notification.type === 'member-related' && notification.memberName && (
-                          <>
-                            <User className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-medium">{notification.memberName}</span>
-                          </>
-                        )}
-                        <Badge variant={
-                          notification.priority === 'High' || notification.priority === 'Urgent' 
-                            ? 'destructive' 
-                            : notification.priority === 'Medium'
-                              ? 'default'
-                              : 'secondary'
-                        }>
+            filteredNotifications.map((notification) => (
+              <Card 
+                key={notification.id} 
+                className={`transition-colors hover:bg-accent/50 ${
+                  !notification.isRead ? 'border-blue-200 bg-blue-50/30' : ''
+                }`}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between space-x-4">
+                    <div className="flex-1 space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <h3 className={`font-medium ${!notification.isRead ? 'text-blue-900' : ''}`}>
+                          {notification.title}
+                        </h3>
+                        <Badge 
+                          variant="outline" 
+                          className={getPriorityColor(notification.priority)}
+                        >
                           {notification.priority}
                         </Badge>
                         {!notification.isRead && (
-                          <Badge className="bg-red-100 text-red-800 border-red-200">
+                          <Badge variant="default" className="bg-blue-600">
                             New
                           </Badge>
                         )}
-                        {notification.requiresStaffAction && (
-                          <Badge className="bg-orange-100 text-orange-800 border-orange-200">
-                            Action Required
-                          </Badge>
-                        )}
-                        {notification.isPrivate && (
-                          <Badge variant="outline">Private</Badge>
-                        )}
                       </div>
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Calendar className="h-3 w-3" />
-                        {notification.createdAt?.toDate?.()?.toLocaleDateString() || 'Unknown date'}
+                      
+                      <p className="text-sm text-muted-foreground">
+                        {notification.content}
+                      </p>
+                      
+                      <div className="flex items-center space-x-4 text-xs text-muted-foreground">
+                        <div className="flex items-center space-x-1">
+                          <User className="h-3 w-3" />
+                          <span>{notification.authorName}</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <Calendar className="h-3 w-3" />
+                          <span>{formatTimestamp(notification.createdAt)}</span>
+                        </div>
+                        {notification.memberName && (
+                          <div className="flex items-center space-x-1">
+                            <MessageSquare className="h-3 w-3" />
+                            <span>Member: {notification.memberName}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     
-                    <div className="mb-2">
-                      <h4 className="font-medium text-sm">{notification.title}</h4>
-                      <p className="text-xs text-muted-foreground">From: {notification.authorName}</p>
-                    </div>
-                    
-                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                      {notification.content}
-                    </p>
-                    
-                    {!notification.isRead && (
-                      <div className="mt-3 pt-3 border-t">
+                    <div className="flex flex-col space-y-2">
+                      {!notification.isRead && (
                         <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => {
-                            // Mark as read functionality would go here
-                            console.log('Mark as read:', notification.id);
-                          }}
+                          onClick={() => markAsRead(notification.id)}
+                          variant="outline" 
+                          size="sm"
                         >
-                          Mark as Read
+                          Mark Read
                         </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
           )}
-        </CardContent>
-      </Card>
+        </div>
+      )}
+
+      {/* Summary */}
+      {!isLoadingNotes && filteredNotifications.length > 0 && (
+        <Card className="bg-muted/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>
+                Showing {filteredNotifications.length} notification{filteredNotifications.length !== 1 ? 's' : ''}
+                {searchTerm && ` matching "${searchTerm}"`}
+              </span>
+              <span>
+                {filteredNotifications.filter(n => !n.isRead).length} unread
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
