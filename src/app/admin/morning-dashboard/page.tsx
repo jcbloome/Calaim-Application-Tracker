@@ -54,9 +54,17 @@ export default function MorningDashboardPage() {
         new Notification('🎉 Notifications Enabled!', {
           body: 'You\'ll now receive real-time alerts for priority member notes.',
           icon: '/favicon.ico',
-          tag: 'permission-granted'
+          tag: 'permission-granted',
+          requireInteraction: true
         });
+        
+        // Enable always-on mode automatically
+        enableAlwaysOnMode();
+      } else {
+        alert('⚠️ Notifications were blocked. Please enable them in your browser settings for always-on functionality.');
       }
+    } else {
+      alert('❌ Your browser doesn\'t support notifications. Try Chrome or Edge for full functionality.');
     }
   };
 
@@ -183,10 +191,23 @@ export default function MorningDashboardPage() {
                   <Bell className="mr-2 h-4 w-4" />
                   Enable Notifications
                 </Button>
-                <Button variant="outline" onClick={enableAlwaysOnMode}>
-                  <Settings className="mr-2 h-4 w-4" />
-                  Configure Always-On Mode
+              <Button variant="outline" onClick={enableAlwaysOnMode}>
+                <Settings className="mr-2 h-4 w-4" />
+                Configure Always-On Mode
+              </Button>
+              {notificationPermission === 'granted' && (
+                <Button variant="outline" onClick={() => {
+                  new Notification('🧪 Test Notification', {
+                    body: 'This is a test of your always-on notification system!',
+                    icon: '/favicon.ico',
+                    tag: 'test-notification',
+                    requireInteraction: true
+                  });
+                }}>
+                  <Bell className="mr-2 h-4 w-4" />
+                  Test Notification
                 </Button>
+              )}
               </div>
             </div>
           </CardContent>
@@ -300,16 +321,21 @@ export default function MorningDashboardPage() {
                   <CheckCircle className="h-5 w-5 text-green-600" />
                   <h4 className="font-medium text-green-800">PWA Ready for Testing!</h4>
                 </div>
-                <p className="text-sm text-green-700 mt-2">
-                  Install this app to your desktop for system tray notifications and always-on functionality.
-                </p>
-              </div>
-              {showInstallButton && (
+            <p className="text-sm text-green-700 mt-2">
+              Install this app to your desktop for system tray notifications and always-on functionality.
+            </p>
+            <div className="mt-3 flex space-x-2">
+              {showInstallButton ? (
                 <Button onClick={handleInstallPWA} className="bg-green-600 hover:bg-green-700">
                   <Activity className="mr-2 h-4 w-4" />
-                  Install App
+                  Install Desktop App
                 </Button>
+              ) : (
+                <div className="text-sm text-green-700">
+                  💡 <strong>To install:</strong> Look for the install icon in your browser's address bar, or use Chrome/Edge menu → "Install CalAIM Tracker"
+                </div>
               )}
+            </div>
             </div>
           </div>
         </CardContent>
