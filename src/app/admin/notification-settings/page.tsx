@@ -67,9 +67,11 @@ export default function NotificationSettingsPage() {
       setLoading(true);
       // This would load from your backend/Firebase
       // For now, using localStorage as demo
-      const savedSettings = localStorage.getItem(`notification-settings-${user?.uid}`);
-      if (savedSettings) {
-        setSettings(JSON.parse(savedSettings));
+      if (typeof window !== 'undefined') {
+        const savedSettings = localStorage.getItem(`notification-settings-${user?.uid}`);
+        if (savedSettings) {
+          setSettings(JSON.parse(savedSettings));
+        }
       }
     } catch (error) {
       console.error('Error loading notification settings:', error);
@@ -85,7 +87,9 @@ export default function NotificationSettingsPage() {
       setLoading(true);
       
       // Save to backend (this would be a real API call)
-      localStorage.setItem(`notification-settings-${user.uid}`, JSON.stringify(settings));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`notification-settings-${user.uid}`, JSON.stringify(settings));
+      }
       
       // If push notifications are enabled, ensure we have permission
       if (settings.enablePushNotifications && !pushEnabled) {
@@ -140,18 +144,20 @@ export default function NotificationSettingsPage() {
     }
 
     // Show test notification
-    const notification = new Notification('📝 CalAIM Test Notification', {
-      body: 'This is a test notification for the CalAIM client notes system',
-      icon: '/calaimlogopdf.png',
-      badge: '/calaimlogopdf.png',
-      tag: 'test-notification',
-      requireInteraction: false
-    });
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      const notification = new Notification('📝 CalAIM Test Notification', {
+        body: 'This is a test notification for the CalAIM client notes system',
+        icon: '/calaimlogopdf.png',
+        badge: '/calaimlogopdf.png',
+        tag: 'test-notification',
+        requireInteraction: false
+      });
 
-    notification.onclick = () => {
-      window.focus();
-      notification.close();
-    };
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+    }
 
     toast({
       title: "Test Notification Sent",

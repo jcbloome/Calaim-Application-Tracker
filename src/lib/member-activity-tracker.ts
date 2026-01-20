@@ -57,7 +57,9 @@ class MemberActivityTracker {
         activities.splice(0, activities.length - 10000);
       }
       
-      localStorage.setItem(this.activitiesKey, JSON.stringify(activities));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(this.activitiesKey, JSON.stringify(activities));
+      }
 
       // Create notifications if required
       if (fullActivity.requiresNotification) {
@@ -75,6 +77,9 @@ class MemberActivityTracker {
   // Get all activities
   getAllActivities(): MemberActivity[] {
     try {
+      if (typeof window === 'undefined') {
+        return []; // Return empty array during SSR
+      }
       const stored = localStorage.getItem(this.activitiesKey);
       return stored ? JSON.parse(stored) : [];
     } catch (error) {
@@ -174,7 +179,9 @@ class MemberActivityTracker {
         notifications.push(notification);
       });
       
-      localStorage.setItem(this.notificationKey, JSON.stringify(notifications));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(this.notificationKey, JSON.stringify(notifications));
+      }
       
       // Send push notifications if enabled
       this.sendActivityPushNotifications(activity, recipients);
@@ -245,6 +252,9 @@ class MemberActivityTracker {
   // Get activity notifications
   getActivityNotifications(): any[] {
     try {
+      if (typeof window === 'undefined') {
+        return []; // Return empty array during SSR
+      }
       const stored = localStorage.getItem(this.notificationKey);
       return stored ? JSON.parse(stored) : [];
     } catch (error) {
@@ -420,7 +430,9 @@ class MemberActivityTracker {
     );
     
     const removedCount = activities.length - filteredActivities.length;
-    localStorage.setItem(this.activitiesKey, JSON.stringify(filteredActivities));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(this.activitiesKey, JSON.stringify(filteredActivities));
+    }
     
     return removedCount;
   }
