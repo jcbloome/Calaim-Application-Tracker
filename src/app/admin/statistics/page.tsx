@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useFirestore } from '@/firebase';
 import { collection, query, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
-import { Loader2, Users, Building2, Stethoscope, UserCheck } from 'lucide-react';
+import { Loader2, Users, Building2, Stethoscope, UserCheck, User, Shield, Activity, TrendingUp } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -70,6 +70,12 @@ export default function AdminStatisticsPage() {
   const [resourceLoading, setResourceLoading] = useState(false);
   const [resourceError, setResourceError] = useState<string | null>(null);
 
+  // Staff and status statistics state
+  const [staffAssignments, setStaffAssignments] = useState<any[]>([]);
+  const [statusBreakdown, setStatusBreakdown] = useState<any>({});
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
+
   const fetchApps = useCallback(async () => {
     if (isAdminLoading || !firestore || !isAdmin) {
         if (!isAdminLoading) setIsLoading(false);
@@ -92,6 +98,34 @@ export default function AdminStatisticsPage() {
         setIsLoading(false);
     }
   }, [firestore, isAdmin, isAdminLoading]);
+
+  const fetchStaffAndStatusStats = useCallback(async () => {
+    if (!isAdmin) return;
+
+    setStatsLoading(true);
+    setStatsError(null);
+    
+    try {
+      // Fetch staff assignments
+      const staffResponse = await fetch('/api/admin/statistics/staff-assignments');
+      if (!staffResponse.ok) throw new Error('Failed to fetch staff assignments');
+      const staffData = await staffResponse.json();
+      
+      // Fetch status breakdown
+      const statusResponse = await fetch('/api/admin/statistics/status-breakdown');
+      if (!statusResponse.ok) throw new Error('Failed to fetch status breakdown');
+      const statusData = await statusResponse.json();
+      
+      setStaffAssignments(staffData.staffAssignments || []);
+      setStatusBreakdown(statusData);
+      
+    } catch (err: any) {
+      console.error('Error fetching staff and status statistics:', err);
+      setStatsError(err.message);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [isAdmin]);
 
   // Fetch resource data (staff, RCFEs, members)
   const fetchResourceData = useCallback(async () => {
@@ -140,7 +174,8 @@ export default function AdminStatisticsPage() {
   useEffect(() => {
     fetchApps();
     fetchResourceData();
-  }, [fetchApps, fetchResourceData]);
+    fetchStaffAndStatusStats();
+  }, [fetchApps, fetchResourceData, fetchStaffAndStatusStats]);
 
   // Calculate resource statistics
   const resourceStats = useMemo(() => {
@@ -323,6 +358,161 @@ export default function AdminStatisticsPage() {
             </div>
             {resourceError && (
                 <p className="text-sm text-destructive mt-2">Error loading resource data: {resourceError}</p>
+            )}
+        </div>
+
+        {/* Staff Assignment Statistics */}
+        <div>
+            <h2 className="text-xl font-semibold mb-4">Staff Assignments</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {statsLoading ? (
+                    Array.from({ length: 6 }, (_, i) => (
+                        <Card key={i} className="border-l-4 border-indigo-500">
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle className="text-sm font-medium">
+                                    <div className="flex items-center gap-2">
+                                        <User className="h-4 w-4" />
+                                        Loading...
+                                    </div>
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="flex items-center gap-3">
+                                    <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
+                                    <div>
+                                        <p className="text-2xl font-bold text-indigo-700">--</p>
+                                        <p className="text-xs text-muted-foreground">Members assigned</p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    ))
+                ) : (
+                    staffAssignments.map((staff, index) => (
+                        <Card key={staff.name} className="border-l-4 border-indigo-500">
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle className="text-sm font-medium">
+                                    <div className="flex items-center gap-2">
+                                        <User className="h-4 w-4" />
+                                        {staff.name}
+                                    </div>
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="flex items-center gap-3">
+                                    <Users className="h-6 w-6 text-indigo-600" />
+                                    <div>
+                                        <p className="text-2xl font-bold text-indigo-700">{staff.count}</p>
+                                        <p className="text-xs text-muted-foreground">Members assigned</p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    ))
+                )}
+            </div>
+            {statsError && (
+                <p className="text-sm text-destructive mt-2">Error loading staff assignments: {statsError}</p>
+            )}
+        </div>
+
+        {/* Status Breakdown Statistics */}
+        <div>
+            <h2 className="text-xl font-semibold mb-4">Status Breakdown</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Kaiser Status Card */}
+                <Card className="border-l-4 border-red-500">
+                    <CardHeader>
+                        <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                            <Shield className="h-5 w-5 text-red-600" />
+                            Kaiser Status
+                        </CardTitle>
+                        <CardDescription>Current Kaiser authorization statuses</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {statsLoading ? (
+                            <div className="flex items-center justify-center py-4">
+                                <Loader2 className="h-6 w-6 animate-spin" />
+                            </div>
+                        ) : (
+                            <div className="space-y-2 max-h-64 overflow-y-auto">
+                                {statusBreakdown.kaiserStatuses?.slice(0, 10).map((item: any) => (
+                                    <div key={item.status} className="flex justify-between items-center py-1 border-b border-gray-100">
+                                        <span className="text-sm text-gray-700 truncate">{item.status}</span>
+                                        <span className="text-sm font-semibold text-red-600">{item.count}</span>
+                                    </div>
+                                ))}
+                                {statusBreakdown.kaiserStatuses?.length > 10 && (
+                                    <p className="text-xs text-muted-foreground text-center pt-2">
+                                        +{statusBreakdown.kaiserStatuses.length - 10} more statuses
+                                    </p>
+                                )}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* CalAIM Status Card */}
+                <Card className="border-l-4 border-green-500">
+                    <CardHeader>
+                        <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                            <Activity className="h-5 w-5 text-green-600" />
+                            CalAIM Status
+                        </CardTitle>
+                        <CardDescription>Current CalAIM program statuses</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {statsLoading ? (
+                            <div className="flex items-center justify-center py-4">
+                                <Loader2 className="h-6 w-6 animate-spin" />
+                            </div>
+                        ) : (
+                            <div className="space-y-2 max-h-64 overflow-y-auto">
+                                {statusBreakdown.calaimStatuses?.slice(0, 10).map((item: any) => (
+                                    <div key={item.status} className="flex justify-between items-center py-1 border-b border-gray-100">
+                                        <span className="text-sm text-gray-700 truncate">{item.status}</span>
+                                        <span className="text-sm font-semibold text-green-600">{item.count}</span>
+                                    </div>
+                                ))}
+                                {statusBreakdown.calaimStatuses?.length > 10 && (
+                                    <p className="text-xs text-muted-foreground text-center pt-2">
+                                        +{statusBreakdown.calaimStatuses.length - 10} more statuses
+                                    </p>
+                                )}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Health Plan Card */}
+                <Card className="border-l-4 border-blue-500">
+                    <CardHeader>
+                        <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                            <TrendingUp className="h-5 w-5 text-blue-600" />
+                            Health Plans
+                        </CardTitle>
+                        <CardDescription>Distribution by health plan</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {statsLoading ? (
+                            <div className="flex items-center justify-center py-4">
+                                <Loader2 className="h-6 w-6 animate-spin" />
+                            </div>
+                        ) : (
+                            <div className="space-y-2 max-h-64 overflow-y-auto">
+                                {statusBreakdown.healthPlans?.map((item: any) => (
+                                    <div key={item.plan} className="flex justify-between items-center py-1 border-b border-gray-100">
+                                        <span className="text-sm text-gray-700 truncate">{item.plan}</span>
+                                        <span className="text-sm font-semibold text-blue-600">{item.count}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
+            {statsError && (
+                <p className="text-sm text-destructive mt-2">Error loading status breakdown: {statsError}</p>
             )}
         </div>
 
