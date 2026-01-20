@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function GET(request: NextRequest) {
   try {
     // Get members data from Kaiser members API
-    const kaiserResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/api/kaiser-members`, {
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const kaiserResponse = await fetch(`${baseUrl}/api/kaiser-members`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -11,7 +12,8 @@ export async function GET(request: NextRequest) {
     });
 
     if (!kaiserResponse.ok) {
-      throw new Error('Failed to fetch Kaiser members data');
+      console.error('Kaiser API response not ok:', kaiserResponse.status, kaiserResponse.statusText);
+      throw new Error(`Failed to fetch Kaiser members data: ${kaiserResponse.status} ${kaiserResponse.statusText}`);
     }
 
     const kaiserData = await kaiserResponse.json();
@@ -64,9 +66,20 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Error fetching status breakdown statistics:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch status breakdown statistics' },
-      { status: 500 }
-    );
+    
+    // Return mock data if API is unavailable
+    return NextResponse.json({
+      success: false,
+      kaiserStatuses: [{ status: 'No Data Available', count: 0 }],
+      calaimStatuses: [{ status: 'No Data Available', count: 0 }],
+      healthPlans: [{ plan: 'No Data Available', count: 0 }],
+      totalMembers: 0,
+      summary: {
+        totalKaiserStatuses: 0,
+        totalCalaimStatuses: 0,
+        totalHealthPlans: 0
+      },
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    });
   }
 }

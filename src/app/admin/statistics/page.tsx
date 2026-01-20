@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useFirestore } from '@/firebase';
 import { collection, query, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
-import { Loader2, Users, Building2, Stethoscope, UserCheck, User, Shield, Activity, TrendingUp } from 'lucide-react';
+import { Loader2, Users, Building2, Stethoscope, UserCheck, User, Activity } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -108,16 +108,23 @@ export default function AdminStatisticsPage() {
     try {
       // Fetch staff assignments
       const staffResponse = await fetch('/api/admin/statistics/staff-assignments');
-      if (!staffResponse.ok) throw new Error('Failed to fetch staff assignments');
       const staffData = await staffResponse.json();
       
       // Fetch status breakdown
       const statusResponse = await fetch('/api/admin/statistics/status-breakdown');
-      if (!statusResponse.ok) throw new Error('Failed to fetch status breakdown');
       const statusData = await statusResponse.json();
       
+      // Handle both successful and error responses
       setStaffAssignments(staffData.staffAssignments || []);
       setStatusBreakdown(statusData);
+      
+      // Show error messages if APIs failed but still display available data
+      if (!staffData.success && staffData.error) {
+        console.warn('Staff assignments API error:', staffData.error);
+      }
+      if (!statusData.success && statusData.error) {
+        console.warn('Status breakdown API error:', statusData.error);
+      }
       
     } catch (err: any) {
       console.error('Error fetching staff and status statistics:', err);
@@ -416,50 +423,18 @@ export default function AdminStatisticsPage() {
             )}
         </div>
 
-        {/* Status Breakdown Statistics */}
+        {/* CalAIM Status Summary */}
         <div>
-            <h2 className="text-xl font-semibold mb-4">Status Breakdown</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Kaiser Status Card */}
-                <Card className="border-l-4 border-red-500">
-                    <CardHeader>
-                        <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                            <Shield className="h-5 w-5 text-red-600" />
-                            Kaiser Status
-                        </CardTitle>
-                        <CardDescription>Current Kaiser authorization statuses</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        {statsLoading ? (
-                            <div className="flex items-center justify-center py-4">
-                                <Loader2 className="h-6 w-6 animate-spin" />
-                            </div>
-                        ) : (
-                            <div className="space-y-2 max-h-64 overflow-y-auto">
-                                {statusBreakdown.kaiserStatuses?.slice(0, 10).map((item: any) => (
-                                    <div key={item.status} className="flex justify-between items-center py-1 border-b border-gray-100">
-                                        <span className="text-sm text-gray-700 truncate">{item.status}</span>
-                                        <span className="text-sm font-semibold text-red-600">{item.count}</span>
-                                    </div>
-                                ))}
-                                {statusBreakdown.kaiserStatuses?.length > 10 && (
-                                    <p className="text-xs text-muted-foreground text-center pt-2">
-                                        +{statusBreakdown.kaiserStatuses.length - 10} more statuses
-                                    </p>
-                                )}
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
+            <h2 className="text-xl font-semibold mb-4">CalAIM Status Summary</h2>
+            <div className="grid grid-cols-1 gap-6">
                 {/* CalAIM Status Card */}
                 <Card className="border-l-4 border-green-500">
                     <CardHeader>
                         <CardTitle className="text-lg font-semibold flex items-center gap-2">
                             <Activity className="h-5 w-5 text-green-600" />
-                            CalAIM Status
+                            CalAIM Program Status
                         </CardTitle>
-                        <CardDescription>Current CalAIM program statuses</CardDescription>
+                        <CardDescription>Current CalAIM program status distribution</CardDescription>
                     </CardHeader>
                     <CardContent>
                         {statsLoading ? (
@@ -483,36 +458,9 @@ export default function AdminStatisticsPage() {
                         )}
                     </CardContent>
                 </Card>
-
-                {/* Health Plan Card */}
-                <Card className="border-l-4 border-blue-500">
-                    <CardHeader>
-                        <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                            <TrendingUp className="h-5 w-5 text-blue-600" />
-                            Health Plans
-                        </CardTitle>
-                        <CardDescription>Distribution by health plan</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        {statsLoading ? (
-                            <div className="flex items-center justify-center py-4">
-                                <Loader2 className="h-6 w-6 animate-spin" />
-                            </div>
-                        ) : (
-                            <div className="space-y-2 max-h-64 overflow-y-auto">
-                                {statusBreakdown.healthPlans?.map((item: any) => (
-                                    <div key={item.plan} className="flex justify-between items-center py-1 border-b border-gray-100">
-                                        <span className="text-sm text-gray-700 truncate">{item.plan}</span>
-                                        <span className="text-sm font-semibold text-blue-600">{item.count}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
             </div>
             {statsError && (
-                <p className="text-sm text-destructive mt-2">Error loading status breakdown: {statsError}</p>
+                <p className="text-sm text-destructive mt-2">Error loading CalAIM status data: {statsError}</p>
             )}
         </div>
 

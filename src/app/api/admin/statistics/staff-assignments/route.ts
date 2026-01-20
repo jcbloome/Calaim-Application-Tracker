@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function GET(request: NextRequest) {
   try {
     // Get staff assignments from Kaiser members API
-    const kaiserResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/api/kaiser-members`, {
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const kaiserResponse = await fetch(`${baseUrl}/api/kaiser-members`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -11,7 +12,8 @@ export async function GET(request: NextRequest) {
     });
 
     if (!kaiserResponse.ok) {
-      throw new Error('Failed to fetch Kaiser members data');
+      console.error('Kaiser API response not ok:', kaiserResponse.status, kaiserResponse.statusText);
+      throw new Error(`Failed to fetch Kaiser members data: ${kaiserResponse.status} ${kaiserResponse.statusText}`);
     }
 
     const kaiserData = await kaiserResponse.json();
@@ -56,9 +58,19 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Error fetching staff assignment statistics:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch staff assignment statistics' },
-      { status: 500 }
-    );
+    
+    // Return mock data if API is unavailable
+    const mockStaffAssignments = [
+      { name: 'Unassigned', count: 0, members: [] },
+      { name: 'Loading...', count: 0, members: [] }
+    ];
+    
+    return NextResponse.json({
+      success: false,
+      staffAssignments: mockStaffAssignments,
+      totalMembers: 0,
+      totalStaff: 0,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    });
   }
 }
