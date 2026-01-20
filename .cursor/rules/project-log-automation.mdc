@@ -1,0 +1,124 @@
+---
+description: Automated Project Log System for AI Session Continuity
+globs: **/*.{js,ts,jsx,tsx,md}
+---
+
+# Project Log Automation System
+
+Ensures seamless continuity between AI sessions through automated progress tracking.
+
+## 1. The Core Rule
+**AFTER EVERY COMPLETED TASK**: Add one-line bullet point to PROJECT_LOG.md
+
+### Trigger Phrases:
+- "Add to PROJECT_LOG.md: [description]"
+- "Log this completion: [description]"
+- "Update project log: [description]"
+
+## 2. What to Log
+
+### ✅ Always Log These:
+- New features completed
+- Major bugs fixed
+- Architectural decisions made
+- Integration milestones reached
+- Performance improvements
+- Security enhancements
+- Database schema changes
+- API endpoint additions
+- UI/UX improvements
+- Deployment successes
+
+### ❌ Don't Log These:
+- Minor code formatting
+- Documentation typos
+- Dependency updates (unless breaking)
+- Routine maintenance
+- Work-in-progress items
+- Failed attempts (unless learning)
+
+## 3. Log Entry Format
+
+### Standard Format:
+```markdown
+- ✅ **[Category]**: [Brief description] ([Date if not today])
+```
+
+### Examples:
+```markdown
+- ✅ **Feature Added**: Bulk operations for Kaiser member status updates
+- ✅ **Bug Fixed**: Resolved infinite redirect loop in admin authentication
+- ✅ **Integration**: Connected Google Drive API for document migration
+- ✅ **Performance**: Optimized Firestore queries, reduced load time by 60%
+- ✅ **Security**: Implemented role-based access control for admin functions
+```
+
+### Categories:
+- **Feature Added** - New functionality
+- **Bug Fixed** - Problem resolution
+- **Integration** - External service connections
+- **Performance** - Speed/efficiency improvements
+- **Security** - Authentication/authorization changes
+- **Architecture** - Structural decisions
+- **Database** - Schema or data changes
+- **API** - Backend endpoint changes
+- **UI/UX** - Interface improvements
+- **Deployment** - Production releases
+
+## 4. Session Continuity Protocol
+
+### For New AI Sessions:
+1. **First Message**: "Read the PROJECT_LOG.md to see what I've been working on"
+2. **AI Response**: Should acknowledge current state and recent progress
+3. **Continue Development**: AI has full context of recent work
+
+### For Ongoing Sessions:
+1. **Complete Task**: Finish development work
+2. **Log Entry**: Add bullet point to PROJECT_LOG.md
+3. **Continue**: Move to next task with logged progress
+
+## 5. Log Maintenance
+
+### Weekly Review:
+- Archive completed items older than 30 days
+- Update "Current System Status" section
+- Refresh "Next Development Phase" priorities
+
+### Monthly Archive:
+- Move old entries to "Archive" section
+- Update architecture decision summaries
+- Refresh known working patterns list
+
+## 6. Integration with Rule Audit System
+
+### Feature Counter Integration:
+- When logging new features, increment feature counter
+- Track progress toward next rule audit (8 features)
+- Link feature completions to architectural pattern reviews
+
+### Cross-Reference:
+- PROJECT_LOG.md tracks WHAT was done
+- Rule files track HOW it should be done
+- Feature counter tracks WHEN to review patterns
+
+## 7. Benefits for Development
+
+### For You:
+- Never lose track of progress
+- Easy handoffs between AI sessions
+- Clear development history
+- Decision rationale preserved
+
+### For AI Assistants:
+- Instant context on project state
+- Understanding of recent decisions
+- Awareness of what's working/not working
+- Continuity of development approach
+
+## 8. Emergency Context Recovery
+
+If PROJECT_LOG.md is lost or corrupted:
+1. Check git history for recent commits
+2. Review .cursor/rules/ for architectural decisions
+3. Scan recent code changes for patterns
+4. Rebuild log from commit messages and file changes
