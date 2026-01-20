@@ -121,24 +121,34 @@ export default function ILSReportEditorPage() {
           bottleneckMembers.map((m: any) => m.Kaiser_Status)
         );
         
-        const processedMembers = bottleneckMembers.map((member: any) => ({
-            id: member.id,
+        const processedMembers = bottleneckMembers.map((member: any) => {
+          console.log('🔍 Processing member date fields:', {
+            memberName: `${member.memberFirstName} ${member.memberLastName}`,
+            Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date,
+            Kaiser_T2038_Received_Date: member.Kaiser_T2038_Received_Date,
+            Kaiser_Tier_Level_Requested_Date: member.Kaiser_Tier_Level_Requested_Date,
+            Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date,
+            ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date,
+            ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date
+          });
+          
+          return {
+            id: member.id || member.Client_ID2,
             memberName: `${member.memberFirstName} ${member.memberLastName}`,
             memberMrn: member.memberMrn,
-            client_ID2: member.client_ID2,
+            client_ID2: member.client_ID2 || member.Client_ID2,
             Kaiser_Status: member.Kaiser_Status,
-            // Using EXACT field names from Caspio screenshot
-            Kaiser_T2038_Requested_Date: member.Kaiser_T038_Requested || member.Kaiser_T2038_Requested || member.Kaiser_T2038_Requested_Date || '',
-            Kaiser_T2038_Received_Date: member.Kaiser_T038_Received || member.Kaiser_T2038_Received || member.Kaiser_T2038_Received_Date || '',
-            // Tier Level fields from screenshot
-            Kaiser_Tier_Level_Requested_Date: member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date || '',
-            Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received || member.Kaiser_Tier_Level_Received_Date || '',
-            // Try multiple possible field names for ILS/RCFE dates
-            ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || member.ILS_RCFE_Sent_For_Contract || '',
-            ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || member.ILS_RCFE_Received_Contract || '',
+            // Use the date fields directly from the API response
+            Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date || '',
+            Kaiser_T2038_Received_Date: member.Kaiser_T2038_Received_Date || '',
+            Kaiser_Tier_Level_Requested_Date: member.Kaiser_Tier_Level_Requested_Date || '',
+            Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date || '',
+            ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || '',
+            ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || '',
             memberCounty: member.memberCounty,
             kaiser_user_assignment: member.kaiser_user_assignment
-          }));
+          };
+        });
         
         setMembers(processedMembers);
         

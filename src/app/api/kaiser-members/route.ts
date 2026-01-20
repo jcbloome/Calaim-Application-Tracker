@@ -148,6 +148,22 @@ export async function GET(request: NextRequest) {
         FirstName: membersData.Result[0].FirstName,
         LastName: membersData.Result[0].LastName
       });
+      
+      // Log date fields specifically for ILS Report debugging
+      console.log('📅 Date fields check:', {
+        Kaiser_T2038_Requested_Date: membersData.Result[0].Kaiser_T2038_Requested_Date,
+        Kaiser_T2038_Received_Date: membersData.Result[0].Kaiser_T2038_Received_Date,
+        Kaiser_Tier_Level_Requested_Date: membersData.Result[0].Kaiser_Tier_Level_Requested_Date,
+        Kaiser_Tier_Level_Received_Date: membersData.Result[0].Kaiser_Tier_Level_Received_Date,
+        ILS_RCFE_Sent_For_Contract_Date: membersData.Result[0].ILS_RCFE_Sent_For_Contract_Date,
+        ILS_RCFE_Received_Contract_Date: membersData.Result[0].ILS_RCFE_Received_Contract_Date,
+        // Also check for alternative field names
+        Kaiser_T038_Requested: membersData.Result[0].Kaiser_T038_Requested,
+        Kaiser_T038_Received: membersData.Result[0].Kaiser_T038_Received,
+        Kaiser_Tier_Level_Requested: membersData.Result[0].Kaiser_Tier_Level_Requested,
+        Kaiser_Tier_Level_Received: membersData.Result[0].Kaiser_Tier_Level_Received
+      });
+      
       console.log('📋 Sample member data:', membersData.Result[0]);
     }
 
@@ -175,6 +191,15 @@ export async function GET(request: NextRequest) {
       workflow_notes: member.workflow_notes || '',
       lastUpdated: member.Date_Modified || new Date().toISOString(),
       created_at: member.Date_Created || new Date().toISOString(),
+      
+      // ILS Report Date Fields - try multiple possible field names
+      Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date || member.Kaiser_T038_Requested || member.Kaiser_T2038_Requested || '',
+      Kaiser_T2038_Received_Date: member.Kaiser_T2038_Received_Date || member.Kaiser_T038_Received || member.Kaiser_T2038_Received || '',
+      Kaiser_Tier_Level_Requested_Date: member.Kaiser_Tier_Level_Requested_Date || member.Kaiser_Tier_Level_Requested || '',
+      Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date || member.Kaiser_Tier_Level_Received || '',
+      ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || member.ILS_RCFE_Sent_For_Contract || '',
+      ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || member.ILS_RCFE_Received_Contract || '',
+      
       // Add any other fields needed by the Kaiser tracker
     }));
 
