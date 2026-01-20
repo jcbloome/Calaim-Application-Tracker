@@ -46,7 +46,7 @@ async function fetchCaspioStaff() {
       }
     ];
   }
-}
+};
 
 export async function GET(request: NextRequest) {
   try {

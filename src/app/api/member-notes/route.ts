@@ -677,36 +677,6 @@ export async function GET(request: NextRequest) {
       source: 'caspio-module',
       timestamp: new Date().toISOString()
     });
-
-    // Get sync status from Firestore (with cache fallback)
-    const syncStatus = await getSyncStatusFromFirestore(clientId2);
-
-    const isFirstSync = !syncStatus || !syncStatus.lastSyncAt;
-    let newNotesCount = 0;
-
-    if (forceSync) {
-      if (isFirstSync) {
-        console.log(`🆕 First time sync for member ${clientId2} - importing all legacy notes`);
-        newNotesCount = await syncAllNotesFromCaspio(clientId2);
-      } else {
-        console.log(`🔄 Incremental sync for member ${clientId2} - checking for new notes`);
-        newNotesCount = await syncNewNotesFromCaspio(clientId2, syncStatus.lastSyncAt);
-      }
-    }
-
-    // Get notes from Firestore (with cache fallback)
-    const notes = await getNotesFromFirestore(clientId2);
-    
-    // Sort notes by creation date (newest first)
-    notes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    console.log(`📋 Returning ${notes.length} notes for member ${clientId2}`);
-
-    return NextResponse.json({
-      success: true,
-      notes,
-      isFirstSync,
-      newNotesCount,
       totalNotes: notes.length,
       legacyNotes: notes.filter(n => n.isLegacy).length,
       regularNotes: notes.filter(n => n.source === 'Caspio').length,
