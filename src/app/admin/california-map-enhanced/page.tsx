@@ -76,6 +76,18 @@ interface StaffMember {
   workload: 'Low' | 'Medium' | 'High' | 'Overloaded';
 }
 
+interface RCFEMemberData {
+  rcfeName: string;
+  location: string;
+  memberCount: number;
+  members: {
+    name: string;
+    clientId: string;
+    assignedStaff: string;
+    staffName: string;
+  }[];
+}
+
 export default function MapIntelligencePage() {
   const { toast } = useToast();
   
@@ -105,6 +117,82 @@ export default function MapIntelligencePage() {
   const [selectedStaff, setSelectedStaff] = useState<string>('');
   const [reassignmentTarget, setReassignmentTarget] = useState<string>('');
   const [isReassigning, setIsReassigning] = useState(false);
+
+  // RCFE Member Distribution state
+  const [rcfeMembers, setRcfeMembers] = useState<RCFEMemberData[]>([]);
+  const [isLoadingRcfeMembers, setIsLoadingRcfeMembers] = useState(false);
+
+  // Load RCFE member distribution data
+  const loadRcfeMemberData = async () => {
+    setIsLoadingRcfeMembers(true);
+    try {
+      // Fetch real member data from existing member-locations API
+      const response = await fetch('/api/member-locations');
+      const data = await response.json();
+      
+      if (data.success && data.data && data.data.members) {
+        // Group members by RCFE facility
+        const rcfeGroups: { [key: string]: RCFEMemberData } = {};
+        
+        data.data.members.forEach((member: any) => {
+          if (member.rcfeName && member.firstName && member.lastName) {
+            const rcfeName = member.rcfeName;
+            const location = member.rcfeAddress || member.rcfeCity || member.city || 'Location TBD';
+            const memberName = `${member.firstName} ${member.lastName}`;
+            const staffName = member.assignedStaff || 'No Staff Assigned';
+            
+            if (!rcfeGroups[rcfeName]) {
+              rcfeGroups[rcfeName] = {
+                rcfeName,
+                location,
+                memberCount: 0,
+                members: []
+              };
+            }
+            
+            // Check if member already exists in this RCFE
+            const existingMember = rcfeGroups[rcfeName].members.find(
+              m => m.clientId === (member.clientId2 || member.id)
+            );
+            
+            if (!existingMember) {
+              rcfeGroups[rcfeName].members.push({
+                name: memberName,
+                clientId: member.clientId2 || member.id,
+                assignedStaff: member.assignedStaff || 'unassigned',
+                staffName: staffName
+              });
+              rcfeGroups[rcfeName].memberCount++;
+            }
+          }
+        });
+        
+        setRcfeMembers(Object.values(rcfeGroups));
+        
+        toast({
+          title: "RCFE Data Loaded",
+          description: `Found ${Object.keys(rcfeGroups).length} RCFE facilities with ${data.data.members.length} members`,
+        });
+      } else {
+        // Show fallback message if no data
+        setRcfeMembers([]);
+        toast({
+          title: "No RCFE Data",
+          description: "No member RCFE assignments found",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error loading RCFE member data:', error);
+      toast({
+        title: "RCFE Data Error",
+        description: "Failed to load RCFE member assignments",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoadingRcfeMembers(false);
+    }
+  };
 
   // Load resource counts from APIs
   useEffect(() => {
@@ -150,6 +238,7 @@ export default function MapIntelligencePage() {
     };
 
     loadResourceCounts();
+    loadRcfeMemberData();
   }, []); // Remove toast dependency to test
 
   // Load comprehensive visits and staff data from APIs
@@ -672,73 +761,74 @@ export default function MapIntelligencePage() {
           {/* RCFE Member Distribution */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Home className="h-5 w-5" />
-                RCFE Member Distribution
-              </CardTitle>
-              <CardDescription>
-                Members assigned to each RCFE facility with their assigned staff
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Home className="h-5 w-5" />
+                    RCFE Member Distribution
+                  </CardTitle>
+                  <CardDescription>
+                    Members assigned to each RCFE facility with their assigned staff
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadRcfeMemberData}
+                  disabled={isLoadingRcfeMembers}
+                  className="flex items-center gap-2"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isLoadingRcfeMembers ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
-                {Object.entries(resourceCounts).length > 0 && (
-                  <>
-                    <div className="border rounded-lg p-3">
-                      <h4 className="font-medium text-sm mb-2">Queen Comfort RCFE</h4>
-                      <p className="text-xs text-muted-foreground mb-2">Van Nuys, CA • 3 members</p>
+                {isLoadingRcfeMembers ? (
+                  <div className="col-span-full flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    <span className="text-sm text-muted-foreground">Loading RCFE member assignments...</span>
+                  </div>
+                ) : rcfeMembers.length > 0 ? (
+                  rcfeMembers.map((rcfe, index) => (
+                    <div key={index} className="border rounded-lg p-3">
+                      <h4 className="font-medium text-sm mb-2">{rcfe.rcfeName}</h4>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        {rcfe.location} • {rcfe.memberCount} member{rcfe.memberCount !== 1 ? 's' : ''}
+                      </p>
                       <div className="space-y-1">
-                        <div className="text-xs">• Larry Grant (Staff: Janelle Barnett)</div>
-                        <div className="text-xs">• Maria Santos (Staff: Janelle Barnett)</div>
-                        <div className="text-xs">• Robert Chen (Staff: Nick Wilson)</div>
+                        {rcfe.members.length > 5 ? (
+                          <>
+                            {rcfe.members.slice(0, 3).map((member, memberIndex) => (
+                              <div key={memberIndex} className="text-xs">
+                                • {member.name} (Staff: {member.staffName})
+                              </div>
+                            ))}
+                            <div className="text-xs text-muted-foreground">
+                              • +{rcfe.members.length - 3} more members
+                            </div>
+                            <div className="text-xs">
+                              • Primary Staff: {rcfe.members[0]?.staffName || 'Unassigned'}
+                            </div>
+                          </>
+                        ) : (
+                          rcfe.members.map((member, memberIndex) => (
+                            <div key={memberIndex} className="text-xs">
+                              • {member.name} (Staff: {member.staffName})
+                            </div>
+                          ))
+                        )}
                       </div>
                     </div>
-                    
-                    <div className="border rounded-lg p-3">
-                      <h4 className="font-medium text-sm mb-2">CHLOIE COTTAGE</h4>
-                      <p className="text-xs text-muted-foreground mb-2">San Dimas, CA • 1 member</p>
-                      <div className="space-y-1">
-                        <div className="text-xs">• Patricia Johnson (Staff: John Martinez)</div>
-                      </div>
-                    </div>
-                    
-                    <div className="border rounded-lg p-3">
-                      <h4 className="font-medium text-sm mb-2">Aasta Assisted Living</h4>
-                      <p className="text-xs text-muted-foreground mb-2">Oxnard, CA • 1 member</p>
-                      <div className="space-y-1">
-                        <div className="text-xs">• Michael Davis (Staff: Jessie Thompson)</div>
-                      </div>
-                    </div>
-                    
-                    <div className="border rounded-lg p-3">
-                      <h4 className="font-medium text-sm mb-2">Lakewood Gardens</h4>
-                      <p className="text-xs text-muted-foreground mb-2">Lakewood, CA • 3 members</p>
-                      <div className="space-y-1">
-                        <div className="text-xs">• Sarah Wilson (Staff: Nick Wilson)</div>
-                        <div className="text-xs">• James Rodriguez (Staff: Janelle Barnett)</div>
-                        <div className="text-xs">• Linda Thompson (Staff: John Martinez)</div>
-                      </div>
-                    </div>
-                    
-                    <div className="border rounded-lg p-3">
-                      <h4 className="font-medium text-sm mb-2">California Mission Inn</h4>
-                      <p className="text-xs text-muted-foreground mb-2">Los Angeles, CA • 9 members</p>
-                      <div className="space-y-1">
-                        <div className="text-xs">• Multiple members assigned</div>
-                        <div className="text-xs">• Primary Staff: Janelle Barnett</div>
-                        <div className="text-xs">• Secondary: Nick Wilson</div>
-                      </div>
-                    </div>
-                    
-                    <div className="border rounded-lg p-3">
-                      <h4 className="font-medium text-sm mb-2">Glen Park at Glendale</h4>
-                      <p className="text-xs text-muted-foreground mb-2">Glendale, CA • 2 members</p>
-                      <div className="space-y-1">
-                        <div className="text-xs">• David Kim (Staff: John Martinez)</div>
-                        <div className="text-xs">• Anna Lopez (Staff: Jessie Thompson)</div>
-                      </div>
-                    </div>
-                  </>
+                  ))
+                ) : (
+                  <div className="col-span-full text-center py-8">
+                    <p className="text-sm text-muted-foreground">No RCFE member assignments found</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Member data will appear here once staff assignments are made
+                    </p>
+                  </div>
                 )}
               </div>
             </CardContent>

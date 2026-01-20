@@ -11,7 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Search, Plus, MessageSquare, Calendar, User, Clock, Send, Sync, CheckCircle, AlertCircle } from 'lucide-react';
+import { Search, Plus, MessageSquare, Calendar, User, Clock, Send, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { memberNotesSync, useMemberNotesSync } from '@/lib/member-notes-sync';
 import { useActivityTracking } from '@/hooks/use-activity-tracking';
@@ -293,7 +293,7 @@ export default function MemberNotesModal({
                 />
                 <Button onClick={searchMember} disabled={loading || syncing}>
                   {syncing ? (
-                    <Sync className="w-4 h-4 mr-2 animate-spin" />
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
                     <Search className="w-4 h-4 mr-2" />
                   )}
@@ -321,7 +321,7 @@ export default function MemberNotesModal({
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <div className="flex items-center space-x-2">
                 {syncing ? (
-                  <Sync className="w-4 h-4 text-blue-600 animate-spin" />
+                  <RefreshCw className="w-4 h-4 text-blue-600 animate-spin" />
                 ) : syncStatus.isFirstTime ? (
                   <AlertCircle className="w-4 h-4 text-blue-600" />
                 ) : (

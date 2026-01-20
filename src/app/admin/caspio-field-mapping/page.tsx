@@ -186,9 +186,15 @@ export default function CaspioFieldMappingPage() {
     }
 
     // Save to localStorage for now (in production, save to database)
-    const savedMappings = JSON.parse(localStorage.getItem('caspioFieldMappings') || '{}');
-    savedMappings[mappingName] = fieldMappings;
-    localStorage.setItem('caspioFieldMappings', JSON.stringify(savedMappings));
+    if (typeof window !== 'undefined') {
+      try {
+        const savedMappings = JSON.parse(localStorage.getItem('caspioFieldMappings') || '{}');
+        savedMappings[mappingName] = fieldMappings;
+        localStorage.setItem('caspioFieldMappings', JSON.stringify(savedMappings));
+      } catch (error) {
+        console.error('Error saving field mappings:', error);
+      }
+    }
 
     toast({
       title: 'Mapping Saved Successfully',
@@ -198,19 +204,40 @@ export default function CaspioFieldMappingPage() {
   };
 
   const handleLoadMapping = (name: string) => {
-    const savedMappings = JSON.parse(localStorage.getItem('caspioFieldMappings') || '{}');
-    if (savedMappings[name]) {
-      setFieldMappings(savedMappings[name]);
-      setMappingName(name);
-      toast({
-        title: 'Mapping Loaded',
-        description: `Field mapping "${name}" has been loaded.`,
-        className: 'bg-blue-100 text-blue-900 border-blue-200',
-      });
+    if (typeof window !== 'undefined') {
+      try {
+        const savedMappings = JSON.parse(localStorage.getItem('caspioFieldMappings') || '{}');
+        if (savedMappings[name]) {
+          setFieldMappings(savedMappings[name]);
+          setMappingName(name);
+          toast({
+            title: 'Mapping Loaded',
+            description: `Field mapping "${name}" has been loaded.`,
+            className: 'bg-blue-100 text-blue-900 border-blue-200',
+          });
+        }
+      } catch (error) {
+        console.error('Error loading field mappings:', error);
+        toast({
+          title: 'Error Loading Mapping',
+          description: 'Failed to load the selected field mapping.',
+          variant: 'destructive'
+        });
+      }
     }
   };
 
-  const savedMappings = JSON.parse(localStorage.getItem('caspioFieldMappings') || '{}');
+  // Get saved mappings with client-side guard
+  const getSavedMappings = () => {
+    if (typeof window === 'undefined') return {};
+    try {
+      return JSON.parse(localStorage.getItem('caspioFieldMappings') || '{}');
+    } catch {
+      return {};
+    }
+  };
+  
+  const savedMappings = getSavedMappings();
 
   return (
     <div className="container mx-auto p-6 space-y-6">

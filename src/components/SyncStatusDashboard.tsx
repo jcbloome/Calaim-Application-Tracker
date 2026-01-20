@@ -8,12 +8,11 @@ import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { 
-  Sync, 
+  RefreshCw, 
   CheckCircle, 
   AlertCircle, 
   Clock, 
   Database,
-  RefreshCw,
   Trash2,
   Info
 } from 'lucide-react';
@@ -159,7 +158,7 @@ export default function SyncStatusDashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
-              <Sync className="w-5 h-5" />
+              <RefreshCw className="w-5 h-5" />
               <span>Sync Actions</span>
             </CardTitle>
           </CardHeader>
@@ -172,7 +171,7 @@ export default function SyncStatusDashboard() {
               {processing ? (
                 <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
               ) : (
-                <Sync className="w-4 h-4 mr-2" />
+                <RefreshCw className="w-4 h-4 mr-2" />
               )}
               Process Pending Syncs ({syncStats.pendingSyncs})
             </Button>
