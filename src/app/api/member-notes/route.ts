@@ -1,7 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-// Temporarily disable Firestore until credentials are configured
-// import { adminDb } from '@/firebase-admin';
-// import { FieldValue } from 'firebase-admin/firestore';
+
+// Try to import Firebase Admin, but handle gracefully if not available
+let adminDb: any = null;
+let Timestamp: any = null;
+let FieldValue: any = null;
+
+try {
+  const firebaseAdmin = require('@/firebase-admin');
+  adminDb = firebaseAdmin.adminDb;
+  const { Timestamp: FirestoreTimestamp, FieldValue: FirestoreFieldValue } = require('firebase-admin/firestore');
+  Timestamp = FirestoreTimestamp;
+  FieldValue = FirestoreFieldValue;
+  console.log('✅ Firebase Admin SDK loaded successfully');
+} catch (error) {
+  console.warn('⚠️ Firebase Admin SDK not available, using cache-only mode:', error.message);
+}
 
 interface CaspioNote {
   PK_ID: number;
@@ -62,6 +75,424 @@ const CASPIO_BASE_URL = 'https://c7ebl500.caspio.com';
 const CASPIO_CLIENT_ID = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
 const CASPIO_CLIENT_SECRET = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
 
+// Global note search function
+async function handleGlobalNoteSearch(searchQuery: string) {
+  try {
+    if (searchQuery.length < SEARCH_MIN_LENGTH) {
+      return NextResponse.json({
+        success: false,
+        error: `Search query must be at least ${SEARCH_MIN_LENGTH} characters long`
+      }, { status: 400 });
+    }
+
+    console.log(`🔍 Performing global note search for: "${searchQuery}"`);
+
+    const searchTerms = searchQuery.toLowerCase().split(' ').filter(term => term.length >= SEARCH_MIN_LENGTH);
+    
+    if (!adminDb) {
+      console.log(`⚠️ Firestore not available, searching in cache only`);
+      // Search in cache across all members
+      const allCachedNotes: MemberNote[] = [];
+      Object.values(memberNotesCache).forEach(memberNotes => {
+        allCachedNotes.push(...memberNotes);
+      });
+      
+      const matchingNotes = allCachedNotes.filter(note => {
+        const searchableText = [
+          note.noteText,
+          note.memberName,
+          note.createdByName,
+          note.assignedToName,
+          note.noteType,
+          note.tags?.join(' ')
+        ].join(' ').toLowerCase();
+
+        return searchTerms.some(term => searchableText.includes(term));
+      });
+
+      return NextResponse.json({
+        success: true,
+        query: searchQuery,
+        totalResults: matchingNotes.length,
+        memberCount: new Set(matchingNotes.map(n => n.clientId2)).size,
+        results: matchingNotes.slice(0, SEARCH_RESULTS_LIMIT),
+        searchTerms,
+        note: 'Search performed on cached data only (Firestore not available)'
+      });
+    }
+    
+    // Search in note text, member names, and created by names
+    const notesSnapshot = await adminDb
+      .collection(MEMBER_NOTES_COLLECTION)
+      .limit(SEARCH_RESULTS_LIMIT)
+      .get();
+
+    const allNotes: MemberNote[] = notesSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        ...data,
+        id: doc.id,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || data.updatedAt,
+        followUpDate: data.followUpDate?.toDate?.()?.toISOString() || data.followUpDate,
+        syncedAt: data.syncedAt?.toDate?.()?.toISOString() || data.syncedAt
+      } as MemberNote;
+    });
+
+    // Client-side filtering for full-text search
+    const matchingNotes = allNotes.filter(note => {
+      const searchableText = [
+        note.noteText,
+        note.memberName,
+        note.createdByName,
+        note.assignedToName,
+        note.noteType,
+        note.tags?.join(' ')
+      ].join(' ').toLowerCase();
+
+      return searchTerms.some(term => searchableText.includes(term));
+    });
+
+    // Sort by relevance (exact matches first, then partial matches)
+    const sortedNotes = matchingNotes.sort((a, b) => {
+      const aText = a.noteText.toLowerCase();
+      const bText = b.noteText.toLowerCase();
+      const queryLower = searchQuery.toLowerCase();
+      
+      const aExactMatch = aText.includes(queryLower);
+      const bExactMatch = bText.includes(queryLower);
+      
+      if (aExactMatch && !bExactMatch) return -1;
+      if (!aExactMatch && bExactMatch) return 1;
+      
+      // Sort by creation date if relevance is equal
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+    // Group results by member
+    const resultsByMember = sortedNotes.reduce((acc, note) => {
+      if (!acc[note.clientId2]) {
+        acc[note.clientId2] = {
+          clientId2: note.clientId2,
+          memberName: note.memberName,
+          notes: []
+        };
+      }
+      acc[note.clientId2].notes.push(note);
+      return acc;
+    }, {} as Record<string, { clientId2: string; memberName: string; notes: MemberNote[] }>);
+
+    console.log(`✅ Found ${sortedNotes.length} matching notes across ${Object.keys(resultsByMember).length} members`);
+
+    return NextResponse.json({
+      success: true,
+      query: searchQuery,
+      totalResults: sortedNotes.length,
+      memberCount: Object.keys(resultsByMember).length,
+      results: Object.values(resultsByMember),
+      searchTerms
+    });
+
+  } catch (error: any) {
+    console.error('❌ Error performing global note search:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to search notes' },
+      { status: 500 }
+    );
+  }
+}
+
+// Firestore helper functions
+async function getNotesFromFirestore(clientId2: string): Promise<MemberNote[]> {
+  try {
+    if (!adminDb) {
+      console.log(`⚠️ Firestore not available, using cache for Client_ID2: ${clientId2}`);
+      return memberNotesCache[clientId2] || [];
+    }
+    
+    console.log(`🔍 Fetching notes from Firestore for Client_ID2: ${clientId2}`);
+    
+    const notesSnapshot = await adminDb
+      .collection(MEMBER_NOTES_COLLECTION)
+      .where('clientId2', '==', clientId2)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    const notes: MemberNote[] = notesSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        ...data,
+        id: doc.id,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || data.updatedAt,
+        followUpDate: data.followUpDate?.toDate?.()?.toISOString() || data.followUpDate,
+        syncedAt: data.syncedAt?.toDate?.()?.toISOString() || data.syncedAt
+      } as MemberNote;
+    });
+
+    console.log(`✅ Retrieved ${notes.length} notes from Firestore for Client_ID2: ${clientId2}`);
+    
+    // Update cache
+    memberNotesCache[clientId2] = notes;
+    
+    return notes;
+  } catch (error) {
+    console.error('❌ Error fetching notes from Firestore, falling back to cache:', error);
+    return memberNotesCache[clientId2] || [];
+  }
+}
+
+async function getSyncStatusFromFirestore(clientId2: string): Promise<any> {
+  try {
+    if (!adminDb) {
+      console.log(`⚠️ Firestore not available, using cache for sync status: ${clientId2}`);
+      return syncStatusCache[clientId2] || null;
+    }
+    
+    const syncDoc = await adminDb
+      .collection(SYNC_STATUS_COLLECTION)
+      .doc(clientId2)
+      .get();
+
+    if (syncDoc.exists) {
+      const data = syncDoc.data();
+      const syncStatus = {
+        ...data,
+        lastSyncAt: data?.lastSyncAt?.toDate?.()?.toISOString() || data?.lastSyncAt,
+        updatedAt: data?.updatedAt?.toDate?.()?.toISOString() || data?.updatedAt
+      };
+      
+      // Update cache
+      syncStatusCache[clientId2] = syncStatus;
+      return syncStatus;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('❌ Error fetching sync status from Firestore, falling back to cache:', error);
+    return syncStatusCache[clientId2] || null;
+  }
+}
+
+async function saveNotesToFirestore(notes: MemberNote[]): Promise<void> {
+  try {
+    if (notes.length === 0) return;
+    
+    if (!adminDb || !Timestamp) {
+      console.log(`⚠️ Firestore not available, notes saved to cache only (${notes.length} notes)`);
+      return;
+    }
+    
+    console.log(`💾 Saving ${notes.length} notes to Firestore`);
+    
+    const batch = adminDb.batch();
+    
+    notes.forEach(note => {
+      const noteRef = adminDb.collection(MEMBER_NOTES_COLLECTION).doc(note.id);
+      const noteData = {
+        ...note,
+        createdAt: note.createdAt ? Timestamp.fromDate(new Date(note.createdAt)) : Timestamp.now(),
+        updatedAt: note.updatedAt ? Timestamp.fromDate(new Date(note.updatedAt)) : Timestamp.now(),
+        followUpDate: note.followUpDate ? Timestamp.fromDate(new Date(note.followUpDate)) : null,
+        syncedAt: note.syncedAt ? Timestamp.fromDate(new Date(note.syncedAt)) : Timestamp.now()
+      };
+      
+      batch.set(noteRef, noteData, { merge: true });
+    });
+    
+    await batch.commit();
+    console.log(`✅ Successfully saved ${notes.length} notes to Firestore`);
+    
+  } catch (error) {
+    console.error('❌ Error saving notes to Firestore:', error);
+    // Don't throw - notes are still in cache
+  }
+}
+
+async function saveSyncStatusToFirestore(clientId2: string, syncStatus: any): Promise<void> {
+  try {
+    if (!adminDb || !Timestamp) {
+      console.log(`⚠️ Firestore not available, sync status saved to cache only for Client_ID2: ${clientId2}`);
+      return;
+    }
+    
+    console.log(`💾 Saving sync status to Firestore for Client_ID2: ${clientId2}`);
+    
+    const syncData = {
+      ...syncStatus,
+      lastSyncAt: syncStatus.lastSyncAt ? Timestamp.fromDate(new Date(syncStatus.lastSyncAt)) : null,
+      updatedAt: Timestamp.now()
+    };
+    
+    await adminDb
+      .collection(SYNC_STATUS_COLLECTION)
+      .doc(clientId2)
+      .set(syncData, { merge: true });
+      
+    console.log(`✅ Sync status saved to Firestore for Client_ID2: ${clientId2}`);
+    
+    // Update health status on successful sync
+    await updateSyncHealth('success', clientId2);
+    
+  } catch (error) {
+    console.error('❌ Error saving sync status to Firestore:', error);
+    await updateSyncHealth('firestore_error', clientId2, error.message);
+    // Don't throw - status is still in cache
+  }
+}
+
+// Health monitoring functions
+async function updateSyncHealth(
+  status: 'success' | 'caspio_error' | 'firestore_error' | 'general_error',
+  clientId2?: string,
+  errorMessage?: string
+): Promise<void> {
+  try {
+    if (!adminDb || !Timestamp) {
+      console.log(`⚠️ Firestore not available, health status not updated: ${status}`);
+      return;
+    }
+    
+    const healthDoc = adminDb.collection(SYNC_HEALTH_COLLECTION).doc('global');
+    const currentHealth = await getSyncHealth();
+    
+    const now = new Date().toISOString();
+    let updatedHealth: SyncHealth;
+    
+    if (status === 'success') {
+      updatedHealth = {
+        ...currentHealth,
+        lastSuccessfulSync: now,
+        failedSyncCount: 0,
+        caspioApiHealth: 'healthy',
+        firestoreHealth: 'healthy',
+        lastHealthCheck: now,
+        errorMessages: [] // Clear errors on success
+      };
+    } else {
+      const newFailedCount = currentHealth.failedSyncCount + 1;
+      updatedHealth = {
+        ...currentHealth,
+        lastFailedSync: now,
+        failedSyncCount: newFailedCount,
+        lastHealthCheck: now,
+        errorMessages: [
+          ...currentHealth.errorMessages.slice(-4), // Keep last 5 errors
+          `${now}: ${errorMessage || 'Unknown error'} (Client: ${clientId2 || 'N/A'})`
+        ]
+      };
+      
+      // Update specific service health
+      if (status === 'caspio_error') {
+        updatedHealth.caspioApiHealth = newFailedCount >= MAX_FAILED_SYNCS ? 'down' : 'degraded';
+      } else if (status === 'firestore_error') {
+        updatedHealth.firestoreHealth = newFailedCount >= MAX_FAILED_SYNCS ? 'down' : 'degraded';
+      }
+    }
+    
+    await healthDoc.set({
+      ...updatedHealth,
+      lastSuccessfulSync: Timestamp.fromDate(new Date(updatedHealth.lastSuccessfulSync)),
+      lastFailedSync: updatedHealth.lastFailedSync ? Timestamp.fromDate(new Date(updatedHealth.lastFailedSync)) : null,
+      lastHealthCheck: Timestamp.fromDate(new Date(updatedHealth.lastHealthCheck))
+    }, { merge: true });
+    
+  } catch (error) {
+    console.error('❌ Error updating sync health:', error);
+    // Don't throw - this is monitoring only
+  }
+}
+
+async function getSyncHealth(): Promise<SyncHealth> {
+  try {
+    if (!adminDb) {
+      console.log(`⚠️ Firestore not available, returning default health status`);
+      return {
+        lastSuccessfulSync: new Date().toISOString(),
+        failedSyncCount: 0,
+        caspioApiHealth: 'healthy',
+        firestoreHealth: 'degraded',
+        lastHealthCheck: new Date().toISOString(),
+        errorMessages: ['Firebase Admin SDK not available']
+      };
+    }
+    
+    const healthDoc = await adminDb.collection(SYNC_HEALTH_COLLECTION).doc('global').get();
+    
+    if (healthDoc.exists) {
+      const data = healthDoc.data()!;
+      return {
+        lastSuccessfulSync: data.lastSuccessfulSync?.toDate?.()?.toISOString() || new Date().toISOString(),
+        lastFailedSync: data.lastFailedSync?.toDate?.()?.toISOString(),
+        failedSyncCount: data.failedSyncCount || 0,
+        caspioApiHealth: data.caspioApiHealth || 'healthy',
+        firestoreHealth: data.firestoreHealth || 'healthy',
+        lastHealthCheck: data.lastHealthCheck?.toDate?.()?.toISOString() || new Date().toISOString(),
+        errorMessages: data.errorMessages || []
+      };
+    }
+    
+    // Return default healthy status
+    return {
+      lastSuccessfulSync: new Date().toISOString(),
+      failedSyncCount: 0,
+      caspioApiHealth: 'healthy',
+      firestoreHealth: 'healthy',
+      lastHealthCheck: new Date().toISOString(),
+      errorMessages: []
+    };
+    
+  } catch (error) {
+    console.error('❌ Error getting sync health:', error);
+    return {
+      lastSuccessfulSync: new Date().toISOString(),
+      failedSyncCount: 0,
+      caspioApiHealth: 'degraded',
+      firestoreHealth: 'degraded',
+      lastHealthCheck: new Date().toISOString(),
+      errorMessages: [`Failed to retrieve health status: ${error.message}`]
+    };
+  }
+}
+
+// Smart retry logic
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000,
+  operationName: string = 'operation'
+): Promise<T> {
+  let lastError: Error;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`🔄 Attempting ${operationName} (attempt ${attempt}/${maxRetries})`);
+      const result = await operation();
+      
+      if (attempt > 1) {
+        console.log(`✅ ${operationName} succeeded on attempt ${attempt}`);
+      }
+      
+      return result;
+    } catch (error: any) {
+      lastError = error;
+      console.error(`❌ ${operationName} failed on attempt ${attempt}:`, error.message);
+      
+      if (attempt === maxRetries) {
+        console.error(`💥 ${operationName} failed after ${maxRetries} attempts`);
+        break;
+      }
+      
+      // Exponential backoff with jitter
+      const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 1000;
+      console.log(`⏳ Waiting ${Math.round(delay)}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError;
+}
+
 // Get Caspio access token
 async function getCaspioToken() {
   const tokenUrl = `${CASPIO_BASE_URL}/oauth/token`;
@@ -84,27 +515,125 @@ async function getCaspioToken() {
   return data.access_token;
 }
 
-// Temporary in-memory storage until Firestore credentials are configured
+// Temporary in-memory storage as fallback
 let memberNotesCache: { [clientId2: string]: MemberNote[] } = {};
 let syncStatusCache: { [clientId2: string]: any } = {};
+
+// Firestore collection names
+const MEMBER_NOTES_COLLECTION = 'member-notes';
+const SYNC_STATUS_COLLECTION = 'member-notes-sync-status';
+
+// Search configuration
+const SEARCH_RESULTS_LIMIT = 50;
+const SEARCH_MIN_LENGTH = 2;
+
+// Health monitoring configuration
+const SYNC_HEALTH_COLLECTION = 'sync-health-status';
+const MAX_FAILED_SYNCS = 3;
+const HEALTH_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+interface SyncHealth {
+  lastSuccessfulSync: string;
+  lastFailedSync?: string;
+  failedSyncCount: number;
+  caspioApiHealth: 'healthy' | 'degraded' | 'down';
+  firestoreHealth: 'healthy' | 'degraded' | 'down';
+  lastHealthCheck: string;
+  errorMessages: string[];
+}
+
+// Data validation functions
+function isValidDate(dateString: any): boolean {
+  if (!dateString) return false;
+  const date = new Date(dateString);
+  return date instanceof Date && !isNaN(date.getTime());
+}
+
+function sanitizeText(text: any): string {
+  if (typeof text !== 'string') return '';
+  return text.trim().replace(/\s+/g, ' ').substring(0, 10000); // Limit length
+}
+
+function validateAndCleanNote(rawNote: any): MemberNote {
+  const now = new Date().toISOString();
+  
+  return {
+    id: rawNote.id || `generated_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+    clientId2: String(rawNote.clientId2 || rawNote.Client_ID2 || '').trim(),
+    memberName: sanitizeText(rawNote.memberName || rawNote.Senior_Full_Name || rawNote.Senior_First_Last) || 'Unknown Member',
+    noteText: sanitizeText(rawNote.noteText || rawNote.Comments || rawNote.Note) || '',
+    noteType: validateNoteType(rawNote.noteType || rawNote.Note_Status),
+    createdBy: String(rawNote.createdBy || rawNote.User_ID || 'unknown').trim(),
+    createdByName: sanitizeText(rawNote.createdByName || rawNote.User_Full_Name || rawNote.User_First_Last) || 'Unknown User',
+    assignedTo: rawNote.assignedTo ? String(rawNote.assignedTo).trim() : undefined,
+    assignedToName: rawNote.assignedToName ? sanitizeText(rawNote.assignedToName) : undefined,
+    createdAt: isValidDate(rawNote.createdAt || rawNote.Time_Stamp || rawNote.Timestamp) 
+      ? new Date(rawNote.createdAt || rawNote.Time_Stamp || rawNote.Timestamp).toISOString() 
+      : now,
+    updatedAt: isValidDate(rawNote.updatedAt) ? new Date(rawNote.updatedAt).toISOString() : now,
+    source: validateSource(rawNote.source),
+    isRead: Boolean(rawNote.isRead),
+    priority: validatePriority(rawNote.priority || rawNote.Follow_Up_Status),
+    followUpDate: isValidDate(rawNote.followUpDate || rawNote.Follow_Up_Date) 
+      ? new Date(rawNote.followUpDate || rawNote.Follow_Up_Date).toISOString() 
+      : undefined,
+    tags: Array.isArray(rawNote.tags) ? rawNote.tags.filter(tag => typeof tag === 'string') : [],
+    isLegacy: Boolean(rawNote.isLegacy),
+    syncedAt: isValidDate(rawNote.syncedAt) ? new Date(rawNote.syncedAt).toISOString() : now,
+    isILSNote: Boolean(rawNote.isILSNote)
+  };
+}
+
+function validateNoteType(type: any): MemberNote['noteType'] {
+  const validTypes: MemberNote['noteType'][] = ['General', 'Medical', 'Social', 'Administrative', 'Follow-up', 'Emergency'];
+  return validTypes.includes(type) ? type : 'General';
+}
+
+function validateSource(source: any): MemberNote['source'] {
+  const validSources: MemberNote['source'][] = ['Caspio', 'ILS', 'App', 'Admin'];
+  return validSources.includes(source) ? source : 'App';
+}
+
+function validatePriority(priority: any): MemberNote['priority'] {
+  const validPriorities: MemberNote['priority'][] = ['Low', 'Medium', 'High', 'Urgent'];
+  
+  if (validPriorities.includes(priority)) return priority;
+  
+  // Handle Caspio priority formats
+  if (typeof priority === 'string') {
+    const priorityLower = priority.toLowerCase();
+    if (priorityLower.includes('urgent') || priorityLower.includes('🔴')) return 'Urgent';
+    if (priorityLower.includes('high')) return 'High';
+    if (priorityLower.includes('medium') || priorityLower.includes('🟡')) return 'Medium';
+    if (priorityLower.includes('low') || priorityLower.includes('🟢')) return 'Low';
+  }
+  
+  return 'Medium'; // Default
+}
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const clientId2 = searchParams.get('clientId2');
     const forceSync = searchParams.get('forceSync') === 'true';
+    const searchQuery = searchParams.get('search');
+
+    // Handle full-text search across all notes
+    if (searchQuery && !clientId2) {
+      return await handleGlobalNoteSearch(searchQuery);
+    }
 
     if (!clientId2) {
       return NextResponse.json(
-        { success: false, error: 'Client ID is required' },
+        { success: false, error: 'Client ID is required for member-specific notes' },
         { status: 400 }
       );
     }
 
     console.log(`📥 Fetching notes for member: ${clientId2} (forceSync: ${forceSync})`);
 
-    // Get sync status from cache (temporary until Firestore is configured)
-    const syncStatus = syncStatusCache[clientId2];
+    // Get sync status from Firestore (with cache fallback)
+    const syncStatus = await getSyncStatusFromFirestore(clientId2);
 
     const isFirstSync = !syncStatus || !syncStatus.lastSyncAt;
     let newNotesCount = 0;
@@ -119,8 +648,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Get notes from cache (temporary until Firestore is configured)
-    const notes = memberNotesCache[clientId2] || [];
+    // Get notes from Firestore (with cache fallback)
+    const notes = await getNotesFromFirestore(clientId2);
     
     // Sort notes by creation date (newest first)
     notes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -204,27 +733,27 @@ export async function POST(request: NextRequest) {
     }
     memberNotesCache[clientId2].unshift(newNote);
 
-    // TODO: Save to Firestore for persistence (disabled until credentials are configured)
-    // await saveNoteToFirestore(newNote);
+    // Save to Firestore for persistence
+    await saveNotesToFirestore([newNote]);
 
     // Sync to Caspio
     await syncNoteToCaspio(newNote);
 
-    // TODO: Send notifications (disabled until Firestore credentials are configured)
-    // if (sendNotification && recipientIds && recipientIds.length > 0) {
-    //   for (const recipientId of recipientIds) {
-    //     const noteForRecipient = {
-    //       ...newNote,
-    //       assignedTo: recipientId,
-    //       assignedToName: `Staff Member ${recipientId}`
-    //     };
-    //     await sendNoteNotification(noteForRecipient);
-    //   }
-    // }
+    // Send notifications
+    if (sendNotification && recipientIds && recipientIds.length > 0) {
+      for (const recipientId of recipientIds) {
+        const noteForRecipient = {
+          ...newNote,
+          assignedTo: recipientId,
+          assignedToName: `Staff Member ${recipientId}`
+        };
+        await sendNoteNotification(noteForRecipient);
+      }
+    }
 
-    // if (assignedTo && assignedToName) {
-    //   await sendNoteNotification(newNote);
-    // }
+    if (assignedTo && assignedToName) {
+      await sendNoteNotification(newNote);
+    }
 
     return NextResponse.json({
       success: true,
@@ -243,7 +772,7 @@ export async function POST(request: NextRequest) {
 
 // Sync ALL notes from both Caspio tables for a member (first time sync)
 async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
-  try {
+  return await withRetry(async () => {
     console.log(`🔄 First-time sync: importing all legacy notes for Client_ID2: ${clientId2}`);
     
     const token = await getCaspioToken();
@@ -289,62 +818,48 @@ async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
     const syncTime = new Date().toISOString();
     let importedCount = 0;
 
-    // Transform regular Caspio notes
-    const transformedRegularNotes: MemberNote[] = caspioNotes.map(caspioNote => ({
-      id: `caspio_${caspioNote.PK_ID}`,
-      clientId2: caspioNote.Client_ID2.toString(),
-      memberName: caspioNote.Senior_Full_Name || 'Unknown Member',
-      noteText: caspioNote.Comments || '',
-      noteType: 'General',
-      createdBy: caspioNote.User_ID.toString(),
-      createdByName: caspioNote.User_Full_Name || `User ${caspioNote.User_ID}`,
-      assignedTo: caspioNote.Follow_Up_Assignment || undefined,
-      assignedToName: caspioNote.Assigned_First || undefined,
-      createdAt: caspioNote.Time_Stamp || syncTime,
-      updatedAt: caspioNote.Time_Stamp || syncTime,
-      source: 'Caspio',
-      isRead: true, // Legacy notes are considered read
-      priority: caspioNote.Follow_Up_Status?.includes('🟢') ? 'Medium' : 'Low',
-      followUpDate: caspioNote.Follow_Up_Date,
-      tags: [],
-      isLegacy: true, // Tag as legacy note
-      syncedAt: syncTime,
-      isILSNote: false
-    }));
+    // Transform regular Caspio notes with validation
+    const transformedRegularNotes: MemberNote[] = caspioNotes.map(caspioNote => 
+      validateAndCleanNote({
+        ...caspioNote,
+        id: `caspio_${caspioNote.PK_ID}`,
+        source: 'Caspio',
+        isRead: true, // Legacy notes are considered read
+        isLegacy: true,
+        syncedAt: syncTime,
+        isILSNote: false
+      })
+    );
 
-    // Transform ILS notes
-    const transformedILSNotes: MemberNote[] = ilsNotes.map(ilsNote => ({
-      id: `ils_${ilsNote.table_ID}`,
-      clientId2: ilsNote.Client_ID2.toString(),
-      memberName: ilsNote.Senior_First_Last || `${ilsNote.Senior_First} ${ilsNote.Senior_Last}` || 'Unknown Member',
-      noteText: ilsNote.Note || '',
-      noteType: 'Administrative', // ILS notes are administrative
-      createdBy: ilsNote.User_ID.toString(),
-      createdByName: ilsNote.User_First_Last || `${ilsNote.User_First} ${ilsNote.User_Last}` || `User ${ilsNote.User_ID}`,
-      assignedTo: undefined, // ILS notes don't have assignments
-      assignedToName: undefined,
-      createdAt: ilsNote.Timestamp || syncTime,
-      updatedAt: ilsNote.Timestamp || syncTime,
-      source: 'ILS',
-      isRead: true, // Legacy notes are considered read
-      priority: 'Medium', // ILS notes are medium priority
-      followUpDate: undefined,
-      tags: ['ILS', 'JHernandez@ilshealth.com'],
-      isLegacy: true, // Tag as legacy note
-      syncedAt: syncTime,
-      isILSNote: true
-    }));
+    // Transform ILS notes with validation
+    const transformedILSNotes: MemberNote[] = ilsNotes.map(ilsNote => 
+      validateAndCleanNote({
+        ...ilsNote,
+        id: `ils_${ilsNote.table_ID}`,
+        noteType: 'Administrative', // ILS notes are administrative
+        source: 'ILS',
+        isRead: true, // Legacy notes are considered read
+        priority: 'Medium',
+        tags: ['ILS', 'JHernandez@ilshealth.com'],
+        isLegacy: true,
+        syncedAt: syncTime,
+        isILSNote: true
+      })
+    );
 
     // Combine all notes and sort by timestamp
     const allTransformedNotes = [...transformedRegularNotes, ...transformedILSNotes];
     allTransformedNotes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    // Store in cache
+    // Store in cache and Firestore
     memberNotesCache[clientId2] = allTransformedNotes;
     importedCount = allTransformedNotes.length;
 
-    // Update sync status in cache
-    syncStatusCache[clientId2] = {
+    // Save notes to Firestore
+    await saveNotesToFirestore(allTransformedNotes);
+
+    // Update sync status
+    const syncStatus = {
       clientId2,
       lastSyncAt: syncTime,
       totalLegacyNotes: importedCount,
@@ -353,19 +868,23 @@ async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
       firstSyncCompleted: true,
       updatedAt: syncTime
     };
+    
+    syncStatusCache[clientId2] = syncStatus;
+    await saveSyncStatusToFirestore(clientId2, syncStatus);
 
     console.log(`✅ Imported ${importedCount} total notes (${transformedRegularNotes.length} regular + ${transformedILSNotes.length} ILS) for Client_ID2: ${clientId2}`);
     return importedCount;
 
-  } catch (error) {
-    console.error('❌ Error importing legacy notes from Caspio:', error);
+  }, 3, 2000, `sync all notes for ${clientId2}`).catch(error => {
+    console.error('❌ Error importing legacy notes from Caspio after retries:', error);
+    updateSyncHealth('caspio_error', clientId2, error.message);
     throw error;
-  }
+  });
 }
 
 // Sync only NEW notes since last sync from both tables (incremental sync)
 async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Promise<number> {
-  try {
+  return await withRetry(async () => {
     console.log(`🔄 Incremental sync: checking for new notes since ${lastSyncAt} for Client_ID2: ${clientId2}`);
     
     const token = await getCaspioToken();
@@ -472,19 +991,24 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
     memberNotesCache[clientId2] = combinedNotes;
     importedCount = allNewNotes.length;
 
-    // Update sync status in cache
+    // Save new notes to Firestore
+    await saveNotesToFirestore(allNewNotes);
+
+    // Update sync status
     if (syncStatusCache[clientId2]) {
       syncStatusCache[clientId2].lastSyncAt = syncTime;
       syncStatusCache[clientId2].updatedAt = syncTime;
+      await saveSyncStatusToFirestore(clientId2, syncStatusCache[clientId2]);
     }
 
     console.log(`✅ Imported ${importedCount} new notes (${newTransformedRegularNotes.length} regular + ${newTransformedILSNotes.length} ILS) for Client_ID2: ${clientId2}`);
     return importedCount;
 
-  } catch (error) {
-    console.error('❌ Error syncing new notes from Caspio:', error);
+  }, 3, 1500, `sync new notes for ${clientId2}`).catch(error => {
+    console.error('❌ Error syncing new notes from Caspio after retries:', error);
+    updateSyncHealth('caspio_error', clientId2, error.message);
     throw error;
-  }
+  });
 }
 
 async function syncNoteToCaspio(note: MemberNote): Promise<void> {
@@ -538,30 +1062,6 @@ async function syncNoteToCaspio(note: MemberNote): Promise<void> {
   }
 }
 
-async function saveNoteToFirestore(note: MemberNote): Promise<void> {
-  try {
-    console.log(`💾 Saving note to Firestore: ${note.id}`);
-    
-    // In production, implement proper Firestore integration
-    // const { getFirestore } = await import('firebase-admin/firestore');
-    // const { adminDb } = await import('@/firebase-admin');
-    
-    // const noteData = {
-    //   ...note,
-    //   createdAt: getFirestore().Timestamp.fromDate(new Date(note.createdAt)),
-    //   updatedAt: getFirestore().Timestamp.fromDate(new Date(note.updatedAt)),
-    //   followUpDate: note.followUpDate ? getFirestore().Timestamp.fromDate(new Date(note.followUpDate)) : null
-    // };
-    
-    // await adminDb.collection('member-notes').doc(note.id).set(noteData);
-    
-    console.log(`✅ Note saved to Firestore: ${note.id}`);
-
-  } catch (error) {
-    console.error('❌ Error saving note to Firestore:', error);
-    // Don't throw error - note is still saved in cache and Caspio
-  }
-}
 
 async function sendNoteNotification(note: MemberNote): Promise<void> {
   try {
@@ -569,26 +1069,32 @@ async function sendNoteNotification(note: MemberNote): Promise<void> {
 
     console.log(`🔔 Sending notification to ${note.assignedToName} for note: ${note.id}`);
     
-    // Create a notification record in Firestore for real-time notifications
-    const { getFirestore } = await import('firebase-admin/firestore');
-    const { adminDb } = await import('@/firebase-admin');
+    if (!adminDb || !Timestamp) {
+      console.log(`⚠️ Firestore not available, notification not saved for note: ${note.id}`);
+      return;
+    }
     
+    // Create a notification record in Firestore for real-time notifications
     const notification = {
-      userId: note.assignedTo,
-      noteId: note.id,
-      title: 'New Note Assigned',
-      message: `You have been assigned a new ${note.priority.toLowerCase()} priority note for ${note.memberName}`,
-      senderName: note.createdByName,
-      memberName: note.memberName,
-      type: 'note_assignment',
-      priority: note.priority.toLowerCase() as 'low' | 'medium' | 'high',
-      timestamp: getFirestore().Timestamp.now(),
-      isRead: false,
-      applicationId: note.clientId2
+      recipientIds: [note.assignedTo],
+      title: 'New Member Note Assigned',
+      message: `You have been assigned a new ${note.priority.toLowerCase()} priority note for ${note.memberName}: "${note.noteText.substring(0, 100)}${note.noteText.length > 100 ? '...' : ''}"`,
+      timestamp: Timestamp.now(),
+      read: false,
+      actionUrl: `/admin/member-notes?clientId2=${note.clientId2}`,
+      priority: note.priority.toLowerCase() as 'low' | 'medium' | 'high' | 'urgent',
+      type: 'member_note',
+      metadata: {
+        noteId: note.id,
+        memberName: note.memberName,
+        clientId2: note.clientId2,
+        assignedBy: note.createdByName,
+        noteType: note.noteType
+      }
     };
 
-    // Save to Firestore for real-time notifications
-    await adminDb.collection('staff_notifications').add(notification);
+    // Save to Firestore notifications collection
+    await adminDb.collection('notifications').add(notification);
     
     // Send email notification
     try {
@@ -596,21 +1102,26 @@ async function sendNoteNotification(note: MemberNote): Promise<void> {
       const staffEmail = getStaffEmail(note.assignedTo);
       
       if (staffEmail) {
-        const { sendNoteAssignmentEmail } = await import('@/app/actions/send-email');
-        
-        await sendNoteAssignmentEmail({
-          to: staffEmail,
-          staffName: note.assignedToName,
-          memberName: note.memberName,
-          noteContent: note.noteText,
-          priority: note.priority.toLowerCase() as 'low' | 'medium' | 'high',
-          assignedBy: note.createdByName,
-          noteType: note.noteType,
-          source: 'portal',
-          clientId2: note.clientId2
-        });
-        
-        console.log(`📧 Email sent to ${staffEmail} for note assignment`);
+        // Import email function if it exists
+        try {
+          const { sendNoteAssignmentEmail } = await import('@/app/actions/send-email');
+          
+          await sendNoteAssignmentEmail({
+            to: staffEmail,
+            staffName: note.assignedToName,
+            memberName: note.memberName,
+            noteContent: note.noteText,
+            priority: note.priority.toLowerCase() as 'low' | 'medium' | 'high',
+            assignedBy: note.createdByName,
+            noteType: note.noteType,
+            source: 'portal',
+            clientId2: note.clientId2
+          });
+          
+          console.log(`📧 Email sent to ${staffEmail} for note assignment`);
+        } catch (importError) {
+          console.warn('⚠️ Email function not available, skipping email notification');
+        }
       } else {
         console.warn(`⚠️ No email found for staff ID: ${note.assignedTo}`);
       }

@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/firebase-admin';
+
+// Try to import Firebase Admin, but handle gracefully if not available
+let adminDb: any = null;
+try {
+  const firebaseAdmin = require('@/firebase-admin');
+  adminDb = firebaseAdmin.adminDb;
+} catch (error) {
+  console.warn('Firebase Admin not available for ILS permissions endpoint');
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,6 +19,18 @@ export async function GET(request: NextRequest) {
         { success: false, error: 'User ID is required' },
         { status: 400 }
       );
+    }
+
+    // If Firebase Admin is not available, return default permissions
+    if (!adminDb) {
+      console.warn('Firebase Admin not available, returning default ILS permissions');
+      return NextResponse.json({
+        success: true,
+        hasILSPermission: false,
+        userId,
+        totalILSUsers: 0,
+        message: 'Firebase Admin SDK not configured - ILS permissions unavailable'
+      });
     }
 
     // Get ILS permissions from system settings
@@ -59,6 +79,17 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'User ID is required' },
         { status: 400 }
       );
+    }
+
+    // If Firebase Admin is not available, return error
+    if (!adminDb) {
+      console.warn('Firebase Admin not available, cannot update ILS permissions');
+      return NextResponse.json({
+        success: false,
+        error: 'Firebase Admin SDK not configured - cannot update ILS permissions',
+        userId,
+        hasILSPermission: false
+      }, { status: 503 }); // Service Unavailable
     }
 
     // Get current ILS permissions

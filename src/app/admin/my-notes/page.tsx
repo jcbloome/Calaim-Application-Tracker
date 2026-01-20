@@ -13,16 +13,22 @@ import { useToast } from '@/hooks/use-toast';
 import { collection, query, where, orderBy, onSnapshot, Timestamp } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 
-interface MyNote {
+interface StaffNotification {
   id: string;
+  type: 'individual' | 'member-related' | 'system' | 'member-note';
+  title: string;
   content: string;
-  memberName: string;
-  memberId: string;
+  memberName?: string;
+  memberId?: string;
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   isPrivate: boolean;
+  isRead: boolean;
   createdAt: Timestamp;
   authorName: string;
   authorId: string;
+  recipientId: string;
+  requiresStaffAction: boolean;
+  category: 'notification' | 'informational';
 }
 
 export default function MyNotesPage() {
@@ -32,7 +38,7 @@ export default function MyNotesPage() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
   
-  const [notes, setNotes] = useState<MyNote[]>([]);
+  const [notifications, setNotifications] = useState<StaffNotification[]>([]);
   const [isLoadingNotes, setIsLoadingNotes] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -46,55 +52,64 @@ export default function MyNotesPage() {
     setIsLoadingNotes(true);
     
     try {
-      // Query notes where the current user is the author
-      // Simplified query to avoid index requirements
-      const notesQuery = query(
-        collection(firestore, 'notes'),
-        where('authorId', '==', user.uid)
+      // Query notifications sent TO the current user
+      const notificationsQuery = query(
+        collection(firestore, 'staff-notifications'),
+        where('recipientId', '==', user.uid)
       );
 
-      const unsubscribe = onSnapshot(notesQuery, (snapshot) => {
-        const userNotes: MyNote[] = [];
+      const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
+        const userNotifications: StaffNotification[] = [];
         
         snapshot.forEach((doc) => {
           const data = doc.data();
-          userNotes.push({
+          userNotifications.push({
             id: doc.id,
+            type: data.type || 'individual',
+            title: data.title || 'Notification',
             content: data.content || '',
-            memberName: data.memberName || 'Unknown Member',
-            memberId: data.memberId || '',
+            memberName: data.memberName || undefined,
+            memberId: data.memberId || undefined,
             priority: data.priority || 'Medium',
             isPrivate: data.isPrivate || false,
+            isRead: data.isRead || false,
             createdAt: data.createdAt,
-            authorName: data.authorName || user.displayName || 'You',
-            authorId: data.authorId || user.uid
+            authorName: data.authorName || 'System',
+            authorId: data.authorId || 'system',
+            recipientId: data.recipientId || user.uid,
+            requiresStaffAction: data.requiresStaffAction || false,
+            category: data.category || 'notification'
           });
         });
         
-        // Sort notes by creation date on the client side
-        userNotes.sort((a, b) => {
+        // Sort notifications by creation date and read status
+        userNotifications.sort((a, b) => {
+          // Unread first, then by date
+          if (a.isRead !== b.isRead) {
+            return a.isRead ? 1 : -1;
+          }
           const aTime = a.createdAt?.toDate?.()?.getTime() || 0;
           const bTime = b.createdAt?.toDate?.()?.getTime() || 0;
           return bTime - aTime; // Newest first
         });
         
-        setNotes(userNotes);
+        setNotifications(userNotifications);
         setIsLoadingNotes(false);
         
-        if (userNotes.length === 0) {
+        if (userNotifications.length === 0) {
           toast({
-            title: 'No Notes Found',
-            description: 'You haven\'t created any notes yet. Notes you create will appear here.',
+            title: 'No Notifications',
+            description: 'You have no notifications at this time.',
             className: 'bg-blue-100 text-blue-900 border-blue-200',
           });
         }
       }, (error) => {
-        console.error('Error loading notes:', error);
+        console.error('Error loading notifications:', error);
         setIsLoadingNotes(false);
         toast({
           variant: 'destructive',
-          title: 'Error Loading Notes',
-          description: 'Failed to load your notes. Please try again.',
+          title: 'Error Loading Notifications',
+          description: 'Failed to load your notifications. Please try again.',
         });
       });
 
@@ -105,11 +120,16 @@ export default function MyNotesPage() {
     }
   }, [firestore, user?.uid, toast]);
 
-  // Filter notes based on search term
-  const filteredNotes = notes.filter(note => 
-    note.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    note.memberName.toLowerCase().includes(searchTerm.toLowerCase())
+  // Filter notifications based on search term
+  const filteredNotifications = notifications.filter(notification => 
+    notification.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    notification.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (notification.memberName && notification.memberName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    notification.authorName.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Count unread notifications
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   if (isLoading) {
     return (
@@ -133,9 +153,9 @@ export default function MyNotesPage() {
   return (
     <div className="container mx-auto py-8 space-y-8">
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold">My Notes</h1>
+        <h1 className="text-3xl font-bold">Notification Center</h1>
         <p className="text-muted-foreground">
-          View and manage notes you've created in this application.
+          Your central hub for staff notifications, member alerts, and system messages.
         </p>
       </div>
       
@@ -145,10 +165,15 @@ export default function MyNotesPage() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <MessageSquare className="h-5 w-5" />
-                My Notes ({filteredNotes.length})
+                Notifications ({filteredNotifications.length})
+                {unreadCount > 0 && (
+                  <Badge className="bg-red-100 text-red-800 border-red-200">
+                    {unreadCount} unread
+                  </Badge>
+                )}
               </CardTitle>
               <CardDescription>
-                Notes you've created for members in the CalAIM system
+                Staff notifications, member alerts, and system messages
               </CardDescription>
             </div>
             <Button 
@@ -168,7 +193,7 @@ export default function MyNotesPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search your notes..."
+                placeholder="Search notifications..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -180,45 +205,95 @@ export default function MyNotesPage() {
           {isLoadingNotes ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-muted-foreground">Loading your notes...</span>
+              <span className="ml-2 text-muted-foreground">Loading notifications...</span>
             </div>
-          ) : filteredNotes.length === 0 ? (
+          ) : filteredNotifications.length === 0 ? (
             <div className="text-center py-8">
               <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-medium text-muted-foreground mb-2">
-                {searchTerm ? 'No matching notes found' : 'No notes yet'}
+                {searchTerm ? 'No matching notifications found' : 'No notifications yet'}
               </h3>
               <p className="text-sm text-muted-foreground">
                 {searchTerm 
                   ? 'Try adjusting your search terms'
-                  : 'Notes you create for members will appear here'
+                  : 'Notifications sent to you will appear here'
                 }
               </p>
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredNotes.map((note) => (
-                <Card key={note.id} className="border-l-4 border-l-blue-500">
+              {filteredNotifications.map((notification) => (
+                <Card 
+                  key={notification.id} 
+                  className={`border-l-4 ${
+                    notification.isRead 
+                      ? 'border-l-gray-300 bg-gray-50' 
+                      : notification.priority === 'High' || notification.priority === 'Urgent'
+                        ? 'border-l-red-500 bg-red-50'
+                        : 'border-l-blue-500 bg-blue-50'
+                  }`}
+                >
                   <CardContent className="pt-4">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-medium">{note.memberName}</span>
-                        <Badge variant={note.priority === 'High' || note.priority === 'Urgent' ? 'destructive' : 'secondary'}>
-                          {note.priority}
+                        {notification.type === 'member-related' && notification.memberName && (
+                          <>
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">{notification.memberName}</span>
+                          </>
+                        )}
+                        <Badge variant={
+                          notification.priority === 'High' || notification.priority === 'Urgent' 
+                            ? 'destructive' 
+                            : notification.priority === 'Medium'
+                              ? 'default'
+                              : 'secondary'
+                        }>
+                          {notification.priority}
                         </Badge>
-                        {note.isPrivate && (
+                        {!notification.isRead && (
+                          <Badge className="bg-red-100 text-red-800 border-red-200">
+                            New
+                          </Badge>
+                        )}
+                        {notification.requiresStaffAction && (
+                          <Badge className="bg-orange-100 text-orange-800 border-orange-200">
+                            Action Required
+                          </Badge>
+                        )}
+                        {notification.isPrivate && (
                           <Badge variant="outline">Private</Badge>
                         )}
                       </div>
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Calendar className="h-3 w-3" />
-                        {note.createdAt?.toDate?.()?.toLocaleDateString() || 'Unknown date'}
+                        {notification.createdAt?.toDate?.()?.toLocaleDateString() || 'Unknown date'}
                       </div>
                     </div>
+                    
+                    <div className="mb-2">
+                      <h4 className="font-medium text-sm">{notification.title}</h4>
+                      <p className="text-xs text-muted-foreground">From: {notification.authorName}</p>
+                    </div>
+                    
                     <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                      {note.content}
+                      {notification.content}
                     </p>
+                    
+                    {!notification.isRead && (
+                      <div className="mt-3 pt-3 border-t">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => {
+                            // Mark as read functionality would go here
+                            console.log('Mark as read:', notification.id);
+                          }}
+                        >
+                          Mark as Read
+                        </Button>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))}

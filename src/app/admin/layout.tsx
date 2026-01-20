@@ -50,6 +50,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/firebase';
 import { NotificationManager } from '@/components/CursorStyleNotification';
 import { StaffNotificationBell } from '@/components/StaffNotificationBell';
+import NotificationBell from '@/components/NotificationBell';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -98,7 +99,7 @@ const adminNavLinks = [
     isSubmenu: true,
     submenuItems: [
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
-      { href: '/admin/my-notes', label: 'My Notes', icon: MessageSquareText },
+      { href: '/admin/my-notes', label: 'Notification Center', icon: MessageSquareText },
       { href: '/admin/social-worker-assignments', label: 'SW Assignments', icon: UserPlus },
       { href: '/admin/tasks', label: 'My Tasks', icon: ClipboardList }
     ]
@@ -310,6 +311,9 @@ function AdminHeader() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Notification Bell */}
+          <NotificationBell />
+          
           {/* Staff Notification Bell */}
           <StaffNotificationBell userId={user?.uid} />
           

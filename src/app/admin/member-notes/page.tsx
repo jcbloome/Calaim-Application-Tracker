@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -75,6 +76,15 @@ export default function MemberNotesPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isNotesLoading, setIsNotesLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Real-time sync status
+  const [syncProgress, setSyncProgress] = useState({
+    isSync: false,
+    progress: 0,
+    stage: 'idle' as 'idle' | 'fetching-regular' | 'fetching-ils' | 'saving' | 'complete',
+    message: '',
+    notesFound: { regular: 0, ils: 0, total: 0 }
+  });
   const [noteFilter, setNoteFilter] = useState({
     type: 'all',
     priority: 'all',
@@ -100,6 +110,10 @@ export default function MemberNotesPage() {
   // Staff list for dropdown
   const [staffList, setStaffList] = useState<Array<{uid: string, name: string, email: string}>>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
+
+  // Health monitoring
+  const [healthStatus, setHealthStatus] = useState<any>(null);
+  const [showHealthDetails, setShowHealthDetails] = useState(false);
 
   // Fetch members from Caspio API with search
   const fetchMembers = useCallback(async (search: string = '') => {
@@ -160,6 +174,20 @@ export default function MemberNotesPage() {
     }
   }, []);
 
+  // Load health status
+  const loadHealthStatus = useCallback(async () => {
+    try {
+      const response = await fetch('/api/member-notes/health');
+      const data = await response.json();
+      
+      if (data.success) {
+        setHealthStatus(data.health);
+      }
+    } catch (error) {
+      console.error('Error loading health status:', error);
+    }
+  }, []);
+
   // Check ILS permissions on mount
   useEffect(() => {
     const checkILSPermissions = async () => {
@@ -182,7 +210,8 @@ export default function MemberNotesPage() {
 
     checkILSPermissions();
     loadStaffMembers();
-  }, [user?.uid, loadStaffMembers]);
+    loadHealthStatus();
+  }, [user?.uid, loadStaffMembers, loadHealthStatus]);
 
   // Don't load members on mount - only when searching
   // Search members when search term changes (with debounce)
@@ -204,13 +233,62 @@ export default function MemberNotesPage() {
 
   const handleRequestNotes = async (member: Member) => {
     setIsNotesLoading(true);
+    setSyncProgress({
+      isSync: true,
+      progress: 0,
+      stage: 'fetching-regular',
+      message: 'Fetching regular notes from Caspio...',
+      notesFound: { regular: 0, ils: 0, total: 0 }
+    });
     
     try {
+      // Simulate progress updates
+      const progressInterval = setInterval(() => {
+        setSyncProgress(prev => {
+          if (prev.stage === 'fetching-regular' && prev.progress < 30) {
+            return { ...prev, progress: prev.progress + 10 };
+          } else if (prev.stage === 'fetching-regular' && prev.progress >= 30) {
+            return { 
+              ...prev, 
+              stage: 'fetching-ils', 
+              progress: 40,
+              message: 'Fetching ILS notes from Caspio...'
+            };
+          } else if (prev.stage === 'fetching-ils' && prev.progress < 70) {
+            return { ...prev, progress: prev.progress + 10 };
+          } else if (prev.stage === 'fetching-ils' && prev.progress >= 70) {
+            return { 
+              ...prev, 
+              stage: 'saving', 
+              progress: 80,
+              message: 'Saving notes to Firestore...'
+            };
+          } else if (prev.stage === 'saving' && prev.progress < 95) {
+            return { ...prev, progress: prev.progress + 5 };
+          }
+          return prev;
+        });
+      }, 500);
+
       const response = await fetch(`/api/member-notes?clientId2=${member.clientId2}&forceSync=true`);
       const data = await response.json();
       
+      clearInterval(progressInterval);
+      
       if (data.success) {
         setMemberNotes(data.notes);
+        
+        setSyncProgress({
+          isSync: false,
+          progress: 100,
+          stage: 'complete',
+          message: 'Sync completed successfully!',
+          notesFound: {
+            regular: data.regularNotes || 0,
+            ils: data.ilsNotes || 0,
+            total: data.totalNotes || 0
+          }
+        });
         
         const syncType = data.isFirstSync ? 'imported from Caspio' : 
                         data.newNotesCount > 0 ? `synced ${data.newNotesCount} new notes` : 
@@ -220,12 +298,31 @@ export default function MemberNotesPage() {
           title: "Notes Loaded",
           description: `${data.notes.length} notes for ${member.firstName} ${member.lastName} - ${syncType}`,
         });
+
+        // Reset progress after 3 seconds
+        setTimeout(() => {
+          setSyncProgress({
+            isSync: false,
+            progress: 0,
+            stage: 'idle',
+            message: '',
+            notesFound: { regular: 0, ils: 0, total: 0 }
+          });
+        }, 3000);
       } else {
         throw new Error(data.error || 'Failed to load notes');
       }
       
     } catch (error: any) {
       console.error('Error loading member notes:', error);
+      setSyncProgress({
+        isSync: false,
+        progress: 0,
+        stage: 'idle',
+        message: 'Sync failed',
+        notesFound: { regular: 0, ils: 0, total: 0 }
+      });
+      
       toast({
         title: "Error",
         description: error.message || "Failed to load member notes",
@@ -347,12 +444,86 @@ export default function MemberNotesPage() {
           <div>
             <h1 className="text-3xl font-bold">Member Notes Lookup</h1>
             <p className="text-muted-foreground">
-              Search and manage notes for CalAIM members across all health plans
+              Search and manage notes for CalAIM members across all health plans. Includes both regular notes and ILS notes with smart caching.
             </p>
-            {hasILSPermission && (
-              <Badge className="bg-green-100 text-green-800 border-green-200 mt-2">
-                ✓ ILS Note Permissions Enabled
+            <div className="flex gap-2 mt-2">
+              <Badge className="bg-blue-100 text-blue-800 border-blue-200">
+                ✓ Regular Notes Integration
               </Badge>
+              <Badge className="bg-purple-100 text-purple-800 border-purple-200">
+                ✓ ILS Notes Integration
+              </Badge>
+              {hasILSPermission && (
+                <Badge className="bg-green-100 text-green-800 border-green-200">
+                  ✓ ILS Permissions Enabled
+                </Badge>
+              )}
+              <Badge className="bg-orange-100 text-orange-800 border-orange-200">
+                ✓ Smart Caching & Sync
+              </Badge>
+              {healthStatus && (
+                <Badge 
+                  className={`cursor-pointer hover:opacity-80 ${
+                    healthStatus.overallHealth === 'healthy' 
+                      ? 'bg-green-100 text-green-800 border-green-200'
+                      : healthStatus.overallHealth === 'degraded'
+                      ? 'bg-yellow-100 text-yellow-800 border-yellow-200'
+                      : 'bg-red-100 text-red-800 border-red-200'
+                  }`}
+                  onClick={() => setShowHealthDetails(!showHealthDetails)}
+                >
+                  {healthStatus.overallHealth === 'healthy' ? '🟢' : 
+                   healthStatus.overallHealth === 'degraded' ? '🟡' : '🔴'} 
+                  System {healthStatus.overallHealth} ({healthStatus.uptimePercentage}%)
+                </Badge>
+              )}
+            </div>
+            
+            {/* Health Details */}
+            {showHealthDetails && healthStatus && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
+                <h4 className="font-medium mb-2">System Health Status</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Caspio API:</span>
+                    <Badge className={`ml-2 ${
+                      healthStatus.caspioApiHealth === 'healthy' ? 'bg-green-100 text-green-800' :
+                      healthStatus.caspioApiHealth === 'degraded' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {healthStatus.caspioApiHealth}
+                    </Badge>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Firestore:</span>
+                    <Badge className={`ml-2 ${
+                      healthStatus.firestoreHealth === 'healthy' ? 'bg-green-100 text-green-800' :
+                      healthStatus.firestoreHealth === 'degraded' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {healthStatus.firestoreHealth}
+                    </Badge>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Failed Syncs:</span>
+                    <span className="ml-2 font-medium">{healthStatus.failedSyncCount}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Last Success:</span>
+                    <span className="ml-2 font-medium">{healthStatus.timeSinceLastSuccess}m ago</span>
+                  </div>
+                </div>
+                {healthStatus.recommendations && healthStatus.recommendations.length > 0 && (
+                  <div className="mt-3">
+                    <span className="text-muted-foreground text-sm">Recommendations:</span>
+                    <ul className="mt-1 text-xs space-y-1">
+                      {healthStatus.recommendations.map((rec: string, idx: number) => (
+                        <li key={idx} className="text-muted-foreground">{rec}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -574,25 +745,48 @@ export default function MemberNotesPage() {
                 <h3 className="text-lg font-medium mb-2">No Notes Loaded</h3>
                 <p className="text-muted-foreground mb-6">
                   Click "Request Notes" to load notes for {selectedMember.firstName} {selectedMember.lastName}
+                  <br />
+                  <span className="text-xs">
+                    This will fetch both regular notes and ILS notes from Caspio, then cache them in Firestore for faster future access.
+                  </span>
                 </p>
-                <Button 
-                  onClick={() => handleRequestNotes(selectedMember)}
-                  disabled={isNotesLoading}
-                  size="lg"
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {isNotesLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Loading Notes...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="mr-2 h-4 w-4" />
-                      Request Notes
-                    </>
+                <div className="space-y-4">
+                  <Button 
+                    onClick={() => handleRequestNotes(selectedMember)}
+                    disabled={isNotesLoading || syncProgress.isSync}
+                    size="lg"
+                    className="bg-blue-600 hover:bg-blue-700 w-full"
+                  >
+                    {isNotesLoading || syncProgress.isSync ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {syncProgress.message || 'Loading Notes...'}
+                      </>
+                    ) : (
+                      <>
+                        <Download className="mr-2 h-4 w-4" />
+                        Request Notes
+                      </>
+                    )}
+                  </Button>
+                  
+                  {/* Sync Progress Indicator */}
+                  {(syncProgress.isSync || syncProgress.stage === 'complete') && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">{syncProgress.message}</span>
+                        <span className="font-medium">{syncProgress.progress}%</span>
+                      </div>
+                      <Progress value={syncProgress.progress} className="h-2" />
+                      
+                      {syncProgress.stage === 'complete' && syncProgress.notesFound.total > 0 && (
+                        <div className="text-xs text-muted-foreground bg-green-50 p-2 rounded border border-green-200">
+                          ✅ Found {syncProgress.notesFound.total} total notes: {syncProgress.notesFound.regular} regular + {syncProgress.notesFound.ils} ILS
+                        </div>
+                      )}
+                    </div>
                   )}
-                </Button>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
@@ -600,6 +794,11 @@ export default function MemberNotesPage() {
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-muted-foreground">
                     Showing {memberNotes.length} notes for {selectedMember.firstName} {selectedMember.lastName}
+                    <div className="text-xs mt-1">
+                      Regular: {filteredNotes.filter(n => n.source === 'Caspio').length} • 
+                      ILS: {filteredNotes.filter(n => n.source === 'ILS').length} • 
+                      App: {filteredNotes.filter(n => n.source === 'App' || n.source === 'Admin').length}
+                    </div>
                   </div>
                   <Button 
                     variant="outline" 
