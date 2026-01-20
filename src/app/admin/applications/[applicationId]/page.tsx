@@ -1155,7 +1155,8 @@ function ApplicationDetailPageContent() {
         },
         body: JSON.stringify({
           applicationId: application.id,
-          memberName: `${application.memberFirstName} ${application.memberLastName}`,
+          memberFirstName: application.memberFirstName,
+          memberLastName: application.memberLastName,
           memberEmail: application.memberEmail || '',
           healthPlan: application.healthPlan,
           pathway: application.pathway
