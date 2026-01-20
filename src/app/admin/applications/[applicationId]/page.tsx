@@ -789,31 +789,29 @@ function ApplicationDetailPageContent() {
     return () => unsubscribe();
   }, [docRef, isUserLoading]);
 
-  // Auto-assign staff if not already assigned and auto-assignment is enabled
-  useEffect(() => {
-    const checkAutoAssignment = async () => {
-      if (!application || (application as any)?.assignedStaff) return;
-      
-      // Check if auto-assignment is enabled
-      const settings = localStorage.getItem('staffAssignmentNotificationSettings');
-      if (settings) {
-        try {
-          const parsedSettings = JSON.parse(settings);
-          if (parsedSettings.enabled && parsedSettings.autoAssignmentEnabled) {
-            console.log('🤖 Auto-assigning staff for application:', application.id);
-            // Small delay to ensure the page has loaded
-            setTimeout(() => {
-              handleStaffAssignment();
-            }, 2000);
-          }
-        } catch (error) {
-          console.error('Error parsing auto-assignment settings:', error);
-        }
-      }
-    };
-
-    checkAutoAssignment();
-  }, [application]);
+  // Auto-assign staff useEffect temporarily disabled to prevent endless looping
+  // useEffect(() => {
+  //   const checkAutoAssignment = async () => {
+  //     if (!application || (application as any)?.assignedStaff) return;
+  //     
+  //     const settings = localStorage.getItem('staffAssignmentNotificationSettings');
+  //     if (settings) {
+  //       try {
+  //         const parsedSettings = JSON.parse(settings);
+  //         if (parsedSettings.enabled && parsedSettings.autoAssignmentEnabled) {
+  //           console.log('🤖 Auto-assigning staff for application:', application.id);
+  //           setTimeout(() => {
+  //             handleStaffAssignment();
+  //           }, 2000);
+  //         }
+  //       } catch (error) {
+  //         console.error('Error parsing auto-assignment settings:', error);
+  //       }
+  //     }
+  //   };
+  //
+  //   checkAutoAssignment();
+  // }, [application]);
   
     const handleFormStatusUpdate = async (updates: Partial<FormStatusType>[]) => {
       if (!docRef || !application) return;
@@ -1142,8 +1140,11 @@ function ApplicationDetailPageContent() {
     }
   };
 
-  // Handle staff assignment
+  // Handle staff assignment - TEMPORARILY DISABLED
   const handleStaffAssignment = async () => {
+    console.log('🚫 Staff assignment is temporarily disabled to prevent looping');
+    return; // Early return to disable functionality
+    
     if (!docRef || !application) return;
     
     setIsUpdatingProgression(true);
@@ -1167,9 +1168,10 @@ function ApplicationDetailPageContent() {
       
       if (data.success) {
         const updateData = {
-          assignedStaff: data.assignedStaff,
-          assignedDate: new Date().toISOString(),
-          assignmentNumber: data.assignmentNumber
+          assignedStaffId: data.assignedStaffId,
+          assignedStaffName: data.assignedStaffName,
+          assignedStaffEmail: data.assignedStaffEmail,
+          assignedDate: new Date().toISOString()
         };
         
         await setDoc(docRef, updateData, { merge: true });
@@ -1179,7 +1181,7 @@ function ApplicationDetailPageContent() {
         
         toast({
           title: "Staff Assigned",
-          description: `Application assigned to ${data.assignedStaff.name} (${data.assignedStaff.email})${data.notificationSent ? ' • Notification sent' : ''}`,
+          description: `Application assigned to ${data.assignedStaffName} (${data.assignedStaffEmail})`,
           className: "bg-green-100 text-green-900 border-green-200",
         });
 
@@ -1410,15 +1412,11 @@ function ApplicationDetailPageContent() {
                                         <Button 
                                             size="sm" 
                                             variant="outline"
-                                            onClick={() => handleStaffAssignment()}
-                                            disabled={isUpdatingProgression}
+                                            disabled={true}
+                                            title="Auto-assignment temporarily disabled"
                                         >
-                                            {isUpdatingProgression ? (
-                                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                            ) : (
-                                                <User className="h-3 w-3 mr-1" />
-                                            )}
-                                            Auto-Assign Staff
+                                            <User className="h-3 w-3 mr-1" />
+                                            Auto-Assign Disabled
                                         </Button>
                                     </div>
                                 )}

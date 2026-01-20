@@ -168,12 +168,12 @@ export async function POST(request: NextRequest) {
       const settingsRef = adminDb.collection('settings').doc('staffAssignment');
       const settingsSnap = await settingsRef.get();
       settings = settingsSnap.data() || {};
-      autoAssignEnabled = settings?.autoAssignEnabled ?? true; // Default to true
+      autoAssignEnabled = false; // Temporarily disabled to prevent endless looping
     } catch (error) {
       console.error('❌ Error accessing Firestore settings, using defaults:', error);
       // Continue with default settings if Firestore fails
-      settings = { autoAssignEnabled: true, lastAssignedIndex: -1 };
-      autoAssignEnabled = true;
+      settings = { autoAssignEnabled: false, lastAssignedIndex: -1 };
+      autoAssignEnabled = false;
     }
     
     if (!autoAssignEnabled) {
