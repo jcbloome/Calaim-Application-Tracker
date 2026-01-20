@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { getNextKaiserStatus, getKaiserStatusesInOrder, KAISER_STATUS_PROGRESSION, getKaiserStatusById } from '@/lib/kaiser-status-progression';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { 
   User, 
   Filter, 
@@ -30,7 +35,12 @@ import {
   ArrowUp,
   ArrowDown,
   X,
-  Database
+  Database,
+  Edit,
+  Save,
+  Plus,
+  Target,
+  Users
 } from 'lucide-react';
 
 // Types
@@ -139,23 +149,23 @@ const formatDate = (dateString: string): string => {
 };
 
 // Helper function to check if a task is overdue
-const isOverdue = (dateString: string): boolean => {
-  if (!dateString) return false;
-  const dueDate = new Date(dateString);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return dueDate < today;
-};
+  const isOverdue = (dateString: string): boolean => {
+    if (!dateString) return false;
+    const dueDate = new Date(dateString);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return dueDate < today;
+  };
 
 // Helper function to get days until due
-const getDaysUntilDue = (dateString: string): number => {
+  const getDaysUntilDue = (dateString: string): number => {
   if (!dateString) return 0;
-  const dueDate = new Date(dateString);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diffTime = dueDate.getTime() - today.getTime();
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-};
+    const dueDate = new Date(dateString);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffTime = dueDate.getTime() - today.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
 
 // Kaiser workflow configuration
 const kaiserWorkflow = {
@@ -236,6 +246,361 @@ const COUNTIES = [
   'Imperial'
 ];
 
+// Staff Member Management Modal Component
+interface StaffMemberManagementModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  staffName: string;
+  members: KaiserMember[];
+  onMemberUpdate: () => void;
+}
+
+function StaffMemberManagementModal({
+  isOpen,
+  onClose,
+  staffName,
+  members,
+  onMemberUpdate
+}: StaffMemberManagementModalProps) {
+  const [editingMember, setEditingMember] = useState<string | null>(null);
+  const [memberUpdates, setMemberUpdates] = useState<Record<string, Partial<KaiserMember>>>({});
+  const [newNote, setNewNote] = useState('');
+  const [addingNoteFor, setAddingNoteFor] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  if (!isOpen) return null;
+
+  const handleStatusUpdate = async (memberId: string, newStatus: string) => {
+    try {
+      const response = await fetch('/api/kaiser-members/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId, status: newStatus })
+      });
+
+      if (response.ok) {
+          toast({
+          title: "Status Updated",
+          description: "Member status has been updated successfully.",
+        });
+        onMemberUpdate();
+        } else {
+        throw new Error('Failed to update status');
+      }
+    } catch (error) {
+          toast({
+        title: "Update Failed",
+        description: "Failed to update member status. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAddNote = async (memberId: string) => {
+    if (!newNote.trim()) return;
+
+    try {
+      const response = await fetch('/api/member-notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          memberId,
+          noteText: newNote,
+          assignedTo: staffName,
+          authorName: staffName,
+          authorId: 'current-user-id'
+        })
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Note Added",
+          description: "Note has been added successfully.",
+        });
+        setNewNote('');
+        setAddingNoteFor(null);
+        onMemberUpdate();
+      } else {
+        throw new Error('Failed to add note');
+      }
+    } catch (error) {
+      toast({
+        title: "Note Failed",
+        description: "Failed to add note. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleNextStepUpdate = (memberId: string, field: string, value: string) => {
+    setMemberUpdates(prev => ({
+      ...prev,
+      [memberId]: {
+        ...prev[memberId],
+        [field]: value
+      }
+    }));
+  };
+
+  const saveNextStepUpdates = async (memberId: string) => {
+    const updates = memberUpdates[memberId];
+    if (!updates) return;
+
+    try {
+      const response = await fetch('/api/kaiser-members/update-workflow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId, ...updates })
+      });
+
+      if (response.ok) {
+      toast({
+          title: "Updates Saved",
+          description: "Member workflow has been updated successfully.",
+        });
+        setEditingMember(null);
+        setMemberUpdates(prev => {
+          const newUpdates = { ...prev };
+          delete newUpdates[memberId];
+          return newUpdates;
+        });
+        onMemberUpdate();
+      } else {
+        throw new Error('Failed to save updates');
+      }
+    } catch (error) {
+      toast({
+        title: "Save Failed",
+        description: "Failed to save updates. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <User className="h-5 w-5" />
+            {staffName} - Member Management
+          </DialogTitle>
+          <DialogDescription>
+            Manage {members.length} members assigned to {staffName}. Update statuses, next steps, and add notes.
+          </DialogDescription>
+        </DialogHeader>
+
+        <ScrollArea className="flex-1 pr-4">
+          <div className="space-y-4">
+            {members.map((member) => {
+              const isEditing = editingMember === member.id;
+              const updates = memberUpdates[member.id] || {};
+              const isAddingNote = addingNoteFor === member.id;
+
+              return (
+                <Card key={member.id} className="border-l-4 border-l-blue-500">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-lg">
+                          {member.memberFirstName} {member.memberLastName}
+                        </CardTitle>
+                        <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
+                          <span>MRN: {member.memberMrn}</span>
+                          <span>County: {member.memberCounty}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setAddingNoteFor(isAddingNote ? null : member.id)}
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          Note
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setEditingMember(isEditing ? null : member.id)}
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          {isEditing ? 'Cancel' : 'Edit'}
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-gray-700 mb-2 block">
+                          Kaiser Status
+                        </label>
+                        <Select
+                          value={member.Kaiser_Status}
+                          onValueChange={(value) => handleStatusUpdate(member.id, value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {getKaiserStatusesInOrder().map((status) => (
+                              <SelectItem key={status} value={status}>
+                                {status}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <label className="text-sm font-medium text-gray-700 mb-2 block">
+                          CalAIM Status
+                        </label>
+                        <Badge variant="outline" className="text-sm">
+                          {member.CalAIM_Status || 'Not set'}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <Separator />
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Target className="h-4 w-4 text-blue-600" />
+                        <span className="font-medium">Next Steps & Workflow</span>
+                      </div>
+
+                      {isEditing ? (
+                        <div className="space-y-3 bg-gray-50 p-3 rounded-lg">
+                          <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1 block">
+                              Next Step
+                            </label>
+                            <Input
+                              value={updates.workflow_step || member.workflow_step || ''}
+                              onChange={(e) => handleNextStepUpdate(member.id, 'workflow_step', e.target.value)}
+                              placeholder="Enter next step..."
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1 block">
+                              Due Date
+                            </label>
+                            <Input
+                              type="date"
+                              value={updates.Next_Step_Due_Date || member.Next_Step_Due_Date || ''}
+                              onChange={(e) => handleNextStepUpdate(member.id, 'Next_Step_Due_Date', e.target.value)}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-sm font-medium text-gray-700 mb-1 block">
+                              Notes
+                            </label>
+                            <Textarea
+                              value={updates.workflow_notes || member.workflow_notes || ''}
+                              onChange={(e) => handleNextStepUpdate(member.id, 'workflow_notes', e.target.value)}
+                              placeholder="Add workflow notes..."
+                              rows={3}
+                            />
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => saveNextStepUpdates(member.id)}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              <Save className="h-4 w-4 mr-1" />
+                              Save Changes
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setEditingMember(null)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 text-sm">
+                          <div>
+                            <span className="text-gray-600">Next Step:</span>
+                            <span className="ml-2 font-medium">
+                              {member.workflow_step || 'Not set'}
+                            </span>
+                          </div>
+                          {member.Next_Step_Due_Date && (
+                            <div>
+                              <span className="text-gray-600">Due Date:</span>
+                              <span className="ml-2 font-medium">
+                                {formatDate(member.Next_Step_Due_Date)}
+                              </span>
+                            </div>
+                          )}
+                          {member.workflow_notes && (
+                            <div>
+                              <span className="text-gray-600">Notes:</span>
+                              <span className="ml-2 text-gray-800">
+                                {member.workflow_notes}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {isAddingNote && (
+                      <>
+                        <Separator />
+                        <div className="space-y-3 bg-blue-50 p-3 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-blue-600" />
+                            <span className="font-medium">Add New Note</span>
+                          </div>
+                          <Textarea
+                            value={newNote}
+                            onChange={(e) => setNewNote(e.target.value)}
+                            placeholder="Enter your note..."
+                            rows={3}
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => handleAddNote(member.id)}
+                              disabled={!newNote.trim()}
+                            >
+                              <Save className="h-4 w-4 mr-1" />
+                              Add Note
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setAddingNoteFor(null);
+                                setNewNote('');
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function KaiserTrackerPage() {
   const { isAdmin, user } = useAdmin();
   const { toast } = useToast();
@@ -252,8 +617,13 @@ export default function KaiserTrackerPage() {
   const [modalMembers, setModalMembers] = useState<KaiserMember[]>([]);
   const [modalTitle, setModalTitle] = useState('');
   const [modalDescription, setModalDescription] = useState('');
-  const [modalFilterType, setModalFilterType] = useState<'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'overdue_tasks'>('kaiser_status');
+  const [modalFilterType, setModalFilterType] = useState<'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'overdue_tasks' | 'staff_members'>('kaiser_status');
   const [modalFilterValue, setModalFilterValue] = useState('');
+  const [staffMemberModal, setStaffMemberModal] = useState<{
+    isOpen: boolean;
+    staffName: string;
+    members: KaiserMember[];
+  }>({ isOpen: false, staffName: '', members: [] });
   const [filters, setFilters] = useState({
     kaiserStatus: 'all',
     calaimStatus: 'all',
@@ -301,7 +671,13 @@ export default function KaiserTrackerPage() {
     
     // Count members assigned to each staff
     members.forEach(member => {
-      const staffName = member.Staff_Assigned || member.kaiser_user_assignment || 'Unassigned';
+      // Try multiple possible staff assignment field names from Caspio
+      const staffName = member.Staff_Assignment || 
+                       member.Staff_Assigned || 
+                       member.kaiser_user_assignment || 
+                       member.SW_ID || 
+                       member.Assigned_Staff ||
+                       'Unassigned';
       
       // Only count Kaiser staff members
       if (kaiserStaff.includes(staffName)) {
@@ -334,7 +710,7 @@ export default function KaiserTrackerPage() {
     memberList: KaiserMember[],
     title: string,
     description: string,
-    filterType: 'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'overdue_tasks',
+    filterType: 'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'overdue_tasks' | 'staff_members',
     filterValue: string
   ) => {
     setModalMembers(memberList);
@@ -343,6 +719,15 @@ export default function KaiserTrackerPage() {
     setModalFilterType(filterType);
     setModalFilterValue(filterValue);
     setModalOpen(true);
+  };
+
+  // Helper function to open staff member management modal
+  const openStaffMemberModal = (staffName: string, members: KaiserMember[]) => {
+    setStaffMemberModal({
+      isOpen: true,
+      staffName,
+      members
+    });
   };
 
   // Helper functions
@@ -470,43 +855,43 @@ export default function KaiserTrackerPage() {
   };
 
   const sortedMembers = filteredMembers().sort((a, b) => {
-    if (!sortField) return 0;
-    
+        if (!sortField) return 0;
+        
     let aValue: any = '';
     let bValue: any = '';
-    
-    switch (sortField) {
-      case 'name':
+        
+          switch (sortField) {
+            case 'name':
         aValue = `${a.memberFirstName} ${a.memberLastName}`;
         bValue = `${b.memberFirstName} ${b.memberLastName}`;
-        break;
-      case 'county':
+              break;
+            case 'county':
         aValue = a.memberCounty;
         bValue = b.memberCounty;
-        break;
-      case 'kaiser_status':
+              break;
+            case 'kaiser_status':
         aValue = a.Kaiser_Status;
         bValue = b.Kaiser_Status;
-        break;
-      case 'calaim_status':
+              break;
+            case 'calaim_status':
         aValue = a.CalAIM_Status;
         bValue = b.CalAIM_Status;
-        break;
+              break;
       case 'staff':
         aValue = a.Staff_Assigned;
         bValue = b.Staff_Assigned;
-        break;
-      case 'due_date':
+              break;
+            case 'due_date':
         aValue = new Date(a.Next_Step_Due_Date || '9999-12-31');
         bValue = new Date(b.Next_Step_Due_Date || '9999-12-31');
-        break;
-      default:
-        return 0;
-    }
-    
+              break;
+            default:
+              return 0;
+          }
+          
     if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
     if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
-    return 0;
+          return 0;
   });
 
   // Handle sorting
@@ -586,7 +971,7 @@ export default function KaiserTrackerPage() {
         >
           <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           {isLoading ? 'Syncing...' : 'Sync from Caspio'}
-        </Button>
+          </Button>
       </div>
 
       {/* Interactive Filtering Message */}
@@ -597,8 +982,8 @@ export default function KaiserTrackerPage() {
             <p className="text-sm text-blue-800 font-medium">
               💡 Click on any status, county, or number in the cards below to filter and view members
             </p>
-          </div>
         </div>
+      </div>
       )}
 
       {/* Summary Cards - Compact */}
@@ -609,8 +994,8 @@ export default function KaiserTrackerPage() {
             <CardTitle className="flex items-center gap-2 text-base">
               <Database className="h-4 w-4 text-gray-400" />
               Kaiser Status Summary
-            </CardTitle>
-          </CardHeader>
+          </CardTitle>
+        </CardHeader>
           <CardContent className="pt-0">
             <div className="space-y-1 max-h-48 overflow-y-auto">
               {KAISER_STATUSES.map((status, index) => {
@@ -628,14 +1013,14 @@ export default function KaiserTrackerPage() {
                     <div className="flex items-center gap-1 flex-1 min-w-0">
                       <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>
                       <span className="font-medium truncate">{status}</span>
-                    </div>
+            </div>
                     <div className="text-right flex-shrink-0">
                       <span className="font-bold text-blue-600">{count}</span>
                       {members.length > 0 && count > 0 && (
                         <span className="text-gray-500 ml-1">({percentage}%)</span>
                       )}
-                    </div>
-                  </div>
+            </div>
+            </div>
                 );
               })}
             </div>
@@ -658,7 +1043,7 @@ export default function KaiserTrackerPage() {
                 return (
                   <div key={`calaim-${index}-${status}`} 
                        className="flex items-center justify-between py-0.5 px-1 hover:bg-gray-50 rounded cursor-pointer text-xs"
-                       onClick={() => {
+                onClick={() => {
                          if (members.length > 0) {
                            const filteredMembers = members.filter(m => m.CalAIM_Status === status);
                            openMemberModal(filteredMembers, `${status} Members`, `${count} members with CalAIM status: ${status}`, 'calaim_status', status);
@@ -667,7 +1052,7 @@ export default function KaiserTrackerPage() {
                     <div className="flex items-center gap-1 flex-1 min-w-0">
                       <div className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0"></div>
                       <span className="font-medium">{status}</span>
-                    </div>
+          </div>
                     <div className="text-right flex-shrink-0">
                       <span className="font-bold text-green-600">{count}</span>
                       {members.length > 0 && count > 0 && (
@@ -677,9 +1062,9 @@ export default function KaiserTrackerPage() {
                   </div>
                 );
               })}
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+        </CardContent>
+      </Card>
 
         {/* County Summary Card */}
         <Card className="bg-white border-l-4 border-l-purple-500 shadow">
@@ -706,14 +1091,14 @@ export default function KaiserTrackerPage() {
                     <div className="flex items-center gap-1 flex-1 min-w-0">
                       <div className="w-2 h-2 bg-purple-500 rounded-full flex-shrink-0"></div>
                       <span className="font-medium">{county} County</span>
-                    </div>
+            </div>
                     <div className="text-right flex-shrink-0">
                       <span className="font-bold text-purple-600">{count}</span>
                       {members.length > 0 && count > 0 && (
                         <span className="text-gray-500 ml-1">({percentage}%)</span>
                       )}
-                    </div>
-                  </div>
+            </div>
+            </div>
                 );
               })}
             </div>
@@ -735,24 +1120,41 @@ export default function KaiserTrackerPage() {
                   <CardTitle className="flex items-center gap-2 text-base">
                     <User className="h-4 w-4 text-indigo-600" />
                     {staffName}
-                  </CardTitle>
-                </CardHeader>
+            </CardTitle>
+          </CardHeader>
                 <CardContent className="pt-0">
                   <div className="text-center">
-                    <div className="text-3xl font-bold text-indigo-600 mb-1">
+                    <button
+                      onClick={() => assignment.count > 0 && openStaffMemberModal(staffName, assignment.members)}
+                      className={`text-3xl font-bold mb-1 transition-colors ${
+                        assignment.count > 0 
+                          ? 'text-indigo-600 hover:text-indigo-800 cursor-pointer' 
+                          : 'text-gray-400 cursor-default'
+                      }`}
+                      disabled={assignment.count === 0}
+                    >
                       {assignment.count}
-                    </div>
+                    </button>
                     <div className="text-sm text-gray-600">
                       Members Assigned
-                    </div>
+            </div>
                     {assignment.count > 0 && (
                       <div className="text-xs text-gray-500 mt-1">
                         {((assignment.count / members.length) * 100).toFixed(1)}% of total
+                        <div className="text-xs text-blue-600 mt-1">
+                          Click number to manage
+                        </div>
+                        <Link 
+                          href="/admin/tasks"
+                          className="text-xs text-green-600 hover:text-green-800 underline mt-1 block"
+                        >
+                          View in My Tasks →
+                        </Link>
                       </div>
                     )}
-                  </div>
-                </CardContent>
-              </Card>
+            </div>
+          </CardContent>
+        </Card>
             );
           })}
         </div>
@@ -767,8 +1169,8 @@ export default function KaiserTrackerPage() {
                   <CardTitle className="flex items-center gap-2 text-base">
                     <CheckCircle className="h-4 w-4 text-orange-600" />
                     {staffName} - Status & Next Steps
-                  </CardTitle>
-                </CardHeader>
+            </CardTitle>
+          </CardHeader>
                 <CardContent className="pt-0">
                   {assignment.count === 0 ? (
                     <div className="text-center py-4 text-gray-500">
@@ -787,7 +1189,7 @@ export default function KaiserTrackerPage() {
                             <div key={`${staffName}-status-${status}`} className="flex justify-between items-center text-xs">
                               <span className="truncate pr-2" title={status}>{status}</span>
                               <span className="font-semibold text-orange-600">{count}</span>
-                            </div>
+                        </div>
                           ))}
                         </div>
                       </div>
@@ -804,7 +1206,7 @@ export default function KaiserTrackerPage() {
                               <div className="flex justify-between items-center">
                                 <span className="truncate pr-2" title={nextStep}>{nextStep}</span>
                                 <span className="font-semibold text-blue-600">{data.count}</span>
-                              </div>
+                  </div>
                               {data.dates.length > 0 && (
                                 <div className="text-xs text-gray-500 mt-1">
                                   Due: {data.dates.slice(0, 2).map(date => {
@@ -815,20 +1217,20 @@ export default function KaiserTrackerPage() {
                                     }
                                   }).join(', ')}
                                   {data.dates.length > 2 && ` +${data.dates.length - 2} more`}
-                                </div>
+                </div>
                               )}
-                            </div>
+                  </div>
                           ))}
-                        </div>
-                      </div>
-                    </div>
+                </div>
+              </div>
+            </div>
                   )}
-                </CardContent>
-              </Card>
+          </CardContent>
+        </Card>
             );
           })}
-        </div>
-      </div>
+                </div>
+            </div>
 
 
       {/* Member Search by Last Name */}
@@ -837,9 +1239,9 @@ export default function KaiserTrackerPage() {
           <CardTitle className="flex items-center gap-2 text-lg">
             <Search className="h-5 w-5 text-gray-400" />
             Member Search by Last Name
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
           {members.length === 0 ? (
             <div className="text-center py-4">
               <p className="text-gray-500 text-sm">Load member data to enable search</p>
@@ -872,7 +1274,7 @@ export default function KaiserTrackerPage() {
                       <div key={member.id} className="p-3 bg-gray-50 rounded border">
                         <div className="font-medium text-gray-900">
                           {member.memberLastName}, {member.memberFirstName}
-                        </div>
+                          </div>
                         <div className="text-sm text-gray-600 mt-1">
                           ID: {member.client_ID2} | {member.memberCounty} County
                         </div>
@@ -884,7 +1286,7 @@ export default function KaiserTrackerPage() {
                             {member.CalAIM_Status}
                           </Badge>
                         </div>
-                      </div>
+                  </div>
                     ))}
                   {members.filter(member => {
                     const searchLower = searchTerm.toLowerCase();
@@ -893,21 +1295,21 @@ export default function KaiserTrackerPage() {
                   }).length === 0 && (
                     <div className="text-center py-4 text-gray-500">
                       <p className="text-sm">No members found with last name "{searchTerm}"</p>
-                    </div>
-                  )}
                 </div>
               )}
-              
+            </div>
+              )}
+
               {!searchTerm && (
                 <div className="text-center py-2">
                   <div className="text-3xl font-bold text-gray-900">{members.length}</div>
                   <p className="text-sm text-gray-600">Total Kaiser Members</p>
-                </div>
-              )}
-            </div>
+      </div>
+                      )}
+                    </div>
           )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
       {/* Member List Modal */}
       <MemberListModal
@@ -928,7 +1330,7 @@ export default function KaiserTrackerPage() {
         availableCalAIMStatuses={availableCalAIMStatuses}
         staffMembers={staffMembers}
       />
-    </div>
+            </div>
   );
 }
 
@@ -975,10 +1377,10 @@ function MemberListModal({
             </div>
             <Button variant="ghost" size="sm" onClick={onClose}>
               <X className="h-4 w-4" />
-            </Button>
-          </div>
+                      </Button>
+                        </div>
           
-        </div>
+                                </div>
         
         {/* Compact Filters - Moved directly under cards */}
         <div className="px-6 py-2 bg-gray-50 border-b">
@@ -987,20 +1389,20 @@ function MemberListModal({
             <Select value={filters.kaiserStatus} onValueChange={(value) => onFilterChange('kaiserStatus', value)}>
               <SelectTrigger className="w-auto h-7 text-xs">
                 <SelectValue placeholder="Kaiser Status" />
-              </SelectTrigger>
-              <SelectContent>
+                          </SelectTrigger>
+                          <SelectContent>
                 <SelectItem value="all">All Kaiser Statuses</SelectItem>
                 {allKaiserStatuses.map(status => (
                   <SelectItem key={status} value={status}>{status}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                            ))}
+                          </SelectContent>
+                        </Select>
 
             <Select value={filters.county} onValueChange={(value) => onFilterChange('county', value)}>
               <SelectTrigger className="w-auto h-7 text-xs">
                 <SelectValue placeholder="County" />
-              </SelectTrigger>
-              <SelectContent>
+                          </SelectTrigger>
+                          <SelectContent>
                 <SelectItem value="all">All Counties</SelectItem>
                 {availableCounties.map(county => (
                   <SelectItem key={county} value={county}>{county}</SelectItem>
@@ -1035,8 +1437,8 @@ function MemberListModal({
             <Button variant="ghost" size="sm" onClick={onClearFilters} className="h-7 px-2 text-xs">
               Clear
             </Button>
-          </div>
-        </div>
+                              </div>
+                              </div>
         
         <div className="p-6 overflow-y-auto max-h-[70vh]">
           {members.length === 0 ? (
@@ -1046,7 +1448,7 @@ function MemberListModal({
               <p className="mt-1 text-sm text-gray-500">
                 Try adjusting your filters or sync data from Caspio.
               </p>
-            </div>
+                              </div>
           ) : (
             <div className="space-y-3">
               {members.map((member) => {
@@ -1067,7 +1469,7 @@ function MemberListModal({
                     <CardContent className="p-4">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2">
                             <h3 className="font-medium">
                               {member.memberFirstName} {member.memberLastName}
                             </h3>
@@ -1083,7 +1485,7 @@ function MemberListModal({
                                 <span className="text-xs font-medium">URGENT</span>
                               </div>
                             )}
-                          </div>
+                              </div>
                           
                           <p className="text-sm text-muted-foreground mt-1">
                             ID: {member.client_ID2} | County: {member.memberCounty}
@@ -1096,11 +1498,11 @@ function MemberListModal({
                             <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
                               CalAIM: {member.CalAIM_Status || 'No Status'}
                             </Badge>
-                          </div>
+                              </div>
 
                           {/* Staff Assignment and Next Step Info */}
                           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                            <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2">
                               <User className="h-4 w-4 text-blue-500" />
                               <div>
                                 <span className="text-gray-600">Staff:</span>
@@ -1108,18 +1510,18 @@ function MemberListModal({
                                   {member.Staff_Assigned || 'Unassigned'}
                                 </span>
                               </div>
-                            </div>
+                                </div>
                             
-                            <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
                               <Calendar className="h-4 w-4 text-purple-500" />
                               <div>
                                 <span className="text-gray-600">Next Step:</span>
                                 <span className="ml-1 font-medium">
                                   {member.workflow_step || 'Not set'}
-                                </span>
-                              </div>
+                              </span>
                             </div>
-                          </div>
+                        </div>
+                              </div>
 
                           {/* Next Step Due Date */}
                           {member.Next_Step_Due_Date && (
@@ -1148,18 +1550,30 @@ function MemberListModal({
                             <div className="mt-2 text-sm">
                               <span className="text-gray-600">Notes:</span>
                               <span className="ml-1 text-gray-800">{member.workflow_notes}</span>
-                            </div>
+                        </div>
                           )}
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+            </div>
+        </CardContent>
+      </Card>
                 );
               })}
             </div>
           )}
         </div>
       </div>
+
+      {/* Staff Member Management Modal */}
+      <StaffMemberManagementModal
+        isOpen={staffMemberModal.isOpen}
+        onClose={() => setStaffMemberModal({ isOpen: false, staffName: '', members: [] })}
+        staffName={staffMemberModal.staffName}
+        members={staffMemberModal.members}
+        onMemberUpdate={() => {
+          // Refresh data after updates
+          fetchMembers();
+        }}
+      />
     </div>
   );
 }
