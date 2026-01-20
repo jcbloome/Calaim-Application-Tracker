@@ -67,7 +67,6 @@ import { Calendar } from '@/components/ui/calendar';
 import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
 import { SyncToCaspioButton } from '@/components/SyncToCaspioButton';
-import { MemberFileLookup } from '@/components/MemberFileLookup';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import { DuplicateClientChecker } from '@/components/DuplicateClientChecker';
 import TaskScheduler from '@/components/TaskScheduler';
@@ -1537,7 +1536,6 @@ function ApplicationDetailPageContent() {
       <aside className="lg:col-span-1 space-y-6">
         <StaffApplicationTracker application={application} />
         <AdminActions application={application} />
-        <MemberFileLookup clientId={(application as any)?.client_ID2} />
         <TaskScheduler 
           memberId={application.id}
           memberName={`${application.memberFirstName} ${application.memberLastName}`}

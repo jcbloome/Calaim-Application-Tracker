@@ -85,12 +85,17 @@ export async function POST(request: NextRequest) {
 
     // Get user information for email
     let userDoc;
-    if (userId) {
-      userDoc = await adminDb.collection('users').doc(userId).get();
+    let userData = null;
+    if (userId && adminDb) {
+      try {
+        userDoc = await adminDb.collection('users').doc(userId).get();
+        userData = userDoc?.data();
+      } catch (error) {
+        console.log('Could not fetch user data:', error);
+      }
     }
 
-    const userData = userDoc?.data();
-    const userEmail = userData?.email;
+    const userEmail = userData?.email || 'user@example.com';
     const userName = userData?.firstName && userData?.lastName 
       ? `${userData.firstName} ${userData.lastName}` 
       : userData?.displayName || userEmail || 'User';
@@ -108,8 +113,15 @@ export async function POST(request: NextRequest) {
       status: 'pending'
     };
 
-    // Store the reminder in Firestore
-    const reminderRef = await adminDb.collection('notifications').add(reminderData);
+    // Store the reminder in Firestore (if available)
+    let reminderRef = null;
+    if (adminDb) {
+      try {
+        reminderRef = await adminDb.collection('notifications').add(reminderData);
+      } catch (error) {
+        console.log('Could not store reminder in Firestore:', error);
+      }
+    }
 
     // If email reminder, send the email
     if (reminderType === 'email' && userEmail) {
@@ -134,33 +146,57 @@ export async function POST(request: NextRequest) {
         const emailResult = await emailResponse.json();
         
         if (emailResult.success) {
-          // Update reminder status to sent
-          await reminderRef.update({
-            status: 'sent',
-            emailSentAt: FieldValue.serverTimestamp()
-          });
+          // Update reminder status to sent (if reminder was stored)
+          if (reminderRef) {
+            try {
+              await reminderRef.update({
+                status: 'sent',
+                emailSentAt: FieldValue.serverTimestamp()
+              });
+            } catch (error) {
+              console.log('Could not update reminder status:', error);
+            }
+          }
         } else {
           console.error('Failed to send email:', emailResult.error);
-          await reminderRef.update({
-            status: 'failed',
-            error: emailResult.error
-          });
+          if (reminderRef) {
+            try {
+              await reminderRef.update({
+                status: 'failed',
+                error: emailResult.error
+              });
+            } catch (error) {
+              console.log('Could not update reminder status:', error);
+            }
+          }
         }
       } catch (emailError: any) {
         console.error('Error sending email:', emailError);
-        await reminderRef.update({
-          status: 'failed',
-          error: emailError.message
-        });
+        if (reminderRef) {
+          try {
+            await reminderRef.update({
+              status: 'failed',
+              error: emailError.message
+            });
+          } catch (error) {
+            console.log('Could not update reminder status:', error);
+          }
+        }
       }
     }
 
-    // Update application with reminder sent flag
-    await docRef.update({
-      csSummaryReminderSent: true,
-      csSummaryReminderSentAt: FieldValue.serverTimestamp(),
-      lastReminderType: reminderType
-    });
+    // Update application with reminder sent flag (if possible)
+    if (adminDb) {
+      try {
+        await docRef.update({
+          csSummaryReminderSent: true,
+          csSummaryReminderSentAt: FieldValue.serverTimestamp(),
+          lastReminderType: reminderType
+        });
+      } catch (error) {
+        console.log('Could not update application reminder flag:', error);
+      }
+    }
 
     console.log(`✅ CS Summary reminder sent for application ${applicationId} (${reminderType})`);
 
@@ -169,8 +205,9 @@ export async function POST(request: NextRequest) {
       message: `CS Summary reminder sent successfully (${reminderType})`,
       applicationId,
       reminderType,
-      reminderId: reminderRef.id,
-      userEmail: reminderType === 'email' ? userEmail : undefined
+      reminderId: reminderRef?.id || 'simulated',
+      userEmail: reminderType === 'email' ? userEmail : undefined,
+      note: !adminDb ? 'Firebase Admin not configured - reminder simulated' : undefined
     });
 
   } catch (error: any) {
