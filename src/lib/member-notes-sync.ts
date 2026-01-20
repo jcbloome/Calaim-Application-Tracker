@@ -37,6 +37,9 @@ class MemberNotesSync {
   // Get all sync statuses
   getAllSyncStatus(): { [clientId2: string]: MemberSyncStatus } {
     try {
+      if (typeof window === 'undefined') {
+        return {}; // Return empty object during SSR
+      }
       const stored = localStorage.getItem(this.syncStatusKey);
       return stored ? JSON.parse(stored) : {};
     } catch (error) {
@@ -48,6 +51,9 @@ class MemberNotesSync {
   // Update sync status for a member
   updateMemberSyncStatus(status: MemberSyncStatus): void {
     try {
+      if (typeof window === 'undefined') {
+        return; // Skip during SSR
+      }
       const allStatus = this.getAllSyncStatus();
       allStatus[status.clientId2] = {
         ...status,
@@ -116,6 +122,9 @@ class MemberNotesSync {
   // Get pending syncs
   getPendingSyncs(): NoteSync[] {
     try {
+      if (typeof window === 'undefined') {
+        return []; // Return empty array during SSR
+      }
       const stored = localStorage.getItem(this.pendingSyncKey);
       return stored ? JSON.parse(stored) : [];
     } catch (error) {
@@ -127,6 +136,9 @@ class MemberNotesSync {
   // Add note to pending sync queue
   addToPendingSync(noteSync: Omit<NoteSync, 'timestamp' | 'synced' | 'syncAttempts'>): void {
     try {
+      if (typeof window === 'undefined') {
+        return; // Skip during SSR
+      }
       const pending = this.getPendingSyncs();
       const newSync: NoteSync = {
         ...noteSync,
@@ -182,7 +194,9 @@ class MemberNotesSync {
     }
 
     // Update pending syncs
-    localStorage.setItem(this.pendingSyncKey, JSON.stringify(pending));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(this.pendingSyncKey, JSON.stringify(pending));
+    }
 
     console.log(`📊 Sync results: ${processed} processed, ${failed} failed`);
     return { processed, failed };
@@ -269,9 +283,11 @@ class MemberNotesSync {
 
   // Clear sync data (for testing/reset)
   clearSyncData(): void {
-    localStorage.removeItem(this.syncStatusKey);
-    localStorage.removeItem(this.pendingSyncKey);
-    console.log('🗑️ Cleared all sync data');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(this.syncStatusKey);
+      localStorage.removeItem(this.pendingSyncKey);
+      console.log('🗑️ Cleared all sync data');
+    }
   }
 
   // Get sync statistics

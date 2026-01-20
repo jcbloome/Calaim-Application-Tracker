@@ -148,12 +148,6 @@ export default function SuperAdminRedirectPage() {
                                 Google Drive Test
                             </Button>
                         </Link>
-                        <Link href="/admin/form-separator">
-                            <Button variant="outline" className="w-full justify-start">
-                                <Wrench className="mr-2 h-4 w-4" />
-                                Form Separator
-                            </Button>
-                        </Link>
                     </div>
                 </CardContent>
             </Card>

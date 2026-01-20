@@ -33,7 +33,6 @@ import {
   MessageSquareText,
   FileText,
   TestTube2,
-  Scissors,
   Map,
   Calendar,
   DollarSign,
@@ -91,7 +90,6 @@ const adminNavLinks = [
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
-      { href: '/admin/form-separator', label: 'Form Separator Tool', icon: Scissors }
     ]
   },
   { 

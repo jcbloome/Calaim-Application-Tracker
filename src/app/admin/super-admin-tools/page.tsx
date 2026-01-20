@@ -80,14 +80,6 @@ const tools: ToolCard[] = [
         category: 'migration',
         status: 'beta'
     },
-    {
-        title: 'Form Separator',
-        description: 'Separate and process PDF forms',
-        icon: <FileText className="h-6 w-6" />,
-        href: '/admin/form-separator',
-        category: 'migration',
-        status: 'active'
-    },
 
     // System Tools
     {
@@ -236,12 +228,6 @@ export default function SuperAdminToolsPage() {
                             <Button variant="outline" className="w-full h-16 border-blue-600 text-blue-600 hover:bg-blue-50">
                                 <HardDrive className="mr-2 h-5 w-5" />
                                 Google Drive Scan
-                            </Button>
-                        </Link>
-                        <Link href="/admin/form-separator">
-                            <Button variant="outline" className="w-full h-16 border-purple-600 text-purple-600 hover:bg-purple-50">
-                                <FileText className="mr-2 h-5 w-5" />
-                                Form Separator
                             </Button>
                         </Link>
                     </div>
