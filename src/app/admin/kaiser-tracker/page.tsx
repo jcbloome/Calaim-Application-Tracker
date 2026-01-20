@@ -976,14 +976,9 @@ export default function KaiserTrackerPage() {
 
       {/* Interactive Filtering Message */}
       {members.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-blue-600" />
-            <p className="text-sm text-blue-800 font-medium">
-              💡 Click on any status, county, or number in the cards below to filter and view members
-            </p>
-        </div>
-      </div>
+        <p className="text-sm text-gray-600 mb-4 text-center">
+          Click on any status or staff member to view assigned members
+        </p>
       )}
 
       {/* Summary Cards - Compact */}
