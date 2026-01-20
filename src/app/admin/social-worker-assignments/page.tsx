@@ -168,10 +168,10 @@ export default function SocialWorkerAssignmentsPage() {
       {
         id: '1',
         socialWorkerId: '1',
-        socialWorkerName: 'Jason Bloome',
+        socialWorkerName: 'Staff Member A',
         memberId: '1',
-        memberName: 'John Smith',
-        rcfeName: 'Sunshine Care Home',
+        memberName: 'Sample Member A',
+        rcfeName: 'Sample Care Home A',
         county: 'Los Angeles',
         assignedDate: '2024-01-01',
         lastVisit: '2024-01-10',

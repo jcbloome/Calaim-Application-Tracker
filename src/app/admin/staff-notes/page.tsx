@@ -78,7 +78,7 @@ export default function StaffNotesPage() {
         {
           id: '1',
           clientId2: 'KAI-12345',
-          memberName: 'John Doe',
+          memberName: 'Sample Member A',
           noteText: 'Follow-up required for medication management. Coordinate with facility nurse. Member has been experiencing some confusion with medication timing.',
           noteType: 'Medical',
           createdBy: 'mike_wilson',
@@ -95,7 +95,7 @@ export default function StaffNotesPage() {
         {
           id: '2',
           clientId2: 'HN-67890',
-          memberName: 'Jane Smith',
+          memberName: 'Sample Member B',
           noteText: 'Please review member\'s care plan and coordinate with family for upcoming visit.',
           noteType: 'Administrative',
           createdBy: 'sarah_johnson',
@@ -112,7 +112,7 @@ export default function StaffNotesPage() {
         {
           id: '3',
           clientId2: 'KAI-11111',
-          memberName: 'Robert Johnson',
+          memberName: 'Sample Member C',
           noteText: 'URGENT: Member has requested immediate transfer to different facility. Please contact family ASAP.',
           noteType: 'Emergency',
           createdBy: 'admin',

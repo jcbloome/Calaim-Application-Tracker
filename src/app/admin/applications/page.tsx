@@ -159,7 +159,18 @@ export default function AdminApplicationsPage() {
             ?.filter(form => form.status === 'Completed' && form.dateCompleted)
             .map((form, formIndex) => {
                 // Create a more robust unique ID using multiple factors
-                const timestamp = form.dateCompleted?.seconds || Date.now();
+                // Handle both Firestore Timestamp objects and regular Date objects
+                let timestamp: number;
+                if (form.dateCompleted?.seconds) {
+                    // Firestore Timestamp object
+                    timestamp = form.dateCompleted.seconds;
+                } else if (form.dateCompleted?.getTime) {
+                    // Regular Date object
+                    timestamp = Math.floor(form.dateCompleted.getTime() / 1000);
+                } else {
+                    // Fallback to current time
+                    timestamp = Math.floor(Date.now() / 1000);
+                }
                 const uniqueId = `${app.source || 'unknown'}-${app.id}-${appIndex}-${formIndex}-${form.name.replace(/\s+/g, '-')}-${timestamp}`;
                 
                 return {
@@ -313,11 +324,22 @@ export default function AdminApplicationsPage() {
   };
 
   const handleRemoveDuplicates = async () => {
+    // Prompt user for member name
+    const memberName = prompt('Enter the full name of the member to remove duplicates for:');
+    if (!memberName || !memberName.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Member name is required to remove duplicates.',
+      });
+      return;
+    }
+
     try {
       const response = await fetch('/api/admin/remove-duplicate-applications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberName: 'Bob Jones' })
+        body: JSON.stringify({ memberName: memberName.trim() })
       });
 
       const result = await response.json();
@@ -333,11 +355,23 @@ export default function AdminApplicationsPage() {
           
           const keepApp = sortedDuplicates[0];
           
+          // Confirm with user before removing duplicates
+          const confirmRemoval = confirm(
+            `Found ${result.duplicates.length} duplicate applications for ${memberName}.\n\n` +
+            `Keep: ${keepApp.id} (${keepApp.source}, last updated: ${new Date(keepApp.lastUpdated?.seconds * 1000 || 0).toLocaleDateString()})\n\n` +
+            `Remove ${result.duplicates.length - 1} other applications?\n\n` +
+            `This action cannot be undone.`
+          );
+          
+          if (!confirmRemoval) {
+            return;
+          }
+          
           const confirmResponse = await fetch('/api/admin/remove-duplicate-applications', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              memberName: 'Bob Jones',
+              memberName: memberName.trim(),
               keepApplicationId: keepApp.id 
             })
           });
@@ -347,7 +381,7 @@ export default function AdminApplicationsPage() {
           if (confirmResult.success) {
             toast({
               title: 'Duplicates Removed',
-              description: `Removed ${confirmResult.removed.length} duplicate Bob Jones applications. Kept the most recent one.`,
+              description: `Removed ${confirmResult.removed.length} duplicate applications for ${memberName}. Kept the most recent one.`,
               className: 'bg-green-100 text-green-900 border-green-200',
             });
             
@@ -359,7 +393,7 @@ export default function AdminApplicationsPage() {
         } else {
           toast({
             title: 'No Duplicates Found',
-            description: 'No duplicate Bob Jones applications found.',
+            description: `No duplicate applications found for ${memberName}.`,
           });
         }
       } else {

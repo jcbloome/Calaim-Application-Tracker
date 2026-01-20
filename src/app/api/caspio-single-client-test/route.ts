@@ -15,14 +15,14 @@ export async function POST(request: NextRequest) {
     // Generate sequential test subject names
     const testNumber = Math.floor(Math.random() * 100) + 1;
     const testClient: TestClient = {
-      firstName: 'Test',
-      lastName: `Subject${testNumber}`,
-      seniorFirst: 'Senior',
-      seniorLast: `Guardian${testNumber}`,
+      firstName: `TestClient`,
+      lastName: `${testNumber}_${Date.now()}`,
+      seniorFirst: `TestSenior`,
+      seniorLast: `${testNumber}_${Date.now()}`,
       mco: Math.random() > 0.5 ? 'Kaiser Permanente' : 'Health Net'
     };
     
-    console.log('👤 Using hardcoded test client data:', testClient);
+    console.log('👤 Using generated test client data:', testClient);
 
     // Caspio credentials (hardcoded for testing)
     const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';

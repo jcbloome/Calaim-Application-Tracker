@@ -91,8 +91,8 @@ export default function TestNotificationsPage() {
   const handleTestHealthNetNotification = async () => {
     try {
       const testData = {
-        memberName: 'John Doe',
-        memberClientId: 'HN-12345',
+        memberName: 'Test Member',
+        memberClientId: 'TEST-12345',
         applicationId: `TEST-${Date.now()}`,
         submittedBy: 'Test User',
         submittedDate: new Date().toLocaleDateString(),

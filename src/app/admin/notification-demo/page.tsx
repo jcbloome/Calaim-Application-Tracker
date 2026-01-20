@@ -78,7 +78,7 @@ export default function NotificationDemoPage() {
     position: 'top-right' as any,
     duration: 5000,
     author: 'Demo User',
-    memberName: 'John Doe'
+    memberName: 'Demo Member'
   });
 
   if (isUserLoading) {

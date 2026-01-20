@@ -117,7 +117,7 @@ export default function AuthorizationTracker() {
     const mockMembers: AuthorizationMember[] = [
       {
         id: 'mock-1',
-        memberName: 'Sarah Johnson',
+        memberName: 'Sample Member',
         mrn: 'MRN123456',
         healthPlan: 'Kaiser',
         primaryContact: 'Maria Garcia',

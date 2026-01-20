@@ -149,24 +149,7 @@ const formatDate = (dateString: string): string => {
   }
 };
 
-// Helper function to check if a task is overdue
-  const isOverdue = (dateString: string): boolean => {
-    if (!dateString) return false;
-    const dueDate = new Date(dateString);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return dueDate < today;
-  };
-
-// Helper function to get days until due
-  const getDaysUntilDue = (dateString: string): number => {
-  if (!dateString) return 0;
-    const dueDate = new Date(dateString);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const diffTime = dueDate.getTime() - today.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  };
+// Helper functions moved inside component to avoid module-level const declarations
 
 // Kaiser workflow configuration
 const kaiserWorkflow = {
@@ -1950,7 +1933,7 @@ function MemberListModal({
         members={staffMemberModal.members}
         onMemberUpdate={() => {
           // Refresh data after updates
-          fetchMembers();
+          fetchCaspioData();
         }}
       />
 

@@ -86,7 +86,7 @@ export default function TestEmailsPage() {
           email: email,
           testData: {
             staffName: selectedStaff,
-            memberName: 'John Test Member',
+            memberName: 'Test Member',
             memberMrn: 'TEST123456',
             memberCounty: 'Los Angeles',
             kaiserStatus: 'T2038 Requested',

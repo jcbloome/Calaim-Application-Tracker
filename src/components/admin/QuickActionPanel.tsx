@@ -247,7 +247,7 @@ export function QuickActionPanel({ applications, onRefresh }: QuickActionPanelPr
             </div>
             <div>
               <Label htmlFor="userName">Full Name</Label>
-              <Input id="userName" placeholder="John Doe" />
+              <Input id="userName" placeholder="Enter full name" />
             </div>
             <div>
               <Label htmlFor="tempPassword">Temporary Password</Label>

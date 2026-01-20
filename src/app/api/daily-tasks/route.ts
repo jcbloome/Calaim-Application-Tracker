@@ -24,9 +24,9 @@ interface DailyTask {
 let tasks: DailyTask[] = [
   {
     id: '1',
-    title: 'Follow up with John Doe Kaiser authorization',
-    description: 'Check status of pending Kaiser authorization for member John Doe',
-    memberName: 'John Doe',
+    title: 'Follow up with Sample Member Kaiser authorization',
+    description: 'Check status of pending Kaiser authorization for member',
+    memberName: 'Sample Member A',
     memberClientId: 'KAI-12345',
     healthPlan: 'Kaiser',
     assignedTo: 'user1',
@@ -43,7 +43,7 @@ let tasks: DailyTask[] = [
     id: '2',
     title: 'Schedule Health Net member visit',
     description: 'Coordinate home visit for Health Net member assessment',
-    memberName: 'Jane Smith',
+    memberName: 'Sample Member B',
     memberClientId: 'HN-67890',
     healthPlan: 'Health Net',
     assignedTo: 'user2',

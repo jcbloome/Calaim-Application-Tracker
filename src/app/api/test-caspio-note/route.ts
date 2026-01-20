@@ -62,8 +62,8 @@ export async function GET() {
       priority: 'low | medium | high (optional)'
     },
     example: {
-      staffMember: 'nick',
-      memberName: 'John Doe',
+      staffMember: 'staff_member_name',
+      memberName: 'Member Name',
       noteContent: 'Follow up needed for discharge planning',
       priority: 'high'
     }

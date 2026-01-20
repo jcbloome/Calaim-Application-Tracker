@@ -106,28 +106,13 @@ export async function GET(request: NextRequest) {
     }
 
     // In production, this would fetch notifications from Firestore for the specific user
-    // For now, return sample notifications
-    const sampleNotifications = [
-      {
-        id: '1',
-        type: 'note_assignment',
-        title: 'New Note Assigned',
-        message: 'You have been assigned a high priority note for John Doe',
-        noteId: 'note_123',
-        clientId2: 'KAI-12345',
-        memberName: 'John Doe',
-        priority: 'High',
-        createdAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(), // 30 minutes ago
-        isRead: false,
-        createdBy: 'sarah_johnson',
-        createdByName: 'Sarah Johnson, MSW'
-      }
-    ];
+    // Return empty notifications array - no hardcoded sample data
+    const notifications: any[] = [];
 
     return NextResponse.json({
       success: true,
-      notifications: sampleNotifications,
-      unreadCount: sampleNotifications.filter(n => !n.isRead).length
+      notifications: notifications,
+      unreadCount: 0
     });
 
   } catch (error: any) {

@@ -100,8 +100,8 @@ Your Resend integration is properly configured and ready for production use.
       
       const result = await sendDocNotification({
         applicationId: 'test-app-123',
-        memberName: 'John Doe',
-        uploaderName: 'Jane Smith',
+        memberName: 'Test Member A',
+        uploaderName: 'Test Uploader',
         files: [
           { name: 'Medical_Records.pdf' },
           { name: 'Insurance_Card.jpg' },
@@ -155,8 +155,8 @@ Your Resend integration is properly configured and ready for production use.
       
       const result = await sendCsNotification({
         applicationId: 'test-app-456',
-        memberName: 'Mary Johnson',
-        referrerName: 'Dr. Smith'
+        memberName: 'Test Member B',
+        referrerName: 'Test Referrer'
       });
 
       const data = result.data as any;
