@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, FormProvider, FieldPath, FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle, Languages } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
@@ -363,7 +363,7 @@ function CsSummaryFormComponent() {
   return (
     <FormProvider {...methods}>
       <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="flex-grow">
-        <div className="container mx-auto px-4 py-8 sm:px-6 max-w-full overflow-x-hidden">
+        <div className="container mx-auto px-3 py-4 sm:px-6 sm:py-8 max-w-full overflow-x-hidden">
           <div className="max-w-4xl mx-auto w-full">
              {isAdminView && internalApplicationId && (
                 <div className="mb-6">
@@ -387,17 +387,36 @@ function CsSummaryFormComponent() {
             
             <div className="mb-8">
               <div className="mb-4">
-                  <h1 className="text-2xl font-bold">CS Member Summary</h1>
-                  {!isAdminView && <GlossaryDialog className="p-0 h-auto mt-2" />}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                      <div>
+                          <h1 className="text-2xl font-bold">CS Member Summary</h1>
+                          {!isAdminView && <GlossaryDialog className="p-0 h-auto mt-2" />}
+                      </div>
+                      {!isAdminView && (
+                          <Button 
+                              type="button" 
+                              variant="outline" 
+                              size="sm"
+                              className="flex items-center gap-2 self-start sm:self-auto"
+                              onClick={() => {
+                                  // TODO: Implement Spanish translation
+                                  console.log('Spanish translation will be implemented later');
+                              }}
+                          >
+                              <Languages className="h-4 w-4" />
+                              Español
+                          </Button>
+                      )}
+                  </div>
               </div>
-               <div className="flex items-center justify-between mb-4">
-                   <Button type="button" variant="outline" onClick={prevStep} disabled={currentStep === 1}>
+               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                   <Button type="button" variant="outline" onClick={prevStep} disabled={currentStep === 1} size="sm" className="sm:w-auto">
                        <ArrowLeft className="mr-2 h-4 w-4" /> Previous
                    </Button>
-                   <span className="text-sm font-medium text-muted-foreground text-center flex-shrink-0 px-4">
-                       Step {currentStep} of {steps.length}: {steps[currentStep - 1].name}
+                   <span className="text-xs sm:text-sm font-medium text-muted-foreground text-center flex-shrink-0 px-2 sm:px-4 order-first sm:order-none">
+                       Step {currentStep} of {steps.length}: <span className="hidden sm:inline">{steps[currentStep - 1].name}</span>
                    </span>
-                   <span></span>
+                   <span className="hidden sm:block"></span>
               </div>
               <Progress value={progress} className="w-full" />
             </div>

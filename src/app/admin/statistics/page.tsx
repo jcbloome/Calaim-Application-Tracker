@@ -30,10 +30,10 @@ import { errorEmitter, FirestorePermissionError } from '@/firebase';
 
 const StatCard = ({ title, children, borderColor }: { title: string, children: React.ReactNode, borderColor?: string }) => (
     <Card className={cn('relative overflow-hidden', borderColor && `border-t-4 ${borderColor}`)}>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 md:px-6 pt-3 md:pt-6">
+            <CardTitle className="text-xs md:text-sm font-medium">{title}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-3 md:px-6 pb-3 md:pb-6">
             {children}
         </CardContent>
     </Card>
@@ -294,24 +294,24 @@ export default function AdminStatisticsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6 p-4 md:p-6">
         <div>
-            <h1 className="text-3xl font-bold">Statistics Dashboard</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-2xl md:text-3xl font-bold">Statistics Dashboard</h1>
+            <p className="text-sm md:text-base text-muted-foreground">
                 Comprehensive overview of system resources and applications.
             </p>
         </div>
 
         {/* Resource Statistics */}
         <div>
-            <h2 className="text-xl font-semibold mb-4">System Resources</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <h2 className="text-lg md:text-xl font-semibold mb-3 md:mb-4">System Resources</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard title="Total RCFEs" borderColor="border-purple-500">
-                    <div className="flex items-center gap-3">
-                        <Building2 className="h-8 w-8 text-purple-600" />
+                    <div className="flex items-center gap-2 md:gap-3">
+                        <Building2 className="h-6 w-6 md:h-8 md:w-8 text-purple-600" />
                         <div>
-                            <p className="text-2xl font-bold text-purple-700">
-                                {resourceLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : resourceStats.totalRCFEs}
+                            <p className="text-xl md:text-2xl font-bold text-purple-700">
+                                {resourceLoading ? <Loader2 className="h-4 w-4 md:h-6 md:w-6 animate-spin" /> : resourceStats.totalRCFEs}
                             </p>
                             <p className="text-xs text-muted-foreground">Residential Care Facilities</p>
                         </div>
@@ -319,11 +319,11 @@ export default function AdminStatisticsPage() {
                 </StatCard>
 
                 <StatCard title="Social Workers (MSW)" borderColor="border-green-500">
-                    <div className="flex items-center gap-3">
-                        <Users className="h-8 w-8 text-green-600" />
+                    <div className="flex items-center gap-2 md:gap-3">
+                        <Users className="h-6 w-6 md:h-8 md:w-8 text-green-600" />
                         <div>
-                            <p className="text-2xl font-bold text-green-700">
-                                {resourceLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : resourceStats.totalSocialWorkers}
+                            <p className="text-xl md:text-2xl font-bold text-green-700">
+                                {resourceLoading ? <Loader2 className="h-4 w-4 md:h-6 md:w-6 animate-spin" /> : resourceStats.totalSocialWorkers}
                             </p>
                             <p className="text-xs text-muted-foreground">Licensed Social Workers</p>
                         </div>
@@ -331,11 +331,11 @@ export default function AdminStatisticsPage() {
                 </StatCard>
 
                 <StatCard title="Registered Nurses (RN)" borderColor="border-blue-500">
-                    <div className="flex items-center gap-3">
-                        <Stethoscope className="h-8 w-8 text-blue-600" />
+                    <div className="flex items-center gap-2 md:gap-3">
+                        <Stethoscope className="h-6 w-6 md:h-8 md:w-8 text-blue-600" />
                         <div>
-                            <p className="text-2xl font-bold text-blue-700">
-                                {resourceLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : resourceStats.totalRNs}
+                            <p className="text-xl md:text-2xl font-bold text-blue-700">
+                                {resourceLoading ? <Loader2 className="h-4 w-4 md:h-6 md:w-6 animate-spin" /> : resourceStats.totalRNs}
                             </p>
                             <p className="text-xs text-muted-foreground">Licensed Nurses</p>
                         </div>
@@ -343,11 +343,11 @@ export default function AdminStatisticsPage() {
                 </StatCard>
 
                 <StatCard title="Authorized Members" borderColor="border-orange-500">
-                    <div className="flex items-center gap-3">
-                        <UserCheck className="h-8 w-8 text-orange-600" />
+                    <div className="flex items-center gap-2 md:gap-3">
+                        <UserCheck className="h-6 w-6 md:h-8 md:w-8 text-orange-600" />
                         <div>
-                            <p className="text-2xl font-bold text-orange-700">
-                                {resourceLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : resourceStats.totalAuthorizedMembers}
+                            <p className="text-xl md:text-2xl font-bold text-orange-700">
+                                {resourceLoading ? <Loader2 className="h-4 w-4 md:h-6 md:w-6 animate-spin" /> : resourceStats.totalAuthorizedMembers}
                             </p>
                             <p className="text-xs text-muted-foreground">CalAIM Members</p>
                         </div>
@@ -361,7 +361,7 @@ export default function AdminStatisticsPage() {
 
         {/* CalAIM Status Summary */}
         <div>
-            <h2 className="text-xl font-semibold mb-4">CalAIM Status Summary</h2>
+            <h2 className="text-lg md:text-xl font-semibold mb-3 md:mb-4">CalAIM Status Summary</h2>
             <div className="grid grid-cols-1 gap-6">
                 {/* CalAIM Status Card */}
                 <Card className="border-l-4 border-green-500">
@@ -402,14 +402,14 @@ export default function AdminStatisticsPage() {
 
         {/* Application Statistics */}
         <div>
-            <h2 className="text-xl font-semibold mb-4">Application Statistics</h2>
+            <h2 className="text-lg md:text-xl font-semibold mb-3 md:mb-4">Application Statistics</h2>
         {/* 
             Grid changed from "grid-cols-1 md:grid-cols-2 xl:grid-cols-3" to 
             "grid-cols-1 md:grid-cols-2 xl:grid-cols-4"
             to fit both County and City cards side by side on extra-large screens. 
             If even more responsive styling is required, further adjustment to parent components may be needed.
         */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
             <StatCard title="Applications by County" borderColor="border-blue-500">
                 <DataList data={stats.byCounty} />
             </StatCard>
