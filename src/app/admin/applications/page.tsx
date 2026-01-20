@@ -84,20 +84,48 @@ export default function AdminApplicationsPage() {
         source: 'admin'
       })) as WithId<Application & FormValues>[];
       
-      // Remove duplicates by ID, preferring admin source over user source
+      // Remove duplicates by ID and member name, preferring admin source over user source
       const appsMap = new Map<string, WithId<Application & FormValues>>();
+      const memberNameMap = new Map<string, WithId<Application & FormValues>>();
       
       // Add user apps first
       userApps.forEach(app => {
         appsMap.set(app.id, app);
+        
+        // Also track by member name to catch duplicates with different IDs
+        const memberName = `${app.memberFirstName || ''} ${app.memberLastName || ''}`.trim().toLowerCase();
+        if (memberName && !memberNameMap.has(memberName)) {
+          memberNameMap.set(memberName, app);
+        }
       });
       
-      // Add admin apps (will overwrite user apps with same ID)
+      // Add admin apps (will overwrite user apps with same ID or member name)
       adminApps.forEach(app => {
         appsMap.set(app.id, app);
+        
+        const memberName = `${app.memberFirstName || ''} ${app.memberLastName || ''}`.trim().toLowerCase();
+        if (memberName) {
+          // If we already have this member name, prefer the admin version if it's newer
+          const existing = memberNameMap.get(memberName);
+          if (!existing || (app.lastUpdated && existing.lastUpdated && 
+              (app.lastUpdated as Timestamp).toMillis() > (existing.lastUpdated as Timestamp).toMillis())) {
+            memberNameMap.set(memberName, app);
+          }
+        }
       });
       
-      const apps = Array.from(appsMap.values());
+      // Use member name map to get unique applications by member
+      const uniqueApps = Array.from(memberNameMap.values());
+      
+      // Add back any applications that don't have member names
+      appsMap.forEach(app => {
+        const memberName = `${app.memberFirstName || ''} ${app.memberLastName || ''}`.trim().toLowerCase();
+        if (!memberName || memberName === '') {
+          uniqueApps.push(app);
+        }
+      });
+      
+      const apps = uniqueApps;
       
       setAllApplications(apps);
       
@@ -129,19 +157,30 @@ export default function AdminApplicationsPage() {
     const allActivities = allApplications.flatMap((app, appIndex) => 
         app.forms
             ?.filter(form => form.status === 'Completed' && form.dateCompleted)
-            .map((form, formIndex) => ({
-                id: `${app.uniqueKey}-${formIndex}-${form.name.replace(/\s+/g, '-')}`, // Unique ID for React keys
-                appId: app.id,
-                userId: app.userId,
-                appName: `${app.memberFirstName} ${app.memberLastName}`,
-                referrerName: app.referrerName,
-                formName: form.name,
-                date: form.dateCompleted!.toDate(),
-                action: form.type === 'Upload' ? 'Uploaded' : 'Completed',
-            })) || []
+            .map((form, formIndex) => {
+                // Create a more robust unique ID using multiple factors
+                const timestamp = form.dateCompleted?.seconds || Date.now();
+                const uniqueId = `${app.source || 'unknown'}-${app.id}-${appIndex}-${formIndex}-${form.name.replace(/\s+/g, '-')}-${timestamp}`;
+                
+                return {
+                    id: uniqueId,
+                    appId: app.id,
+                    userId: app.userId,
+                    appName: `${app.memberFirstName} ${app.memberLastName}`,
+                    referrerName: app.referrerName,
+                    formName: form.name,
+                    date: form.dateCompleted!.toDate(),
+                    action: form.type === 'Upload' ? 'Uploaded' : 'Completed',
+                };
+            }) || []
     );
 
-    return allActivities
+    // Remove any potential duplicates by ID (just in case)
+    const uniqueActivities = allActivities.filter((activity, index, self) => 
+        index === self.findIndex(a => a.id === activity.id)
+    );
+
+    return uniqueActivities
       .sort((a, b) => b.date.getTime() - a.date.getTime())
       .slice(0, 10); // Get the 10 most recent activities
   }, [allApplications]);
