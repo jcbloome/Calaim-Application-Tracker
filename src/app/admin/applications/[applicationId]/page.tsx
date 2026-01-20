@@ -367,7 +367,7 @@ function AdminActions({ application }: { application: Application }) {
         return doc(firestore, `users/${application.userId}/applications`, application.id);
     }, [firestore, application.id, application.userId]);
 
-    const handleNotificationUpdate = async (type: 'emailReminders' | 'reviewNotification', enabled: boolean) => {
+    const handleNotificationUpdate = async (type: 'emailReminders' | 'reviewNotification' | 'statusReminders', enabled: boolean) => {
         setIsUpdatingNotifications(true);
         try {
             const response = await fetch('/api/admin/update-notification-settings', {
@@ -378,6 +378,7 @@ function AdminActions({ application }: { application: Application }) {
                 body: JSON.stringify({
                     applicationId: application.id,
                     ...(type === 'emailReminders' && { emailRemindersEnabled: enabled }),
+                    ...(type === 'statusReminders' && { statusRemindersEnabled: enabled }),
                     ...(type === 'reviewNotification' && { reviewNotificationSent: enabled }),
                 }),
             });
@@ -388,16 +389,23 @@ function AdminActions({ application }: { application: Application }) {
 
             if (type === 'emailReminders') {
                 setEmailRemindersEnabled(enabled);
+            } else if (type === 'statusReminders') {
+                // Update local state for status reminders if needed
+                // setStatusRemindersEnabled(enabled);
             } else {
                 setReviewNotificationSent(enabled);
             }
 
             toast({
-                title: type === 'emailReminders' ? 
+                title: type === 'emailReminders' ?
                     (enabled ? 'Email Reminders Enabled' : 'Email Reminders Disabled') :
+                    type === 'statusReminders' ?
+                    (enabled ? 'Status Reminders Enabled' : 'Status Reminders Disabled') :
                     (enabled ? 'Review Notification Sent' : 'Review Notification Cleared'),
                 description: type === 'emailReminders' ?
                     (enabled ? 'User will receive email reminders for missing documents' : 'User will not receive email reminders for missing documents') :
+                    type === 'statusReminders' ?
+                    (enabled ? 'User will receive application status updates' : 'User will not receive status updates') :
                     (enabled ? 'User has been notified that we are reviewing their CS Summary and application' : 'Review notification status cleared'),
                 className: enabled ? 'bg-green-100 text-green-900 border-green-200' : 'bg-orange-100 text-orange-900 border-orange-200'
             });
@@ -572,62 +580,79 @@ function AdminActions({ application }: { application: Application }) {
                         )}
                     </Button>
                     
-                    {/* Email Reminders Toggle */}
+                    {/* Update Status Reminders Toggle */}
                     <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
                         <div className="flex items-center space-x-2">
-                            <Mail className="h-4 w-4 text-muted-foreground" />
+                            <Bell className="h-4 w-4 text-muted-foreground" />
                             <div>
-                                <Label htmlFor="email-reminders" className="text-sm font-medium">
-                                    Email Reminders
+                                <Label htmlFor="status-reminders" className="text-sm font-medium">
+                                    Update Status Reminders
                                 </Label>
                                 <p className="text-xs text-muted-foreground">
-                                    Send document reminders to user
+                                    Send application status updates to user
                                 </p>
                             </div>
                         </div>
                         <div className="flex items-center space-x-2">
                             {isUpdatingNotifications && <Loader2 className="h-4 w-4 animate-spin" />}
-                            {emailRemindersEnabled ? (
-                                <Bell className="h-4 w-4 text-green-600" />
-                            ) : (
-                                <BellOff className="h-4 w-4 text-muted-foreground" />
-                            )}
                             <Switch
-                                id="email-reminders"
-                                checked={emailRemindersEnabled}
-                                onCheckedChange={(enabled) => handleNotificationUpdate('emailReminders', enabled)}
+                                id="status-reminders"
+                                checked={(application as any)?.statusRemindersEnabled ?? true}
+                                onCheckedChange={(enabled) => handleNotificationUpdate('statusReminders', enabled)}
                                 disabled={isUpdatingNotifications}
                             />
                         </div>
                     </div>
-                    
-                    {/* Review Notification Toggle */}
-                    <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
-                        <div className="flex items-center space-x-2">
-                            <Eye className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                                <Label htmlFor="review-notification" className="text-sm font-medium">
-                                    Review Notification
-                                </Label>
-                                <p className="text-xs text-muted-foreground">
-                                    Notify user we're reviewing CS Summary
-                                </p>
+
+                    {/* Email Reminders for Missing Documents Toggle */}
+                    <div className="flex flex-col p-3 border rounded-lg bg-muted/30 space-y-2">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                                <Mail className="h-4 w-4 text-muted-foreground" />
+                                <div>
+                                    <Label htmlFor="email-reminders" className="text-sm font-medium">
+                                        Email Reminders for Missing Documents
+                                    </Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        Send document reminders to user
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                {isUpdatingNotifications && <Loader2 className="h-4 w-4 animate-spin" />}
+                                <Switch
+                                    id="email-reminders"
+                                    checked={emailRemindersEnabled}
+                                    onCheckedChange={(enabled) => handleNotificationUpdate('emailReminders', enabled)}
+                                    disabled={isUpdatingNotifications}
+                                />
                             </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                            {isUpdatingNotifications && <Loader2 className="h-4 w-4 animate-spin" />}
-                            {reviewNotificationSent ? (
-                                <Eye className="h-4 w-4 text-blue-600" />
+                        
+                        {/* Show missing documents when reminders are enabled */}
+                        {emailRemindersEnabled && (() => {
+                            const missingDocs = application.forms?.filter(form => 
+                                form.status === 'Pending' && form.type !== 'online-form'
+                            ) || [];
+                            
+                            return missingDocs.length > 0 ? (
+                                <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded">
+                                    <p className="text-xs font-medium text-orange-800 mb-1">Missing Documents:</p>
+                                    <ul className="text-xs text-orange-700 space-y-1">
+                                        {missingDocs.map(doc => (
+                                            <li key={doc.name} className="flex items-center gap-1">
+                                                <div className="w-1 h-1 bg-orange-400 rounded-full"></div>
+                                                {doc.name}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
                             ) : (
-                                <EyeOff className="h-4 w-4 text-muted-foreground" />
-                            )}
-                            <Switch
-                                id="review-notification"
-                                checked={reviewNotificationSent}
-                                onCheckedChange={(enabled) => handleNotificationUpdate('reviewNotification', enabled)}
-                                disabled={isUpdatingNotifications}
-                            />
-                        </div>
+                                <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
+                                    <p className="text-xs text-green-700">✅ All documents completed</p>
+                                </div>
+                            );
+                        })()}
                     </div>
                     
                     {(application as any)?.caspioSent && (
@@ -1367,22 +1392,12 @@ function ApplicationDetailPageContent() {
                 </div>
                 
                 <div className="flex items-center gap-2">
-                    {(() => {
-                        // Check if CS Summary form is complete and reviewed
-                        const csSummaryForm = application.forms?.find(form => form.name === 'CS Member Summary');
-                        const isCsSummaryComplete = csSummaryForm?.status === 'Completed';
-                        const isReviewed = (application as any)?.reviewNotificationSent;
-                        const isCsSummaryCompleteAndReviewed = isCsSummaryComplete && isReviewed;
-                        
-                        return (
-                            <div className={`flex items-center gap-1 ${isCsSummaryCompleteAndReviewed ? 'text-green-600' : 'text-muted-foreground'}`}>
-                                <CheckCircle2 className="h-4 w-4" />
-                                <span className="text-xs font-medium">
-                                    {isCsSummaryCompleteAndReviewed ? 'CS Summary Complete & Reviewed' : 'CS Summary Pending'}
-                                </span>
-                            </div>
-                        );
-                    })()}
+                    <div className={`flex items-center gap-1 ${(application as any)?.statusRemindersEnabled !== false ? 'text-green-600' : 'text-muted-foreground'}`}>
+                        <Bell className="h-4 w-4" />
+                        <span className="text-xs font-medium">
+                            {(application as any)?.statusRemindersEnabled !== false ? 'Status Updates Active' : 'Status Updates Off'}
+                        </span>
+                    </div>
                 </div>
             </div>
             

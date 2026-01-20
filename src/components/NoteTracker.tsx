@@ -38,7 +38,7 @@ interface Note {
   memberId: string;
   memberName: string;
   content: string;
-  category: 'General' | 'Medical' | 'Insurance' | 'Discharge Planning' | 'Family Communication' | 'Internal';
+  // category field removed
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   isPrivate: boolean;
   isPinned: boolean;
@@ -70,14 +70,7 @@ interface NoteTrackerProps {
   memberName: string;
 }
 
-const NOTE_CATEGORIES = [
-  'General',
-  'Medical',
-  'Insurance', 
-  'Discharge Planning',
-  'Family Communication',
-  'Internal'
-];
+// Categories removed - simplified notes system
 
 const PRIORITY_COLORS = {
   'Low': 'bg-gray-100 text-gray-800 border-gray-200',
@@ -86,14 +79,7 @@ const PRIORITY_COLORS = {
   'Urgent': 'bg-red-100 text-red-800 border-red-200'
 };
 
-const CATEGORY_COLORS = {
-  'General': 'bg-slate-100 text-slate-800',
-  'Medical': 'bg-red-100 text-red-800',
-  'Insurance': 'bg-blue-100 text-blue-800',
-  'Discharge Planning': 'bg-green-100 text-green-800',
-  'Family Communication': 'bg-purple-100 text-purple-800',
-  'Internal': 'bg-yellow-100 text-yellow-800'
-};
+// Category colors removed - no longer needed
 
 export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) {
   const [notes, setNotes] = useState<Note[]>([]);
@@ -104,7 +90,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
   const [staffMembers, setStaffMembers] = useState<Array<{ id: string; name: string; role: string; email: string }>>([]);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterCategory, setFilterCategory] = useState<string>('all');
+  // Category filtering removed
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [showArchived, setShowArchived] = useState(false);
   const { user } = useAuth();
@@ -115,7 +101,6 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
   // New note form state
   const [newNote, setNewNote] = useState({
     content: '',
-    category: 'General' as Note['category'],
     priority: 'Medium' as Note['priority'],
     isPrivate: false,
     recipientIds: [] as string[],
@@ -222,7 +207,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
         clientId2: memberId,
         memberName,
         noteText: newNote.content,
-        category: newNote.category,
+        // category removed
         priority: newNote.priority,
         isPrivate: newNote.isPrivate,
         recipientIds: newNote.recipientIds,
@@ -247,7 +232,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
           memberId,
           memberName,
           content: newNote.content,
-          category: newNote.category,
+          // category removed
           priority: newNote.priority,
           isPrivate: newNote.isPrivate,
           isPinned: false,
@@ -267,7 +252,6 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
         setShowNewNoteForm(false);
         setNewNote({
           content: '',
-          category: 'General',
           priority: 'Medium',
           isPrivate: false,
           recipientIds: [],
@@ -284,7 +268,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
         showNotification({
           type: 'success',
           title: 'Note Created Successfully! 🎯',
-          message: `Your ${newNote.category.toLowerCase()} note for ${memberName} has been posted${newNote.sendNotification ? ' and notifications sent to staff' : ''}.`,
+          message: `Your note for ${memberName} has been posted${newNote.sendNotification ? ' and notifications sent to staff' : ''}.`,
           author: user.displayName || user.email || 'You',
           memberName,
           priority: newNote.priority,
@@ -395,10 +379,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
       );
     }
 
-    // Category filter
-    if (filterCategory !== 'all') {
-      filtered = filtered.filter(note => note.category === filterCategory);
-    }
+    // Category filtering removed
 
     // Priority filter
     if (filterPriority !== 'all') {
@@ -418,7 +399,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
     });
 
     setFilteredNotes(filtered);
-  }, [notes, searchTerm, filterCategory, filterPriority, showArchived]);
+  }, [notes, searchTerm, filterPriority, showArchived]);
 
   // Scroll to bottom when new notes are added
   useEffect(() => {
@@ -479,17 +460,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
               </div>
             </div>
             
-            <Select value={filterCategory} onValueChange={setFilterCategory}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {NOTE_CATEGORIES.map((category) => (
-                  <SelectItem key={category} value={category}>{category}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Category filter removed */}
             
             <Select value={filterPriority} onValueChange={setFilterPriority}>
               <SelectTrigger className="w-[120px]">
@@ -543,19 +514,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Category */}
-              <div className="space-y-2">
-                <Label>Category</Label>
-                <Select value={newNote.category} onValueChange={(value: Note['category']) => setNewNote(prev => ({ ...prev, category: value }))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {NOTE_CATEGORIES.map((category) => (
-                      <SelectItem key={category} value={category}>{category}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Category selection removed */}
 
               {/* Priority */}
               <div className="space-y-2">
@@ -741,9 +700,7 @@ function NoteCard({
           <div className="flex items-center gap-2">
             {note.isPinned && <Pin className="h-4 w-4 text-yellow-600" />}
             {isUnread && <Badge className="bg-blue-100 text-blue-800 text-xs">New</Badge>}
-            <Badge className={CATEGORY_COLORS[note.category]}>
-              {note.category}
-            </Badge>
+            {/* Category badge removed */}
             <Badge className={PRIORITY_COLORS[note.priority]}>
               {note.priority}
             </Badge>
