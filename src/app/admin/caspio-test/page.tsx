@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useCaspioSync } from '@/modules/caspio-integration';
 
 interface TestResult {
   member: string;
@@ -301,6 +302,18 @@ export default function CaspioTestPage() {
   const [singleTestResults, setSingleTestResults] = useState<any>(null);
   const [fieldMappings, setFieldMappings] = useState<{[key: string]: string}>({});
   const { toast } = useToast();
+  
+  // Use new Caspio integration module
+  const { 
+    members, 
+    syncStatus, 
+    isLoading, 
+    isSyncing, 
+    error, 
+    syncMembers, 
+    performFullSync, 
+    clearError 
+  } = useCaspioSync();
 
   const runCaspioMemberSyncTest = async () => {
     setIsRunning(true);

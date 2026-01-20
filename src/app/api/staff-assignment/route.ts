@@ -1,45 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { CaspioService } from '@/modules/caspio-integration';
 
-// Fetch real MSW staff from Caspio
+// Fetch real MSW staff from Caspio using the new module
 async function fetchCaspioStaff() {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/caspio-staff`);
-    const data = await response.json();
+    const caspioService = CaspioService.getInstance();
+    const staff = await caspioService.getAvailableMSWStaff();
     
-    if (data.success && data.staff.length > 0) {
-      return data.staff.filter((staff: any) => staff.isActive !== false); // Only active staff
+    if (staff.length > 0) {
+      // Transform to expected format
+      return staff.map(staffMember => ({
+        id: staffMember.id,
+        name: staffMember.name,
+        email: staffMember.email,
+        sw_id: staffMember.id,
+        assignedMemberCount: staffMember.workload || 0
+      }));
     }
     
-    // Fallback to default staff if no Caspio staff found
+    // Fallback handled by CaspioService
     console.log('⚠️ No Caspio staff found, using fallback staff');
-    return [
-      {
-        id: 'nick-staff',
-        name: 'Nick',
-        email: 'nick@carehomefinders.com',
-        sw_id: 'nick-staff',
-        assignedMemberCount: 0
-      },
-      {
-        id: 'john-staff', 
-        name: 'John',
-        email: 'john@carehomefinders.com',
-        sw_id: 'john-staff',
-        assignedMemberCount: 0
-      },
-      {
-        id: 'jessie-staff',
-        name: 'Jessie', 
-        email: 'jessie@carehomefinders.com',
-        sw_id: 'jessie-staff',
-        assignedMemberCount: 0
-      }
-    ];
-  } catch (error) {
-    console.error('❌ Error fetching Caspio staff:', error);
-    // Return fallback staff on error
     return [
       {
         id: 'nick-staff',

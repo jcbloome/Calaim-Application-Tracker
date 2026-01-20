@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { CaspioService } from '@/modules/caspio-integration';
 
 // Try to import Firebase Admin, but handle gracefully if not available
 let adminDb: any = null;
@@ -75,7 +76,30 @@ const CASPIO_BASE_URL = 'https://c7ebl500.caspio.com';
 const CASPIO_CLIENT_ID = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
 const CASPIO_CLIENT_SECRET = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
 
-// Global note search function
+// Handle full-text search using new Caspio module
+async function handleGlobalNoteSearchWithModule(searchQuery: string) {
+  try {
+    const caspioService = CaspioService.getInstance();
+    const notes = await caspioService.searchNotes(searchQuery);
+    
+    return NextResponse.json({
+      success: true,
+      notes: notes,
+      count: notes.length,
+      searchQuery,
+      source: 'caspio-module-search',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Global note search failed:', error);
+    return NextResponse.json(
+      { success: false, error: 'Search failed', details: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+// Legacy global note search function (kept for backward compatibility)
 async function handleGlobalNoteSearch(searchQuery: string) {
   try {
     if (searchQuery.length < SEARCH_MIN_LENGTH) {
@@ -618,9 +642,9 @@ export async function GET(request: NextRequest) {
     const forceSync = searchParams.get('forceSync') === 'true';
     const searchQuery = searchParams.get('search');
 
-    // Handle full-text search across all notes
+    // Handle full-text search across all notes using new module
     if (searchQuery && !clientId2) {
-      return await handleGlobalNoteSearch(searchQuery);
+      return await handleGlobalNoteSearchWithModule(searchQuery);
     }
 
     if (!clientId2) {
@@ -631,6 +655,28 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(`📥 Fetching notes for member: ${clientId2} (forceSync: ${forceSync})`);
+
+    // Use new Caspio module for fetching notes
+    const caspioService = CaspioService.getInstance();
+    const syncOptions = {
+      forceRefresh: forceSync,
+      includeILS: true
+    };
+
+    const notes = await caspioService.getMemberNotes(clientId2, syncOptions);
+    
+    // Sync to Firestore for caching
+    if (adminDb) {
+      await caspioService.syncNotesToFirestore(clientId2);
+    }
+
+    return NextResponse.json({
+      success: true,
+      notes: notes,
+      count: notes.length,
+      source: 'caspio-module',
+      timestamp: new Date().toISOString()
+    });
 
     // Get sync status from Firestore (with cache fallback)
     const syncStatus = await getSyncStatusFromFirestore(clientId2);
@@ -697,6 +743,42 @@ export async function POST(request: NextRequest) {
       memberName,
       category
     } = body;
+
+    // Use new Caspio module for creating notes
+    const caspioService = CaspioService.getInstance();
+    
+    const noteData = {
+      memberId: clientId2,
+      memberName: memberName || 'Unknown Member',
+      noteText,
+      staffMember: createdByName || authorName || 'Unknown Staff',
+      priority: priority || 'Medium',
+      category: category || 'General',
+      isILSOnly: noteType === 'ILS',
+      isRead: false,
+      assignedStaff: assignedToName ? [assignedToName] : []
+    };
+
+    const createdNote = await caspioService.createNote(noteData);
+    
+    // Create Firestore notification if needed
+    if (adminDb && sendNotification && recipientIds?.length > 0) {
+      await createFirestoreNotification({
+        recipientIds,
+        title: `New ${priority} Priority Note`,
+        message: noteText.substring(0, 100) + (noteText.length > 100 ? '...' : ''),
+        priority: priority.toLowerCase(),
+        type: 'member_note',
+        actionUrl: `/admin/member-notes?clientId2=${clientId2}`,
+        createdBy: authorId || createdBy
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      note: createdNote,
+      message: 'Note created successfully using Caspio module'
+    });
 
     if (!clientId2 || !noteText || !authorId) {
       return NextResponse.json(
