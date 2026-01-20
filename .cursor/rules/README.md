@@ -14,6 +14,7 @@ This folder contains the architectural guidelines and rules for the CalAIM Appli
 
 ### Maintenance & Support
 - **`troubleshooting-guide.mdc`** - Common issues and their solutions, based on real problems we've solved
+- **`rule-audit-system.mdc`** - Automated system to keep rules current (every 8 features)
 
 ## 🎯 Purpose
 
@@ -37,6 +38,12 @@ These rules are living documents that should be updated as we:
 - Discover better patterns
 - Add new features
 - Learn from production issues
+
+### Automated Rule Audits
+**Every 8 features**, trigger a rule audit by saying:
+> "RULE AUDIT: Scan codebase for new patterns"
+
+This ensures our architectural rules stay current with the evolving codebase.
 
 ## 📊 System Overview
 

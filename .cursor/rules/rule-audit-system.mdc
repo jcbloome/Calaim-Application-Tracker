@@ -1,0 +1,109 @@
+---
+description: Automated Rule Audit System - Every 8 Features
+globs: **/*.{js,ts,jsx,tsx}
+---
+
+# Rule Audit System
+
+Automated process to keep architectural rules current with codebase evolution.
+
+## 1. Audit Trigger
+**FREQUENCY:** Every 8 new features/components
+**TRIGGER PHRASE:** "RULE AUDIT: Scan codebase for new patterns"
+
+## 2. Audit Process
+When triggered, perform this systematic review:
+
+### Step 1: Pattern Detection
+Scan for new patterns not documented in existing rules:
+- New component architectures
+- Novel data fetching patterns
+- Emerging state management approaches
+- New error handling strategies
+- Fresh authentication patterns
+
+### Step 2: Rule Gap Analysis
+Compare current codebase against existing rules:
+- **caspio-firebase-sync.mdc** - Data sync patterns
+- **ssr-client-safety.mdc** - Browser API usage
+- **firebase-admin-patterns.mdc** - Admin SDK patterns
+- **component-architecture.mdc** - React patterns
+- **troubleshooting-guide.mdc** - Known solutions
+
+### Step 3: Documentation Update
+For each new pattern found:
+1. Document the pattern with code examples
+2. Explain why this pattern was chosen
+3. Add to appropriate rule file
+4. Update troubleshooting guide if needed
+
+## 3. Audit Checklist
+
+### New Patterns to Look For:
+- [ ] Server Actions (`'use server'`)
+- [ ] New validation schemas (Zod, etc.)
+- [ ] Enhanced UI patterns (toasts, modals, etc.)
+- [ ] Error boundary implementations
+- [ ] New authentication flows
+- [ ] Novel data transformation patterns
+- [ ] Emerging performance optimizations
+- [ ] New testing patterns
+
+### Files to Examine:
+- [ ] `/src/app/**` - New pages and layouts
+- [ ] `/src/components/**` - New component patterns
+- [ ] `/src/lib/**` - New utility patterns
+- [ ] `/src/hooks/**` - New hook patterns
+- [ ] `/functions/src/**` - New backend patterns
+
+### Rule Files to Update:
+- [ ] Update pattern documentation
+- [ ] Add new troubleshooting entries
+- [ ] Enhance safety constraints
+- [ ] Document new architectural decisions
+
+## 4. Audit Output Format
+
+```markdown
+## Rule Audit Results - [Date]
+
+### New Patterns Discovered:
+1. **Pattern Name** - Brief description
+   - Location: `file/path`
+   - Why adopted: Reasoning
+   - Rule file updated: `rule-file.mdc`
+
+### Existing Patterns Validated:
+- [x] Caspio-Firebase sync - Still consistent
+- [x] SSR safety - All new components follow rules
+- [x] Component architecture - Standards maintained
+
+### Recommendations:
+- Update X rule file with Y pattern
+- Consider standardizing Z approach
+- Document W solution in troubleshooting guide
+```
+
+## 5. Feature Counter
+Track features since last audit:
+
+**Current Count: 0/8**
+**Last Audit: [Date]**
+**Next Audit Due: After 8 features**
+
+### Feature Types That Count:
+- New pages/routes
+- New major components
+- New API endpoints
+- New data patterns
+- New authentication flows
+- New integrations
+- Major refactors
+- New architectural decisions
+
+### Features That Don't Count:
+- Bug fixes
+- Minor UI tweaks
+- Documentation updates
+- Configuration changes
+- Dependency updates
