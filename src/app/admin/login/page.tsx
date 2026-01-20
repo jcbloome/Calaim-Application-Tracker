@@ -25,7 +25,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, Loader2, LogIn, ShieldAlert, LogOut, Mail } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
-import { useAdmin } from '@/hooks/use-admin';
+// import { useAdmin } from '@/hooks/use-admin';
 import Image from 'next/image';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 

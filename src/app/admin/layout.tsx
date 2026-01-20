@@ -441,24 +441,25 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
+  // DISABLED: Redirect logic causing loops - let users stay logged in
   // Only redirect if we're absolutely sure the user is not an admin
   // And give plenty of time for authentication to settle
-  if (hasCheckedAuth && !loading && !isAdmin && !isLoginPage && user) {
-    // Use window.location for redirect to prevent router issues
-    if (typeof window !== 'undefined') {
-      setTimeout(() => {
-        window.location.href = '/admin/login';
-      }, 2000); // Increased to 2 seconds
-    }
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Verifying admin permissions...</p>
-        </div>
-      </div>
-    );
-  }
+  // if (hasCheckedAuth && !loading && !isAdmin && !isLoginPage && user) {
+  //   // Use window.location for redirect to prevent router issues
+  //   if (typeof window !== 'undefined') {
+  //     setTimeout(() => {
+  //       window.location.href = '/admin/login';
+  //     }, 2000); // Increased to 2 seconds
+  //   }
+  //   return (
+  //     <div className="flex items-center justify-center min-h-screen">
+  //       <div className="text-center">
+  //         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+  //         <p className="text-muted-foreground">Verifying admin permissions...</p>
+  //       </div>
+  //     </div>
+  //   );
+  // }
   
   // If this is the login page, render it without the admin layout
   if (isLoginPage) {
