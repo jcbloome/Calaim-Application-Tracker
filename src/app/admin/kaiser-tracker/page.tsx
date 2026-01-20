@@ -831,10 +831,14 @@ function MemberListModal({
             </Button>
           </div>
           
-          {/* Filters */}
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        </div>
+        
+        {/* Compact Filters - Moved directly under cards */}
+        <div className="px-6 py-2 bg-gray-50 border-b">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-gray-600 font-medium text-xs">Filters:</span>
             <Select value={filters.kaiserStatus} onValueChange={(value) => onFilterChange('kaiserStatus', value)}>
-              <SelectTrigger>
+              <SelectTrigger className="w-auto h-7 text-xs">
                 <SelectValue placeholder="Kaiser Status" />
               </SelectTrigger>
               <SelectContent>
@@ -846,7 +850,7 @@ function MemberListModal({
             </Select>
 
             <Select value={filters.county} onValueChange={(value) => onFilterChange('county', value)}>
-              <SelectTrigger>
+              <SelectTrigger className="w-auto h-7 text-xs">
                 <SelectValue placeholder="County" />
               </SelectTrigger>
               <SelectContent>
@@ -858,7 +862,7 @@ function MemberListModal({
             </Select>
 
             <Select value={filters.calaimStatus} onValueChange={(value) => onFilterChange('calaimStatus', value)}>
-              <SelectTrigger>
+              <SelectTrigger className="w-auto h-7 text-xs">
                 <SelectValue placeholder="CalAIM Status" />
               </SelectTrigger>
               <SelectContent>
@@ -870,7 +874,7 @@ function MemberListModal({
             </Select>
 
             <Select value={filters.staffAssigned} onValueChange={(value) => onFilterChange('staffAssigned', value)}>
-              <SelectTrigger>
+              <SelectTrigger className="w-auto h-7 text-xs">
                 <SelectValue placeholder="Staff Assigned" />
               </SelectTrigger>
               <SelectContent>
@@ -881,8 +885,8 @@ function MemberListModal({
               </SelectContent>
             </Select>
 
-            <Button variant="outline" onClick={onClearFilters} className="w-full">
-              Clear Filters
+            <Button variant="ghost" size="sm" onClick={onClearFilters} className="h-7 px-2 text-xs">
+              Clear
             </Button>
           </div>
         </div>
@@ -897,45 +901,114 @@ function MemberListModal({
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {members.map((member) => (
-                <Card 
-                  key={member.id} 
-                  className="cursor-pointer hover:bg-gray-50 transition-colors"
-                  onClick={() => onMemberClick(member)}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-medium">
-                          {member.memberFirstName} {member.memberLastName}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                          ID: {member.client_ID2} | County: {member.memberCounty}
-                        </p>
-                        <div className="flex gap-2 mt-2">
-                          <Badge variant="outline" className={`text-xs ${getStatusColor(member.Kaiser_Status)}`}>
-                            {member.Kaiser_Status || 'No Status'}
-                          </Badge>
-                          <Badge variant="outline" className="text-xs">
-                            {member.CalAIM_Status || 'No CalAIM Status'}
-                          </Badge>
+            <div className="space-y-3">
+              {members.map((member) => {
+                const isStepOverdue = isOverdue(member.Next_Step_Due_Date);
+                const daysUntilDue = getDaysUntilDue(member.Next_Step_Due_Date);
+                const isUrgent = daysUntilDue <= 3 && daysUntilDue > 0;
+                
+                return (
+                  <Card 
+                    key={member.id} 
+                    className={`cursor-pointer hover:bg-gray-50 transition-colors border-l-4 ${
+                      isStepOverdue ? 'border-l-red-500 bg-red-50' : 
+                      isUrgent ? 'border-l-yellow-500 bg-yellow-50' : 
+                      'border-l-blue-500'
+                    }`}
+                    onClick={() => onMemberClick(member)}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-medium">
+                              {member.memberFirstName} {member.memberLastName}
+                            </h3>
+                            {isStepOverdue && (
+                              <div className="flex items-center gap-1 text-red-600">
+                                <AlertTriangle className="h-4 w-4" />
+                                <span className="text-xs font-medium">OVERDUE</span>
+                              </div>
+                            )}
+                            {isUrgent && !isStepOverdue && (
+                              <div className="flex items-center gap-1 text-yellow-600">
+                                <Clock className="h-4 w-4" />
+                                <span className="text-xs font-medium">URGENT</span>
+                              </div>
+                            )}
+                          </div>
+                          
+                          <p className="text-sm text-muted-foreground mt-1">
+                            ID: {member.client_ID2} | County: {member.memberCounty}
+                          </p>
+                          
+                          <div className="flex gap-2 mt-2">
+                            <Badge variant="outline" className={`text-xs ${getStatusColor(member.Kaiser_Status)}`}>
+                              Kaiser: {member.Kaiser_Status || 'No Status'}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                              CalAIM: {member.CalAIM_Status || 'No Status'}
+                            </Badge>
+                          </div>
+
+                          {/* Staff Assignment and Next Step Info */}
+                          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                            <div className="flex items-center gap-2">
+                              <User className="h-4 w-4 text-blue-500" />
+                              <div>
+                                <span className="text-gray-600">Staff:</span>
+                                <span className="ml-1 font-medium">
+                                  {member.Staff_Assigned || 'Unassigned'}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              <Calendar className="h-4 w-4 text-purple-500" />
+                              <div>
+                                <span className="text-gray-600">Next Step:</span>
+                                <span className="ml-1 font-medium">
+                                  {member.workflow_step || 'Not set'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Next Step Due Date */}
+                          {member.Next_Step_Due_Date && (
+                            <div className="mt-2 flex items-center gap-2 text-sm">
+                              <Clock className={`h-4 w-4 ${isStepOverdue ? 'text-red-500' : isUrgent ? 'text-yellow-500' : 'text-gray-500'}`} />
+                              <div>
+                                <span className="text-gray-600">Due:</span>
+                                <span className={`ml-1 font-medium ${
+                                  isStepOverdue ? 'text-red-600' : 
+                                  isUrgent ? 'text-yellow-600' : 
+                                  'text-gray-900'
+                                }`}>
+                                  {formatDate(member.Next_Step_Due_Date)}
+                                  {daysUntilDue !== 0 && (
+                                    <span className="ml-1 text-xs">
+                                      ({daysUntilDue > 0 ? `${daysUntilDue} days left` : `${Math.abs(daysUntilDue)} days overdue`})
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Workflow Notes */}
+                          {member.workflow_notes && (
+                            <div className="mt-2 text-sm">
+                              <span className="text-gray-600">Notes:</span>
+                              <span className="ml-1 text-gray-800">{member.workflow_notes}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <div className="text-right text-sm text-muted-foreground">
-                        {member.Staff_Assigned && (
-                          <p>Assigned: {member.Staff_Assigned}</p>
-                        )}
-                        {member.Next_Step_Due_Date && (
-                          <p className={isOverdue(member.Next_Step_Due_Date) ? 'text-red-600 font-medium' : ''}>
-                            Due: {formatDate(member.Next_Step_Due_Date)}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
