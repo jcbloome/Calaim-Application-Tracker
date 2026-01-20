@@ -53,16 +53,25 @@ import { Document, Page, pdfjs } from 'react-pdf';
 // Set up PDF.js worker with proper error handling
 if (typeof window !== 'undefined') {
   try {
-    // Use a more stable CDN and version
-    pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    // Use the same version as the installed package to avoid conflicts
+    const pdfVersion = pdfjs.version || '3.11.174';
+    pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfVersion}/build/pdf.worker.min.js`;
+    
+    // Disable some PDF.js features that can cause Object.defineProperty errors
+    pdfjs.GlobalWorkerOptions.isEvalSupported = false;
+    
   } catch (error) {
     console.warn('PDF.js worker setup failed:', error);
     // Multiple fallback options
     try {
-      pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      pdfjs.GlobalWorkerOptions.isEvalSupported = false;
     } catch (fallbackError) {
       console.warn('Fallback PDF.js worker setup failed:', fallbackError);
-      pdfjs.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+      // Force fallback viewer if all else fails
+      if (typeof window !== 'undefined') {
+        (window as any).PDF_JS_FAILED = true;
+      }
     }
   }
 }
@@ -143,12 +152,23 @@ export default function FormSeparatorPage() {
 
   // Initialize PDF.js worker on component mount
   React.useEffect(() => {
-    if (typeof window !== 'undefined' && !pdfjs.GlobalWorkerOptions.workerSrc) {
-      try {
-        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      } catch (error) {
-        console.warn('Failed to set PDF.js worker:', error);
+    if (typeof window !== 'undefined') {
+      // Check if PDF.js failed to initialize
+      if ((window as any).PDF_JS_FAILED) {
         setUseFallbackViewer(true);
+        return;
+      }
+      
+      // Ensure worker is set up
+      if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+        try {
+          const pdfVersion = pdfjs.version || '3.11.174';
+          pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfVersion}/build/pdf.worker.min.js`;
+          pdfjs.GlobalWorkerOptions.isEvalSupported = false;
+        } catch (error) {
+          console.warn('Failed to set PDF.js worker:', error);
+          setUseFallbackViewer(true);
+        }
       }
     }
   }, []);
@@ -213,12 +233,23 @@ export default function FormSeparatorPage() {
       
       try {
         // Use PDF.js to render page as canvas, then convert to image
-        const loadingTask = pdfjs.getDocument(file);
+        const loadingTask = pdfjs.getDocument({
+          data: file,
+          // Use conservative options to avoid Object.defineProperty errors
+          disableFontFace: true,
+          disableRange: true,
+          disableStream: true,
+          isEvalSupported: false
+        });
         const pdf = await loadingTask.promise;
         const page = await pdf.getPage(pageNum);
         
         const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d')!;
+        const context = canvas.getContext('2d');
+        if (!context) {
+          throw new Error('Could not get canvas context');
+        }
+        
         const viewport = page.getViewport({ scale: 1.5 });
         
         canvas.height = viewport.height;
@@ -231,6 +262,8 @@ export default function FormSeparatorPage() {
         
       } catch (error) {
         console.error(`Failed to convert page ${pageNum} to image:`, error);
+        // Set a placeholder for failed pages
+        setPageImages(prev => ({ ...prev, [pageNum]: 'failed' }));
       } finally {
         setLoadingImages(prev => {
           const newSet = new Set(prev);
@@ -265,12 +298,18 @@ export default function FormSeparatorPage() {
               onMouseEnter={() => convertPageToImage(pageNum)}
             >
               <div className="aspect-[3/4] bg-gray-100 rounded flex items-center justify-center relative overflow-hidden">
-                {pageImages[pageNum] ? (
+                {pageImages[pageNum] && pageImages[pageNum] !== 'failed' ? (
                   <img
                     src={pageImages[pageNum]}
                     alt={`Page ${pageNum}`}
                     className="w-full h-full object-contain"
                   />
+                ) : pageImages[pageNum] === 'failed' ? (
+                  <div className="flex flex-col items-center text-red-500">
+                    <AlertCircle className="h-8 w-8 mb-2" />
+                    <span className="text-xs">Page {pageNum}</span>
+                    <span className="text-xs opacity-75">Preview failed</span>
+                  </div>
                 ) : loadingImages.has(pageNum) ? (
                   <div className="flex flex-col items-center">
                     <Loader2 className="h-6 w-6 animate-spin mb-2" />
@@ -559,9 +598,14 @@ export default function FormSeparatorPage() {
                         <Document
                           file={file}
                           onLoadSuccess={(pdf) => {
-                            setNumPages(pdf.numPages);
-                            setPdfLoadError(null);
-                            console.log('PDF loaded successfully:', pdf.numPages, 'pages');
+                            try {
+                              setNumPages(pdf.numPages);
+                              setPdfLoadError(null);
+                              console.log('PDF loaded successfully:', pdf.numPages, 'pages');
+                            } catch (error) {
+                              console.error('Error processing loaded PDF:', error);
+                              setUseFallbackViewer(true);
+                            }
                           }}
                           onLoadError={(error) => {
                             console.error('PDF load error:', error);
@@ -572,6 +616,15 @@ export default function FormSeparatorPage() {
                               description: "Switching to fallback viewer. You can still select pages manually.",
                               variant: "destructive"
                             });
+                          }}
+                          options={{
+                            // Disable problematic features that can cause Object.defineProperty errors
+                            disableFontFace: true,
+                            disableRange: true,
+                            disableStream: true,
+                            isEvalSupported: false,
+                            // Use a more conservative worker configuration
+                            workerSrc: pdfjs.GlobalWorkerOptions.workerSrc
                           }}
                           className="space-y-4"
                           loading={
@@ -606,6 +659,10 @@ export default function FormSeparatorPage() {
                               width={150}
                               renderTextLayer={false}
                               renderAnnotationLayer={false}
+                              onLoadError={(error) => {
+                                console.warn(`Failed to load page ${pageNum}:`, error);
+                                // Don't switch to fallback for individual page errors
+                              }}
                               loading={
                                 <div className="flex items-center justify-center h-32 bg-gray-100">
                                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -614,6 +671,7 @@ export default function FormSeparatorPage() {
                               error={
                                 <div className="flex items-center justify-center h-32 bg-red-50 text-red-600">
                                   <AlertCircle className="h-4 w-4" />
+                                  <span className="ml-1 text-xs">Page {pageNum}</span>
                                 </div>
                               }
                             />
