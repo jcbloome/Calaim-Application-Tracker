@@ -71,17 +71,15 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 const adminNavLinks = [
-  { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/activity-log', label: 'Activity Log', icon: Activity },
   { 
     label: 'Application Management', 
     icon: FolderKanban, 
     isSubmenu: true,
     submenuItems: [
+      { href: '/admin', label: 'Activity Dashboard', icon: LayoutDashboard },
       { href: '/admin/applications', label: 'All Applications', icon: FolderKanban },
       { href: '/admin/applications/create', label: 'Create Application for Member', icon: UserPlus },
-      { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
-      { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/form-separator', label: 'Form Separator Tool', icon: Scissors }
     ]
   },
@@ -110,6 +108,8 @@ const adminNavLinks = [
     icon: BarChart3, 
     isSubmenu: true,
     submenuItems: [
+      { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
+      { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/california-map-enhanced', label: 'Map Intelligence & Visits', icon: Navigation },
       { href: '/admin/california-counties', label: 'County Analysis', icon: Map },
