@@ -1076,25 +1076,28 @@ async function sendNoteNotification(note: MemberNote): Promise<void> {
     
     // Create a notification record in Firestore for real-time notifications
     const notification = {
-      recipientIds: [note.assignedTo],
-      title: 'New Member Note Assigned',
-      message: `You have been assigned a new ${note.priority.toLowerCase()} priority note for ${note.memberName}: "${note.noteText.substring(0, 100)}${note.noteText.length > 100 ? '...' : ''}"`,
-      timestamp: Timestamp.now(),
-      read: false,
-      actionUrl: `/admin/member-notes?clientId2=${note.clientId2}`,
-      priority: note.priority.toLowerCase() as 'low' | 'medium' | 'high' | 'urgent',
+      recipientId: note.assignedTo, // Single recipient for staff-notifications collection
+      title: `Priority Note: ${note.memberName}`,
+      content: note.noteText.substring(0, 200) + (note.noteText.length > 200 ? '...' : ''),
+      memberName: note.memberName,
+      priority: note.priority,
       type: 'member_note',
+      isRead: false,
+      requiresStaffAction: note.priority === 'High' || note.priority === 'Urgent',
+      createdAt: Timestamp.now(),
+      actionUrl: `/admin/member-notes?clientId2=${note.clientId2}`,
       metadata: {
         noteId: note.id,
-        memberName: note.memberName,
         clientId2: note.clientId2,
         assignedBy: note.createdByName,
         noteType: note.noteType
       }
     };
 
-    // Save to Firestore notifications collection
-    await adminDb.collection('notifications').add(notification);
+    // Save to Firestore staff-notifications collection for real-time updates
+    await adminDb.collection('staff-notifications').add(notification);
+    
+    console.log(`🔔 Real-time notification created for ${note.assignedToName} (Priority: ${note.priority})`);
     
     // Send email notification
     try {

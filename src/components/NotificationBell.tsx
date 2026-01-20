@@ -31,6 +31,58 @@ interface NotificationBellProps {
   className?: string;
 }
 
+// Browser notification function
+const showBrowserNotifications = (priorityNotifications: NotificationPreview[]) => {
+  // Request permission if not already granted
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().then(permission => {
+      if (permission === 'granted') {
+        console.log('🔔 Notification permission granted');
+      }
+    });
+    return; // Don't show notifications on first permission request
+  }
+
+  if (Notification.permission !== 'granted') {
+    console.log('🔔 Notification permission denied');
+    return;
+  }
+
+  // Show notifications for each priority alert
+  priorityNotifications.forEach(notification => {
+    const browserNotification = new Notification(`🚨 Priority Alert: ${notification.memberName}`, {
+      body: notification.content,
+      icon: '/favicon.ico',
+      badge: '/favicon.ico',
+      tag: notification.id, // Prevent duplicate notifications
+      requireInteraction: true, // Keep notification visible until user interacts
+      data: {
+        url: notification.actionUrl || '/admin/my-notes',
+        notificationId: notification.id
+      }
+    });
+
+    // Handle notification click
+    browserNotification.onclick = function(event) {
+      event.preventDefault();
+      window.focus(); // Focus the browser window
+      if (notification.actionUrl) {
+        window.location.href = notification.actionUrl;
+      }
+      browserNotification.close();
+    };
+
+    // Auto-close after 10 seconds for non-urgent notifications
+    if (notification.priority !== 'Urgent') {
+      setTimeout(() => {
+        browserNotification.close();
+      }, 10000);
+    }
+
+    console.log(`🔔 Browser notification shown for: ${notification.memberName}`);
+  });
+};
+
 export default function NotificationBell({ className = '' }: NotificationBellProps) {
   const [notifications, setNotifications] = useState<NotificationPreview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -68,15 +120,36 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
           });
         });
         
-        // Sort by creation date (newest first) and limit to 5
+        // Sort by creation date (newest first) and limit to 10
         recentNotifications.sort((a, b) => {
           const aTime = a.createdAt?.toDate?.()?.getTime() || 0;
           const bTime = b.createdAt?.toDate?.()?.getTime() || 0;
           return bTime - aTime;
         });
         
-        setNotifications(recentNotifications.slice(0, 5));
+        // Check for new priority notifications for browser alerts
+        const newPriorityNotifications = recentNotifications.filter(n => 
+          (n.priority === 'High' || n.priority === 'Urgent') &&
+          n.requiresStaffAction
+        );
+
+        // Show browser notifications for priority alerts
+        if (newPriorityNotifications.length > 0) {
+          showBrowserNotifications(newPriorityNotifications);
+        }
+        
+        setNotifications(recentNotifications.slice(0, 10));
+        
+        // Update document title with unread count
+        const unreadCount = recentNotifications.length;
+        if (unreadCount > 0) {
+          document.title = `(${unreadCount}) CalAIM Tracker`;
+        } else {
+          document.title = 'CalAIM Tracker';
+        }
+        
         setIsLoading(false);
+        console.log(`🔔 Real-time update: ${unreadCount} unread notifications`);
       }, (error) => {
         console.error('Error loading notification preview:', error);
         setIsLoading(false);

@@ -72,6 +72,7 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 const adminNavLinks = [
+  { href: '/admin/morning-dashboard', label: 'Morning Dashboard', icon: LayoutDashboard },
   { href: '/admin/activity-log', label: 'Activity Log', icon: Activity },
   { 
     label: 'Application Management', 

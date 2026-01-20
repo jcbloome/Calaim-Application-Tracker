@@ -1,0 +1,53 @@
+{
+  "name": "CalAIM Application Tracker",
+  "short_name": "CalAIM Tracker",
+  "description": "CalAIM member management and notification system",
+  "start_url": "/admin/morning-dashboard",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png", 
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity", "medical"],
+  "shortcuts": [
+    {
+      "name": "Morning Dashboard",
+      "short_name": "Dashboard",
+      "description": "View daily notifications and alerts",
+      "url": "/admin/morning-dashboard",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Member Notes",
+      "short_name": "Notes", 
+      "description": "Access member notes and communications",
+      "url": "/admin/member-notes",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Applications",
+      "short_name": "Apps",
+      "description": "Manage member applications",
+      "url": "/admin/applications", 
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "prefer_related_applications": false,
+  "related_applications": [],
+  "scope": "/",
+  "lang": "en-US",
+  "dir": "ltr"
+}

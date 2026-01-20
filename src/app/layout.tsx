@@ -8,6 +8,7 @@ import { RealTimeNotifications } from '@/components/RealTimeNotifications';
 import LoginTrackingProvider from '@/components/LoginTrackingProvider';
 import { AutoLogoutProvider } from '@/components/AutoLogoutProvider';
 import { SessionManager } from '@/components/SessionManager';
+import PWAServiceWorker from '@/components/PWAServiceWorker';
 import { cn } from '@/lib/utils';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { Inter } from 'next/font/google';
@@ -19,6 +20,25 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'Connect CalAIM',
   description: 'A portal for the CalAIM Community Support for Assisted Transitions for Health Net and Kaiser.',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'CalAIM Tracker',
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  openGraph: {
+    type: 'website',
+    siteName: 'CalAIM Application Tracker',
+    title: 'CalAIM Application Tracker',
+    description: 'CalAIM member management and notification system',
+  },
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 export const viewport: Viewport = {
@@ -40,6 +60,7 @@ export default function RootLayout({
               <SessionManager>
                 <LoginTrackingProvider>
                   <AutoLogoutProvider>
+                    <PWAServiceWorker />
                     {children}
                   </AutoLogoutProvider>
                 </LoginTrackingProvider>
