@@ -83,7 +83,21 @@ export default function AdminApplicationsPage() {
         uniqueKey: `admin-${doc.id}-${index}`,
         source: 'admin'
       })) as WithId<Application & FormValues>[];
-      const apps = [...userApps, ...adminApps];
+      
+      // Remove duplicates by ID, preferring admin source over user source
+      const appsMap = new Map<string, WithId<Application & FormValues>>();
+      
+      // Add user apps first
+      userApps.forEach(app => {
+        appsMap.set(app.id, app);
+      });
+      
+      // Add admin apps (will overwrite user apps with same ID)
+      adminApps.forEach(app => {
+        appsMap.set(app.id, app);
+      });
+      
+      const apps = Array.from(appsMap.values());
       
       setAllApplications(apps);
       
@@ -112,10 +126,11 @@ export default function AdminApplicationsPage() {
   const activityLog = useMemo(() => {
     if (!allApplications) return [];
     
-    const allActivities = allApplications.flatMap(app => 
+    const allActivities = allApplications.flatMap((app, appIndex) => 
         app.forms
             ?.filter(form => form.status === 'Completed' && form.dateCompleted)
-            .map(form => ({
+            .map((form, formIndex) => ({
+                id: `${app.uniqueKey}-${formIndex}-${form.name.replace(/\s+/g, '-')}`, // Unique ID for React keys
                 appId: app.id,
                 userId: app.userId,
                 appName: `${app.memberFirstName} ${app.memberLastName}`,
@@ -359,8 +374,8 @@ export default function AdminApplicationsPage() {
                 <CardContent>
                     {activityLog.length > 0 ? (
                         <ul className="space-y-4">
-                            {activityLog.map((activity, index) => (
-                                <li key={`${activity.appId}-${activity.formName}-${index}`} className="flex gap-4">
+                            {activityLog.map((activity) => (
+                                <li key={activity.id} className="flex gap-4">
                                     <div className="flex-shrink-0">
                                         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
                                             <FileCheck2 className="h-5 w-5 text-muted-foreground" />
