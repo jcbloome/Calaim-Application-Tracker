@@ -154,20 +154,39 @@ export default function AdminApplicationsPage() {
     if (!firestore || selected.length === 0) return;
     
     const batch = writeBatch(firestore);
+    let deletedCount = 0;
     
     selected.forEach(id => {
       const appToDelete = allApplications?.find(app => app.id === id);
-      if (appToDelete?.userId) {
+      if (appToDelete) {
+        if (appToDelete.userId) {
+          // User application
           const docRef = doc(firestore, `users/${appToDelete.userId}/applications`, id);
           batch.delete(docRef);
+          deletedCount++;
+        } else if (appToDelete.source === 'admin') {
+          // Admin application
+          const docRef = doc(firestore, `applications`, id);
+          batch.delete(docRef);
+          deletedCount++;
+        }
       }
     });
+
+    if (deletedCount === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No Applications to Delete',
+        description: 'No valid applications found for deletion.',
+      });
+      return;
+    }
 
     try {
       await batch.commit();
       toast({
         title: 'Applications Deleted',
-        description: `${selected.length} application(s) have been successfully deleted.`,
+        description: `${deletedCount} application(s) have been successfully deleted.`,
       });
       // Refetch data
        setAllApplications(prev => prev.filter(app => !selected.includes(app.id)));
@@ -254,6 +273,69 @@ export default function AdminApplicationsPage() {
     setMemberFilter('');
   };
 
+  const handleRemoveDuplicates = async () => {
+    try {
+      const response = await fetch('/api/admin/remove-duplicate-applications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberName: 'Bob Jones' })
+      });
+
+      const result = await response.json();
+      
+      if (result.success && result.duplicates) {
+        if (result.duplicates.length > 1) {
+          // Keep the most recent one and remove others
+          const sortedDuplicates = result.duplicates.sort((a: any, b: any) => {
+            const dateA = a.lastUpdated ? new Date(a.lastUpdated.seconds * 1000) : new Date(0);
+            const dateB = b.lastUpdated ? new Date(b.lastUpdated.seconds * 1000) : new Date(0);
+            return dateB.getTime() - dateA.getTime();
+          });
+          
+          const keepApp = sortedDuplicates[0];
+          
+          const confirmResponse = await fetch('/api/admin/remove-duplicate-applications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              memberName: 'Bob Jones',
+              keepApplicationId: keepApp.id 
+            })
+          });
+
+          const confirmResult = await confirmResponse.json();
+          
+          if (confirmResult.success) {
+            toast({
+              title: 'Duplicates Removed',
+              description: `Removed ${confirmResult.removed.length} duplicate Bob Jones applications. Kept the most recent one.`,
+              className: 'bg-green-100 text-green-900 border-green-200',
+            });
+            
+            // Refresh the applications list
+            fetchAllApplications();
+          } else {
+            throw new Error(confirmResult.error);
+          }
+        } else {
+          toast({
+            title: 'No Duplicates Found',
+            description: 'No duplicate Bob Jones applications found.',
+          });
+        }
+      } else {
+        throw new Error(result.error || 'Failed to check for duplicates');
+      }
+    } catch (error: any) {
+      console.error('Error removing duplicates:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message || 'Failed to remove duplicate applications',
+      });
+    }
+  };
+
 
   return (
     <div className="space-y-6">
@@ -278,6 +360,15 @@ export default function AdminApplicationsPage() {
                 >
                   <Database className="mr-2 h-4 w-4" />
                   {isPushingToCaspio ? 'Pushing...' : `Push to Caspio (${selected.length})`}
+                </Button>
+                
+                <Button 
+                  onClick={handleRemoveDuplicates}
+                  variant="outline"
+                  className="text-orange-600 hover:text-orange-700 border-orange-200 hover:border-orange-300"
+                >
+                  <AlertTriangle className="mr-2 h-4 w-4" />
+                  Remove Bob Jones Duplicates
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
