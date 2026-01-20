@@ -59,9 +59,19 @@ const eligibilityCheckSchema = z.object({
   requesterName: z.string().min(2, 'Your full name is required'),
   requesterEmail: z.string().email('Please enter a valid email address'),
   relationshipToMember: z.string().min(1, 'Relationship to member is required'),
+  otherRelationshipSpecification: z.string().optional(),
   
   // Optional additional information
   additionalInfo: z.string().optional()
+}).refine((data) => {
+  // If relationship is "other", then otherRelationshipSpecification is required
+  if (data.relationshipToMember === 'other') {
+    return data.otherRelationshipSpecification && data.otherRelationshipSpecification.trim().length > 0;
+  }
+  return true;
+}, {
+  message: 'Please specify the relationship when selecting "Other"',
+  path: ['otherRelationshipSpecification']
 });
 
 type EligibilityCheckForm = z.infer<typeof eligibilityCheckSchema>;
@@ -81,6 +91,7 @@ export default function EligibilityCheckPage() {
       requesterName: '',
       requesterEmail: '',
       relationshipToMember: '',
+      otherRelationshipSpecification: '',
       additionalInfo: ''
     }
   });
@@ -213,22 +224,30 @@ export default function EligibilityCheckPage() {
           <Card className="border-blue-200 bg-blue-50">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-blue-800">
-                <ExternalLink className="h-5 w-5" />
-                Share of Cost Information
+                <DollarSign className="h-5 w-5" />
+                Share of Cost (SOC) Information
               </CardTitle>
             </CardHeader>
             <CardContent className="text-blue-700">
-              <p className="text-sm mb-3">
-                For detailed share of cost (SOC) information, members or authorized representatives should visit:
-              </p>
-              <a 
-                href="https://benefitscal.com" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800 underline font-medium text-sm"
-              >
-                BenefitsCal.com
-              </a>
+              <div className="space-y-3 text-sm">
+                <div className="p-3 bg-blue-100 rounded-md border border-blue-300">
+                  <p className="font-medium text-blue-900 mb-1">SOC Threshold Information:</p>
+                  <p>Share of Cost is usually triggered if a member receives more than <strong>$1,800/month</strong>, although this number can vary by county and by particular circumstances.</p>
+                </div>
+                <div>
+                  <p className="mb-2">
+                    For detailed share of cost (SOC) verification and current thresholds, members or authorized representatives should visit:
+                  </p>
+                  <a 
+                    href="https://benefitscal.com" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 underline font-medium"
+                  >
+                    BenefitsCal.com
+                  </a>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -237,13 +256,21 @@ export default function EligibilityCheckPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-purple-800">
                 <Home className="h-5 w-5" />
-                SNF Residents - Important Note
+                SNF Residents - SOC Considerations
               </CardTitle>
             </CardHeader>
             <CardContent className="text-purple-700">
-              <p className="text-sm">
-                Members in Skilled Nursing Facilities (SNFs) with income above $1,800/month may not show a Share of Cost since the SNF receives most of their income. However, this may change when transitioning to community living.
-              </p>
+              <div className="space-y-2 text-sm">
+                <p>
+                  <strong>Important for SNF residents:</strong> Members in Skilled Nursing Facilities (SNFs) with income above $1,800/month may not show a Share of Cost since the SNF receives most of their income.
+                </p>
+                <p>
+                  However, this may change when transitioning to community living, as the SOC calculation will be based on their full income rather than what remains after SNF costs.
+                </p>
+                <p className="text-purple-600 font-medium">
+                  Note: SOC thresholds can vary by county and individual circumstances.
+                </p>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -474,6 +501,7 @@ export default function EligibilityCheckPage() {
                         <SelectItem value="authorized-representative">Authorized Representative</SelectItem>
                         <SelectItem value="case-manager">Case Manager</SelectItem>
                         <SelectItem value="social-worker">Social Worker</SelectItem>
+                        <SelectItem value="referral-agency">Referral Agency</SelectItem>
                         <SelectItem value="other-family">Other Family Member</SelectItem>
                         <SelectItem value="other">Other</SelectItem>
                       </SelectContent>
@@ -481,6 +509,23 @@ export default function EligibilityCheckPage() {
                     {errors.relationshipToMember && (
                       <p className="text-red-500 text-sm mt-1">{errors.relationshipToMember.message}</p>
                     )}
+                    
+                    {/* Conditional "Other" specification field */}
+                    {watch('relationshipToMember') === 'other' && (
+                      <div className="mt-3">
+                        <Label htmlFor="otherRelationshipSpecification">Please specify your relationship *</Label>
+                        <Input
+                          id="otherRelationshipSpecification"
+                          {...register('otherRelationshipSpecification')}
+                          placeholder="Please describe your relationship to the member"
+                          className={errors.otherRelationshipSpecification ? 'border-red-500' : ''}
+                        />
+                        {errors.otherRelationshipSpecification && (
+                          <p className="text-red-500 text-sm mt-1">{errors.otherRelationshipSpecification.message}</p>
+                        )}
+                      </div>
+                    )}
+                    
                     <p className="text-sm text-gray-600 mt-1">
                       Please specify your relationship to the member for whom you're requesting the eligibility check.
                     </p>

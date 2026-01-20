@@ -37,6 +37,7 @@ interface EligibilityCheck {
   requesterName: string;
   requesterEmail: string;
   relationshipToMember: string;
+  otherRelationshipSpecification?: string;
   additionalInfo?: string;
   status: 'pending' | 'in-progress' | 'completed' | 'not-eligible';
   result?: 'eligible' | 'not-eligible';
@@ -352,7 +353,12 @@ export default function EligibilityChecksPage() {
                     </div>
                     <div className="col-span-2">
                       <span className="font-medium">Relationship to Member:</span>
-                      <p className="capitalize">{selectedCheck.relationshipToMember?.replace('-', ' ')}</p>
+                      <p className="capitalize">
+                        {selectedCheck.relationshipToMember?.replace('-', ' ')}
+                        {selectedCheck.relationshipToMember === 'other' && selectedCheck.otherRelationshipSpecification && 
+                          ` (${selectedCheck.otherRelationshipSpecification})`
+                        }
+                      </p>
                     </div>
                   </div>
                   {selectedCheck.additionalInfo && (

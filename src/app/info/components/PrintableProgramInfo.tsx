@@ -51,9 +51,12 @@ export function PrintableProgramInfo() {
             <SectionTitle>Medicare vs. Medi-Cal</SectionTitle>
             <p>Medicare is a federal health insurance program mainly for people 65 or older. Medi-Cal is California's Medicaid program for low-income individuals. The CalAIM program is a Medi-Cal benefit.</p>
 
-            <SectionTitle>Benefitscal.com</SectionTitle>
+            <SectionTitle>Benefitscal.com & Share of Cost (SOC)</SectionTitle>
             <p>A one stop shop to apply and review Medi-Cal benefits including possible share of cost information and to add for the member an authorized representative/power of attorney.</p>
-            <p>Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">www.benefitscal.com</a> for more information.</p>
+            <div style={{ backgroundColor: '#fef3c7', padding: '12px', border: '1px solid #d97706', borderRadius: '6px', margin: '12px 0' }}>
+              <p><strong>SOC Threshold Information:</strong> Share of Cost is usually triggered if a member receives more than <strong>$1,800/month</strong>, although this number can vary by county and by particular circumstances. Members in SNFs may not show a SOC since the facility receives most of their income, but this may change when transitioning to community living.</p>
+            </div>
+            <p>Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">www.benefitscal.com</a> for current SOC verification and more information.</p>
 
             <SectionTitle>Managed Care Plans We Work With</SectionTitle>
             <p>Connections currently is only contracted with <strong>Health Net</strong> and <strong>Kaiser</strong> for the CS for Assisted Living Transitions. You must switch to one of these plans if you would like to work with Connections.</p>
@@ -96,6 +99,9 @@ export function PrintableProgramInfo() {
             <SectionTitle>Share of Cost (SOC)</SectionTitle>
             <p>A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay.</p>
             <p>This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.</p>
+            <div style={{ backgroundColor: '#dbeafe', padding: '12px', border: '1px solid #3b82f6', borderRadius: '6px', margin: '12px 0' }}>
+              <p><strong>SOC is usually triggered if a member receives more than $1,800/month</strong>, although this number can vary by county and by particular circumstances.</p>
+            </div>
             <p>Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.</p>
             <p>Read more about eliminating share of cost at the <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer">California Advocates for Nursing Home Reform (CANHR)</a>.</p>
 

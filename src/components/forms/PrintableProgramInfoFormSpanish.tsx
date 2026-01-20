@@ -117,16 +117,25 @@ export function PrintableProgramInfoFormSpanish({
           </p>
         </div>
 
-        {/* Benefitscal.com */}
+        {/* Benefitscal.com & SOC */}
         <div className="p-4 print:p-6 border print:border-black">
           <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
-            Benefitscal.com
+            Benefitscal.com & Participación en el Costo (SOC)
           </h3>
           <p className="text-sm print:text-xs text-gray-700 print:text-black mb-2">
             Una ventanilla única para solicitar y revisar beneficios de Medi-Cal incluyendo posible información de participación en costos y para agregar para el miembro un representante autorizado/poder notarial.
           </p>
-          <p className="text-sm print:text-xs text-gray-700 print:text-black">
-            Visite <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-blue-800 hover:underline">www.benefitscal.com</a> para más información.
+          <div className="mt-3 p-3 print:p-3 bg-yellow-50 print:bg-white border print:border-black">
+            <h4 className="font-semibold text-gray-900 print:text-black mb-2">Información sobre Participación en el Costo (SOC):</h4>
+            <p className="text-sm print:text-xs text-gray-700 print:text-black">
+              La Participación en el Costo generalmente se activa si un miembro recibe más de <strong>$1,800/mes</strong>, 
+              aunque este número puede variar por condado y por circunstancias particulares. Los miembros en SNFs pueden no 
+              mostrar un SOC ya que la instalación recibe la mayor parte de sus ingresos, pero esto puede cambiar al hacer 
+              la transición a la vida comunitaria.
+            </p>
+          </div>
+          <p className="text-sm print:text-xs text-gray-700 print:text-black mt-2">
+            Visite <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-blue-800 hover:underline">www.benefitscal.com</a> para verificación actual de SOC y más información.
           </p>
         </div>
 
@@ -204,6 +213,9 @@ export function PrintableProgramInfoFormSpanish({
             <p>
               Una Participación en el Costo (SOC) es como un deducible mensual para Medi-Cal. Es la cantidad de dinero que 
               puede tener que pagar cada mes hacia servicios médicos antes de que su cobertura de Medi-Cal comience a pagar.
+            </p>
+            <p className="font-semibold text-blue-700 print:text-black mb-2">
+              El SOC generalmente se activa si un miembro recibe más de $1,800/mes, aunque puede variar por condado y circunstancias.
             </p>
             <p className="font-semibold text-red-700 print:text-black">
               Los miembros no pueden aplicar para CalAIM con un SOC. Debe ser eliminado antes de ser elegible para aplicar.

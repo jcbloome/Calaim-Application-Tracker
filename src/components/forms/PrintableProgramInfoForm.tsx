@@ -120,17 +120,26 @@ export function PrintableProgramInfoForm({
         </p>
       </div>
 
-      {/* Benefitscal.com */}
+      {/* Benefitscal.com & Share of Cost */}
       <div className="col-span-full mb-8">
         <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
-          Benefitscal.com
+          Benefitscal.com & Share of Cost (SOC)
         </h2>
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
           A one stop shop to apply and review Medi-Cal benefits including possible share of cost information 
           and to add for the member an authorized representative/power of attorney.
         </p>
+        <div className="mt-4 p-3 print:p-3 bg-yellow-50 print:bg-white border print:border-black">
+          <h3 className="font-semibold text-gray-900 print:text-black mb-2">Share of Cost (SOC) Information:</h3>
+          <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+            Share of Cost is usually triggered if a member receives more than <strong>$1,800/month</strong>, 
+            although this number can vary by county and by particular circumstances. Members in SNFs may not 
+            show a SOC since the facility receives most of their income, but this may change when transitioning 
+            to community living.
+          </p>
+        </div>
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed mt-2">
-          Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-black hover:underline">www.benefitscal.com</a> for more information.
+          Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-black hover:underline">www.benefitscal.com</a> for current SOC verification and more information.
         </p>
       </div>
 

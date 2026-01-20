@@ -20,9 +20,19 @@ const eligibilityCheckSchema = z.object({
   requesterName: z.string().min(2, 'Requester name is required'),
   requesterEmail: z.string().email('Valid email is required'),
   relationshipToMember: z.string().min(1, 'Relationship to member is required'),
+  otherRelationshipSpecification: z.string().optional(),
   
   // Optional additional information
   additionalInfo: z.string().optional()
+}).refine((data) => {
+  // If relationship is "other", then otherRelationshipSpecification is required
+  if (data.relationshipToMember === 'other') {
+    return data.otherRelationshipSpecification && data.otherRelationshipSpecification.trim().length > 0;
+  }
+  return true;
+}, {
+  message: 'Please specify the relationship when selecting "Other"',
+  path: ['otherRelationshipSpecification']
 });
 
 export async function POST(request: NextRequest) {
@@ -122,7 +132,11 @@ async function sendConfirmationEmail(data: any) {
         <li><strong>Health Plan:</strong> ${data.healthPlan}</li>
         <li><strong>County:</strong> ${data.county}</li>
         <li><strong>Date of Birth:</strong> ${data.memberBirthday}</li>
-        <li><strong>Your Relationship:</strong> ${data.relationshipToMember.replace('-', ' ')}</li>
+        <li><strong>Your Relationship:</strong> ${data.relationshipToMember.replace('-', ' ')}${
+          data.relationshipToMember === 'other' && data.otherRelationshipSpecification 
+            ? ` (${data.otherRelationshipSpecification})` 
+            : ''
+        }</li>
       </ul>
       <p>We will email you the eligibility results within 1 business day.</p>
       <p>Thank you for using our CalAIM eligibility check service.</p>

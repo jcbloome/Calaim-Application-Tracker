@@ -141,7 +141,11 @@ async function sendResultEmail({
         <p>We have completed the CalAIM eligibility check for <strong>${memberName}</strong> (${healthPlan}).</p>
         
         <p style="font-size: 14px; color: #6b7280; margin: 10px 0;">
-          <em>Relationship to member: ${relationshipToMember.replace('-', ' ')}</em>
+          <em>Relationship to member: ${relationshipToMember.replace('-', ' ')}${
+            relationshipToMember === 'other' && checkData.otherRelationshipSpecification 
+              ? ` (${checkData.otherRelationshipSpecification})` 
+              : ''
+          }</em>
         </p>
         
         <div style="background-color: ${result === 'eligible' ? '#dcfce7' : '#fee2e2'}; 
