@@ -85,9 +85,10 @@ export async function POST(request: Request) {
         requesterEmail: checkData.requesterEmail,
         memberName: checkData.memberName,
         healthPlan: checkData.healthPlan,
+        relationshipToMember: checkData.relationshipToMember,
         result,
-        resultMessage,
-        screenshotUrl
+        resultMessage
+        // Note: screenshotUrl removed for HIPAA compliance - screenshots kept internal only
       });
     } catch (emailError) {
       console.error('Error sending result email:', emailError);
@@ -113,17 +114,17 @@ async function sendResultEmail({
   requesterEmail,
   memberName,
   healthPlan,
+  relationshipToMember,
   result,
-  resultMessage,
-  screenshotUrl
+  resultMessage
 }: {
   requesterName: string;
   requesterEmail: string;
   memberName: string;
   healthPlan: string;
+  relationshipToMember: string;
   result: 'eligible' | 'not-eligible';
   resultMessage: string;
-  screenshotUrl?: string;
 }) {
   // This is a placeholder for email functionality
   // You would integrate with your email service (SendGrid, AWS SES, etc.)
@@ -138,6 +139,10 @@ async function sendResultEmail({
         <p>Dear ${requesterName},</p>
         
         <p>We have completed the CalAIM eligibility check for <strong>${memberName}</strong> (${healthPlan}).</p>
+        
+        <p style="font-size: 14px; color: #6b7280; margin: 10px 0;">
+          <em>Relationship to member: ${relationshipToMember.replace('-', ' ')}</em>
+        </p>
         
         <div style="background-color: ${result === 'eligible' ? '#dcfce7' : '#fee2e2'}; 
                     border: 1px solid ${result === 'eligible' ? '#16a34a' : '#dc2626'}; 
@@ -154,12 +159,7 @@ async function sendResultEmail({
           <p style="white-space: pre-wrap;">${resultMessage}</p>
         </div>
         
-        ${screenshotUrl ? `
-          <div style="margin: 20px 0;">
-            <h4>Eligibility Verification Screenshot:</h4>
-            <img src="${screenshotUrl}" alt="Eligibility verification" style="max-width: 100%; border: 1px solid #d1d5db; border-radius: 8px;">
-          </div>
-        ` : ''}
+        <!-- Screenshots removed for HIPAA compliance - kept internal only -->
         
         <div style="background-color: #eff6ff; border-radius: 8px; padding: 16px; margin: 20px 0;">
           <h4 style="margin-top: 0;">Additional Resources:</h4>

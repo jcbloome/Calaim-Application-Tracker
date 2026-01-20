@@ -36,6 +36,7 @@ interface EligibilityCheck {
   county: string;
   requesterName: string;
   requesterEmail: string;
+  relationshipToMember: string;
   additionalInfo?: string;
   status: 'pending' | 'in-progress' | 'completed' | 'not-eligible';
   result?: 'eligible' | 'not-eligible';
@@ -328,7 +329,7 @@ export default function EligibilityChecksPage() {
                       <p>{selectedCheck.county}</p>
                     </div>
                     <div className="col-span-2">
-                      <span className="font-medium">MRN/Medi-Cal #:</span>
+                      <span className="font-medium">Medical Record Number (MRN):</span>
                       <p>{selectedCheck.memberMrn}</p>
                     </div>
                   </div>
@@ -348,6 +349,10 @@ export default function EligibilityChecksPage() {
                     <div>
                       <span className="font-medium">Email:</span>
                       <p>{selectedCheck.requesterEmail}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="font-medium">Relationship to Member:</span>
+                      <p className="capitalize">{selectedCheck.relationshipToMember?.replace('-', ' ')}</p>
                     </div>
                   </div>
                   {selectedCheck.additionalInfo && (

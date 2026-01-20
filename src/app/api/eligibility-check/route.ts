@@ -12,13 +12,14 @@ const eligibilityCheckSchema = z.object({
   // Member Information
   memberName: z.string().min(2, 'Member name must be at least 2 characters'),
   memberBirthday: z.string().min(1, 'Member birthday is required'),
-  memberMrn: z.string().min(1, 'MRN/Medi-Cal number is required'),
+  memberMrn: z.string().min(1, 'Medical Record Number (MRN) is required'),
   healthPlan: z.enum(['Kaiser', 'Health Net']),
   county: z.string().min(1, 'County is required'),
   
   // Requester Information
   requesterName: z.string().min(2, 'Requester name is required'),
   requesterEmail: z.string().email('Valid email is required'),
+  relationshipToMember: z.string().min(1, 'Relationship to member is required'),
   
   // Optional additional information
   additionalInfo: z.string().optional()
@@ -121,6 +122,7 @@ async function sendConfirmationEmail(data: any) {
         <li><strong>Health Plan:</strong> ${data.healthPlan}</li>
         <li><strong>County:</strong> ${data.county}</li>
         <li><strong>Date of Birth:</strong> ${data.memberBirthday}</li>
+        <li><strong>Your Relationship:</strong> ${data.relationshipToMember.replace('-', ' ')}</li>
       </ul>
       <p>We will email you the eligibility results within 1 business day.</p>
       <p>Thank you for using our CalAIM eligibility check service.</p>

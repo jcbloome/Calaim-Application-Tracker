@@ -49,7 +49,7 @@ const eligibilityCheckSchema = z.object({
   // Member Information
   memberName: z.string().min(2, 'Member name must be at least 2 characters'),
   memberBirthday: z.string().min(1, 'Member birthday is required'),
-  memberMrn: z.string().min(1, 'MRN/Medi-Cal number is required'),
+  memberMrn: z.string().min(1, 'Medical Record Number (MRN) is required'),
   healthPlan: z.enum(['Kaiser', 'Health Net'], {
     required_error: 'Please select a health plan'
   }),
@@ -58,6 +58,7 @@ const eligibilityCheckSchema = z.object({
   // Requester Information
   requesterName: z.string().min(2, 'Your full name is required'),
   requesterEmail: z.string().email('Please enter a valid email address'),
+  relationshipToMember: z.string().min(1, 'Relationship to member is required'),
   
   // Optional additional information
   additionalInfo: z.string().optional()
@@ -79,6 +80,7 @@ export default function EligibilityCheckPage() {
       memberMrn: '',
       requesterName: '',
       requesterEmail: '',
+      relationshipToMember: '',
       additionalInfo: ''
     }
   });
@@ -365,32 +367,47 @@ export default function EligibilityCheckPage() {
                     )}
                   </div>
 
-                  {/* MRN/Medi-Cal Number */}
+                  {/* Medical Record Number (MRN) */}
                   <div className="md:col-span-2">
                     <Label htmlFor="memberMrn">
-                      {selectedHealthPlan === 'Kaiser' ? 'MRN (Medical Record Number)' : 'Medi-Cal Number'} *
+                      Medical Record Number (MRN) *
                     </Label>
                     <Input
                       id="memberMrn"
                       {...register('memberMrn')}
                       placeholder={
                         selectedHealthPlan === 'Kaiser' 
-                          ? 'Enter MRN (usually starts with 000...)'
-                          : 'Enter Medi-Cal number'
+                          ? 'Enter MRN (usually starts with 0000...)'
+                          : selectedHealthPlan === 'Health Net'
+                          ? 'Enter MRN (same as Medi-Cal number)'
+                          : 'Enter Medical Record Number (MRN)'
                       }
                       className={errors.memberMrn ? 'border-red-500' : ''}
                     />
                     {errors.memberMrn && (
                       <p className="text-red-500 text-sm mt-1">{errors.memberMrn.message}</p>
                     )}
+                    
+                    {/* Health Plan Specific Tips */}
                     {selectedHealthPlan === 'Kaiser' && (
-                      <p className="text-sm text-gray-600 mt-1">
-                        For Kaiser members, the MRN is different from the Medi-Cal number and usually begins with 000.
-                      </p>
+                      <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                        <p className="text-sm text-blue-800">
+                          <strong>Kaiser MRN:</strong> For Kaiser members, the MRN is a different number than the Medi-Cal number and usually begins with a few zeros (0000...).
+                        </p>
+                      </div>
                     )}
+                    
                     {selectedHealthPlan === 'Health Net' && (
+                      <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-md">
+                        <p className="text-sm text-green-800">
+                          <strong>Health Net MRN:</strong> For Health Net members, the MRN is the same as the Medi-Cal number.
+                        </p>
+                      </div>
+                    )}
+                    
+                    {!selectedHealthPlan && (
                       <p className="text-sm text-gray-600 mt-1">
-                        For Health Net members, the MRN is the same as the Medi-Cal number.
+                        Please select a health plan above to see specific MRN guidance.
                       </p>
                     )}
                   </div>
@@ -434,6 +451,39 @@ export default function EligibilityCheckPage() {
                     {errors.requesterEmail && (
                       <p className="text-red-500 text-sm mt-1">{errors.requesterEmail.message}</p>
                     )}
+                  </div>
+
+                  {/* Relationship to Member */}
+                  <div className="md:col-span-2">
+                    <Label htmlFor="relationshipToMember">Your Relationship to Member *</Label>
+                    <Select 
+                      value={watch('relationshipToMember') || ''} 
+                      onValueChange={(value) => setValue('relationshipToMember', value)}
+                    >
+                      <SelectTrigger className={errors.relationshipToMember ? 'border-red-500' : ''}>
+                        <SelectValue placeholder="Select your relationship to the member" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="self">Self (I am the member)</SelectItem>
+                        <SelectItem value="parent">Parent</SelectItem>
+                        <SelectItem value="spouse">Spouse/Partner</SelectItem>
+                        <SelectItem value="child">Adult Child</SelectItem>
+                        <SelectItem value="sibling">Sibling</SelectItem>
+                        <SelectItem value="guardian">Legal Guardian</SelectItem>
+                        <SelectItem value="power-of-attorney">Power of Attorney</SelectItem>
+                        <SelectItem value="authorized-representative">Authorized Representative</SelectItem>
+                        <SelectItem value="case-manager">Case Manager</SelectItem>
+                        <SelectItem value="social-worker">Social Worker</SelectItem>
+                        <SelectItem value="other-family">Other Family Member</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {errors.relationshipToMember && (
+                      <p className="text-red-500 text-sm mt-1">{errors.relationshipToMember.message}</p>
+                    )}
+                    <p className="text-sm text-gray-600 mt-1">
+                      Please specify your relationship to the member for whom you're requesting the eligibility check.
+                    </p>
                   </div>
                 </div>
 
