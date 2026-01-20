@@ -1,9 +1,9 @@
 # Feature Counter - Rule Audit Tracking
 
 ## Current Status
-- **Features Since Last Audit:** 3/8
+- **Features Since Last Audit:** 5/8
 - **Last Audit Date:** January 20, 2026 (Initial Setup)
-- **Next Audit Due:** After 5 more features
+- **Next Audit Due:** After 3 more features
 
 ## Feature Log
 *Track major features/components added since last audit*
@@ -12,6 +12,8 @@
 1. **Centralized Task Management Module** - Unified task processing system eliminating duplication
 2. **Workflow Automation Engine** - Automated workflow progression with configurable rules
 3. **Smart Task Hub** - AI-powered task prioritization and intelligent workload management
+4. **Eligibility Check System** - User-facing CalAIM eligibility verification with backend processing
+5. **Enhanced Eligibility System** - Admin backend with screenshot upload, comprehensive user guidance, and automated email responses
 
 ---
 

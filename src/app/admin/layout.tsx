@@ -101,7 +101,8 @@ const adminNavLinks = [
       { href: '/admin/my-notes', label: 'My Notifications', icon: Bell },
       { href: '/admin/social-worker-assignments', label: 'Staff Assignments', icon: UserPlus },
       { href: '/admin/tasks', label: 'My Tasks', icon: ClipboardList },
-      { href: '/admin/member-activity', label: 'Member Activity', icon: Activity }
+      { href: '/admin/member-activity', label: 'Member Activity', icon: Activity },
+      { href: '/admin/eligibility-checks', label: 'Eligibility Checks', icon: Shield }
     ]
   },
   { 

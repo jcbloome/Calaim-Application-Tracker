@@ -23,6 +23,7 @@ import { SessionTimer } from './SessionTimer';
 const navLinks = [
     { href: "/info", label: "Program Information" },
     { href: "/faq", label: "FAQ & Glossary" },
+    { href: "/eligibility-check", label: "Eligibility Check" },
     { href: "/applications", label: "My Applications" },
     { href: "/forms/printable-package", label: "Printable Forms" },
 ];
