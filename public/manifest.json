@@ -9,13 +9,13 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "/calaimlogopdf.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon-512.png", 
+      "src": "/calaimlogopdf.png", 
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
@@ -28,21 +28,21 @@
       "short_name": "Dashboard",
       "description": "View daily notifications and alerts",
       "url": "/admin/morning-dashboard",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/calaimlogopdf.png", "sizes": "192x192" }]
     },
     {
       "name": "Member Notes",
       "short_name": "Notes", 
       "description": "Access member notes and communications",
       "url": "/admin/member-notes",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/calaimlogopdf.png", "sizes": "192x192" }]
     },
     {
       "name": "Applications",
       "short_name": "Apps",
       "description": "Manage member applications",
       "url": "/admin/applications", 
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/calaimlogopdf.png", "sizes": "192x192" }]
     }
   ],
   "prefer_related_applications": false,

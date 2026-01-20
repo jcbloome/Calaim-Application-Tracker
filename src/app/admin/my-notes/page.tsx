@@ -1,17 +1,14 @@
 'use client';
 
-import { useAdmin } from '@/hooks/use-admin';
-import { useUser } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { collection, query, where, orderBy, onSnapshot, Timestamp } from 'firebase/firestore';
-import { useFirestore } from '@/firebase';
+import { useFirebaseAuth, useFirestoreCollection } from '@/modules/firebase-integration';
 
 interface StaffNotification {
   id: string;
@@ -32,15 +29,26 @@ interface StaffNotification {
 }
 
 export default function MyNotesPage() {
-  const { isLoading, isAdmin, user: adminUser } = useAdmin();
-  const { user } = useUser();
-  const firestore = useFirestore();
+  const { user, isAdmin, isLoading } = useFirebaseAuth();
   const { toast } = useToast();
   const searchParams = useSearchParams();
-  
-  const [notifications, setNotifications] = useState<StaffNotification[]>([]);
-  const [isLoadingNotes, setIsLoadingNotes] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Use new Firebase module for notifications
+  const { 
+    documents: notifications, 
+    isLoading: isLoadingNotes, 
+    error, 
+    updateDocument, 
+    refresh 
+  } = useFirestoreCollection<StaffNotification>('notifications', {
+    where: user?.uid ? [
+      { field: 'recipientIds', operator: 'array-contains', value: user.uid }
+    ] : [],
+    orderBy: [{ field: 'createdAt', direction: 'desc' }],
+    autoSubscribe: true, // Real-time updates
+    limit: 100
+  });
 
   // Load notes created by this user from Firestore
   useEffect(() => {
