@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 interface ILSReportMember {
   id: string;
