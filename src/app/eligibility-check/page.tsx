@@ -175,20 +175,38 @@ export default function EligibilityCheckPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="text-blue-700">
-              <ul className="space-y-2 text-sm">
-                <li className="flex items-start gap-2">
-                  <CheckCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>Member must currently have active Medi-Cal coverage</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>If ineligible, we cannot determine the specific reason (e.g., share of cost)</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <Clock className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>Results provided within 1 business day via email</span>
-                </li>
-              </ul>
+              <div className="space-y-3 text-sm">
+                <ul className="space-y-2">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <span>Member must currently have active Medi-Cal coverage</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <span>If ineligible, we cannot determine the specific reason (e.g., share of cost)</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Clock className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <span>Results provided within 1 business day via email</span>
+                  </li>
+                </ul>
+                
+                <div className="pt-3 border-t border-blue-200">
+                  <p className="font-medium text-blue-800 mb-2">What We Check:</p>
+                  <ul className="space-y-1 text-xs">
+                    <li>• Current Medi-Cal enrollment status</li>
+                    <li>• CalAIM Community Supports eligibility</li>
+                    <li>• Health plan participation requirements</li>
+                    <li>• Geographic service area coverage</li>
+                  </ul>
+                </div>
+                
+                <div className="p-2 bg-blue-100 rounded border border-blue-300">
+                  <p className="text-xs font-medium text-blue-900">
+                    💡 Tip: Have your Medi-Cal card and MRN ready before submitting
+                  </p>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -197,79 +215,83 @@ export default function EligibilityCheckPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-green-800">
                 <MapPin className="h-5 w-5" />
-                Service Areas
+                Service Areas & Coverage
               </CardTitle>
             </CardHeader>
             <CardContent className="text-green-700">
               <div className="space-y-3 text-sm">
-                <div>
-                  <div className="font-medium flex items-center gap-2">
+                <div className="p-3 bg-green-100 rounded border border-green-300">
+                  <div className="font-medium flex items-center gap-2 text-green-900 mb-1">
                     <Building className="h-4 w-4" />
                     Kaiser Permanente
                   </div>
-                  <p className="ml-6">Active in all California counties</p>
+                  <p className="ml-6 mb-2">Active in all California counties</p>
+                  <p className="ml-6 text-xs text-green-800">
+                    Serves members statewide with comprehensive CalAIM Community Supports
+                  </p>
                 </div>
-                <div>
-                  <div className="font-medium flex items-center gap-2">
+                
+                <div className="p-3 bg-green-100 rounded border border-green-300">
+                  <div className="font-medium flex items-center gap-2 text-green-900 mb-1">
                     <Building className="h-4 w-4" />
                     Health Net
                   </div>
-                  <p className="ml-6">Los Angeles and Sacramento counties only</p>
+                  <p className="ml-6 mb-2">Los Angeles and Sacramento counties only</p>
+                  <p className="ml-6 text-xs text-green-800">
+                    Limited geographic coverage - verify county before applying
+                  </p>
+                </div>
+                
+                <div className="pt-2 border-t border-green-200">
+                  <p className="font-medium text-green-800 mb-1">Coverage Note:</p>
+                  <p className="text-xs">
+                    You must be enrolled with one of these health plans to access CalAIM Community Supports through Connections Care Home Consultants.
+                  </p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Share of Cost Information Card */}
-          <Card className="border-blue-200 bg-blue-50">
+          {/* Combined Share of Cost Information Card */}
+          <Card className="border-orange-200 bg-orange-50">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-blue-800">
+              <CardTitle className="flex items-center gap-2 text-orange-800">
                 <DollarSign className="h-5 w-5" />
                 Share of Cost (SOC) Information
               </CardTitle>
             </CardHeader>
-            <CardContent className="text-blue-700">
+            <CardContent className="text-orange-700">
               <div className="space-y-3 text-sm">
-                <div className="p-3 bg-blue-100 rounded-md border border-blue-300">
-                  <p className="font-medium text-blue-900 mb-1">SOC Threshold Information:</p>
-                  <p>Share of Cost is usually triggered if a member receives more than <strong>$1,800/month</strong>, although this number can vary by county and by particular circumstances.</p>
+                {/* SOC Threshold */}
+                <div className="p-3 bg-orange-100 rounded-md border border-orange-300">
+                  <p className="font-semibold text-orange-900 mb-1">SOC Threshold:</p>
+                  <p>Share of Cost is usually triggered if a member receives more than <strong>$1,800/month</strong>, although this can vary by county and circumstances.</p>
                 </div>
-                <div>
-                  <p className="mb-2">
-                    For detailed share of cost (SOC) verification and current thresholds, members or authorized representatives should visit:
+                
+                {/* SNF Considerations */}
+                <div className="p-3 bg-orange-100 rounded-md border border-orange-300">
+                  <p className="font-semibold text-orange-900 mb-1 flex items-center gap-1">
+                    <Home className="h-4 w-4" />
+                    SNF Residents:
+                  </p>
+                  <p>Members in Skilled Nursing Facilities with income above $1,800/month may not show a SOC since the SNF receives most income. This may change when transitioning to community living.</p>
+                </div>
+                
+                {/* BenefitsCal Link */}
+                <div className="pt-2 border-t border-orange-200">
+                  <p className="mb-2 text-orange-800">
+                    For detailed SOC verification and current thresholds:
                   </p>
                   <a 
                     href="https://benefitscal.com" 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 underline font-medium"
+                    className="inline-flex items-center gap-1 text-orange-600 hover:text-orange-800 underline font-medium"
                   >
+                    <ExternalLink className="h-3 w-3" />
                     BenefitsCal.com
                   </a>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* SNF Residents Information Card */}
-          <Card className="border-purple-200 bg-purple-50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-purple-800">
-                <Home className="h-5 w-5" />
-                SNF Residents - SOC Considerations
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-purple-700">
-              <div className="space-y-2 text-sm">
-                <p>
-                  <strong>Important for SNF residents:</strong> Members in Skilled Nursing Facilities (SNFs) with income above $1,800/month may not show a Share of Cost since the SNF receives most of their income.
-                </p>
-                <p>
-                  However, this may change when transitioning to community living, as the SOC calculation will be based on their full income rather than what remains after SNF costs.
-                </p>
-                <p className="text-purple-600 font-medium">
-                  Note: SOC thresholds can vary by county and individual circumstances.
-                </p>
               </div>
             </CardContent>
           </Card>
