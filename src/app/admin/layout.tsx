@@ -32,7 +32,6 @@ import {
   Settings,
   MessageSquareText,
   FileText,
-  Activity,
   TestTube2,
   Scissors,
   Map,
