@@ -55,7 +55,7 @@ export default function ContactPage() {
                   800-330-5993
                 </a>
                 <p className="text-sm text-gray-600 mt-2">
-                  Monday - Friday, 8:00 AM - 5:00 PM PST
+                  Monday - Friday, 9:00 AM - 5:00 PM PST
                 </p>
               </CardContent>
             </Card>
@@ -120,7 +120,7 @@ export default function ContactPage() {
               <CardContent className="space-y-3">
                 <div className="flex justify-between">
                   <span className="font-medium">Monday - Friday:</span>
-                  <span>8:00 AM - 5:00 PM PST</span>
+                  <span>9:00 AM - 5:00 PM PST</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">Saturday - Sunday:</span>
