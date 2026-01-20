@@ -1,0 +1,47 @@
+---
+description: Server-Side Rendering (SSR) Safety Rules for Next.js
+globs: **/*.{js,ts,jsx,tsx}
+---
+
+# SSR Safety Protocol
+
+Critical rules to prevent "window is not defined" and other SSR errors.
+
+## 1. Browser API Guards
+- **ALWAYS** wrap browser APIs with `typeof window !== 'undefined'` checks:
+  ```typescript
+  // ✅ CORRECT
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('key', value);
+    window.location.href = '/path';
+  }
+  
+  // ❌ WRONG
+  localStorage.setItem('key', value); // SSR Error!
+  ```
+
+## 2. Common Browser APIs That Need Guards
+- `window` object access
+- `localStorage` / `sessionStorage`
+- `navigator` object
+- `document` object
+- `Notification` API
+- `DOMMatrix` / Canvas APIs
+- `location` object
+
+## 3. Component Patterns
+- Use `'use client'` directive for components that MUST run client-side
+- Prefer `useEffect` hooks for browser-only initialization
+- Use dynamic imports with `{ ssr: false }` for problematic libraries
+
+## 4. Testing Strategy
+- Always test builds with `npm run build` before deployment
+- Check for SSR errors in the build output
+- Verify components render correctly on server and client
+
+## 5. Emergency Fixes
+If SSR errors persist:
+1. Add client-side guards around ALL browser API calls
+2. Move problematic code to `useEffect` hooks
+3. Consider making the entire component client-only with `'use client'`
+4. As last resort, use dynamic imports with `{ ssr: false }`

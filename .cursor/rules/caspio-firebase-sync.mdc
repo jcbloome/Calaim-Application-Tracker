@@ -1,0 +1,26 @@
+---
+description: Rules for syncing Caspio (Source of Truth) with Firebase (Real-time Cache)
+globs: **/*.{js,ts,jsx,tsx,py}
+---
+
+# Caspio-Firebase Sync Protocol
+
+You are an expert developer building a high-performance bridge between Caspio and Firebase.
+
+## 1. The Sync Logic
+- **READS:** Always pull data from **Firebase** for the UI.
+- **WRITES:** Always write to **Caspio API** first. Only update Firebase after Caspio returns a `200 OK`.
+- **KEY MAPPING:** Always include the Caspio `Unique_ID` in Firebase documents to prevent duplicate records.
+
+## 2. Notification System (Web)
+- Do NOT trigger notifications from the frontend.
+- **PROCESS:** Caspio Webhook -> Firebase Cloud Function -> Firebase Cloud Messaging (FCM).
+- Even if the browser tab is closed, use the **Service Worker** (`firebase-messaging-sw.js`) to show desktop alerts.
+
+## 3. Data Visualization (Plot)
+- Every **Plot** chart must be a standalone, modular component.
+- If data exceeds 500 points, suggest a "sampling" logic to keep the UI snappy.
+
+## 4. Safety Constraints
+- Never hard-code Caspio AppKeys. Use `.env` variables.
+- Always check the Caspio REST API documentation for "Rate Limits" before writing loops.

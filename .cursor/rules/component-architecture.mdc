@@ -1,0 +1,99 @@
+---
+description: Component Architecture and UI Patterns
+globs: **/*.{jsx,tsx}
+---
+
+# Component Architecture Guidelines
+
+Standards for building maintainable, reusable components.
+
+## 1. Component Structure
+```typescript
+// ✅ CORRECT Component Pattern
+'use client'; // Only if needed for browser APIs
+
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/firebase';
+import { Button } from '@/components/ui/button';
+
+interface ComponentProps {
+  title: string;
+  onAction?: () => void;
+}
+
+export default function MyComponent({ title, onAction }: ComponentProps) {
+  const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
+
+  // Browser-only code in useEffect
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // Safe browser API usage
+    }
+  }, []);
+
+  return (
+    <div className="p-4">
+      <h1>{title}</h1>
+      {/* Component JSX */}
+    </div>
+  );
+}
+```
+
+## 2. State Management
+- **LOCAL STATE:** Use `useState` for component-specific data
+- **GLOBAL STATE:** Use Firebase real-time listeners for shared data
+- **LOADING STATES:** Always provide loading indicators
+- **ERROR HANDLING:** Graceful error boundaries and fallbacks
+
+## 3. Data Fetching Patterns
+- **REAL-TIME:** Use Firebase listeners for live data
+- **API CALLS:** Use proper error handling and loading states
+- **CACHING:** Leverage Firebase's built-in caching
+
+```typescript
+// ✅ CORRECT Data Fetching
+useEffect(() => {
+  if (!user) return;
+  
+  const unsubscribe = onSnapshot(
+    collection(db, 'applications'),
+    (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setApplications(data);
+      setLoading(false);
+    },
+    (error) => {
+      console.error('Firestore error:', error);
+      setError(error.message);
+      setLoading(false);
+    }
+  );
+
+  return () => unsubscribe();
+}, [user]);
+```
+
+## 4. UI/UX Standards
+- **RESPONSIVE:** Always use Tailwind responsive classes
+- **ACCESSIBILITY:** Include proper ARIA labels and keyboard navigation
+- **LOADING STATES:** Show spinners/skeletons during data fetching
+- **ERROR STATES:** Provide clear error messages and retry options
+- **EMPTY STATES:** Handle empty data gracefully
+
+## 5. Icon Usage
+- **LUCIDE REACT:** Use lucide-react icons consistently
+- **FALLBACKS:** Provide fallback icons if specific ones don't exist
+- **SIZE CONSISTENCY:** Use consistent icon sizes (h-4 w-4, h-5 w-5, etc.)
+
+```typescript
+// ✅ CORRECT Icon Usage
+import { RefreshCw, AlertCircle } from 'lucide-react';
+
+// If icon doesn't exist, use a similar one
+import { RefreshCw as Sync } from 'lucide-react'; // Sync doesn't exist
+```

@@ -1,0 +1,144 @@
+---
+description: Common Issues and Solutions for CalAIM Tracker
+globs: **/*.{js,ts,jsx,tsx}
+---
+
+# CalAIM Tracker Troubleshooting Guide
+
+Solutions to common issues we've encountered and resolved.
+
+## 1. Build Errors
+
+### "window is not defined" / "localStorage is not defined"
+**CAUSE:** Server-side rendering trying to access browser APIs
+**SOLUTION:** Add client-side guards
+```typescript
+// ✅ FIX
+if (typeof window !== 'undefined') {
+  localStorage.setItem('key', value);
+}
+```
+
+### "DOMMatrix is not defined"
+**CAUSE:** Canvas/graphics libraries running on server
+**SOLUTION:** Use dynamic imports or client-only components
+```typescript
+// ✅ FIX
+const DynamicComponent = dynamic(() => import('./ClientOnlyComponent'), {
+  ssr: false
+});
+```
+
+## 2. Authentication Issues
+
+### Infinite Redirect Loops
+**CAUSE:** Admin check redirecting to login, which redirects back
+**SOLUTION:** Simplify admin logic, avoid aggressive redirects
+```typescript
+// ✅ FIX - Simple email check
+const isAdmin = user?.email === 'jason@carehomefinders.com';
+```
+
+### "Could not load default credentials"
+**CAUSE:** Firebase Admin SDK missing credentials
+**SOLUTION:** Check environment variables and initialization
+```typescript
+// ✅ FIX
+if (!process.env.FIREBASE_PROJECT_ID) {
+  console.error('Missing Firebase credentials');
+  return fallbackResponse;
+}
+```
+
+## 3. API Errors
+
+### "JSON parsing error: Unexpected end of JSON input"
+**CAUSE:** API returning malformed JSON or empty response
+**SOLUTION:** Proper error handling in API routes
+```typescript
+// ✅ FIX
+try {
+  return NextResponse.json({ success: true, data });
+} catch (error) {
+  return NextResponse.json({ 
+    error: 'Internal server error',
+    details: error.message 
+  }, { status: 500 });
+}
+```
+
+### Caspio API Rate Limits
+**CAUSE:** Too many API calls in short time
+**SOLUTION:** Implement rate limiting and batching
+```typescript
+// ✅ FIX
+await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+```
+
+## 4. Google Maps Issues
+
+### "REQUEST_DENIED" Error
+**CAUSE:** API key restrictions blocking localhost
+**SOLUTION:** Update Google Cloud Console API key restrictions
+- Add `http://localhost:3005/*` to HTTP referrers
+- Add `https://localhost:3005/*` for HTTPS
+
+### Map Not Loading
+**CAUSE:** Missing or invalid API key
+**SOLUTION:** Check environment variables
+```typescript
+// ✅ CHECK
+console.log('Google Maps API Key:', process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.substring(0, 10) + '...');
+```
+
+## 5. Performance Issues
+
+### Slow Page Loads
+**CAUSE:** Too much data fetching on initial load
+**SOLUTION:** Implement pagination and lazy loading
+```typescript
+// ✅ FIX
+const [limit, setLimit] = useState(50);
+const query = query(collection(db, 'items'), limit(limit));
+```
+
+### Memory Leaks
+**CAUSE:** Unsubscribed Firebase listeners
+**SOLUTION:** Always cleanup in useEffect
+```typescript
+// ✅ FIX
+useEffect(() => {
+  const unsubscribe = onSnapshot(/* ... */);
+  return () => unsubscribe(); // Cleanup
+}, []);
+```
+
+## 6. Emergency Fixes
+
+### Production Build Failing
+1. Run `npm run build` locally to reproduce
+2. Check for SSR errors in build output
+3. Add client-side guards to problematic components
+4. Consider removing problematic features temporarily
+
+### Complete System Down
+1. Check Firebase Console for service status
+2. Verify Caspio API connectivity
+3. Check environment variables
+4. Rollback to last working commit if needed
+
+## 7. Prevention Strategies
+
+### Before Each Deployment
+- [ ] Run `npm run build` locally
+- [ ] Test admin authentication
+- [ ] Verify API endpoints work
+- [ ] Check for console errors
+- [ ] Test on mobile devices
+
+### Code Review Checklist
+- [ ] All browser APIs have client-side guards
+- [ ] Error handling in all API routes
+- [ ] Proper TypeScript types
+- [ ] No hardcoded credentials
+- [ ] Firebase listeners are cleaned up

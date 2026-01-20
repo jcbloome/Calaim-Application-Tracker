@@ -1,0 +1,70 @@
+---
+description: Firebase Admin SDK Patterns and Authentication Rules
+globs: **/*.{js,ts,jsx,tsx}
+---
+
+# Firebase Admin SDK Protocol
+
+Rules for consistent Firebase Admin usage and authentication.
+
+## 1. Admin SDK Initialization
+- **SINGLETON PATTERN:** Initialize Firebase Admin only once per application
+- **CHECK EXISTING:** Always check if `admin.apps.length > 0` before initializing
+- **GRACEFUL FALLBACK:** Provide fallbacks when Admin SDK fails to load
+
+```typescript
+// ✅ CORRECT Pattern
+let adminDb: any = null;
+
+try {
+  if (admin.apps.length === 0) {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      projectId: process.env.FIREBASE_PROJECT_ID
+    });
+  }
+  adminDb = admin.firestore();
+} catch (error) {
+  console.error('Firebase Admin initialization failed:', error);
+  // Provide fallback or graceful degradation
+}
+```
+
+## 2. Authentication Patterns
+- **EMAIL-BASED ADMIN:** Use `jason@carehomefinders.com` as hardcoded super admin
+- **ROLE-BASED ACCESS:** Check `/roles_admin/{uid}` collection for additional admins
+- **GRACEFUL DEGRADATION:** Always provide fallbacks when auth fails
+
+## 3. API Route Patterns
+- **CONSISTENT ERROR HANDLING:** Always return proper HTTP status codes
+- **JSON RESPONSES:** Ensure all API responses are valid JSON
+- **ADMIN VERIFICATION:** Verify admin status in protected routes
+
+```typescript
+// ✅ CORRECT API Pattern
+export async function GET(request: NextRequest) {
+  try {
+    // Admin verification logic
+    const isAdmin = await verifyAdminStatus(userId);
+    if (!isAdmin) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    }
+    
+    // Main logic here
+    return NextResponse.json({ success: true, data: result });
+  } catch (error) {
+    console.error('API Error:', error);
+    return NextResponse.json({ 
+      error: 'Internal server error',
+      details: error.message 
+    }, { status: 500 });
+  }
+}
+```
+
+## 4. Common Pitfalls to Avoid
+- ❌ Multiple Firebase Admin initializations
+- ❌ Undefined variables in catch blocks
+- ❌ Missing error handling in API routes
+- ❌ Hardcoded credentials in code
+- ❌ Infinite redirect loops in auth
