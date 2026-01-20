@@ -25,7 +25,7 @@ import {
   Eye,
   Send
 } from 'lucide-react';
-import { useAdmin } from '@/hooks/useAdmin';
+import { useAdmin } from '@/hooks/use-admin';
 
 interface EligibilityCheck {
   id: string;
