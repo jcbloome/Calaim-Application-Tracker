@@ -279,6 +279,56 @@ export default function KaiserTrackerPage() {
       .map(([status, count]) => ({ status, count }));
   }, [members]);
 
+  // Calculate staff assignments for Kaiser staff only
+  const kaiserStaff = ['John', 'Nick', 'Jesse'];
+  const staffAssignments = useMemo(() => {
+    const assignments: Record<string, { 
+      count: number; 
+      members: any[];
+      statusBreakdown: Record<string, number>;
+      nextSteps: Record<string, { count: number; dates: string[] }>;
+    }> = {};
+    
+    // Initialize staff
+    kaiserStaff.forEach(staff => {
+      assignments[staff] = { 
+        count: 0, 
+        members: [], 
+        statusBreakdown: {},
+        nextSteps: {}
+      };
+    });
+    
+    // Count members assigned to each staff
+    members.forEach(member => {
+      const staffName = member.Staff_Assigned || member.kaiser_user_assignment || 'Unassigned';
+      
+      // Only count Kaiser staff members
+      if (kaiserStaff.includes(staffName)) {
+        assignments[staffName].count++;
+        assignments[staffName].members.push(member);
+        
+        // Count status breakdown
+        const status = member.Kaiser_Status || 'No Status';
+        assignments[staffName].statusBreakdown[status] = (assignments[staffName].statusBreakdown[status] || 0) + 1;
+        
+        // Count next steps
+        const nextStep = member.Next_Step || member.workflow_step || 'No Next Step';
+        const nextStepDate = member.Next_Step_Due_Date || member.Next_Step_Date || '';
+        
+        if (!assignments[staffName].nextSteps[nextStep]) {
+          assignments[staffName].nextSteps[nextStep] = { count: 0, dates: [] };
+        }
+        assignments[staffName].nextSteps[nextStep].count++;
+        if (nextStepDate) {
+          assignments[staffName].nextSteps[nextStep].dates.push(nextStepDate);
+        }
+      }
+    });
+    
+    return assignments;
+  }, [members]);
+
   // Helper function to open member list modal
   const openMemberModal = (
     memberList: KaiserMember[],
@@ -657,6 +707,115 @@ export default function KaiserTrackerPage() {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Staff Assignment Cards */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold text-gray-900">Kaiser Staff Assignments</h3>
+        
+        {/* Staff Member Count Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {kaiserStaff.map(staffName => {
+            const assignment = staffAssignments[staffName];
+            return (
+              <Card key={`staff-${staffName}`} className="bg-white border-l-4 border-l-indigo-500 shadow">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <User className="h-4 w-4 text-indigo-600" />
+                    {staffName}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-indigo-600 mb-1">
+                      {assignment.count}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      Members Assigned
+                    </div>
+                    {assignment.count > 0 && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        {((assignment.count / members.length) * 100).toFixed(1)}% of total
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* Staff Status Breakdown Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {kaiserStaff.map(staffName => {
+            const assignment = staffAssignments[staffName];
+            return (
+              <Card key={`staff-status-${staffName}`} className="bg-white border-l-4 border-l-orange-500 shadow">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <CheckCircle className="h-4 w-4 text-orange-600" />
+                    {staffName} - Status & Next Steps
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  {assignment.count === 0 ? (
+                    <div className="text-center py-4 text-gray-500">
+                      <div className="text-sm">No members assigned</div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Status Breakdown */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-700 mb-2">Current Status</h4>
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                          {Object.entries(assignment.statusBreakdown)
+                            .sort(([,a], [,b]) => b - a)
+                            .slice(0, 5)
+                            .map(([status, count]) => (
+                            <div key={`${staffName}-status-${status}`} className="flex justify-between items-center text-xs">
+                              <span className="truncate pr-2" title={status}>{status}</span>
+                              <span className="font-semibold text-orange-600">{count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      {/* Next Steps */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-700 mb-2">Next Steps</h4>
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                          {Object.entries(assignment.nextSteps)
+                            .sort(([,a], [,b]) => b.count - a.count)
+                            .slice(0, 3)
+                            .map(([nextStep, data]) => (
+                            <div key={`${staffName}-next-${nextStep}`} className="text-xs">
+                              <div className="flex justify-between items-center">
+                                <span className="truncate pr-2" title={nextStep}>{nextStep}</span>
+                                <span className="font-semibold text-blue-600">{data.count}</span>
+                              </div>
+                              {data.dates.length > 0 && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Due: {data.dates.slice(0, 2).map(date => {
+                                    try {
+                                      return format(new Date(date), 'MM/dd');
+                                    } catch {
+                                      return date;
+                                    }
+                                  }).join(', ')}
+                                  {data.dates.length > 2 && ` +${data.dates.length - 2} more`}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </div>
 
       {/* Filters */}

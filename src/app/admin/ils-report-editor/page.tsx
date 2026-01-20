@@ -221,101 +221,215 @@ export default function ILSReportEditorPage() {
         memberMrn: member.memberMrn,
         Kaiser_Status: member.Kaiser_Status,
         Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date,
+        Kaiser_T2038_Received_Date: member.Kaiser_T2038_Received_Date,
         Kaiser_Tier_Level_Requested_Date: member.Kaiser_Tier_Level_Requested_Date,
-        ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date
+        Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date,
+        ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date,
+        ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date
       }))
     };
 
-    // Create printable version
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(`
-        <html>
-          <head>
-            <title>ILS Weekly Report - ${format(new Date(reportDate), 'MMM dd, yyyy')}</title>
-            <style>
-              body { font-family: Arial, sans-serif; margin: 20px; }
-              .header { text-align: center; margin-bottom: 30px; }
-              .report-date { color: #666; font-size: 14px; }
-              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-              th { background-color: #f5f5f5; font-weight: bold; }
-              .status-badge { padding: 2px 6px; border-radius: 4px; font-size: 12px; }
-              .status-t2038 { background-color: #fef3c7; color: #92400e; }
-              .status-tier { background-color: #dbeafe; color: #1e40af; }
-              .status-rcfe { background-color: #f3e8ff; color: #7c3aed; }
-              .footer { margin-top: 30px; font-size: 12px; color: #666; }
-              .comments-section { margin: 20px 0; padding: 15px; background-color: #f9f9f9; border-left: 4px solid #007bff; }
-              .comments-section h2 { margin: 0 0 10px 0; font-size: 16px; color: #333; }
-              .comments-content { font-size: 14px; line-height: 1.5; color: #555; white-space: pre-wrap; }
-              @media print { 
-                body { margin: 0; }
-                .no-print { display: none; }
-                .comments-section { background-color: #f5f5f5; }
-              }
-            </style>
-          </head>
-          <body>
-            <div class="header">
-              <h1>ILS Weekly Report</h1>
-              <div class="report-date">Report Date: ${format(new Date(reportDate), 'MMMM dd, yyyy')}</div>
-              <div class="report-date">Kaiser Bottleneck Members</div>
-            </div>
-            
-            ${reportData.comments ? `
-            <div class="comments-section">
-              <h2>Report Comments & Notes</h2>
-              <div class="comments-content">${reportData.comments.replace(/\n/g, '<br>')}</div>
-            </div>
-            ` : ''}
-            
-            <table>
-              <thead>
+    // Create a blob with HTML content
+    const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ILS Weekly Report - ${format(new Date(reportDate), 'MMM dd, yyyy')}</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            line-height: 1.4;
+        }
+        .header { 
+            text-align: center; 
+            margin-bottom: 30px; 
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 15px;
+        }
+        .report-date { 
+            color: #666; 
+            font-size: 14px; 
+            margin: 5px 0;
+        }
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-top: 20px; 
+            font-size: 12px;
+        }
+        th, td { 
+            border: 1px solid #ddd; 
+            padding: 8px; 
+            text-align: left; 
+            vertical-align: top;
+        }
+        th { 
+            background-color: #f5f5f5; 
+            font-weight: bold; 
+            font-size: 11px;
+        }
+        .status-badge { 
+            padding: 2px 6px; 
+            border-radius: 4px; 
+            font-size: 10px; 
+            font-weight: bold;
+        }
+        .status-t2038 { 
+            background-color: #fef3c7; 
+            color: #92400e; 
+        }
+        .status-tier { 
+            background-color: #dbeafe; 
+            color: #1e40af; 
+        }
+        .status-rcfe { 
+            background-color: #f3e8ff; 
+            color: #7c3aed; 
+        }
+        .footer { 
+            margin-top: 30px; 
+            font-size: 12px; 
+            color: #666; 
+            border-top: 1px solid #ddd;
+            padding-top: 15px;
+        }
+        .comments-section { 
+            margin: 20px 0; 
+            padding: 15px; 
+            background-color: #f9f9f9; 
+            border-left: 4px solid #007bff; 
+            border-radius: 4px;
+        }
+        .comments-section h2 { 
+            margin: 0 0 10px 0; 
+            font-size: 16px; 
+            color: #333; 
+        }
+        .comments-content { 
+            font-size: 14px; 
+            line-height: 1.5; 
+            color: #555; 
+            white-space: pre-wrap; 
+        }
+        .print-button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 20px 0;
+        }
+        .print-button:hover {
+            background-color: #0056b3;
+        }
+        @media print { 
+            body { margin: 0; }
+            .no-print { display: none !important; }
+            .comments-section { background-color: #f5f5f5; }
+            .print-button { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>ILS Weekly Report</h1>
+        <div class="report-date">Report Date: ${format(new Date(reportDate), 'MMMM dd, yyyy')}</div>
+        <div class="report-date">Kaiser Bottleneck Members</div>
+    </div>
+    
+    <div class="no-print">
+        <button class="print-button" onclick="window.print()">🖨️ Print Report</button>
+    </div>
+    
+    ${reportData.comments ? `
+    <div class="comments-section">
+        <h2>Report Comments & Notes</h2>
+        <div class="comments-content">${reportData.comments.replace(/\n/g, '<br>')}</div>
+    </div>
+    ` : ''}
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Member Name</th>
+                <th>MRN</th>
+                <th>Kaiser Status</th>
+                <th>T2038 Requested</th>
+                <th>T2038 Received</th>
+                <th>Tier Requested</th>
+                <th>Tier Received</th>
+                <th>RCFE Sent</th>
+                <th>RCFE Received</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${reportData.members.map(member => `
                 <tr>
-                  <th>Member Name</th>
-                  <th>MRN</th>
-                  <th>Kaiser Status</th>
-                  <th>T2038 Requested</th>
-                  <th>Tier Requested</th>
-                  <th>RCFE Sent</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${reportData.members.map(member => `
-                  <tr>
-                    <td>${member.memberName}</td>
+                    <td><strong>${member.memberName}</strong></td>
                     <td>${member.memberMrn}</td>
                     <td>
-                      <span class="status-badge ${
-                        member.Kaiser_Status.includes('T2038') ? 'status-t2038' :
-                        member.Kaiser_Status.includes('Tier') ? 'status-tier' :
-                        'status-rcfe'
-                      }">
-                        ${member.Kaiser_Status}
-                      </span>
+                        <span class="status-badge ${
+                          member.Kaiser_Status.includes('T2038') ? 'status-t2038' :
+                          member.Kaiser_Status.includes('Tier') ? 'status-tier' :
+                          'status-rcfe'
+                        }">
+                            ${member.Kaiser_Status}
+                        </span>
                     </td>
-                    <td>${member.Kaiser_T2038_Requested_Date && member.Kaiser_T2038_Requested_Date !== 'null' ? format(new Date(member.Kaiser_T2038_Requested_Date), 'MM/dd/yyyy') : '-'}</td>
-                    <td>${member.Kaiser_Tier_Level_Requested_Date && member.Kaiser_Tier_Level_Requested_Date !== 'null' ? format(new Date(member.Kaiser_Tier_Level_Requested_Date), 'MM/dd/yyyy') : '-'}</td>
-                    <td>${member.ILS_RCFE_Sent_For_Contract_Date && member.ILS_RCFE_Sent_For_Contract_Date !== 'null' ? format(new Date(member.ILS_RCFE_Sent_For_Contract_Date), 'MM/dd/yyyy') : '-'}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-            
-            <div class="footer">
-              <p>Generated on ${format(new Date(), 'MMMM dd, yyyy HH:mm')} | CalAIM Tracker System</p>
-              <p>Total Members: ${reportData.members.length}</p>
-            </div>
-            
-            <script>
-              window.onload = function() {
-                window.print();
-              }
-            </script>
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
+                    <td>${member.Kaiser_T2038_Requested_Date && member.Kaiser_T2038_Requested_Date !== 'null' && member.Kaiser_T2038_Requested_Date !== '' ? format(new Date(member.Kaiser_T2038_Requested_Date), 'MM/dd/yyyy') : '-'}</td>
+                    <td>${member.Kaiser_T2038_Received_Date && member.Kaiser_T2038_Received_Date !== 'null' && member.Kaiser_T2038_Received_Date !== '' ? format(new Date(member.Kaiser_T2038_Received_Date), 'MM/dd/yyyy') : '-'}</td>
+                    <td>${member.Kaiser_Tier_Level_Requested_Date && member.Kaiser_Tier_Level_Requested_Date !== 'null' && member.Kaiser_Tier_Level_Requested_Date !== '' ? format(new Date(member.Kaiser_Tier_Level_Requested_Date), 'MM/dd/yyyy') : '-'}</td>
+                    <td>${member.Kaiser_Tier_Level_Received_Date && member.Kaiser_Tier_Level_Received_Date !== 'null' && member.Kaiser_Tier_Level_Received_Date !== '' ? format(new Date(member.Kaiser_Tier_Level_Received_Date), 'MM/dd/yyyy') : '-'}</td>
+                    <td>${member.ILS_RCFE_Sent_For_Contract_Date && member.ILS_RCFE_Sent_For_Contract_Date !== 'null' && member.ILS_RCFE_Sent_For_Contract_Date !== '' ? format(new Date(member.ILS_RCFE_Sent_For_Contract_Date), 'MM/dd/yyyy') : '-'}</td>
+                    <td>${member.ILS_RCFE_Received_Contract_Date && member.ILS_RCFE_Received_Contract_Date !== 'null' && member.ILS_RCFE_Received_Contract_Date !== '' ? format(new Date(member.ILS_RCFE_Received_Contract_Date), 'MM/dd/yyyy') : '-'}</td>
+                </tr>
+            `).join('')}
+        </tbody>
+    </table>
+    
+    <div class="footer">
+        <p><strong>Generated on:</strong> ${format(new Date(), 'MMMM dd, yyyy HH:mm')} | CalAIM Tracker System</p>
+        <p><strong>Total Members:</strong> ${reportData.members.length}</p>
+        <p><strong>Report Period:</strong> ${format(new Date(reportDate), 'MMMM dd, yyyy')}</p>
+    </div>
+</body>
+</html>`;
+
+    // Create blob and URL
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    
+    // Open in new window with specific window features
+    const printWindow = window.open(url, 'ILS_Report', 'width=1200,height=800,scrollbars=yes,resizable=yes');
+    
+    if (printWindow) {
+      // Clean up the blob URL after a delay
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 1000);
+      
+      // Focus the new window
+      printWindow.focus();
+    } else {
+      // Fallback: download as HTML file
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ILS_Weekly_Report_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: 'Report Downloaded',
+        description: 'Report saved as HTML file. Open it in your browser and use Ctrl+P to print as PDF.',
+        className: 'bg-blue-100 text-blue-900 border-blue-200',
+      });
     }
   };
 
