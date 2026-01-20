@@ -2,7 +2,7 @@
 
 import React, { ReactNode, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAdmin } from '@/hooks/use-admin';
 import {
@@ -72,48 +72,49 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 const adminNavLinks = [
-  { href: '/admin/morning-dashboard', label: 'Morning Dashboard', icon: LayoutDashboard },
-  { href: '/admin/activity-log', label: 'Activity Log', icon: Activity },
   { 
-    label: 'Application Management', 
+    label: 'Dashboard', 
+    icon: LayoutDashboard, 
+    isSubmenu: true,
+    submenuItems: [
+      { href: '/admin/morning-dashboard', label: 'Morning Dashboard', icon: LayoutDashboard },
+      { href: '/admin', label: 'Activity Dashboard', icon: Activity },
+      { href: '/admin/activity-log', label: 'Activity Log', icon: Activity }
+    ]
+  },
+  { 
+    label: 'Applications', 
     icon: FolderKanban, 
     isSubmenu: true,
     submenuItems: [
-      { href: '/admin', label: 'Activity Dashboard', icon: LayoutDashboard },
       { href: '/admin/applications', label: 'All Applications', icon: FolderKanban },
-      { href: '/admin/applications/create', label: 'Create Application for Member', icon: UserPlus },
+      { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
+      { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
+      { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
       { href: '/admin/form-separator', label: 'Form Separator Tool', icon: Scissors }
     ]
   },
   { 
-    label: 'Kaiser Management', 
-    icon: Heart, 
-    isSubmenu: true,
-    submenuItems: [
-      { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
-      { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit }
-    ]
-  },
-  { 
-    label: 'Staff & Tasks', 
-    icon: UserPlus, 
+    label: 'Members', 
+    icon: Users, 
     isSubmenu: true,
     submenuItems: [
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
-      { href: '/admin/my-notes', label: 'Notification Center', icon: MessageSquareText },
-      { href: '/admin/social-worker-assignments', label: 'SW Assignments', icon: UserPlus },
-      { href: '/admin/tasks', label: 'My Tasks', icon: ClipboardList }
+      { href: '/admin/my-notes', label: 'My Notifications', icon: Bell },
+      { href: '/admin/social-worker-assignments', label: 'Staff Assignments', icon: UserPlus },
+      { href: '/admin/tasks', label: 'My Tasks', icon: ClipboardList },
+      { href: '/admin/member-activity', label: 'Member Activity', icon: Activity }
     ]
   },
   { 
-    label: 'Reports & Analytics', 
+    label: 'Reports', 
     icon: BarChart3, 
     isSubmenu: true,
     submenuItems: [
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
-      { href: '/admin/california-map-enhanced', label: 'Map Intelligence & Visits', icon: Navigation },
+      { href: '/admin/california-map-enhanced', label: 'Map Intelligence', icon: Navigation },
       { href: '/admin/california-counties', label: 'County Analysis', icon: Map },
       { href: '/admin/reports', label: 'Reports', icon: FileText }
     ]
@@ -122,71 +123,43 @@ const adminNavLinks = [
 
 const superAdminNavLinks = [
   { 
-    label: 'Staff Management', 
-    icon: Users, 
+    label: 'Super Admin', 
+    icon: ShieldAlert, 
     isSubmenu: true,
     submenuItems: [
+      // Staff Management
       { href: '/admin/staff-management', label: 'Staff Management', icon: Users },
       { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
       { href: '/admin/daily-tasks', label: 'Daily Task Tracker', icon: Calendar },
       { href: '/admin/login-activity', label: 'Login Activity', icon: Activity },
-      { href: '/admin/profile', label: 'Profile Management', icon: UserIcon }
-    ]
-  },
-  { 
-    label: 'Super Admin Tools', 
-    icon: Wrench, 
-    isSubmenu: true,
-    submenuItems: [
-      { href: '/admin/super-admin-tools', label: 'All Tools', icon: Wrench },
-      { href: '/admin/caspio-test', label: 'Caspio API Test', icon: TestTube2 },
-      { href: '/admin/migrate-drive', label: 'Google Drive Test', icon: FolderSync },
-      { href: '/admin/form-separator', label: 'Form Separator', icon: Scissors }
-    ]
-  },
-  { 
-    label: 'Data Management', 
-    icon: Database, 
-    isSubmenu: true,
-    submenuItems: [
+      { href: '/admin/profile', label: 'Profile Management', icon: UserIcon },
+      
+      // System Tools
+      { href: '/admin/super-admin-tools', label: 'System Tools', icon: Wrench },
+      { href: '/admin/notification-settings', label: 'Notification Settings', icon: Settings },
+      
+      // Data Management
       { href: '/admin/batch-sync', label: 'Batch Sync', icon: RefreshCw },
       { href: '/admin/intelligent-matching', label: 'Intelligent Matching', icon: Brain },
-      { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain }
-    ]
-  },
-  { 
-    label: 'Caspio Integration', 
-    icon: Database, 
-    isSubmenu: true,
-    submenuItems: [
-      { href: '/admin/caspio-field-mapping', label: 'Field Mapping Configuration', icon: Map },
-      { href: '/admin/caspio-test', label: 'Sync Testing & Development', icon: Database },
-      { href: '/admin/migrate-drive', label: 'Migrate Drive', icon: FolderSync }
-    ]
-  },
-  { 
-    label: 'Communication System', 
-    icon: MessageSquareText, 
-    isSubmenu: true,
-    submenuItems: [
-      { href: '/admin/client-notes', label: 'Client Notes & Communication', icon: MessageSquareText },
-      { href: '/admin/member-activity', label: 'Member Activity Tracking', icon: Activity },
-      { href: '/admin/notification-settings', label: 'Notification Settings', icon: Settings },
+      { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain },
+      
+      // Caspio Integration
+      { href: '/admin/caspio-field-mapping', label: 'Field Mapping', icon: Map },
+      { href: '/admin/caspio-test', label: 'Caspio API Test', icon: Database },
+      { href: '/admin/migrate-drive', label: 'Google Drive Test', icon: FolderSync },
+      
+      // Communication System
+      { href: '/admin/client-notes', label: 'Client Notes System', icon: MessageSquareText },
       { href: '/admin/system-note-log', label: 'System Note Log', icon: MessageSquareText },
       { href: '/admin/super-admin-notes', label: 'Complete Note Log', icon: FileText },
-      { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell }
-    ]
-  },
-  { 
-    label: 'Development Tools', 
-    icon: TestTube2, 
-    isSubmenu: true,
-    submenuItems: [
-      { href: '/admin/user-diagnostics', label: 'User Side Diagnostic Tools', icon: TestTube2 },
+      
+      // Development & Testing
+      { href: '/admin/user-diagnostics', label: 'User Diagnostics', icon: TestTube2 },
       { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
       { href: '/admin/test-emails', label: 'Email Testing', icon: Mail },
-      { href: '/admin/test-google-maps', label: 'Google Maps Testing', icon: Map },
-      { href: '/admin/test-notifications', label: 'System Tray Notifications Test', icon: Bell }
+      { href: '/admin/test-google-maps', label: 'Google Maps Test', icon: Map },
+      { href: '/admin/test-notifications', label: 'Notification Test', icon: Bell },
+      { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell }
     ]
   }
 ];
@@ -194,7 +167,6 @@ const superAdminNavLinks = [
 function AdminHeader() {
   const { user, isSuperAdmin } = useAdmin();
   const auth = useAuth();
-  const router = useRouter();
   const pathname = usePathname();
   const [openSubmenus, setOpenSubmenus] = useState<Set<string>>(new Set());
   const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null);
@@ -442,15 +414,18 @@ function AdminHeader() {
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, loading, isAdmin } = useAdmin();
   const [showAlert, setShowAlert] = useState(false);
+  const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
   const pathname = usePathname();
-  const router = useRouter();
 
   // Allow access to login page without authentication
   const isLoginPage = pathname === '/admin/login';
 
   useEffect(() => {
-    if (!loading && !isAdmin && !isLoginPage) {
-      setShowAlert(true);
+    if (!loading) {
+      setHasCheckedAuth(true);
+      if (!isAdmin && !isLoginPage) {
+        setShowAlert(true);
+      }
     }
   }, [loading, isAdmin, isLoginPage]);
 
@@ -466,16 +441,19 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  // Redirect to login if user is not an admin (but not if already on login page)
-  if (!loading && !isAdmin && !isLoginPage) {
-    // Use Next.js router for client-side navigation to prevent loops
-    console.log('🔄 AdminLayout: Redirecting non-admin user to login');
-    router.push('/admin/login');
+  // Only redirect if we're absolutely sure the user is not an admin
+  if (hasCheckedAuth && !loading && !isAdmin && !isLoginPage && user) {
+    // Use window.location for redirect to prevent router issues
+    if (typeof window !== 'undefined') {
+      setTimeout(() => {
+        window.location.href = '/admin/login';
+      }, 1000);
+    }
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Redirecting to login...</p>
+          <p className="text-muted-foreground">Checking permissions...</p>
         </div>
       </div>
     );

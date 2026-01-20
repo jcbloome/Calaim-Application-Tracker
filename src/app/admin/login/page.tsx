@@ -64,9 +64,16 @@ export default function AdminLoginPage() {
   // This effect will redirect a logged-in admin away from the login page.
   useEffect(() => {
     if (!isAdminLoading && (isAdmin || isSuperAdmin)) {
-      router.push('/admin/morning-dashboard');
+      // Use setTimeout to prevent hot reload issues
+      const timer = setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          window.location.href = '/admin';
+        }
+      }, 100);
+      
+      return () => clearTimeout(timer);
     }
-  }, [isAdmin, isSuperAdmin, isAdminLoading, router]);
+  }, [isAdmin, isSuperAdmin, isAdminLoading]);
 
 
   const handleSignIn = async (e: React.FormEvent) => {
