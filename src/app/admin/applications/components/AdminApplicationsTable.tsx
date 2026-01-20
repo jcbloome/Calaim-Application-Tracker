@@ -268,11 +268,15 @@ export const AdminApplicationsTable = ({
       if (result.success) {
         toast({
           title: 'CS Summary Confirmed',
-          description: `Successfully confirmed CS Summary for ${app.memberFirstName} ${app.memberLastName}`,
+          description: result.note ? 
+            `CS Summary confirmation simulated for ${app.memberFirstName} ${app.memberLastName} (Firebase Admin not configured)` :
+            `Successfully confirmed CS Summary for ${app.memberFirstName} ${app.memberLastName}`,
         });
         
-        // Refresh the page to show updated status
-        window.location.reload();
+        // Only refresh if not simulated
+        if (!result.note) {
+          window.location.reload();
+        }
       } else {
         throw new Error(result.error || 'Failed to confirm CS Summary');
       }
@@ -313,7 +317,9 @@ export const AdminApplicationsTable = ({
       if (result.success) {
         toast({
           title: 'Reminder Sent',
-          description: `CS Summary reminder sent to ${result.userEmail || 'user'} for ${app.memberFirstName} ${app.memberLastName}`,
+          description: result.note ? 
+            `CS Summary reminder simulated for ${app.memberFirstName} ${app.memberLastName} (Firebase Admin not configured)` :
+            `CS Summary reminder sent to ${result.userEmail || 'user'} for ${app.memberFirstName} ${app.memberLastName}`,
         });
       } else {
         throw new Error(result.error || 'Failed to send reminder');

@@ -972,6 +972,33 @@ function ApplicationDetailPageContent() {
       }
   };
 
+  const markFormAsComplete = async (formName: string) => {
+    if (!application || !applicationId || !appUserId) return;
+    
+    try {
+      await handleFormStatusUpdate([{
+        name: formName,
+        status: 'Completed',
+        fileName: 'Marked complete by admin',
+        dateCompleted: Timestamp.now(),
+        completedBy: user?.displayName || 'Admin'
+      }]);
+      
+      toast({
+        title: 'Form Marked Complete',
+        description: `${formName} has been marked as completed.`,
+        className: "bg-green-100 text-green-900 border-green-200",
+      });
+    } catch (error) {
+      console.error('Error marking form as complete:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Could not mark form as complete. Please try again.',
+      });
+    }
+  };
+
   if (isLoading || isUserLoading) {
     return (
         <div className="flex items-center justify-center h-full">
@@ -1417,6 +1444,17 @@ function ApplicationDetailPageContent() {
                         <CardContent className="flex flex-col flex-grow justify-end gap-4">
                             <StatusIndicator status={status} />
                             {getFormAction(req)}
+                            {status === 'Pending' && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full border-green-200 text-green-700 hover:bg-green-50"
+                                    onClick={() => markFormAsComplete(req.title)}
+                                >
+                                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                                    Mark as Complete
+                                </Button>
+                            )}
                         </CardContent>
                     </Card>
                 )
