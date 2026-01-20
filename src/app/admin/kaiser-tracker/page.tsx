@@ -40,7 +40,8 @@ import {
   Save,
   Plus,
   Target,
-  Users
+  Users,
+  MessageSquare
 } from 'lucide-react';
 
 // Types
@@ -245,6 +246,234 @@ const COUNTIES = [
   'Fresno',
   'Imperial'
 ];
+
+// Member Notes Modal Component
+interface MemberNotesModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  member: KaiserMember | null;
+  notes: any[];
+  isLoadingNotes: boolean;
+  newNote: {
+    noteText: string;
+    priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+    assignedTo: string;
+    assignedToName: string;
+    followUpDate: string;
+  };
+  onNewNoteChange: (note: any) => void;
+  onCreateNote: () => void;
+}
+
+function MemberNotesModal({
+  isOpen,
+  onClose,
+  member,
+  notes,
+  isLoadingNotes,
+  newNote,
+  onNewNoteChange,
+  onCreateNote
+}: MemberNotesModalProps) {
+  if (!isOpen || !member) return null;
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'Urgent': return 'bg-red-100 text-red-800 border-red-200';
+      case 'High': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'Medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'Low': return 'bg-green-100 text-green-800 border-green-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const getSourceColor = (source: string) => {
+    switch (source) {
+      case 'Caspio': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'App': return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'Admin': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            {member.memberFirstName} {member.memberLastName} - Member Notes
+          </DialogTitle>
+          <DialogDescription>
+            MRN: {member.memberMrn} | County: {member.memberCounty} | Kaiser Status: {member.Kaiser_Status}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[70vh]">
+          {/* Notes List */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-medium">Notes History</h3>
+              <Badge variant="outline">
+                {notes.length} notes
+              </Badge>
+            </div>
+
+            {isLoadingNotes ? (
+              <div className="text-center py-8">
+                <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
+                <p className="text-muted-foreground">Loading notes...</p>
+              </div>
+            ) : (
+              <ScrollArea className="h-[50vh]">
+                <div className="space-y-3">
+                  {notes.length === 0 ? (
+                    <div className="text-center py-8">
+                      <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No Notes Found</h3>
+                      <p className="text-muted-foreground">
+                        No notes have been created for this member yet.
+                      </p>
+                    </div>
+                  ) : (
+                    notes.map((note) => (
+                      <div key={note.id} className={`p-4 border rounded-lg ${!note.isRead ? 'border-blue-200 bg-blue-50' : ''}`}>
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex gap-2">
+                            <Badge variant="outline" className={getPriorityColor(note.priority)}>
+                              {note.priority}
+                            </Badge>
+                            <Badge variant="outline">
+                              {note.noteType || 'General'}
+                            </Badge>
+                            <Badge variant="outline" className={getSourceColor(note.source)}>
+                              {note.source}
+                            </Badge>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {new Date(note.createdAt).toLocaleDateString()} {new Date(note.createdAt).toLocaleTimeString()}
+                          </div>
+                        </div>
+                        
+                        <p className="text-sm mb-3">{note.noteText}</p>
+                        
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <div>
+                            <span className="font-medium">By:</span> {note.createdByName || note.authorName}
+                            {note.assignedToName && (
+                              <>
+                                <span className="mx-2">•</span>
+                                <span className="font-medium">Assigned to:</span> {note.assignedToName}
+                              </>
+                            )}
+                          </div>
+                          {note.followUpDate && (
+                            <div className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              Follow-up: {new Date(note.followUpDate).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+
+          {/* Add New Note */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">Add New Note</h3>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Priority</label>
+                <Select 
+                  value={newNote.priority} 
+                  onValueChange={(value: 'Low' | 'Medium' | 'High' | 'Urgent') => 
+                    onNewNoteChange({ ...newNote, priority: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Low">Low</SelectItem>
+                    <SelectItem value="Medium">Medium</SelectItem>
+                    <SelectItem value="High">High</SelectItem>
+                    <SelectItem value="Urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Note Content</label>
+                <Textarea
+                  value={newNote.noteText}
+                  onChange={(e) => onNewNoteChange({ ...newNote, noteText: e.target.value })}
+                  placeholder="Enter note content..."
+                  rows={4}
+                  className="resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Assign to Staff (Optional)</label>
+                  <Select
+                    value={newNote.assignedToName}
+                    onValueChange={(value) => {
+                      // Map staff names to IDs (in production, this would come from a staff API)
+                      const staffMap: Record<string, string> = {
+                        'John': 'john-user-id',
+                        'Nick': 'nick-user-id',
+                        'Jesse': 'jesse-user-id'
+                      };
+                      onNewNoteChange({ 
+                        ...newNote, 
+                        assignedToName: value,
+                        assignedTo: staffMap[value] || ''
+                      });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select staff member" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="John">John</SelectItem>
+                      <SelectItem value="Nick">Nick</SelectItem>
+                      <SelectItem value="Jesse">Jesse</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Follow-up Date (Optional)</label>
+                  <Input
+                    type="date"
+                    value={newNote.followUpDate}
+                    onChange={(e) => onNewNoteChange({ ...newNote, followUpDate: e.target.value })}
+                    min={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+              </div>
+
+              <Button 
+                onClick={onCreateNote} 
+                disabled={!newNote.noteText.trim()}
+                className="w-full"
+              >
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Add Note
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // Staff Member Management Modal Component
 interface StaffMemberManagementModalProps {
@@ -624,6 +853,22 @@ export default function KaiserTrackerPage() {
     staffName: string;
     members: KaiserMember[];
   }>({ isOpen: false, staffName: '', members: [] });
+
+  // Member notes modal state
+  const [memberNotesModal, setMemberNotesModal] = useState<{
+    isOpen: boolean;
+    member: KaiserMember | null;
+    notes: any[];
+    isLoadingNotes: boolean;
+  }>({ isOpen: false, member: null, notes: [], isLoadingNotes: false });
+
+  const [newNote, setNewNote] = useState({
+    noteText: '',
+    priority: 'Medium' as 'Low' | 'Medium' | 'High' | 'Urgent',
+    assignedTo: '',
+    assignedToName: '',
+    followUpDate: ''
+  });
   const [filters, setFilters] = useState({
     kaiserStatus: 'all',
     calaimStatus: 'all',
@@ -728,6 +973,145 @@ export default function KaiserTrackerPage() {
       staffName,
       members
     });
+  };
+
+  // Helper function to handle member click and load notes
+  const handleMemberClick = async (member: KaiserMember) => {
+    setMemberNotesModal({
+      isOpen: true,
+      member,
+      notes: [],
+      isLoadingNotes: true
+    });
+
+    try {
+      // Fetch member notes
+      const response = await fetch(`/api/member-notes?clientId2=${member.client_ID2}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setMemberNotesModal(prev => ({
+          ...prev,
+          notes: data.notes || [],
+          isLoadingNotes: false
+        }));
+        
+        toast({
+          title: data.fromCache ? "Notes Loaded from Cache" : "Notes Synced from Caspio",
+          description: `${data.notes?.length || 0} notes loaded for ${member.memberFirstName} ${member.memberLastName}`,
+        });
+      } else {
+        throw new Error(data.error || 'Failed to load notes');
+      }
+      
+    } catch (error: any) {
+      console.error('Error loading member notes:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to load member notes",
+        variant: "destructive"
+      });
+      
+      setMemberNotesModal(prev => ({
+        ...prev,
+        notes: [],
+        isLoadingNotes: false
+      }));
+    }
+  };
+
+  // Helper function to create a new note
+  const handleCreateNote = async () => {
+    if (!memberNotesModal.member || !newNote.noteText.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter note content",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const noteData = {
+        clientId2: memberNotesModal.member.client_ID2,
+        memberName: `${memberNotesModal.member.memberFirstName} ${memberNotesModal.member.memberLastName}`,
+        noteText: newNote.noteText,
+        priority: newNote.priority,
+        assignedTo: newNote.assignedTo || undefined,
+        assignedToName: newNote.assignedToName || undefined,
+        followUpDate: newNote.followUpDate || undefined,
+        authorId: user?.uid || 'current-user',
+        authorName: user?.displayName || user?.email || 'Current User'
+      };
+
+      const response = await fetch('/api/member-notes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(noteData),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Update the member's notes
+        setMemberNotesModal(prev => ({
+          ...prev,
+          notes: [data.note, ...prev.notes]
+        }));
+
+        // Reset form
+        setNewNote({
+          noteText: '',
+          priority: 'Medium',
+          assignedTo: '',
+          assignedToName: '',
+          followUpDate: ''
+        });
+
+        toast({
+          title: "Note Created",
+          description: `Note added for ${memberNotesModal.member.memberFirstName} ${memberNotesModal.member.memberLastName}${newNote.assignedToName ? ` and assigned to ${newNote.assignedToName}` : ''}`,
+        });
+
+        // Show notification if assigned to staff
+        if (newNote.assignedTo && newNote.assignedToName) {
+          // Trigger staff notification
+          await fetch('/api/staff/notifications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'note_assignment',
+              title: 'New Note Assigned',
+              message: `You have been assigned a ${newNote.priority.toLowerCase()} priority note for ${memberNotesModal.member.memberFirstName} ${memberNotesModal.member.memberLastName}`,
+              noteId: data.note.id,
+              clientId2: memberNotesModal.member.client_ID2,
+              memberName: `${memberNotesModal.member.memberFirstName} ${memberNotesModal.member.memberLastName}`,
+              priority: newNote.priority,
+              assignedTo: newNote.assignedTo,
+              createdBy: user?.uid || 'current-user',
+              createdByName: user?.displayName || user?.email || 'Current User'
+            })
+          });
+
+          toast({
+            title: "Notification Sent",
+            description: `${newNote.assignedToName} has been notified`,
+          });
+        }
+      } else {
+        throw new Error(data.error || 'Failed to create note');
+      }
+
+    } catch (error: any) {
+      console.error('Error creating note:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create note",
+        variant: "destructive"
+      });
+    }
   };
 
   // Helper functions
@@ -1459,7 +1843,7 @@ function MemberListModal({
                       isUrgent ? 'border-l-yellow-500 bg-yellow-50' : 
                       'border-l-blue-500'
                     }`}
-                    onClick={() => onMemberClick(member)}
+                    onClick={() => handleMemberClick(member)}
                   >
                     <CardContent className="p-4">
                       <div className="flex justify-between items-start">
@@ -1568,6 +1952,18 @@ function MemberListModal({
           // Refresh data after updates
           fetchMembers();
         }}
+      />
+
+      {/* Member Notes Modal */}
+      <MemberNotesModal
+        isOpen={memberNotesModal.isOpen}
+        onClose={() => setMemberNotesModal({ isOpen: false, member: null, notes: [], isLoadingNotes: false })}
+        member={memberNotesModal.member}
+        notes={memberNotesModal.notes}
+        isLoadingNotes={memberNotesModal.isLoadingNotes}
+        newNote={newNote}
+        onNewNoteChange={setNewNote}
+        onCreateNote={handleCreateNote}
       />
     </div>
   );
