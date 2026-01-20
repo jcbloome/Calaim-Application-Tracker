@@ -36,6 +36,10 @@ import {
   List,
   Link as LinkIcon,
   Download,
+  Bell,
+  BellOff,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
@@ -46,6 +50,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { MultiUploadCard } from '@/components/MultiUploadCard';
@@ -351,7 +356,8 @@ function AdminActions({ application }: { application: Application }) {
     const [isSending, setIsSending] = useState(false);
     const [isSendingToCaspio, setIsSendingToCaspio] = useState(false);
     const [emailRemindersEnabled, setEmailRemindersEnabled] = useState((application as any)?.emailRemindersEnabled ?? true);
-    const [isUpdatingReminders, setIsUpdatingReminders] = useState(false);
+    const [reviewNotificationSent, setReviewNotificationSent] = useState((application as any)?.reviewNotificationSent ?? false);
+    const [isUpdatingNotifications, setIsUpdatingNotifications] = useState(false);
     const { toast } = useToast();
     const router = useRouter();
 
@@ -361,33 +367,49 @@ function AdminActions({ application }: { application: Application }) {
         return doc(firestore, `users/${application.userId}/applications`, application.id);
     }, [firestore, application.id, application.userId]);
 
-    const handleEmailRemindersToggle = async (enabled: boolean) => {
-        if (!docRef) return;
-        
-        setIsUpdatingReminders(true);
+    const handleNotificationUpdate = async (type: 'emailReminders' | 'reviewNotification', enabled: boolean) => {
+        setIsUpdatingNotifications(true);
         try {
-            await setDoc(docRef, {
-                emailRemindersEnabled: enabled,
-                lastUpdated: serverTimestamp()
-            }, { merge: true });
-            
-            setEmailRemindersEnabled(enabled);
+            const response = await fetch('/api/admin/update-notification-settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    applicationId: application.id,
+                    ...(type === 'emailReminders' && { emailRemindersEnabled: enabled }),
+                    ...(type === 'reviewNotification' && { reviewNotificationSent: enabled }),
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to update notification settings');
+            }
+
+            if (type === 'emailReminders') {
+                setEmailRemindersEnabled(enabled);
+            } else {
+                setReviewNotificationSent(enabled);
+            }
+
             toast({
-                title: enabled ? 'Email Reminders Enabled' : 'Email Reminders Disabled',
-                description: enabled 
-                    ? 'User will receive email reminders for missing documents'
-                    : 'User will not receive email reminders for missing documents',
+                title: type === 'emailReminders' ? 
+                    (enabled ? 'Email Reminders Enabled' : 'Email Reminders Disabled') :
+                    (enabled ? 'Review Notification Sent' : 'Review Notification Cleared'),
+                description: type === 'emailReminders' ?
+                    (enabled ? 'User will receive email reminders for missing documents' : 'User will not receive email reminders for missing documents') :
+                    (enabled ? 'User has been notified that we are reviewing their CS Summary and application' : 'Review notification status cleared'),
                 className: enabled ? 'bg-green-100 text-green-900 border-green-200' : 'bg-orange-100 text-orange-900 border-orange-200'
             });
         } catch (error) {
-            console.error('Error updating email reminders:', error);
+            console.error('Error updating notification settings:', error);
             toast({
                 variant: 'destructive',
                 title: 'Error',
-                description: 'Failed to update email reminder settings'
+                description: 'Failed to update notification settings'
             });
         } finally {
-            setIsUpdatingReminders(false);
+            setIsUpdatingNotifications(false);
         }
     };
 
@@ -564,12 +586,46 @@ function AdminActions({ application }: { application: Application }) {
                             </div>
                         </div>
                         <div className="flex items-center space-x-2">
-                            {isUpdatingReminders && <Loader2 className="h-4 w-4 animate-spin" />}
-                            <Checkbox
+                            {isUpdatingNotifications && <Loader2 className="h-4 w-4 animate-spin" />}
+                            {emailRemindersEnabled ? (
+                                <Bell className="h-4 w-4 text-green-600" />
+                            ) : (
+                                <BellOff className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            <Switch
                                 id="email-reminders"
                                 checked={emailRemindersEnabled}
-                                onCheckedChange={handleEmailRemindersToggle}
-                                disabled={isUpdatingReminders}
+                                onCheckedChange={(enabled) => handleNotificationUpdate('emailReminders', enabled)}
+                                disabled={isUpdatingNotifications}
+                            />
+                        </div>
+                    </div>
+                    
+                    {/* Review Notification Toggle */}
+                    <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                        <div className="flex items-center space-x-2">
+                            <Eye className="h-4 w-4 text-muted-foreground" />
+                            <div>
+                                <Label htmlFor="review-notification" className="text-sm font-medium">
+                                    Review Notification
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                    Notify user we're reviewing CS Summary
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            {isUpdatingNotifications && <Loader2 className="h-4 w-4 animate-spin" />}
+                            {reviewNotificationSent ? (
+                                <Eye className="h-4 w-4 text-blue-600" />
+                            ) : (
+                                <EyeOff className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            <Switch
+                                id="review-notification"
+                                checked={reviewNotificationSent}
+                                onCheckedChange={(enabled) => handleNotificationUpdate('reviewNotification', enabled)}
+                                disabled={isUpdatingNotifications}
                             />
                         </div>
                     </div>
@@ -1294,6 +1350,37 @@ function ApplicationDetailPageContent() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
                 <div className="truncate"><strong>Application ID:</strong> <span className="font-mono text-xs">{application.id}</span></div>
                 <div><strong>Submission Status:</strong> <span className="font-semibold">{application.status}</span></div>
+            </div>
+            
+            {/* Notification Status Icons */}
+            <div className="flex items-center gap-4 pt-2 border-t">
+                <div className="flex items-center gap-2">
+                    {(application as any)?.emailRemindersEnabled ? (
+                        <div className="flex items-center gap-1 text-green-600">
+                            <Bell className="h-4 w-4" />
+                            <span className="text-xs font-medium">Email Reminders Active</span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-1 text-muted-foreground">
+                            <BellOff className="h-4 w-4" />
+                            <span className="text-xs">Email Reminders Off</span>
+                        </div>
+                    )}
+                </div>
+                
+                <div className="flex items-center gap-2">
+                    {(application as any)?.reviewNotificationSent ? (
+                        <div className="flex items-center gap-1 text-blue-600">
+                            <Eye className="h-4 w-4" />
+                            <span className="text-xs font-medium">Review Notification Sent</span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-1 text-muted-foreground">
+                            <EyeOff className="h-4 w-4" />
+                            <span className="text-xs">No Review Notification</span>
+                        </div>
+                    )}
+                </div>
             </div>
             
             {/* Staff Assignment Display */}

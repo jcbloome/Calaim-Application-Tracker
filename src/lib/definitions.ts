@@ -85,6 +85,11 @@ export type Application = {
   rcfeAdminName?: string | null;
   rcfeAdminPhone?: string | null;
   rcfeAdminEmail?: string | null;
+  // Notification settings
+  emailRemindersEnabled?: boolean;
+  reviewNotificationSent?: boolean;
+  emailRemindersEnabledAt?: Timestamp | FieldValue;
+  reviewNotificationSentAt?: Timestamp | FieldValue;
 };
 
 export type FormStatus = {
