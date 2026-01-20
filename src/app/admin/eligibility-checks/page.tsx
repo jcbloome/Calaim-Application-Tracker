@@ -29,12 +29,14 @@ import { useAdmin } from '@/hooks/use-admin';
 
 interface EligibilityCheck {
   id: string;
-  memberName: string;
+  memberFirstName: string;
+  memberLastName: string;
   memberBirthday: string;
   memberMrn: string;
   healthPlan: 'Kaiser' | 'Health Net';
   county: string;
-  requesterName: string;
+  requesterFirstName: string;
+  requesterLastName: string;
   requesterEmail: string;
   relationshipToMember: string;
   otherRelationshipSpecification?: string;
@@ -264,7 +266,7 @@ export default function EligibilityChecksPage() {
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <h4 className="font-medium">{check.memberName}</h4>
+                        <h4 className="font-medium">{check.memberFirstName} {check.memberLastName}</h4>
                         <p className="text-sm text-gray-600">
                           {check.healthPlan} • {check.county}
                         </p>
@@ -272,7 +274,7 @@ export default function EligibilityChecksPage() {
                       {getStatusBadge(check.status)}
                     </div>
                     <div className="text-xs text-gray-500">
-                      <p>Requested by: {check.requesterName}</p>
+                      <p>Requested by: {check.requesterFirstName} {check.requesterLastName}</p>
                       <p>
                         {check.timestamp?.toDate ? 
                           check.timestamp.toDate().toLocaleDateString() : 
@@ -312,7 +314,7 @@ export default function EligibilityChecksPage() {
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <span className="font-medium">Name:</span>
-                      <p>{selectedCheck.memberName}</p>
+                      <p>{selectedCheck.memberFirstName} {selectedCheck.memberLastName}</p>
                     </div>
                     <div>
                       <span className="font-medium">Birthday:</span>
@@ -345,7 +347,7 @@ export default function EligibilityChecksPage() {
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <span className="font-medium">Name:</span>
-                      <p>{selectedCheck.requesterName}</p>
+                      <p>{selectedCheck.requesterFirstName} {selectedCheck.requesterLastName}</p>
                     </div>
                     <div>
                       <span className="font-medium">Email:</span>

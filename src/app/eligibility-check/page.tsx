@@ -47,7 +47,8 @@ const CALIFORNIA_COUNTIES = [
 // Form validation schema
 const eligibilityCheckSchema = z.object({
   // Member Information
-  memberName: z.string().min(2, 'Member name must be at least 2 characters'),
+  memberFirstName: z.string().min(2, 'Member first name must be at least 2 characters'),
+  memberLastName: z.string().min(2, 'Member last name must be at least 2 characters'),
   memberBirthday: z.string().min(1, 'Member birthday is required'),
   memberMrn: z.string().min(1, 'Medical Record Number (MRN) is required'),
   healthPlan: z.enum(['Kaiser', 'Health Net'], {
@@ -56,8 +57,10 @@ const eligibilityCheckSchema = z.object({
   county: z.string().min(1, 'Please select a county'),
   
   // Requester Information
-  requesterName: z.string().min(2, 'Your full name is required'),
+  requesterFirstName: z.string().min(2, 'Your first name is required'),
+  requesterLastName: z.string().min(2, 'Your last name is required'),
   requesterEmail: z.string().email('Please enter a valid email address'),
+  confirmEmail: z.string().email('Please enter a valid email address'),
   relationshipToMember: z.string().min(1, 'Relationship to member is required'),
   otherRelationshipSpecification: z.string().optional(),
   
@@ -72,6 +75,12 @@ const eligibilityCheckSchema = z.object({
 }, {
   message: 'Please specify the relationship when selecting "Other"',
   path: ['otherRelationshipSpecification']
+}).refine((data) => {
+  // Email addresses must match
+  return data.requesterEmail === data.confirmEmail;
+}, {
+  message: 'Email addresses do not match',
+  path: ['confirmEmail']
 });
 
 type EligibilityCheckForm = z.infer<typeof eligibilityCheckSchema>;
@@ -85,11 +94,14 @@ export default function EligibilityCheckPage() {
   const form = useForm<EligibilityCheckForm>({
     resolver: zodResolver(eligibilityCheckSchema),
     defaultValues: {
-      memberName: '',
+      memberFirstName: '',
+      memberLastName: '',
       memberBirthday: '',
       memberMrn: '',
-      requesterName: '',
+      requesterFirstName: '',
+      requesterLastName: '',
       requesterEmail: '',
+      confirmEmail: '',
       relationshipToMember: '',
       otherRelationshipSpecification: '',
       additionalInfo: ''
@@ -318,17 +330,31 @@ export default function EligibilityCheckPage() {
                 </h3>
                 
                 <div className="grid md:grid-cols-2 gap-4">
-                  {/* Member Name */}
+                  {/* Member First Name */}
                   <div>
-                    <Label htmlFor="memberName">Member Full Name *</Label>
+                    <Label htmlFor="memberFirstName">Member First Name *</Label>
                     <Input
-                      id="memberName"
-                      {...register('memberName')}
-                      placeholder="Enter member's full name"
-                      className={errors.memberName ? 'border-red-500' : ''}
+                      id="memberFirstName"
+                      {...register('memberFirstName')}
+                      placeholder="Enter member's first name"
+                      className={errors.memberFirstName ? 'border-red-500' : ''}
                     />
-                    {errors.memberName && (
-                      <p className="text-red-500 text-sm mt-1">{errors.memberName.message}</p>
+                    {errors.memberFirstName && (
+                      <p className="text-red-500 text-sm mt-1">{errors.memberFirstName.message}</p>
+                    )}
+                  </div>
+
+                  {/* Member Last Name */}
+                  <div>
+                    <Label htmlFor="memberLastName">Member Last Name *</Label>
+                    <Input
+                      id="memberLastName"
+                      {...register('memberLastName')}
+                      placeholder="Enter member's last name"
+                      className={errors.memberLastName ? 'border-red-500' : ''}
+                    />
+                    {errors.memberLastName && (
+                      <p className="text-red-500 text-sm mt-1">{errors.memberLastName.message}</p>
                     )}
                   </div>
 
@@ -473,17 +499,31 @@ export default function EligibilityCheckPage() {
                 </h3>
                 
                 <div className="grid md:grid-cols-2 gap-4">
-                  {/* Requester Name */}
+                  {/* Requester First Name */}
                   <div>
-                    <Label htmlFor="requesterName">Your Full Name *</Label>
+                    <Label htmlFor="requesterFirstName">Your First Name *</Label>
                     <Input
-                      id="requesterName"
-                      {...register('requesterName')}
-                      placeholder="Enter your full name"
-                      className={errors.requesterName ? 'border-red-500' : ''}
+                      id="requesterFirstName"
+                      {...register('requesterFirstName')}
+                      placeholder="Enter your first name"
+                      className={errors.requesterFirstName ? 'border-red-500' : ''}
                     />
-                    {errors.requesterName && (
-                      <p className="text-red-500 text-sm mt-1">{errors.requesterName.message}</p>
+                    {errors.requesterFirstName && (
+                      <p className="text-red-500 text-sm mt-1">{errors.requesterFirstName.message}</p>
+                    )}
+                  </div>
+
+                  {/* Requester Last Name */}
+                  <div>
+                    <Label htmlFor="requesterLastName">Your Last Name *</Label>
+                    <Input
+                      id="requesterLastName"
+                      {...register('requesterLastName')}
+                      placeholder="Enter your last name"
+                      className={errors.requesterLastName ? 'border-red-500' : ''}
+                    />
+                    {errors.requesterLastName && (
+                      <p className="text-red-500 text-sm mt-1">{errors.requesterLastName.message}</p>
                     )}
                   </div>
 
@@ -500,6 +540,24 @@ export default function EligibilityCheckPage() {
                     {errors.requesterEmail && (
                       <p className="text-red-500 text-sm mt-1">{errors.requesterEmail.message}</p>
                     )}
+                  </div>
+
+                  {/* Confirm Email */}
+                  <div>
+                    <Label htmlFor="confirmEmail">Confirm Email Address *</Label>
+                    <Input
+                      id="confirmEmail"
+                      type="email"
+                      {...register('confirmEmail')}
+                      placeholder="Re-enter your email address"
+                      className={errors.confirmEmail ? 'border-red-500' : ''}
+                    />
+                    {errors.confirmEmail && (
+                      <p className="text-red-500 text-sm mt-1">{errors.confirmEmail.message}</p>
+                    )}
+                    <p className="text-sm text-gray-600 mt-1">
+                      Please confirm your email to ensure you receive the eligibility results.
+                    </p>
                   </div>
 
                   {/* Relationship to Member */}

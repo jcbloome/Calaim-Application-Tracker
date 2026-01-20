@@ -10,15 +10,18 @@ if (!admin.apps.length) {
 // Validation schema for eligibility check submission
 const eligibilityCheckSchema = z.object({
   // Member Information
-  memberName: z.string().min(2, 'Member name must be at least 2 characters'),
+  memberFirstName: z.string().min(2, 'Member first name must be at least 2 characters'),
+  memberLastName: z.string().min(2, 'Member last name must be at least 2 characters'),
   memberBirthday: z.string().min(1, 'Member birthday is required'),
   memberMrn: z.string().min(1, 'Medical Record Number (MRN) is required'),
   healthPlan: z.enum(['Kaiser', 'Health Net']),
   county: z.string().min(1, 'County is required'),
   
   // Requester Information
-  requesterName: z.string().min(2, 'Requester name is required'),
+  requesterFirstName: z.string().min(2, 'Requester first name is required'),
+  requesterLastName: z.string().min(2, 'Requester last name is required'),
   requesterEmail: z.string().email('Valid email is required'),
+  confirmEmail: z.string().email('Valid email is required'),
   relationshipToMember: z.string().min(1, 'Relationship to member is required'),
   otherRelationshipSpecification: z.string().optional(),
   
@@ -33,6 +36,12 @@ const eligibilityCheckSchema = z.object({
 }, {
   message: 'Please specify the relationship when selecting "Other"',
   path: ['otherRelationshipSpecification']
+}).refine((data) => {
+  // Email addresses must match
+  return data.requesterEmail === data.confirmEmail;
+}, {
+  message: 'Email addresses do not match',
+  path: ['confirmEmail']
 });
 
 export async function POST(request: NextRequest) {
@@ -125,13 +134,14 @@ async function sendConfirmationEmail(data: any) {
     subject: 'CalAIM Eligibility Check - Confirmation',
     html: `
       <h2>Eligibility Check Submitted</h2>
-      <p>Dear ${data.requesterName},</p>
+        <p>Dear ${data.requesterFirstName} ${data.requesterLastName},</p>
       <p>We have received your CalAIM eligibility check request for:</p>
       <ul>
-        <li><strong>Member:</strong> ${data.memberName}</li>
+        <li><strong>Member:</strong> ${data.memberFirstName} ${data.memberLastName}</li>
         <li><strong>Health Plan:</strong> ${data.healthPlan}</li>
         <li><strong>County:</strong> ${data.county}</li>
         <li><strong>Date of Birth:</strong> ${data.memberBirthday}</li>
+        <li><strong>Requester:</strong> ${data.requesterFirstName} ${data.requesterLastName}</li>
         <li><strong>Your Relationship:</strong> ${data.relationshipToMember.replace('-', ' ')}${
           data.relationshipToMember === 'other' && data.otherRelationshipSpecification 
             ? ` (${data.otherRelationshipSpecification})` 

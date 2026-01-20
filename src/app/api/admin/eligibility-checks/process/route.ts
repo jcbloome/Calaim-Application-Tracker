@@ -81,9 +81,11 @@ export async function POST(request: Request) {
     // Send email to requester
     try {
       await sendResultEmail({
-        requesterName: checkData.requesterName,
+        requesterFirstName: checkData.requesterFirstName,
+        requesterLastName: checkData.requesterLastName,
         requesterEmail: checkData.requesterEmail,
-        memberName: checkData.memberName,
+        memberFirstName: checkData.memberFirstName,
+        memberLastName: checkData.memberLastName,
         healthPlan: checkData.healthPlan,
         relationshipToMember: checkData.relationshipToMember,
         result,
@@ -110,17 +112,21 @@ export async function POST(request: Request) {
 }
 
 async function sendResultEmail({
-  requesterName,
+  requesterFirstName,
+  requesterLastName,
   requesterEmail,
-  memberName,
+  memberFirstName,
+  memberLastName,
   healthPlan,
   relationshipToMember,
   result,
   resultMessage
 }: {
-  requesterName: string;
+  requesterFirstName: string;
+  requesterLastName: string;
   requesterEmail: string;
-  memberName: string;
+  memberFirstName: string;
+  memberLastName: string;
   healthPlan: string;
   relationshipToMember: string;
   result: 'eligible' | 'not-eligible';
@@ -136,9 +142,9 @@ async function sendResultEmail({
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #1f2937;">CalAIM Eligibility Check Results</h2>
         
-        <p>Dear ${requesterName},</p>
+        <p>Dear ${requesterFirstName} ${requesterLastName},</p>
         
-        <p>We have completed the CalAIM eligibility check for <strong>${memberName}</strong> (${healthPlan}).</p>
+        <p>We have completed the CalAIM eligibility check for <strong>${checkData.memberFirstName} ${checkData.memberLastName}</strong> (${healthPlan}).</p>
         
         <p style="font-size: 14px; color: #6b7280; margin: 10px 0;">
           <em>Relationship to member: ${relationshipToMember.replace('-', ' ')}${
