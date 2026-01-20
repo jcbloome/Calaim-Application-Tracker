@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useFirestore } from '@/firebase';
 import { collection, query, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
-import { Loader2, Users, Building2, Stethoscope, UserCheck, User, Activity } from 'lucide-react';
+import { Loader2, Users, Building2, Stethoscope, UserCheck, Activity } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -70,8 +70,7 @@ export default function AdminStatisticsPage() {
   const [resourceLoading, setResourceLoading] = useState(false);
   const [resourceError, setResourceError] = useState<string | null>(null);
 
-  // Staff and status statistics state
-  const [staffAssignments, setStaffAssignments] = useState<any[]>([]);
+  // Status statistics state
   const [statusBreakdown, setStatusBreakdown] = useState<any>({});
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
@@ -99,35 +98,27 @@ export default function AdminStatisticsPage() {
     }
   }, [firestore, isAdmin, isAdminLoading]);
 
-  const fetchStaffAndStatusStats = useCallback(async () => {
+  const fetchStatusStats = useCallback(async () => {
     if (!isAdmin) return;
 
     setStatsLoading(true);
     setStatsError(null);
     
     try {
-      // Fetch staff assignments
-      const staffResponse = await fetch('/api/admin/statistics/staff-assignments');
-      const staffData = await staffResponse.json();
-      
       // Fetch status breakdown
       const statusResponse = await fetch('/api/admin/statistics/status-breakdown');
       const statusData = await statusResponse.json();
       
       // Handle both successful and error responses
-      setStaffAssignments(staffData.staffAssignments || []);
       setStatusBreakdown(statusData);
       
-      // Show error messages if APIs failed but still display available data
-      if (!staffData.success && staffData.error) {
-        console.warn('Staff assignments API error:', staffData.error);
-      }
+      // Show error messages if API failed but still display available data
       if (!statusData.success && statusData.error) {
         console.warn('Status breakdown API error:', statusData.error);
       }
       
     } catch (err: any) {
-      console.error('Error fetching staff and status statistics:', err);
+      console.error('Error fetching status statistics:', err);
       setStatsError(err.message);
     } finally {
       setStatsLoading(false);
@@ -181,8 +172,8 @@ export default function AdminStatisticsPage() {
   useEffect(() => {
     fetchApps();
     fetchResourceData();
-    fetchStaffAndStatusStats();
-  }, [fetchApps, fetchResourceData, fetchStaffAndStatusStats]);
+    fetchStatusStats();
+  }, [fetchApps, fetchResourceData, fetchStatusStats]);
 
   // Calculate resource statistics
   const resourceStats = useMemo(() => {
@@ -314,7 +305,7 @@ export default function AdminStatisticsPage() {
         {/* Resource Statistics */}
         <div>
             <h2 className="text-xl font-semibold mb-4">System Resources</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard title="Total RCFEs" borderColor="border-purple-500">
                     <div className="flex items-center gap-3">
                         <Building2 className="h-8 w-8 text-purple-600" />
@@ -368,61 +359,6 @@ export default function AdminStatisticsPage() {
             )}
         </div>
 
-        {/* Staff Assignment Statistics */}
-        <div>
-            <h2 className="text-xl font-semibold mb-4">Staff Assignments</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {statsLoading ? (
-                    Array.from({ length: 6 }, (_, i) => (
-                        <Card key={i} className="border-l-4 border-indigo-500">
-                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                <CardTitle className="text-sm font-medium">
-                                    <div className="flex items-center gap-2">
-                                        <User className="h-4 w-4" />
-                                        Loading...
-                                    </div>
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="flex items-center gap-3">
-                                    <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
-                                    <div>
-                                        <p className="text-2xl font-bold text-indigo-700">--</p>
-                                        <p className="text-xs text-muted-foreground">Members assigned</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))
-                ) : (
-                    staffAssignments.map((staff, index) => (
-                        <Card key={staff.name} className="border-l-4 border-indigo-500">
-                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                <CardTitle className="text-sm font-medium">
-                                    <div className="flex items-center gap-2">
-                                        <User className="h-4 w-4" />
-                                        {staff.name}
-                                    </div>
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="flex items-center gap-3">
-                                    <Users className="h-6 w-6 text-indigo-600" />
-                                    <div>
-                                        <p className="text-2xl font-bold text-indigo-700">{staff.count}</p>
-                                        <p className="text-xs text-muted-foreground">Members assigned</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))
-                )}
-            </div>
-            {statsError && (
-                <p className="text-sm text-destructive mt-2">Error loading staff assignments: {statsError}</p>
-            )}
-        </div>
-
         {/* CalAIM Status Summary */}
         <div>
             <h2 className="text-xl font-semibold mb-4">CalAIM Status Summary</h2>
@@ -473,7 +409,7 @@ export default function AdminStatisticsPage() {
             to fit both County and City cards side by side on extra-large screens. 
             If even more responsive styling is required, further adjustment to parent components may be needed.
         */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <StatCard title="Applications by County" borderColor="border-blue-500">
                 <DataList data={stats.byCounty} />
             </StatCard>
