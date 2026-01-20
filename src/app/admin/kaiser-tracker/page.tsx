@@ -589,6 +589,18 @@ export default function KaiserTrackerPage() {
         </Button>
       </div>
 
+      {/* Interactive Filtering Message */}
+      {members.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-blue-600" />
+            <p className="text-sm text-blue-800 font-medium">
+              💡 Click on any status, county, or number in the cards below to filter and view members
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Summary Cards - Compact */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Kaiser Status Summary Card */}
@@ -818,30 +830,6 @@ export default function KaiserTrackerPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {members.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">
-                Load Kaiser member data to access filtering options.
-              </p>
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">
-                Use the status summary cards above to filter and view members by their Kaiser workflow status.
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Member Search by Last Name */}
       <Card className="bg-white border-l-4 border-l-orange-500 shadow">
