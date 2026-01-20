@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/firebase-admin';
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,27 +11,43 @@ export async function GET(request: NextRequest) {
     // Fetch Firebase admin users if requested
     if (includeFirebaseAdmins) {
       try {
-        const adminRolesSnap = await adminDb.collection('roles_admin').get();
-        const superAdminRolesSnap = await adminDb.collection('roles_super_admin').get();
+        // Dynamically import Firebase Admin to handle cases where it might not be configured
+        let adminDb;
+        try {
+          const { adminDb: db } = await import('@/firebase-admin');
+          adminDb = db;
+        } catch (importError) {
+          console.warn('Firebase Admin not available, skipping Firebase staff fetch:', importError.message);
+          adminDb = null;
+        }
 
-        const adminIds = new Set(adminRolesSnap.docs.map(d => d.id));
-        const superAdminIds = new Set(superAdminRolesSnap.docs.map(d => d.id));
-        const allAdminIds = Array.from(new Set([...adminIds, ...superAdminIds]));
+        if (adminDb) {
+          try {
+            const adminRolesSnap = await adminDb.collection('roles_admin').get();
+            const superAdminRolesSnap = await adminDb.collection('roles_super_admin').get();
 
-        if (allAdminIds.length > 0) {
-          const usersSnap = await adminDb.collection('users').where(adminDb.FieldPath.documentId(), 'in', allAdminIds).get();
-          const firebaseStaff = usersSnap.docs.map(d => {
-            const userData = d.data();
-            const role = superAdminIds.has(d.id) ? 'Super Admin' : 'Admin';
-            return {
-              id: d.id,
-              name: userData.firstName && userData.lastName ? `${userData.firstName} ${userData.lastName}` : userData.email || 'Unknown Staff',
-              email: userData.email,
-              role: role,
-              source: 'firebase'
-            };
-          });
-          allStaff.push(...firebaseStaff);
+          const adminIds = new Set(adminRolesSnap.docs.map(d => d.id));
+          const superAdminIds = new Set(superAdminRolesSnap.docs.map(d => d.id));
+          const allAdminIds = Array.from(new Set([...adminIds, ...superAdminIds]));
+
+          if (allAdminIds.length > 0) {
+            const usersSnap = await adminDb.collection('users').where(adminDb.FieldPath.documentId(), 'in', allAdminIds).get();
+            const firebaseStaff = usersSnap.docs.map(d => {
+              const userData = d.data();
+              const role = superAdminIds.has(d.id) ? 'Super Admin' : 'Admin';
+              return {
+                id: d.id,
+                name: userData.firstName && userData.lastName ? `${userData.firstName} ${userData.lastName}` : userData.email || 'Unknown Staff',
+                email: userData.email,
+                role: role,
+                source: 'firebase'
+              };
+            });
+            allStaff.push(...firebaseStaff);
+          }
+          } catch (firestoreError) {
+            console.warn('Firebase Firestore query failed, skipping Firebase staff:', firestoreError.message);
+          }
         }
       } catch (error) {
         console.error('❌ Error fetching Firebase admin staff:', error);

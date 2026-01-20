@@ -45,6 +45,32 @@ async function fetchCaspioStaff() {
         assignedMemberCount: 0
       }
     ];
+  } catch (error) {
+    console.error('Error fetching Caspio staff:', error);
+    // Return fallback staff on error
+    return [
+      {
+        id: 'nick-staff',
+        name: 'Nick',
+        email: 'nick@carehomefinders.com',
+        sw_id: 'nick-staff',
+        assignedMemberCount: 0
+      },
+      {
+        id: 'john-staff',
+        name: 'John', 
+        email: 'john@carehomefinders.com',
+        sw_id: 'john-staff',
+        assignedMemberCount: 0
+      },
+      {
+        id: 'jessie-staff',
+        name: 'Jessie',
+        email: 'jessie@carehomefinders.com', 
+        sw_id: 'jessie-staff',
+        assignedMemberCount: 0
+      }
+    ];
   }
 };
 

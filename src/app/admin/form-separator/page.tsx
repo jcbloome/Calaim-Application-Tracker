@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -50,7 +51,7 @@ import {
 import { PDFDocument } from 'pdf-lib';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-// Set up PDF.js worker with proper error handling
+// Set up PDF.js worker with proper error handling - only on client side
 if (typeof window !== 'undefined') {
   try {
     // Use the same version as the installed package to avoid conflicts
@@ -133,7 +134,7 @@ class PDFErrorBoundary extends React.Component<
   }
 }
 
-export default function FormSeparatorPage() {
+function FormSeparatorPage() {
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
   const [separatedForms, setSeparatedForms] = useState<SeparatedForm[]>([]);
@@ -232,6 +233,8 @@ export default function FormSeparatorPage() {
         console.warn('convertPageToImage called on server side, skipping');
         return;
       }
+
+      // pdfjs is now statically imported, so no need to check
 
       if (pageImages[pageNum] || loadingImages.has(pageNum)) return;
 
@@ -602,11 +605,11 @@ export default function FormSeparatorPage() {
                         }
                       >
                         <Document
-                          file={file}
-                          onLoadSuccess={(pdf) => {
-                            try {
-                              setNumPages(pdf.numPages);
-                              setPdfLoadError(null);
+                            file={file}
+                            onLoadSuccess={(pdf) => {
+                              try {
+                                setNumPages(pdf.numPages);
+                                setPdfLoadError(null);
                               console.log('PDF loaded successfully:', pdf.numPages, 'pages');
                             } catch (error) {
                               console.error('Error processing loaded PDF:', error);
@@ -661,25 +664,25 @@ export default function FormSeparatorPage() {
                             onClick={() => togglePageSelection(pageNum)}
                           >
                             <Page
-                              pageNumber={pageNum}
-                              width={150}
-                              renderTextLayer={false}
-                              renderAnnotationLayer={false}
-                              onLoadError={(error) => {
-                                console.warn(`Failed to load page ${pageNum}:`, error);
-                                // Don't switch to fallback for individual page errors
-                              }}
-                              loading={
-                                <div className="flex items-center justify-center h-32 bg-gray-100">
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                </div>
-                              }
-                              error={
-                                <div className="flex items-center justify-center h-32 bg-red-50 text-red-600">
-                                  <AlertCircle className="h-4 w-4" />
-                                  <span className="ml-1 text-xs">Page {pageNum}</span>
-                                </div>
-                              }
+                                pageNumber={pageNum}
+                                width={150}
+                                renderTextLayer={false}
+                                renderAnnotationLayer={false}
+                                onLoadError={(error) => {
+                                  console.warn(`Failed to load page ${pageNum}:`, error);
+                                  // Don't switch to fallback for individual page errors
+                                }}
+                                loading={
+                                  <div className="flex items-center justify-center h-32 bg-gray-100">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  </div>
+                                }
+                                error={
+                                  <div className="flex items-center justify-center h-32 bg-red-50 text-red-600">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <span className="ml-1 text-xs">Page {pageNum}</span>
+                                  </div>
+                                }
                             />
                             <div className="absolute top-2 left-2 bg-black bg-opacity-75 text-white px-2 py-1 rounded text-xs">
                               Page {pageNum}
@@ -930,3 +933,16 @@ export default function FormSeparatorPage() {
     </div>
   );
 }
+
+// Export as dynamic component to prevent SSR issues
+export default dynamic(() => Promise.resolve(FormSeparatorPage), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+        <p className="text-muted-foreground">Loading Form Separator...</p>
+      </div>
+    </div>
+  )
+});

@@ -1,14 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Try to import Firebase Admin, but handle gracefully if not available
-let adminDb: any = null;
-try {
-  const firebaseAdmin = require('@/firebase-admin');
-  adminDb = firebaseAdmin.adminDb;
-  console.log('✅ Firebase Admin loaded for health check');
-} catch (error) {
-  console.warn('⚠️ Firebase Admin not available for health check:', error.message);
-}
+// Dynamic import will be handled in the GET function
 
 const SYNC_HEALTH_COLLECTION = 'sync-health-status';
 
@@ -25,6 +17,17 @@ interface SyncHealth {
 export async function GET(request: NextRequest) {
   try {
     console.log('📊 Fetching sync health status');
+    
+    // Dynamically import Firebase Admin to handle cases where it might not be configured
+    let adminDb;
+    try {
+      const { adminDb: db } = await import('@/firebase-admin');
+      adminDb = db;
+      console.log('✅ Firebase Admin loaded for health check');
+    } catch (importError) {
+      console.warn('⚠️ Firebase Admin not available for health check:', importError.message);
+      adminDb = null;
+    }
     
     // If Firebase Admin is not available, return default healthy status
     if (!adminDb) {

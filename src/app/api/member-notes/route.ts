@@ -675,8 +675,7 @@ export async function GET(request: NextRequest) {
       notes: notes,
       count: notes.length,
       source: 'caspio-module',
-      timestamp: new Date().toISOString()
-    });
+      timestamp: new Date().toISOString(),
       totalNotes: notes.length,
       legacyNotes: notes.filter(n => n.isLegacy).length,
       regularNotes: notes.filter(n => n.source === 'Caspio').length,

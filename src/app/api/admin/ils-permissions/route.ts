@@ -60,6 +60,11 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Error checking ILS permissions:', error);
+    
+    // Get userId from request params for error response
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+    
     return NextResponse.json(
       { 
         success: true, 
