@@ -227,6 +227,12 @@ export default function FormSeparatorPage() {
 
     // Convert PDF page to image for better preview
     const convertPageToImage = async (pageNum: number) => {
+      // Ensure we're running in the browser to avoid DOMMatrix/canvas SSR errors
+      if (typeof window === 'undefined' || typeof document === 'undefined') {
+        console.warn('convertPageToImage called on server side, skipping');
+        return;
+      }
+
       if (pageImages[pageNum] || loadingImages.has(pageNum)) return;
 
       setLoadingImages(prev => new Set([...prev, pageNum]));
