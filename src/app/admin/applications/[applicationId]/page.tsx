@@ -1358,31 +1358,31 @@ function ApplicationDetailPageContent() {
             {/* Notification Status Icons */}
             <div className="flex items-center gap-4 pt-2 border-t">
                 <div className="flex items-center gap-2">
-                    {(application as any)?.emailRemindersEnabled ? (
-                        <div className="flex items-center gap-1 text-green-600">
-                            <Bell className="h-4 w-4" />
-                            <span className="text-xs font-medium">Email Reminders Active</span>
-                        </div>
-                    ) : (
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                            <BellOff className="h-4 w-4" />
-                            <span className="text-xs">Email Reminders Off</span>
-                        </div>
-                    )}
+                    <div className={`flex items-center gap-1 ${(application as any)?.emailRemindersEnabled ? 'text-green-600' : 'text-muted-foreground'}`}>
+                        <Mail className="h-4 w-4" />
+                        <span className="text-xs font-medium">
+                            {(application as any)?.emailRemindersEnabled ? 'Email Reminders Active' : 'Email Reminders Off'}
+                        </span>
+                    </div>
                 </div>
                 
                 <div className="flex items-center gap-2">
-                    {(application as any)?.reviewNotificationSent ? (
-                        <div className="flex items-center gap-1 text-blue-600">
-                            <Eye className="h-4 w-4" />
-                            <span className="text-xs font-medium">Review Notification Sent</span>
-                        </div>
-                    ) : (
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                            <EyeOff className="h-4 w-4" />
-                            <span className="text-xs">No Review Notification</span>
-                        </div>
-                    )}
+                    {(() => {
+                        // Check if CS Summary form is complete and reviewed
+                        const csSummaryForm = application.forms?.find(form => form.name === 'CS Member Summary');
+                        const isCsSummaryComplete = csSummaryForm?.status === 'Completed';
+                        const isReviewed = (application as any)?.reviewNotificationSent;
+                        const isCsSummaryCompleteAndReviewed = isCsSummaryComplete && isReviewed;
+                        
+                        return (
+                            <div className={`flex items-center gap-1 ${isCsSummaryCompleteAndReviewed ? 'text-green-600' : 'text-muted-foreground'}`}>
+                                <CheckCircle2 className="h-4 w-4" />
+                                <span className="text-xs font-medium">
+                                    {isCsSummaryCompleteAndReviewed ? 'CS Summary Complete & Reviewed' : 'CS Summary Pending'}
+                                </span>
+                            </div>
+                        );
+                    })()}
                 </div>
             </div>
             
