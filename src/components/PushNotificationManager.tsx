@@ -20,7 +20,9 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setIsSupported('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window);
-      setPermission(Notification.permission);
+      if ('Notification' in window) {
+        setPermission(Notification.permission);
+      }
     }
   }, []);
 
@@ -40,7 +42,7 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
         const messaging = getMessaging();
 
         // Request permission if not granted
-        if (permission === 'default') {
+        if (permission === 'default' && 'Notification' in window) {
           const newPermission = await Notification.requestPermission();
           setPermission(newPermission);
           
@@ -53,7 +55,7 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
         }
 
         // Get FCM token if permission is granted
-        if (permission === 'granted' || Notification.permission === 'granted') {
+        if (permission === 'granted' || (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted')) {
           try {
             const token = await getToken(messaging, {
               vapidKey: 'BKxvxQ9K5wYzJ8FqXN2M3L4P6R7S8T9U0V1W2X3Y4Z5A6B7C8D9E0F1G2H3I4J5K6L7M8N9O0P1Q2R3S4T5U6V7W8X9Y0Z' // You'll need to generate this
@@ -86,7 +88,7 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
           });
 
           // Also show browser notification if permission is granted
-          if (Notification.permission === 'granted') {
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
             const notification = new Notification(
               payload.notification?.title || '📝 CalAIM Note Assignment',
               {
@@ -99,11 +101,13 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
             );
 
             notification.onclick = () => {
-              window.focus();
-              if (payload.data?.clientId2) {
-                window.location.href = `/admin/client-notes?client=${payload.data.clientId2}`;
-              } else {
-                window.location.href = '/admin/client-notes';
+              if (typeof window !== 'undefined') {
+                window.focus();
+                if (payload.data?.clientId2) {
+                  window.location.href = `/admin/client-notes?client=${payload.data.clientId2}`;
+                } else {
+                  window.location.href = '/admin/client-notes';
+                }
               }
               notification.close();
             };
@@ -130,8 +134,8 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
           userId,
           token,
           deviceInfo: {
-            userAgent: navigator.userAgent,
-            platform: navigator.platform,
+            userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+            platform: typeof navigator !== 'undefined' ? navigator.platform : 'unknown',
             timestamp: new Date().toISOString()
           }
         }),
@@ -159,6 +163,15 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
     }
 
     try {
+      if (typeof window === 'undefined' || !('Notification' in window)) {
+        toast({
+          title: "Not Available",
+          description: "Notifications are not available in this environment",
+          variant: "destructive",
+        });
+        return false;
+      }
+      
       const newPermission = await Notification.requestPermission();
       setPermission(newPermission);
 
@@ -169,7 +182,9 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
         });
         
         // Re-initialize to get token
-        window.location.reload();
+        if (typeof window !== 'undefined') {
+          window.location.reload();
+        }
       } else {
         toast({
           title: "Permission Denied",
@@ -197,11 +212,13 @@ export function usePushNotifications() {
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    setIsEnabled(Notification.permission === 'granted');
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setIsEnabled(Notification.permission === 'granted');
+    }
   }, []);
 
   const requestPermission = async () => {
-    if ('Notification' in window) {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
       const permission = await Notification.requestPermission();
       setIsEnabled(permission === 'granted');
       return permission === 'granted';
@@ -213,6 +230,6 @@ export function usePushNotifications() {
     isEnabled,
     token,
     requestPermission,
-    isSupported: 'Notification' in window && 'serviceWorker' in navigator
+    isSupported: typeof window !== 'undefined' && 'Notification' in window && 'serviceWorker' in navigator
   };
 }
