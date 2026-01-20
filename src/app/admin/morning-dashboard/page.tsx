@@ -16,19 +16,32 @@ import {
   Activity,
   Settings
 } from 'lucide-react';
-import MorningDashboard from '@/components/MorningDashboard';
-import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import { useAdmin } from '@/hooks/use-admin';
 
 export default function MorningDashboardPage() {
   const { isAdmin, user } = useAdmin();
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallButton, setShowInstallButton] = useState(false);
 
   useEffect(() => {
     // Check current notification permission
     if ('Notification' in window) {
       setNotificationPermission(Notification.permission);
     }
+
+    // Listen for PWA install prompt
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallButton(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
   }, []);
 
   const requestNotificationPermission = async () => {
@@ -58,6 +71,24 @@ export default function MorningDashboardPage() {
         icon: '/favicon.ico',
         tag: 'always-on-enabled'
       });
+    }
+  };
+
+  const handleInstallPWA = async () => {
+    if (!deferredPrompt) return;
+
+    try {
+      await deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      
+      if (outcome === 'accepted') {
+        console.log('🎉 PWA installation accepted');
+        setShowInstallButton(false);
+      }
+      
+      setDeferredPrompt(null);
+    } catch (error) {
+      console.error('Error during PWA installation:', error);
     }
   };
 
@@ -100,9 +131,6 @@ export default function MorningDashboardPage() {
           <span className="text-sm text-muted-foreground">Ready to start your day?</span>
         </div>
       </div>
-
-      {/* PWA Install Prompt */}
-      <PWAInstallPrompt />
 
       {/* Always-On Setup Card */}
       {notificationPermission !== 'granted' && (
@@ -233,8 +261,59 @@ export default function MorningDashboardPage() {
         </Card>
       </div>
 
-      {/* Main Morning Dashboard */}
-      <MorningDashboard />
+      {/* Simplified Morning Dashboard */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Morning Dashboard</CardTitle>
+          <CardDescription>
+            Your daily command center - PWA functionality is ready to test!
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="p-4 border rounded-lg">
+              <Bell className="h-8 w-8 text-blue-600 mb-2" />
+              <h3 className="font-medium">Notifications</h3>
+              <p className="text-sm text-muted-foreground">Real-time alerts</p>
+            </div>
+            <div className="p-4 border rounded-lg">
+              <Users className="h-8 w-8 text-green-600 mb-2" />
+              <h3 className="font-medium">Member Notes</h3>
+              <p className="text-sm text-muted-foreground">View & manage</p>
+            </div>
+            <div className="p-4 border rounded-lg">
+              <Activity className="h-8 w-8 text-purple-600 mb-2" />
+              <h3 className="font-medium">Applications</h3>
+              <p className="text-sm text-muted-foreground">Track progress</p>
+            </div>
+            <div className="p-4 border rounded-lg">
+              <Settings className="h-8 w-8 text-orange-600 mb-2" />
+              <h3 className="font-medium">System Status</h3>
+              <p className="text-sm text-muted-foreground">All systems operational</p>
+            </div>
+          </div>
+          
+          <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                  <h4 className="font-medium text-green-800">PWA Ready for Testing!</h4>
+                </div>
+                <p className="text-sm text-green-700 mt-2">
+                  Install this app to your desktop for system tray notifications and always-on functionality.
+                </p>
+              </div>
+              {showInstallButton && (
+                <Button onClick={handleInstallPWA} className="bg-green-600 hover:bg-green-700">
+                  <Activity className="mr-2 h-4 w-4" />
+                  Install App
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
