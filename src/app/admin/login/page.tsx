@@ -51,7 +51,8 @@ export default function AdminLoginPage() {
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
-  const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+  // Removed useAdmin hook to prevent loading issues
+  // const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -61,19 +62,19 @@ export default function AdminLoginPage() {
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
 
-  // This effect will redirect a logged-in admin away from the login page.
-  useEffect(() => {
-    if (!isAdminLoading && (isAdmin || isSuperAdmin)) {
-      // Use setTimeout to prevent hot reload issues
-      const timer = setTimeout(() => {
-        if (typeof window !== 'undefined') {
-          window.location.href = '/admin';
-        }
-      }, 100);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [isAdmin, isSuperAdmin, isAdminLoading]);
+  // Disabled automatic redirect to prevent conflicts with admin layout
+  // useEffect(() => {
+  //   if (!isAdminLoading && (isAdmin || isSuperAdmin)) {
+  //     // Use setTimeout to prevent hot reload issues
+  //     const timer = setTimeout(() => {
+  //       if (typeof window !== 'undefined') {
+  //         window.location.href = '/admin';
+  //       }
+  //     }, 100);
+  //     
+  //     return () => clearTimeout(timer);
+  //   }
+  // }, [isAdmin, isSuperAdmin, isAdminLoading]);
 
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -100,8 +101,15 @@ export default function AdminLoginPage() {
       
       toast({
         title: 'Sign In Successful!',
-        description: 'Verifying admin status and redirecting...',
+        description: 'Redirecting to admin panel...',
       });
+
+      // Manual redirect after successful login
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          window.location.href = '/admin';
+        }
+      }, 1000);
 
     } catch (err) {
       const authError = err as AuthError;
@@ -182,15 +190,15 @@ export default function AdminLoginPage() {
     }
   };
 
-  // While checking auth state, show a loader
-  if (isAdminLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="h-8 w-8 animate-spin" />
-        <p className="ml-2">Loading session...</p>
-      </div>
-    );
-  }
+  // Don't show loading screen - let users always access login page
+  // if (isAdminLoading) {
+  //   return (
+  //     <div className="flex items-center justify-center h-screen">
+  //       <Loader2 className="h-8 w-8 animate-spin" />
+  //       <p className="ml-2">Loading session...</p>
+  //     </div>
+  //   );
+  // }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">

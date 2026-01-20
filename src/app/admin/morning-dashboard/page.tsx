@@ -26,9 +26,6 @@ export default function MorningDashboardPage() {
   const [alwaysOnEnabled, setAlwaysOnEnabled] = useState(false);
 
   useEffect(() => {
-    // Debug logging to track the redirect loop
-    console.log('🔍 Morning Dashboard - Admin Status:', { isAdmin, user: user?.email, isLoading });
-    
     if ('Notification' in window) {
       setNotificationPermission(Notification.permission);
     }
@@ -124,7 +121,7 @@ export default function MorningDashboardPage() {
       const { outcome } = await deferredPrompt.userChoice;
       
       if (outcome === 'accepted') {
-        console.log('🎉 PWA installation accepted');
+        // PWA installation accepted
         setShowInstallButton(false);
       }
       
@@ -145,7 +142,7 @@ export default function MorningDashboardPage() {
 
   // Show loading while authentication is being checked
   if (isLoading) {
-    console.log('🔄 Morning Dashboard: Still loading authentication...');
+    // Still loading authentication
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -157,7 +154,7 @@ export default function MorningDashboardPage() {
   }
 
   if (!isAdmin) {
-    console.log('❌ Morning Dashboard: User is not admin', { isAdmin, user: user?.email });
+    // User is not admin
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -171,7 +168,7 @@ export default function MorningDashboardPage() {
     );
   }
 
-  console.log('✅ Morning Dashboard: User authenticated as admin', { isAdmin, user: user?.email });
+  // User authenticated as admin
 
   return (
     <div className="container mx-auto p-6 space-y-6">
