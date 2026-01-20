@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useFirestore } from '@/firebase';
 import { collection, query, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
-import { Loader2, Users, Building2, Stethoscope, UserCheck, Activity } from 'lucide-react';
+import { Loader2, Users, Building2, Stethoscope, UserCheck, Activity, BarChart3 } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -359,46 +359,6 @@ export default function AdminStatisticsPage() {
             )}
         </div>
 
-        {/* CalAIM Status Summary */}
-        <div>
-            <h2 className="text-lg md:text-xl font-semibold mb-3 md:mb-4">CalAIM Status Summary</h2>
-            <div className="grid grid-cols-1 gap-6">
-                {/* CalAIM Status Card */}
-                <Card className="border-l-4 border-green-500">
-                    <CardHeader>
-                        <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                            <Activity className="h-5 w-5 text-green-600" />
-                            CalAIM Program Status
-                        </CardTitle>
-                        <CardDescription>Current CalAIM program status distribution</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        {statsLoading ? (
-                            <div className="flex items-center justify-center py-4">
-                                <Loader2 className="h-6 w-6 animate-spin" />
-                            </div>
-                        ) : (
-                            <div className="space-y-2 max-h-64 overflow-y-auto">
-                                {statusBreakdown.calaimStatuses?.slice(0, 10).map((item: any) => (
-                                    <div key={item.status} className="flex justify-between items-center py-1 border-b border-gray-100">
-                                        <span className="text-sm text-gray-700 truncate">{item.status}</span>
-                                        <span className="text-sm font-semibold text-green-600">{item.count}</span>
-                                    </div>
-                                ))}
-                                {statusBreakdown.calaimStatuses?.length > 10 && (
-                                    <p className="text-xs text-muted-foreground text-center pt-2">
-                                        +{statusBreakdown.calaimStatuses.length - 10} more statuses
-                                    </p>
-                                )}
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-            </div>
-            {statsError && (
-                <p className="text-sm text-destructive mt-2">Error loading CalAIM status data: {statsError}</p>
-            )}
-        </div>
 
         {/* Application Statistics */}
         <div>
@@ -414,7 +374,6 @@ export default function AdminStatisticsPage() {
                 <DataList data={stats.byCounty} />
             </StatCard>
 
-            {/* NEW: Top 10 Cities Card */}
             <StatCard title="Top 10 Cities" borderColor="border-sky-500">
                 <DataList data={topCities} emptyText="No city data available." />
             </StatCard>
@@ -426,76 +385,98 @@ export default function AdminStatisticsPage() {
             <StatCard title="Applications by Pathway" borderColor="border-orange-500">
                 <DataList data={stats.byPathway} />
             </StatCard>
-            
-             <Card className="border-t-4 border-yellow-500 md:col-span-1">
-                <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                        <div className="space-y-0">
-                             <CardTitle className="text-sm font-medium">Submissions by Month</CardTitle>
-                        </div>
-                    </div>
-                    <div className="pt-2">
-                         <Select 
-                            value={selectedYear} 
-                            onValueChange={setSelectedYear}
-                        >
-                            <SelectTrigger className="w-[180px]">
-                                <SelectValue placeholder="Select Year" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {availableYears.length > 0 ? (
-                                    availableYears.map(year => (
-                                        <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
-                                    ))
-                                ) : (
-                                    <SelectItem value={new Date().getFullYear().toString()} disabled>
-                                        {new Date().getFullYear()}
-                                    </SelectItem>
-                                )}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <DataList data={stats.submissionsByMonth} emptyText="No submissions for this year." />
-                </CardContent>
-            </Card>
 
-             <Card className="border-t-4 border-purple-500 md:col-span-2">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Top 10 Referrers</CardTitle>
-                </CardHeader>
-                <CardContent>
-                     {stats.topReferrers.length > 0 ? (
-                        <div className="overflow-x-auto">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Rank</TableHead>
-                                    <TableHead>Name</TableHead>
-                                    <TableHead className="text-right">Submissions</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {stats.topReferrers.map((r, index) => (
-                                    <TableRow key={r.name}>
-                                        <TableCell className="font-medium w-16">
-                                            <div className="flex items-center gap-2">
-                                                <span>#{index + 1}</span>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="font-medium">{r.name}</TableCell>
-                                        <TableCell className="text-right font-semibold">{r.value}</TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
+            {/* CalAIM Program Status Card */}
+            <StatCard title="CalAIM Program Status" borderColor="border-emerald-500">
+                {statsLoading ? (
+                    <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                    </div>
+                ) : (
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                        {statusBreakdown.calaimStatuses?.slice(0, 8).map((item: any) => (
+                            <div key={item.status} className="flex justify-between items-center py-1 text-xs">
+                                <span className="text-gray-700 truncate pr-2">{item.status}</span>
+                                <span className="font-semibold text-emerald-600 flex-shrink-0">{item.count}</span>
+                            </div>
+                        ))}
+                        {statusBreakdown.calaimStatuses?.length > 8 && (
+                            <p className="text-xs text-muted-foreground text-center pt-1">
+                                +{statusBreakdown.calaimStatuses.length - 8} more
+                            </p>
+                        )}
+                    </div>
+                )}
+            </StatCard>
+
+            {/* Top 10 Referrers Card */}
+            <StatCard title="Top 10 Referrers" borderColor="border-purple-500">
+                {stats.topReferrers?.length > 0 ? (
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                        {stats.topReferrers.slice(0, 8).map((referrer: any, index: number) => (
+                            <div key={referrer.name} className="flex justify-between items-center py-1 text-xs">
+                                <span className="text-gray-700 truncate pr-2">#{index + 1} {referrer.name}</span>
+                                <span className="font-semibold text-purple-600 flex-shrink-0">{referrer.value}</span>
+                            </div>
+                        ))}
+                        {stats.topReferrers.length > 8 && (
+                            <p className="text-xs text-muted-foreground text-center pt-1">
+                                +{stats.topReferrers.length - 8} more
+                            </p>
+                        )}
+                    </div>
+                ) : (
+                    <p className="text-xs text-muted-foreground py-4">No referrer data available.</p>
+                )}
+            </StatCard>
+
+            {/* Placeholder Cards to maintain 4-column grid */}
+            <StatCard title="Coming Soon" borderColor="border-gray-300">
+                <div className="flex items-center justify-center py-8">
+                    <div className="text-center">
+                        <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
+                            <Activity className="h-6 w-6 text-gray-400" />
                         </div>
-                     ) : (
-                        <p className="text-sm text-muted-foreground pt-4">No referrer data available.</p>
-                     )}
-                </CardContent>
-            </Card>
+                        <p className="text-xs text-muted-foreground">Additional metrics</p>
+                    </div>
+                </div>
+            </StatCard>
+
+            <StatCard title="Future Analytics" borderColor="border-gray-300">
+                <div className="flex items-center justify-center py-8">
+                    <div className="text-center">
+                        <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
+                            <BarChart3 className="h-6 w-6 text-gray-400" />
+                        </div>
+                        <p className="text-xs text-muted-foreground">Enhanced reporting</p>
+                    </div>
+                </div>
+            </StatCard>
+            
+             <StatCard title="Submissions by Month" borderColor="border-yellow-500">
+                <div className="mb-3">
+                     <Select 
+                        value={selectedYear} 
+                        onValueChange={setSelectedYear}
+                    >
+                        <SelectTrigger className="w-full text-xs">
+                            <SelectValue placeholder="Select Year" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {availableYears.length > 0 ? (
+                                availableYears.map(year => (
+                                    <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
+                                ))
+                            ) : (
+                                <SelectItem value={new Date().getFullYear().toString()} disabled>
+                                    {new Date().getFullYear()}
+                                </SelectItem>
+                            )}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <DataList data={stats.submissionsByMonth} emptyText="No submissions for this year." />
+            </StatCard>
 
         </div>
         </div>
