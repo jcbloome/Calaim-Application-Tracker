@@ -28,6 +28,7 @@ import {
   Brain,
   ChevronDown,
   ChevronRight,
+  Activity,
   Settings,
   MessageSquareText,
   FileText,
