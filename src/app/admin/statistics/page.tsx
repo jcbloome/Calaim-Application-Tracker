@@ -430,30 +430,8 @@ export default function AdminStatisticsPage() {
                 )}
             </StatCard>
 
-            {/* Placeholder Cards to maintain 4-column grid */}
-            <StatCard title="Coming Soon" borderColor="border-gray-300">
-                <div className="flex items-center justify-center py-8">
-                    <div className="text-center">
-                        <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
-                            <Activity className="h-6 w-6 text-gray-400" />
-                        </div>
-                        <p className="text-xs text-muted-foreground">Additional metrics</p>
-                    </div>
-                </div>
-            </StatCard>
-
-            <StatCard title="Future Analytics" borderColor="border-gray-300">
-                <div className="flex items-center justify-center py-8">
-                    <div className="text-center">
-                        <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
-                            <BarChart3 className="h-6 w-6 text-gray-400" />
-                        </div>
-                        <p className="text-xs text-muted-foreground">Enhanced reporting</p>
-                    </div>
-                </div>
-            </StatCard>
-            
-             <StatCard title="Submissions by Month" borderColor="border-yellow-500">
+            {/* Submissions by Month Card */}
+            <StatCard title="Submissions by Month" borderColor="border-yellow-500">
                 <div className="mb-3">
                      <Select 
                         value={selectedYear} 
@@ -476,6 +454,29 @@ export default function AdminStatisticsPage() {
                     </Select>
                 </div>
                 <DataList data={stats.submissionsByMonth} emptyText="No submissions for this year." />
+            </StatCard>
+
+            {/* Placeholder Cards to maintain 4-column grid */}
+            <StatCard title="Coming Soon" borderColor="border-gray-300">
+                <div className="flex items-center justify-center py-8">
+                    <div className="text-center">
+                        <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
+                            <Activity className="h-6 w-6 text-gray-400" />
+                        </div>
+                        <p className="text-xs text-muted-foreground">Additional metrics</p>
+                    </div>
+                </div>
+            </StatCard>
+
+            <StatCard title="Future Analytics" borderColor="border-gray-300">
+                <div className="flex items-center justify-center py-8">
+                    <div className="text-center">
+                        <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
+                            <BarChart3 className="h-6 w-6 text-gray-400" />
+                        </div>
+                        <p className="text-xs text-muted-foreground">Enhanced reporting</p>
+                    </div>
+                </div>
             </StatCard>
 
         </div>
