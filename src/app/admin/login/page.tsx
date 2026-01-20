@@ -64,7 +64,7 @@ export default function AdminLoginPage() {
   // This effect will redirect a logged-in admin away from the login page.
   useEffect(() => {
     if (!isAdminLoading && (isAdmin || isSuperAdmin)) {
-      router.push('/admin');
+      router.push('/admin/morning-dashboard');
     }
   }, [isAdmin, isSuperAdmin, isAdminLoading, router]);
 

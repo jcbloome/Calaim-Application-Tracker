@@ -19,18 +19,24 @@ import {
 import { useAdmin } from '@/hooks/use-admin';
 
 export default function MorningDashboardPage() {
-  const { isAdmin, user } = useAdmin();
+  const { isAdmin, user, isLoading } = useAdmin();
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallButton, setShowInstallButton] = useState(false);
+  const [alwaysOnEnabled, setAlwaysOnEnabled] = useState(false);
 
   useEffect(() => {
-    // Check current notification permission
+    // Debug logging to track the redirect loop
+    console.log('🔍 Morning Dashboard - Admin Status:', { isAdmin, user: user?.email, isLoading });
+    
     if ('Notification' in window) {
       setNotificationPermission(Notification.permission);
     }
 
-    // Listen for PWA install prompt
+    // Check if always-on mode is already configured
+    const alwaysOnSetting = localStorage.getItem('calaim-always-on');
+    setAlwaysOnEnabled(alwaysOnSetting === 'true');
+
     const handleBeforeInstallPrompt = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -50,35 +56,63 @@ export default function MorningDashboardPage() {
       setNotificationPermission(permission);
       
       if (permission === 'granted') {
-        // Show a test notification
         new Notification('🎉 Notifications Enabled!', {
-          body: 'You\'ll now receive real-time alerts for priority member notes.',
+          body: 'You will now receive real-time alerts for priority member notes.',
           icon: '/favicon.ico',
           tag: 'permission-granted',
           requireInteraction: true
         });
         
-        // Enable always-on mode automatically
         enableAlwaysOnMode();
       } else {
         alert('⚠️ Notifications were blocked. Please enable them in your browser settings for always-on functionality.');
       }
     } else {
-      alert('❌ Your browser doesn\'t support notifications. Try Chrome or Edge for full functionality.');
+      alert('❌ Your browser does not support notifications. Try Chrome or Edge for full functionality.');
     }
   };
 
   const enableAlwaysOnMode = () => {
-    // Store preference in localStorage
     localStorage.setItem('calaim-always-on', 'true');
+    setAlwaysOnEnabled(true);
     
-    // Show confirmation
+    // Show immediate feedback
+    alert('✅ Always-On Mode Configured!\n\n' +
+          '• Background notifications enabled\n' +
+          '• App will run in system tray when minimized\n' +
+          '• Priority alerts will appear as desktop notifications\n\n' +
+          'Next: Enable browser notifications for full functionality!');
+    
     if (notificationPermission === 'granted') {
       new Notification('🔔 Always-On Mode Enabled', {
-        body: 'You\'ll receive real-time notifications throughout the day.',
+        body: 'You will receive real-time notifications throughout the day.',
         icon: '/favicon.ico',
         tag: 'always-on-enabled'
       });
+    } else {
+      // If notifications aren't enabled yet, prompt for them
+      setTimeout(() => {
+        if (confirm('🔔 Enable notifications now for complete always-on functionality?')) {
+          requestNotificationPermission();
+        }
+      }, 1000);
+    }
+  };
+
+  const disableAlwaysOnMode = () => {
+    if (confirm('❌ Disable Always-On Mode?\n\nThis will turn off:\n• Background notifications\n• System tray alerts\n• Real-time member updates')) {
+      localStorage.removeItem('calaim-always-on');
+      setAlwaysOnEnabled(false);
+      
+      alert('🔕 Always-On Mode Disabled\n\nYou can re-enable it anytime from this dashboard.');
+      
+      if (notificationPermission === 'granted') {
+        new Notification('🔕 Always-On Mode Disabled', {
+          body: 'Background notifications have been turned off.',
+          icon: '/favicon.ico',
+          tag: 'always-on-disabled'
+        });
+      }
     }
   };
 
@@ -100,6 +134,27 @@ export default function MorningDashboardPage() {
     }
   };
 
+  const testNotification = () => {
+    new Notification('🧪 Test Notification', {
+      body: 'This is a test of your always-on notification system!',
+      icon: '/favicon.ico',
+      tag: 'test-notification',
+      requireInteraction: true
+    });
+  };
+
+  // Show loading while authentication is being checked
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading Morning Dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!isAdmin) {
     return (
       <div className="container mx-auto p-6">
@@ -120,7 +175,6 @@ export default function MorningDashboardPage() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <div className="p-2 bg-gradient-to-r from-orange-400 to-pink-400 rounded-lg">
@@ -140,7 +194,6 @@ export default function MorningDashboardPage() {
         </div>
       </div>
 
-      {/* Always-On Setup Card */}
       {notificationPermission !== 'granted' && (
         <Card className="border-orange-200 bg-orange-50">
           <CardHeader>
@@ -186,35 +239,82 @@ export default function MorningDashboardPage() {
                 </div>
               </div>
               
-              <div className="flex space-x-3">
-                <Button onClick={requestNotificationPermission} className="bg-orange-600 hover:bg-orange-700">
-                  <Bell className="mr-2 h-4 w-4" />
-                  Enable Notifications
-                </Button>
-              <Button variant="outline" onClick={enableAlwaysOnMode}>
-                <Settings className="mr-2 h-4 w-4" />
-                Configure Always-On Mode
-              </Button>
-              {notificationPermission === 'granted' && (
-                <Button variant="outline" onClick={() => {
-                  new Notification('🧪 Test Notification', {
-                    body: 'This is a test of your always-on notification system!',
-                    icon: '/favicon.ico',
-                    tag: 'test-notification',
-                    requireInteraction: true
-                  });
-                }}>
-                  <Bell className="mr-2 h-4 w-4" />
-                  Test Notification
-                </Button>
-              )}
+              <div className="space-y-3">
+                <div className="flex space-x-3">
+                  <Button onClick={requestNotificationPermission} className="bg-orange-600 hover:bg-orange-700">
+                    <Bell className="mr-2 h-4 w-4" />
+                    Enable Notifications
+                  </Button>
+                  <Button 
+                    variant={alwaysOnEnabled ? "default" : "outline"} 
+                    onClick={alwaysOnEnabled ? disableAlwaysOnMode : enableAlwaysOnMode}
+                    className={alwaysOnEnabled ? "bg-green-600 hover:bg-green-700" : ""}
+                  >
+                    {alwaysOnEnabled ? (
+                      <>
+                        <CheckCircle className="mr-2 h-4 w-4" />
+                        Always-On Mode Active
+                      </>
+                    ) : (
+                      <>
+                        <Settings className="mr-2 h-4 w-4" />
+                        Configure Always-On Mode
+                      </>
+                    )}
+                  </Button>
+                  {alwaysOnEnabled && (
+                    <Button 
+                      variant="outline" 
+                      onClick={disableAlwaysOnMode}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      Disable Always-On
+                    </Button>
+                  )}
+                  {notificationPermission === 'granted' && (
+                    <Button variant="outline" onClick={testNotification}>
+                      <Bell className="mr-2 h-4 w-4" />
+                      Test Notification
+                    </Button>
+                  )}
+                </div>
+                
+                {/* Setup Progress Indicator */}
+                <div className="text-sm text-orange-700 bg-orange-100 p-3 rounded-lg">
+                  <div className="font-medium mb-2">Setup Progress:</div>
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-2">
+                      {alwaysOnEnabled ? (
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      ) : (
+                        <div className="h-4 w-4 border-2 border-orange-400 rounded-full" />
+                      )}
+                      <span>Always-On Mode Configured</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      {notificationPermission === 'granted' ? (
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      ) : (
+                        <div className="h-4 w-4 border-2 border-orange-400 rounded-full" />
+                      )}
+                      <span>Browser Notifications Enabled</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      {showInstallButton || window.matchMedia('(display-mode: standalone)').matches ? (
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      ) : (
+                        <div className="h-4 w-4 border-2 border-orange-400 rounded-full" />
+                      )}
+                      <span>PWA Installed (Optional)</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Success Card - Notifications Enabled */}
       {notificationPermission === 'granted' && (
         <Card className="border-green-200 bg-green-50">
           <CardContent className="p-4">
@@ -223,15 +323,18 @@ export default function MorningDashboardPage() {
               <div>
                 <p className="font-medium text-green-800">Always-On Notifications Enabled</p>
                 <p className="text-sm text-green-700">
-                  You'll receive real-time alerts for priority member notes throughout the day.
+                  You will receive real-time alerts for priority member notes throughout the day.
                 </p>
               </div>
+              <Button variant="outline" onClick={testNotification} className="ml-auto">
+                <Bell className="mr-2 h-4 w-4" />
+                Test Notification
+              </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Quick Actions */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => window.location.href = '/admin/member-notes'}>
           <CardContent className="p-4">
@@ -282,16 +385,15 @@ export default function MorningDashboardPage() {
         </Card>
       </div>
 
-      {/* Simplified Morning Dashboard */}
       <Card>
         <CardHeader>
-          <CardTitle>Morning Dashboard</CardTitle>
+          <CardTitle>PWA Testing Dashboard</CardTitle>
           <CardDescription>
-            Your daily command center - PWA functionality is ready to test!
+            Progressive Web App functionality is ready to test!
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="p-4 border rounded-lg">
               <Bell className="h-8 w-8 text-blue-600 mb-2" />
               <h3 className="font-medium">Notifications</h3>
@@ -314,17 +416,17 @@ export default function MorningDashboardPage() {
             </div>
           </div>
           
-          <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+          <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center space-x-2">
                   <CheckCircle className="h-5 w-5 text-green-600" />
                   <h4 className="font-medium text-green-800">PWA Ready for Testing!</h4>
                 </div>
-            <p className="text-sm text-green-700 mt-2">
-              Install this app to your desktop for system tray notifications and always-on functionality.
-            </p>
-            <div className="mt-3 flex space-x-2">
+                <p className="text-sm text-green-700 mt-2">
+                  Install this app to your desktop for system tray notifications and always-on functionality.
+                </p>
+              </div>
               {showInstallButton ? (
                 <Button onClick={handleInstallPWA} className="bg-green-600 hover:bg-green-700">
                   <Activity className="mr-2 h-4 w-4" />
@@ -332,10 +434,9 @@ export default function MorningDashboardPage() {
                 </Button>
               ) : (
                 <div className="text-sm text-green-700">
-                  💡 <strong>To install:</strong> Look for the install icon in your browser's address bar, or use Chrome/Edge menu → "Install CalAIM Tracker"
+                  💡 <strong>To install:</strong> Look for the install icon in your browser address bar, or use Chrome/Edge menu → Install CalAIM Tracker
                 </div>
               )}
-            </div>
             </div>
           </div>
         </CardContent>
