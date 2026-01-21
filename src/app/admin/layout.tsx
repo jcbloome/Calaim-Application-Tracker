@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAdmin } from '@/hooks/use-admin';
+import { useSocialWorker } from '@/hooks/use-social-worker';
 import {
   LayoutDashboard,
   Shield,
@@ -43,13 +44,16 @@ import {
   CalendarCheck,
   RefreshCw,
   Users,
-  RotateCcw
+  RotateCcw,
+  UserCheck,
+  ClipboardCheck
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/firebase';
 import { NotificationManager } from '@/components/CursorStyleNotification';
 import { StaffNotificationBell } from '@/components/StaffNotificationBell';
+import { SocialWorkerRedirect } from '@/components/SocialWorkerRedirect';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -110,6 +114,14 @@ const adminNavLinks = [
       { href: '/admin/california-counties', label: 'County Analysis', icon: Map },
       { href: '/admin/reports', label: 'Reports', icon: FileText }
     ]
+  },
+  { 
+    label: 'SW', 
+    icon: UserCheck, 
+    isSubmenu: true,
+    submenuItems: [
+      { href: '/admin/sw-visit-verification', label: 'Visit Verification', icon: ClipboardCheck }
+    ]
   }
 ];
 
@@ -159,6 +171,7 @@ const superAdminNavLinks = [
 
 function AdminHeader() {
   const { user, isSuperAdmin } = useAdmin();
+  const { isSocialWorker } = useSocialWorker();
   const auth = useAuth();
   const pathname = usePathname();
   const [openSubmenus, setOpenSubmenus] = useState<Set<string>>(new Set());
@@ -189,10 +202,17 @@ function AdminHeader() {
     setHoveredSubmenu(null);
   };
 
-  const combinedNavLinks = [
-    ...adminNavLinks,
-    ...(isSuperAdmin ? superAdminNavLinks : [])
-  ];
+  // Filter navigation based on user role
+  let combinedNavLinks = adminNavLinks;
+  
+  if (isSocialWorker) {
+    // Social workers only see the SW tab
+    combinedNavLinks = adminNavLinks.filter(nav => nav.label === 'SW');
+  } else if (isSuperAdmin) {
+    // Super admins see everything
+    combinedNavLinks = [...adminNavLinks, ...superAdminNavLinks];
+  }
+  // Regular admins see all admin nav links (default)
 
   return (
     <div className="bg-card border-b sticky top-0 z-40">
@@ -466,6 +486,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   // If loading is done and user is an admin, show the full admin layout.
   return (
     <NotificationManager>
+      <SocialWorkerRedirect />
       <div className="flex flex-col min-h-screen">
         <AdminHeader />
         <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">

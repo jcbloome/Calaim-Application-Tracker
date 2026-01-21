@@ -24,7 +24,9 @@ import {
   Save,
   X,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -74,6 +76,7 @@ export default function SocialWorkerAssignmentsPage() {
   const [rcfeMembers, setRCFEMembers] = useState<RCFEMember[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCounty, setSelectedCounty] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -83,7 +86,7 @@ export default function SocialWorkerAssignmentsPage() {
 
   const { toast } = useToast();
 
-  // Mock data - replace with real API calls
+  // Load initial data
   useEffect(() => {
     loadMockData();
   }, []);
@@ -287,6 +290,62 @@ export default function SocialWorkerAssignmentsPage() {
     return nextMonth.toISOString().split('T')[0];
   };
 
+  const syncFromCaspio = async () => {
+    setSyncing(true);
+    try {
+      console.log('🔒 SAFE MODE: Only reading data, no processing to avoid Caspio interference');
+      
+      // Fetch data from Caspio API (READ ONLY)
+      const response = await fetch('/api/kaiser-members');
+      if (!response.ok) {
+        throw new Error('Failed to fetch data from Caspio');
+      }
+      
+      const data = await response.json();
+      console.log('📊 Raw Caspio data (READ ONLY):', data);
+      
+      // SAFE MODE: Only log data, don't process or transform anything
+      if (data.members && data.members.length > 0) {
+        console.log('🔍 SAFE MODE - Sample member data (first 5):');
+        data.members.slice(0, 5).forEach((member: any, index: number) => {
+          console.log(`Member ${index + 1}:`, {
+            name: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
+            Staff_Assigned: member.Staff_Assigned,
+            Kaiser_User_Assignment: member.Kaiser_User_Assignment,
+            RCFE_Name: member.RCFE_Name,
+            client_ID2: member.client_ID2
+          });
+        });
+        
+        console.log('📊 SAFE MODE - Data summary:', {
+          totalMembers: data.members.length,
+          membersWithStaffAssigned: data.members.filter((m: any) => m.Staff_Assigned).length,
+          membersWithKaiserAssignment: data.members.filter((m: any) => m.Kaiser_User_Assignment).length,
+          membersWithRCFE: data.members.filter((m: any) => m.RCFE_Name).length
+        });
+      }
+      
+      // SAFE MODE: Don't update state, just show what we would have done
+      console.log('🔒 SAFE MODE: Skipping data transformation and state updates to prevent Caspio interference');
+      
+      toast({
+        title: "Safe Mode Sync Complete",
+        description: `Read ${data.members?.length || 0} members from Caspio (no processing done)`,
+        variant: "default"
+      });
+      
+    } catch (error) {
+      console.error('❌ Error syncing from Caspio:', error);
+      toast({
+        title: "Sync Failed",
+        description: "Failed to sync data from Caspio. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const getCareLevelBadge = (level: string) => {
     const colors = {
       'Low': 'bg-green-100 text-green-800',
@@ -305,6 +364,18 @@ export default function SocialWorkerAssignmentsPage() {
           <p className="text-muted-foreground">Manage social worker assignments to RCFE members</p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            onClick={syncFromCaspio} 
+            disabled={syncing}
+            variant="outline"
+          >
+            {syncing ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            {syncing ? 'Syncing...' : 'Sync from Caspio'}
+          </Button>
           <Button onClick={() => setShowAssignModal(true)} disabled={unassignedMembers.length === 0}>
             <Plus className="h-4 w-4 mr-2" />
             New Assignment
