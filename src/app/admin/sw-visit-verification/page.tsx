@@ -268,6 +268,16 @@ export default function SWVisitVerificationPage() {
   };
 
   const submitVisitVerification = async () => {
+    // READ-ONLY MODE: Submission is disabled
+    toast({
+      title: "Read-Only Mode",
+      description: "Visit verification submission is disabled in read-only mode. This page only displays assignment data from Caspio.",
+      variant: "destructive"
+    });
+    return;
+
+    // Original validation code (disabled in read-only mode)
+    /*
     if (!selectedRCFE) {
       toast({
         title: "Error",
@@ -297,6 +307,7 @@ export default function SWVisitVerificationPage() {
     }
 
     try {
+    */
       const verification: VisitVerification = {
         id: Date.now().toString(),
         socialWorkerEmail: user?.email || '',
@@ -347,8 +358,14 @@ export default function SWVisitVerificationPage() {
         <div>
           <h1 className="text-3xl font-bold">Visit Verification</h1>
           <p className="text-muted-foreground">
-            Record your visits to RCFE members - {user?.displayName || user?.email}
+            View your assigned RCFE members - {user?.displayName || user?.email}
           </p>
+          <div className="flex items-center gap-2 mt-2">
+            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+              📖 Read-Only Mode
+            </Badge>
+            <span className="text-sm text-muted-foreground">Data synced from Caspio - verification submission disabled</span>
+          </div>
         </div>
         <div className="flex gap-2">
           <Button 
@@ -632,11 +649,12 @@ export default function SWVisitVerificationPage() {
               </div>
               <Button 
                 onClick={submitVisitVerification}
-                disabled={visitedCount === 0 || !signature}
+                disabled={true}
                 size="lg"
+                variant="outline"
               >
                 <Save className="h-4 w-4 mr-2" />
-                Submit Visit Verification
+                Submit Visit Verification (Read-Only)
               </Button>
             </div>
           </CardContent>

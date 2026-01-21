@@ -240,46 +240,13 @@ export default function SocialWorkerAssignmentsPage() {
   }, [rcfeMembers]);
 
   const handleAssignSocialWorker = (memberId: string, socialWorkerId: string) => {
-    const member = rcfeMembers.find(m => m.id === memberId);
-    const socialWorker = socialWorkers.find(sw => sw.id === socialWorkerId);
-    
-    if (!member || !socialWorker) return;
-
-    // Update member assignment
-    setRCFEMembers(prev => prev.map(m => 
-      m.id === memberId 
-        ? { ...m, assignedSocialWorker: socialWorkerId, nextVisit: getNextVisitDate() }
-        : m
-    ));
-
-    // Create new assignment
-    const newAssignment: Assignment = {
-      id: Date.now().toString(),
-      socialWorkerId,
-      socialWorkerName: socialWorker.name,
-      memberId,
-      memberName: member.name,
-      rcfeName: member.rcfeName,
-      county: member.county,
-      assignedDate: new Date().toISOString().split('T')[0],
-      nextVisit: getNextVisitDate(),
-      status: 'Active'
-    };
-
-    setAssignments(prev => [...prev, newAssignment]);
-
-    // Update social worker caseload
-    setSocialWorkers(prev => prev.map(sw =>
-      sw.id === socialWorkerId
-        ? { ...sw, caseload: sw.caseload + 1 }
-        : sw
-    ));
-
+    // READ-ONLY MODE: Assignments are disabled to prevent writes to Caspio
     toast({
-      title: "Assignment Created",
-      description: `${member.name} assigned to ${socialWorker.name}`,
+      title: "Read-Only Mode",
+      description: "Assignment functionality is disabled in read-only mode. Data is synced from Caspio only.",
+      variant: "destructive"
     });
-
+    
     setShowAssignModal(false);
     setSelectedMember(null);
   };
@@ -293,45 +260,96 @@ export default function SocialWorkerAssignmentsPage() {
   const syncFromCaspio = async () => {
     setSyncing(true);
     try {
-      console.log('🔒 SAFE MODE: Only reading data, no processing to avoid Caspio interference');
+      console.log('📊 Syncing social worker assignments from Caspio (READ ONLY)');
       
-      // Fetch data from Caspio API (READ ONLY)
+      // Fetch data from Caspio API
       const response = await fetch('/api/kaiser-members');
       if (!response.ok) {
         throw new Error('Failed to fetch data from Caspio');
       }
       
       const data = await response.json();
-      console.log('📊 Raw Caspio data (READ ONLY):', data);
+      console.log('📊 Synced data from Caspio:', data);
       
-      // SAFE MODE: Only log data, don't process or transform anything
+      // Debug: Log a few sample members to see the staff assignment fields
       if (data.members && data.members.length > 0) {
-        console.log('🔍 SAFE MODE - Sample member data (first 5):');
-        data.members.slice(0, 5).forEach((member: any, index: number) => {
+        console.log('🔍 Sample member data for staff assignments:');
+        data.members.slice(0, 3).forEach((member: any, index: number) => {
           console.log(`Member ${index + 1}:`, {
             name: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
             Staff_Assigned: member.Staff_Assigned,
             Kaiser_User_Assignment: member.Kaiser_User_Assignment,
-            RCFE_Name: member.RCFE_Name,
-            client_ID2: member.client_ID2
+            RCFE_Name: member.RCFE_Name
           });
-        });
-        
-        console.log('📊 SAFE MODE - Data summary:', {
-          totalMembers: data.members.length,
-          membersWithStaffAssigned: data.members.filter((m: any) => m.Staff_Assigned).length,
-          membersWithKaiserAssignment: data.members.filter((m: any) => m.Kaiser_User_Assignment).length,
-          membersWithRCFE: data.members.filter((m: any) => m.RCFE_Name).length
         });
       }
       
-      // SAFE MODE: Don't update state, just show what we would have done
-      console.log('🔒 SAFE MODE: Skipping data transformation and state updates to prevent Caspio interference');
+      // Transform Caspio data to our format
+      const transformedMembers: RCFEMember[] = data.members
+        .filter((member: any) => member.RCFE_Name && member.RCFE_Name.trim() !== '')
+        .map((member: any, index: number) => ({
+          id: `rcfe-member-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}-${member.client_ID2 || 'unknown'}`,
+          name: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
+          rcfeName: member.RCFE_Name || 'Unknown RCFE',
+          rcfeAddress: member.RCFE_Address || 'Address not available',
+          county: member.Member_County || 'Los Angeles',
+          city: member.Member_City || 'Unknown',
+          assignedSocialWorker: member.Staff_Assigned || member.Kaiser_User_Assignment || undefined,
+          lastVisit: member.Last_Visit_Date || undefined,
+          nextVisit: member.Next_Visit_Date || undefined,
+          status: member.CalAIM_Status === 'Authorized' ? 'Active' : 'Inactive',
+          careLevel: member.Care_Level || 'Medium'
+        }));
+
+      // Transform staff assignments
+      const staffAssignments = data.members
+        .filter((member: any) => member.Staff_Assigned || member.Kaiser_User_Assignment)
+        .map((member: any) => {
+          // Get the social worker identifier
+          const socialWorkerAssignment = member.Staff_Assigned || member.Kaiser_User_Assignment;
+          
+          // Debug: Log the type and value of the assignment
+          console.log('🔍 Social Worker Assignment Debug:', {
+            memberName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
+            Staff_Assigned: member.Staff_Assigned,
+            Staff_Assigned_Type: typeof member.Staff_Assigned,
+            Kaiser_User_Assignment: member.Kaiser_User_Assignment,
+            Kaiser_User_Assignment_Type: typeof member.Kaiser_User_Assignment,
+            socialWorkerAssignment: socialWorkerAssignment,
+            socialWorkerAssignment_Type: typeof socialWorkerAssignment
+          });
+          
+          // Ensure it's a string and determine if this is an email (social worker) or a name
+          const assignmentStr = String(socialWorkerAssignment || '');
+          const isEmail = assignmentStr && typeof assignmentStr === 'string' && assignmentStr.includes('@');
+          
+          // If it's an email, use it as both ID and name (for now)
+          // If it's not an email, it might be a name - use it as the name but create an ID
+          const socialWorkerId = isEmail ? assignmentStr : `sw-${assignmentStr.replace(/\s+/g, '-').toLowerCase()}`;
+          const socialWorkerName = assignmentStr || 'Unassigned';
+          
+          return {
+            id: `assignment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${member.client_ID2 || 'unknown'}`,
+            socialWorkerId: socialWorkerId,
+            socialWorkerName: socialWorkerName,
+            memberId: `member-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${member.client_ID2 || 'unknown'}`,
+            memberName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
+            rcfeName: member.RCFE_Name || 'Unknown RCFE',
+            county: member.Member_County || 'Los Angeles',
+            assignedDate: member.Assignment_Date || new Date().toISOString().split('T')[0],
+            lastVisit: member.Last_Visit_Date || undefined,
+            nextVisit: member.Next_Visit_Date || undefined,
+            status: 'Active',
+            notes: member.Visit_Notes || undefined
+          };
+        });
+
+      setRCFEMembers(transformedMembers);
+      setAssignments(staffAssignments);
       
       toast({
-        title: "Safe Mode Sync Complete",
-        description: `Read ${data.members?.length || 0} members from Caspio (no processing done)`,
-        variant: "default"
+        title: "Sync Complete",
+        description: `Synced ${transformedMembers.length} RCFE members and ${staffAssignments.length} assignments from Caspio (READ ONLY)`,
       });
       
     } catch (error) {
@@ -361,7 +379,13 @@ export default function SocialWorkerAssignmentsPage() {
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">Social Worker Assignments</h1>
-          <p className="text-muted-foreground">Manage social worker assignments to RCFE members</p>
+          <p className="text-muted-foreground">View social worker assignments to RCFE members</p>
+          <div className="flex items-center gap-2 mt-2">
+            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+              📖 Read-Only Mode
+            </Badge>
+            <span className="text-sm text-muted-foreground">Data synced from Caspio - no write operations</span>
+          </div>
         </div>
         <div className="flex gap-2">
           <Button 
@@ -376,9 +400,19 @@ export default function SocialWorkerAssignmentsPage() {
             )}
             {syncing ? 'Syncing...' : 'Sync from Caspio'}
           </Button>
-          <Button onClick={() => setShowAssignModal(true)} disabled={unassignedMembers.length === 0}>
+          <Button 
+            onClick={() => {
+              toast({
+                title: "Read-Only Mode",
+                description: "Assignment creation is disabled. This page only displays data from Caspio.",
+                variant: "destructive"
+              });
+            }} 
+            variant="outline"
+            disabled
+          >
             <Plus className="h-4 w-4 mr-2" />
-            New Assignment
+            New Assignment (Read-Only)
           </Button>
         </div>
       </div>
@@ -597,12 +631,17 @@ export default function SocialWorkerAssignmentsPage() {
 
                     <Button 
                       onClick={() => {
-                        setSelectedMember(member);
-                        setShowAssignModal(true);
+                        toast({
+                          title: "Read-Only Mode",
+                          description: "Assignment functionality is disabled. This page only displays data from Caspio.",
+                          variant: "destructive"
+                        });
                       }}
+                      variant="outline"
+                      disabled
                     >
                       <Plus className="h-4 w-4 mr-2" />
-                      Assign Social Worker
+                      Assign (Read-Only)
                     </Button>
                   </div>
                 </CardContent>
