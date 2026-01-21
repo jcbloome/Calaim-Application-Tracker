@@ -69,10 +69,13 @@ export const performAutoSync = onCall(async (request) => {
       }
     });
     
-    // Update Caspio record
+    // EMERGENCY DISABLE: Update Caspio record - DISABLED TO PREVENT CASPIO INTERFERENCE
+    console.log('🚨 EMERGENCY: Auto-batch sync Caspio UPDATE operations disabled to prevent RCFE/Social Worker access interference');
     const membersTable = 'CalAIM_tbl_Members';
     const updateUrl = `${baseUrl}/tables/${membersTable}/records?q.where=client_ID2='${clientId}'`;
     
+    // DISABLED: Caspio write operations causing interference with RCFE/Social Worker access
+    /*
     const updateResponse = await fetch(updateUrl, {
       method: 'PUT',
       headers: {
@@ -86,6 +89,9 @@ export const performAutoSync = onCall(async (request) => {
       const errorText = await updateResponse.text();
       throw new HttpsError('internal', `Failed to auto-sync to Caspio: ${updateResponse.status} ${errorText}`);
     }
+    */
+    
+    console.log('✅ Auto-batch sync Caspio UPDATE DISABLED - preventing interference');
     
     // Update Firestore sync status
     const db = admin.firestore();

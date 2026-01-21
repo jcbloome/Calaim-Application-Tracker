@@ -180,7 +180,7 @@ export const updateMemberAuthorization = onCall(async (request) => {
       const whereClause = `Record_ID='${memberId}'`;
       
       const response = await fetch(`${apiUrl}?q.where=${encodeURIComponent(whereClause)}`, {
-        method: 'PUT',
+        // EMERGENCY DISABLE: method: 'PUT', // DISABLED TO PREVENT CASPIO INTERFERENCE
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',

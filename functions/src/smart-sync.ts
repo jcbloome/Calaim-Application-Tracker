@@ -180,7 +180,7 @@ export const performManualSync = onCall(async (request) => {
     const updateUrl = `${baseUrl}/tables/${membersTable}/records?q.where=client_ID2='${clientId}'`;
     
     const updateResponse = await fetch(updateUrl, {
-      method: 'PUT',
+      // EMERGENCY DISABLE: method: 'PUT', // DISABLED TO PREVENT CASPIO INTERFERENCE
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',

@@ -64,7 +64,12 @@ export const caspioWebhook = onRequest({
     const applicationDoc = applicationsSnapshot.docs[0];
     const applicationData = applicationDoc.data();
     
-    // Process different operations
+    // EMERGENCY DISABLE: Process different operations - DISABLED TO PREVENT CASPIO INTERFERENCE
+    console.log('🚨 EMERGENCY: Caspio webhook operations disabled to prevent RCFE/Social Worker access interference');
+    console.log(`📝 Would process ${operation} operation for ${clientId}, but webhooks are DISABLED`);
+    
+    // DISABLED: Webhook operations that could interfere with Caspio data integrity
+    /*
     switch (operation) {
       case 'UPDATE':
         await handleCaspioUpdate(applicationDoc.id, applicationData, record_data, changed_fields);
@@ -78,6 +83,7 @@ export const caspioWebhook = onRequest({
       default:
         console.log(`⚠️ Unknown operation: ${operation}`);
     }
+    */
     
     // Log webhook activity
     await db.collection('webhook-logs').add({

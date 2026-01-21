@@ -410,7 +410,10 @@ export const updateKaiserStatusInCaspio = onCall({
     if (next_steps_date) updateData.next_steps_date = next_steps_date;
     
     console.log('📝 Update data:', updateData);
+    console.log('🚨 EMERGENCY: Caspio Kaiser status UPDATE operations disabled to prevent RCFE/Social Worker access interference');
     
+    // DISABLED: Caspio write operations causing interference with RCFE/Social Worker access
+    /*
     const updateResponse = await fetch(updateUrl, {
       method: 'PUT',
       headers: {
@@ -427,11 +430,14 @@ export const updateKaiserStatusInCaspio = onCall({
     
     const result = await updateResponse.json();
     console.log('✅ Successfully updated Caspio record');
+    */
+    
+    console.log('✅ Kaiser status update DISABLED - preventing Caspio interference');
     
     return {
       success: true,
-      message: `Successfully updated Kaiser status in Caspio for client_ID2: ${client_ID2}`,
-      data: result,
+      message: `EMERGENCY MODE: Kaiser status update DISABLED to prevent interference. Would have updated client_ID2: ${client_ID2}`,
+      data: { disabled: true, updateData },
     };
     
   } catch (error: any) {
@@ -508,6 +514,11 @@ export const syncKaiserStatus = onCall(async (request) => {
         if (kaiser_user_assignment) updateData.kaiser_user_assignment = kaiser_user_assignment;
         if (next_steps_date) updateData.next_steps_date = next_steps_date;
         
+        // EMERGENCY DISABLE: Caspio sync operations disabled to prevent RCFE/Social Worker access interference
+        console.log('🚨 EMERGENCY: Caspio sync UPDATE operations disabled to prevent RCFE/Social Worker access interference');
+        
+        // DISABLED: Caspio write operations causing interference with RCFE/Social Worker access
+        /*
         const updateResponse = await fetch(updateUrl, {
           method: 'PUT',
           headers: {
@@ -522,6 +533,9 @@ export const syncKaiserStatus = onCall(async (request) => {
         } else {
           console.log('⚠️ Failed to update Caspio record:', updateResponse.status);
         }
+        */
+        
+        console.log('✅ Caspio sync UPDATE DISABLED - preventing interference');
       }
     }
     
@@ -1378,9 +1392,12 @@ export const syncMemberToCaspio = onCall({
         const searchData = await searchResponse.json();
         
         if (searchData.Result && searchData.Result.length > 0) {
-          // Member exists - UPDATE
-          console.log('📝 Member exists in Caspio, updating record...');
+          // EMERGENCY DISABLE: Member exists - UPDATE DISABLED TO PREVENT CASPIO INTERFERENCE
+          console.log('🚨 EMERGENCY: Caspio UPDATE operations disabled to prevent RCFE/Social Worker access interference');
+          console.log('📝 Member exists in Caspio, but UPDATE operation is DISABLED');
           
+          // DISABLED: Caspio write operations causing interference with RCFE/Social Worker access
+          /*
           const updateUrl = `${baseUrl}/tables/${membersTable}/records?q.where=client_ID2='${clientId2}'`;
           const updateResponse = await fetch(updateUrl, {
             method: 'PUT',
@@ -1398,12 +1415,13 @@ export const syncMemberToCaspio = onCall({
           
           const result = await updateResponse.json();
           console.log('✅ Successfully updated member in Caspio');
+          */
           
           return {
             success: true,
-            action: 'updated',
-            message: `Successfully updated member "${caspioMemberData.Senior_First} ${caspioMemberData.Senior_Last}" in Caspio`,
-            data: result,
+            action: 'read_only_mode',
+            message: `EMERGENCY MODE: Caspio writes disabled. Member "${caspioMemberData.Senior_First} ${caspioMemberData.Senior_Last}" found but NOT updated to prevent interference`,
+            data: searchData.Result[0],
             memberId: memberId,
             client_ID2: clientId2
           };
@@ -1415,9 +1433,12 @@ export const syncMemberToCaspio = onCall({
       }
     }
     
-    // CREATE new member record
-    console.log('📝 Creating new member record in Caspio...');
+    // EMERGENCY DISABLE: CREATE new member record - DISABLED TO PREVENT CASPIO INTERFERENCE
+    console.log('🚨 EMERGENCY: Caspio CREATE operations disabled to prevent RCFE/Social Worker access interference');
+    console.log('📝 Would create new member record in Caspio, but CREATE operation is DISABLED');
     
+    // DISABLED: Caspio write operations causing interference with RCFE/Social Worker access
+    /*
     const insertResponse = await fetch(`${baseUrl}/tables/${membersTable}/records`, {
       method: 'POST',
       headers: {
@@ -1434,19 +1455,20 @@ export const syncMemberToCaspio = onCall({
     
     const result = await insertResponse.json();
     console.log('✅ Successfully created member in Caspio');
+    */
     
-    // Update Firestore with sync status
+    // Update Firestore with sync status (READ-ONLY MODE)
     await memberDoc.ref.update({
       lastSyncedToCaspio: admin.firestore.FieldValue.serverTimestamp(),
       syncedBy: request.auth.uid,
-      caspioSyncStatus: 'synced'
+      caspioSyncStatus: 'read_only_mode_disabled'
     });
     
     return {
       success: true,
-      action: 'created',
-      message: `Successfully created member "${caspioMemberData.Senior_First} ${caspioMemberData.Senior_Last}" in Caspio`,
-      data: result,
+      action: 'read_only_mode',
+      message: `EMERGENCY MODE: Caspio writes disabled. Member "${caspioMemberData.Senior_First} ${caspioMemberData.Senior_Last}" would be created but operation is DISABLED to prevent interference`,
+      data: null,
       memberId: memberId,
       client_ID2: clientId2
     };

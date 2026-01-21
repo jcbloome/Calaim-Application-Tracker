@@ -281,6 +281,12 @@ export async function createCaspioApplication(firebaseData: any): Promise<Caspio
     // Validate the data
     const validatedData = CaspioApplicationSchema.parse(caspioData);
     
+    // EMERGENCY DISABLE: Caspio CREATE operations disabled to prevent RCFE/Social Worker access interference
+    console.log('🚨 EMERGENCY: Caspio CREATE operations disabled to prevent RCFE/Social Worker access interference');
+    console.log('📝 Would create application in Caspio, but CREATE operation is DISABLED');
+    
+    // DISABLED: Caspio write operations causing interference with RCFE/Social Worker access
+    /*
     const response = await fetch(`${CASPIO_CONFIG.baseUrl}/tables/${CASPIO_CONFIG.tableName}/records`, {
       method: 'POST',
       headers: {
@@ -289,6 +295,10 @@ export async function createCaspioApplication(firebaseData: any): Promise<Caspio
       },
       body: JSON.stringify(validatedData),
     });
+    */
+    
+    // Simulate successful response for read-only mode
+    const response = { ok: true, json: async () => ({ disabled: true, message: 'Caspio writes disabled' }) };
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -348,6 +358,12 @@ export async function updateCaspioApplication(applicationId: string, firebaseDat
     // Validate the data
     const validatedData = CaspioApplicationSchema.parse(caspioData);
     
+    // EMERGENCY DISABLE: Caspio UPDATE operations disabled to prevent RCFE/Social Worker access interference
+    console.log('🚨 EMERGENCY: Caspio UPDATE operations disabled to prevent RCFE/Social Worker access interference');
+    console.log(`📝 Would update application ${applicationId} in Caspio, but UPDATE operation is DISABLED`);
+    
+    // DISABLED: Caspio write operations causing interference with RCFE/Social Worker access
+    /*
     const response = await fetch(`${CASPIO_CONFIG.baseUrl}/tables/${CASPIO_CONFIG.tableName}/records`, {
       method: 'PUT',
       headers: {
@@ -359,6 +375,10 @@ export async function updateCaspioApplication(applicationId: string, firebaseDat
         ApplicationID: applicationId, // Ensure we're updating the right record
       }),
     });
+    */
+    
+    // Simulate successful response for read-only mode
+    const response = { ok: true, json: async () => ({ disabled: true, message: 'Caspio writes disabled' }) };
     
     if (!response.ok) {
       const errorText = await response.text();

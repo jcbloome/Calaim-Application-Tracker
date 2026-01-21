@@ -679,7 +679,7 @@ export const applyConfirmedMatches = onCall(async (request) => {
         const updateResponse = await fetch(
           `${config.baseUrl}/rest/v2/tables/CalAIM_Member_Table/records?q.where=Client_ID2='${match.caspioMember.Client_ID2}'`,
           {
-            method: 'PUT',
+            // EMERGENCY DISABLE: method: 'PUT', // DISABLED TO PREVENT CASPIO INTERFERENCE
             headers: {
               'Authorization': `Bearer ${accessToken}`,
               'Content-Type': 'application/json',
