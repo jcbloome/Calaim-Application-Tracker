@@ -211,6 +211,64 @@ export const STATUS_COLORS: Record<string, StatusStyle> = {
     icon: 'Mail'
   },
   
+  // New Kaiser Statuses from Updated Caspio List
+  'T2038, Not Requested, Doc Collection': {
+    color: 'bg-slate-50 text-slate-700 border-slate-200',
+    backgroundColor: 'bg-slate-50',
+    borderColor: 'border-slate-200',
+    textColor: 'text-slate-700',
+    icon: 'FileText'
+  },
+  'T2038 Request Ready': {
+    color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    backgroundColor: 'bg-emerald-50',
+    borderColor: 'border-emerald-200',
+    textColor: 'text-emerald-700',
+    icon: 'CheckCircle'
+  },
+  'T2038 Auth Only Email': {
+    color: 'bg-amber-50 text-amber-700 border-amber-200',
+    backgroundColor: 'bg-amber-50',
+    borderColor: 'border-amber-200',
+    textColor: 'text-amber-700',
+    icon: 'Mail'
+  },
+  'Tier Level Request Needed': {
+    color: 'bg-rose-50 text-rose-700 border-rose-200',
+    backgroundColor: 'bg-rose-50',
+    borderColor: 'border-rose-200',
+    textColor: 'text-rose-700',
+    icon: 'FileText'
+  },
+  'ILS/RCFE Contract Email Needed': {
+    color: 'bg-blue-50 text-blue-700 border-blue-200',
+    backgroundColor: 'bg-blue-50',
+    borderColor: 'border-blue-200',
+    textColor: 'text-blue-700',
+    icon: 'Mail'
+  },
+  'ILS/RCFE Contact Email Sent': {
+    color: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+    backgroundColor: 'bg-cyan-50',
+    borderColor: 'border-cyan-200',
+    textColor: 'text-cyan-700',
+    icon: 'Mail'
+  },
+  'ILS/RCFE Connection Confirmed': {
+    color: 'bg-teal-50 text-teal-700 border-teal-200',
+    backgroundColor: 'bg-teal-50',
+    borderColor: 'border-teal-200',
+    textColor: 'text-teal-700',
+    icon: 'CheckCircle'
+  },
+  'ILS Contracted and Member Moved In': {
+    color: 'bg-green-50 text-green-700 border-green-200',
+    backgroundColor: 'bg-green-50',
+    borderColor: 'border-green-200',
+    textColor: 'text-green-700',
+    icon: 'CheckCircle'
+  },
+  
   // Health Net Statuses
   'Application Being Reviewed': {
     color: 'bg-blue-50 text-blue-700 border-blue-200',

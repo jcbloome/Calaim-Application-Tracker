@@ -10,23 +10,32 @@ import type {
 } from './types';
 import { calculateRecommendedDueDate, addBusinessDays } from './date-utils';
 
-// Kaiser Workflow Configuration (centralized from multiple files)
+// Kaiser Workflow Configuration (updated with new Caspio statuses)
 export const KAISER_WORKFLOW: WorkflowConfig = {
   name: 'Kaiser Permanente CalAIM Workflow',
   healthPlan: 'Kaiser',
   steps: [
     {
-      status: 'Pre-T2038, Compiling Docs',
-      nextStatus: 'T2038 Requested',
+      status: 'T2038, Not Requested, Doc Collection',
+      nextStatus: 'T2038 Request Ready',
       recommendedDays: 7,
       requiredActions: ['Gather member documentation', 'Complete initial assessment'],
       autoAdvanceConditions: ['documents_complete', 'assessment_reviewed'],
       canSkip: false,
-      description: 'Compile all necessary documentation before T2038 request'
+      description: 'Collect documentation before T2038 request preparation'
+    },
+    {
+      status: 'T2038 Request Ready',
+      nextStatus: 'T2038 Requested',
+      recommendedDays: 2,
+      requiredActions: ['Review documentation', 'Submit T2038 request'],
+      autoAdvanceConditions: ['t2038_submitted'],
+      canSkip: false,
+      description: 'T2038 request prepared and ready for submission'
     },
     {
       status: 'T2038 Requested',
-      nextStatus: 'T2038 Received',
+      nextStatus: 'T2038 received, Need First Contact',
       recommendedDays: 14,
       requiredActions: ['Submit T2038 request', 'Follow up with Kaiser'],
       autoAdvanceConditions: ['t2038_received'],
@@ -80,12 +89,21 @@ export const KAISER_WORKFLOW: WorkflowConfig = {
     },
     {
       status: 'RN Visit Complete',
-      nextStatus: 'Tier Level Requested',
+      nextStatus: 'Tier Level Request Needed',
       recommendedDays: 3,
       requiredActions: ['Review RN assessment', 'Prepare tier level request'],
       autoAdvanceConditions: ['assessment_reviewed', 'tier_request_ready'],
       canSkip: false,
       description: 'RN assessment completed, ready for tier level request'
+    },
+    {
+      status: 'Tier Level Request Needed',
+      nextStatus: 'Tier Level Requested',
+      recommendedDays: 5,
+      requiredActions: ['Prepare tier level documentation', 'Submit request'],
+      autoAdvanceConditions: ['tier_request_submitted'],
+      canSkip: false,
+      description: 'Tier level request preparation needed'
     },
     {
       status: 'Tier Level Requested',
@@ -143,33 +161,51 @@ export const KAISER_WORKFLOW: WorkflowConfig = {
     },
     {
       status: 'R&B Signed',
-      nextStatus: 'ILS Sent for Contract',
+      nextStatus: 'ILS/RCFE Contract Email Needed',
       recommendedDays: 3,
-      requiredActions: ['Process R&B approval', 'Initiate ILS contracting'],
-      autoAdvanceConditions: ['rb_processed', 'ils_contract_initiated'],
+      requiredActions: ['Process R&B approval', 'Prepare contracting email'],
+      autoAdvanceConditions: ['rb_processed', 'email_ready'],
       canSkip: false,
       description: 'Room and Board approved and signed'
     },
     {
-      status: 'ILS Sent for Contract',
-      nextStatus: 'ILS Contracted (Complete)',
-      recommendedDays: 14,
-      requiredActions: ['Complete ILS contracting', 'Finalize placement'],
-      autoAdvanceConditions: ['ils_contract_signed', 'placement_finalized'],
+      status: 'ILS/RCFE Contract Email Needed',
+      nextStatus: 'ILS/RCFE Contact Email Sent',
+      recommendedDays: 2,
+      requiredActions: ['Send contracting email to ILS/RCFE provider'],
+      autoAdvanceConditions: ['email_sent'],
       canSkip: false,
-      description: 'ILS contracting in progress'
+      description: 'ILS/RCFE contracting email needs to be sent'
     },
     {
-      status: 'ILS Contracted (Complete)',
+      status: 'ILS/RCFE Contact Email Sent',
+      nextStatus: 'ILS/RCFE Connection Confirmed',
+      recommendedDays: 7,
+      requiredActions: ['Follow up on email response', 'Coordinate connection'],
+      autoAdvanceConditions: ['response_received', 'connection_confirmed'],
+      canSkip: false,
+      description: 'Contracting email sent, awaiting response'
+    },
+    {
+      status: 'ILS/RCFE Connection Confirmed',
+      nextStatus: 'ILS Contracted and Member Moved In',
+      recommendedDays: 14,
+      requiredActions: ['Finalize contracting', 'Coordinate member move-in'],
+      autoAdvanceConditions: ['contract_finalized', 'member_moved_in'],
+      canSkip: false,
+      description: 'ILS/RCFE connection confirmed, finalizing placement'
+    },
+    {
+      status: 'ILS Contracted and Member Moved In',
       nextStatus: undefined,
       recommendedDays: 0,
-      requiredActions: ['Archive case', 'Update records'],
+      requiredActions: ['Complete final documentation', 'Archive case'],
       autoAdvanceConditions: [],
       canSkip: false,
-      description: 'Case completed successfully'
+      description: 'Case completed - member successfully placed and moved in'
     }
   ],
-  completionCriteria: ['ILS Contracted (Complete)']
+  completionCriteria: ['ILS Contracted and Member Moved In']
 };
 
 // Health Net Workflow Configuration

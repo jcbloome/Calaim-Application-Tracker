@@ -174,37 +174,42 @@ const kaiserWorkflow = {
 
 // Predefined Kaiser statuses to show immediately
 const KAISER_STATUSES = [
-  'T2038 Requested',
-  'T2038 Received', 
-  'T2038 received, Need First Contact',
-  'T2038 received, doc collection',
-  'Needs RN Visit',
-  'RN/MSW Scheduled',
-  'RN Visit Complete',
-  'Need Tier Level',
-  'Tier Level Requested',
-  'Tier Level Received',
-  'Locating RCFEs',
-  'Found RCFE',
-  'R&B Requested',
-  'R&B Signed',
-  'RCFE/ILS for Invoicing',
-  'ILS Contracted (Complete)',
-  'Confirm ILS Contracted',
-  'Tier Level Revision Request',
-  'On-Hold',
-  'Tier Level Appeal',
-  'T2038 email but need auth sheet',
-  'Non-active',
+  // Updated Kaiser Status List from Caspio (sorted by Sort_Order)
+  'T2038, Not Requested, Doc Collection',           // Sort: 0
+  'T2038 Request Ready',                            // Sort: 1
+  'T2038 Requested',                                // Sort: 2
+  'T2038 received, Need First Contact',             // Sort: 4
+  'T2038 received, doc collection',                 // Sort: 5
+  'T2038 Auth Only Email',                          // Sort: 5.4
+  'RN Visit Needed',                                // Sort: 6.5
+  'RN/MSW Scheduled',                               // Sort: 7
+  'RN Visit Complete',                              // Sort: 8
+  'Tier Level Request Needed',                      // Sort: 9
+  'Tier Level Requested',                           // Sort: 10
+  'Tier Level Received',                            // Sort: 11
+  'Tier Level Appeal',                              // Sort: 11.2
+  'RCFE Needed',                                    // Sort: 12
+  'R&B Needed',                                     // Sort: 14.1
+  'R&B Requested',                                  // Sort: 14.2
+  'R&B Signed',                                     // Sort: 14.3
+  'RCFE_Located',                                   // Sort: 14
+  'ILS/RCFE Contract Email Needed',                 // Sort: 15.5
+  'ILS/RCFE Contact Email Sent',                    // Sort: 15.7
+  'ILS/RCFE Connection Confirmed',                  // Sort: 15.9
+  'ILS Contracted and Member Moved In',             // Sort: 20
+  'Non-active',                                     // Sort: 22
+  'On-Hold',                                        // Sort: 23
+  
+  // Legacy statuses (keeping for backward compatibility)
   'Pending',
-  'Switched MCPs',
-  'Pending to Switch',
-  'Authorized on hold',
-  'Authorized',
   'Denied',
   'Expired',
+  'Authorized',
   'Not interested',
-  'Not CalAIM'
+  'Not CalAIM',
+  'Switched MCPs',
+  'Pending to Switch',
+  'Authorized on hold'
 ];
 
 const CALAIM_STATUSES = [

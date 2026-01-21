@@ -29,6 +29,16 @@ const NEXT_ACTIONS: Record<string, string> = {
   "On-Hold": "Review hold status and determine next steps",
   "Non-active": "Review case status and determine reactivation steps",
   
+  // New Kaiser Status Actions
+  "T2038, Not Requested, Doc Collection": "Collect required documentation and prepare T2038 request",
+  "T2038 Request Ready": "Submit T2038 request to Kaiser",
+  "T2038 Auth Only Email": "Send authorization-only email to Kaiser",
+  "Tier Level Request Needed": "Prepare and submit tier level request",
+  "ILS/RCFE Contract Email Needed": "Send contracting email to ILS/RCFE provider",
+  "ILS/RCFE Contact Email Sent": "Follow up on ILS/RCFE contracting response",
+  "ILS/RCFE Connection Confirmed": "Finalize ILS/RCFE connection and placement",
+  "ILS Contracted and Member Moved In": "Complete final documentation and close case",
+  
   // Health Net actions
   "Application Being Reviewed": "Follow up on application review status",
   "Scheduling ISP": "Schedule Individual Service Plan meeting",
@@ -130,21 +140,33 @@ export class TaskProcessor {
   // Estimate completion days based on status
   private estimateCompletionDays(status: string): number {
     const estimations: Record<string, number> = {
-      'Pre-T2038, Compiling Docs': 45,
+      // Updated Kaiser Status Estimations (based on new workflow)
+      'T2038, Not Requested, Doc Collection': 50,
+      'T2038 Request Ready': 45,
       'T2038 Requested': 35,
-      'T2038 Received': 30,
       'T2038 received, Need First Contact': 25,
       'T2038 received, doc collection': 20,
+      'T2038 Auth Only Email': 30,
       'RN Visit Needed': 15,
       'RN/MSW Scheduled': 10,
       'RN Visit Complete': 8,
+      'Tier Level Request Needed': 7,
       'Tier Level Requested': 6,
       'Tier Level Received': 4,
+      'Tier Level Appeal': 14,
       'RCFE Needed': 21,
       'RCFE_Located': 14,
       'R&B Needed': 10,
       'R&B Requested': 7,
       'R&B Signed': 5,
+      'ILS/RCFE Contract Email Needed': 4,
+      'ILS/RCFE Contact Email Sent': 3,
+      'ILS/RCFE Connection Confirmed': 2,
+      'ILS Contracted and Member Moved In': 0,
+      
+      // Legacy statuses
+      'Pre-T2038, Compiling Docs': 45,
+      'T2038 Received': 30,
       'ILS Sent for Contract': 3,
       'ILS Contracted (Complete)': 0,
       
