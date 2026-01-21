@@ -24,6 +24,7 @@ import {
   X,
   FileText,
   Package,
+  ArrowLeft,
 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -31,6 +32,7 @@ import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
+import { useAdmin } from '@/hooks/use-admin';
 import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytesResumable, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { Label } from '@/components/ui/label';
@@ -88,6 +90,7 @@ function PathwayPageContent() {
   const router = useRouter();
   const applicationId = searchParams.get('applicationId');
   const { user, isUserLoading } = useUser();
+  const { isAdmin, isSuperAdmin } = useAdmin();
   const firestore = useFirestore();
   const storage = useStorage();
   const { toast } = useToast();
@@ -600,12 +603,17 @@ function PathwayPageContent() {
        if (req.type === 'Upload') {
            return (
                 <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-green-50 border border-green-200 text-sm">
-                    {formInfo?.downloadURL ? (
+                    {formInfo?.downloadURL && (isAdmin || isSuperAdmin) ? (
                         <a href={formInfo.downloadURL} target="_blank" rel="noopener noreferrer" className="truncate flex-1 text-green-800 font-medium hover:underline">
                             {formInfo?.fileName || 'Completed'}
                         </a>
                     ) : (
-                        <span className="truncate flex-1 text-green-800 font-medium">{formInfo?.fileName || 'Completed'}</span>
+                        <span className="truncate flex-1 text-green-800 font-medium">
+                            {formInfo?.fileName || 'Completed'}
+                            {!isAdmin && !isSuperAdmin && formInfo?.downloadURL && (
+                                <span className="block text-xs text-gray-500 mt-1">Document submitted - accessible by staff only</span>
+                            )}
+                        </span>
                     )}
                 </div>
            );
@@ -653,12 +661,17 @@ function PathwayPageContent() {
              if (isCompleted) {
                  return (
                     <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-green-50 border border-green-200 text-sm">
-                        {formInfo?.downloadURL ? (
+                        {formInfo?.downloadURL && (isAdmin || isSuperAdmin) ? (
                             <a href={formInfo.downloadURL} target="_blank" rel="noopener noreferrer" className="truncate flex-1 text-green-800 font-medium hover:underline">
                                 {formInfo?.fileName || 'Completed'}
                             </a>
                         ) : (
-                             <span className="truncate flex-1 text-green-800 font-medium">{formInfo?.fileName || 'Completed'}</span>
+                             <span className="truncate flex-1 text-green-800 font-medium">
+                                {formInfo?.fileName || 'Completed'}
+                                {!isAdmin && !isSuperAdmin && formInfo?.downloadURL && (
+                                    <span className="block text-xs text-gray-500 mt-1">Document submitted - accessible by staff only</span>
+                                )}
+                             </span>
                         )}
                         <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(formInfo!)}>
                             <X className="h-4 w-4" />
@@ -701,6 +714,16 @@ function PathwayPageContent() {
       <Header />
       <main className="flex-grow bg-slate-50/50 py-8 sm:py-12">
         <div className="container mx-auto max-w-4xl px-4 sm:px-6 space-y-8 max-w-full overflow-x-hidden">
+          {/* Back to Applications Hub Link */}
+          <div className="flex items-center">
+            <Link 
+              href="/applications" 
+              className="inline-flex items-center text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Applications Hub
+            </Link>
+          </div>
             <Card className="shadow-sm">
                 <CardHeader>
                 <CardTitle className="text-2xl sm:text-3xl font-bold text-primary">
