@@ -80,12 +80,14 @@ const ApplicationsTable = ({
   onSelectionChange,
   selection,
   isLoading,
+  showNotifications = false,
 }: {
   title: string;
   applications: ApplicationData[];
   onSelectionChange?: (id: string, isSelected: boolean) => void;
   selection?: string[];
   isLoading: boolean;
+  showNotifications?: boolean;
 }) => {
   const getActionLink = (app: ApplicationData) => {
     // If the application is still being worked on, check if CS Summary is completed
@@ -139,14 +141,14 @@ const ApplicationsTable = ({
                 <TableHead>Status</TableHead>
                 <TableHead className="hidden lg:table-cell">Plan &amp; Pathway</TableHead>
                 <TableHead className="hidden sm:table-cell">Last Updated</TableHead>
-                <TableHead className="hidden md:table-cell text-center">Notifications</TableHead>
+                {showNotifications && <TableHead className="hidden md:table-cell text-center">Notifications</TableHead>}
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
+                  <TableCell colSpan={onSelectionChange ? (showNotifications ? 7 : 6) : (showNotifications ? 6 : 5)} className="h-24 text-center">
                     <Loader2 className="mx-auto h-6 w-6 animate-spin" />
                   </TableCell>
                 </TableRow>
@@ -173,26 +175,28 @@ const ApplicationsTable = ({
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">{app.healthPlan} - {app.pathway}</TableCell>
                     <TableCell className="hidden sm:table-cell">{app.lastUpdated ? format(app.lastUpdated.toDate(), 'MM/dd/yyyy') : 'N/A'}</TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <div className="flex items-center justify-center gap-2">
-                        <Bell 
-                          className={`h-4 w-4 ${
-                            app.statusRemindersEnabled !== false 
-                              ? 'text-blue-600' 
-                              : 'text-gray-300'
-                          }`}
-                          title={app.statusRemindersEnabled !== false ? 'Status reminders enabled' : 'Status reminders disabled'}
-                        />
-                        <Mail 
-                          className={`h-4 w-4 ${
-                            app.emailRemindersEnabled 
-                              ? 'text-green-600' 
-                              : 'text-gray-300'
-                          }`}
-                          title={app.emailRemindersEnabled ? 'Email reminders enabled' : 'Email reminders disabled'}
-                        />
-                      </div>
-                    </TableCell>
+                    {showNotifications && (
+                      <TableCell className="hidden md:table-cell">
+                        <div className="flex items-center justify-center gap-2">
+                          <Bell 
+                            className={`h-4 w-4 ${
+                              app.statusRemindersEnabled !== false 
+                                ? 'text-blue-600' 
+                                : 'text-gray-300'
+                            }`}
+                            title={app.statusRemindersEnabled !== false ? 'Status reminders enabled' : 'Status reminders disabled'}
+                          />
+                          <Mail 
+                            className={`h-4 w-4 ${
+                              app.emailRemindersEnabled 
+                                ? 'text-green-600' 
+                                : 'text-gray-300'
+                            }`}
+                            title={app.emailRemindersEnabled ? 'Email reminders enabled' : 'Email reminders disabled'}
+                          />
+                        </div>
+                      </TableCell>
+                    )}
                     <TableCell className="text-right">
                       <Button asChild variant="outline" size="sm">
                         <Link href={getActionLink(app)}>{getActionText(app)}</Link>
@@ -202,7 +206,7 @@ const ApplicationsTable = ({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
+                  <TableCell colSpan={onSelectionChange ? (showNotifications ? 7 : 6) : (showNotifications ? 6 : 5)} className="h-24 text-center">
                     No applications found.
                   </TableCell>
                 </TableRow>
