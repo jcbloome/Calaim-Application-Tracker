@@ -46,8 +46,8 @@ export async function GET(request: NextRequest) {
     console.log('✅ [SW-ASSIGNMENTS] Got Caspio access token');
 
     // Query members assigned to this social worker
-    // Look for members where Staff_Assigned or Kaiser_User_Assignment matches the email
-    const query = `Staff_Assigned='${email}' OR Kaiser_User_Assignment='${email}'`;
+    // Look for members where Social_Worker_Assigned, Staff_Assigned or Kaiser_User_Assignment matches the email
+    const query = `Social_Worker_Assigned='${email}' OR Staff_Assigned='${email}' OR Kaiser_User_Assignment='${email}'`;
     const membersUrl = `${baseUrl}/tables/${tableName}/records?q.where=${encodeURIComponent(query)}`;
 
     console.log('📊 [SW-ASSIGNMENTS] Fetching assigned members...');

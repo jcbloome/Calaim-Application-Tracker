@@ -166,6 +166,7 @@ export async function GET(request: NextRequest) {
       
       // Debug staff assignment fields specifically
       console.log('🔍 STAFF ASSIGNMENT FIELDS DEBUG:', {
+        Social_Worker_Assigned: membersData.Result[0].Social_Worker_Assigned,
         Kaiser_User_Assignment: membersData.Result[0].Kaiser_User_Assignment,
         kaiser_user_assignment: membersData.Result[0].kaiser_user_assignment,
         SW_ID: membersData.Result[0].SW_ID,
@@ -176,7 +177,9 @@ export async function GET(request: NextRequest) {
           key.toLowerCase().includes('assign') ||
           key.toLowerCase().includes('user') ||
           key.toLowerCase().includes('next') ||
-          key.toLowerCase().includes('date')
+          key.toLowerCase().includes('date') ||
+          key.toLowerCase().includes('social') ||
+          key.toLowerCase().includes('worker')
         )
       });
       
@@ -204,7 +207,8 @@ export async function GET(request: NextRequest) {
       SW_ID: member.SW_ID,
       Kaiser_User_Assignment: member.Kaiser_User_Assignment,
       Kaiser_Next_Step_Date: member.Kaiser_Next_Step_Date,
-      Staff_Assigned: member.Kaiser_User_Assignment || 
+      Staff_Assigned: member.Social_Worker_Assigned || 
+                     member.Kaiser_User_Assignment || 
                      member.kaiser_user_assignment || 
                      member['Kaiser User Assignment'] ||
                      member.KaiserUserAssignment ||

@@ -294,7 +294,7 @@ export default function SocialWorkerAssignmentsPage() {
           rcfeAddress: member.RCFE_Address || 'Address not available',
           county: member.Member_County || 'Los Angeles',
           city: member.Member_City || 'Unknown',
-          assignedSocialWorker: member.Staff_Assigned || member.Kaiser_User_Assignment || undefined,
+          assignedSocialWorker: member.Social_Worker_Assigned || member.Staff_Assigned || member.Kaiser_User_Assignment || undefined,
           lastVisit: member.Last_Visit_Date || undefined,
           nextVisit: member.Next_Visit_Date || undefined,
           status: member.CalAIM_Status === 'Authorized' ? 'Active' : 'Inactive',
@@ -303,14 +303,16 @@ export default function SocialWorkerAssignmentsPage() {
 
       // Transform staff assignments
       const staffAssignments = data.members
-        .filter((member: any) => member.Staff_Assigned || member.Kaiser_User_Assignment)
+        .filter((member: any) => member.Social_Worker_Assigned || member.Staff_Assigned || member.Kaiser_User_Assignment)
         .map((member: any) => {
-          // Get the social worker identifier
-          const socialWorkerAssignment = member.Staff_Assigned || member.Kaiser_User_Assignment;
+          // Get the social worker identifier - prioritize Social_Worker_Assigned
+          const socialWorkerAssignment = member.Social_Worker_Assigned || member.Staff_Assigned || member.Kaiser_User_Assignment;
           
           // Debug: Log the type and value of the assignment
           console.log('🔍 Social Worker Assignment Debug:', {
             memberName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
+            Social_Worker_Assigned: member.Social_Worker_Assigned,
+            Social_Worker_Assigned_Type: typeof member.Social_Worker_Assigned,
             Staff_Assigned: member.Staff_Assigned,
             Staff_Assigned_Type: typeof member.Staff_Assigned,
             Kaiser_User_Assignment: member.Kaiser_User_Assignment,
