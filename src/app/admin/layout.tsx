@@ -50,7 +50,6 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/firebase';
 import { NotificationManager } from '@/components/CursorStyleNotification';
 import { StaffNotificationBell } from '@/components/StaffNotificationBell';
-import NotificationBell from '@/components/NotificationBell';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,40 +76,33 @@ const adminNavLinks = [
     icon: LayoutDashboard, 
     isSubmenu: true,
     submenuItems: [
-      { href: '/admin/morning-dashboard', label: 'Morning Dashboard', icon: LayoutDashboard },
       { href: '/admin', label: 'Activity Dashboard', icon: Activity },
-      { href: '/admin/activity-log', label: 'Activity Log', icon: Activity }
-    ]
-  },
-  { 
-    label: 'Applications', 
-    icon: FolderKanban, 
-    isSubmenu: true,
-    submenuItems: [
+      { href: '/admin/activity-log', label: 'Activity Log', icon: Activity },
       { href: '/admin/applications', label: 'All Applications', icon: FolderKanban },
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
-      { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
-      { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
-    ]
-  },
-  { 
-    label: 'Members', 
-    icon: Users, 
-    isSubmenu: true,
-    submenuItems: [
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
-      { href: '/admin/my-notes', label: 'My Notifications', icon: Bell },
-      { href: '/admin/social-worker-assignments', label: 'Staff Assignments', icon: UserPlus },
-      { href: '/admin/tasks', label: 'My Tasks', icon: ClipboardList },
-      { href: '/admin/member-activity', label: 'Member Activity', icon: Activity },
       { href: '/admin/eligibility-checks', label: 'Eligibility Checks', icon: Shield }
     ]
   },
   { 
-    label: 'Reports', 
-    icon: BarChart3, 
+    label: 'My Tasks', 
+    icon: ClipboardList, 
     isSubmenu: true,
     submenuItems: [
+      { href: '/admin/my-notes', label: 'My Notifications', icon: Bell },
+      { href: '/admin/tasks', label: 'My Tasks', icon: ClipboardList },
+      { href: '/admin/morning-dashboard', label: 'Morning Dashboard', icon: LayoutDashboard }
+    ]
+  },
+  { 
+    label: 'Tools', 
+    icon: Wrench, 
+    isSubmenu: true,
+    submenuItems: [
+      { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
+      { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
+      { href: '/admin/social-worker-assignments', label: 'Staff Assignments', icon: UserPlus },
+      { href: '/admin/member-activity', label: 'Member Activity', icon: Activity },
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
@@ -286,9 +278,6 @@ function AdminHeader() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Notification Bell */}
-          <NotificationBell />
-          
           {/* Staff Notification Bell */}
           <StaffNotificationBell userId={user?.uid} />
           

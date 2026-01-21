@@ -907,6 +907,7 @@ export default function KaiserTrackerPage() {
       // Try multiple possible staff assignment field names from Caspio
       const staffName = member.Staff_Assignment || 
                        member.Staff_Assigned || 
+                       member.Kaiser_User_Assignment ||
                        member.kaiser_user_assignment || 
                        member.SW_ID || 
                        member.Assigned_Staff ||
@@ -1161,7 +1162,7 @@ export default function KaiserTrackerPage() {
         pathway: member?.pathway || 'Unknown',
         Kaiser_Status: member?.Kaiser_Status || member?.Kaiser_ID_Status || 'No Status',
         CalAIM_Status: member?.CalAIM_Status || 'No Status',
-        Staff_Assigned: member?.SW_ID || '',
+        Staff_Assigned: member?.Kaiser_User_Assignment || member?.kaiser_user_assignment || member?.SW_ID || '',
         Next_Step_Due_Date: member?.Next_Step_Due_Date || '',
         workflow_step: member?.workflow_step || '',
         workflow_notes: member?.workflow_notes || '',
