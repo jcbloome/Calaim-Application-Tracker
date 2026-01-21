@@ -91,6 +91,21 @@ export default function SocialWorkerAssignmentsPage() {
     loadMockData();
   }, []);
 
+  // Known social worker names (to filter out staff names)
+  const KNOWN_SOCIAL_WORKERS = [
+    'Jason Bloome',
+    'Anna-Lisa Bastian', 
+    'Kia Yang',
+    'John Amber',
+    'Nick Jaksic'
+  ];
+
+  // Known staff names (to filter out from social worker assignments)
+  const KNOWN_STAFF_NAMES = [
+    'Leidy Kanjanapitak',
+    'Tang Kanjanapitak'
+  ];
+
   const loadMockData = () => {
     // Mock social workers
     const mockSocialWorkers: SocialWorker[] = [
@@ -120,6 +135,26 @@ export default function SocialWorkerAssignmentsPage() {
         email: 'mskiayang@yahoo.com',
         county: 'Sacramento',
         city: 'Sacramento',
+        caseload: 8,
+        maxCaseload: 18,
+        status: 'Active'
+      },
+      {
+        id: '4',
+        name: 'John Amber',
+        email: 'john.amber@example.com',
+        county: 'Los Angeles',
+        city: 'Los Angeles',
+        caseload: 10,
+        maxCaseload: 20,
+        status: 'Active'
+      },
+      {
+        id: '5',
+        name: 'Nick Jaksic',
+        email: 'nick.jaksic@example.com',
+        county: 'Los Angeles',
+        city: 'Los Angeles',
         caseload: 8,
         maxCaseload: 18,
         status: 'Active'
@@ -294,31 +329,37 @@ export default function SocialWorkerAssignmentsPage() {
           rcfeAddress: member.RCFE_Address || 'Address not available',
           county: member.Member_County || 'Los Angeles',
           city: member.Member_City || 'Unknown',
-          assignedSocialWorker: member.Social_Worker_Assigned || member.Staff_Assigned || member.Kaiser_User_Assignment || undefined,
+          assignedSocialWorker: (() => {
+            const assignment = member.Social_Worker_Assigned || member.Staff_Assigned || member.Kaiser_User_Assignment;
+            // Only return if it's a known social worker, not staff
+            return assignment && KNOWN_SOCIAL_WORKERS.includes(assignment) ? assignment : undefined;
+          })(),
           lastVisit: member.Last_Visit_Date || undefined,
           nextVisit: member.Next_Visit_Date || undefined,
           status: member.CalAIM_Status === 'Authorized' ? 'Active' : 'Inactive',
           careLevel: member.Care_Level || 'Medium'
         }));
 
-      // Transform staff assignments
+      // Transform staff assignments - only include actual social workers, not staff
       const staffAssignments = data.members
-        .filter((member: any) => member.Social_Worker_Assigned || member.Staff_Assigned || member.Kaiser_User_Assignment)
+        .filter((member: any) => {
+          const assignment = member.Social_Worker_Assigned || member.Staff_Assigned || member.Kaiser_User_Assignment;
+          // Only include if assigned to a known social worker (not staff)
+          return assignment && KNOWN_SOCIAL_WORKERS.includes(assignment);
+        })
         .map((member: any) => {
           // Get the social worker identifier - prioritize Social_Worker_Assigned
           const socialWorkerAssignment = member.Social_Worker_Assigned || member.Staff_Assigned || member.Kaiser_User_Assignment;
           
           // Debug: Log the type and value of the assignment
-          console.log('🔍 Social Worker Assignment Debug:', {
+          console.log('🔍 Social Worker Assignment Debug (Filtered):', {
             memberName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
             Social_Worker_Assigned: member.Social_Worker_Assigned,
-            Social_Worker_Assigned_Type: typeof member.Social_Worker_Assigned,
             Staff_Assigned: member.Staff_Assigned,
-            Staff_Assigned_Type: typeof member.Staff_Assigned,
             Kaiser_User_Assignment: member.Kaiser_User_Assignment,
-            Kaiser_User_Assignment_Type: typeof member.Kaiser_User_Assignment,
             socialWorkerAssignment: socialWorkerAssignment,
-            socialWorkerAssignment_Type: typeof socialWorkerAssignment
+            isKnownSocialWorker: KNOWN_SOCIAL_WORKERS.includes(socialWorkerAssignment),
+            isKnownStaff: KNOWN_STAFF_NAMES.includes(socialWorkerAssignment)
           });
           
           // Ensure it's a string and determine if this is an email (social worker) or a name
