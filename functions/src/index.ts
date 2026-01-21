@@ -57,6 +57,13 @@ export { performAutoSync, getPendingSyncs, performBatchSync } from './auto-batch
 // Export Caspio Webhook functions
 export { caspioWebhook } from './caspio-webhooks';
 
+// Export Caspio note monitoring functions (READ-ONLY)
+export {
+  monitorCaspioPriorityNotes,
+  testPriorityNoteMonitoring,
+  getPriorityNotesForDashboard
+} from './caspio-note-monitor';
+
 // Export Caspio Member Sync Test functions
 export { testCaspioMemberSync } from './caspio-member-sync-test';
 
@@ -361,6 +368,13 @@ export const updateKaiserStatusInCaspio = onCall({
     /connectcalaim\.com$/
   ]
 }, async (request) => {
+  // 🚫 DISABLED: Caspio write operations disabled to prevent interference
+  console.log('⚠️ updateKaiserStatusInCaspio is disabled - read-only mode active');
+  return {
+    success: false,
+    message: 'Caspio write operations are disabled to prevent interference with RCFE/Social Worker access',
+    readOnlyMode: true
+  };
   try {
     const { client_ID2, Kaiser_Status, CalAIM_Status, kaiser_user_assignment, next_steps_date } = request.data;
     
@@ -433,6 +447,13 @@ export const updateKaiserStatusInCaspio = onCall({
 
 // Sync Kaiser status from App to Firebase and Caspio
 export const syncKaiserStatus = onCall(async (request) => {
+  // 🚫 DISABLED: Caspio write operations disabled to prevent interference
+  console.log('⚠️ syncKaiserStatus is disabled - read-only mode active');
+  return {
+    success: false,
+    message: 'Caspio write operations are disabled to prevent interference with RCFE/Social Worker access',
+    readOnlyMode: true
+  };
   try {
     const { applicationId, client_ID2, Kaiser_Status, CalAIM_Status, kaiser_user_assignment, next_steps_date } = request.data;
     
@@ -912,6 +933,109 @@ export const publishCsSummaryToCaspioSimple = onCall(async (request) => {
       throw new HttpsError('invalid-argument', 'Application data is required');
     }
     
+    console.log('📤 Publishing NEW APPLICATION to Caspio (SAFE - creates new record)...');
+    console.log('📋 Application data received:', JSON.stringify(applicationData, null, 2));
+    
+    // Use hardcoded credentials
+    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+    
+    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    
+    console.log('🔑 Getting Caspio access token...');
+    
+    // Get OAuth token
+    let tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: 'grant_type=client_credentials',
+    });
+    
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      console.log('❌ OAuth Error:', errorText);
+      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
+    }
+    
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    console.log('✅ Got access token');
+    
+    // Check if member already exists
+    const firstName = applicationData.memberFirstName || '';
+    const lastName = applicationData.memberLastName || '';
+    
+    if (!firstName || !lastName) {
+      throw new HttpsError('invalid-argument', 'Member first name and last name are required');
+    }
+    
+    // Create new application record in Caspio
+    const applicationRecord = {
+      MemberFirstName: firstName,
+      MemberLastName: lastName,
+      MemberDOB: applicationData.memberDOB || '',
+      MemberMediCalNum: applicationData.memberMediCalNum || '',
+      MemberMRN: applicationData.memberMRN || '',
+      MemberLanguage: applicationData.memberLanguage || '',
+      MemberCounty: applicationData.memberCounty || '',
+      ReferrerFirstName: applicationData.referrerFirstName || '',
+      ReferrerLastName: applicationData.referrerLastName || '',
+      ReferrerEmail: applicationData.referrerEmail || '',
+      ReferrerPhone: applicationData.referrerPhone || '',
+      ReferrerRelationship: applicationData.referrerRelationship || '',
+      Agency: applicationData.agency || '',
+      PrimaryContactFirstName: applicationData.primaryContactFirstName || '',
+      PrimaryContactLastName: applicationData.primaryContactLastName || '',
+      PrimaryContactRelationship: applicationData.primaryContactRelationship || '',
+      PrimaryContactPhone: applicationData.primaryContactPhone || '',
+      Status: 'New Application',
+      DateCreated: new Date().toISOString(),
+      LastUpdated: new Date().toISOString()
+    };
+    
+    // Post to Caspio Applications table
+    const applicationsTable = 'Applications'; // Adjust table name as needed
+    const createUrl = `${baseUrl}/tables/${applicationsTable}/records`;
+    
+    console.log('📝 Creating new application record in Caspio...');
+    const createResponse = await fetch(createUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(applicationRecord),
+    });
+    
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
+      console.log('❌ Create Error:', errorText);
+      throw new HttpsError('internal', `Failed to create application: ${createResponse.status} ${errorText}`);
+    }
+    
+    const createResult = await createResponse.json();
+    console.log('✅ Successfully created application in Caspio:', createResult);
+    
+    return {
+      success: true,
+      message: `Successfully submitted application for ${firstName} ${lastName} to Caspio`,
+      caspioRecord: createResult
+    };
+    
+  } catch (error: any) {
+    console.error('❌ Error publishing to Caspio:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', `Unexpected error: ${error.message}`);
+  }
+    
     console.log('📤 Publishing CS Summary to Caspio via Functions (Simple)...');
     console.log('📋 Application data received:', JSON.stringify(applicationData, null, 2));
     
@@ -1217,12 +1341,13 @@ export const updateKaiserMemberDates = onCall({
 export const syncMemberToCaspio = onCall({
   secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret]
 }, async (request) => {
-  try {
-    const { memberId } = request.data;
-    
-    if (!memberId) {
-      throw new HttpsError('invalid-argument', 'Member ID is required');
-    }
+  // 🚫 DISABLED: Caspio write operations disabled to prevent interference
+  console.log('⚠️ syncMemberToCaspio is disabled - read-only mode active');
+  return {
+    success: false,
+    message: 'Caspio write operations are disabled to prevent interference with RCFE/Social Worker access',
+    readOnlyMode: true
+  };
     
     // Verify user is authenticated and authorized
     if (!request.auth) {

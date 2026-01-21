@@ -162,6 +162,13 @@ export const fetchAuthorizationMembers = onCall(async (request) => {
  * Update authorization dates for a member
  */
 export const updateMemberAuthorization = onCall(async (request) => {
+  // 🚫 DISABLED: Caspio write operations disabled to prevent interference
+  console.log('⚠️ updateMemberAuthorization is disabled - read-only mode active');
+  return {
+    success: false,
+    message: 'Caspio write operations are disabled to prevent interference with RCFE/Social Worker access',
+    readOnlyMode: true
+  };
     try {
       const { memberId, authorizationData } = request.data;
       

@@ -22,6 +22,7 @@ import {
   Printer,
   FolderSync,
   Bell,
+  BellRing,
   Database,
   FileEdit,
   Mail,
@@ -136,6 +137,7 @@ const superAdminNavLinks = [
       // System Tools
       { href: '/admin/super-admin-tools', label: 'System Tools', icon: Wrench },
       { href: '/admin/notification-settings', label: 'Notification Settings', icon: Settings },
+      { href: '/admin/priority-note-monitor', label: 'Priority Note Monitor', icon: BellRing },
       
       // Data Management
       { href: '/admin/batch-sync', label: 'Batch Sync', icon: RefreshCw },

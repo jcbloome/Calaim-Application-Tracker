@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CaspioModeNotice } from '@/components/admin/CaspioModeNotice';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -172,6 +173,8 @@ export default function MorningDashboardPage() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
+      {/* Caspio Mode Notice */}
+      <CaspioModeNotice />
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <div className="p-2 bg-gradient-to-r from-orange-400 to-pink-400 rounded-lg">
