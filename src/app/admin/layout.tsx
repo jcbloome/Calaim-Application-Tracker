@@ -213,6 +213,7 @@ function AdminHeader() {
               width={240}
               height={67}
               className="w-48 h-auto object-contain"
+              priority
             />
           </Link>
 

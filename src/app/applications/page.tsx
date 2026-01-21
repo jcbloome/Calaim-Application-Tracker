@@ -3,7 +3,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Loader2, Bell, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -48,6 +48,8 @@ interface ApplicationData {
   pathway: 'SNF Transition' | 'SNF Diversion';
   healthPlan: 'Kaiser' | 'Health Net' | 'Other' | 'Kaiser Permanente';
   userId?: string;
+  emailRemindersEnabled?: boolean;
+  statusRemindersEnabled?: boolean;
   forms?: Array<{
     name: string;
     status: 'Pending' | 'Completed';
@@ -135,15 +137,16 @@ const ApplicationsTable = ({
                 {onSelectionChange && <TableHead className="w-[50px] pl-4"></TableHead>}
                 <TableHead>Member</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="hidden md:table-cell">Plan &amp; Pathway</TableHead>
+                <TableHead className="hidden lg:table-cell">Plan &amp; Pathway</TableHead>
                 <TableHead className="hidden sm:table-cell">Last Updated</TableHead>
+                <TableHead className="hidden md:table-cell text-center">Notifications</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={onSelectionChange ? 6 : 5} className="h-24 text-center">
+                  <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
                     <Loader2 className="mx-auto h-6 w-6 animate-spin" />
                   </TableCell>
                 </TableRow>
@@ -168,8 +171,28 @@ const ApplicationsTable = ({
                         {app.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell">{app.healthPlan} - {app.pathway}</TableCell>
+                    <TableCell className="hidden lg:table-cell">{app.healthPlan} - {app.pathway}</TableCell>
                     <TableCell className="hidden sm:table-cell">{app.lastUpdated ? format(app.lastUpdated.toDate(), 'MM/dd/yyyy') : 'N/A'}</TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <div className="flex items-center justify-center gap-2">
+                        <Bell 
+                          className={`h-4 w-4 ${
+                            app.statusRemindersEnabled !== false 
+                              ? 'text-blue-600' 
+                              : 'text-gray-300'
+                          }`}
+                          title={app.statusRemindersEnabled !== false ? 'Status reminders enabled' : 'Status reminders disabled'}
+                        />
+                        <Mail 
+                          className={`h-4 w-4 ${
+                            app.emailRemindersEnabled 
+                              ? 'text-green-600' 
+                              : 'text-gray-300'
+                          }`}
+                          title={app.emailRemindersEnabled ? 'Email reminders enabled' : 'Email reminders disabled'}
+                        />
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right">
                       <Button asChild variant="outline" size="sm">
                         <Link href={getActionLink(app)}>{getActionText(app)}</Link>
@@ -179,7 +202,7 @@ const ApplicationsTable = ({
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={onSelectionChange ? 6 : 5} className="h-24 text-center">
+                  <TableCell colSpan={onSelectionChange ? 7 : 6} className="h-24 text-center">
                     No applications found.
                   </TableCell>
                 </TableRow>

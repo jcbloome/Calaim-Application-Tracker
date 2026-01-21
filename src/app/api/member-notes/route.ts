@@ -749,69 +749,6 @@ export async function POST(request: NextRequest) {
       message: 'Note created successfully using Caspio module'
     });
 
-    if (!clientId2 || !noteText || !authorId) {
-      return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
-
-    console.log(`📝 Creating new note for Client_ID2: ${clientId2}`);
-
-    const timestamp = new Date().toISOString();
-    const newNote: MemberNote = {
-      id: `app_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-      clientId2,
-      memberName: memberName || 'Unknown Member',
-      noteText,
-      noteType: category || noteType || 'General',
-      createdBy: authorId || createdBy,
-      createdByName: authorName || createdByName || 'Unknown User',
-      assignedTo,
-      assignedToName: assignedToName || (assignedTo ? getStaffDisplayName(assignedTo) : undefined),
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      source: 'App',
-      isRead: !assignedTo && (!recipientIds || recipientIds.length === 0), // Unread if assigned to someone else
-      priority: priority || 'Medium',
-      followUpDate,
-      tags: body.tags || []
-    };
-
-    // Add to cache
-    if (!memberNotesCache[clientId2]) {
-      memberNotesCache[clientId2] = [];
-    }
-    memberNotesCache[clientId2].unshift(newNote);
-
-    // Save to Firestore for persistence
-    await saveNotesToFirestore([newNote]);
-
-    // Sync to Caspio
-    await syncNoteToCaspio(newNote);
-
-    // Send notifications
-    if (sendNotification && recipientIds && recipientIds.length > 0) {
-      for (const recipientId of recipientIds) {
-        const noteForRecipient = {
-          ...newNote,
-          assignedTo: recipientId,
-          assignedToName: `Staff Member ${recipientId}`
-        };
-        await sendNoteNotification(noteForRecipient);
-      }
-    }
-
-    if (assignedTo && assignedToName) {
-      await sendNoteNotification(newNote);
-    }
-
-    return NextResponse.json({
-      success: true,
-      note: newNote,
-      message: 'Note created successfully'
-    });
-
   } catch (error: any) {
     console.error('Error creating member note:', error);
     return NextResponse.json(

@@ -173,8 +173,8 @@ export default function MorningDashboardPage() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Caspio Mode Notice */}
-      <CaspioModeNotice />
+      {/* Caspio Mode Notice - Temporarily disabled for testing */}
+      {/* <CaspioModeNotice /> */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <div className="p-2 bg-gradient-to-r from-orange-400 to-pink-400 rounded-lg">

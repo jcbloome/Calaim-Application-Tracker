@@ -44,7 +44,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
-import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot, collection, getDocs } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Label } from '@/components/ui/label';
@@ -77,6 +77,94 @@ import { DuplicateClientChecker } from '@/components/DuplicateClientChecker';
 import TaskScheduler from '@/components/TaskScheduler';
 import NoteTracker from '@/components/NoteTracker';
 import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusProgress } from '@/lib/kaiser-status-progression';
+
+// Staff Assignment Dropdown Component
+function StaffAssignmentDropdown({ 
+    application, 
+    onStaffChange 
+}: { 
+    application: Application; 
+    onStaffChange: (staffId: string, staffName: string) => void;
+}) {
+    const firestore = useFirestore();
+    const { toast } = useToast();
+    const [staffList, setStaffList] = useState<StaffMember[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [isLoadingStaff, setIsLoadingStaff] = useState(true);
+
+    useEffect(() => {
+        // Set staff list based on health plan (hardcoded for now)
+        let staff: StaffMember[] = [];
+        
+        if (application.healthPlan === 'Kaiser') {
+            staff = [
+                { uid: 'jesse', firstName: 'Jesse', lastName: '', email: 'jesse@example.com', role: 'Admin' },
+                { uid: 'nick', firstName: 'Nick', lastName: '', email: 'nick@example.com', role: 'Admin' },
+                { uid: 'john', firstName: 'John', lastName: '', email: 'john@example.com', role: 'Admin' },
+            ];
+        } else if (application.healthPlan === 'Health Net') {
+            staff = [
+                { uid: 'monica', firstName: 'Monica', lastName: '', email: 'monica@example.com', role: 'Admin' },
+                { uid: 'leidy', firstName: 'Leidy', lastName: '', email: 'leidy@example.com', role: 'Admin' },
+                { uid: 'letitia', firstName: 'Letitia', lastName: '', email: 'letitia@example.com', role: 'Admin' },
+            ];
+        }
+        
+        setStaffList(staff);
+        setIsLoadingStaff(false);
+    }, [application.healthPlan]);
+
+    const handleStaffAssignment = async (staffId: string) => {
+        const selectedStaff = staffList.find(staff => staff.uid === staffId);
+        if (!selectedStaff || !firestore) return;
+
+        setIsLoading(true);
+        try {
+            const docRef = doc(firestore, `users/${application.userId}/applications/${application.id}`);
+            const updateData = {
+                assignedStaffId: staffId,
+                assignedStaffName: selectedStaff.firstName,
+                assignedDate: new Date().toISOString()
+            };
+            
+            await setDoc(docRef, updateData, { merge: true });
+            onStaffChange(staffId, selectedStaff.firstName);
+            
+            toast({
+                title: "Staff Assigned",
+                description: `Application assigned to ${selectedStaff.firstName}`,
+            });
+        } catch (error) {
+            console.error('Error assigning staff:', error);
+            toast({
+                variant: "destructive",
+                title: "Error",
+                description: "Failed to assign staff",
+            });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <Select
+            value={(application as any)?.assignedStaffId || ''}
+            onValueChange={handleStaffAssignment}
+            disabled={isLoading}
+        >
+            <SelectTrigger>
+                <SelectValue placeholder="Assign a staff member..." />
+            </SelectTrigger>
+            <SelectContent>
+                {staffList.map(staff => (
+                    <SelectItem key={staff.uid} value={staff.uid}>
+                        {staff.firstName}
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    );
+}
 
 // Get Kaiser statuses in proper sort order
 const kaiserSteps = getKaiserStatusesInOrder().map(status => status.status);
@@ -164,50 +252,32 @@ function StaffApplicationTracker({ application }: { application: Application }) 
     const steps = application.healthPlan?.toLowerCase().includes('kaiser') ? kaiserSteps : healthNetSteps;
 
     useEffect(() => {
-        const fetchStaff = async () => {
-            if (!firestore) return;
+        // Set staff list based on health plan
+        const getStaffByHealthPlan = () => {
             setIsLoadingStaff(true);
-             try {
-                const adminRolesSnap = await getDocs(collection(firestore, 'roles_admin'));
-                const superAdminRolesSnap = await getDocs(collection(firestore, 'roles_super_admin'));
-                const adminIds = new Set(adminRolesSnap.docs.map(d => d.id));
-                const superAdminIds = new Set(superAdminRolesSnap.docs.map(d => d.id));
-                const allStaffIds = Array.from(new Set([...adminIds, ...superAdminIds]));
-
-                if (allStaffIds.length === 0) {
-                    setStaffList([]);
-                    return;
-                }
-                
-                const usersSnap = await getDocs(collection(firestore, 'users'));
-                const usersData = new Map(usersSnap.docs.map(d => [d.id, d.data()]));
-
-                const staff: StaffMember[] = allStaffIds.map(id => {
-                    const userData = usersData.get(id) || {};
-                    const role: 'Admin' | 'Super Admin' = superAdminIds.has(id) ? 'Super Admin' : 'Admin';
-                    return {
-                        uid: id,
-                        firstName: userData.firstName || 'Unknown',
-                        lastName: userData.lastName || 'User',
-                        email: userData.email || 'N/A',
-                        role: role,
-                    };
-                }).sort((a,b) => {
-                    // Super Admins first, then regular Admins
-                    if (a.role === 'Super Admin' && b.role !== 'Super Admin') return -1;
-                    if (b.role === 'Super Admin' && a.role !== 'Super Admin') return 1;
-                    // Within same role, sort by last name
-                    return a.lastName.localeCompare(b.lastName);
-                });
-                setStaffList(staff);
-            } catch (error) {
-                console.error("Error fetching staff list:", error);
-            } finally {
-                setIsLoadingStaff(false);
+            
+            let staff: StaffMember[] = [];
+            
+            if (application.healthPlan === 'Kaiser') {
+                staff = [
+                    { uid: 'jesse', firstName: 'Jesse', lastName: '', email: 'jesse@example.com', role: 'Admin' },
+                    { uid: 'nick', firstName: 'Nick', lastName: '', email: 'nick@example.com', role: 'Admin' },
+                    { uid: 'john', firstName: 'John', lastName: '', email: 'john@example.com', role: 'Admin' },
+                ];
+            } else if (application.healthPlan === 'Health Net') {
+                staff = [
+                    { uid: 'monica', firstName: 'Monica', lastName: '', email: 'monica@example.com', role: 'Admin' },
+                    { uid: 'leidy', firstName: 'Leidy', lastName: '', email: 'leidy@example.com', role: 'Admin' },
+                    { uid: 'letitia', firstName: 'Letitia', lastName: '', email: 'letitia@example.com', role: 'Admin' },
+                ];
             }
+            
+            setStaffList(staff);
+            setIsLoadingStaff(false);
         };
-        fetchStaff();
-    }, [firestore]);
+
+        getStaffByHealthPlan();
+    }, [application.healthPlan]);
 
 
     const handleTrackerUpdate = async (field: keyof StaffTracker, value: any) => {
@@ -355,7 +425,7 @@ function AdminActions({ application }: { application: Application }) {
     const [status, setStatus] = useState<Application['status'] | ''>('');
     const [isSending, setIsSending] = useState(false);
     const [isSendingToCaspio, setIsSendingToCaspio] = useState(false);
-    const [emailRemindersEnabled, setEmailRemindersEnabled] = useState((application as any)?.emailRemindersEnabled ?? true);
+    const [emailRemindersEnabled, setEmailRemindersEnabled] = useState((application as any)?.emailRemindersEnabled ?? false);
     const [reviewNotificationSent, setReviewNotificationSent] = useState((application as any)?.reviewNotificationSent ?? false);
     const [isUpdatingNotifications, setIsUpdatingNotifications] = useState(false);
     const { toast } = useToast();
@@ -597,7 +667,7 @@ function AdminActions({ application }: { application: Application }) {
                             {isUpdatingNotifications && <Loader2 className="h-4 w-4 animate-spin" />}
                             <Switch
                                 id="status-reminders"
-                                checked={(application as any)?.statusRemindersEnabled ?? true}
+                                checked={(application as any)?.statusRemindersEnabled ?? false}
                                 onCheckedChange={(enabled) => handleNotificationUpdate('statusReminders', enabled)}
                                 disabled={isUpdatingNotifications}
                             />
@@ -1383,67 +1453,85 @@ function ApplicationDetailPageContent() {
             {/* Notification Status Icons */}
             <div className="flex items-center gap-4 pt-2 border-t">
                 <div className="flex items-center gap-2">
-                    <div className={`flex items-center gap-1 ${(application as any)?.emailRemindersEnabled ? 'text-green-600' : 'text-muted-foreground'}`}>
+                    <div className={`flex items-center gap-1 ${(application as any)?.emailRemindersEnabled === true ? 'text-green-600' : 'text-muted-foreground'}`}>
                         <Mail className="h-4 w-4" />
                         <span className="text-xs font-medium">
-                            {(application as any)?.emailRemindersEnabled ? 'Email Reminders Active' : 'Email Reminders Off'}
+                            {(application as any)?.emailRemindersEnabled === true ? 'Email Reminders Active' : 'Email Reminders Off'}
                         </span>
                     </div>
                 </div>
                 
                 <div className="flex items-center gap-2">
-                    <div className={`flex items-center gap-1 ${(application as any)?.statusRemindersEnabled !== false ? 'text-green-600' : 'text-muted-foreground'}`}>
+                    <div className={`flex items-center gap-1 ${(application as any)?.statusRemindersEnabled === true ? 'text-green-600' : 'text-muted-foreground'}`}>
                         <Bell className="h-4 w-4" />
                         <span className="text-xs font-medium">
-                            {(application as any)?.statusRemindersEnabled !== false ? 'Status Updates Active' : 'Status Updates Off'}
+                            {(application as any)?.statusRemindersEnabled === true ? 'Status Updates Active' : 'Status Updates Off'}
                         </span>
                     </div>
                 </div>
             </div>
             
             {/* Staff Assignment Display */}
-            <div className="border-t pt-4">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <User className="h-5 w-5 text-muted-foreground" />
-                        <div>
-                            <div className="text-sm font-medium">Assigned Staff</div>
-                            <div className="text-xs text-muted-foreground">
-                                {(application as any)?.assignedStaff ? (
-                                    <div className="flex items-center gap-2">
-                                        <span className="font-medium text-primary">
-                                            {(application as any).assignedStaff.name}
-                                        </span>
-                                        <span className="text-muted-foreground">
-                                            ({(application as any).assignedStaff.email})
-                                        </span>
-                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                                            Assigned
-                                        </Badge>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-muted-foreground">Not yet assigned</span>
-                                        <Button 
-                                            size="sm" 
-                                            variant="outline"
-                                            disabled={true}
-                                            title="Auto-assignment temporarily disabled"
-                                        >
-                                            <User className="h-3 w-3 mr-1" />
-                                            Auto-Assign Disabled
-                                        </Button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+            <div className="border-t pt-4 space-y-4">
+                {/* Assigned Staff Section */}
+                <div className="space-y-2">
+                    <Label htmlFor="main-staff-assignment" className="text-sm font-medium flex items-center gap-2">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                        Assigned Staff
+                    </Label>
+                    <StaffAssignmentDropdown 
+                        application={application} 
+                        onStaffChange={(staffId, staffName) => {
+                            // Update the application state
+                            setApplication(prev => prev ? { 
+                                ...prev, 
+                                assignedStaffId: staffId,
+                                assignedStaffName: staffName,
+                                assignedDate: new Date().toISOString()
+                            } : null);
+                        }} 
+                    />
+                </div>
+
+                {/* Application Checked Section */}
+                <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                        <Checkbox
+                            id="application-checked"
+                            checked={(application as any)?.applicationChecked || false}
+                            onCheckedChange={async (checked) => {
+                                try {
+                                    const updateData = {
+                                        applicationChecked: checked,
+                                        applicationCheckedDate: checked ? new Date().toISOString() : null
+                                    };
+                                    
+                                    if (docRef) {
+                                        await setDoc(docRef, updateData, { merge: true });
+                                        setApplication(prev => prev ? { ...prev, ...updateData } : null);
+                                        
+                                        toast({
+                                            title: checked ? "Application Marked as Checked" : "Application Check Removed",
+                                            description: checked ? "Application has been marked as reviewed" : "Application check status removed",
+                                        });
+                                    }
+                                } catch (error) {
+                                    console.error('Error updating application checked status:', error);
+                                    toast({
+                                        variant: "destructive",
+                                        title: "Error",
+                                        description: "Failed to update application status",
+                                    });
+                                }
+                            }}
+                        />
+                        <Label htmlFor="application-checked" className="text-sm font-medium">
+                            Application checked by staff
+                        </Label>
                     </div>
-                    {(application as any)?.assignedStaff && (
-                        <div className="text-xs text-muted-foreground">
-                            Assigned: {(application as any).assignedDate ? 
-                                format(new Date((application as any).assignedDate), 'PPP p') : 
-                                'Recently'
-                            }
+                    {(application as any)?.applicationChecked && (application as any)?.applicationCheckedDate && (
+                        <div className="text-xs text-muted-foreground ml-6">
+                            Checked on: {format(new Date((application as any).applicationCheckedDate), 'PPP p')}
                         </div>
                     )}
                 </div>
@@ -1643,7 +1731,7 @@ function ApplicationDetailPageContent() {
           currentAssignee={(application as any)?.kaiser_user_assignment}
         />
         <NoteTracker 
-          memberId={application.id}
+          memberId={(application as any)?.client_ID2 || application.id}
           memberName={`${application.memberFirstName} ${application.memberLastName}`}
         />
          <Card>

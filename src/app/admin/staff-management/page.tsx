@@ -48,6 +48,8 @@ export default function StaffManagementPage() {
     const [healthNetRecipients, setHealthNetRecipients] = useState<string[]>([]);
     const [kaiserRecipients, setKaiserRecipients] = useState<string[]>([]);
     const [ilsNotePermissions, setIlsNotePermissions] = useState<string[]>([]);
+    const [kaiserAssignmentStaff, setKaiserAssignmentStaff] = useState<string[]>([]);
+    const [healthNetAssignmentStaff, setHealthNetAssignmentStaff] = useState<string[]>([]);
     const [isSavingNotifications, setIsSavingNotifications] = useState(false);
     const [newStaffFirstName, setNewStaffFirstName] = useState('');
     const [newStaffLastName, setNewStaffLastName] = useState('');
@@ -123,6 +125,8 @@ export default function StaffManagementPage() {
                 setHealthNetRecipients(data?.healthNetRecipients || []);
                 setKaiserRecipients(data?.kaiserRecipients || []);
                 setIlsNotePermissions(data?.ilsNotePermissions || []);
+                setKaiserAssignmentStaff(data?.kaiserAssignmentStaff || []);
+                setHealthNetAssignmentStaff(data?.healthNetAssignmentStaff || []);
             }
         } catch (error) {
              console.error("Error fetching notification settings:", error);
@@ -218,6 +222,18 @@ export default function StaffManagementPage() {
         );
     };
 
+    const handleKaiserAssignmentToggle = (uid: string, checked: boolean) => {
+        setKaiserAssignmentStaff(prev => 
+            checked ? [...prev, uid] : prev.filter(id => id !== uid)
+        );
+    };
+
+    const handleHealthNetAssignmentToggle = (uid: string, checked: boolean) => {
+        setHealthNetAssignmentStaff(prev => 
+            checked ? [...prev, uid] : prev.filter(id => id !== uid)
+        );
+    };
+
     const handleIlsNoteToggle = (uid: string, checked: boolean) => {
         setIlsNotePermissions(prev => 
             checked ? [...prev, uid] : prev.filter(id => id !== uid)
@@ -233,7 +249,9 @@ export default function StaffManagementPage() {
                 recipientUids: notificationRecipients,
                 healthNetRecipients: healthNetRecipients,
                 kaiserRecipients: kaiserRecipients,
-                ilsNotePermissions: ilsNotePermissions
+                ilsNotePermissions: ilsNotePermissions,
+                kaiserAssignmentStaff: kaiserAssignmentStaff,
+                healthNetAssignmentStaff: healthNetAssignmentStaff
             };
             await setDoc(settingsRef, data, { merge: true }).catch(e => {
                 errorEmitter.emit('permission-error', new FirestorePermissionError({ path: settingsRef.path, operation: 'update', requestResourceData: data }));
@@ -455,6 +473,37 @@ export default function StaffManagementPage() {
                                                 onCheckedChange={(checked) => handleIlsNoteToggle(staff.uid, !!checked)} 
                                                 aria-label={`Toggle ILS note permissions for ${staff.email}`} 
                                             />
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Staff Assignment Configuration */}
+                                    <div className="mt-4 pt-4 border-t">
+                                        <h4 className="text-sm font-medium mb-3 text-muted-foreground">Staff Assignment Availability</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="flex items-center justify-between gap-4">
+                                                <div className="flex items-center gap-2">
+                                                    <Users className={`h-4 w-4 ${kaiserAssignmentStaff.includes(staff.uid) ? 'text-red-600' : 'text-muted-foreground'}`} />
+                                                    <Label htmlFor={`kaiser-assign-${staff.uid}`} className="text-sm font-medium">Available for Kaiser Assignments</Label>
+                                                </div>
+                                                <Checkbox 
+                                                    id={`kaiser-assign-${staff.uid}`} 
+                                                    checked={kaiserAssignmentStaff.includes(staff.uid)} 
+                                                    onCheckedChange={(checked) => handleKaiserAssignmentToggle(staff.uid, !!checked)} 
+                                                    aria-label={`Toggle Kaiser assignment availability for ${staff.email}`} 
+                                                />
+                                            </div>
+                                            <div className="flex items-center justify-between gap-4">
+                                                <div className="flex items-center gap-2">
+                                                    <Users className={`h-4 w-4 ${healthNetAssignmentStaff.includes(staff.uid) ? 'text-blue-600' : 'text-muted-foreground'}`} />
+                                                    <Label htmlFor={`healthnet-assign-${staff.uid}`} className="text-sm font-medium">Available for Health Net Assignments</Label>
+                                                </div>
+                                                <Checkbox 
+                                                    id={`healthnet-assign-${staff.uid}`} 
+                                                    checked={healthNetAssignmentStaff.includes(staff.uid)} 
+                                                    onCheckedChange={(checked) => handleHealthNetAssignmentToggle(staff.uid, !!checked)} 
+                                                    aria-label={`Toggle Health Net assignment availability for ${staff.email}`} 
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

@@ -1,6 +1,7 @@
 // Centralized Status Management
 // Eliminates duplication of status colors, icons, and styling across pages
 
+import React from 'react';
 import { 
   CheckCircle, 
   Clock, 
