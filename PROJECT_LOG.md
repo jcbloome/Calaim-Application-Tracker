@@ -30,6 +30,7 @@
 - ✅ **Enhanced Eligibility System**: Added admin backend with screenshot upload, BenefitsCal.com guidance, and SNF income messaging
 - ✅ **Universal Eligibility Verification**: Created reusable eligibility card component for ALL admin pathways with mandatory screenshot upload
 - ✅ **Updated Kaiser Status System**: Synchronized with new Caspio status list and sort order (52 statuses total)
+- 🚨 **EMERGENCY: Disabled All Caspio Write Operations**: Prevented RCFE/Social Worker access interference by disabling all PUT/POST/UPDATE operations
 
 ### **Current System Status**
 - 🟢 **Production Build**: Fully working, no SSR errors

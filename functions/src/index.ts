@@ -412,26 +412,8 @@ export const updateKaiserStatusInCaspio = onCall({
     console.log('📝 Update data:', updateData);
     console.log('🚨 EMERGENCY: Caspio Kaiser status UPDATE operations disabled to prevent RCFE/Social Worker access interference');
     
-    // DISABLED: Caspio write operations causing interference with RCFE/Social Worker access
-    /*
-    const updateResponse = await fetch(updateUrl, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(updateData),
-    });
-    
-    if (!updateResponse.ok) {
-      const errorText = await updateResponse.text();
-      throw new HttpsError('internal', `Failed to update Caspio record: ${updateResponse.status} ${errorText}`);
-    }
-    
-    const result = await updateResponse.json();
-    console.log('✅ Successfully updated Caspio record');
-    */
-    
+    // Simulate successful update without actually updating Caspio
+    const result = { disabled: true, message: 'Caspio writes disabled for emergency' };
     console.log('✅ Kaiser status update DISABLED - preventing Caspio interference');
     
     return {
@@ -516,25 +498,6 @@ export const syncKaiserStatus = onCall(async (request) => {
         
         // EMERGENCY DISABLE: Caspio sync operations disabled to prevent RCFE/Social Worker access interference
         console.log('🚨 EMERGENCY: Caspio sync UPDATE operations disabled to prevent RCFE/Social Worker access interference');
-        
-        // DISABLED: Caspio write operations causing interference with RCFE/Social Worker access
-        /*
-        const updateResponse = await fetch(updateUrl, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(updateData),
-        });
-        
-        if (updateResponse.ok) {
-          console.log('✅ Updated Caspio record');
-        } else {
-          console.log('⚠️ Failed to update Caspio record:', updateResponse.status);
-        }
-        */
-        
         console.log('✅ Caspio sync UPDATE DISABLED - preventing interference');
       }
     }
@@ -1396,26 +1359,8 @@ export const syncMemberToCaspio = onCall({
           console.log('🚨 EMERGENCY: Caspio UPDATE operations disabled to prevent RCFE/Social Worker access interference');
           console.log('📝 Member exists in Caspio, but UPDATE operation is DISABLED');
           
-          // DISABLED: Caspio write operations causing interference with RCFE/Social Worker access
-          /*
-          const updateUrl = `${baseUrl}/tables/${membersTable}/records?q.where=client_ID2='${clientId2}'`;
-          const updateResponse = await fetch(updateUrl, {
-            method: 'PUT',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(caspioMemberData),
-          });
-          
-          if (!updateResponse.ok) {
-            const errorText = await updateResponse.text();
-            throw new HttpsError('internal', `Failed to update Caspio record: ${updateResponse.status} ${errorText}`);
-          }
-          
-          const result = await updateResponse.json();
-          console.log('✅ Successfully updated member in Caspio');
-          */
+          // Simulate successful update without actually updating Caspio
+          const result = { disabled: true, message: 'Caspio writes disabled for emergency' };
           
           return {
             success: true,
@@ -1437,25 +1382,8 @@ export const syncMemberToCaspio = onCall({
     console.log('🚨 EMERGENCY: Caspio CREATE operations disabled to prevent RCFE/Social Worker access interference');
     console.log('📝 Would create new member record in Caspio, but CREATE operation is DISABLED');
     
-    // DISABLED: Caspio write operations causing interference with RCFE/Social Worker access
-    /*
-    const insertResponse = await fetch(`${baseUrl}/tables/${membersTable}/records`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(caspioMemberData),
-    });
-    
-    if (!insertResponse.ok) {
-      const errorText = await insertResponse.text();
-      throw new HttpsError('internal', `Failed to create Caspio record: ${insertResponse.status} ${errorText}`);
-    }
-    
-    const result = await insertResponse.json();
-    console.log('✅ Successfully created member in Caspio');
-    */
+    // Simulate successful creation without actually creating in Caspio
+    const result = { disabled: true, message: 'Caspio writes disabled for emergency' };
     
     // Update Firestore with sync status (READ-ONLY MODE)
     await memberDoc.ref.update({
