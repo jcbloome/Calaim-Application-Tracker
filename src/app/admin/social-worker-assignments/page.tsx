@@ -304,9 +304,28 @@ export default function SocialWorkerAssignmentsPage() {
         });
       }
       
-      // Transform Caspio data to our format
+      // Transform Caspio data to our format - include both assigned and unassigned authorized members
       const transformedMembers: RCFEMember[] = data.members
-        .filter((member: any) => member.RCFE_Name && member.RCFE_Name.trim() !== '')
+        .filter((member: any) => {
+          // Include members with RCFE and either:
+          // 1. Have a social worker assigned, OR
+          // 2. Are authorized but don't have a social worker assigned (need assignment)
+          const hasRCFE = member.RCFE_Name && member.RCFE_Name.trim() !== '';
+          const isAuthorized = member.CalAIM_Status === 'Authorized';
+          const hasSocialWorker = member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '';
+          
+          console.log('🔍 Member Filter Debug:', {
+            name: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
+            hasRCFE,
+            isAuthorized,
+            hasSocialWorker,
+            CalAIM_Status: member.CalAIM_Status,
+            Social_Worker_Assigned: member.Social_Worker_Assigned,
+            shouldInclude: hasRCFE && (hasSocialWorker || isAuthorized)
+          });
+          
+          return hasRCFE && (hasSocialWorker || isAuthorized);
+        })
         .map((member: any, index: number) => ({
           id: `rcfe-member-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}-${member.client_ID2 || 'unknown'}`,
           name: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
@@ -321,21 +340,27 @@ export default function SocialWorkerAssignmentsPage() {
           careLevel: member.Care_Level || 'Medium'
         }));
 
-      // Transform social worker assignments - only use Social_Worker_Assigned field
+      // Transform social worker assignments - include both assigned and unassigned authorized members
       const staffAssignments = data.members
         .filter((member: any) => {
-          // Only include if they have a Social_Worker_Assigned value
-          return member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '';
+          // Include if they have a Social_Worker_Assigned value OR are authorized but unassigned
+          const hasSocialWorker = member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '';
+          const isAuthorizedUnassigned = member.CalAIM_Status === 'Authorized' && !hasSocialWorker;
+          const hasRCFE = member.RCFE_Name && member.RCFE_Name.trim() !== '';
+          
+          return hasRCFE && (hasSocialWorker || isAuthorizedUnassigned);
         })
         .map((member: any) => {
-          // Only use the Social_Worker_Assigned field
-          const socialWorkerAssignment = member.Social_Worker_Assigned;
+          // Use Social_Worker_Assigned field, or "Unassigned" for authorized members without assignment
+          const socialWorkerAssignment = member.Social_Worker_Assigned || 'Unassigned';
           
           // Debug: Log the social worker assignment
-          console.log('🔍 Social Worker Assignment Debug (Social_Worker_Assigned Only):', {
+          console.log('🔍 Social Worker Assignment Debug (Including Unassigned):', {
             memberName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
             Social_Worker_Assigned: member.Social_Worker_Assigned,
-            socialWorkerAssignment: socialWorkerAssignment
+            CalAIM_Status: member.CalAIM_Status,
+            socialWorkerAssignment: socialWorkerAssignment,
+            isUnassigned: socialWorkerAssignment === 'Unassigned'
           });
           
           // Ensure it's a string and determine if this is an email (social worker) or a name
@@ -562,7 +587,14 @@ export default function SocialWorkerAssignmentsPage() {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
                         <div>
                           <p className="font-medium">Social Worker</p>
-                          <p>{assignment.socialWorkerName}</p>
+                          <p className={assignment.socialWorkerName === 'Unassigned' ? 'text-red-600 font-medium' : ''}>
+                            {assignment.socialWorkerName}
+                            {assignment.socialWorkerName === 'Unassigned' && (
+                              <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded">
+                                Needs Assignment
+                              </span>
+                            )}
+                          </p>
                         </div>
                         <div>
                           <p className="font-medium">RCFE Facility</p>
@@ -633,6 +665,11 @@ export default function SocialWorkerAssignmentsPage() {
                         <Badge className={getCareLevelBadge(member.careLevel)}>
                           {member.careLevel} Care
                         </Badge>
+                        {member.status === 'Active' && (
+                          <Badge variant="destructive" className="text-xs">
+                            Needs Social Worker
+                          </Badge>
+                        )}
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
