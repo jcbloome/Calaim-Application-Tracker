@@ -35,7 +35,7 @@ const NEXT_ACTIONS: Record<string, string> = {
   "T2038 Auth Only Email": "Send authorization-only email to Kaiser",
   "Tier Level Request Needed": "Prepare and submit tier level request",
   "ILS/RCFE Contract Email Needed": "Send contracting email to ILS/RCFE provider",
-  "ILS/RCFE Contact Email Sent": "Follow up on ILS/RCFE contracting response",
+  "ILS/RCFE Contract Email Sent": "Follow up on ILS/RCFE contracting response",
   "ILS/RCFE Connection Confirmed": "Finalize ILS/RCFE connection and placement",
   "ILS Contracted and Member Moved In": "Complete final documentation and close case",
   
@@ -160,7 +160,7 @@ export class TaskProcessor {
       'R&B Requested': 7,
       'R&B Signed': 5,
       'ILS/RCFE Contract Email Needed': 4,
-      'ILS/RCFE Contact Email Sent': 3,
+      'ILS/RCFE Contract Email Sent': 3,
       'ILS/RCFE Connection Confirmed': 2,
       'ILS Contracted and Member Moved In': 0,
       

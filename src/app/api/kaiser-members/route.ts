@@ -164,6 +164,25 @@ export async function GET(request: NextRequest) {
         Kaiser_Tier_Level_Received: membersData.Result[0].Kaiser_Tier_Level_Received
       });
       
+      // Debug staff assignment fields specifically
+      console.log('🔍 STAFF ASSIGNMENT FIELDS DEBUG:', {
+        Kaiser_User_Assignment: membersData.Result[0].Kaiser_User_Assignment,
+        kaiser_user_assignment: membersData.Result[0].kaiser_user_assignment,
+        SW_ID: membersData.Result[0].SW_ID,
+        Staff_Assigned: membersData.Result[0].Staff_Assigned,
+        Kaiser_Next_Step_Date: membersData.Result[0].Kaiser_Next_Step_Date,
+        allStaffFields: Object.keys(membersData.Result[0]).filter(key => 
+          key.toLowerCase().includes('staff') || 
+          key.toLowerCase().includes('assign') ||
+          key.toLowerCase().includes('user') ||
+          key.toLowerCase().includes('next') ||
+          key.toLowerCase().includes('date')
+        )
+      });
+      
+      // Show ALL field names to help identify the correct staff field
+      console.log('🔍 ALL AVAILABLE FIELDS:', Object.keys(membersData.Result[0]).sort());
+      
       console.log('📋 Sample member data:', membersData.Result[0]);
     }
 
@@ -183,7 +202,18 @@ export async function GET(request: NextRequest) {
       Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || member.Status || getRandomKaiserStatus(index),
       Kaiser_ID_Status: member.Kaiser_ID_Status,
       SW_ID: member.SW_ID,
-      Staff_Assigned: member.SW_ID || member.Staff_Assigned || '',
+      Kaiser_User_Assignment: member.Kaiser_User_Assignment,
+      Kaiser_Next_Step_Date: member.Kaiser_Next_Step_Date,
+      Staff_Assigned: member.Kaiser_User_Assignment || 
+                     member.kaiser_user_assignment || 
+                     member['Kaiser User Assignment'] ||
+                     member.KaiserUserAssignment ||
+                     member.Kaiser_Staff_Assignment ||
+                     member.SW_ID || 
+                     member.Staff_Assigned || 
+                     member.Assigned_Staff ||
+                     member.AssignedStaff ||
+                     '',
       RCFE_Name: member.RCFE_Name,
       pathway: member.Pathway || member.CalAIM_Pathway || 'Kaiser',
       Next_Step_Due_Date: member.Next_Step_Due_Date || member.next_steps_date || '',

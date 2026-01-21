@@ -170,7 +170,7 @@ export const KAISER_WORKFLOW: WorkflowConfig = {
     },
     {
       status: 'ILS/RCFE Contract Email Needed',
-      nextStatus: 'ILS/RCFE Contact Email Sent',
+      nextStatus: 'ILS/RCFE Contract Email Sent',
       recommendedDays: 2,
       requiredActions: ['Send contracting email to ILS/RCFE provider'],
       autoAdvanceConditions: ['email_sent'],
@@ -178,7 +178,7 @@ export const KAISER_WORKFLOW: WorkflowConfig = {
       description: 'ILS/RCFE contracting email needs to be sent'
     },
     {
-      status: 'ILS/RCFE Contact Email Sent',
+      status: 'ILS/RCFE Contract Email Sent',
       nextStatus: 'ILS/RCFE Connection Confirmed',
       recommendedDays: 7,
       requiredActions: ['Follow up on email response', 'Coordinate connection'],

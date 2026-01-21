@@ -248,7 +248,7 @@ export const STATUS_COLORS: Record<string, StatusStyle> = {
     textColor: 'text-blue-700',
     icon: 'Mail'
   },
-  'ILS/RCFE Contact Email Sent': {
+  'ILS/RCFE Contract Email Sent': {
     color: 'bg-cyan-50 text-cyan-700 border-cyan-200',
     backgroundColor: 'bg-cyan-50',
     borderColor: 'border-cyan-200',

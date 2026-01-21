@@ -43,6 +43,7 @@ import {
   Users,
   MessageSquare
 } from 'lucide-react';
+import { format } from 'date-fns';
 
 // Types
 interface KaiserMember {
@@ -59,6 +60,7 @@ interface KaiserMember {
   CalAIM_Status: string;
   Staff_Assigned: string;
   Next_Step_Due_Date: string;
+  Kaiser_Next_Step_Date: string;
   workflow_step: string;
   workflow_notes: string;
   last_updated: string;
@@ -194,7 +196,7 @@ const KAISER_STATUSES = [
   'R&B Signed',                                     // Sort: 14.3
   'RCFE_Located',                                   // Sort: 14
   'ILS/RCFE Contract Email Needed',                 // Sort: 15.5
-  'ILS/RCFE Contact Email Sent',                    // Sort: 15.7
+  'ILS/RCFE Contract Email Sent',                   // Sort: 15.7
   'ILS/RCFE Connection Confirmed',                  // Sort: 15.9
   'ILS Contracted and Member Moved In',             // Sort: 20
   'Non-active',                                     // Sort: 22
@@ -882,8 +884,8 @@ export default function KaiserTrackerPage() {
       .map(([status, count]) => ({ status, count }));
   }, [members]);
 
-  // Calculate staff assignments for Kaiser staff only
-  const kaiserStaff = ['John', 'Nick', 'Jesse'];
+
+  // Calculate staff assignments dynamically from actual data
   const staffAssignments = useMemo(() => {
     const assignments: Record<string, { 
       count: number; 
@@ -892,31 +894,23 @@ export default function KaiserTrackerPage() {
       nextSteps: Record<string, { count: number; dates: string[] }>;
     }> = {};
     
-    // Initialize staff
-    kaiserStaff.forEach(staff => {
-      assignments[staff] = { 
-        count: 0, 
-        members: [], 
-        statusBreakdown: {},
-        nextSteps: {}
-      };
-    });
-    
-    // Count members assigned to each staff
+    // Count members assigned to each staff (including unassigned)
     members.forEach(member => {
-      // Try multiple possible staff assignment field names from Caspio
-      const staffName = member.Staff_Assignment || 
-                       member.Staff_Assigned || 
-                       member.Kaiser_User_Assignment ||
-                       member.kaiser_user_assignment || 
-                       member.SW_ID || 
-                       member.Assigned_Staff ||
-                       'Unassigned';
+      // Use the same field mapping as the API route
+      const staffName = member.Staff_Assigned || 'Unassigned';
       
-      // Only count Kaiser staff members
-      if (kaiserStaff.includes(staffName)) {
-        assignments[staffName].count++;
-        assignments[staffName].members.push(member);
+      // Initialize staff if not exists
+      if (!assignments[staffName]) {
+        assignments[staffName] = { 
+          count: 0, 
+          members: [], 
+          statusBreakdown: {},
+          nextSteps: {}
+        };
+      }
+      
+      assignments[staffName].count++;
+      assignments[staffName].members.push(member);
         
         // Count status breakdown
         const status = member.Kaiser_Status || 'No Status';
@@ -933,11 +927,61 @@ export default function KaiserTrackerPage() {
         if (nextStepDate) {
           assignments[staffName].nextSteps[nextStep].dates.push(nextStepDate);
         }
-      }
+
     });
     
     return assignments;
   }, [members]);
+
+  // Get dynamic list of all staff (including unassigned)
+  const allStaff = useMemo(() => {
+    return Object.keys(staffAssignments).sort((a, b) => {
+      // Sort: Unassigned last, then alphabetically
+      if (a === 'Unassigned') return 1;
+      if (b === 'Unassigned') return -1;
+      return a.localeCompare(b);
+    });
+  }, [staffAssignments]);
+
+
+  // Function to determine next required steps based on current Kaiser status
+  const getNextRequiredSteps = (currentStatus: string): string[] => {
+    const statusToNextSteps: Record<string, string[]> = {
+      'T2038 Requested': ['T2038 Received', 'Follow up on T2038'],
+      'T2038 Received': ['T2038 received, Need First Contact', 'Schedule first contact'],
+      'T2038 received, Need First Contact': ['T2038 received, doc collection', 'Complete first contact'],
+      'T2038 received, doc collection': ['Needs RN Visit', 'Collect required documents'],
+      'Needs RN Visit': ['RN/MSW Scheduled', 'Schedule RN visit'],
+      'RN/MSW Scheduled': ['RN Visit Complete', 'Complete RN visit'],
+      'RN Visit Complete': ['Need Tier Level', 'Request tier level'],
+      'Need Tier Level': ['Tier Level Requested', 'Submit tier level request'],
+      'Tier Level Requested': ['Tier Level Received', 'Follow up on tier level'],
+      'Tier Level Received': ['Locating RCFEs', 'Begin RCFE search'],
+      'Locating RCFEs': ['Found RCFE', 'Continue RCFE search'],
+      'Found RCFE': ['R&B Requested', 'Request R&B'],
+      'R&B Requested': ['R&B Signed', 'Follow up on R&B'],
+      'R&B Signed': ['RCFE/ILS for Invoicing', 'Set up invoicing'],
+      'RCFE/ILS for Invoicing': ['ILS Contracted (Complete)', 'Complete ILS contract'],
+      'ILS Contracted (Complete)': ['Confirm ILS Contracted', 'Confirm contract completion'],
+      'Confirm ILS Contracted': ['Case Complete', 'Close case'],
+      'Tier Level Revision Request': ['Tier Level Received', 'Follow up on revision'],
+      'On-Hold': ['Resume case', 'Review hold status'],
+      'Tier Level Appeal': ['Tier Level Received', 'Follow up on appeal'],
+      'T2038 email but need auth sheet': ['T2038 Received', 'Obtain authorization sheet'],
+      'Non-active': ['Reactivate case', 'Review case status'],
+      'Pending': ['Determine next action', 'Review case details'],
+      'Switched MCPs': ['Transfer case', 'Complete MCP transfer'],
+      'Pending to Switch': ['Complete switch', 'Process MCP change'],
+      'Authorized on hold': ['Resume authorization', 'Review hold reason'],
+      'Authorized': ['Begin service delivery', 'Implement authorization'],
+      'Denied': ['Appeal process', 'Review denial reason'],
+      'Expired': ['Renewal process', 'Submit renewal request'],
+      'Not interested': ['Close case', 'Document decision'],
+      'Not CalAIM': ['Transfer/close case', 'Redirect appropriately']
+    };
+
+    return statusToNextSteps[currentStatus] || ['Review case', 'Determine appropriate action'];
+  };
 
   // Helper function to open member list modal
   const openMemberModal = (
@@ -957,6 +1001,7 @@ export default function KaiserTrackerPage() {
 
   // Helper function to open staff member management modal
   const openStaffMemberModal = (staffName: string, members: KaiserMember[]) => {
+    console.log('🔍 Opening staff member modal for:', staffName, 'with', members.length, 'members');
     setStaffMemberModal({
       isOpen: true,
       staffName,
@@ -1112,14 +1157,6 @@ export default function KaiserTrackerPage() {
     return dueDate < today;
   };
 
-  const formatDate = (dateString: string): string => {
-    if (!dateString) return 'Not set';
-    try {
-      return new Date(dateString).toLocaleDateString();
-    } catch {
-      return 'Invalid date';
-    }
-  };
 
   const getDaysUntilDue = (dateString: string): number => {
     if (!dateString) return 0;
@@ -1129,6 +1166,7 @@ export default function KaiserTrackerPage() {
     const diffTime = dueDate.getTime() - today.getTime();
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
+
 
   // Fetch Kaiser members from Caspio
   const fetchCaspioData = async () => {
@@ -1147,6 +1185,30 @@ export default function KaiserTrackerPage() {
       
       // Extract the members array from the response
       const data = responseData.members || [];
+      
+      // Debug staff assignment fields specifically
+      if (data.length > 0) {
+        const firstMember = data[0];
+        console.log('🔍 FRONTEND STAFF ASSIGNMENT DEBUG - Available fields in first member:', {
+          Kaiser_User_Assignment: firstMember?.Kaiser_User_Assignment,
+          kaiser_user_assignment: firstMember?.kaiser_user_assignment,
+          SW_ID: firstMember?.SW_ID,
+          Staff_Assignment: firstMember?.Staff_Assignment,
+          Assigned_Staff: firstMember?.Assigned_Staff,
+          Staff_Assigned: firstMember?.Staff_Assigned,
+          allFieldsWithStaff: Object.keys(firstMember).filter(key => 
+            key.toLowerCase().includes('staff') || 
+            key.toLowerCase().includes('assign') ||
+            key.toLowerCase().includes('user')
+          )
+        });
+        
+        // Show what Staff_Assigned is actually mapped to
+        console.log('🎯 FINAL Staff_Assigned VALUE:', firstMember?.Staff_Assigned);
+        
+        // Show ALL field names in frontend data
+        console.log('🔍 FRONTEND ALL FIELDS:', Object.keys(firstMember).sort());
+      }
       
       // Clean and process the data
       const cleanMembers = data.map((member: any, index: number) => ({
@@ -1313,7 +1375,7 @@ export default function KaiserTrackerPage() {
 
   // Load data on component mount
   useEffect(() => {
-    // Only fetch data once on mount, don't auto-fetch
+    // Only fetch data when user manually clicks sync button, not on page load
     // fetchCaspioData();
   }, []);
 
@@ -1478,64 +1540,76 @@ export default function KaiserTrackerPage() {
       <div className="space-y-4">
         <h3 className="text-lg font-semibold text-gray-900">Kaiser Staff Assignments</h3>
         
-        {/* Staff Member Count Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {kaiserStaff.map(staffName => {
-            const assignment = staffAssignments[staffName];
-            return (
-              <Card key={`staff-${staffName}`} className="bg-white border-l-4 border-l-indigo-500 shadow">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <User className="h-4 w-4 text-indigo-600" />
-                    {staffName}
+        {/* Staff Summary Card */}
+        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-l-blue-500 shadow-md">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Users className="h-5 w-5 text-blue-600" />
+              All Kaiser Staff Summary
             </CardTitle>
           </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="text-center">
+          <CardContent className="pt-0">
+            <div className={`grid gap-4 ${allStaff.length <= 3 ? 'grid-cols-3' : allStaff.length <= 4 ? 'grid-cols-4' : 'grid-cols-5'}`}>
+              {allStaff.map(staffName => {
+                const assignment = staffAssignments[staffName];
+                return (
+                  <div key={`summary-${staffName}`} className="text-center">
                     <button
                       onClick={() => assignment.count > 0 && openStaffMemberModal(staffName, assignment.members)}
-                      className={`text-3xl font-bold mb-1 transition-colors ${
+                      className={`block w-full p-3 rounded-lg border transition-all ${
                         assignment.count > 0 
-                          ? 'text-indigo-600 hover:text-indigo-800 cursor-pointer' 
-                          : 'text-gray-400 cursor-default'
+                          ? staffName === 'Unassigned'
+                            ? 'bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 cursor-pointer shadow-sm hover:shadow-md'
+                            : 'bg-white hover:bg-blue-50 border-blue-200 hover:border-blue-300 cursor-pointer shadow-sm hover:shadow-md'
+                          : 'bg-gray-50 border-gray-200 cursor-default'
                       }`}
                       disabled={assignment.count === 0}
                     >
-                      {assignment.count}
-                    </button>
-                    <div className="text-sm text-gray-600">
-                      Members Assigned
-            </div>
-                    {assignment.count > 0 && (
-                      <div className="text-xs text-gray-500 mt-1">
-                        {((assignment.count / members.length) * 100).toFixed(1)}% of total
-                        <div className="text-xs text-blue-600 mt-1">
-                          Click number to manage
-                        </div>
-                        <Link 
-                          href="/admin/tasks"
-                          className="text-xs text-green-600 hover:text-green-800 underline mt-1 block"
-                        >
-                          View in My Tasks →
-                        </Link>
+                      <div className={`font-semibold text-sm mb-1 ${
+                        staffName === 'Unassigned' ? 'text-gray-700' : 'text-gray-900'
+                      }`}>{staffName}</div>
+                      <div className={`text-2xl font-bold ${
+                        assignment.count > 0 
+                          ? staffName === 'Unassigned' ? 'text-gray-600' : 'text-blue-600'
+                          : 'text-gray-400'
+                      }`}>
+                        {assignment.count}
                       </div>
-                    )}
+                      <div className="text-xs text-gray-500">
+                        {assignment.count === 1 ? 'member' : 'members'}
+                      </div>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 pt-3 border-t border-gray-200">
+              <div className="text-center">
+                <span className="text-sm text-gray-600">Total Members: </span>
+                <span className="font-semibold text-lg text-blue-600">
+                  {allStaff.reduce((total, staff) => total + staffAssignments[staff].count, 0)}
+                </span>
+              </div>
             </div>
           </CardContent>
         </Card>
-            );
-          })}
-        </div>
+
 
         {/* Staff Status Breakdown Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {kaiserStaff.map(staffName => {
+        <div className={`grid grid-cols-1 gap-4 ${allStaff.length <= 3 ? 'md:grid-cols-3' : allStaff.length <= 4 ? 'md:grid-cols-4' : 'md:grid-cols-5'}`}>
+          {allStaff.map(staffName => {
             const assignment = staffAssignments[staffName];
             return (
-              <Card key={`staff-status-${staffName}`} className="bg-white border-l-4 border-l-orange-500 shadow">
+              <Card key={`staff-status-${staffName}`} className={`bg-white border-l-4 shadow ${
+                staffName === 'Unassigned' 
+                  ? 'border-l-gray-400' 
+                  : 'border-l-orange-500'
+              }`}>
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center gap-2 text-base">
-                    <CheckCircle className="h-4 w-4 text-orange-600" />
+                    <CheckCircle className={`h-4 w-4 ${
+                      staffName === 'Unassigned' ? 'text-gray-500' : 'text-orange-600'
+                    }`} />
                     {staffName} - Status & Next Steps
             </CardTitle>
           </CardHeader>
@@ -1556,7 +1630,24 @@ export default function KaiserTrackerPage() {
                             .map(([status, count]) => (
                             <div key={`${staffName}-status-${status}`} className="flex justify-between items-center text-xs">
                               <span className="truncate pr-2" title={status}>{status}</span>
-                              <span className="font-semibold text-orange-600">{count}</span>
+                              <button
+                                onClick={() => {
+                                  // Filter members by this staff and status
+                                  const statusMembers = assignment.members.filter(member => 
+                                    (member.Kaiser_Status || 'No Status') === status
+                                  );
+                                  openMemberModal(
+                                    statusMembers,
+                                    `${staffName} - ${status}`,
+                                    `${count} members with status: ${status}`,
+                                    'kaiser_status',
+                                    status
+                                  );
+                                }}
+                                className="font-semibold text-orange-600 hover:text-orange-800 cursor-pointer hover:underline"
+                              >
+                                {count}
+                              </button>
                         </div>
                           ))}
                         </div>
@@ -1573,25 +1664,170 @@ export default function KaiserTrackerPage() {
                             <div key={`${staffName}-next-${nextStep}`} className="text-xs">
                               <div className="flex justify-between items-center">
                                 <span className="truncate pr-2" title={nextStep}>{nextStep}</span>
-                                <span className="font-semibold text-blue-600">{data.count}</span>
+                                <button
+                                  onClick={() => {
+                                    // Filter members by this staff and next step
+                                    const nextStepMembers = assignment.members.filter(member => 
+                                      (member.workflow_step || member.Next_Step || 'No Next Step') === nextStep
+                                    );
+                                    openMemberModal(
+                                      nextStepMembers,
+                                      `${staffName} - Next Step: ${nextStep}`,
+                                      `${data.count} members with next step: ${nextStep}`,
+                                      'staff_members',
+                                      staffName
+                                    );
+                                  }}
+                                  className="font-semibold text-blue-600 hover:text-blue-800 cursor-pointer hover:underline"
+                                >
+                                  {data.count}
+                                </button>
                   </div>
                               {data.dates.length > 0 && (
-                                <div className="text-xs text-gray-500 mt-1">
-                                  Due: {data.dates.slice(0, 2).map(date => {
-                                    try {
-                                      return format(new Date(date), 'MM/dd');
-                                    } catch {
-                                      return date;
-                                    }
-                                  }).join(', ')}
-                                  {data.dates.length > 2 && ` +${data.dates.length - 2} more`}
+                                <div className="text-xs mt-1">
+                                  {(() => {
+                                    // Check for overdue and urgent dates
+                                    const today = new Date();
+                                    const overdueDates = data.dates.filter(date => {
+                                      try {
+                                        return new Date(date) < today;
+                                      } catch {
+                                        return false;
+                                      }
+                                    });
+                                    const urgentDates = data.dates.filter(date => {
+                                      try {
+                                        const dueDate = new Date(date);
+                                        const diffTime = dueDate.getTime() - today.getTime();
+                                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                                        return diffDays <= 3 && diffDays > 0;
+                                      } catch {
+                                        return false;
+                                      }
+                                    });
+
+                                    const hasOverdue = overdueDates.length > 0;
+                                    const hasUrgent = urgentDates.length > 0;
+
+                                    return (
+                                      <div className={`flex items-center gap-1 ${
+                                        hasOverdue ? 'text-red-600' : 
+                                        hasUrgent ? 'text-yellow-600' : 
+                                        'text-gray-500'
+                                      }`}>
+                                        {hasOverdue && <AlertTriangle className="h-3 w-3" />}
+                                        {hasUrgent && !hasOverdue && <Clock className="h-3 w-3" />}
+                                        <span>
+                                          Due: {data.dates.slice(0, 2).map(date => {
+                                            try {
+                                              return format(new Date(date), 'MM/dd');
+                                            } catch {
+                                              return date;
+                                            }
+                                          }).join(', ')}
+                                          {data.dates.length > 2 && ` +${data.dates.length - 2} more`}
+                                        </span>
+                                        {hasOverdue && (
+                                          <span className="text-red-600 font-medium ml-1">
+                                            ({overdueDates.length} overdue)
+                                          </span>
+                                        )}
+                                        {hasUrgent && !hasOverdue && (
+                                          <span className="text-yellow-600 font-medium ml-1">
+                                            ({urgentDates.length} urgent)
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                 </div>
                               )}
                   </div>
                           ))}
-                </div>
-              </div>
-            </div>
+                        </div>
+                      </div>
+
+
+                      {/* Kaiser Next Step Date Warnings */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3 text-red-500" />
+                          Kaiser Date Warnings
+                        </h4>
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                          {(() => {
+                            // Filter members with Kaiser_Next_Step_Date that are overdue or upcoming
+                            const kaiserDateMembers = assignment.members.filter(member => 
+                              member.Kaiser_Next_Step_Date && member.Kaiser_Next_Step_Date.trim() !== ''
+                            );
+                            
+                            const overdueMembers = kaiserDateMembers.filter(member => 
+                              isOverdue(member.Kaiser_Next_Step_Date)
+                            );
+                            
+                            const urgentMembers = kaiserDateMembers.filter(member => {
+                              const days = getDaysUntilDue(member.Kaiser_Next_Step_Date);
+                              return days <= 3 && days > 0;
+                            });
+
+                            if (overdueMembers.length === 0 && urgentMembers.length === 0) {
+                              return (
+                                <div className="text-xs text-gray-500 italic">
+                                  No urgent Kaiser dates
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <>
+                                {overdueMembers.length > 0 && (
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="truncate pr-2 text-red-600 font-medium">
+                                      Overdue Kaiser Dates
+                                    </span>
+                                    <button
+                                      onClick={() => {
+                                        openMemberModal(
+                                          overdueMembers,
+                                          `${staffName} - Overdue Kaiser Dates`,
+                                          `${overdueMembers.length} members with overdue Kaiser next step dates`,
+                                          'staff_members',
+                                          staffName
+                                        );
+                                      }}
+                                      className="font-semibold text-red-600 hover:text-red-800 cursor-pointer hover:underline"
+                                    >
+                                      {overdueMembers.length}
+                                    </button>
+                                  </div>
+                                )}
+                                {urgentMembers.length > 0 && (
+                                  <div className="flex justify-between items-center text-xs">
+                                    <span className="truncate pr-2 text-yellow-600 font-medium">
+                                      Urgent Kaiser Dates (≤3 days)
+                                    </span>
+                                    <button
+                                      onClick={() => {
+                                        openMemberModal(
+                                          urgentMembers,
+                                          `${staffName} - Urgent Kaiser Dates`,
+                                          `${urgentMembers.length} members with urgent Kaiser next step dates`,
+                                          'staff_members',
+                                          staffName
+                                        );
+                                      }}
+                                      className="font-semibold text-yellow-600 hover:text-yellow-800 cursor-pointer hover:underline"
+                                    >
+                                      {urgentMembers.length}
+                                    </button>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    </div>
                   )}
           </CardContent>
         </Card>
@@ -1635,7 +1871,8 @@ export default function KaiserTrackerPage() {
                       const searchLower = searchTerm.toLowerCase();
                       const lastName = (member.memberLastName || '').toLowerCase();
                       
-                      return lastName.includes(searchLower);
+                      // Exact match for last name only (starts with search term)
+                      return lastName.startsWith(searchLower);
                     })
                     .slice(0, 10)
                     .map(member => (
@@ -1645,6 +1882,9 @@ export default function KaiserTrackerPage() {
                           </div>
                         <div className="text-sm text-gray-600 mt-1">
                           ID: {member.client_ID2} | {member.memberCounty} County
+                        </div>
+                        <div className="text-sm text-gray-600 mt-1">
+                          <span className="font-medium">Staff:</span> {member.Staff_Assigned || 'Unassigned'}
                         </div>
                         <div className="flex gap-2 mt-2">
                           <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
@@ -1913,6 +2153,38 @@ function MemberListModal({
                             </div>
                           )}
 
+                          {/* Kaiser Next Step Date */}
+                          {member.Kaiser_Next_Step_Date && (
+                            <div className="mt-2 flex items-center gap-2 text-sm">
+                              <Calendar className={`h-4 w-4 ${
+                                isOverdue(member.Kaiser_Next_Step_Date) ? 'text-red-500' : 
+                                getDaysUntilDue(member.Kaiser_Next_Step_Date) <= 3 && getDaysUntilDue(member.Kaiser_Next_Step_Date) > 0 ? 'text-yellow-500' : 
+                                'text-purple-500'
+                              }`} />
+                              <div>
+                                <span className="text-gray-600">Kaiser Date:</span>
+                                <span className={`ml-1 font-medium ${
+                                  isOverdue(member.Kaiser_Next_Step_Date) ? 'text-red-600' : 
+                                  getDaysUntilDue(member.Kaiser_Next_Step_Date) <= 3 && getDaysUntilDue(member.Kaiser_Next_Step_Date) > 0 ? 'text-yellow-600' : 
+                                  'text-purple-600'
+                                }`}>
+                                  {formatDate(member.Kaiser_Next_Step_Date)}
+                                  {(() => {
+                                    const kaiserDays = getDaysUntilDue(member.Kaiser_Next_Step_Date);
+                                    if (kaiserDays !== 0) {
+                                      return (
+                                        <span className="ml-1 text-xs">
+                                          ({kaiserDays > 0 ? `${kaiserDays} days left` : `${Math.abs(kaiserDays)} days overdue`})
+                                        </span>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
                           {/* Workflow Notes */}
                           {member.workflow_notes && (
                             <div className="mt-2 text-sm">
@@ -1953,6 +2225,23 @@ function MemberListModal({
         newNote={newNote}
         onNewNoteChange={setNewNote}
         onCreateNote={handleCreateNote}
+      />
+
+      {/* Member List Modal */}
+      <MemberListModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        members={modalMembers}
+        title={modalTitle}
+        description={modalDescription}
+        onMemberClick={handleMemberClick}
+        filters={filters}
+        onFilterChange={handleFilterChange}
+        onClearFilters={handleClearFilters}
+        allKaiserStatuses={allKaiserStatuses}
+        availableCounties={availableCounties}
+        availableCalAIMStatuses={availableCalAIMStatuses}
+        staffMembers={staffMembers}
       />
     </div>
   );

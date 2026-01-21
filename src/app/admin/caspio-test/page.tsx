@@ -304,6 +304,7 @@ export default function CaspioTestPage() {
   const [isRefreshingCaspioFields, setIsRefreshingCaspioFields] = useState(false);
   const [isRefreshingAppFields, setIsRefreshingAppFields] = useState(false);
   const [dynamicCaspioFields, setDynamicCaspioFields] = useState<string[]>(caspioMembersFieldNames);
+  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
   const { toast } = useToast();
   
   // Use new Caspio integration module
@@ -319,17 +320,42 @@ export default function CaspioTestPage() {
   } = useCaspioSync();
 
   const refreshCaspioFields = async () => {
+    // Rate limiting: prevent calls within 5 seconds of each other
+    const now = Date.now();
+    const RATE_LIMIT_MS = 5000; // 5 seconds
+    
+    if (now - lastRefreshTime < RATE_LIMIT_MS) {
+      toast({
+        variant: "destructive",
+        title: "Please Wait",
+        description: "Please wait a few seconds between refresh attempts",
+      });
+      return;
+    }
+    
     setIsRefreshingCaspioFields(true);
+    setLastRefreshTime(now);
+    
     try {
-      // Call a Firebase function to get fresh field names from Caspio
+      console.log('🔄 [FIELD-REFRESH] Starting Caspio field refresh...');
+      
+      // Call Firebase function with timeout
       const functions = getFunctions();
       const getCaspioFields = httpsCallable(functions, 'getCaspioTableFields');
       
-      const result = await getCaspioFields({ tableName: 'CalAIM_tbl_Members' });
+      // Set a client-side timeout as well
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Client timeout: Request took too long')), 20000);
+      });
+      
+      const refreshPromise = getCaspioFields({ tableName: 'CalAIM_tbl_Members' });
+      
+      const result = await Promise.race([refreshPromise, timeoutPromise]) as any;
       const data = result.data as any;
       
       if (data.success && data.fields) {
         setDynamicCaspioFields(data.fields);
+        console.log('✅ [FIELD-REFRESH] Successfully updated field list');
         toast({
           title: "Caspio Fields Refreshed",
           description: `Found ${data.fields.length} fields in CalAIM_tbl_Members table`,
@@ -338,7 +364,7 @@ export default function CaspioTestPage() {
         throw new Error(data.message || 'Failed to fetch Caspio fields');
       }
     } catch (error: any) {
-      console.error('Error refreshing Caspio fields:', error);
+      console.error('❌ [FIELD-REFRESH] Error refreshing Caspio fields:', error);
       toast({
         variant: "destructive",
         title: "Refresh Failed",
@@ -346,6 +372,7 @@ export default function CaspioTestPage() {
       });
     } finally {
       setIsRefreshingCaspioFields(false);
+      console.log('🏁 [FIELD-REFRESH] Refresh operation completed');
     }
   };
 
@@ -971,20 +998,27 @@ export default function CaspioTestPage() {
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold text-green-600">CalAIM Members Table Fields</h3>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={refreshCaspioFields}
-                      disabled={isRefreshingCaspioFields}
-                      className="text-green-600 border-green-600 hover:bg-green-50"
-                    >
-                      {isRefreshingCaspioFields ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="mr-2 h-4 w-4" />
+                    <div className="flex flex-col items-end gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={refreshCaspioFields}
+                        disabled={isRefreshingCaspioFields}
+                        className="text-green-600 border-green-600 hover:bg-green-50"
+                      >
+                        {isRefreshingCaspioFields ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                        )}
+                        Refresh Caspio Fields
+                      </Button>
+                      {lastRefreshTime > 0 && (
+                        <span className="text-xs text-gray-500">
+                          Last: {new Date(lastRefreshTime).toLocaleTimeString()}
+                        </span>
                       )}
-                      Refresh Caspio Fields
-                    </Button>
+                    </div>
                   </div>
                   <div className="space-y-4 max-h-96 overflow-y-auto border rounded-lg p-4">
                     {Object.entries(caspioMembersFields).map(([key, value]) => (

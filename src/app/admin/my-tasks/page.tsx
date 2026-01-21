@@ -9,7 +9,6 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit } from 'lucide-react';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
 
 interface MyKaiserTask {
@@ -21,8 +20,8 @@ interface MyKaiserTask {
   client_ID2: string;
   Kaiser_Status: string;
   CalAIM_Status: string;
-  next_steps_date: string;
-  kaiser_user_assignment: string;
+  Kaiser_Next_Step_Date: string;
+  Staff_Assigned: string;
   pathway: string;
   daysUntilDue: number;
   isOverdue: boolean;
@@ -104,25 +103,28 @@ export default function MyTasksPage() {
     
     setIsLoading(true);
     try {
-      const functions = getFunctions();
-      const fetchKaiserMembers = httpsCallable(functions, 'fetchKaiserMembersFromCaspio');
-      
-      const result = await fetchKaiserMembers();
-      const data = result.data as any;
+      const response = await fetch('/api/kaiser-members');
+      const data = await response.json();
       
       if (data.success) {
         const allMembers = data.members || [];
         
         // Filter for members assigned to current user
-        const myMembers = allMembers.filter((member: any) => 
-          member.kaiser_user_assignment === currentUser.email ||
-          member.kaiser_user_assignment === `${currentUser.displayName}` ||
-          member.kaiser_user_assignment === `${currentUser.email?.split('@')[0]}`
-        );
+        const myMembers = allMembers.filter((member: any) => {
+          const staffAssigned = member.Staff_Assigned || member.Kaiser_User_Assignment || '';
+          const userEmail = currentUser.email || '';
+          const userName = currentUser.displayName || '';
+          const userFirstName = userEmail.split('@')[0] || '';
+          
+          return staffAssigned.toLowerCase().includes(userName.toLowerCase()) ||
+                 staffAssigned.toLowerCase().includes(userFirstName.toLowerCase()) ||
+                 staffAssigned === userName ||
+                 staffAssigned === userFirstName;
+        });
         
         // Transform to task format
         const myTasks: MyKaiserTask[] = myMembers.map((member: any) => {
-          const daysUntilDue = getDaysUntilDue(member.next_steps_date);
+          const daysUntilDue = getDaysUntilDue(member.Kaiser_Next_Step_Date);
           const isOverdue = daysUntilDue < 0;
           
           return {
@@ -134,8 +136,8 @@ export default function MyTasksPage() {
             client_ID2: member.client_ID2,
             Kaiser_Status: member.Kaiser_Status,
             CalAIM_Status: member.CalAIM_Status,
-            next_steps_date: member.next_steps_date,
-            kaiser_user_assignment: member.kaiser_user_assignment,
+            Kaiser_Next_Step_Date: member.Kaiser_Next_Step_Date,
+            Staff_Assigned: member.Staff_Assigned,
             pathway: member.pathway,
             daysUntilDue,
             isOverdue,
@@ -398,16 +400,16 @@ function TaskTable({ tasks }: { tasks: MyKaiserTask[] }) {
                     <div className={`flex items-center gap-1 text-xs ${
                       task.isOverdue 
                         ? 'text-red-600 font-medium' 
-                        : task.next_steps_date 
+                        : task.Kaiser_Next_Step_Date 
                           ? 'text-muted-foreground' 
                           : 'text-gray-400'
                     }`}>
                       <Badge className={getUrgencyColor(task.daysUntilDue, task.isOverdue)} variant="outline">
                         <div className="flex items-center gap-1">
                           {getUrgencyIcon(task.daysUntilDue, task.isOverdue)}
-                          {task.next_steps_date ? (
+                          {task.Kaiser_Next_Step_Date ? (
                             <>
-                              {formatDate(task.next_steps_date)}
+                              {formatDate(task.Kaiser_Next_Step_Date)}
                               {task.isOverdue && (
                                 <span className="ml-1">
                                   ({Math.abs(task.daysUntilDue)} days overdue)

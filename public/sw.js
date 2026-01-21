@@ -1,28 +1,25 @@
-// Service Worker DISABLED for debugging webpack issues
-console.log('🚫 Service Worker: Completely disabled');
+// Service Worker completely disabled to prevent webpack conflicts
+// This prevents caching issues that cause "Cannot read properties of undefined" errors
 
-// Clear all caches and do nothing else
-self.addEventListener('install', (event) => {
-  console.log('🚫 Service Worker: Install - clearing all caches');
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          console.log('🗑️ Deleting cache:', cacheName);
-          return caches.delete(cacheName);
-        })
-      );
-    })
-  );
+self.addEventListener('install', () => {
+  // Skip waiting and activate immediately
   self.skipWaiting();
 });
 
-self.addEventListener('activate', (event) => {
-  console.log('🚫 Service Worker: Activate - claiming clients');
-  event.waitUntil(self.clients.claim());
+self.addEventListener('activate', () => {
+  // Clear all caches
+  caches.keys().then(cacheNames => {
+    return Promise.all(
+      cacheNames.map(cacheName => caches.delete(cacheName))
+    );
+  });
+  
+  // Take control immediately
+  self.clients.claim();
 });
 
-// Don't intercept any fetch requests
+// Don't cache anything - let everything go to network
 self.addEventListener('fetch', (event) => {
-  // Do nothing - let all requests go through normally
+  // Just pass through to network, no caching
+  return;
 });

@@ -271,8 +271,11 @@ export const testBasicConnection = onCall(async (request) => {
 export const getCaspioTableFields = onCall(async (request) => {
   const { tableName = 'CalAIM_tbl_Members' } = request.data;
   
+  // Set a strict timeout to prevent lingering connections
+  const TIMEOUT_MS = 15000; // 15 seconds max
+  
   try {
-    console.log(`🔍 Fetching field names from Caspio table: ${tableName}`);
+    console.log(`🔍 [FIELD-REFRESH] Starting field fetch for table: ${tableName}`);
     
     // Get Caspio credentials
     const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
@@ -282,56 +285,87 @@ export const getCaspioTableFields = onCall(async (request) => {
     const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
     const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
     
-    // Get access token
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      body: 'grant_type=client_credentials',
-    });
+    // Create AbortController for timeout control
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+      console.log('⏰ [FIELD-REFRESH] Request timed out after 15 seconds');
+    }, TIMEOUT_MS);
     
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
-    }
-    
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
-    
-    // Get table schema to extract field names
-    const schemaUrl = `${baseUrl}/tables/${tableName}`;
-    const schemaResponse = await fetch(schemaUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'application/json'
+    try {
+      // Get access token with timeout
+      console.log('🔑 [FIELD-REFRESH] Getting access token...');
+      const tokenResponse = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${credentials}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+          'Connection': 'close' // Ensure connection closes after request
+        },
+        body: 'grant_type=client_credentials',
+        signal: controller.signal
+      });
+      
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
+        throw new Error(`Token request failed: ${tokenResponse.status} ${errorText}`);
       }
-    });
-    
-    if (!schemaResponse.ok) {
-      const errorText = await schemaResponse.text();
-      throw new HttpsError('internal', `Failed to get table schema: ${schemaResponse.status} ${errorText}`);
+      
+      const tokenData = await tokenResponse.json();
+      const accessToken = tokenData.access_token;
+      console.log('✅ [FIELD-REFRESH] Got access token');
+      
+      // Get table schema to extract field names with timeout
+      console.log('📋 [FIELD-REFRESH] Fetching table schema...');
+      const schemaUrl = `${baseUrl}/tables/${tableName}`;
+      const schemaResponse = await fetch(schemaUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json',
+          'Connection': 'close' // Ensure connection closes after request
+        },
+        signal: controller.signal
+      });
+      
+      if (!schemaResponse.ok) {
+        const errorText = await schemaResponse.text();
+        throw new Error(`Schema request failed: ${schemaResponse.status} ${errorText}`);
+      }
+      
+      const schemaData = await schemaResponse.json();
+      
+      // Extract field names from schema
+      const fields = schemaData.Result?.Fields?.map((field: any) => field.Name) || [];
+      
+      console.log(`✅ [FIELD-REFRESH] Successfully retrieved ${fields.length} fields from ${tableName}`);
+      console.log(`📝 [FIELD-REFRESH] Sample fields:`, fields.slice(0, 5));
+      
+      // Clear timeout since we completed successfully
+      clearTimeout(timeoutId);
+      
+      return {
+        success: true,
+        fields: fields,
+        tableName: tableName,
+        message: `Successfully retrieved ${fields.length} field names from ${tableName}`,
+        timestamp: new Date().toISOString()
+      };
+      
+    } finally {
+      // Always clear the timeout
+      clearTimeout(timeoutId);
     }
-    
-    const schemaData = await schemaResponse.json();
-    
-    // Extract field names from schema
-    const fields = schemaData.Result?.Fields?.map((field: any) => field.Name) || [];
-    
-    console.log(`✅ Found ${fields.length} fields in ${tableName}:`, fields.slice(0, 10));
-    
-    return {
-      success: true,
-      fields: fields,
-      tableName: tableName,
-      message: `Successfully retrieved ${fields.length} field names from ${tableName}`
-    };
     
   } catch (error: any) {
-    console.error('❌ Error fetching Caspio table fields:', error);
+    console.error('❌ [FIELD-REFRESH] Error fetching Caspio table fields:', error);
+    
+    // Handle specific error types
+    if (error.name === 'AbortError') {
+      throw new HttpsError('deadline-exceeded', 'Request timed out - Caspio API took too long to respond');
+    }
+    
     throw new HttpsError('internal', `Failed to fetch table fields: ${error.message}`);
   }
 });
