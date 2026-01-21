@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
@@ -30,7 +30,7 @@ interface StaffNotification {
   category: 'notification' | 'informational';
 }
 
-export default function MyNotesPage() {
+function MyNotesContent() {
   const { user, isAdmin, loading } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -386,5 +386,13 @@ export default function MyNotesPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function MyNotesPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" />Loading...</div>}>
+      <MyNotesContent />
+    </Suspense>
   );
 }

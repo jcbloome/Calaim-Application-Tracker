@@ -1,11 +1,11 @@
 
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import { PrintableFullPackage } from '@/components/forms/PrintableFullPackage';
 import { useSearchParams } from 'next/navigation';
 
-export default function FullPackagePrintPage() {
+function FullPackageContent() {
   const searchParams = useSearchParams();
   const memberName = searchParams.get('memberName') || '';
   const memberMrn = searchParams.get('memberMrn') || '';
@@ -20,14 +20,22 @@ export default function FullPackagePrintPage() {
   };
 
   return (
+    <PrintableFullPackage
+      applicationData={applicationData}
+      applicationId={applicationId}
+      pathway={pathway}
+      showPrintButton={true}
+    />
+  );
+}
+
+export default function FullPackagePrintPage() {
+  return (
     <div className="min-h-screen bg-gray-50 print:bg-white">
       <main className="container mx-auto py-8 px-4 print:p-0">
-        <PrintableFullPackage
-          applicationData={applicationData}
-          applicationId={applicationId}
-          pathway={pathway}
-          showPrintButton={true}
-        />
+        <Suspense fallback={<div className="flex justify-center items-center h-64">Loading...</div>}>
+          <FullPackageContent />
+        </Suspense>
       </main>
     </div>
   );
