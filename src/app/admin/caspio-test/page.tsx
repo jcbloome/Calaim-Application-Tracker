@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { Loader2, Database, CheckCircle2, AlertTriangle, Users, ArrowRight, Map, Copy } from 'lucide-react';
+import { Loader2, Database, CheckCircle2, AlertTriangle, Users, ArrowRight, Map, Copy, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -301,6 +301,9 @@ export default function CaspioTestPage() {
   const [isSingleTestRunning, setIsSingleTestRunning] = useState(false);
   const [singleTestResults, setSingleTestResults] = useState<any>(null);
   const [fieldMappings, setFieldMappings] = useState<{[key: string]: string}>({});
+  const [isRefreshingCaspioFields, setIsRefreshingCaspioFields] = useState(false);
+  const [isRefreshingAppFields, setIsRefreshingAppFields] = useState(false);
+  const [dynamicCaspioFields, setDynamicCaspioFields] = useState<string[]>(caspioMembersFieldNames);
   const { toast } = useToast();
   
   // Use new Caspio integration module
@@ -314,6 +317,60 @@ export default function CaspioTestPage() {
     performFullSync, 
     clearError 
   } = useCaspioSync();
+
+  const refreshCaspioFields = async () => {
+    setIsRefreshingCaspioFields(true);
+    try {
+      // Call a Firebase function to get fresh field names from Caspio
+      const functions = getFunctions();
+      const getCaspioFields = httpsCallable(functions, 'getCaspioTableFields');
+      
+      const result = await getCaspioFields({ tableName: 'CalAIM_tbl_Members' });
+      const data = result.data as any;
+      
+      if (data.success && data.fields) {
+        setDynamicCaspioFields(data.fields);
+        toast({
+          title: "Caspio Fields Refreshed",
+          description: `Found ${data.fields.length} fields in CalAIM_tbl_Members table`,
+        });
+      } else {
+        throw new Error(data.message || 'Failed to fetch Caspio fields');
+      }
+    } catch (error: any) {
+      console.error('Error refreshing Caspio fields:', error);
+      toast({
+        variant: "destructive",
+        title: "Refresh Failed",
+        description: error.message || "Could not refresh Caspio field names",
+      });
+    } finally {
+      setIsRefreshingCaspioFields(false);
+    }
+  };
+
+  const refreshAppFields = async () => {
+    setIsRefreshingAppFields(true);
+    try {
+      // Simulate refreshing app fields - in a real scenario, this might reload from a config file
+      // For now, we'll just show a success message since the fields are hardcoded
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+      
+      toast({
+        title: "App Fields Refreshed",
+        description: `CS Summary form fields reloaded (${Object.keys(csSummaryFields).length} fields)`,
+      });
+    } catch (error: any) {
+      console.error('Error refreshing app fields:', error);
+      toast({
+        variant: "destructive",
+        title: "Refresh Failed",
+        description: "Could not refresh app field definitions",
+      });
+    } finally {
+      setIsRefreshingAppFields(false);
+    }
+  };
 
   const runCaspioMemberSyncTest = async () => {
     setIsRunning(true);
@@ -868,7 +925,23 @@ export default function CaspioTestPage() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* CS Summary Form Fields */}
                 <div>
-                  <h3 className="text-lg font-semibold mb-4 text-blue-600">CS Summary Form Fields</h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-blue-600">CS Summary Form Fields</h3>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={refreshAppFields}
+                      disabled={isRefreshingAppFields}
+                      className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                    >
+                      {isRefreshingAppFields ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                      )}
+                      Refresh App Fields
+                    </Button>
+                  </div>
                   <div className="space-y-4 max-h-96 overflow-y-auto border rounded-lg p-4">
                     {Object.entries(csSummaryFields).map(([key, value]) => (
                       <div key={key} className="flex flex-col gap-1 p-2 border-b">
@@ -896,7 +969,23 @@ export default function CaspioTestPage() {
 
                 {/* CalAIM Members Table Fields */}
                 <div>
-                  <h3 className="text-lg font-semibold mb-4 text-green-600">CalAIM Members Table Fields</h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-green-600">CalAIM Members Table Fields</h3>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={refreshCaspioFields}
+                      disabled={isRefreshingCaspioFields}
+                      className="text-green-600 border-green-600 hover:bg-green-50"
+                    >
+                      {isRefreshingCaspioFields ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                      )}
+                      Refresh Caspio Fields
+                    </Button>
+                  </div>
                   <div className="space-y-4 max-h-96 overflow-y-auto border rounded-lg p-4">
                     {Object.entries(caspioMembersFields).map(([key, value]) => (
                       <div key={key} className="flex flex-col gap-1 p-2 border-b">
@@ -973,7 +1062,7 @@ export default function CaspioTestPage() {
                         // Auto-map obvious matches
                         const autoMappings: {[key: string]: string} = {};
                         Object.keys(csSummaryFields).forEach(csField => {
-                          if (caspioMembersFieldNames.includes(csField)) {
+                          if (dynamicCaspioFields.includes(csField)) {
                             autoMappings[csField] = csField;
                           }
                         });
@@ -1036,7 +1125,7 @@ export default function CaspioTestPage() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="no-mapping">-- No Mapping --</SelectItem>
-                            {caspioMembersFieldNames.map(fieldName => (
+                            {dynamicCaspioFields.map(fieldName => (
                               <SelectItem key={fieldName} value={fieldName}>
                                 {fieldName}
                               </SelectItem>

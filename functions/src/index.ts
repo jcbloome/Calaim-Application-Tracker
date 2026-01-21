@@ -268,6 +268,74 @@ export const testBasicConnection = onCall(async (request) => {
   }
 });
 
+export const getCaspioTableFields = onCall(async (request) => {
+  const { tableName = 'CalAIM_tbl_Members' } = request.data;
+  
+  try {
+    console.log(`🔍 Fetching field names from Caspio table: ${tableName}`);
+    
+    // Get Caspio credentials
+    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+    
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
+    
+    // Get access token
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: 'grant_type=client_credentials',
+    });
+    
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
+    }
+    
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    
+    // Get table schema to extract field names
+    const schemaUrl = `${baseUrl}/tables/${tableName}`;
+    const schemaResponse = await fetch(schemaUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json'
+      }
+    });
+    
+    if (!schemaResponse.ok) {
+      const errorText = await schemaResponse.text();
+      throw new HttpsError('internal', `Failed to get table schema: ${schemaResponse.status} ${errorText}`);
+    }
+    
+    const schemaData = await schemaResponse.json();
+    
+    // Extract field names from schema
+    const fields = schemaData.Result?.Fields?.map((field: any) => field.Name) || [];
+    
+    console.log(`✅ Found ${fields.length} fields in ${tableName}:`, fields.slice(0, 10));
+    
+    return {
+      success: true,
+      fields: fields,
+      tableName: tableName,
+      message: `Successfully retrieved ${fields.length} field names from ${tableName}`
+    };
+    
+  } catch (error: any) {
+    console.error('❌ Error fetching Caspio table fields:', error);
+    throw new HttpsError('internal', `Failed to fetch table fields: ${error.message}`);
+  }
+});
+
 // Caspio API Integration Function with fallback to environment variables
 export const testCaspioConnection = onCall(async (request) => {
   try {
