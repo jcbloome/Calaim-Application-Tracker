@@ -13,9 +13,9 @@ export default function TestBillyPage() {
   useAutoTrackPortalAccess('assignments');
   
   const [mockUser] = useState({
-    uid: 'fake-fake-test',
-    email: 'jcbloome@gmail.com',
-    displayName: 'fake fake'
+    uid: 'social-worker-test',
+    email: 'test@example.com',
+    displayName: 'Test Social Worker'
   });
 
   const [assignedData, setAssignedData] = useState<any>(null);

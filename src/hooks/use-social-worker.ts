@@ -43,40 +43,8 @@ export function useSocialWorker() {
           setSocialWorkerData(data);
           setIsSocialWorker(true);
         } else {
-          // Check if this is a known social worker by email
-          const knownSocialWorkers = [
-            {
-              email: 'jcbloome@gmail.com',
-              name: 'fake fake',
-              uid: user.uid,
-              assignedMembers: [],
-              assignedRCFEs: []
-            }
-          ];
-          
-          const socialWorker = knownSocialWorkers.find(sw => 
-            sw.email.toLowerCase() === user.email?.toLowerCase()
-          );
-          
-          if (socialWorker) {
-            const mockData: SocialWorkerData = {
-              uid: user.uid,
-              email: user.email || socialWorker.email,
-              displayName: socialWorker.name,
-              role: 'social_worker',
-              assignedMembers: socialWorker.assignedMembers,
-              assignedRCFEs: socialWorker.assignedRCFEs,
-              permissions: {
-                visitVerification: true,
-                memberQuestionnaire: true
-              }
-            };
-            setSocialWorkerData(mockData);
-            setIsSocialWorker(true);
-          } else {
-            setIsSocialWorker(false);
-            setSocialWorkerData(null);
-          }
+          setIsSocialWorker(false);
+          setSocialWorkerData(null);
         }
       } catch (error) {
         console.error('Error checking social worker status:', error);

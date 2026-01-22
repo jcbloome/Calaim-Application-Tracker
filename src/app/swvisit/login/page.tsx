@@ -34,18 +34,15 @@ export default function SocialWorkerLogin() {
     setError('');
 
     try {
-      // Check for known social workers
-      const knownSocialWorkers = ['jcbloome@gmail.com'];
+      // Here you would integrate with Firebase Auth for social workers
+      // For now, allow any login to proceed for testing
+      console.log('🔧 Social worker login attempt for:', email);
       
-      if (knownSocialWorkers.includes(email.toLowerCase())) {
-        console.log('🔧 Social worker login for:', email);
-        
-        // Track login event
-        await trackLogin();
-        
-        router.push('/swvisit');
-        return;
-      }
+      // Track login event
+      await trackLogin();
+      
+      router.push('/swvisit');
+      return;
 
       // Here you would integrate with Firebase Auth
       // const result = await signInWithEmailAndPassword(auth, email, password);
