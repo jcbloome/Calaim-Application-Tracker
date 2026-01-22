@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
@@ -234,6 +235,74 @@ const TaskStatusBadge = ({ status }: { status: TaskStatus }) => {
     return <Badge variant="outline" className={cn('gap-1.5 pl-1.5', variants[status])}><Circle className="h-2 w-2 -translate-x-1" fill="currentColor" /> {status}</Badge>;
 }
 
+// Member List Dialog Component
+function MemberListDialog({ 
+  isOpen, 
+  onClose, 
+  rcfeData, 
+  staffName 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  rcfeData: Array<{ name: string; address: string; members: Array<{ id: string; firstName: string; lastName: string; }> }>; 
+  staffName: string; 
+}) {
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[80vh]">
+        <DialogHeader>
+          <DialogTitle>RCFE Details - {staffName}</DialogTitle>
+          <DialogDescription>
+            Facilities and members assigned to this social worker
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="max-h-[60vh] pr-4">
+          <div className="space-y-6">
+            {rcfeData.length > 0 ? rcfeData.map((rcfe, index) => (
+              <Card key={index} className="border-l-4 border-l-blue-500">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg">{rcfe.name}</CardTitle>
+                  <CardDescription className="text-sm">
+                    <span className="font-medium">Location:</span> {rcfe.address}
+                  </CardDescription>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <User className="h-4 w-4" />
+                    <span>{rcfe.members.length} member{rcfe.members.length !== 1 ? 's' : ''}</span>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-sm">Members:</h4>
+                    <div className="grid gap-2">
+                      {rcfe.members.map((member) => (
+                        <Link 
+                          key={member.id}
+                          href={`/admin/applications/${member.id}`}
+                          className="flex items-center gap-2 p-2 rounded-md hover:bg-muted transition-colors text-sm"
+                        >
+                          <Circle className="h-2 w-2 fill-current text-blue-500" />
+                          <span className="hover:underline">
+                            {member.firstName} {member.lastName}
+                          </span>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <User className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No RCFE assignments found for this social worker.</p>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function ManagerialOverviewPage() {
   const firestore = useFirestore();
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -248,6 +317,11 @@ export default function ManagerialOverviewPage() {
   const [staffFilter, setStaffFilter] = useState('all');
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'ascending' | 'descending' }>({ key: 'taskStatus', direction: 'ascending' });
   const [currentDialogItem, setCurrentDialogItem] = useState<CombinedData | null>(null);
+  const [memberListDialog, setMemberListDialog] = useState<{ isOpen: boolean; rcfeData: any[]; staffName: string }>({
+    isOpen: false,
+    rcfeData: [],
+    staffName: ''
+  });
 
   const fetchData = useCallback(async () => {
     if (isAdminLoading || !firestore || !isSuperAdmin) {
@@ -333,6 +407,7 @@ export default function ManagerialOverviewPage() {
           let openCount = 0;
           let overdueCount = 0;
           let dueTodayCount = 0;
+          const rcfeData = new Map<string, { name: string; address: string; members: Array<{ id: string; firstName: string; lastName: string; }> }>();
 
           for (const tracker of trackers.values()) {
               if (tracker.assignedStaffId === staff.uid) {
@@ -347,10 +422,34 @@ export default function ManagerialOverviewPage() {
                             dueTodayCount++;
                         }
                       }
+
+                      // Group by RCFE
+                      if (app.rcfeName && app.rcfeAddress) {
+                          const rcfeKey = `${app.rcfeName}-${app.rcfeAddress}`;
+                          if (!rcfeData.has(rcfeKey)) {
+                              rcfeData.set(rcfeKey, {
+                                  name: app.rcfeName,
+                                  address: app.rcfeAddress,
+                                  members: []
+                              });
+                          }
+                          rcfeData.get(rcfeKey)!.members.push({
+                              id: app.id,
+                              firstName: app.memberFirstName || 'Unknown',
+                              lastName: app.memberLastName || 'Member'
+                          });
+                      }
                   }
               }
           }
-          return { ...staff, openCount, overdueCount, dueTodayCount };
+          
+          return { 
+              ...staff, 
+              openCount, 
+              overdueCount, 
+              dueTodayCount, 
+              rcfeData: Array.from(rcfeData.values())
+          };
       });
   }, [staffList, applications, trackers]);
 
@@ -468,30 +567,58 @@ export default function ManagerialOverviewPage() {
                 <CardContent className="space-y-4">
                     {staffStats.length > 0 ? staffStats.map((staff, index) => (
                         <React.Fragment key={staff.uid}>
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                            <Link href={`/admin/my-tasks?userId=${staff.uid}&name=${staff.firstName}%20${staff.lastName}`} className="font-semibold hover:underline">
-                                {staff.firstName} {staff.lastName}
-                            </Link>
-                            <div className="flex items-center gap-4 text-sm">
-                                <div>
-                                    <span className="font-bold text-lg">{staff.openCount}</span>
-                                    <span className="text-muted-foreground"> Open</span>
-                                </div>
-                                {staff.overdueCount > 0 && (
-                                    <div className="flex items-center gap-1.5 text-destructive">
-                                        <AlertCircle className="h-4 w-4" />
-                                        <span className="font-semibold">{staff.overdueCount} Overdue</span>
+                            <div className="space-y-3">
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                    <Link href={`/admin/my-tasks?userId=${staff.uid}&name=${staff.firstName}%20${staff.lastName}`} className="font-semibold hover:underline">
+                                        {staff.firstName} {staff.lastName}
+                                    </Link>
+                                    <div className="flex items-center gap-4 text-sm">
+                                        <div>
+                                            <span className="font-bold text-lg">{staff.openCount}</span>
+                                            <span className="text-muted-foreground"> Open</span>
+                                        </div>
+                                        {staff.overdueCount > 0 && (
+                                            <div className="flex items-center gap-1.5 text-destructive">
+                                                <AlertCircle className="h-4 w-4" />
+                                                <span className="font-semibold">{staff.overdueCount} Overdue</span>
+                                            </div>
+                                        )}
+                                        {staff.dueTodayCount > 0 && (
+                                            <div className="flex items-center gap-1.5 text-yellow-600">
+                                                <CalendarIcon className="h-4 w-4" />
+                                                <span className="font-semibold">{staff.dueTodayCount} Due Today</span>
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                                    {staff.dueTodayCount > 0 && (
-                                    <div className="flex items-center gap-1.5 text-yellow-600">
-                                        <CalendarIcon className="h-4 w-4" />
-                                        <span className="font-semibold">{staff.dueTodayCount} Due Today</span>
+                                </div>
+                                
+                                {/* RCFE Information */}
+                                {staff.rcfeData && staff.rcfeData.length > 0 && (
+                                    <div className="ml-4 space-y-2">
+                                        <div className="text-xs text-muted-foreground font-medium">RCFE Assignments:</div>
+                                        {staff.rcfeData.map((rcfe, rcfeIndex) => (
+                                            <div key={rcfeIndex} className="text-sm bg-muted/30 rounded-md p-2">
+                                                <div className="font-medium text-blue-700">{rcfe.name}</div>
+                                                <div className="text-xs text-muted-foreground mb-1">{rcfe.address}</div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-6 px-2 text-xs hover:bg-blue-100"
+                                                    onClick={() => setMemberListDialog({
+                                                        isOpen: true,
+                                                        rcfeData: staff.rcfeData || [],
+                                                        staffName: `${staff.firstName} ${staff.lastName}`
+                                                    })}
+                                                >
+                                                    <User className="h-3 w-3 mr-1" />
+                                                    {rcfe.members.length} member{rcfe.members.length !== 1 ? 's' : ''}
+                                                </Button>
+                                            </div>
+                                        ))}
                                     </div>
                                 )}
                             </div>
-                        </div>
-                        {index < staffStats.length - 1 && <Separator />}
+                            {index < staffStats.length - 1 && <Separator />}
                         </React.Fragment>
                     )) : <p className="text-sm text-muted-foreground text-center">No staff found.</p>}
                 </CardContent>
@@ -639,6 +766,13 @@ export default function ManagerialOverviewPage() {
                 onUpdate={fetchData}
             />
         )}
+        
+        <MemberListDialog
+            isOpen={memberListDialog.isOpen}
+            onClose={() => setMemberListDialog({ isOpen: false, rcfeData: [], staffName: '' })}
+            rcfeData={memberListDialog.rcfeData}
+            staffName={memberListDialog.staffName}
+        />
     </Dialog>
   );
 }

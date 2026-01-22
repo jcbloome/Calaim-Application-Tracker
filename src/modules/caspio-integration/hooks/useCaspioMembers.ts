@@ -93,10 +93,10 @@ export function useCaspioMembers(): UseCaspioMembersReturn {
     setError(null);
   }, []);
 
-  // Auto-fetch on mount
-  useEffect(() => {
-    fetchMembers();
-  }, [fetchMembers]);
+  // Disabled auto-fetch - only fetch when user manually triggers sync
+  // useEffect(() => {
+  //   fetchMembers();
+  // }, [fetchMembers]);
 
   return {
     members,

@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Users, UserPlus, Search, Filter } from 'lucide-react';
+import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Users, UserPlus, Search, Filter, ArrowUpDown, ChevronUp, ChevronDown, Pause, Play } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface Member {
@@ -43,6 +43,45 @@ interface SocialWorkerStats {
   activeCount: number;
 }
 
+// Sortable column header component
+function SortableHeader({ 
+  field, 
+  children, 
+  currentSortField, 
+  currentSortDirection, 
+  onSort 
+}: { 
+  field: string; 
+  children: React.ReactNode; 
+  currentSortField: string; 
+  currentSortDirection: 'asc' | 'desc'; 
+  onSort: (field: any) => void; 
+}) {
+  const isActive = currentSortField === field;
+  
+  return (
+    <TableHead 
+      className={`cursor-pointer hover:bg-muted/50 select-none transition-colors ${
+        isActive ? 'bg-muted/30' : ''
+      }`}
+      onClick={() => onSort(field)}
+    >
+      <div className="flex items-center gap-2 font-medium">
+        <span className={isActive ? 'text-primary' : ''}>{children}</span>
+        {isActive ? (
+          currentSortDirection === 'asc' ? (
+            <ChevronUp className="h-4 w-4 text-primary" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-primary" />
+          )
+        ) : (
+          <ArrowUpDown className="h-4 w-4 opacity-50 group-hover:opacity-75" />
+        )}
+      </div>
+    </TableHead>
+  );
+}
+
 export default function SocialWorkerAssignmentsPage() {
   const { isAdmin, isLoading } = useAdmin();
   const { toast } = useToast();
@@ -54,8 +93,15 @@ export default function SocialWorkerAssignmentsPage() {
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedCounty, setSelectedCounty] = useState('all');
   const [selectedRCFE, setSelectedRCFE] = useState('all');
+  const [selectedHoldStatus, setSelectedHoldStatus] = useState('all');
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [selectedSWForModal, setSelectedSWForModal] = useState<SocialWorkerStats | null>(null);
+  
+  // Sorting state
+  type SortField = 'memberName' | 'Client_ID2' | 'CalAIM_MCO' | 'memberCounty' | 'CalAIM_Status' | 'Social_Worker_Assigned' | 'RCFE_Name' | 'Hold_For_Social_Worker';
+  type SortDirection = 'asc' | 'desc';
+  const [sortField, setSortField] = useState<SortField>('memberName');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   // Fetch all members from API (Kaiser + Health Net + other MCOs)
   const fetchAllMembers = async () => {
@@ -89,11 +135,12 @@ export default function SocialWorkerAssignmentsPage() {
     }
   };
 
-  useEffect(() => {
-    if (isAdmin) {
-      fetchAllMembers();
-    }
-  }, [isAdmin]);
+  // Disabled automatic loading - only sync when user clicks "Sync from Caspio" button
+  // useEffect(() => {
+  //   if (isAdmin) {
+  //     fetchAllMembers();
+  //   }
+  // }, [isAdmin]);
 
   // Calculate social worker statistics
   const socialWorkerStats = useMemo((): SocialWorkerStats[] => {
@@ -176,9 +223,20 @@ export default function SocialWorkerAssignmentsPage() {
     return [...new Set(members.map(m => m.RCFE_Name || 'No RCFE'))].sort();
   }, [members]);
 
-  // Filter members based on search and filters
+  // Handle column sorting
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Filter and sort members
   const filteredMembers = useMemo(() => {
-    return members.filter(member => {
+    // First filter
+    const filtered = members.filter(member => {
       const matchesSearch = !searchTerm || 
         member.memberName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         member.Client_ID2.toString().includes(searchTerm) ||
@@ -199,9 +257,63 @@ export default function SocialWorkerAssignmentsPage() {
       const matchesRCFE = selectedRCFE === 'all' || 
         (member.RCFE_Name || 'No RCFE') === selectedRCFE;
       
-      return matchesSearch && matchesSW && matchesMCO && matchesStatus && matchesCounty && matchesRCFE;
+      const matchesHoldStatus = selectedHoldStatus === 'all' || 
+        (selectedHoldStatus === 'hold' && member.Hold_For_Social_Worker === '🔴 Hold') ||
+        (selectedHoldStatus === 'active' && member.Hold_For_Social_Worker !== '🔴 Hold');
+      
+      return matchesSearch && matchesSW && matchesMCO && matchesStatus && matchesCounty && matchesRCFE && matchesHoldStatus;
     });
-  }, [members, searchTerm, selectedSocialWorker, selectedStatus, selectedCounty]);
+
+    // Then sort
+    return filtered.sort((a, b) => {
+      let aValue: string | number = '';
+      let bValue: string | number = '';
+
+      switch (sortField) {
+        case 'memberName':
+          aValue = a.memberName || '';
+          bValue = b.memberName || '';
+          break;
+        case 'Client_ID2':
+          aValue = a.Client_ID2 || '';
+          bValue = b.Client_ID2 || '';
+          break;
+        case 'CalAIM_MCO':
+          aValue = a.CalAIM_MCO || 'Unknown';
+          bValue = b.CalAIM_MCO || 'Unknown';
+          break;
+        case 'memberCounty':
+          aValue = a.memberCounty || 'Unknown';
+          bValue = b.memberCounty || 'Unknown';
+          break;
+        case 'CalAIM_Status':
+          aValue = a.CalAIM_Status || 'No Status';
+          bValue = b.CalAIM_Status || 'No Status';
+          break;
+        case 'Social_Worker_Assigned':
+          aValue = a.Social_Worker_Assigned || 'Unassigned';
+          bValue = b.Social_Worker_Assigned || 'Unassigned';
+          break;
+        case 'RCFE_Name':
+          aValue = a.RCFE_Name || 'No RCFE';
+          bValue = b.RCFE_Name || 'No RCFE';
+          break;
+        case 'Hold_For_Social_Worker':
+          aValue = a.Hold_For_Social_Worker || 'No';
+          bValue = b.Hold_For_Social_Worker || 'No';
+          break;
+        default:
+          return 0;
+      }
+
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        const comparison = aValue.localeCompare(bValue);
+        return sortDirection === 'asc' ? comparison : -comparison;
+      }
+
+      return 0;
+    });
+  }, [members, searchTerm, selectedSocialWorker, selectedMCO, selectedStatus, selectedCounty, selectedRCFE, selectedHoldStatus, sortField, sortDirection]);
 
   if (isLoading) {
     return (
@@ -297,16 +409,19 @@ export default function SocialWorkerAssignmentsPage() {
               </CardContent>
             </Card>
             
-            <Card>
+            <Card className="border-red-200 bg-red-50">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">On Hold</CardTitle>
-                <Clock className="h-4 w-4 text-red-500" />
+                <CardTitle className="text-sm font-medium text-red-800">On Hold</CardTitle>
+                <Pause className="h-4 w-4 text-red-600" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-red-600">
+                <div className="text-2xl font-bold text-red-700 flex items-center gap-2">
                   {socialWorkerStats.reduce((sum, sw) => sum + sw.onHoldCount, 0)}
+                  {socialWorkerStats.reduce((sum, sw) => sum + sw.onHoldCount, 0) > 0 && (
+                    <AlertTriangle className="h-5 w-5 text-red-600" />
+                  )}
                 </div>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-red-700">
                   Members on hold for SW visit
                 </p>
               </CardContent>
@@ -368,6 +483,21 @@ export default function SocialWorkerAssignmentsPage() {
                 </CardContent>
               </Card>
             ))}
+            {!isLoadingMembers && socialWorkerStats.length === 0 && (
+              <Card className="border-dashed">
+                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                  <Users className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No Data Loaded</h3>
+                  <p className="text-muted-foreground mb-4 max-w-md">
+                    Click "Sync from Caspio" to load member data and social worker assignments.
+                  </p>
+                  <Button onClick={fetchAllMembers} disabled={isLoadingMembers}>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Sync from Caspio
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </TabsContent>
 
@@ -381,7 +511,7 @@ export default function SocialWorkerAssignmentsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Search</label>
                   <div className="relative">
@@ -480,6 +610,30 @@ export default function SocialWorkerAssignmentsPage() {
                   </Select>
                 </div>
                 
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Hold Status</label>
+                  <Select value={selectedHoldStatus} onValueChange={setSelectedHoldStatus}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="hold">
+                        <div className="flex items-center gap-2">
+                          <Pause className="h-3 w-3 text-red-600" />
+                          On Hold
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="active">
+                        <div className="flex items-center gap-2">
+                          <Play className="h-3 w-3 text-green-600" />
+                          Active
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
                 <div className="flex items-end">
                   <Button 
                     variant="outline" 
@@ -490,6 +644,7 @@ export default function SocialWorkerAssignmentsPage() {
                       setSelectedStatus('all');
                       setSelectedCounty('all');
                       setSelectedRCFE('all');
+                      setSelectedHoldStatus('all');
                     }}
                     className="w-full"
                   >
@@ -504,8 +659,37 @@ export default function SocialWorkerAssignmentsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
-                <span>Member Assignments ({filteredMembers.length})</span>
-                <Badge variant="outline">{filteredMembers.length} of {members.length} members</Badge>
+                <div className="flex items-center gap-3">
+                  <span>Member Assignments ({filteredMembers.length})</span>
+                  <div className="flex items-center gap-1 text-sm text-muted-foreground font-normal">
+                    <ArrowUpDown className="h-3 w-3" />
+                    <span>
+                      Sorted by {
+                        sortField === 'memberName' ? 'Member Name' :
+                        sortField === 'Client_ID2' ? 'Client ID' :
+                        sortField === 'CalAIM_MCO' ? 'MCO' :
+                        sortField === 'memberCounty' ? 'County' :
+                        sortField === 'CalAIM_Status' ? 'CalAIM Status' :
+                        sortField === 'Social_Worker_Assigned' ? 'Social Worker' :
+                        sortField === 'RCFE_Name' ? 'RCFE Name' :
+                        sortField === 'Hold_For_Social_Worker' ? 'Hold Status' :
+                        sortField
+                      } ({sortDirection === 'asc' ? 'A-Z' : 'Z-A'})
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">{filteredMembers.length} of {members.length} members</Badge>
+                  {(() => {
+                    const holdCount = filteredMembers.filter(m => m.Hold_For_Social_Worker === '🔴 Hold').length;
+                    return holdCount > 0 ? (
+                      <Badge variant="destructive" className="flex items-center gap-1">
+                        <Pause className="h-3 w-3" />
+                        {holdCount} on hold
+                      </Badge>
+                    ) : null;
+                  })()}
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -513,14 +697,70 @@ export default function SocialWorkerAssignmentsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Member</TableHead>
-                      <TableHead>Client ID</TableHead>
-                      <TableHead>MCO</TableHead>
-                      <TableHead>County</TableHead>
-                      <TableHead>CalAIM Status</TableHead>
-                      <TableHead>Social Worker</TableHead>
-                      <TableHead>RCFE</TableHead>
-                      <TableHead>Hold Status</TableHead>
+                      <SortableHeader 
+                        field="memberName" 
+                        currentSortField={sortField} 
+                        currentSortDirection={sortDirection} 
+                        onSort={handleSort}
+                      >
+                        Member
+                      </SortableHeader>
+                      <SortableHeader 
+                        field="Client_ID2" 
+                        currentSortField={sortField} 
+                        currentSortDirection={sortDirection} 
+                        onSort={handleSort}
+                      >
+                        Client ID
+                      </SortableHeader>
+                      <SortableHeader 
+                        field="CalAIM_MCO" 
+                        currentSortField={sortField} 
+                        currentSortDirection={sortDirection} 
+                        onSort={handleSort}
+                      >
+                        MCO
+                      </SortableHeader>
+                      <SortableHeader 
+                        field="memberCounty" 
+                        currentSortField={sortField} 
+                        currentSortDirection={sortDirection} 
+                        onSort={handleSort}
+                      >
+                        County
+                      </SortableHeader>
+                      <SortableHeader 
+                        field="CalAIM_Status" 
+                        currentSortField={sortField} 
+                        currentSortDirection={sortDirection} 
+                        onSort={handleSort}
+                      >
+                        CalAIM Status
+                      </SortableHeader>
+                      <SortableHeader 
+                        field="Social_Worker_Assigned" 
+                        currentSortField={sortField} 
+                        currentSortDirection={sortDirection} 
+                        onSort={handleSort}
+                      >
+                        Social Worker
+                      </SortableHeader>
+                      <SortableHeader 
+                        field="RCFE_Name" 
+                        currentSortField={sortField} 
+                        currentSortDirection={sortDirection} 
+                        onSort={handleSort}
+                      >
+                        RCFE
+                      </SortableHeader>
+                      <SortableHeader 
+                        field="Hold_For_Social_Worker" 
+                        currentSortField={sortField} 
+                        currentSortDirection={sortDirection} 
+                        onSort={handleSort}
+                      >
+                        Hold Status
+                      </SortableHeader>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -540,9 +780,19 @@ export default function SocialWorkerAssignmentsPage() {
                       </TableRow>
                     ) : (
                       filteredMembers.map((member) => (
-                        <TableRow key={member.id}>
+                        <TableRow key={member.id} className={member.Hold_For_Social_Worker === '🔴 Hold' ? 'bg-red-50 border-l-4 border-l-red-500' : ''}>
                           <TableCell className="font-medium">
-                            {member.memberName}
+                            <div className="flex items-center gap-2">
+                              {member.Hold_For_Social_Worker === '🔴 Hold' && (
+                                <div className="flex items-center gap-1">
+                                  <Pause className="h-4 w-4 text-red-600" />
+                                  <span className="text-red-600 text-xs font-semibold">HOLD</span>
+                                </div>
+                              )}
+                              <span className={member.Hold_For_Social_Worker === '🔴 Hold' ? 'text-red-800' : ''}>
+                                {member.memberName}
+                              </span>
+                            </div>
                           </TableCell>
                           <TableCell>{member.Client_ID2}</TableCell>
                           <TableCell>
@@ -583,11 +833,16 @@ export default function SocialWorkerAssignmentsPage() {
                           </TableCell>
                           <TableCell>
                             {member.Hold_For_Social_Worker === '🔴 Hold' ? (
-                              <Badge variant="destructive" className="text-xs">
-                                🔴 Hold
-                              </Badge>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="destructive" className="text-xs flex items-center gap-1">
+                                  <Pause className="h-3 w-3" />
+                                  Hold for SW Visit
+                                </Badge>
+                                <AlertTriangle className="h-4 w-4 text-red-500" />
+                              </div>
                             ) : (
-                              <Badge variant="secondary" className="text-xs">
+                              <Badge variant="default" className="text-xs flex items-center gap-1 bg-green-100 text-green-800 border-green-200">
+                                <Play className="h-3 w-3" />
                                 Active
                               </Badge>
                             )}

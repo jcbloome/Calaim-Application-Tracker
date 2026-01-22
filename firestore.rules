@@ -5,5 +5,47 @@ service cloud.firestore {
     match /{document=**} {
       allow read, write: if true;
     }
+    
+    // Social Workers collection - admin management only
+    match /socialWorkers/{socialWorkerId} {
+      // Super admins can manage social worker accounts
+      allow read, write: if request.auth != null;
+      
+      // Social workers can read their own profile
+      allow read: if request.auth != null && request.auth.uid == socialWorkerId;
+      
+      // Allow updating last login timestamp
+      allow update: if request.auth != null && 
+                    request.auth.uid == socialWorkerId &&
+                    request.writeFields.hasOnly(['lastLogin']);
+    }
+    
+    // Synced Social Workers collection - super admin only
+    match /syncedSocialWorkers/{syncedWorkerId} {
+      // Super admins can manage synced social worker data
+      allow read, write: if request.auth != null && 
+                         request.auth.token.email in ['jason@carehomefinders.com', 'jason.bloome@connectionslos.com', 'jcbloome@gmail.com'];
+    }
+    
+    // SW Claims collection
+    match /sw-claims/{claimId} {
+      // Social workers can create and read their own claims
+      allow create: if request.auth != null && 
+                    request.auth.uid != null &&
+                    request.resource.data.socialWorkerEmail == request.auth.token.email;
+      
+      allow read: if request.auth != null && 
+                  (resource.data.socialWorkerEmail == request.auth.token.email ||
+                   // Super admins can read all claims
+                   request.auth.token.email in ['jason@carehomefinders.com', 'jason.bloome@connectionslos.com', 'jcbloome@gmail.com']);
+      
+      // Only super admins can update claim status
+      allow update: if request.auth != null && 
+                    request.auth.token.email in ['jason@carehomefinders.com', 'jason.bloome@connectionslos.com', 'jcbloome@gmail.com'];
+      
+      // Super admins can delete claims
+      allow delete: if request.auth != null && 
+                    request.auth.token.email in ['jason@carehomefinders.com', 'jason.bloome@connectionslos.com', 'jcbloome@gmail.com'];
+    }
   }
 }

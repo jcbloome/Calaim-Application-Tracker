@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useAdmin } from '@/hooks/use-admin';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Loader2, Printer, ArrowLeft, Users, AlertCircle } from 'lucide-react';
+import { Loader2, Printer, ArrowLeft, Users, AlertCircle, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -34,7 +34,7 @@ export default function IlsReportPage() {
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
 
   const [ilsMembers, setIlsMembers] = useState<ILSMember[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchILSMembers = useCallback(async () => {
@@ -79,15 +79,16 @@ export default function IlsReportPage() {
     }
   }, [isSuperAdmin, isAdminLoading]);
 
-  useEffect(() => {
-    fetchILSMembers();
-  }, [fetchILSMembers]);
+  // Disabled automatic loading - only load when user clicks sync button
+  // useEffect(() => {
+  //   fetchILSMembers();
+  // }, [fetchILSMembers]);
 
-  if (isLoading || isAdminLoading) {
+  if (isAdminLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="ml-4">Fetching ILS members from Caspio...</p>
+        <p className="ml-4">Loading...</p>
       </div>
     );
   }
@@ -116,10 +117,24 @@ export default function IlsReportPage() {
                 Return to Dashboard
               </Link>
             </Button>
-            <Button onClick={() => window.print()}>
-              <Printer className="mr-2 h-4 w-4" />
-              Print Report
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                onClick={fetchILSMembers} 
+                disabled={isLoading}
+                variant="outline"
+              >
+                {isLoading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                {isLoading ? 'Syncing...' : 'Sync from Caspio'}
+              </Button>
+              <Button onClick={() => window.print()}>
+                <Printer className="mr-2 h-4 w-4" />
+                Print Report
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -201,8 +216,16 @@ export default function IlsReportPage() {
             ) : (
               <div className="text-center text-muted-foreground py-10">
                 <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p className="text-lg font-medium mb-2">No ILS Members Found</p>
-                <p>No CalAIM members currently have ILS_View set to "Yes"</p>
+                <p className="text-lg font-medium mb-2">No ILS Data Loaded</p>
+                <p className="mb-4">Click "Sync from Caspio" to load ILS members data</p>
+                <Button onClick={fetchILSMembers} disabled={isLoading}>
+                  {isLoading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  {isLoading ? 'Syncing...' : 'Sync from Caspio'}
+                </Button>
               </div>
             )}
           </CardContent>

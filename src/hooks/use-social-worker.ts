@@ -1,19 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, useFirestore } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 interface SocialWorkerData {
   uid: string;
   email: string;
   displayName: string;
   role: 'social_worker';
+  isActive: boolean;
+  createdAt: Date;
+  createdBy: string;
+  lastLogin?: Date;
   assignedMembers?: string[];
   assignedRCFEs?: string[];
   permissions: {
     visitVerification: boolean;
     memberQuestionnaire: boolean;
+    claimsSubmission: boolean;
   };
+  notes?: string;
 }
 
 export function useSocialWorker() {
@@ -40,8 +46,31 @@ export function useSocialWorker() {
         
         if (socialWorkerDoc.exists()) {
           const data = socialWorkerDoc.data() as SocialWorkerData;
-          setSocialWorkerData(data);
-          setIsSocialWorker(true);
+          
+          // Check if account is active
+          if (data.isActive) {
+            setSocialWorkerData({
+              ...data,
+              uid: user.uid,
+              createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
+              lastLogin: data.lastLogin?.toDate ? data.lastLogin.toDate() : undefined
+            });
+            setIsSocialWorker(true);
+            
+            // Update last login timestamp
+            try {
+              await updateDoc(doc(firestore, 'socialWorkers', user.uid), {
+                lastLogin: serverTimestamp()
+              });
+            } catch (loginUpdateError) {
+              console.warn('Failed to update last login:', loginUpdateError);
+            }
+          } else {
+            // Account exists but is inactive
+            setIsSocialWorker(false);
+            setSocialWorkerData(null);
+            console.warn('Social worker account is inactive');
+          }
         } else {
           setIsSocialWorker(false);
           setSocialWorkerData(null);
@@ -56,13 +85,35 @@ export function useSocialWorker() {
     };
 
     checkSocialWorkerStatus();
-  }, [user, loading]);
+  }, [user, loading, firestore]);
+
+  // Helper functions to check specific permissions
+  const hasPermission = (permission: keyof SocialWorkerData['permissions']): boolean => {
+    return socialWorkerData?.permissions?.[permission] || false;
+  };
+
+  const canAccessVisitVerification = (): boolean => {
+    return hasPermission('visitVerification');
+  };
+
+  const canAccessMemberQuestionnaire = (): boolean => {
+    return hasPermission('memberQuestionnaire');
+  };
+
+  const canSubmitClaims = (): boolean => {
+    return hasPermission('claimsSubmission');
+  };
 
   return {
     user: socialWorkerData || user,
     isSocialWorker,
     socialWorkerData,
     isLoading: loading || isLoading,
-    error
+    error,
+    // Permission helpers
+    hasPermission,
+    canAccessVisitVerification,
+    canAccessMemberQuestionnaire,
+    canSubmitClaims
   };
 }

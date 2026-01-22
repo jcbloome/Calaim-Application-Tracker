@@ -117,14 +117,6 @@ const adminNavLinks = [
       { href: '/admin/reports', label: 'Reports', icon: FileText }
     ]
   },
-  { 
-    label: 'SW', 
-    icon: UserCheck, 
-    isSubmenu: true,
-    submenuItems: [
-      { href: '/admin/sw-visit-verification', label: 'Visit Verification', icon: ClipboardCheck }
-    ]
-  }
 ];
 
 const superAdminNavLinks = [
@@ -135,7 +127,9 @@ const superAdminNavLinks = [
     submenuItems: [
       // Staff Management
       { href: '/admin/staff-management', label: 'Staff Management', icon: Users },
+      { href: '/admin/sw-user-management', label: 'SW User Management', icon: UserCheck },
       { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
+      { href: '/admin/sw-claims-management', label: 'SW Claims Management', icon: DollarSign },
       { href: '/admin/daily-tasks', label: 'Daily Task Tracker', icon: Calendar },
       { href: '/admin/login-activity', label: 'Login Activity', icon: Activity },
       { href: '/admin/profile', label: 'Profile Management', icon: UserIcon },
@@ -213,8 +207,13 @@ function AdminHeader() {
   } else if (isSuperAdmin) {
     // Super admins see everything
     combinedNavLinks = [...adminNavLinks, ...superAdminNavLinks];
+  } else {
+    // Regular admins see admin nav links, but hide SW tab unless it's the test account
+    const isTestAccount = user?.email === 'jcbloome@gmail.com';
+    if (!isTestAccount) {
+      combinedNavLinks = adminNavLinks.filter(nav => nav.label !== 'SW');
+    }
   }
-  // Regular admins see all admin nav links (default)
 
   return (
     <div className="bg-card border-b sticky top-0 z-40">

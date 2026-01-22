@@ -10,16 +10,11 @@ import {
   AlertTriangle,
   User,
   Clock,
-  MapPin,
-  Monitor,
   RefreshCw,
-  Filter,
   Calendar,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface LoginLog {
@@ -77,43 +72,29 @@ export default function LoginActivityTracker() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filterAction, setFilterAction] = useState<string>('all');
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
-
-  const addDebugLog = useCallback((message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setDebugLogs(prev => [`[${timestamp}] ${message}`, ...prev.slice(0, 49)]);
-  }, []);
+  const [socialWorkerEmails, setSocialWorkerEmails] = useState<Set<string>>(new Set());
+  const [rnEmails, setRnEmails] = useState<Set<string>>(new Set());
 
   // Direct Firebase Auth listener
   useEffect(() => {
     const auth = getAuth();
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      addDebugLog(`🔐 Auth state changed: ${user ? `User: ${user.email}` : 'No user'}`);
       setAuthUser(user);
     });
 
     return () => unsubscribe();
-  }, [addDebugLog]);
+  }, []);
 
   const ensureCurrentUserSession = useCallback(async () => {
-    addDebugLog(`🔍 ensureCurrentUserSession called`);
-    addDebugLog(`👤 useUser currentUser exists: ${!!currentUser}`);
-    addDebugLog(`🔐 authUser exists: ${!!authUser}`);
-    
     // Try both user sources
     const user = currentUser || authUser;
     
     if (!user) {
-      addDebugLog('❌ No user found from either source - cannot create session');
       return;
     }
 
-    addDebugLog(`👤 Using user: ${user.email}, UID: ${user.uid}`);
-
     try {
-      addDebugLog(`🔥 Getting Firestore instance...`);
       const db = getFirestore();
-      addDebugLog(`📄 Creating session document reference for UID: ${user.uid}`);
       const sessionDoc = doc(db, 'activeSessions', user.uid);
       
       const sessionData = {
@@ -124,33 +105,22 @@ export default function LoginActivityTracker() {
         email: user.email,
         loginTime: serverTimestamp(),
         lastActivity: serverTimestamp(),
-        ipAddress: 'Current Session', // We don't have access to IP in browser
-        userAgent: navigator.userAgent.substring(0, 100), // Truncate to avoid size issues
+        ipAddress: 'Current Session',
+        userAgent: typeof window !== 'undefined' ? navigator.userAgent.substring(0, 100) : 'Server',
         sessionDuration: 0,
         isActive: true,
-        createdAt: new Date().toISOString(), // Add regular timestamp too
+        createdAt: new Date().toISOString(),
         lastUpdated: new Date().toISOString()
       };
-
-      addDebugLog(`💾 Attempting to write session data...`);
-      addDebugLog(`📊 Session data: ${JSON.stringify(sessionData, null, 2).substring(0, 300)}...`);
       
       await setDoc(sessionDoc, sessionData, { merge: true });
-      addDebugLog(`✅ Successfully created/updated active session for ${user.email}`);
-      
-      // Verify the document was created
-      addDebugLog(`🔍 Verifying session was created...`);
-      
     } catch (err: any) {
-      addDebugLog(`❌ Failed to create session: ${err.message}`);
-      addDebugLog(`❌ Error code: ${err.code}`);
-      addDebugLog(`❌ Error stack: ${err.stack}`);
+      console.error('Failed to create session:', err);
     }
-  }, [currentUser, authUser, addDebugLog]);
+  }, [currentUser, authUser]);
 
   const loadLoginLogs = useCallback(async () => {
     try {
-      addDebugLog('📥 Loading login logs from Firestore...');
       const db = getFirestore();
       const logsCollection = collection(db, 'loginLogs');
       
@@ -176,41 +146,17 @@ export default function LoginActivityTracker() {
       })) as LoginLog[];
 
       setLoginLogs(logs);
-      addDebugLog(`✅ Loaded ${logs.length} login logs`);
-      
-      // Debug: Log first few entries to see data structure
-      if (logs.length > 0) {
-        const firstLog = logs[0];
-        addDebugLog(`🔍 Sample log data: ${JSON.stringify(firstLog, null, 2).substring(0, 300)}...`);
-        addDebugLog(`📊 Available fields: ${Object.keys(firstLog).join(', ')}`);
-        addDebugLog(`👤 User fields: email=${firstLog.email}, displayName=${firstLog.displayName}, userName=${firstLog.userName}, userEmail=${firstLog.userEmail}`);
-        addDebugLog(`🔑 Action fields: action=${firstLog.action}, type=${firstLog.type}, event=${firstLog.event}`);
-        addDebugLog(`🌐 IP fields: ipAddress=${firstLog.ipAddress}, ip=${firstLog.ip}, clientIP=${firstLog.clientIP}, remoteAddress=${firstLog.remoteAddress}`);
-        addDebugLog(`📊 Other fields: role=${firstLog.role}, userId=${firstLog.userId}, success=${firstLog.success}`);
-      }
     } catch (err: any) {
       const errorMsg = `Failed to load login logs: ${err.message}`;
       setError(errorMsg);
-      addDebugLog(`❌ ${errorMsg}`);
+      console.error(errorMsg, err);
     }
-  }, [filterAction, addDebugLog]);
+  }, [filterAction]);
 
   const loadActiveSessions = useCallback(async () => {
     try {
-      addDebugLog('📥 Loading active sessions from Firestore...');
       const db = getFirestore();
       const sessionsCollection = collection(db, 'activeSessions');
-      
-      // First, try to get all documents to see what's there
-      const allSessionsSnapshot = await getDocs(sessionsCollection);
-      addDebugLog(`🔍 Total documents in activeSessions collection: ${allSessionsSnapshot.size}`);
-      
-      if (allSessionsSnapshot.size > 0) {
-        allSessionsSnapshot.docs.forEach((doc, index) => {
-          const data = doc.data();
-          addDebugLog(`📄 Session ${index + 1}: ID=${doc.id}, fields=${Object.keys(data).join(', ')}`);
-        });
-      }
 
       const sessionsQuery = query(
         sessionsCollection, 
@@ -225,23 +171,15 @@ export default function LoginActivityTracker() {
       })) as ActiveSession[];
 
       setActiveSessions(sessions);
-      addDebugLog(`✅ Loaded ${sessions.length} active sessions`);
-      
-      // Debug: Show sample session data if available
-      if (sessions.length > 0) {
-        const firstSession = sessions[0];
-        addDebugLog(`🔍 Sample session: ${JSON.stringify(firstSession, null, 2).substring(0, 200)}...`);
-      }
     } catch (err: any) {
       const errorMsg = `Failed to load active sessions: ${err.message}`;
       setError(errorMsg);
-      addDebugLog(`❌ ${errorMsg}`);
+      console.error(errorMsg, err);
     }
-  }, [addDebugLog]);
+  }, []);
 
   const testFirestoreWrite = useCallback(async () => {
     try {
-      addDebugLog('🧪 Testing basic Firestore write permissions...');
       const db = getFirestore();
       const testDoc = doc(db, 'test_writes', `session_test_${Date.now()}`);
       
@@ -251,18 +189,16 @@ export default function LoginActivityTracker() {
         user: currentUser?.email || 'unknown'
       });
       
-      addDebugLog('✅ Basic Firestore write test successful');
       return true;
     } catch (err: any) {
-      addDebugLog(`❌ Basic Firestore write test failed: ${err.message}`);
+      console.error('Firestore write test failed:', err);
       return false;
     }
-  }, [currentUser, addDebugLog]);
+  }, [currentUser]);
 
   const refreshData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    addDebugLog('🔄 Refreshing login activity data...');
     
     try {
       // First test basic Firestore write permissions
@@ -271,30 +207,109 @@ export default function LoginActivityTracker() {
       if (canWrite) {
         // Then ensure current user has an active session
         await ensureCurrentUserSession();
-      } else {
-        addDebugLog('⚠️ Skipping session creation due to write permission issues');
       }
       
       // Then load all data
       await Promise.all([loadLoginLogs(), loadActiveSessions()]);
-      addDebugLog('✅ Data refresh completed');
     } catch (err) {
-      addDebugLog('❌ Data refresh failed');
+      console.error('Data refresh failed:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [loadLoginLogs, loadActiveSessions, ensureCurrentUserSession, testFirestoreWrite, addDebugLog]);
+  }, [loadLoginLogs, loadActiveSessions, ensureCurrentUserSession, testFirestoreWrite]);
 
+  // Initial load
   useEffect(() => {
     if (isSuperAdmin) {
       refreshData();
     }
   }, [isSuperAdmin, refreshData]);
 
+  // Load social worker and RN emails to identify user types
+  useEffect(() => {
+    const loadUserTypeEmails = async () => {
+      try {
+        const db = getFirestore();
+        
+        // Load social workers
+        const swCollection = collection(db, 'socialWorkers');
+        const swSnapshot = await getDocs(swCollection);
+        const swEmails = new Set<string>();
+        swSnapshot.docs.forEach(doc => {
+          const data = doc.data();
+          if (data.email) {
+            swEmails.add(data.email.toLowerCase());
+          }
+        });
+        setSocialWorkerEmails(swEmails);
+        
+        // Load RNs - check if there's a registeredNurses collection or similar
+        // For now, we'll check for RN in email or a dedicated collection if it exists
+        // You can add RN identification logic here based on your system
+        const rnEmails = new Set<string>();
+        // TODO: Add RN identification logic (e.g., from a collection or email pattern)
+        setRnEmails(rnEmails);
+      } catch (err) {
+        console.error('Failed to load user type emails:', err);
+      }
+    };
+    
+    if (isSuperAdmin) {
+      loadUserTypeEmails();
+    }
+  }, [isSuperAdmin]);
+
+  const getUserType = (email?: string): 'staff' | 'socialWorker' | 'rn' | 'user' => {
+    if (!email) return 'user';
+    
+    const emailLower = email.toLowerCase();
+    
+    // Check if admin/staff
+    const adminEmails = [
+      'jason@carehomefinders.com',
+      'jason.bloome@connectionslos.com',
+      'jcbloome@gmail.com'
+    ];
+    
+    if (adminEmails.includes(emailLower)) {
+      return 'staff';
+    }
+    
+    // Check if social worker
+    if (socialWorkerEmails.has(emailLower)) {
+      return 'socialWorker';
+    }
+    
+    // Check if RN
+    if (rnEmails.has(emailLower)) {
+      return 'rn';
+    }
+    
+    return 'user';
+  };
+
+  const getUserTypeBadge = (userType: 'staff' | 'socialWorker' | 'rn' | 'user') => {
+    switch (userType) {
+      case 'staff':
+        return { label: 'Staff', className: 'bg-blue-500 text-white' };
+      case 'socialWorker':
+        return { label: 'SW', className: 'bg-purple-500 text-white' };
+      case 'rn':
+        return { label: 'RN', className: 'bg-green-500 text-white' };
+      case 'user':
+        return { label: 'User', className: 'bg-gray-500 text-white' };
+    }
+  };
+
   const formatTimestamp = (timestamp: any) => {
     if (!timestamp) return 'Unknown';
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleString();
+    return date.toLocaleString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      hour: 'numeric', 
+      minute: '2-digit' 
+    });
   };
 
   const getActionBadgeVariant = (action: string, success: boolean) => {
@@ -332,10 +347,14 @@ export default function LoginActivityTracker() {
     <div className="space-y-4">
       {/* Compact Header */}
       <div className="flex items-center justify-between">
-        <Button onClick={refreshData} disabled={isLoading} variant="outline" size="sm">
-          <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          {isLoading && (
+            <>
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              <span>Loading...</span>
+            </>
+          )}
+        </div>
         {error && (
           <div className="flex items-center gap-2 text-red-600 text-sm">
             <AlertTriangle className="h-4 w-4" />
@@ -344,8 +363,8 @@ export default function LoginActivityTracker() {
         )}
       </div>
 
-      {/* Three-Column Layout for Maximum Space Efficiency */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Two-Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Active Sessions - Compact */}
         <Card className="h-fit">
           <CardHeader className="pb-2">
@@ -407,63 +426,56 @@ export default function LoginActivityTracker() {
                 <p className="text-center text-muted-foreground py-4 text-xs">No login logs found</p>
               ) : (
                 <div className="space-y-1">
-                  {loginLogs.map((log) => (
-                    <div key={log.id} className="p-2 border rounded text-xs hover:bg-gray-50">
-                      <div className="flex items-center gap-2">
-                        <User className="h-3 w-3 text-blue-500 flex-shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1">
-                            <p className="font-medium truncate text-xs">
-                              {log.userName || log.displayName || log.userEmail || log.email || 'Unknown User'}
-                            </p>
-                            <Badge variant={getActionBadgeVariant(log.action || log.type || log.event || 'unknown', log.success !== false)} className="text-xs px-1 py-0 h-4">
-                              {log.action || log.type || log.event || 'unknown'}
+                  {loginLogs.map((log) => {
+                    const userEmail = log.userEmail || log.email || '';
+                    const userType = getUserType(userEmail);
+                    const userName = log.userName || log.displayName || userEmail || 'Unknown User';
+                    const action = log.action || log.type || log.event || 'unknown';
+                    const isSuccess = log.success !== false;
+                    const typeBadge = getUserTypeBadge(userType);
+                    
+                    return (
+                      <div 
+                        key={log.id} 
+                        className="p-2 border rounded text-xs hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <User className="h-3 w-3 text-gray-500 flex-shrink-0" />
+                          <div className="min-w-0 flex-1 flex items-center gap-2">
+                            <span className="font-medium truncate text-xs">
+                              {userName}
+                            </span>
+                            <Badge 
+                              className={`text-xs px-1.5 py-0 h-4 shrink-0 ${typeBadge.className}`}
+                            >
+                              {typeBadge.label}
                             </Badge>
+                            <Badge 
+                              variant={getActionBadgeVariant(action, isSuccess)} 
+                              className="text-xs px-1.5 py-0 h-4 shrink-0"
+                            >
+                              {action}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0">
+                              <Clock className="h-3 w-3" />
+                              {formatTimestamp(log.timestamp)}
+                            </span>
+                            {log.failureReason && (
+                              <span className="text-xs text-red-600 truncate ml-auto">
+                                {log.failureReason}
+                              </span>
+                            )}
                           </div>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {log.userEmail || log.email || 'No email'}
-                          </p>
-                          <p className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {formatTimestamp(log.timestamp)}
-                          </p>
-                          {log.failureReason && (
-                            <p className="text-xs text-red-600 truncate">Reason: {log.failureReason}</p>
-                          )}
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
           </CardContent>
         </Card>
 
-        {/* Debug Log - Compact */}
-        <Card className="h-fit">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <Monitor className="h-4 w-4" />
-              Debug Log
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="max-h-64 overflow-y-auto">
-              {debugLogs.length === 0 ? (
-                <p className="text-center text-muted-foreground py-4 text-xs">No debug logs yet</p>
-              ) : (
-                <div className="space-y-1">
-                  {debugLogs.slice(0, 15).map((log, index) => (
-                    <p key={index} className="text-xs font-mono text-muted-foreground leading-tight break-words">
-                      {log}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

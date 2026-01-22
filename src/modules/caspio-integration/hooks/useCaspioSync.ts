@@ -137,34 +137,34 @@ export function useCaspioSync(autoSync: boolean = false): UseCaspioSyncReturn {
     }
   }, [caspioService, autoSync, syncMembers]);
 
-  // Auto-sync on mount if enabled
-  useEffect(() => {
-    if (autoSync) {
-      refresh();
-    }
-  }, [autoSync, refresh]);
+  // Disabled auto-sync - only sync when user manually triggers
+  // useEffect(() => {
+  //   if (autoSync) {
+  //     refresh();
+  //   }
+  // }, [autoSync, refresh]);
 
-  // Health check interval
-  useEffect(() => {
-    if (!autoSync) return;
-
-    const healthCheckInterval = setInterval(async () => {
-      try {
-        const status = await caspioService.getSyncStatus();
-        setSyncStatus(status);
-        
-        // Auto-retry if sync is unhealthy
-        if (!status.isHealthy && status.nextRetry && new Date() >= status.nextRetry) {
-          console.log('🔄 Auto-retrying unhealthy sync...');
-          await syncMembers({ forceRefresh: true });
-        }
-      } catch (err) {
-        console.error('❌ Health check failed:', err);
-      }
-    }, 60000); // Check every minute
-
-    return () => clearInterval(healthCheckInterval);
-  }, [autoSync, caspioService, syncMembers]);
+  // Disabled health check interval - no automatic background syncing
+  // useEffect(() => {
+  //   if (!autoSync) return;
+  //
+  //   const healthCheckInterval = setInterval(async () => {
+  //     try {
+  //       const status = await caspioService.getSyncStatus();
+  //       setSyncStatus(status);
+  //       
+  //       // Auto-retry if sync is unhealthy
+  //       if (!status.isHealthy && status.nextRetry && new Date() >= status.nextRetry) {
+  //         console.log('🔄 Auto-retrying unhealthy sync...');
+  //         await syncMembers({ forceRefresh: true });
+  //       }
+  //     } catch (err) {
+  //       console.error('❌ Health check failed:', err);
+  //     }
+  //   }, 60000); // Check every minute
+  //
+  //   return () => clearInterval(healthCheckInterval);
+  // }, [autoSync, caspioService, syncMembers]);
 
   return {
     // Data

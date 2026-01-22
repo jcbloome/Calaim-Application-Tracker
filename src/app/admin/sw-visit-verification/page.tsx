@@ -78,12 +78,12 @@ export default function SWVisitVerificationPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  // Load RCFE facilities and members on component mount
-  useEffect(() => {
-    if (user?.email) {
-      loadRCFEFacilities();
-    }
-  }, [user]);
+  // Disabled automatic loading - only load when user manually triggers
+  // useEffect(() => {
+  //   if (user?.email) {
+  //     loadRCFEFacilities();
+  //   }
+  // }, [user]);
 
   // Load members when RCFE is selected
   useEffect(() => {
@@ -596,6 +596,23 @@ export default function SWVisitVerificationPage() {
           <CardContent className="p-8 text-center">
             <Loader2 className="h-8 w-8 mx-auto mb-4 animate-spin" />
             <p className="text-gray-600">Loading...</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Empty State */}
+      {!loading && rcfeFacilities.length === 0 && (
+        <Card className="border-dashed">
+          <CardContent className="p-8 text-center">
+            <MapPin className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-semibold mb-2">No RCFE Assignments</h3>
+            <p className="text-muted-foreground mb-4">
+              Click "Sync from Caspio" to load your RCFE facility assignments.
+            </p>
+            <Button onClick={loadRCFEFacilities} disabled={syncing}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+              Sync from Caspio
+            </Button>
           </CardContent>
         </Card>
       )}
