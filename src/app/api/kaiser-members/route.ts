@@ -164,22 +164,16 @@ export async function GET(request: NextRequest) {
         Kaiser_Tier_Level_Received: membersData.Result[0].Kaiser_Tier_Level_Received
       });
       
-      // Debug staff assignment fields specifically
-      console.log('🔍 STAFF ASSIGNMENT FIELDS DEBUG:', {
+      // Debug social worker assignment fields only
+      console.log('🔍 SOCIAL WORKER ASSIGNMENT FIELDS DEBUG:', {
         Social_Worker_Assigned: membersData.Result[0].Social_Worker_Assigned,
         Kaiser_User_Assignment: membersData.Result[0].Kaiser_User_Assignment,
-        kaiser_user_assignment: membersData.Result[0].kaiser_user_assignment,
-        SW_ID: membersData.Result[0].SW_ID,
-        Staff_Assigned: membersData.Result[0].Staff_Assigned,
         Kaiser_Next_Step_Date: membersData.Result[0].Kaiser_Next_Step_Date,
-        allStaffFields: Object.keys(membersData.Result[0]).filter(key => 
-          key.toLowerCase().includes('staff') || 
-          key.toLowerCase().includes('assign') ||
-          key.toLowerCase().includes('user') ||
+        socialWorkerFields: Object.keys(membersData.Result[0]).filter(key => 
+          key.toLowerCase().includes('kaiser_user') || 
+          key.toLowerCase().includes('social_worker') ||
           key.toLowerCase().includes('next') ||
-          key.toLowerCase().includes('date') ||
-          key.toLowerCase().includes('social') ||
-          key.toLowerCase().includes('worker')
+          key.toLowerCase().includes('date')
         )
       });
       
@@ -207,17 +201,7 @@ export async function GET(request: NextRequest) {
       SW_ID: member.SW_ID,
       Kaiser_User_Assignment: member.Kaiser_User_Assignment,
       Kaiser_Next_Step_Date: member.Kaiser_Next_Step_Date,
-        Staff_Assigned: member.Kaiser_User_Assignment || 
-                        member.Social_Worker_Assigned ||
-                        member.kaiser_user_assignment || 
-                        member['Kaiser User Assignment'] ||
-                        member.KaiserUserAssignment ||
-                        member.Kaiser_Staff_Assignment ||
-                        member.SW_ID || 
-                        member.Staff_Assigned || 
-                        member.Assigned_Staff ||
-                        member.AssignedStaff ||
-                        '',
+        // Only use social worker assignments, not staff assignments
         Social_Worker_Assigned: member.Kaiser_User_Assignment || 
                                member.Social_Worker_Assigned ||
                                '',
