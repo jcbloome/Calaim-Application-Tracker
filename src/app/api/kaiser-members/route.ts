@@ -164,17 +164,12 @@ export async function GET(request: NextRequest) {
         Kaiser_Tier_Level_Received: membersData.Result[0].Kaiser_Tier_Level_Received
       });
       
-      // Debug social worker assignment fields only
-      console.log('🔍 SOCIAL WORKER ASSIGNMENT FIELDS DEBUG:', {
-        Social_Worker_Assigned: membersData.Result[0].Social_Worker_Assigned,
-        Kaiser_User_Assignment: membersData.Result[0].Kaiser_User_Assignment,
+      // Debug social worker vs user/staff assignment fields
+      console.log('🔍 SOCIAL WORKER vs USER/STAFF ASSIGNMENT DEBUG:', {
+        Social_Worker_Assigned: membersData.Result[0].Social_Worker_Assigned, // Actual social workers
+        Kaiser_User_Assignment: membersData.Result[0].Kaiser_User_Assignment, // Users/staff
         Kaiser_Next_Step_Date: membersData.Result[0].Kaiser_Next_Step_Date,
-        socialWorkerFields: Object.keys(membersData.Result[0]).filter(key => 
-          key.toLowerCase().includes('kaiser_user') || 
-          key.toLowerCase().includes('social_worker') ||
-          key.toLowerCase().includes('next') ||
-          key.toLowerCase().includes('date')
-        )
+        note: 'Using Social_Worker_Assigned for social workers, Kaiser_User_Assignment contains users/staff'
       });
       
       // Show ALL field names to help identify the correct staff field
@@ -201,8 +196,8 @@ export async function GET(request: NextRequest) {
       SW_ID: member.SW_ID,
       Kaiser_User_Assignment: member.Kaiser_User_Assignment,
       Kaiser_Next_Step_Date: member.Kaiser_Next_Step_Date,
-        // Only use Kaiser_User_Assignment for social workers (ignore Social_Worker_Assigned which contains staff)
-        Social_Worker_Assigned: member.Kaiser_User_Assignment || '',
+        // Use Social_Worker_Assigned field for actual social workers (Kaiser_User_Assignment contains users/staff)
+        Social_Worker_Assigned: member.Social_Worker_Assigned || '',
       RCFE_Name: member.RCFE_Name,
       pathway: member.Pathway || member.CalAIM_Pathway || 'Kaiser',
       Next_Step_Due_Date: member.Next_Step_Due_Date || member.next_steps_date || '',
