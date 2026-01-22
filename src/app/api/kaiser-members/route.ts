@@ -201,10 +201,8 @@ export async function GET(request: NextRequest) {
       SW_ID: member.SW_ID,
       Kaiser_User_Assignment: member.Kaiser_User_Assignment,
       Kaiser_Next_Step_Date: member.Kaiser_Next_Step_Date,
-        // Only use social worker assignments, not staff assignments
-        Social_Worker_Assigned: member.Kaiser_User_Assignment || 
-                               member.Social_Worker_Assigned ||
-                               '',
+        // Only use Kaiser_User_Assignment for social workers (ignore Social_Worker_Assigned which contains staff)
+        Social_Worker_Assigned: member.Kaiser_User_Assignment || '',
       RCFE_Name: member.RCFE_Name,
       pathway: member.Pathway || member.CalAIM_Pathway || 'Kaiser',
       Next_Step_Due_Date: member.Next_Step_Due_Date || member.next_steps_date || '',
