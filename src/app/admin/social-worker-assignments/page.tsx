@@ -85,6 +85,7 @@ export default function SocialWorkerAssignmentsPage() {
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [selectedSocialWorkerMembers, setSelectedSocialWorkerMembers] = useState<any[]>([]);
   const [selectedSocialWorkerName, setSelectedSocialWorkerName] = useState('');
+  const [showRcfeSuggestions, setShowRcfeSuggestions] = useState(false);
 
   const { toast } = useToast();
 
@@ -241,6 +242,20 @@ export default function SocialWorkerAssignmentsPage() {
   const unassignedMembers = useMemo(() => {
     return rcfeMembers.filter(member => !member.assignedSocialWorker);
   }, [rcfeMembers]);
+
+  // Get unique RCFE names for autocomplete
+  const uniqueRcfeNames = useMemo(() => {
+    const names = rcfeMembers.map(member => member.rcfeName).filter(Boolean);
+    return [...new Set(names)].sort();
+  }, [rcfeMembers]);
+
+  // Filter RCFE suggestions based on search term
+  const filteredRcfeSuggestions = useMemo(() => {
+    if (!rcfeSearchTerm) return [];
+    return uniqueRcfeNames.filter(name => 
+      name.toLowerCase().includes(rcfeSearchTerm.toLowerCase())
+    ).slice(0, 10); // Limit to 10 suggestions
+  }, [uniqueRcfeNames, rcfeSearchTerm]);
 
   // Group members by social worker for card display
   const socialWorkerGroups = useMemo(() => {
@@ -540,20 +555,6 @@ export default function SocialWorkerAssignmentsPage() {
             )}
             {syncing ? 'Syncing...' : 'Sync from Caspio'}
           </Button>
-          <Button 
-            onClick={() => {
-              toast({
-                title: "Read-Only Mode",
-                description: "Assignment creation is disabled. This page only displays data from Caspio.",
-                variant: "destructive"
-              });
-            }} 
-            variant="outline"
-            disabled
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            New Assignment (Read-Only)
-          </Button>
         </div>
       </div>
 
@@ -568,14 +569,35 @@ export default function SocialWorkerAssignmentsPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <div>
+        <div className="relative">
           <Label htmlFor="rcfe-search">Filter by RCFE Name</Label>
           <Input
             id="rcfe-search"
             placeholder="Search RCFE facilities..."
             value={rcfeSearchTerm}
-            onChange={(e) => setRcfeSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setRcfeSearchTerm(e.target.value);
+              setShowRcfeSuggestions(e.target.value.length > 0);
+            }}
+            onFocus={() => setShowRcfeSuggestions(rcfeSearchTerm.length > 0)}
+            onBlur={() => setTimeout(() => setShowRcfeSuggestions(false), 200)}
           />
+          {showRcfeSuggestions && filteredRcfeSuggestions.length > 0 && (
+            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+              {filteredRcfeSuggestions.map((rcfeName, index) => (
+                <div
+                  key={index}
+                  className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                  onClick={() => {
+                    setRcfeSearchTerm(rcfeName);
+                    setShowRcfeSuggestions(false);
+                  }}
+                >
+                  {rcfeName}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div>
           <Label htmlFor="social-worker-search">Filter by Social Worker</Label>
