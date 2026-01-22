@@ -156,9 +156,12 @@ export default function AdminStatisticsPage() {
       }
 
       if (memberResult.success) {
+        console.log('✅ Member data loaded successfully:', memberResult.data);
+        console.log('📊 Total members from API:', memberResult.data?.totalMembers);
         setMemberData(memberResult.data);
       } else {
-        console.error('Member data error:', memberResult.error);
+        console.error('❌ Member data error:', memberResult.error);
+        console.log('❌ Full member result:', memberResult);
       }
 
     } catch (error: any) {
@@ -184,6 +187,14 @@ export default function AdminStatisticsPage() {
     const totalRNs = staffKeys.reduce((sum, key) => sum + (staffData[key]?.rns?.length || 0), 0);
     const totalRCFEs = rcfeKeys.reduce((sum, key) => sum + (rcfeData[key]?.facilities?.length || 0), 0);
     const totalAuthorizedMembers = memberData?.totalMembers || 0;
+    
+    console.log('📊 STATISTICS CALCULATION DEBUG:', {
+      memberData: memberData,
+      totalMembers: memberData?.totalMembers,
+      totalAuthorizedMembers: totalAuthorizedMembers,
+      staffKeys: staffKeys.length,
+      rcfeKeys: rcfeKeys.length
+    });
     
     return {
       totalSocialWorkers,
