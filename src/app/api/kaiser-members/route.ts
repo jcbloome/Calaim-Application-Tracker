@@ -106,69 +106,76 @@ export async function GET(request: NextRequest) {
     // Fetch Kaiser members from CalAIM_tbl_Members where CalAIM_MCO = 'Kaiser'
     console.log('📊 Fetching Kaiser members...');
     
-    // Try without limit first to see total count
-    const countUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=1`;
-    console.log('🔗 Count Check URL:', countUrl);
     
-    const countResponse = await fetch(countUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    if (countResponse.ok) {
-      const countData = await countResponse.json();
-      console.log('📊 TOTAL RECORDS CHECK:', {
-        sampleCount: countData.Result?.length || 0,
-        pageInfo: countData.PageInfo,
-        responseStructure: Object.keys(countData)
-      });
-    }
-    
-    // Now fetch with high limit
-    const queryUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=10000`;
-    console.log('🔗 Main Query URL:', queryUrl);
-    
-    const membersResponse = await fetch(queryUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    // Fetch ALL records with pagination support
+    console.log('🔄 Starting paginated fetch to get ALL records...');
+    let allMembers: any[] = [];
+    let pageNumber = 1;
+    const pageSize = 1000; // Caspio's typical max per page
+    let hasMorePages = true;
 
-    if (!membersResponse.ok) {
-      const errorText = await membersResponse.text();
-      console.error('❌ Failed to fetch Kaiser members:', {
-        status: membersResponse.status,
-        statusText: membersResponse.statusText,
-        error: errorText
+    while (hasMorePages && pageNumber <= 10) { // Safety limit of 10 pages
+      const queryUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=${pageSize}&q.pageNumber=${pageNumber}`;
+      console.log(`🔗 Page ${pageNumber} Query URL:`, queryUrl);
+      
+      const membersResponse = await fetch(queryUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
       });
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Failed to fetch Kaiser members from Caspio',
-        debug: {
+
+      if (!membersResponse.ok) {
+        const errorText = await membersResponse.text();
+        console.error(`❌ Failed to fetch Kaiser members page ${pageNumber}:`, {
           status: membersResponse.status,
           statusText: membersResponse.statusText,
           error: errorText
+        });
+        break; // Stop pagination on error
+      }
+
+      const pageData = await membersResponse.json();
+      console.log(`📄 Page ${pageNumber}: ${pageData.Result?.length || 0} records`);
+      
+      if (pageData.Result && pageData.Result.length > 0) {
+        allMembers = allMembers.concat(pageData.Result);
+        
+        // Check if we have more pages
+        if (pageData.Result.length < pageSize) {
+          hasMorePages = false; // Last page
+        } else {
+          pageNumber++;
         }
-      }, { status: 500 });
+      } else {
+        hasMorePages = false; // No more data
+      }
     }
 
-    const membersData = await membersResponse.json();
-    console.log(`✅ Successfully fetched ${membersData.Result?.length || 0} Kaiser members`);
+    console.log(`✅ PAGINATION COMPLETE: Fetched ${allMembers.length} total Kaiser members across ${pageNumber} pages`);
+    
+    // Create a combined response object
+    const membersData = {
+      Result: allMembers,
+      TotalRecords: allMembers.length,
+      PaginationInfo: {
+        totalPages: pageNumber,
+        recordsPerPage: pageSize,
+        totalRecords: allMembers.length
+      }
+    };
+    console.log(`✅ Successfully fetched ${membersData.Result?.length || 0} Kaiser members via pagination`);
     
     // COMPREHENSIVE API RESPONSE DEBUG
-    console.log('🔍 FULL API RESPONSE STRUCTURE:', {
-      hasResult: !!membersData.Result,
-      resultLength: membersData.Result?.length || 0,
-      hasPageInfo: !!membersData.PageInfo,
-      pageInfo: membersData.PageInfo,
-      responseKeys: Object.keys(membersData),
-      firstRecordKeys: membersData.Result?.[0] ? Object.keys(membersData.Result[0]) : []
-    });
+    console.log('🔍 FULL API RESPONSE STRUCTURE:');
+    console.log('  - hasResult:', !!membersData.Result);
+    console.log('  - resultLength:', membersData.Result?.length || 0);
+    console.log('  - hasPageInfo:', !!membersData.PageInfo);
+    console.log('  - responseKeys:', Object.keys(membersData));
+    if (membersData.Result?.[0]) {
+      console.log('  - firstRecordKeys:', Object.keys(membersData.Result[0]));
+    }
     
     // Check if we might be hitting the API limit
     if (membersData.Result && membersData.Result.length >= 9000) {
@@ -181,11 +188,10 @@ export async function GET(request: NextRequest) {
     }
     
     // Count total records vs limit requested
-    console.log('📊 API LIMITS CHECK:', {
-      requested: 10000,
-      received: membersData.Result?.length || 0,
-      percentage: ((membersData.Result?.length || 0) / 10000 * 100).toFixed(1) + '%'
-    });
+    console.log('📊 API LIMITS CHECK:');
+    console.log('  - requested: 10000');
+    console.log('  - received:', membersData.Result?.length || 0);
+    console.log('  - percentage:', ((membersData.Result?.length || 0) / 10000 * 100).toFixed(1) + '%');
 
     // Log the first member to see available fields
     if (membersData.Result && membersData.Result.length > 0) {
