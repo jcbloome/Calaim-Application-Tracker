@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
     console.log('🔄 Starting paginated fetch to get ALL CalAIM members...');
     let allMembers: any[] = [];
     let pageNumber = 1;
-    const pageSize = 1000; // Increased from 100 to 1000 like kaiser-members API
+    const pageSize = 1000; // Same as kaiser-members API
     let hasMorePages = true;
 
     while (hasMorePages && pageNumber <= 10) { // Safety limit of 10 pages = 10,000 records
@@ -95,21 +95,45 @@ export async function GET(request: NextRequest) {
       const pageData = await membersResponse.json();
       console.log(`📄 Page ${pageNumber}: ${pageData.Result?.length || 0} records`);
       
+      // Add comprehensive debugging
+      if (pageData.Result) {
+        console.log(`📊 Page ${pageNumber} - Raw record count: ${pageData.Result.length}`);
+        if (pageData.Result.length > 0) {
+          // Show status breakdown for this page
+          const pageStatuses = pageData.Result.reduce((acc: any, member: any) => {
+            const status = member.CalAIM_Status || 'Unknown';
+            acc[status] = (acc[status] || 0) + 1;
+            return acc;
+          }, {});
+          console.log(`📊 Page ${pageNumber} - Status breakdown:`, pageStatuses);
+        }
+      }
+      
       if (pageData.Result && pageData.Result.length > 0) {
         allMembers = allMembers.concat(pageData.Result);
         
         // Check if we have more pages
         if (pageData.Result.length < pageSize) {
           hasMorePages = false; // Last page
+          console.log(`📋 Reached last page - got ${pageData.Result.length} records (less than pageSize ${pageSize})`);
         } else {
           pageNumber++;
         }
       } else {
         hasMorePages = false; // No more data
+        console.log(`📋 No more data on page ${pageNumber}`);
       }
     }
 
     console.log(`✅ PAGINATION COMPLETE: Fetched ${allMembers.length} total CalAIM members across ${pageNumber} pages`);
+    
+    // Show total status breakdown before filtering
+    const totalStatuses = allMembers.reduce((acc: any, member: any) => {
+      const status = member.CalAIM_Status || 'Unknown';
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {});
+    console.log('📊 TOTAL STATUS BREAKDOWN (before filtering):', totalStatuses);
     
     // Debug: Show available fields in the first record
     if (allMembers.length > 0) {
