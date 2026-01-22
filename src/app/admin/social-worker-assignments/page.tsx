@@ -292,16 +292,39 @@ export default function SocialWorkerAssignmentsPage() {
       const data = await response.json();
       console.log('📊 Synced data from Caspio:', data);
       
-      // Debug: Log a few sample members to see the staff assignment fields
+      // Debug: Log ALL possible staff/social worker fields
       if (data.members && data.members.length > 0) {
-        console.log('🔍 Sample member data for staff assignments:');
-        data.members.slice(0, 3).forEach((member: any, index: number) => {
-          console.log(`Member ${index + 1}:`, {
+        console.log('🔍 ALL STAFF/SOCIAL WORKER FIELDS DEBUG:');
+        const sampleMember = data.members[0];
+        
+        // Find all fields that might contain staff or social worker info
+        const allFields = Object.keys(sampleMember);
+        const staffRelatedFields = allFields.filter(field => 
+          field.toLowerCase().includes('staff') || 
+          field.toLowerCase().includes('social') ||
+          field.toLowerCase().includes('worker') ||
+          field.toLowerCase().includes('assign') ||
+          field.toLowerCase().includes('user') ||
+          field.toLowerCase().includes('sw_') ||
+          field.toLowerCase().includes('kaiser')
+        );
+        
+        console.log('📋 All Staff/Social Worker Related Fields:', staffRelatedFields);
+        
+        // Show values for first 5 members
+        data.members.slice(0, 5).forEach((member: any, index: number) => {
+          const memberData: any = {
             name: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
-            Staff_Assigned: member.Staff_Assigned,
-            Kaiser_User_Assignment: member.Kaiser_User_Assignment,
+            CalAIM_Status: member.CalAIM_Status,
             RCFE_Name: member.RCFE_Name
+          };
+          
+          // Add all staff-related field values
+          staffRelatedFields.forEach(field => {
+            memberData[field] = member[field];
           });
+          
+          console.log(`Member ${index + 1}:`, memberData);
         });
       }
       
@@ -341,15 +364,12 @@ export default function SocialWorkerAssignmentsPage() {
           careLevel: member.Care_Level || 'Medium'
         }));
 
-      // Transform social worker assignments - include both assigned and unassigned authorized members
+      // Transform social worker assignments - show all members for debugging
       const staffAssignments = data.members
         .filter((member: any) => {
-          // Include if they have a Social_Worker_Assigned value OR are authorized but unassigned
-          const hasSocialWorker = member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '';
-          const isAuthorizedUnassigned = member.CalAIM_Status === 'Authorized' && !hasSocialWorker;
+          // For now, show all members with RCFE to see what data we have
           const hasRCFE = member.RCFE_Name && member.RCFE_Name.trim() !== '';
-          
-          return hasRCFE && (hasSocialWorker || isAuthorizedUnassigned);
+          return hasRCFE;
         })
         .map((member: any) => {
           // Use Social_Worker_Assigned field, or "Unassigned" for authorized members without assignment
