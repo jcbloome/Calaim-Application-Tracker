@@ -348,18 +348,29 @@ export default function SocialWorkerAssignmentsPage() {
         
         console.log(`📊 Summary: ${assigned.length} assigned, ${unassigned.length} unassigned (out of ${authorizedWithRCFE.length} total authorized with RCFE)`);
         
-        // Show first 5 members with their Social_Worker_Assigned values
+        // Show first 5 members with their field values
+        console.log('🔍 SOCIAL WORKER PAGE - First 5 members data:');
         data.members.slice(0, 5).forEach((member: any, index: number) => {
           console.log(`Member ${index + 1}:`, {
             Senior_Last_First_ID: member.Senior_Last_First_ID,
+            Senior_First: member.Senior_First,
+            Senior_Last: member.Senior_Last,
             memberName: member.memberName,
+            memberFirstName: member.memberFirstName,
+            memberLastName: member.memberLastName,
             RCFE_Name: member.RCFE_Name,
+            RCFE_Address: member.RCFE_Address,
             RCFE_City_RCFE_Zip: member.RCFE_City_RCFE_Zip,
             CalAIM_Status: member.CalAIM_Status,
             Social_Worker_Assigned: member.Social_Worker_Assigned,
             hasAssignment: !!(member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '')
           });
         });
+        
+        // Show all available fields from first member
+        if (data.members.length > 0) {
+          console.log('🔍 ALL FIELDS in first member:', Object.keys(data.members[0]).sort());
+        }
         
         // Show unique social workers (from authorized members with RCFE)
         const uniqueSocialWorkers = [...new Set(
@@ -380,7 +391,7 @@ export default function SocialWorkerAssignmentsPage() {
         })
         .map((member: any, index: number) => ({
           id: `rcfe-member-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}-${member.client_ID2 || 'unknown'}`,
-          name: member.Senior_Last_First_ID || member.memberName || `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
+          name: member.Senior_Last_First_ID || member.memberName || `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
           rcfeName: member.RCFE_Name || 'Unknown RCFE',
           rcfeAddress: member.RCFE_Address || 'Address not available',
           county: member.Member_County || 'Los Angeles',

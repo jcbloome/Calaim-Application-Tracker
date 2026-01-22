@@ -195,10 +195,11 @@ export async function GET(request: NextRequest) {
       id: member.Client_ID2 || `member-${Math.random().toString(36).substring(7)}`,
       Client_ID2: member.Client_ID2,
       client_ID2: member.Client_ID2, // Duplicate for compatibility
-      // Use Senior_Last_First_ID as the primary name field
+      // Use the correct field names you specified
       memberName: member.Senior_Last_First_ID || `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
       memberFirstName: member.Senior_First || member.memberFirstName || member.Member_First_Name || member.FirstName || 'Unknown',
       memberLastName: member.Senior_Last || member.memberLastName || member.Member_Last_Name || member.LastName || 'Member',
+      Senior_Last_First_ID: member.Senior_Last_First_ID,
       memberCounty: member.memberCounty || member.County || member.Member_County || 'Unknown',
       memberMrn: member.memberMrn || member.Member_MRN || '',
       memberPhone: member.memberPhone || member.Member_Phone || '',
