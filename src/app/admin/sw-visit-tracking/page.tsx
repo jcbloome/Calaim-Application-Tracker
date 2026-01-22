@@ -56,7 +56,7 @@ interface SignOffRecord {
   flaggedVisits: number;
 }
 
-export default function SWVisitTrackingPage() {
+export default function SWVisitTrackingPage(): React.JSX.Element {
   const [visitRecords, setVisitRecords] = useState<VisitRecord[]>([]);
   const [signOffRecords, setSignOffRecords] = useState<SignOffRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -509,7 +509,7 @@ export default function SWVisitTrackingPage() {
                   <Badge className="bg-yellow-600">{visitRecords.filter(v => v.totalScore >= 40 && v.totalScore < 50).length}</Badge>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span>Needs Attention (<40)</span>
+                  <span>Needs Attention (&lt;40)</span>
                   <Badge variant="destructive">{visitRecords.filter(v => v.totalScore < 40).length}</Badge>
                 </div>
               </div>
