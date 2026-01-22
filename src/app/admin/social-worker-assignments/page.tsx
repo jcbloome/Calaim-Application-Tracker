@@ -279,18 +279,29 @@ export default function SocialWorkerAssignmentsPage() {
   };
 
   const syncFromCaspio = async () => {
+    console.log('🔄 Starting sync from Caspio...');
     setSyncing(true);
     try {
       console.log('📊 Syncing social worker assignments from Caspio (READ ONLY)');
       
       // Fetch data from Caspio API
+      console.log('📡 Fetching from /api/kaiser-members...');
       const response = await fetch('/api/kaiser-members');
+      console.log('📡 Response status:', response.status, response.statusText);
+      
       if (!response.ok) {
-        throw new Error('Failed to fetch data from Caspio');
+        const errorText = await response.text();
+        console.error('❌ API Response Error:', errorText);
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
       }
       
       const data = await response.json();
       console.log('📊 Synced data from Caspio:', data);
+      
+      if (!data.members || !Array.isArray(data.members)) {
+        console.error('❌ Invalid data structure:', data);
+        throw new Error('Invalid data structure received from API');
+      }
       
       // Debug: Log Social_Worker_Assigned field only
       if (data.members && data.members.length > 0) {

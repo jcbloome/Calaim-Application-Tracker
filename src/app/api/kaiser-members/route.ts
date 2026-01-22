@@ -207,17 +207,20 @@ export async function GET(request: NextRequest) {
       SW_ID: member.SW_ID,
       Kaiser_User_Assignment: member.Kaiser_User_Assignment,
       Kaiser_Next_Step_Date: member.Kaiser_Next_Step_Date,
-      Staff_Assigned: member.Social_Worker_Assigned || 
-                     member.Kaiser_User_Assignment || 
-                     member.kaiser_user_assignment || 
-                     member['Kaiser User Assignment'] ||
-                     member.KaiserUserAssignment ||
-                     member.Kaiser_Staff_Assignment ||
-                     member.SW_ID || 
-                     member.Staff_Assigned || 
-                     member.Assigned_Staff ||
-                     member.AssignedStaff ||
-                     '',
+        Staff_Assigned: member.Kaiser_User_Assignment || 
+                        member.Social_Worker_Assigned ||
+                        member.kaiser_user_assignment || 
+                        member['Kaiser User Assignment'] ||
+                        member.KaiserUserAssignment ||
+                        member.Kaiser_Staff_Assignment ||
+                        member.SW_ID || 
+                        member.Staff_Assigned || 
+                        member.Assigned_Staff ||
+                        member.AssignedStaff ||
+                        '',
+        Social_Worker_Assigned: member.Kaiser_User_Assignment || 
+                               member.Social_Worker_Assigned ||
+                               '',
       RCFE_Name: member.RCFE_Name,
       pathway: member.Pathway || member.CalAIM_Pathway || 'Kaiser',
       Next_Step_Due_Date: member.Next_Step_Due_Date || member.next_steps_date || '',
