@@ -428,6 +428,20 @@ export default function SocialWorkerAssignmentsPage() {
         console.log(`📊 Summary: ${assigned.length} assigned, ${unassigned.length} unassigned (out of ${authorizedMembers.length} total authorized)`);
         console.log(`📊 RCFE Status: ${withRCFE.length} with RCFE, ${withoutRCFE.length} without RCFE`);
         
+        // DEBUG: Check Billy's raw data from API
+        const billyRawMembers = data.members.filter((m: any) => 
+          m.Social_Worker_Assigned && m.Social_Worker_Assigned.includes('Billy')
+        );
+        console.log('🔍 BILLY RAW API DATA:', {
+          billyRawCount: billyRawMembers.length,
+          sampleBillyRaw: billyRawMembers.slice(0, 3).map(m => ({
+            Senior_Last_First_ID: m.Senior_Last_First_ID,
+            Social_Worker_Assigned: m.Social_Worker_Assigned,
+            CalAIM_Status: m.CalAIM_Status,
+            RCFE_Name: m.RCFE_Name
+          }))
+        });
+        
         // Show first 5 members with their field values
         console.log('🔍 SOCIAL WORKER PAGE - First 5 members data:');
         data.members.slice(0, 5).forEach((member: any, index: number) => {
