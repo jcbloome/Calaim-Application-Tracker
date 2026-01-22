@@ -249,12 +249,16 @@ export default function SocialWorkerAssignmentsPage() {
     return [...new Set(names)].sort();
   }, [rcfeMembers]);
 
-  // Filter RCFE suggestions based on search term
+  // Filter RCFE suggestions based on search term (match from beginning of words only)
   const filteredRcfeSuggestions = useMemo(() => {
     if (!rcfeSearchTerm) return [];
-    return uniqueRcfeNames.filter(name => 
-      name.toLowerCase().includes(rcfeSearchTerm.toLowerCase())
-    ).slice(0, 10); // Limit to 10 suggestions
+    const searchTerm = rcfeSearchTerm.toLowerCase();
+    return uniqueRcfeNames.filter(name => {
+      const nameLower = name.toLowerCase();
+      // Match from beginning of the name OR beginning of any word
+      return nameLower.startsWith(searchTerm) || 
+             nameLower.split(' ').some(word => word.startsWith(searchTerm));
+    }).slice(0, 10); // Limit to 10 suggestions
   }, [uniqueRcfeNames, rcfeSearchTerm]);
 
   // Group members by social worker for card display
