@@ -263,6 +263,15 @@ export default function SocialWorkerAssignmentsPage() {
 
   // Group members by social worker for card display
   const socialWorkerGroups = useMemo(() => {
+    console.log('🔍 SOCIAL WORKER GROUPING DEBUG:', {
+      totalRcfeMembers: rcfeMembers.length,
+      membersWithSW: rcfeMembers.filter(m => m.assignedSocialWorker).length,
+      sampleMembers: rcfeMembers.slice(0, 3).map(m => ({
+        name: m.name,
+        assignedSocialWorker: m.assignedSocialWorker
+      }))
+    });
+    
     const groups: Record<string, any[]> = {};
     
     // Group RCFE members by their assigned social worker
@@ -274,6 +283,15 @@ export default function SocialWorkerAssignmentsPage() {
         }
         groups[socialWorkerName].push(member);
       }
+    });
+
+    console.log('🔍 GROUPED SOCIAL WORKERS:', {
+      groupCount: Object.keys(groups).length,
+      groupNames: Object.keys(groups),
+      groupSizes: Object.entries(groups).map(([name, members]) => ({
+        name,
+        count: members.length
+      }))
     });
 
     return Object.entries(groups)
