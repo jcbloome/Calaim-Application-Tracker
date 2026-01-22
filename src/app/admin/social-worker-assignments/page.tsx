@@ -732,7 +732,9 @@ export default function SocialWorkerAssignmentsPage() {
             </CardHeader>
             <CardContent className="overflow-y-auto">
               <div className="space-y-3">
-                {selectedSocialWorkerMembers.map((member, index) => (
+                {selectedSocialWorkerMembers
+                  .sort((a, b) => (a.rcfeName || '').localeCompare(b.rcfeName || ''))
+                  .map((member, index) => (
                   <div key={index} className="p-3 bg-gray-50 rounded border">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
