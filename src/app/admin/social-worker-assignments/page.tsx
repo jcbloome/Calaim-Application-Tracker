@@ -292,63 +292,41 @@ export default function SocialWorkerAssignmentsPage() {
       const data = await response.json();
       console.log('📊 Synced data from Caspio:', data);
       
-      // Debug: Log ALL possible staff/social worker fields
+      // Debug: Log Social_Worker_Assigned field only
       if (data.members && data.members.length > 0) {
-        console.log('🔍 ALL STAFF/SOCIAL WORKER FIELDS DEBUG:');
-        const sampleMember = data.members[0];
+        console.log('🔍 Social Worker Assignment Debug (Social_Worker_Assigned field only):');
         
-        // Find all fields that might contain staff or social worker info
-        const allFields = Object.keys(sampleMember);
-        const staffRelatedFields = allFields.filter(field => 
-          field.toLowerCase().includes('staff') || 
-          field.toLowerCase().includes('social') ||
-          field.toLowerCase().includes('worker') ||
-          field.toLowerCase().includes('assign') ||
-          field.toLowerCase().includes('user') ||
-          field.toLowerCase().includes('sw_') ||
-          field.toLowerCase().includes('kaiser')
-        );
+        // Count assigned vs unassigned
+        const assigned = data.members.filter((m: any) => m.Social_Worker_Assigned && m.Social_Worker_Assigned.trim() !== '');
+        const unassigned = data.members.filter((m: any) => !m.Social_Worker_Assigned || m.Social_Worker_Assigned.trim() === '');
         
-        console.log('📋 All Staff/Social Worker Related Fields:', staffRelatedFields);
+        console.log(`📊 Summary: ${assigned.length} assigned, ${unassigned.length} unassigned`);
         
-        // Show values for first 5 members
+        // Show first 5 members with their Social_Worker_Assigned values
         data.members.slice(0, 5).forEach((member: any, index: number) => {
-          const memberData: any = {
+          console.log(`Member ${index + 1}:`, {
             name: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
-            CalAIM_Status: member.CalAIM_Status,
-            RCFE_Name: member.RCFE_Name
-          };
-          
-          // Add all staff-related field values
-          staffRelatedFields.forEach(field => {
-            memberData[field] = member[field];
-          });
-          
-          console.log(`Member ${index + 1}:`, memberData);
-        });
-      }
-      
-      // Transform Caspio data to our format - include both assigned and unassigned authorized members
-      const transformedMembers: RCFEMember[] = data.members
-        .filter((member: any) => {
-          // Include members with RCFE and either:
-          // 1. Have a social worker assigned, OR
-          // 2. Are authorized but don't have a social worker assigned (need assignment)
-          const hasRCFE = member.RCFE_Name && member.RCFE_Name.trim() !== '';
-          const isAuthorized = member.CalAIM_Status === 'Authorized';
-          const hasSocialWorker = member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '';
-          
-          console.log('🔍 Member Filter Debug:', {
-            name: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
-            hasRCFE,
-            isAuthorized,
-            hasSocialWorker,
             CalAIM_Status: member.CalAIM_Status,
             Social_Worker_Assigned: member.Social_Worker_Assigned,
-            shouldInclude: hasRCFE && (hasSocialWorker || isAuthorized)
+            hasAssignment: !!(member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '')
           });
-          
-          return hasRCFE && (hasSocialWorker || isAuthorized);
+        });
+        
+        // Show unique social workers
+        const uniqueSocialWorkers = [...new Set(
+          data.members
+            .filter((m: any) => m.Social_Worker_Assigned && m.Social_Worker_Assigned.trim() !== '')
+            .map((m: any) => m.Social_Worker_Assigned)
+        )];
+        console.log('👥 Unique Social Workers found:', uniqueSocialWorkers);
+      }
+      
+      // Transform authorized RCFE members (both assigned and unassigned)
+      const transformedMembers: RCFEMember[] = data.members
+        .filter((member: any) => {
+          const hasRCFE = member.RCFE_Name && member.RCFE_Name.trim() !== '';
+          const isAuthorized = member.CalAIM_Status === 'Authorized';
+          return hasRCFE && isAuthorized;
         })
         .map((member: any, index: number) => ({
           id: `rcfe-member-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}-${member.client_ID2 || 'unknown'}`,
@@ -364,12 +342,13 @@ export default function SocialWorkerAssignmentsPage() {
           careLevel: member.Care_Level || 'Medium'
         }));
 
-      // Transform social worker assignments - show all members for debugging
+      // Transform social worker assignments - include assigned and unassigned authorized members
       const staffAssignments = data.members
         .filter((member: any) => {
-          // For now, show all members with RCFE to see what data we have
           const hasRCFE = member.RCFE_Name && member.RCFE_Name.trim() !== '';
-          return hasRCFE;
+          const isAuthorized = member.CalAIM_Status === 'Authorized';
+          // Show all authorized members with RCFE (both assigned and unassigned)
+          return hasRCFE && isAuthorized;
         })
         .map((member: any) => {
           // Use Social_Worker_Assigned field, or "Unassigned" for authorized members without assignment
