@@ -78,11 +78,12 @@ export default function SocialWorkerAssignmentsPage() {
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCounty, setSelectedCounty] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [activeTab, setActiveTab] = useState('assignments');
-  const [showAssignModal, setShowAssignModal] = useState(false);
-  const [selectedMember, setSelectedMember] = useState<RCFEMember | null>(null);
+  const [rcfeSearchTerm, setRcfeSearchTerm] = useState('');
+  const [socialWorkerSearchTerm, setSocialWorkerSearchTerm] = useState('');
+  const [selectedSocialWorker, setSelectedSocialWorker] = useState('');
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [selectedSocialWorkerMembers, setSelectedSocialWorkerMembers] = useState<any[]>([]);
+  const [selectedSocialWorkerName, setSelectedSocialWorkerName] = useState('');
 
   const { toast } = useToast();
 
@@ -259,6 +260,54 @@ export default function SocialWorkerAssignmentsPage() {
   const unassignedMembers = useMemo(() => {
     return rcfeMembers.filter(member => !member.assignedSocialWorker);
   }, [rcfeMembers]);
+
+  // Group members by social worker for card display
+  const socialWorkerGroups = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    
+    assignments.forEach(assignment => {
+      const socialWorkerName = assignment.socialWorkerName || 'Unassigned';
+      if (!groups[socialWorkerName]) {
+        groups[socialWorkerName] = [];
+      }
+      groups[socialWorkerName].push(assignment);
+    });
+
+    return Object.entries(groups)
+      .filter(([name]) => name !== 'Unassigned') // Exclude unassigned for cards
+      .map(([name, members]) => ({
+        name,
+        memberCount: members.length,
+        members
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [assignments]);
+
+  // Filter social worker groups based on search terms
+  const filteredSocialWorkerGroups = useMemo(() => {
+    return socialWorkerGroups.filter(group => {
+      const matchesSocialWorker = socialWorkerSearchTerm === '' || 
+        group.name.toLowerCase().includes(socialWorkerSearchTerm.toLowerCase());
+      
+      const matchesMembers = searchTerm === '' || 
+        group.members.some(member => 
+          member.memberName.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+        
+      const matchesRCFE = rcfeSearchTerm === '' ||
+        group.members.some(member =>
+          member.rcfeName.toLowerCase().includes(rcfeSearchTerm.toLowerCase())
+        );
+      
+      return matchesSocialWorker && (searchTerm === '' || matchesMembers) && (rcfeSearchTerm === '' || matchesRCFE);
+    });
+  }, [socialWorkerGroups, socialWorkerSearchTerm, searchTerm, rcfeSearchTerm]);
+
+  const handleSocialWorkerCardClick = (socialWorkerName: string, members: any[]) => {
+    setSelectedSocialWorkerName(socialWorkerName);
+    setSelectedSocialWorkerMembers(members);
+    setShowMembersModal(true);
+  };
 
   const handleAssignSocialWorker = (memberId: string, socialWorkerId: string) => {
     // READ-ONLY MODE: Assignments are disabled to prevent writes to Caspio
@@ -476,6 +525,37 @@ export default function SocialWorkerAssignmentsPage() {
         </div>
       </div>
 
+      {/* Filter Controls */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <Label htmlFor="member-search">Filter by Member Name</Label>
+          <Input
+            id="member-search"
+            placeholder="Search members..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="rcfe-search">Filter by RCFE Name</Label>
+          <Input
+            id="rcfe-search"
+            placeholder="Search RCFE facilities..."
+            value={rcfeSearchTerm}
+            onChange={(e) => setRcfeSearchTerm(e.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="social-worker-search">Filter by Social Worker</Label>
+          <Input
+            id="social-worker-search"
+            placeholder="Search social workers..."
+            value={socialWorkerSearchTerm}
+            onChange={(e) => setSocialWorkerSearchTerm(e.target.value)}
+          />
+        </div>
+      </div>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
@@ -578,14 +658,129 @@ export default function SocialWorkerAssignmentsPage() {
       </Card>
 
       {/* Main Content */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="assignments">Current Assignments</TabsTrigger>
-          <TabsTrigger value="unassigned">Unassigned Members</TabsTrigger>
-          <TabsTrigger value="social-workers">Social Workers</TabsTrigger>
-        </TabsList>
+      {/* Social Worker Cards */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Social Workers ({filteredSocialWorkerGroups.length})</h2>
+          <div className="text-sm text-muted-foreground">
+            Click on a card to view assigned members
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filteredSocialWorkerGroups.map((group) => (
+            <Card 
+              key={group.name} 
+              className="cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => handleSocialWorkerCardClick(group.name, group.members)}
+            >
+              <CardContent className="p-4">
+                <div className="text-center">
+                  <div className="flex items-center justify-center w-12 h-12 bg-blue-100 rounded-full mx-auto mb-3">
+                    <Users className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <h3 className="font-semibold text-lg mb-1">{group.name}</h3>
+                  <div className="text-2xl font-bold text-blue-600 mb-1">{group.memberCount}</div>
+                  <p className="text-sm text-muted-foreground">
+                    {group.memberCount === 1 ? 'Member' : 'Members'} Assigned
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          
+          {/* Unassigned Members Card */}
+          {unassignedMembers.length > 0 && (
+            <Card 
+              className="cursor-pointer hover:shadow-md transition-shadow border-orange-200"
+              onClick={() => handleSocialWorkerCardClick('Unassigned', unassignedMembers.map(member => ({
+                memberName: member.name,
+                rcfeName: member.rcfeName,
+                county: member.county,
+                status: member.status
+              })))}
+            >
+              <CardContent className="p-4">
+                <div className="text-center">
+                  <div className="flex items-center justify-center w-12 h-12 bg-orange-100 rounded-full mx-auto mb-3">
+                    <UserPlus className="h-6 w-6 text-orange-600" />
+                  </div>
+                  <h3 className="font-semibold text-lg mb-1">Unassigned</h3>
+                  <div className="text-2xl font-bold text-orange-600 mb-1">{unassignedMembers.length}</div>
+                  <p className="text-sm text-muted-foreground">
+                    {unassignedMembers.length === 1 ? 'Member' : 'Members'} Need Assignment
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+        
+        {filteredSocialWorkerGroups.length === 0 && unassignedMembers.length === 0 && (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <Users className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+              <p className="text-gray-600">No social workers found matching your filters</p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
-        <TabsContent value="assignments" className="space-y-4">
+      {/* Members Modal */}
+      {showMembersModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-4xl max-h-[80vh] overflow-hidden">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Members Assigned to {selectedSocialWorkerName}</CardTitle>
+                  <CardDescription>
+                    {selectedSocialWorkerMembers.length} {selectedSocialWorkerMembers.length === 1 ? 'member' : 'members'} assigned
+                  </CardDescription>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => setShowMembersModal(false)}
+                >
+                  ✕
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="overflow-y-auto">
+              <div className="space-y-3">
+                {selectedSocialWorkerMembers.map((member, index) => (
+                  <div key={index} className="p-3 bg-gray-50 rounded border">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h4 className="font-medium text-gray-900">{member.memberName}</h4>
+                        <div className="text-sm text-gray-600 mt-1">
+                          <div>RCFE: {member.rcfeName}</div>
+                          <div>County: {member.county}</div>
+                          {member.lastVisit && <div>Last Visit: {member.lastVisit}</div>}
+                          {member.nextVisit && <div>Next Visit: {member.nextVisit}</div>}
+                        </div>
+                      </div>
+                      <Badge variant={member.status === 'Active' ? 'default' : 'secondary'}>
+                        {member.status}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+                
+                {selectedSocialWorkerMembers.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    No members assigned to this social worker
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
           <div className="grid grid-cols-1 gap-4">
             {filteredAssignments.map((assignment) => (
               <Card key={assignment.id}>
