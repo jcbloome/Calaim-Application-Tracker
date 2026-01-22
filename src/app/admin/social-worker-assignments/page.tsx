@@ -294,6 +294,20 @@ export default function SocialWorkerAssignmentsPage() {
       groupSizes: Object.entries(groups).map(([name, members]) => ({
         name,
         count: members.length
+      })),
+      totalMembersInGroups: Object.values(groups).reduce((sum: number, members: any[]) => sum + members.length, 0)
+    });
+    
+    // Debug: Check if Billy's members are being grouped correctly
+    const billyMembers = rcfeMembers.filter(m => 
+      m.assignedSocialWorker && m.assignedSocialWorker.includes('Billy')
+    );
+    console.log('🔍 BILLY DEBUG:', {
+      billyMembersFound: billyMembers.length,
+      billyAssignedSocialWorker: billyMembers.slice(0, 3).map(m => m.assignedSocialWorker),
+      sampleBillyMembers: billyMembers.slice(0, 3).map(m => ({
+        name: m.name,
+        assignedSocialWorker: m.assignedSocialWorker
       }))
     });
 
