@@ -105,8 +105,8 @@ export async function GET(request: NextRequest) {
 
     // Fetch Kaiser members from CalAIM_tbl_Members where CalAIM_MCO = 'Kaiser'
     console.log('📊 Fetching Kaiser members...');
-    // Remove field selection to get all available fields first
-    const queryUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=1000`;
+    // Significantly increase limit to get ALL members (no limit or very high limit)
+    const queryUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=10000`;
     console.log('🔗 Query URL:', queryUrl);
     
     const membersResponse = await fetch(queryUrl, {
@@ -137,6 +137,16 @@ export async function GET(request: NextRequest) {
 
     const membersData = await membersResponse.json();
     console.log(`✅ Successfully fetched ${membersData.Result?.length || 0} Kaiser members`);
+    
+    // Check if we might be hitting the API limit
+    if (membersData.Result && membersData.Result.length >= 2000) {
+      console.log('⚠️  WARNING: Fetched 2000+ records - might be hitting API limit!');
+    }
+    
+    // Log pagination info if available
+    if (membersData.PageInfo) {
+      console.log('📄 Pagination Info:', membersData.PageInfo);
+    }
 
     // Log the first member to see available fields
     if (membersData.Result && membersData.Result.length > 0) {
@@ -169,12 +179,42 @@ export async function GET(request: NextRequest) {
       console.log('🔍 SOCIAL WORKER vs USER/STAFF ASSIGNMENT DEBUG:', {
         Social_Worker_Assigned: membersData.Result[0].Social_Worker_Assigned, // Actual social workers
         Kaiser_User_Assignment: membersData.Result[0].Kaiser_User_Assignment, // Users/staff
+        Hold_For_Social_Worker: membersData.Result[0].Hold_For_Social_Worker, // Hold status
         Kaiser_Next_Step_Date: membersData.Result[0].Kaiser_Next_Step_Date,
-        note: 'Using Social_Worker_Assigned for social workers, Kaiser_User_Assignment contains users/staff'
+        note: 'Using Social_Worker_Assigned for social workers, Hold_For_Social_Worker for visit status'
       });
       
       // Show ALL field names to help identify the correct staff field
       console.log('🔍 ALL AVAILABLE FIELDS:', Object.keys(membersData.Result[0]).sort());
+      
+      // Debug ALL social worker assignments from raw API
+      const allSocialWorkers = [...new Set(
+        membersData.Result
+          .filter((member: any) => member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '')
+          .map((member: any) => member.Social_Worker_Assigned)
+      )];
+      
+      console.log('🔍 ALL SOCIAL WORKERS FROM RAW API:', allSocialWorkers);
+      console.log('🔍 SOCIAL WORKER MEMBER COUNTS FROM RAW API:');
+      
+      allSocialWorkers.forEach(sw => {
+        const swMembers = membersData.Result.filter((member: any) => 
+          member.Social_Worker_Assigned === sw
+        );
+        console.log(`  - ${sw}: ${swMembers.length} members`);
+      });
+      
+      // Debug Billy specifically
+      const billyMembers = membersData.Result.filter((member: any) => 
+        member.Social_Worker_Assigned && member.Social_Worker_Assigned.toLowerCase().includes('billy')
+      );
+      console.log('🔍 BILLY MEMBER COUNT FROM RAW API:', billyMembers.length);
+      console.log('🔍 BILLY SAMPLE ASSIGNMENTS:', billyMembers.slice(0, 5).map(m => ({
+        name: m.Senior_Last_First_ID,
+        sw: m.Social_Worker_Assigned,
+        hold: m.Hold_For_Social_Worker,
+        status: m.CalAIM_Status
+      })));
       
       // Debug the specific fields we're looking for
       console.log('🔍 FIELD MAPPING DEBUG - RAW CASPIO DATA:', {
@@ -238,6 +278,9 @@ export async function GET(request: NextRequest) {
       Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date || member.Kaiser_Tier_Level_Received || '',
       ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || member.ILS_RCFE_Sent_For_Contract || '',
       ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || member.ILS_RCFE_Received_Contract || '',
+      
+      // Hold status for social worker visits
+      Hold_For_Social_Worker: member.Hold_For_Social_Worker || '',
       
       // Add any other fields needed by the Kaiser tracker
     }));

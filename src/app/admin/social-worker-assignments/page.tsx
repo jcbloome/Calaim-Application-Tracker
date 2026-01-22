@@ -18,6 +18,7 @@ import {
   Mail, 
   Phone,
   Calendar,
+  Pause,
   Clock,
   Plus,
   Edit,
@@ -50,11 +51,14 @@ interface RCFEMember {
   rcfeAddress: string;
   county: string;
   city: string;
+  zip?: string;
   assignedSocialWorker?: string;
   lastVisit?: string;
   nextVisit?: string;
-  status: 'Active' | 'Inactive';
+  status: string; // Allow any status, not just Active/Inactive
   careLevel: 'Low' | 'Medium' | 'High';
+  CalAIM_Status?: string; // Add this for filtering
+  holdForSocialWorker?: string; // Add hold status
 }
 
 interface Assignment {
@@ -280,12 +284,11 @@ export default function SocialWorkerAssignmentsPage() {
     // Group RCFE members by their assigned social worker
     rcfeMembers.forEach(member => {
       const socialWorkerName = member.assignedSocialWorker || 'Unassigned';
-      if (socialWorkerName !== 'Unassigned') { // Only include assigned members
-        if (!groups[socialWorkerName]) {
-          groups[socialWorkerName] = [];
-        }
-        groups[socialWorkerName].push(member);
+      // Include ALL members - assigned AND unassigned
+      if (!groups[socialWorkerName]) {
+        groups[socialWorkerName] = [];
       }
+      groups[socialWorkerName].push(member);
     });
 
     console.log('🔍 GROUPED SOCIAL WORKERS:', {
@@ -477,12 +480,8 @@ export default function SocialWorkerAssignmentsPage() {
         console.log('📈 Total unique social workers:', uniqueSocialWorkers.length);
       }
       
-      // Transform ALL authorized members (with or without RCFE)
+      // Transform ALL members - no filtering, let UI handle it
       const transformedMembers: RCFEMember[] = data.members
-        .filter((member: any) => {
-          const isAuthorized = member.CalAIM_Status === 'Authorized';
-          return isAuthorized; // Include all authorized members regardless of RCFE
-        })
         .map((member: any, index: number) => ({
           id: `rcfe-member-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}-${member.client_ID2 || 'unknown'}`,
           name: member.Senior_Last_First_ID || member.memberName || `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
@@ -491,11 +490,13 @@ export default function SocialWorkerAssignmentsPage() {
           county: member.Member_County || 'Los Angeles',
           city: member.RCFE_City || member.Member_City || 'Unknown',
           zip: member.RCFE_Zip || 'Unknown',
-          assignedSocialWorker: member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '' ? member.Social_Worker_Assigned : undefined,
+          assignedSocialWorker: member.Social_Worker_Assigned || undefined, // Keep ALL assignments
           lastVisit: member.Last_Visit_Date || undefined,
           nextVisit: member.Next_Visit_Date || undefined,
-          status: member.CalAIM_Status === 'Authorized' ? 'Active' : 'Inactive',
-          careLevel: member.Care_Level || 'Medium'
+          status: member.CalAIM_Status || 'Unknown',
+          careLevel: member.Care_Level || 'Medium',
+          CalAIM_Status: member.CalAIM_Status || 'Unknown', // Add this for filtering
+          holdForSocialWorker: member.Hold_For_Social_Worker || '' // Add hold status
         }));
 
       // Transform social worker assignments - include ALL authorized members (with or without RCFE)
@@ -668,14 +669,14 @@ export default function SocialWorkerAssignmentsPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
               <UserCheck className="h-4 w-4 text-blue-600" />
               <div>
                 <p className="text-sm text-muted-foreground">Active Social Workers</p>
-                <p className="text-2xl font-bold">{socialWorkers.filter(sw => sw.status === 'Active').length}</p>
+                <p className="text-2xl font-bold">{socialWorkerGroups.filter(group => group.name !== 'Unassigned').length}</p>
               </div>
             </div>
           </CardContent>
@@ -688,6 +689,18 @@ export default function SocialWorkerAssignmentsPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Total Members</p>
                 <p className="text-2xl font-bold">{rcfeMembers.length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-emerald-600" />
+              <div>
+                <p className="text-sm text-muted-foreground">Authorized Members</p>
+                <p className="text-2xl font-bold">{rcfeMembers.filter(member => member.CalAIM_Status === 'Authorized').length}</p>
               </div>
             </div>
           </CardContent>
