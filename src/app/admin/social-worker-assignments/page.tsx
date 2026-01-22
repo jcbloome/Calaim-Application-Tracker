@@ -606,58 +606,6 @@ export default function SocialWorkerAssignmentsPage() {
 
 
       {/* Main Content */}
-      {/* Summary Card */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Social Worker Summary
-          </CardTitle>
-          <CardDescription>
-            Overview of all social workers and their caseloads
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">{socialWorkerGroups.length}</div>
-              <div className="text-sm text-muted-foreground">Active Social Workers</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">{socialWorkerGroups.reduce((sum, group) => sum + group.memberCount, 0)}</div>
-              <div className="text-sm text-muted-foreground">Assigned Members</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-orange-600">{unassignedMembers.length}</div>
-              <div className="text-sm text-muted-foreground">Unassigned Members</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-purple-600">{rcfeMembers.length}</div>
-              <div className="text-sm text-muted-foreground">Total RCFE Members</div>
-            </div>
-          </div>
-          
-          {/* Social Worker List */}
-          <div className="mt-6">
-            <h4 className="font-medium mb-3">Social Workers & Caseloads:</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-              {socialWorkerGroups.map((group) => (
-                <div key={group.name} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                  <span className="text-sm font-medium">{group.name}</span>
-                  <Badge variant="outline">{group.memberCount} members</Badge>
-                </div>
-              ))}
-              {unassignedMembers.length > 0 && (
-                <div className="flex justify-between items-center p-2 bg-orange-50 rounded">
-                  <span className="text-sm font-medium">Unassigned</span>
-                  <Badge variant="destructive">{unassignedMembers.length} members</Badge>
-                </div>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Social Worker Cards */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
