@@ -307,11 +307,14 @@ export default function SocialWorkerAssignmentsPage() {
       if (data.members && data.members.length > 0) {
         console.log('🔍 Social Worker Assignment Debug (Social_Worker_Assigned field only):');
         
-        // Count assigned vs unassigned
-        const assigned = data.members.filter((m: any) => m.Social_Worker_Assigned && m.Social_Worker_Assigned.trim() !== '');
-        const unassigned = data.members.filter((m: any) => !m.Social_Worker_Assigned || m.Social_Worker_Assigned.trim() === '');
+        // Count assigned vs unassigned (only authorized members with RCFE)
+        const authorizedWithRCFE = data.members.filter((m: any) => 
+          m.CalAIM_Status === 'Authorized' && m.RCFE_Name && m.RCFE_Name.trim() !== ''
+        );
+        const assigned = authorizedWithRCFE.filter((m: any) => m.Social_Worker_Assigned && m.Social_Worker_Assigned.trim() !== '');
+        const unassigned = authorizedWithRCFE.filter((m: any) => !m.Social_Worker_Assigned || m.Social_Worker_Assigned.trim() === '');
         
-        console.log(`📊 Summary: ${assigned.length} assigned, ${unassigned.length} unassigned`);
+        console.log(`📊 Summary: ${assigned.length} assigned, ${unassigned.length} unassigned (out of ${authorizedWithRCFE.length} total authorized with RCFE)`);
         
         // Show first 5 members with their Social_Worker_Assigned values
         data.members.slice(0, 5).forEach((member: any, index: number) => {
@@ -323,13 +326,14 @@ export default function SocialWorkerAssignmentsPage() {
           });
         });
         
-        // Show unique social workers
+        // Show unique social workers (from authorized members with RCFE)
         const uniqueSocialWorkers = [...new Set(
-          data.members
+          authorizedWithRCFE
             .filter((m: any) => m.Social_Worker_Assigned && m.Social_Worker_Assigned.trim() !== '')
             .map((m: any) => m.Social_Worker_Assigned)
         )];
         console.log('👥 Unique Social Workers found:', uniqueSocialWorkers);
+        console.log('📈 Total unique social workers:', uniqueSocialWorkers.length);
       }
       
       // Transform authorized RCFE members (both assigned and unassigned)
@@ -353,12 +357,12 @@ export default function SocialWorkerAssignmentsPage() {
           careLevel: member.Care_Level || 'Medium'
         }));
 
-      // Transform social worker assignments - include assigned and unassigned authorized members
+      // Transform social worker assignments - include ALL authorized members (assigned and unassigned)
       const staffAssignments = data.members
         .filter((member: any) => {
           const hasRCFE = member.RCFE_Name && member.RCFE_Name.trim() !== '';
           const isAuthorized = member.CalAIM_Status === 'Authorized';
-          // Show all authorized members with RCFE (both assigned and unassigned)
+          // Show all authorized members with RCFE regardless of social worker assignment
           return hasRCFE && isAuthorized;
         })
         .map((member: any) => {
