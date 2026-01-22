@@ -19,6 +19,7 @@ import {
   ShieldAlert,
   Kanban,
   ClipboardList,
+  ClipboardCheck,
   Heart,
   Printer,
   FolderSync,
@@ -46,7 +47,7 @@ import {
   Users,
   RotateCcw,
   UserCheck,
-  ClipboardCheck
+  FileBarChart
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -106,6 +107,8 @@ const adminNavLinks = [
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
       { href: '/admin/social-worker-assignments', label: 'Social Worker Assignments', icon: UserPlus },
+      { href: '/sw-visit-verification', label: 'SW Visit Verification', icon: ClipboardCheck },
+      { href: '/admin/sw-visit-tracking', label: 'SW Visit Tracking System', icon: FileBarChart },
       { href: '/admin/member-activity', label: 'Member Activity', icon: Activity },
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },

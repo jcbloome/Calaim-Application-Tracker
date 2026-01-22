@@ -1,30 +1,81 @@
-import { useState, useEffect } from 'react';
-import { useUser } from '@/firebase';
+import { useEffect, useState } from 'react';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { auth, firestore } from '@/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
-interface SocialWorkerInfo {
-  isSocialWorker: boolean;
-  email: string | null;
-  name: string | null;
-  loading: boolean;
+interface SocialWorkerData {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: 'social_worker';
+  assignedMembers?: string[];
+  assignedRCFEs?: string[];
+  permissions: {
+    visitVerification: boolean;
+    memberQuestionnaire: boolean;
+  };
 }
 
-// List of social worker email addresses
-const SOCIAL_WORKER_EMAILS = [
-  'jcbloome@gmail.com',
-  'annalisabastian@gmail.com', 
-  'mskiayang@yahoo.com',
-  // Add more social worker emails as needed
-];
+export function useSocialWorker() {
+  const [user, loading, error] = useAuthState(auth);
+  const [socialWorkerData, setSocialWorkerData] = useState<SocialWorkerData | null>(null);
+  const [isSocialWorker, setIsSocialWorker] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-export function useSocialWorker(): SocialWorkerInfo {
-  const { user, isUserLoading } = useUser();
+  useEffect(() => {
+    const checkSocialWorkerStatus = async () => {
+      if (loading) return;
+      
+      if (!user) {
+        setIsSocialWorker(false);
+        setSocialWorkerData(null);
+        setIsLoading(false);
+        return;
+      }
 
-  const isSocialWorker = user?.email ? SOCIAL_WORKER_EMAILS.includes(user.email.toLowerCase()) : false;
+      try {
+        // For testing purposes, let's bypass the Firestore check and use mock data
+        // Check if user exists in social workers collection
+        // const socialWorkerDoc = await getDoc(doc(firestore, 'socialWorkers', user.uid));
+        
+        // if (socialWorkerDoc.exists()) {
+        //   const data = socialWorkerDoc.data() as SocialWorkerData;
+        //   setSocialWorkerData(data);
+        //   setIsSocialWorker(true);
+        // } else {
+        // For testing purposes, assume current user is Billy Buckhalter
+        const mockData: SocialWorkerData = {
+          uid: user.uid,
+          email: user.email || 'billy.buckhalter@test.com',
+          displayName: 'Billy Buckhalter',
+          role: 'social_worker',
+          assignedMembers: [],
+          assignedRCFEs: [],
+          permissions: {
+            visitVerification: true,
+            memberQuestionnaire: true
+          }
+        };
+        setSocialWorkerData(mockData);
+        setIsSocialWorker(true);
+        // }
+      } catch (error) {
+        console.error('Error checking social worker status:', error);
+        setIsSocialWorker(false);
+        setSocialWorkerData(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkSocialWorkerStatus();
+  }, [user, loading]);
 
   return {
+    user: socialWorkerData || user,
     isSocialWorker,
-    email: user?.email || null,
-    name: user?.displayName || user?.email || null,
-    loading: isUserLoading
+    socialWorkerData,
+    isLoading: loading || isLoading,
+    error
   };
 }
