@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,7 +24,9 @@ import {
   Send,
   ArrowLeft,
   ArrowRight,
-  Home
+  Home,
+  Shield,
+  Users
 } from 'lucide-react';
 
 interface MemberVisitQuestionnaire {
@@ -649,10 +652,33 @@ export default function SWVisitVerification() {
 
   if (!isSocialWorker) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
-          <p>This page is only accessible to Social Workers.</p>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
+        <div className="container mx-auto px-4 py-16">
+          <div className="max-w-md mx-auto text-center space-y-6">
+            <div className="bg-white rounded-full p-6 w-24 h-24 mx-auto flex items-center justify-center shadow-lg">
+              <Shield className="h-12 w-12 text-blue-500" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">Social Worker Access Required</h1>
+              <p className="text-gray-600 mb-6">
+                This is the member visit verification system. Please sign in with your social worker credentials.
+              </p>
+              <div className="space-y-3">
+                <Button asChild className="w-full bg-blue-600 hover:bg-blue-700">
+                  <Link href="/swvisit/login">
+                    <Users className="h-4 w-4 mr-2" />
+                    Social Worker Login
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="w-full">
+                  <Link href="/swvisit">
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back to SW Portal
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
