@@ -439,9 +439,9 @@ export default function SocialWorkerAssignmentsPage() {
           console.log('🔍 ALL FIELDS in first member:', Object.keys(data.members[0]).sort());
         }
         
-        // Show unique social workers (from authorized members with RCFE)
+        // Show unique social workers (from authorized members)
         const uniqueSocialWorkers = [...new Set(
-          authorizedWithRCFE
+          authorizedMembers
             .filter((m: any) => m.Social_Worker_Assigned && m.Social_Worker_Assigned.trim() !== '')
             .map((m: any) => m.Social_Worker_Assigned)
         )];
