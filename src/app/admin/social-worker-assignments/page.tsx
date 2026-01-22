@@ -235,27 +235,7 @@ export default function SocialWorkerAssignmentsPage() {
   }, [socialWorkers, rcfeMembers]);
 
   // Filter data
-  const filteredAssignments = useMemo(() => {
-    let filtered = assignments;
-
-    if (searchTerm) {
-      filtered = filtered.filter(assignment =>
-        assignment.socialWorkerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        assignment.memberName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        assignment.rcfeName.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    if (selectedCounty !== 'all') {
-      filtered = filtered.filter(assignment => assignment.county === selectedCounty);
-    }
-
-    if (selectedStatus !== 'all') {
-      filtered = filtered.filter(assignment => assignment.status === selectedStatus);
-    }
-
-    return filtered;
-  }, [assignments, searchTerm, selectedCounty, selectedStatus]);
+  // Remove old filtering logic since we're using card-based interface now
 
   const unassignedMembers = useMemo(() => {
     return rcfeMembers.filter(member => !member.assignedSocialWorker);
@@ -607,55 +587,6 @@ export default function SocialWorkerAssignmentsPage() {
         </Card>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search assignments..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-
-            <Select value={selectedCounty} onValueChange={setSelectedCounty}>
-              <SelectTrigger>
-                <SelectValue placeholder="All Counties" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Counties</SelectItem>
-                {counties.map(county => (
-                  <SelectItem key={county} value={county}>{county}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-              <SelectTrigger>
-                <SelectValue placeholder="All Statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="Active">Active</SelectItem>
-                <SelectItem value="Pending">Pending</SelectItem>
-                <SelectItem value="Completed">Completed</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Button variant="outline" onClick={() => {
-              setSearchTerm('');
-              setSelectedCounty('all');
-              setSelectedStatus('all');
-            }}>
-              <X className="h-4 w-4 mr-2" />
-              Clear Filters
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Main Content */}
       {/* Social Worker Cards */}
