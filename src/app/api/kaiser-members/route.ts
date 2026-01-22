@@ -105,8 +105,8 @@ export async function GET(request: NextRequest) {
 
     // Fetch Kaiser members from CalAIM_tbl_Members where CalAIM_MCO = 'Kaiser'
     console.log('📊 Fetching Kaiser members...');
-    // Request specific fields including the ones you mentioned
-    const queryUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=1000&q.select=Client_ID2,Senior_First,Senior_Last,Senior_Last_First_ID,CalAIM_Status,CalAIM_MCO,Kaiser_Status,Kaiser_ID_Status,Social_Worker_Assigned,Kaiser_User_Assignment,Kaiser_Next_Step_Date,RCFE_Name,RCFE_Address,RCFE_City_RCFE_Zip,Member_County,Member_City,Last_Visit_Date,Next_Visit_Date,Care_Level,Date_Modified,Date_Created`;
+    // Remove field selection to get all available fields first
+    const queryUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=1000`;
     console.log('🔗 Query URL:', queryUrl);
     
     const membersResponse = await fetch(queryUrl, {
