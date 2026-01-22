@@ -6,8 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { User, Building, ArrowRight, MapPin } from 'lucide-react';
 import Link from 'next/link';
+import { useAutoTrackPortalAccess } from '@/hooks/use-sw-login-tracking';
 
 export default function TestBillyPage() {
+  // Track assignments access
+  useAutoTrackPortalAccess('assignments');
+  
   const [mockUser] = useState({
     uid: 'billy-buckhalter-test',
     email: 'billy.buckhalter@test.com',

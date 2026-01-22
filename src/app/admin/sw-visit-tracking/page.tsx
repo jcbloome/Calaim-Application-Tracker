@@ -22,7 +22,11 @@ import {
   Flag,
   Users,
   BarChart3,
-  TrendingUp
+  TrendingUp,
+  LogIn,
+  Monitor,
+  Smartphone,
+  Activity
 } from 'lucide-react';
 
 interface VisitRecord {
@@ -56,22 +60,41 @@ interface SignOffRecord {
   flaggedVisits: number;
 }
 
+interface LoginEvent {
+  id: string;
+  socialWorkerId: string;
+  socialWorkerName: string;
+  loginTime: string;
+  userAgent: string;
+  ipAddress: string;
+  sessionId: string;
+  portalSection: 'login' | 'portal-home' | 'visit-verification' | 'assignments';
+}
+
 export default function SWVisitTrackingPage(): React.JSX.Element {
   const [visitRecords, setVisitRecords] = useState<VisitRecord[]>([]);
   const [signOffRecords, setSignOffRecords] = useState<SignOffRecord[]>([]);
+  const [loginEvents, setLoginEvents] = useState<LoginEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'visits' | 'signoffs' | 'analytics'>('visits');
+  const [activeTab, setActiveTab] = useState<'visits' | 'signoffs' | 'analytics' | 'logins'>('visits');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
 
   useEffect(() => {
     loadTrackingData();
-  }, []);
+  }, [dateFilter]);
 
   const loadTrackingData = async () => {
     setLoading(true);
     try {
+      // Fetch real login events
+      const loginResponse = await fetch(`/api/sw-visits/login-tracking?days=${dateFilter === 'all' ? '30' : dateFilter}`);
+      if (loginResponse.ok) {
+        const loginData = await loginResponse.json();
+        setLoginEvents(loginData.events || []);
+      }
+      
       // Simulate loading data - in production this would come from Firestore
       // For now, we'll create mock data to demonstrate the system
       
@@ -295,6 +318,14 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
           onClick={() => setActiveTab('analytics')}
         >
           Analytics
+        </Button>
+        <Button
+          variant={activeTab === 'logins' ? 'default' : 'ghost'}
+          size="sm"
+          onClick={() => setActiveTab('logins')}
+        >
+          <LogIn className="h-4 w-4 mr-1" />
+          Login Tracking
         </Button>
       </div>
 
@@ -546,6 +577,171 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
               </div>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* Login Tracking Tab */}
+      {activeTab === 'logins' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Total Logins</p>
+                    <p className="text-2xl font-bold">{loginEvents.length}</p>
+                  </div>
+                  <LogIn className="h-8 w-8 text-blue-600" />
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Unique Users</p>
+                    <p className="text-2xl font-bold">
+                      {[...new Set(loginEvents.map(e => e.socialWorkerId))].length}
+                    </p>
+                  </div>
+                  <Users className="h-8 w-8 text-green-600" />
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Portal Access</p>
+                    <p className="text-2xl font-bold">
+                      {loginEvents.filter(e => e.portalSection === 'portal-home').length}
+                    </p>
+                  </div>
+                  <Monitor className="h-8 w-8 text-purple-600" />
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Visit Tool Access</p>
+                    <p className="text-2xl font-bold">
+                      {loginEvents.filter(e => e.portalSection === 'visit-verification').length}
+                    </p>
+                  </div>
+                  <Activity className="h-8 w-8 text-orange-600" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <LogIn className="h-5 w-5" />
+                Recent Portal Access ({loginEvents.length} events)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {loginEvents.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <LogIn className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No login events recorded yet</p>
+                    <p className="text-sm">Login tracking will appear here as social workers access the portal</p>
+                  </div>
+                ) : (
+                  loginEvents.slice(0, 20).map((event) => (
+                    <div key={event.sessionId} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex items-center space-x-4">
+                        <div className="bg-blue-100 rounded-full p-2">
+                          {event.portalSection === 'login' && <LogIn className="h-4 w-4 text-blue-600" />}
+                          {event.portalSection === 'portal-home' && <Monitor className="h-4 w-4 text-blue-600" />}
+                          {event.portalSection === 'visit-verification' && <Activity className="h-4 w-4 text-blue-600" />}
+                          {event.portalSection === 'assignments' && <Users className="h-4 w-4 text-blue-600" />}
+                        </div>
+                        <div>
+                          <p className="font-medium">{event.socialWorkerName}</p>
+                          <p className="text-sm text-muted-foreground">
+                            Accessed: {event.portalSection.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium">
+                          {new Date(event.loginTime).toLocaleDateString()}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(event.loginTime).toLocaleTimeString()}
+                        </p>
+                        <div className="flex items-center gap-1 mt-1">
+                          <MapPin className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-xs text-muted-foreground">
+                            {event.ipAddress}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {loginEvents.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Access Patterns</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="font-medium mb-3">Most Active Social Workers</h4>
+                    <div className="space-y-2">
+                      {Object.entries(
+                        loginEvents.reduce((acc, event) => {
+                          acc[event.socialWorkerName] = (acc[event.socialWorkerName] || 0) + 1;
+                          return acc;
+                        }, {} as Record<string, number>)
+                      )
+                      .sort(([,a], [,b]) => b - a)
+                      .slice(0, 5)
+                      .map(([name, count]) => (
+                        <div key={name} className="flex justify-between items-center">
+                          <span className="text-sm">{name}</span>
+                          <Badge variant="secondary">{count} logins</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h4 className="font-medium mb-3">Portal Section Usage</h4>
+                    <div className="space-y-2">
+                      {Object.entries(
+                        loginEvents.reduce((acc, event) => {
+                          const section = event.portalSection.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase());
+                          acc[section] = (acc[section] || 0) + 1;
+                          return acc;
+                        }, {} as Record<string, number>)
+                      )
+                      .sort(([,a], [,b]) => b - a)
+                      .map(([section, count]) => (
+                        <div key={section} className="flex justify-between items-center">
+                          <span className="text-sm">{section}</span>
+                          <Badge variant="outline">{count} accesses</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
     </div>

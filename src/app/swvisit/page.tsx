@@ -19,10 +19,14 @@ import {
   Building
 } from 'lucide-react';
 import { useSocialWorker } from '@/hooks/use-social-worker';
+import { useAutoTrackPortalAccess } from '@/hooks/use-sw-login-tracking';
 import Image from 'next/image';
 
 export default function SocialWorkerPortal() {
   const { user, isSocialWorker, isLoading } = useSocialWorker();
+  
+  // Track portal access
+  useAutoTrackPortalAccess('portal-home');
 
   if (isLoading) {
     return (

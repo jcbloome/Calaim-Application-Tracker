@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useSocialWorker } from '@/hooks/use-social-worker';
+import { useAutoTrackPortalAccess } from '@/hooks/use-sw-login-tracking';
 import { 
   MapPin, 
   Star, 
@@ -152,6 +153,9 @@ const StarRating: React.FC<{
 export default function SWVisitVerification() {
   const { user, isSocialWorker } = useSocialWorker();
   const { toast } = useToast();
+  
+  // Track visit verification access
+  useAutoTrackPortalAccess('visit-verification');
   
   const [currentStep, setCurrentStep] = useState<'select-rcfe' | 'select-member' | 'questionnaire' | 'sign-off' | 'visit-completed'>('select-rcfe');
   const [selectedRCFE, setSelectedRCFE] = useState<RCFE | null>(null);

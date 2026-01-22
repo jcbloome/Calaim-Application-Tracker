@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
+import { useSWLoginTracking } from '@/hooks/use-sw-login-tracking';
 
 export default function SocialWorkerLogin() {
   const [email, setEmail] = useState('');
@@ -25,6 +26,7 @@ export default function SocialWorkerLogin() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
+  const { trackLogin } = useSWLoginTracking();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +37,10 @@ export default function SocialWorkerLogin() {
       // For testing purposes, allow Billy Buckhalter to login
       if (email.toLowerCase().includes('billy') || email.toLowerCase().includes('buckhalter')) {
         console.log('🔧 Test login for Billy Buckhalter');
+        
+        // Track login event
+        await trackLogin();
+        
         router.push('/swvisit');
         return;
       }
