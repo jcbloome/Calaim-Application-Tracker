@@ -105,7 +105,8 @@ export async function GET(request: NextRequest) {
 
     // Fetch Kaiser members from CalAIM_tbl_Members where CalAIM_MCO = 'Kaiser'
     console.log('📊 Fetching Kaiser members...');
-    const queryUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=1000`;
+    // Request specific fields including the ones you mentioned
+    const queryUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=1000&q.select=Client_ID2,Senior_First,Senior_Last,Senior_Last_First_ID,CalAIM_Status,CalAIM_MCO,Kaiser_Status,Kaiser_ID_Status,Social_Worker_Assigned,Kaiser_User_Assignment,Kaiser_Next_Step_Date,RCFE_Name,RCFE_Address,RCFE_City_RCFE_Zip,Member_County,Member_City,Last_Visit_Date,Next_Visit_Date,Care_Level,Date_Modified,Date_Created`;
     console.log('🔗 Query URL:', queryUrl);
     
     const membersResponse = await fetch(queryUrl, {
@@ -195,12 +196,12 @@ export async function GET(request: NextRequest) {
       id: member.Client_ID2 || `member-${Math.random().toString(36).substring(7)}`,
       Client_ID2: member.Client_ID2,
       client_ID2: member.Client_ID2, // Duplicate for compatibility
-      // Use the correct field names you specified
+      // Use Senior_Last_First_ID as primary name field, fallback to constructed name
       memberName: member.Senior_Last_First_ID || `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
-      memberFirstName: member.Senior_First || member.memberFirstName || member.Member_First_Name || member.FirstName || 'Unknown',
-      memberLastName: member.Senior_Last || member.memberLastName || member.Member_Last_Name || member.LastName || 'Member',
-      Senior_Last_First_ID: member.Senior_Last_First_ID,
-      memberCounty: member.memberCounty || member.County || member.Member_County || 'Unknown',
+      memberFirstName: member.Senior_First || 'Unknown',
+      memberLastName: member.Senior_Last || 'Member',
+      Senior_Last_First_ID: member.Senior_Last_First_ID || `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
+      memberCounty: member.Member_County || member.County || 'Unknown',
       memberMrn: member.memberMrn || member.Member_MRN || '',
       memberPhone: member.memberPhone || member.Member_Phone || '',
       memberEmail: member.memberEmail || member.Member_Email || '',
