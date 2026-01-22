@@ -105,9 +105,31 @@ export async function GET(request: NextRequest) {
 
     // Fetch Kaiser members from CalAIM_tbl_Members where CalAIM_MCO = 'Kaiser'
     console.log('📊 Fetching Kaiser members...');
-    // Significantly increase limit to get ALL members (no limit or very high limit)
+    
+    // Try without limit first to see total count
+    const countUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=1`;
+    console.log('🔗 Count Check URL:', countUrl);
+    
+    const countResponse = await fetch(countUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (countResponse.ok) {
+      const countData = await countResponse.json();
+      console.log('📊 TOTAL RECORDS CHECK:', {
+        sampleCount: countData.Result?.length || 0,
+        pageInfo: countData.PageInfo,
+        responseStructure: Object.keys(countData)
+      });
+    }
+    
+    // Now fetch with high limit
     const queryUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=10000`;
-    console.log('🔗 Query URL:', queryUrl);
+    console.log('🔗 Main Query URL:', queryUrl);
     
     const membersResponse = await fetch(queryUrl, {
       method: 'GET',
@@ -138,15 +160,32 @@ export async function GET(request: NextRequest) {
     const membersData = await membersResponse.json();
     console.log(`✅ Successfully fetched ${membersData.Result?.length || 0} Kaiser members`);
     
+    // COMPREHENSIVE API RESPONSE DEBUG
+    console.log('🔍 FULL API RESPONSE STRUCTURE:', {
+      hasResult: !!membersData.Result,
+      resultLength: membersData.Result?.length || 0,
+      hasPageInfo: !!membersData.PageInfo,
+      pageInfo: membersData.PageInfo,
+      responseKeys: Object.keys(membersData),
+      firstRecordKeys: membersData.Result?.[0] ? Object.keys(membersData.Result[0]) : []
+    });
+    
     // Check if we might be hitting the API limit
-    if (membersData.Result && membersData.Result.length >= 2000) {
-      console.log('⚠️  WARNING: Fetched 2000+ records - might be hitting API limit!');
+    if (membersData.Result && membersData.Result.length >= 9000) {
+      console.log('⚠️  WARNING: Fetched 9000+ records - might be hitting API limit!');
     }
     
-    // Log pagination info if available
+    // Check for pagination
     if (membersData.PageInfo) {
-      console.log('📄 Pagination Info:', membersData.PageInfo);
+      console.log('📄 PAGINATION DETECTED:', membersData.PageInfo);
     }
+    
+    // Count total records vs limit requested
+    console.log('📊 API LIMITS CHECK:', {
+      requested: 10000,
+      received: membersData.Result?.length || 0,
+      percentage: ((membersData.Result?.length || 0) / 10000 * 100).toFixed(1) + '%'
+    });
 
     // Log the first member to see available fields
     if (membersData.Result && membersData.Result.length > 0) {
@@ -195,8 +234,9 @@ export async function GET(request: NextRequest) {
       )];
       
       console.log('🔍 ALL SOCIAL WORKERS FROM RAW API:', allSocialWorkers);
-      console.log('🔍 SOCIAL WORKER MEMBER COUNTS FROM RAW API:');
+      console.log('🔍 TOTAL UNIQUE SOCIAL WORKERS:', allSocialWorkers.length);
       
+      console.log('🔍 SOCIAL WORKER MEMBER COUNTS FROM RAW API:');
       allSocialWorkers.forEach(sw => {
         const swMembers = membersData.Result.filter((member: any) => 
           member.Social_Worker_Assigned === sw
@@ -204,17 +244,44 @@ export async function GET(request: NextRequest) {
         console.log(`  - ${sw}: ${swMembers.length} members`);
       });
       
-      // Debug Billy specifically
+      // Debug Billy specifically with multiple variations
+      const billyVariations = ['billy', 'buckhalter', 'Billy', 'Buckhalter'];
+      let totalBillyMembers = 0;
+      
+      billyVariations.forEach(variation => {
+        const members = membersData.Result.filter((member: any) => 
+          member.Social_Worker_Assigned && member.Social_Worker_Assigned.toLowerCase().includes(variation.toLowerCase())
+        );
+        if (members.length > 0) {
+          console.log(`🔍 BILLY VARIATION "${variation}": ${members.length} members`);
+          totalBillyMembers = Math.max(totalBillyMembers, members.length);
+        }
+      });
+      
+      console.log('🔍 BILLY TOTAL MEMBER COUNT FROM RAW API:', totalBillyMembers);
+      
+      // Show exact Billy assignments
       const billyMembers = membersData.Result.filter((member: any) => 
         member.Social_Worker_Assigned && member.Social_Worker_Assigned.toLowerCase().includes('billy')
       );
-      console.log('🔍 BILLY MEMBER COUNT FROM RAW API:', billyMembers.length);
-      console.log('🔍 BILLY SAMPLE ASSIGNMENTS:', billyMembers.slice(0, 5).map(m => ({
+      
+      console.log('🔍 BILLY EXACT ASSIGNMENTS:', billyMembers.slice(0, 10).map(m => ({
         name: m.Senior_Last_First_ID,
         sw: m.Social_Worker_Assigned,
-        hold: m.Hold_For_Social_Worker,
-        status: m.CalAIM_Status
+        status: m.CalAIM_Status,
+        clientId: m.Client_ID2
       })));
+      
+      // Check if there are members with similar names
+      const possibleBillyNames = membersData.Result
+        .filter((member: any) => member.Social_Worker_Assigned && 
+          (member.Social_Worker_Assigned.includes('Buck') || 
+           member.Social_Worker_Assigned.includes('Billy') ||
+           member.Social_Worker_Assigned.includes('76')))
+        .map((member: any) => member.Social_Worker_Assigned);
+      
+      const uniqueBillyNames = [...new Set(possibleBillyNames)];
+      console.log('🔍 POSSIBLE BILLY NAME VARIATIONS:', uniqueBillyNames);
       
       // Debug the specific fields we're looking for
       console.log('🔍 FIELD MAPPING DEBUG - RAW CASPIO DATA:', {
