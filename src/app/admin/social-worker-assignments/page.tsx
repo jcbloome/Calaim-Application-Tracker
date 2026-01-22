@@ -246,23 +246,25 @@ export default function SocialWorkerAssignmentsPage() {
   const socialWorkerGroups = useMemo(() => {
     const groups: Record<string, any[]> = {};
     
-    assignments.forEach(assignment => {
-      const socialWorkerName = assignment.socialWorkerName || 'Unassigned';
-      if (!groups[socialWorkerName]) {
-        groups[socialWorkerName] = [];
+    // Group RCFE members by their assigned social worker
+    rcfeMembers.forEach(member => {
+      const socialWorkerName = member.assignedSocialWorker || 'Unassigned';
+      if (socialWorkerName !== 'Unassigned') { // Only include assigned members
+        if (!groups[socialWorkerName]) {
+          groups[socialWorkerName] = [];
+        }
+        groups[socialWorkerName].push(member);
       }
-      groups[socialWorkerName].push(assignment);
     });
 
     return Object.entries(groups)
-      .filter(([name]) => name !== 'Unassigned') // Exclude unassigned for cards
       .map(([name, members]) => ({
         name,
         memberCount: members.length,
         members
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [assignments]);
+  }, [rcfeMembers]);
 
   // Filter social worker groups based on search terms
   const filteredSocialWorkerGroups = useMemo(() => {
@@ -604,7 +606,14 @@ export default function SocialWorkerAssignmentsPage() {
             <Card 
               key={group.name} 
               className="cursor-pointer hover:shadow-md transition-shadow"
-              onClick={() => handleSocialWorkerCardClick(group.name, group.members)}
+              onClick={() => handleSocialWorkerCardClick(group.name, group.members.map(member => ({
+                memberName: member.name,
+                rcfeName: member.rcfeName,
+                county: member.county,
+                status: member.status,
+                lastVisit: member.lastVisit,
+                nextVisit: member.nextVisit
+              })))}
             >
               <CardContent className="p-4">
                 <div className="text-center">
