@@ -330,6 +330,20 @@ export default function SocialWorkerAssignmentsPage() {
       const data = await response.json();
       console.log('📊 Synced data from Caspio:', data);
       
+      // DEBUG: Show raw member data to see actual Caspio field values
+      if (data.members && data.members.length > 0) {
+        console.log('🔍 RAW FIRST MEMBER FROM API:', data.members[0]);
+        console.log('🔍 RCFE FIELDS CHECK:', {
+          RCFE_Name: data.members[0].RCFE_Name,
+          RCFE_Address: data.members[0].RCFE_Address,
+          RCFE_City: data.members[0].RCFE_City,
+          RCFE_Zip: data.members[0].RCFE_Zip,
+          Senior_Last_First_ID: data.members[0].Senior_Last_First_ID,
+          memberName: data.members[0].memberName,
+          memberCounty: data.members[0].memberCounty
+        });
+      }
+      
       if (!data.members || !Array.isArray(data.members)) {
         console.error('❌ Invalid data structure:', data);
         throw new Error('Invalid data structure received from API');
