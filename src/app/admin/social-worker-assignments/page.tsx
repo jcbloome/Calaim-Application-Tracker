@@ -474,6 +474,19 @@ export default function SocialWorkerAssignmentsPage() {
       setRCFEMembers(transformedMembers);
       setAssignments(staffAssignments);
       
+      // DEBUG: Check why social worker cards show 0 members
+      console.log('🔍 SOCIAL WORKER GROUPING DEBUG:', {
+        totalTransformedMembers: transformedMembers.length,
+        membersWithSocialWorkers: transformedMembers.filter(m => m.assignedSocialWorker).length,
+        membersWithoutSocialWorkers: transformedMembers.filter(m => !m.assignedSocialWorker).length,
+        sampleMembersWithSW: transformedMembers.filter(m => m.assignedSocialWorker).slice(0, 3).map(m => ({
+          name: m.name,
+          assignedSocialWorker: m.assignedSocialWorker,
+          rcfeName: m.rcfeName
+        })),
+        uniqueSocialWorkerNames: [...new Set(transformedMembers.filter(m => m.assignedSocialWorker).map(m => m.assignedSocialWorker))]
+      });
+      
       toast({
         title: "Sync Complete",
         description: `Synced ${transformedMembers.length} RCFE members and ${staffAssignments.length} assignments from Caspio (READ ONLY)`,
