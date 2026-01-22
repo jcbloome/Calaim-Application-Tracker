@@ -62,20 +62,18 @@ export async function GET(request: NextRequest) {
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
 
-    // Fetch CalAIM members from the members table
+    // Fetch ALL CalAIM members with improved pagination (same as kaiser-members API)
     const membersTable = 'CalAIM_tbl_Members';
+    console.log('🔄 Starting paginated fetch to get ALL CalAIM members...');
     let allMembers: any[] = [];
     let pageNumber = 1;
-    const pageSize = 100;
-    const maxPages = 50; // Up to 5,000 members
-    let pageRecords: any[] = [];
+    const pageSize = 1000; // Increased from 100 to 1000 like kaiser-members API
+    let hasMorePages = true;
 
-    console.log('📊 Fetching CalAIM members...');
-
-    do {
-      const membersUrl = `${caspioBaseUrl}/rest/v2/tables/${membersTable}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
-      console.log(`🌐 Fetching page ${pageNumber} from ${membersTable}...`);
-
+    while (hasMorePages && pageNumber <= 10) { // Safety limit of 10 pages = 10,000 records
+      const membersUrl = `${caspioBaseUrl}/rest/v2/tables/${membersTable}/records?q.limit=${pageSize}&q.pageNumber=${pageNumber}`;
+      console.log(`🔗 Page ${pageNumber} Query URL:`, membersUrl);
+      
       const membersResponse = await fetch(membersUrl, {
         method: 'GET',
         headers: {
@@ -84,39 +82,34 @@ export async function GET(request: NextRequest) {
         },
       });
 
-      console.log(`📡 Response status for ${membersTable} page ${pageNumber}:`, membersResponse.status);
-      
       if (!membersResponse.ok) {
         const errorText = await membersResponse.text();
-        console.log(`❌ Error response for ${membersTable} page ${pageNumber}:`, errorText);
-        break;
+        console.error(`❌ Failed to fetch CalAIM members page ${pageNumber}:`, {
+          status: membersResponse.status,
+          statusText: membersResponse.statusText,
+          error: errorText
+        });
+        break; // Stop pagination on error
       }
 
-      const membersData = await membersResponse.json();
-      pageRecords = membersData.Result || [];
+      const pageData = await membersResponse.json();
+      console.log(`📄 Page ${pageNumber}: ${pageData.Result?.length || 0} records`);
       
-      console.log(`📄 Retrieved ${pageRecords.length} members from page ${pageNumber}`);
-      
-      if (pageRecords.length > 0) {
-        allMembers = allMembers.concat(pageRecords);
-        pageNumber++;
+      if (pageData.Result && pageData.Result.length > 0) {
+        allMembers = allMembers.concat(pageData.Result);
+        
+        // Check if we have more pages
+        if (pageData.Result.length < pageSize) {
+          hasMorePages = false; // Last page
+        } else {
+          pageNumber++;
+        }
+      } else {
+        hasMorePages = false; // No more data
       }
+    }
 
-      // If we got fewer records than pageSize, we've reached the end
-      if (pageRecords.length < pageSize) {
-        console.log(`📋 Reached end of data - got ${pageRecords.length} records (less than pageSize ${pageSize})`);
-        break;
-      }
-
-      // Safety check to prevent infinite loops
-      if (pageNumber > maxPages) {
-        console.log(`⚠️ Reached maximum pages limit (${maxPages})`);
-        break;
-      }
-      
-    } while (pageRecords.length === pageSize && pageNumber <= maxPages);
-
-    console.log(`✅ Found ${allMembers.length} total CalAIM members from ${pageNumber - 1} pages`);
+    console.log(`✅ PAGINATION COMPLETE: Fetched ${allMembers.length} total CalAIM members across ${pageNumber} pages`);
     
     // Debug: Show available fields in the first record
     if (allMembers.length > 0) {
