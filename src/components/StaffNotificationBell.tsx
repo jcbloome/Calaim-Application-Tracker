@@ -188,7 +188,7 @@ export function StaffNotificationBell({ userId, className = '' }: StaffNotificat
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-96 p-0" align="end">
+      <PopoverContent className="w-96 p-0 z-50" align="end">
         <Card className="border-0 shadow-lg">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">

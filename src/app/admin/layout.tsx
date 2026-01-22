@@ -250,7 +250,7 @@ function AdminHeader() {
                           <ChevronDown className="h-3 w-3 ml-1" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="w-64">
+                      <DropdownMenuContent align="start" className="w-64 z-40">
                         {navItem.submenuItems?.map((item, index) => (
                           item.isDivider ? (
                             <div key={index}>
@@ -297,7 +297,7 @@ function AdminHeader() {
           </NavigationMenu>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 relative z-50">
           {/* Staff Notification Bell */}
           <StaffNotificationBell userId={user?.uid} />
           
@@ -312,7 +312,7 @@ function AdminHeader() {
                 <ChevronDown className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuContent align="end" className="w-48 z-45">
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
                   <p className="text-sm font-medium leading-none">
