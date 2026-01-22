@@ -10,12 +10,18 @@ export function useSWLoginTracking() {
 
   const trackPortalAccess = useCallback(async (section: PortalSection) => {
     if (!isSocialWorker || !user) {
+      console.log('🔍 Skipping login tracking - not a social worker or no user');
       return;
     }
 
     try {
       const socialWorkerId = socialWorkerData?.id || user.uid || 'unknown';
       const socialWorkerName = socialWorkerData?.name || user.displayName || user.email || 'Unknown SW';
+      
+      if (!socialWorkerId || !socialWorkerName || socialWorkerId === 'unknown' || socialWorkerName === 'Unknown SW') {
+        console.log('🔍 Skipping login tracking - insufficient user data');
+        return;
+      }
 
       const response = await fetch('/api/sw-visits/login-tracking', {
         method: 'POST',
@@ -60,16 +66,18 @@ export function useSWLoginTracking() {
 
 export function useAutoTrackPortalAccess(section: PortalSection) {
   const { trackPortalAccess } = useSWLoginTracking();
-  const { isSocialWorker, isLoading } = useSocialWorker();
+  const { isSocialWorker, isLoading, user } = useSocialWorker();
 
   useEffect(() => {
-    if (!isLoading && isSocialWorker) {
+    if (!isLoading && isSocialWorker && user) {
       // Small delay to ensure user data is loaded
       const timer = setTimeout(() => {
-        trackPortalAccess(section);
+        trackPortalAccess(section).catch(error => {
+          console.error('Failed to track portal access:', error);
+        });
       }, 1000);
 
       return () => clearTimeout(timer);
     }
-  }, [trackPortalAccess, section, isSocialWorker, isLoading]);
+  }, [trackPortalAccess, section, isSocialWorker, isLoading, user]);
 }
