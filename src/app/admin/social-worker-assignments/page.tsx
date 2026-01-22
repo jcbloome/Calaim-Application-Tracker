@@ -287,6 +287,12 @@ export default function SocialWorkerAssignmentsPage() {
   }, [socialWorkerGroups, socialWorkerSearchTerm, searchTerm, rcfeSearchTerm]);
 
   const handleSocialWorkerCardClick = (socialWorkerName: string, members: any[]) => {
+    console.log('🔍 MODAL DATA DEBUG:', {
+      socialWorkerName,
+      memberCount: members.length,
+      firstMember: members[0],
+      sampleMemberData: members.slice(0, 2)
+    });
     setSelectedSocialWorkerName(socialWorkerName);
     setSelectedSocialWorkerMembers(members);
     setShowMembersModal(true);
@@ -639,6 +645,9 @@ export default function SocialWorkerAssignmentsPage() {
               onClick={() => handleSocialWorkerCardClick(group.name, group.members.map(member => ({
                 memberName: member.name,
                 rcfeName: member.rcfeName,
+                rcfeAddress: member.rcfeAddress,
+                city: member.city,
+                zip: member.zip,
                 county: member.county,
                 status: member.status,
                 lastVisit: member.lastVisit,
@@ -667,6 +676,9 @@ export default function SocialWorkerAssignmentsPage() {
               onClick={() => handleSocialWorkerCardClick('Unassigned', unassignedMembers.map(member => ({
                 memberName: member.name,
                 rcfeName: member.rcfeName,
+                rcfeAddress: member.rcfeAddress,
+                city: member.city,
+                zip: member.zip,
                 county: member.county,
                 status: member.status
               })))}
