@@ -1,875 +1,757 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useAdmin } from '@/hooks/use-admin';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { 
-  Search, 
-  Users, 
-  UserCheck, 
-  UserPlus,
-  Home, 
-  MapPin, 
-  Mail, 
-  Phone,
-  Calendar,
-  Pause,
-  Clock,
-  Plus,
-  Edit,
-  Trash2,
-  Save,
-  X,
-  AlertCircle,
-  CheckCircle,
-  RefreshCw,
-  Loader2
-} from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Users, UserPlus, Search, Filter } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-interface SocialWorker {
+interface Member {
   id: string;
-  name: string;
-  email: string;
-  phone?: string;
-  county: string;
-  city?: string;
-  caseload: number;
-  maxCaseload: number;
-  status: 'Active' | 'Inactive';
-}
-
-interface RCFEMember {
-  id: string;
-  name: string;
-  rcfeName: string;
-  rcfeAddress: string;
-  county: string;
-  city: string;
-  zip?: string;
-  assignedSocialWorker?: string;
-  lastVisit?: string;
-  nextVisit?: string;
-  status: string; // Allow any status, not just Active/Inactive
-  careLevel: 'Low' | 'Medium' | 'High';
-  CalAIM_Status?: string; // Add this for filtering
-  holdForSocialWorker?: string; // Add hold status
-}
-
-interface Assignment {
-  id: string;
-  socialWorkerId: string;
-  socialWorkerName: string;
-  memberId: string;
+  Client_ID2: string;
   memberName: string;
-  rcfeName: string;
-  county: string;
-  assignedDate: string;
-  lastVisit?: string;
-  nextVisit?: string;
-  status: 'Active' | 'Completed' | 'Pending';
-  notes?: string;
+  memberFirstName: string;
+  memberLastName: string;
+  memberCounty: string;
+  CalAIM_MCO: string;
+  CalAIM_Status: string;
+  Social_Worker_Assigned: string;
+  Staff_Assigned: string;
+  Hold_For_Social_Worker: string;
+  RCFE_Name: string;
+  RCFE_Address: string;
+  pathway: string;
+  last_updated: string;
+}
+
+interface SocialWorkerStats {
+  name: string;
+  memberCount: number;
+  members: Member[];
+  mcoBreakdown: Record<string, number>;
+  statusBreakdown: Record<string, number>;
+  countyBreakdown: Record<string, number>;
+  rcfeBreakdown: Record<string, number>;
+  onHoldCount: number;
+  activeCount: number;
 }
 
 export default function SocialWorkerAssignmentsPage() {
-  const [socialWorkers, setSocialWorkers] = useState<SocialWorker[]>([]);
-  const [rcfeMembers, setRCFEMembers] = useState<RCFEMember[]>([]);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [rcfeSearchTerm, setRcfeSearchTerm] = useState('');
-  const [socialWorkerSearchTerm, setSocialWorkerSearchTerm] = useState('');
-  const [selectedSocialWorker, setSelectedSocialWorker] = useState('');
-  const [showMembersModal, setShowMembersModal] = useState(false);
-  const [selectedSocialWorkerMembers, setSelectedSocialWorkerMembers] = useState<any[]>([]);
-  const [selectedSocialWorkerName, setSelectedSocialWorkerName] = useState('');
-  const [showRcfeSuggestions, setShowRcfeSuggestions] = useState(false);
-
+  const { isAdmin, isLoading } = useAdmin();
   const { toast } = useToast();
+  const [members, setMembers] = useState<Member[]>([]);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedSocialWorker, setSelectedSocialWorker] = useState('all');
+  const [selectedMCO, setSelectedMCO] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
+  const [selectedCounty, setSelectedCounty] = useState('all');
+  const [selectedRCFE, setSelectedRCFE] = useState('all');
+  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [selectedSWForModal, setSelectedSWForModal] = useState<SocialWorkerStats | null>(null);
 
-  // Load initial data
-  useEffect(() => {
-    // Auto-sync from Caspio on page load
-    syncFromCaspio();
-  }, []);
-
-  const loadMockData = () => {
-    // Mock social workers
-    const mockSocialWorkers: SocialWorker[] = [
-      {
-        id: '1',
-        name: 'Jason Bloome',
-        email: 'jcbloome@gmail.com',
-        county: 'Los Angeles',
-        city: 'Pembroke Pines',
-        caseload: 15,
-        maxCaseload: 25,
-        status: 'Active'
-      },
-      {
-        id: '2',
-        name: 'Anna-Lisa Bastian',
-        email: 'Annalisabastian@gmail.com',
-        county: 'Los Angeles',
-        city: 'View Park',
-        caseload: 12,
-        maxCaseload: 20,
-        status: 'Active'
-      },
-      {
-        id: '3',
-        name: 'Kia Yang',
-        email: 'mskiayang@yahoo.com',
-        county: 'Sacramento',
-        city: 'Sacramento',
-        caseload: 8,
-        maxCaseload: 18,
-        status: 'Active'
-      },
-      {
-        id: '4',
-        name: 'John Amber',
-        email: 'john.amber@example.com',
-        county: 'Los Angeles',
-        city: 'Los Angeles',
-        caseload: 10,
-        maxCaseload: 20,
-        status: 'Active'
-      },
-      {
-        id: '5',
-        name: 'Nick Jaksic',
-        email: 'nick.jaksic@example.com',
-        county: 'Los Angeles',
-        city: 'Los Angeles',
-        caseload: 8,
-        maxCaseload: 18,
-        status: 'Active'
-      }
-    ];
-
-    // Mock RCFE members
-    const mockMembers: RCFEMember[] = [
-      {
-        id: '1',
-        name: 'John Smith',
-        rcfeName: 'Sunshine Care Home',
-        rcfeAddress: '123 Main St, Los Angeles, CA',
-        county: 'Los Angeles',
-        city: 'Los Angeles',
-        assignedSocialWorker: '1',
-        lastVisit: '2024-01-10',
-        nextVisit: '2024-02-10',
-        status: 'Active',
-        careLevel: 'Medium'
-      },
-      {
-        id: '2',
-        name: 'Mary Johnson',
-        rcfeName: 'Golden Years RCFE',
-        rcfeAddress: '456 Oak Ave, Sacramento, CA',
-        county: 'Sacramento',
-        city: 'Sacramento',
-        status: 'Active',
-        careLevel: 'High'
-      },
-      {
-        id: '3',
-        name: 'Robert Davis',
-        rcfeName: 'Peaceful Living Home',
-        rcfeAddress: '789 Pine St, Los Angeles, CA',
-        county: 'Los Angeles',
-        city: 'Pasadena',
-        assignedSocialWorker: '2',
-        lastVisit: '2024-01-15',
-        nextVisit: '2024-02-15',
-        status: 'Active',
-        careLevel: 'Low'
-      }
-    ];
-
-    // Mock assignments
-    const mockAssignments: Assignment[] = [
-      {
-        id: '1',
-        socialWorkerId: '1',
-        socialWorkerName: 'Staff Member A',
-        memberId: '1',
-        memberName: 'Sample Member A',
-        rcfeName: 'Sample Care Home A',
-        county: 'Los Angeles',
-        assignedDate: '2024-01-01',
-        lastVisit: '2024-01-10',
-        nextVisit: '2024-02-10',
-        status: 'Active',
-        notes: 'Regular monthly visits scheduled'
-      },
-      {
-        id: '2',
-        socialWorkerId: '2',
-        socialWorkerName: 'Anna-Lisa Bastian',
-        memberId: '3',
-        memberName: 'Robert Davis',
-        rcfeName: 'Peaceful Living Home',
-        county: 'Los Angeles',
-        assignedDate: '2024-01-05',
-        lastVisit: '2024-01-15',
-        nextVisit: '2024-02-15',
-        status: 'Active',
-        notes: 'Low care level, quarterly visits'
-      }
-    ];
-
-    setSocialWorkers(mockSocialWorkers);
-    setRCFEMembers(mockMembers);
-    setAssignments(mockAssignments);
-  };
-
-  // Get counties for filter
-  const counties = useMemo(() => {
-    const uniqueCounties = [...new Set([
-      ...socialWorkers.map(sw => sw.county),
-      ...rcfeMembers.map(member => member.county)
-    ])].sort();
-    return uniqueCounties;
-  }, [socialWorkers, rcfeMembers]);
-
-  // Filter data
-  // Remove old filtering logic since we're using card-based interface now
-
-  const unassignedMembers = useMemo(() => {
-    return rcfeMembers.filter(member => !member.assignedSocialWorker);
-  }, [rcfeMembers]);
-
-  // Get unique RCFE names for autocomplete
-  const uniqueRcfeNames = useMemo(() => {
-    const names = rcfeMembers.map(member => member.rcfeName).filter(Boolean);
-    return [...new Set(names)].sort();
-  }, [rcfeMembers]);
-
-  // Filter RCFE suggestions based on search term (match from beginning of words only)
-  const filteredRcfeSuggestions = useMemo(() => {
-    if (!rcfeSearchTerm) return [];
-    const searchTerm = rcfeSearchTerm.toLowerCase();
-    return uniqueRcfeNames.filter(name => {
-      const nameLower = name.toLowerCase();
-      // Match from beginning of the name OR beginning of any word
-      return nameLower.startsWith(searchTerm) || 
-             nameLower.split(' ').some(word => word.startsWith(searchTerm));
-    }).slice(0, 10); // Limit to 10 suggestions
-  }, [uniqueRcfeNames, rcfeSearchTerm]);
-
-  // Group members by social worker for card display
-  const socialWorkerGroups = useMemo(() => {
-    console.log('🔍 SOCIAL WORKER GROUPING DEBUG:', {
-      totalRcfeMembers: rcfeMembers.length,
-      membersWithSW: rcfeMembers.filter(m => m.assignedSocialWorker).length
-    });
-    
-    // Show sample members separately to avoid complex object issues
-    console.log('🔍 SAMPLE MEMBERS:', rcfeMembers.slice(0, 3));
-    
-    // Show members with assignments
-    const membersWithAssignments = rcfeMembers.filter(m => m.assignedSocialWorker && m.assignedSocialWorker.trim() !== '');
-    console.log('🔍 MEMBERS WITH ASSIGNMENTS:', membersWithAssignments.length, membersWithAssignments.slice(0, 3));
-    
-    const groups: Record<string, any[]> = {};
-    
-    // Group RCFE members by their assigned social worker
-    rcfeMembers.forEach(member => {
-      const socialWorkerName = member.assignedSocialWorker || 'Unassigned';
-      // Include ALL members - assigned AND unassigned
-      if (!groups[socialWorkerName]) {
-        groups[socialWorkerName] = [];
-      }
-      groups[socialWorkerName].push(member);
-    });
-
-    console.log('🔍 GROUPED SOCIAL WORKERS:', {
-      groupCount: Object.keys(groups).length,
-      groupNames: Object.keys(groups),
-      groupSizes: Object.entries(groups).map(([name, members]) => ({
-        name,
-        count: members.length
-      })),
-      totalMembersInGroups: Object.values(groups).reduce((sum: number, members: any[]) => sum + members.length, 0)
-    });
-    
-    // Debug: Check if Billy's members are being grouped correctly
-    const billyMembers = rcfeMembers.filter(m => 
-      m.assignedSocialWorker && m.assignedSocialWorker.includes('Billy')
-    );
-    console.log('🔍 BILLY DEBUG:', {
-      billyMembersFound: billyMembers.length,
-      billyAssignedSocialWorker: billyMembers.slice(0, 3).map(m => m.assignedSocialWorker),
-      sampleBillyMembers: billyMembers.slice(0, 3).map(m => ({
-        name: m.name,
-        assignedSocialWorker: m.assignedSocialWorker
-      }))
-    });
-
-    return Object.entries(groups)
-      .map(([name, members]) => ({
-        name,
-        memberCount: members.length,
-        members
-      }))
-      .sort((a, b) => {
-        // Put "Unassigned" at the end
-        if (a.name === 'Unassigned') return 1;
-        if (b.name === 'Unassigned') return -1;
-        return a.name.localeCompare(b.name);
-      });
-  }, [rcfeMembers]);
-
-  // Filter social worker groups based on search terms
-  const filteredSocialWorkerGroups = useMemo(() => {
-    return socialWorkerGroups.filter(group => {
-      const matchesSocialWorker = socialWorkerSearchTerm === '' || 
-        group.name.toLowerCase().includes(socialWorkerSearchTerm.toLowerCase());
-      
-      const matchesMembers = searchTerm === '' || 
-        group.members.some(member => 
-          member.memberName.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-        
-      const matchesRCFE = rcfeSearchTerm === '' ||
-        group.members.some(member =>
-          member.rcfeName.toLowerCase().includes(rcfeSearchTerm.toLowerCase())
-        );
-      
-      return matchesSocialWorker && (searchTerm === '' || matchesMembers) && (rcfeSearchTerm === '' || matchesRCFE);
-    });
-  }, [socialWorkerGroups, socialWorkerSearchTerm, searchTerm, rcfeSearchTerm]);
-
-  const handleSocialWorkerCardClick = (socialWorkerName: string, members: any[]) => {
-    console.log('🔍 MODAL DATA DEBUG:', {
-      socialWorkerName,
-      memberCount: members.length,
-      firstMember: members[0],
-      sampleMemberData: members.slice(0, 2)
-    });
-    setSelectedSocialWorkerName(socialWorkerName);
-    setSelectedSocialWorkerMembers(members);
-    setShowMembersModal(true);
-  };
-
-  const handleAssignSocialWorker = (memberId: string, socialWorkerId: string) => {
-    // READ-ONLY MODE: Assignments are disabled to prevent writes to Caspio
-    toast({
-      title: "Read-Only Mode",
-      description: "Assignment functionality is disabled in read-only mode. Data is synced from Caspio only.",
-      variant: "destructive"
-    });
-    
-    setShowAssignModal(false);
-    setSelectedMember(null);
-  };
-
-  const getNextVisitDate = () => {
-    const nextMonth = new Date();
-    nextMonth.setMonth(nextMonth.getMonth() + 1);
-    return nextMonth.toISOString().split('T')[0];
-  };
-
-  const syncFromCaspio = async () => {
-    console.log('🔄 Starting sync from Caspio...');
-    setSyncing(true);
+  // Fetch all members from API (Kaiser + Health Net + other MCOs)
+  const fetchAllMembers = async () => {
+    setIsLoadingMembers(true);
     try {
-      console.log('📊 Syncing social worker assignments from Caspio (READ ONLY)');
-      
-      // Fetch data from Caspio API
-      console.log('📡 Fetching from /api/kaiser-members...');
-      const response = await fetch('/api/kaiser-members');
-      console.log('📡 Response status:', response.status, response.statusText);
-      
+      const response = await fetch('/api/all-members');
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ API Response Error:', errorText);
-        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const responseData = await response.json();
+      
+      if (!responseData.success) {
+        throw new Error(responseData.error || 'Failed to fetch members');
       }
       
-      const data = await response.json();
-      console.log('📊 Synced data from Caspio:', data);
-      
-      // DEBUG: Show raw member data to see actual Caspio field values
-      if (data.members && data.members.length > 0) {
-        console.log('🔍 RAW FIRST MEMBER FROM API:', data.members[0]);
-        console.log('🔍 RCFE FIELDS CHECK:', {
-          RCFE_Name: data.members[0].RCFE_Name,
-          RCFE_Address: data.members[0].RCFE_Address,
-          RCFE_City: data.members[0].RCFE_City,
-          RCFE_Zip: data.members[0].RCFE_Zip,
-          Senior_Last_First_ID: data.members[0].Senior_Last_First_ID,
-          memberName: data.members[0].memberName,
-          memberCounty: data.members[0].memberCounty
-        });
-      }
-      
-      if (!data.members || !Array.isArray(data.members)) {
-        console.error('❌ Invalid data structure:', data);
-        throw new Error('Invalid data structure received from API');
-      }
-      
-      // Debug: Log Social_Worker_Assigned field only
-      if (data.members && data.members.length > 0) {
-        console.log('🔍 Social Worker Assignment Debug (Social_Worker_Assigned field only):');
-        
-        // Count assigned vs unassigned (all authorized members)
-        const authorizedMembers = data.members.filter((m: any) => m.CalAIM_Status === 'Authorized');
-        const assigned = authorizedMembers.filter((m: any) => m.Social_Worker_Assigned && m.Social_Worker_Assigned.trim() !== '');
-        const unassigned = authorizedMembers.filter((m: any) => !m.Social_Worker_Assigned || m.Social_Worker_Assigned.trim() === '');
-        const withRCFE = authorizedMembers.filter((m: any) => m.RCFE_Name && m.RCFE_Name.trim() !== '');
-        const withoutRCFE = authorizedMembers.filter((m: any) => !m.RCFE_Name || m.RCFE_Name.trim() === '');
-        
-        console.log(`📊 Summary: ${assigned.length} assigned, ${unassigned.length} unassigned (out of ${authorizedMembers.length} total authorized)`);
-        console.log(`📊 RCFE Status: ${withRCFE.length} with RCFE, ${withoutRCFE.length} without RCFE`);
-        
-        // DEBUG: Check Billy's raw data from API
-        const billyRawMembers = data.members.filter((m: any) => 
-          m.Social_Worker_Assigned && m.Social_Worker_Assigned.includes('Billy')
-        );
-        console.log('🔍 BILLY RAW API DATA:', {
-          billyRawCount: billyRawMembers.length,
-          sampleBillyRaw: billyRawMembers.slice(0, 3).map(m => ({
-            Senior_Last_First_ID: m.Senior_Last_First_ID,
-            Social_Worker_Assigned: m.Social_Worker_Assigned,
-            CalAIM_Status: m.CalAIM_Status,
-            RCFE_Name: m.RCFE_Name
-          }))
-        });
-        
-        // Show first 5 members with their field values
-        console.log('🔍 SOCIAL WORKER PAGE - First 5 members data:');
-        data.members.slice(0, 5).forEach((member: any, index: number) => {
-          console.log(`Member ${index + 1}:`, {
-            Senior_Last_First_ID: member.Senior_Last_First_ID,
-            Senior_First: member.Senior_First,
-            Senior_Last: member.Senior_Last,
-            memberName: member.memberName,
-            memberFirstName: member.memberFirstName,
-            memberLastName: member.memberLastName,
-            RCFE_Name: member.RCFE_Name,
-            RCFE_Address: member.RCFE_Address,
-            RCFE_City: member.RCFE_City,
-            RCFE_Zip: member.RCFE_Zip,
-            CalAIM_Status: member.CalAIM_Status,
-            Social_Worker_Assigned: member.Social_Worker_Assigned,
-            hasAssignment: !!(member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '')
-          });
-        });
-        
-        // Show all available fields from first member
-        if (data.members.length > 0) {
-          console.log('🔍 ALL FIELDS in first member:', Object.keys(data.members[0]).sort());
-        }
-        
-        // Show unique social workers (from authorized members)
-        const uniqueSocialWorkers = [...new Set(
-          authorizedMembers
-            .filter((m: any) => m.Social_Worker_Assigned && m.Social_Worker_Assigned.trim() !== '')
-            .map((m: any) => m.Social_Worker_Assigned)
-        )];
-        console.log('👥 Unique Social Workers found:', uniqueSocialWorkers);
-        console.log('📈 Total unique social workers:', uniqueSocialWorkers.length);
-      }
-      
-      // Transform ALL members - no filtering, let UI handle it
-      const transformedMembers: RCFEMember[] = data.members
-        .map((member: any, index: number) => ({
-          id: `rcfe-member-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}-${member.client_ID2 || 'unknown'}`,
-          name: member.Senior_Last_First_ID || member.memberName || `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
-          rcfeName: member.RCFE_Name || 'No RCFE Assigned',
-          rcfeAddress: member.RCFE_Address || 'No address available',
-          county: member.Member_County || 'Los Angeles',
-          city: member.RCFE_City || member.Member_City || 'Unknown',
-          zip: member.RCFE_Zip || 'Unknown',
-          assignedSocialWorker: member.Social_Worker_Assigned || undefined, // Keep ALL assignments
-          lastVisit: member.Last_Visit_Date || undefined,
-          nextVisit: member.Next_Visit_Date || undefined,
-          status: member.CalAIM_Status || 'Unknown',
-          careLevel: member.Care_Level || 'Medium',
-          CalAIM_Status: member.CalAIM_Status || 'Unknown', // Add this for filtering
-          holdForSocialWorker: member.Hold_For_Social_Worker || '' // Add hold status
-        }));
-
-      // Transform social worker assignments - include ALL authorized members (with or without RCFE)
-      const staffAssignments = data.members
-        .filter((member: any) => {
-          const isAuthorized = member.CalAIM_Status === 'Authorized';
-          // Show all authorized members regardless of RCFE or social worker assignment
-          return isAuthorized;
-        })
-        .map((member: any) => {
-          // Use Social_Worker_Assigned field, or "Unassigned" for authorized members without assignment
-          const socialWorkerAssignment = member.Social_Worker_Assigned || 'Unassigned';
-          
-          // Debug: Log the social worker assignment
-          console.log('🔍 Social Worker Assignment Debug (Including Unassigned):', {
-            memberName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
-            Social_Worker_Assigned: member.Social_Worker_Assigned,
-            CalAIM_Status: member.CalAIM_Status,
-            socialWorkerAssignment: socialWorkerAssignment,
-            isUnassigned: socialWorkerAssignment === 'Unassigned'
-          });
-          
-          // Ensure it's a string and determine if this is an email (social worker) or a name
-          const assignmentStr = String(socialWorkerAssignment || '');
-          const isEmail = assignmentStr && typeof assignmentStr === 'string' && assignmentStr.includes('@');
-          
-          // If it's an email, use it as both ID and name (for now)
-          // If it's not an email, it might be a name - use it as the name but create an ID
-          const socialWorkerId = isEmail ? assignmentStr : `sw-${assignmentStr.replace(/\s+/g, '-').toLowerCase()}`;
-          const socialWorkerName = assignmentStr || 'Unassigned';
-          
-          return {
-            id: `assignment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${member.client_ID2 || 'unknown'}`,
-            socialWorkerId: socialWorkerId,
-            socialWorkerName: socialWorkerName,
-            memberId: `member-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${member.client_ID2 || 'unknown'}`,
-            memberName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
-            rcfeName: member.RCFE_Name || 'Unknown RCFE',
-            county: member.Member_County || 'Los Angeles',
-            assignedDate: member.Assignment_Date || new Date().toISOString().split('T')[0],
-            lastVisit: member.Last_Visit_Date || undefined,
-            nextVisit: member.Next_Visit_Date || undefined,
-            status: 'Active',
-            notes: member.Visit_Notes || undefined
-          };
-        });
-
-      setRCFEMembers(transformedMembers);
-      setAssignments(staffAssignments);
-      
-      // DEBUG: Check why social worker cards show 0 members
-      console.log('🔍 SOCIAL WORKER GROUPING DEBUG:', {
-        totalTransformedMembers: transformedMembers.length,
-        membersWithSocialWorkers: transformedMembers.filter(m => m.assignedSocialWorker).length,
-        membersWithoutSocialWorkers: transformedMembers.filter(m => !m.assignedSocialWorker).length,
-        sampleMembersWithSW: transformedMembers.filter(m => m.assignedSocialWorker).slice(0, 3).map(m => ({
-          name: m.name,
-          assignedSocialWorker: m.assignedSocialWorker,
-          rcfeName: m.rcfeName
-        })),
-        uniqueSocialWorkerNames: [...new Set(transformedMembers.filter(m => m.assignedSocialWorker).map(m => m.assignedSocialWorker))]
-      });
+      setMembers(responseData.members || []);
       
       toast({
-        title: "Sync Complete",
-        description: `Synced ${transformedMembers.length} RCFE members and ${staffAssignments.length} assignments from Caspio (READ ONLY)`,
+        title: "Data Loaded Successfully",
+        description: `Loaded ${responseData.members?.length || 0} members from all MCOs`,
       });
-      
     } catch (error) {
-      console.error('❌ Error syncing from Caspio:', error);
+      console.error('Error fetching all members:', error);
       toast({
-        title: "Sync Failed",
-        description: "Failed to sync data from Caspio. Please try again.",
-        variant: "destructive"
+        title: "Load Failed",
+        description: "Failed to load members. Please try again.",
+        variant: "destructive",
       });
     } finally {
-      setSyncing(false);
+      setIsLoadingMembers(false);
     }
   };
 
-  const getCareLevelBadge = (level: string) => {
-    const colors = {
-      'Low': 'bg-green-100 text-green-800',
-      'Medium': 'bg-yellow-100 text-yellow-800',
-      'High': 'bg-red-100 text-red-800'
-    };
-    return colors[level as keyof typeof colors] || 'bg-gray-100 text-gray-800';
-  };
+  useEffect(() => {
+    if (isAdmin) {
+      fetchAllMembers();
+    }
+  }, [isAdmin]);
+
+  // Calculate social worker statistics
+  const socialWorkerStats = useMemo((): SocialWorkerStats[] => {
+    const stats: Record<string, SocialWorkerStats> = {};
+    
+    members.forEach(member => {
+      const swName = member.Social_Worker_Assigned || 'Unassigned';
+      
+      if (!stats[swName]) {
+        stats[swName] = {
+          name: swName,
+          memberCount: 0,
+          members: [],
+          mcoBreakdown: {},
+          statusBreakdown: {},
+          countyBreakdown: {},
+          rcfeBreakdown: {},
+          onHoldCount: 0,
+          activeCount: 0
+        };
+      }
+      
+      stats[swName].memberCount++;
+      stats[swName].members.push(member);
+      
+      // MCO breakdown
+      const mco = member.CalAIM_MCO || 'Unknown';
+      stats[swName].mcoBreakdown[mco] = (stats[swName].mcoBreakdown[mco] || 0) + 1;
+      
+      // Status breakdown
+      const status = member.CalAIM_Status || 'No Status';
+      stats[swName].statusBreakdown[status] = (stats[swName].statusBreakdown[status] || 0) + 1;
+      
+      // County breakdown
+      const county = member.memberCounty || 'Unknown';
+      stats[swName].countyBreakdown[county] = (stats[swName].countyBreakdown[county] || 0) + 1;
+      
+      // RCFE breakdown
+      const rcfe = member.RCFE_Name || 'No RCFE';
+      stats[swName].rcfeBreakdown[rcfe] = (stats[swName].rcfeBreakdown[rcfe] || 0) + 1;
+      
+      // Hold status
+      if (member.Hold_For_Social_Worker === '🔴 Hold') {
+        stats[swName].onHoldCount++;
+      }
+      
+      // Active status (not expired, denied, or non-active)
+      if (!['Expired', 'Denied', 'Non-active'].includes(status)) {
+        stats[swName].activeCount++;
+      }
+    });
+    
+    return Object.values(stats).sort((a, b) => {
+      // Sort: Unassigned last, then by member count descending
+      if (a.name === 'Unassigned') return 1;
+      if (b.name === 'Unassigned') return -1;
+      return b.memberCount - a.memberCount;
+    });
+  }, [members]);
+
+  // Get all unique social workers for filter
+  const allSocialWorkers = useMemo(() => {
+    return socialWorkerStats.map(sw => sw.name);
+  }, [socialWorkerStats]);
+
+  // Get all unique values for filters
+  const allMCOs = useMemo(() => {
+    return [...new Set(members.map(m => m.CalAIM_MCO || 'Unknown'))].sort();
+  }, [members]);
+
+  const allStatuses = useMemo(() => {
+    return [...new Set(members.map(m => m.CalAIM_Status || 'No Status'))].sort();
+  }, [members]);
+
+  const allCounties = useMemo(() => {
+    return [...new Set(members.map(m => m.memberCounty || 'Unknown'))].sort();
+  }, [members]);
+
+  const allRCFEs = useMemo(() => {
+    return [...new Set(members.map(m => m.RCFE_Name || 'No RCFE'))].sort();
+  }, [members]);
+
+  // Filter members based on search and filters
+  const filteredMembers = useMemo(() => {
+    return members.filter(member => {
+      const matchesSearch = !searchTerm || 
+        member.memberName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        member.Client_ID2.toString().includes(searchTerm) ||
+        (member.Social_Worker_Assigned || '').toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesSW = selectedSocialWorker === 'all' || 
+        (member.Social_Worker_Assigned || 'Unassigned') === selectedSocialWorker;
+      
+      const matchesMCO = selectedMCO === 'all' || 
+        (member.CalAIM_MCO || 'Unknown') === selectedMCO;
+      
+      const matchesStatus = selectedStatus === 'all' || 
+        (member.CalAIM_Status || 'No Status') === selectedStatus;
+      
+      const matchesCounty = selectedCounty === 'all' || 
+        (member.memberCounty || 'Unknown') === selectedCounty;
+      
+      const matchesRCFE = selectedRCFE === 'all' || 
+        (member.RCFE_Name || 'No RCFE') === selectedRCFE;
+      
+      return matchesSearch && matchesSW && matchesMCO && matchesStatus && matchesCounty && matchesRCFE;
+    });
+  }, [members, searchTerm, selectedSocialWorker, selectedStatus, selectedCounty]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading social worker assignments...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="w-96">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Access Denied
+            </CardTitle>
+            <CardDescription>
+              You need admin permissions to view social worker assignments.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Social Worker Assignments</h1>
-          <p className="text-muted-foreground">View social worker assignments to RCFE members</p>
-          <div className="flex items-center gap-2 mt-2">
-            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-              📖 Read-Only Mode
-            </Badge>
-            <span className="text-sm text-muted-foreground">Data synced from Caspio - no write operations</span>
-          </div>
+          <h1 className="text-3xl font-bold tracking-tight">Social Worker Assignments</h1>
+          <p className="text-muted-foreground">
+            Manage member assignments to social workers | {members.length} total members (all MCOs)
+          </p>
         </div>
-        <div className="flex gap-2">
-          <Button 
-            onClick={syncFromCaspio} 
-            disabled={syncing}
-            variant="outline"
-          >
-            {syncing ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4 mr-2" />
-            )}
-            {syncing ? 'Syncing...' : 'Sync from Caspio'}
-          </Button>
-        </div>
+        <Button onClick={fetchAllMembers} disabled={isLoadingMembers}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingMembers ? 'animate-spin' : ''}`} />
+          Sync from Caspio
+        </Button>
       </div>
 
-      {/* Filter Controls */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <Label htmlFor="member-search">Filter by Member Name</Label>
-          <Input
-            id="member-search"
-            placeholder="Search members..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-        <div className="relative">
-          <Label htmlFor="rcfe-search">Filter by RCFE Name</Label>
-          <Input
-            id="rcfe-search"
-            placeholder="Search RCFE facilities..."
-            value={rcfeSearchTerm}
-            onChange={(e) => {
-              setRcfeSearchTerm(e.target.value);
-              setShowRcfeSuggestions(e.target.value.length > 0);
-            }}
-            onFocus={() => setShowRcfeSuggestions(rcfeSearchTerm.length > 0)}
-            onBlur={() => setTimeout(() => setShowRcfeSuggestions(false), 200)}
-          />
-          {showRcfeSuggestions && filteredRcfeSuggestions.length > 0 && (
-            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-              {filteredRcfeSuggestions.map((rcfeName, index) => (
-                <div
-                  key={index}
-                  className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                  onClick={() => {
-                    setRcfeSearchTerm(rcfeName);
-                    setShowRcfeSuggestions(false);
-                  }}
-                >
-                  {rcfeName}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div>
-          <Label htmlFor="social-worker-search">Filter by Social Worker</Label>
-          <Input
-            id="social-worker-search"
-            placeholder="Search social workers..."
-            value={socialWorkerSearchTerm}
-            onChange={(e) => setSocialWorkerSearchTerm(e.target.value)}
-          />
-        </div>
-      </div>
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="assignments">Member Assignments</TabsTrigger>
+          <TabsTrigger value="workload">Workload Analysis</TabsTrigger>
+        </TabsList>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <UserCheck className="h-4 w-4 text-blue-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Active Social Workers</p>
-                <p className="text-2xl font-bold">{socialWorkerGroups.filter(group => group.name !== 'Unassigned').length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-green-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Total Members</p>
-                <p className="text-2xl font-bold">{rcfeMembers.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <UserCheck className="h-4 w-4 text-emerald-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Authorized Members</p>
-                <p className="text-2xl font-bold">{rcfeMembers.filter(member => member.CalAIM_Status === 'Authorized').length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-purple-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Active Assignments</p>
-                <p className="text-2xl font-bold">{assignments.filter(a => a.status === 'Active').length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-orange-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Unassigned Members</p>
-                <p className="text-2xl font-bold">{unassignedMembers.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-
-      {/* Main Content */}
-      {/* Social Worker Cards */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Social Workers ({filteredSocialWorkerGroups.length})</h2>
-          <div className="text-sm text-muted-foreground">
-            Click on a card to view assigned members
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredSocialWorkerGroups.map((group) => (
-            <Card 
-              key={group.name} 
-              className="cursor-pointer hover:shadow-md transition-shadow"
-              onClick={() => handleSocialWorkerCardClick(group.name, group.members.map(member => ({
-                memberName: member.name,
-                rcfeName: member.rcfeName,
-                rcfeAddress: member.rcfeAddress,
-                city: member.city,
-                zip: member.zip,
-                county: member.county,
-                status: member.status,
-                lastVisit: member.lastVisit,
-                nextVisit: member.nextVisit
-              })))}
-            >
-              <CardContent className="p-4">
-                <div className="text-center">
-                  <div className="flex items-center justify-center w-12 h-12 bg-blue-100 rounded-full mx-auto mb-3">
-                    <Users className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <h3 className="font-semibold text-lg mb-1">{group.name}</h3>
-                  <div className="text-2xl font-bold text-blue-600 mb-1">{group.memberCount}</div>
-                  <p className="text-sm text-muted-foreground">
-                    {group.memberCount === 1 ? 'Member' : 'Members'} Assigned
-                  </p>
-                </div>
+        <TabsContent value="overview" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Members</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{members.length}</div>
+                <p className="text-xs text-muted-foreground">
+                  Members in system (all MCOs)
+                </p>
               </CardContent>
             </Card>
-          ))}
-          
-          {/* Unassigned Members Card */}
-          {unassignedMembers.length > 0 && (
-            <Card 
-              className="cursor-pointer hover:shadow-md transition-shadow border-orange-200"
-              onClick={() => handleSocialWorkerCardClick('Unassigned', unassignedMembers.map(member => ({
-                memberName: member.name,
-                rcfeName: member.rcfeName,
-                rcfeAddress: member.rcfeAddress,
-                city: member.city,
-                zip: member.zip,
-                county: member.county,
-                status: member.status
-              })))}
-            >
-              <CardContent className="p-4">
-                <div className="text-center">
-                  <div className="flex items-center justify-center w-12 h-12 bg-orange-100 rounded-full mx-auto mb-3">
-                    <UserPlus className="h-6 w-6 text-orange-600" />
-                  </div>
-                  <h3 className="font-semibold text-lg mb-1">Unassigned</h3>
-                  <div className="text-2xl font-bold text-orange-600 mb-1">{unassignedMembers.length}</div>
-                  <p className="text-sm text-muted-foreground">
-                    {unassignedMembers.length === 1 ? 'Member' : 'Members'} Need Assignment
-                  </p>
-                </div>
+            
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Social Workers</CardTitle>
+                <UserPlus className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{socialWorkerStats.filter(sw => sw.name !== 'Unassigned').length}</div>
+                <p className="text-xs text-muted-foreground">
+                  Active social workers
+                </p>
               </CardContent>
             </Card>
-          )}
-        </div>
-        
-        {filteredSocialWorkerGroups.length === 0 && unassignedMembers.length === 0 && (
+            
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Unassigned</CardTitle>
+                <AlertTriangle className="h-4 w-4 text-yellow-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-yellow-600">
+                  {socialWorkerStats.find(sw => sw.name === 'Unassigned')?.memberCount || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Members without social worker
+                </p>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">On Hold</CardTitle>
+                <Clock className="h-4 w-4 text-red-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">
+                  {socialWorkerStats.reduce((sum, sw) => sum + sw.onHoldCount, 0)}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Members on hold for SW visit
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Social Worker Summary Cards */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {socialWorkerStats.map((sw) => (
+              <Card key={sw.name} className={sw.name === 'Unassigned' ? 'border-yellow-200 bg-yellow-50' : ''}>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center justify-between">
+                    <span className={sw.name === 'Unassigned' ? 'text-yellow-700' : ''}>
+                      {sw.name === 'Unassigned' ? '⚠️ Unassigned Members' : sw.name}
+                    </span>
+                    <Button
+                      variant={sw.name === 'Unassigned' ? 'destructive' : 'default'}
+                      size="sm"
+                      onClick={() => {
+                        setSelectedSWForModal(sw);
+                        setShowMemberModal(true);
+                      }}
+                    >
+                      {sw.memberCount} members
+                    </Button>
+                  </CardTitle>
+                  <CardDescription>
+                    {sw.activeCount} active • {sw.onHoldCount} on hold
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="text-sm">
+                      <strong>MCOs:</strong>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {Object.entries(sw.mcoBreakdown)
+                          .sort(([,a], [,b]) => b - a)
+                          .map(([mco, count]) => (
+                            <Badge key={mco} variant="default" className="text-xs">
+                              {mco}: {count}
+                            </Badge>
+                          ))}
+                      </div>
+                    </div>
+                    <div className="text-sm">
+                      <strong>Top RCFEs:</strong>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {Object.entries(sw.rcfeBreakdown)
+                          .sort(([,a], [,b]) => b - a)
+                          .slice(0, 2)
+                          .map(([rcfe, count]) => (
+                            <Badge key={rcfe} variant="secondary" className="text-xs">
+                              {rcfe === 'No RCFE' ? 'No RCFE' : rcfe.substring(0, 20) + (rcfe.length > 20 ? '...' : '')}: {count}
+                            </Badge>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="assignments" className="space-y-4">
+          {/* Filters */}
           <Card>
-            <CardContent className="p-8 text-center">
-              <Users className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-              <p className="text-gray-600">No social workers found matching your filters</p>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Filter className="h-5 w-5" />
+                Filter Members
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Search</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search members..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Social Worker</label>
+                  <Select value={selectedSocialWorker} onValueChange={setSelectedSocialWorker}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All social workers" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Social Workers</SelectItem>
+                      {allSocialWorkers.map(sw => (
+                        <SelectItem key={sw} value={sw}>
+                          {sw} ({socialWorkerStats.find(s => s.name === sw)?.memberCount || 0})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">MCO</label>
+                  <Select value={selectedMCO} onValueChange={setSelectedMCO}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All MCOs" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All MCOs</SelectItem>
+                      {allMCOs.map(mco => (
+                        <SelectItem key={mco} value={mco}>
+                          {mco}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">CalAIM Status</label>
+                  <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      {allStatuses.map(status => (
+                        <SelectItem key={status} value={status}>
+                          {status}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">County</label>
+                  <Select value={selectedCounty} onValueChange={setSelectedCounty}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All counties" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Counties</SelectItem>
+                      {allCounties.map(county => (
+                        <SelectItem key={county} value={county}>
+                          {county}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">RCFE</label>
+                  <Select value={selectedRCFE} onValueChange={setSelectedRCFE}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All RCFEs" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All RCFEs</SelectItem>
+                      {allRCFEs.map(rcfe => (
+                        <SelectItem key={rcfe} value={rcfe}>
+                          {rcfe === 'No RCFE' ? 'No RCFE' : rcfe.substring(0, 30) + (rcfe.length > 30 ? '...' : '')}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="flex items-end">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setSearchTerm('');
+                      setSelectedSocialWorker('all');
+                      setSelectedMCO('all');
+                      setSelectedStatus('all');
+                      setSelectedCounty('all');
+                      setSelectedRCFE('all');
+                    }}
+                    className="w-full"
+                  >
+                    Clear Filters
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
-        )}
-      </div>
 
-      {/* Members Modal */}
-      {showMembersModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-4xl max-h-[80vh] overflow-hidden">
+          {/* Members Table */}
+          <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Members Assigned to {selectedSocialWorkerName}</CardTitle>
-                  <CardDescription>
-                    {selectedSocialWorkerMembers.length} {selectedSocialWorkerMembers.length === 1 ? 'member' : 'members'} assigned
-                  </CardDescription>
-                </div>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => setShowMembersModal(false)}
-                >
-                  ✕
-                </Button>
-              </div>
+              <CardTitle className="flex items-center justify-between">
+                <span>Member Assignments ({filteredMembers.length})</span>
+                <Badge variant="outline">{filteredMembers.length} of {members.length} members</Badge>
+              </CardTitle>
             </CardHeader>
-            <CardContent className="overflow-y-auto">
-              <div className="space-y-3">
-                {selectedSocialWorkerMembers
-                  .sort((a, b) => (a.rcfeName || '').localeCompare(b.rcfeName || ''))
-                  .map((member, index) => (
-                  <div key={index} className="p-3 bg-gray-50 rounded border">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h4 className="font-medium text-gray-900">{member.memberName}</h4>
-                        <div className="text-sm text-gray-600 mt-1">
-                          <div>RCFE: {member.rcfeName}</div>
-                          {member.rcfeAddress && <div>Address: {member.rcfeAddress}</div>}
-                          <div>City: {member.city} {member.zip && `${member.zip}`}</div>
-                          <div>County: {member.county}</div>
-                          {member.lastVisit && <div>Last Visit: {member.lastVisit}</div>}
-                          {member.nextVisit && <div>Next Visit: {member.nextVisit}</div>}
+            <CardContent>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Member</TableHead>
+                      <TableHead>Client ID</TableHead>
+                      <TableHead>MCO</TableHead>
+                      <TableHead>County</TableHead>
+                      <TableHead>CalAIM Status</TableHead>
+                      <TableHead>Social Worker</TableHead>
+                      <TableHead>RCFE</TableHead>
+                      <TableHead>Hold Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoadingMembers ? (
+                      <TableRow>
+                        <TableCell colSpan={9} className="text-center py-8">
+                          <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
+                          Loading members...
+                        </TableCell>
+                      </TableRow>
+                    ) : filteredMembers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                          No members found matching the current filters.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredMembers.map((member) => (
+                        <TableRow key={member.id}>
+                          <TableCell className="font-medium">
+                            {member.memberName}
+                          </TableCell>
+                          <TableCell>{member.Client_ID2}</TableCell>
+                          <TableCell>
+                            <Badge variant="default" className="text-xs">
+                              {member.CalAIM_MCO || 'Unknown'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{member.memberCounty}</TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="text-xs">
+                              {member.CalAIM_Status || 'No Status'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {member.Social_Worker_Assigned ? (
+                              <Badge variant="default" className="text-xs">
+                                {member.Social_Worker_Assigned}
+                              </Badge>
+                            ) : (
+                              <Badge variant="destructive" className="text-xs">
+                                Unassigned
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs">
+                              {member.RCFE_Name ? (
+                                <div>
+                                  <div className="font-medium">{member.RCFE_Name}</div>
+                                  <div className="text-muted-foreground">{member.RCFE_Address}</div>
+                                </div>
+                              ) : (
+                                <Badge variant="outline" className="text-xs">
+                                  No RCFE
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {member.Hold_For_Social_Worker === '🔴 Hold' ? (
+                              <Badge variant="destructive" className="text-xs">
+                                🔴 Hold
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-xs">
+                                Active
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="sm">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="workload" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Social Worker Workload Analysis</CardTitle>
+              <CardDescription>
+                Detailed breakdown of member assignments and workload distribution
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                {socialWorkerStats.map((sw) => (
+                  <div key={sw.name} className="border rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        {sw.name === 'Unassigned' ? (
+                          <>
+                            <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                            <span className="text-yellow-700">Unassigned Members</span>
+                          </>
+                        ) : (
+                          <>
+                            <User className="h-5 w-5" />
+                            {sw.name}
+                          </>
+                        )}
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{sw.memberCount} total</Badge>
+                        <Badge variant="default">{sw.activeCount} active</Badge>
+                        {sw.onHoldCount > 0 && (
+                          <Badge variant="destructive">{sw.onHoldCount} on hold</Badge>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <h4 className="font-medium mb-2">Status Breakdown</h4>
+                        <div className="space-y-1">
+                          {Object.entries(sw.statusBreakdown)
+                            .sort(([,a], [,b]) => b - a)
+                            .map(([status, count]) => (
+                              <div key={status} className="flex justify-between items-center text-sm">
+                                <span>{status}</span>
+                                <Badge variant="outline" className="text-xs">{count}</Badge>
+                              </div>
+                            ))}
                         </div>
                       </div>
-                      <Badge variant={member.status === 'Active' ? 'default' : 'secondary'}>
-                        {member.status}
-                      </Badge>
+                      
+                      <div>
+                        <h4 className="font-medium mb-2">County Distribution</h4>
+                        <div className="space-y-1">
+                          {Object.entries(sw.countyBreakdown)
+                            .sort(([,a], [,b]) => b - a)
+                            .map(([county, count]) => (
+                              <div key={county} className="flex justify-between items-center text-sm">
+                                <span>{county}</span>
+                                <Badge variant="secondary" className="text-xs">{count}</Badge>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
-                
-                {selectedSocialWorkerMembers.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    No members assigned to this social worker
-                  </div>
-                )}
               </div>
             </CardContent>
           </Card>
-        </div>
-      )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Member Details Modal */}
+      <Dialog open={showMemberModal} onOpenChange={setShowMemberModal}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedSWForModal?.name === 'Unassigned' ? 'Unassigned Members' : `${selectedSWForModal?.name} - Member Details`}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedSWForModal?.memberCount} members across {Object.keys(selectedSWForModal?.rcfeBreakdown || {}).length} RCFEs
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedSWForModal && (
+            <div className="space-y-4">
+              {/* MCO Summary */}
+              <div>
+                <h4 className="font-medium mb-2">MCO Distribution</h4>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(selectedSWForModal.mcoBreakdown).map(([mco, count]) => (
+                    <Badge key={mco} variant="default">
+                      {mco}: {count}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              {/* RCFE Breakdown */}
+              <div>
+                <h4 className="font-medium mb-2">RCFE Facilities</h4>
+                <div className="space-y-2">
+                  {Object.entries(selectedSWForModal.rcfeBreakdown)
+                    .sort(([,a], [,b]) => b - a)
+                    .map(([rcfe, count]) => {
+                      const rcfeMembers = selectedSWForModal.members.filter(m => 
+                        (m.RCFE_Name || 'No RCFE') === rcfe
+                      );
+                      const rcfeAddress = rcfeMembers[0]?.RCFE_Address || 'Address not available';
+                      
+                      return (
+                        <div key={rcfe} className="border rounded-lg p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <h5 className="font-medium">{rcfe === 'No RCFE' ? 'No RCFE Assigned' : rcfe}</h5>
+                              {rcfe !== 'No RCFE' && (
+                                <p className="text-sm text-muted-foreground">{rcfeAddress}</p>
+                              )}
+                            </div>
+                            <Badge variant="outline">{count} members</Badge>
+                          </div>
+                          
+                          {/* Members at this RCFE */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                            {rcfeMembers.map(member => (
+                              <div key={member.id} className="text-sm p-2 bg-muted rounded">
+                                <div className="font-medium">{member.memberName}</div>
+                                <div className="text-muted-foreground">
+                                  {member.CalAIM_MCO} • {member.CalAIM_Status}
+                                </div>
+                                <div className="text-muted-foreground">
+                                  ID: {member.Client_ID2}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

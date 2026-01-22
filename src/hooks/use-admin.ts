@@ -35,8 +35,14 @@ export function useAdmin(): AdminStatus {
       return;
     }
 
-    // Simple admin check - just check the hardcoded email
-    if (user.email === 'jason@carehomefinders.com') {
+    // Simple admin check - check hardcoded admin emails
+    const adminEmails = [
+      'jason@carehomefinders.com',
+      'jason.bloome@connectionslos.com', // Add your work email
+      'jcbloome@gmail.com' // Add your personal email if needed
+    ];
+    
+    if (adminEmails.includes(user.email || '')) {
       setIsAdmin(true);
       setIsSuperAdmin(true);
       setIsLoading(false);

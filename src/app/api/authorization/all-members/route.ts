@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { 
+  fetchAllCalAIMMembers, 
+  CaspioCredentials 
+} from '@/lib/caspio-api-utils';
 
 interface CaspioAuthResponse {
   access_token: string;
@@ -6,169 +10,63 @@ interface CaspioAuthResponse {
   expires_in: number;
 }
 
-/**
- * Get OAuth token from Caspio
- */
-async function getCaspioAccessToken(): Promise<string> {
-  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-  const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-  const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-  
-  // Try the exact same approach as Firebase Functions
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
-  
-  const response = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json'
-    },
-    body: 'grant_type=client_credentials',
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('❌ Caspio OAuth failed:', { status: response.status, error: errorText });
-    throw new Error('Failed to authenticate with Caspio');
-  }
-
-  const data: CaspioAuthResponse = await response.json();
-  return data.access_token;
-}
-
 export async function GET(req: NextRequest) {
   try {
     console.log('🚀 API ROUTE CALLED - Authorization Tracker ALL MEMBERS');
-    console.log('🔍 Fetching ALL members from Caspio for Authorization Tracker...');
+    console.log('🔍 Using MCO partitioning method for consistency and scalability...');
     
-    // Get OAuth token
-    const accessToken = await getCaspioAccessToken();
-    console.log('✅ Got Caspio access token successfully');
-    
-    // Fetch ALL members from CalAIM_tbl_Members table with pagination
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const apiUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
-    
-    let allMembers: any[] = [];
-    let pageNumber = 1;
-    const pageSize = 1000; // Maximum allowed by Caspio
-    const maxPages = 20; // Safety limit (up to 20,000 records)
-    let pageMembers: any[] = [];
-    
-    do {
-      // Use Caspio's correct pagination parameters
-      const url = `${apiUrl}?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
-        
-      console.log(`📄 Fetching page ${pageNumber} from Caspio (pageSize: ${pageSize})...`);
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
+    // Use the same robust method as social worker assignments
+    const credentials: CaspioCredentials = {
+      baseUrl: process.env.CASPIO_BASE_URL!,
+      clientId: process.env.CASPIO_CLIENT_ID!,
+      clientSecret: process.env.CASPIO_CLIENT_SECRET!,
+    };
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Failed to fetch members from Caspio:', { status: response.status, error: errorText });
-        throw new Error('Failed to fetch member data from Caspio');
-      }
+    // Fetch ALL members using the proven MCO partitioning approach, including raw data for authorization fields
+    const result = await fetchAllCalAIMMembers(credentials, { includeRawData: true });
+    console.log(`✅ Fetched ${result.count} total members using MCO partitioning method`);
 
-      const data = await response.json();
-      pageMembers = data.Result || [];
-      allMembers = allMembers.concat(pageMembers);
-      
-      pageNumber++;
-      
-      console.log(`📊 Page ${pageNumber - 1}: ${pageMembers.length} members, Total so far: ${allMembers.length}`);
-      console.log(`🔍 Response metadata:`, {
-        resultCount: pageMembers.length,
-        responseKeys: Object.keys(data),
-        nextPageNumber: pageNumber
-      });
-      
-      // If we got fewer records than pageSize, we've reached the end
-      if (pageMembers.length < pageSize) {
-        console.log(`📋 Reached end of data - got ${pageMembers.length} records (less than pageSize ${pageSize})`);
-        break;
-      }
-      
-      // Debug first few members' health plan fields
-      if (pageNumber === 2 && pageMembers.length > 0) { // pageNumber is already incremented, so first page is when pageNumber === 2
-        console.log('🔍 Sample health plan fields from first member:');
-        const sample = pageMembers[0];
-        console.log('- CalAIM_MCP:', sample.CalAIM_MCP);
-        console.log('- MC_Plan:', sample.MC_Plan);
-        console.log('- Health_Plan:', sample.Health_Plan);
-        console.log('- MCP:', sample.MCP);
-        console.log('- MCP_CIN:', sample.MCP_CIN);
-        console.log('- Name_Other_MCP:', sample.Name_Other_MCP);
-        console.log('- Will_Swith_To_What_MCP:', sample.Will_Swith_To_What_MCP);
-        console.log('- All MCP/Plan fields:', Object.keys(sample).filter(key => key.toLowerCase().includes('plan') || key.toLowerCase().includes('mcp') || key.toLowerCase().includes('kaiser') || key.toLowerCase().includes('health')));
-        console.log('- First 10 field names:', Object.keys(sample).slice(0, 10));
-        console.log('- Sample member data:', JSON.stringify(sample, null, 2).substring(0, 500) + '...');
-      }
-      
-    } while (pageMembers.length === pageSize && pageNumber <= maxPages);
+    // Work directly with raw members to avoid mapping issues
+    const rawMembersWithAuthData = result.rawMembers?.filter(rawMember => 
+      rawMember.Authorization_Start_Date_T2038 || 
+      rawMember.Authorization_End_Date_T2038 || 
+      rawMember.Authorization_Start_Date_H2022 || 
+      rawMember.Authorization_End_Date_H2022
+    ) || [];
     
-    console.log(`📊 Final total: ${allMembers.length} members from ${pageNumber - 1} pages`);
-    
-    // Debug: Show CalAIM_Status values with unique ID fields
-    if (allMembers.length > 0) {
-      console.log('🔍 First 5 members CalAIM_Status values with unique IDs:');
-      allMembers.slice(0, 5).forEach((member, index) => {
-        console.log(`Member ${index + 1}:`, {
-          Name: `${member.Senior_First} ${member.Senior_Last}`,
-          Record_ID: member.Record_ID,
-          Senior_Last_First_ID: member.Senior_Last_First_ID,
-          Client_ID2: member.Client_ID2,
-          CalAIM_Status: member.CalAIM_Status,
-          statusType: typeof member.CalAIM_Status,
-          statusLength: member.CalAIM_Status ? member.CalAIM_Status.length : 0
-        });
-      });
-      
-      const uniqueStatuses = [...new Set(allMembers.map(m => m.CalAIM_Status).filter(Boolean))];
-      console.log('📊 Unique CalAIM_Status values in authorization data:', uniqueStatuses);
-    }
+    console.log(`📊 Total members: ${result.count}, Members with authorization data: ${rawMembersWithAuthData.length}`);
 
-    // Filter to only include authorized members
-    const authorizedMembers = allMembers.filter(member => 
-      member.CalAIM_Status === 'Authorized'
-    );
-    
-    console.log(`📊 Total members: ${allMembers.length}, Authorized members: ${authorizedMembers.length}`);
-
-    // Transform data for Authorization Tracker (only authorized members)
-    const transformedMembers = authorizedMembers.map((member: any) => {
+    // Transform data for Authorization Tracker (directly from raw members with auth data)
+    const transformedMembers = rawMembersWithAuthData.map((rawMember: any, index: number) => {
+      // Create a unique ID by combining multiple fields to handle duplicate client_ID2s
+      const clientId = rawMember.client_ID2 || rawMember.Client_ID2 || '';
+      const uniqueId = `${clientId}-${rawMember.Senior_First || ''}-${rawMember.Senior_Last || ''}-${index}`.replace(/\s+/g, '-');
+      
       return {
-        // Basic info using EXACT Caspio field names with proper unique IDs
-        recordId: member.Record_ID || '',
-        seniorLastFirstId: member.Senior_Last_First_ID || '',
-        clientId2: member.Client_ID2 || '',
-        memberFirstName: member.Senior_First || '',
-        memberLastName: member.Senior_Last || '',
-        memberMediCalNum: member.MC || '',
-        memberMrn: member.MCP_CIN || '',
-        memberCounty: member.Member_County || '',
-        memberHealthPlan: member.CalAIM_MCO || member.CalAIM_MCP || member.HealthPlan || member.MC_Plan || member.Health_Plan || member.MCP || member.MCO || member.Plan_Name || 'Unknown',
-        memberStatus: member.CalAIM_Status || '',
+        // Basic info (from raw Caspio data)
+        recordId: uniqueId,
+        seniorLastFirstId: clientId,
+        clientId2: clientId,
+        memberFirstName: rawMember.Senior_First || '',
+        memberLastName: rawMember.Senior_Last || '',
+        memberMediCalNum: rawMember.MC || '',
+        memberMrn: rawMember.MCP_CIN || '',
+        memberCounty: rawMember.Member_County || 'Los Angeles',
+        memberHealthPlan: rawMember.CalAIM_MCO || 'Unknown',
+        memberStatus: rawMember.CalAIM_Status || '',
         
-        // Authorization fields - using EXACT field names from your Caspio table
-        authStartDateT2038: member.Authorization_Start_Date_T2038 || '',
-        authEndDateT2038: member.Authorization_End_Date_T2038 || '',
-        authStartDateH2022: member.Authorization_Start_Date_H2022 || '',
-        authEndDateH2022: member.Authorization_End_Date_H2022 || '',
-        authExtRequestDateT2038: member.Requested_Auth_Extension_T2038 || member.Auth_Ext_Request_Date_T2038 || '',
-        authExtRequestDateH2022: member.Requested_Auth_Extension_H2022 || '',
+        // Authorization fields (from raw Caspio data)
+        authStartDateT2038: rawMember.Authorization_Start_Date_T2038 || '',
+        authEndDateT2038: rawMember.Authorization_End_Date_T2038 || '',
+        authStartDateH2022: rawMember.Authorization_Start_Date_H2022 || '',
+        authEndDateH2022: rawMember.Authorization_End_Date_H2022 || '',
+        authExtRequestDateT2038: rawMember.Requested_Auth_Extension_T2038 || rawMember.Auth_Ext_Request_Date_T2038 || '',
+        authExtRequestDateH2022: rawMember.Requested_Auth_Extension_H2022 || '',
         
-        // Additional useful fields
-        primaryContact: member.Primary_Contact || '',
-        contactPhone: member.Contact_Phone || '',
-        contactEmail: member.Contact_Email || '',
+        // Additional useful fields (from raw data)
+        primaryContact: rawMember.Primary_Contact || '',
+        contactPhone: rawMember.Contact_Phone || '',
+        contactEmail: rawMember.Contact_Email || '',
       };
     });
     

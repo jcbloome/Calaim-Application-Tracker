@@ -106,15 +106,84 @@ export async function GET(request: NextRequest) {
     // Fetch Kaiser members from CalAIM_tbl_Members where CalAIM_MCO = 'Kaiser'
     console.log('📊 Fetching Kaiser members...');
     
+    // First, check total count available
+    const countUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.select=COUNT(*)`;
+    console.log('🔢 Checking total Kaiser member count...');
     
-    // Fetch ALL records with pagination support
-    console.log('🔄 Starting paginated fetch to get ALL records...');
+    try {
+      const countResponse = await fetch(countUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (countResponse.ok) {
+        const countData = await countResponse.json();
+        console.log('🔢 Total Kaiser members available:', countData);
+      }
+    } catch (countError) {
+      console.log('⚠️ Could not get count, proceeding with pagination...');
+    }
+    
+    // Try different approaches to get all records
+    console.log('🔄 Trying multiple approaches to fetch ALL Kaiser records...');
     let allMembers: any[] = [];
+    
+    // Approach 1: Try without pagination first (get default limit)
+    console.log('🔄 Approach 1: Fetching without pagination...');
+    const simpleUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'`;
+    console.log(`🔗 Simple Query URL:`, simpleUrl);
+    
+    const simpleResponse = await fetch(simpleUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (simpleResponse.ok) {
+      const simpleData = await simpleResponse.json();
+      console.log(`📄 Simple query returned: ${simpleData.Result?.length || 0} records`);
+      if (simpleData.Result && simpleData.Result.length > 0) {
+        allMembers = simpleData.Result;
+      }
+    }
+    
+    // Try with higher limit to get all 405 records
+    console.log('🔄 Approach 2: Trying with higher limit to get all 405 records...');
+    const highLimitUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=500`;
+    console.log(`🔗 High Limit Query URL:`, highLimitUrl);
+    
+    const highLimitResponse = await fetch(highLimitUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (highLimitResponse.ok) {
+      const highLimitData = await highLimitResponse.json();
+      console.log(`📄 High limit query returned: ${highLimitData.Result?.length || 0} records`);
+      if (highLimitData.Result && highLimitData.Result.length > allMembers.length) {
+        allMembers = highLimitData.Result;
+        console.log(`✅ HIGH LIMIT SUCCESS: Using ${allMembers.length} records from high limit query`);
+      }
+    } else {
+      console.log(`⚠️ High limit query failed, using simple query results (${allMembers.length} records)`);
+    }
+    
+    // Always try pagination to get all 405 records
+    console.log('🔄 Approach 3: Using pagination to get all 405 records...');
     let pageNumber = 1;
-    const pageSize = 1000; // Caspio's typical max per page
+    const pageSize = 100; // Caspio's apparent default limit
     let hasMorePages = true;
+    let paginatedMembers: any[] = [];
 
-    while (hasMorePages && pageNumber <= 10) { // Safety limit of 10 pages
+    while (hasMorePages && pageNumber <= 10) { // 10 pages * 100 = 1000 records max
       const queryUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=${pageSize}&q.pageNumber=${pageNumber}`;
       console.log(`🔗 Page ${pageNumber} Query URL:`, queryUrl);
       
@@ -127,41 +196,44 @@ export async function GET(request: NextRequest) {
       });
 
       if (!membersResponse.ok) {
-        const errorText = await membersResponse.text();
-        console.error(`❌ Failed to fetch Kaiser members page ${pageNumber}:`, {
-          status: membersResponse.status,
-          statusText: membersResponse.statusText,
-          error: errorText
-        });
-        break; // Stop pagination on error
+        console.log(`⚠️ Page ${pageNumber} failed, stopping pagination`);
+        break;
       }
 
       const pageData = await membersResponse.json();
       console.log(`📄 Page ${pageNumber}: ${pageData.Result?.length || 0} records`);
       
       if (pageData.Result && pageData.Result.length > 0) {
-        allMembers = allMembers.concat(pageData.Result);
+        paginatedMembers = paginatedMembers.concat(pageData.Result);
         
-        // Check if we have more pages
+        // Continue until we get less than a full page
         if (pageData.Result.length < pageSize) {
-          hasMorePages = false; // Last page
+          console.log(`📄 Page ${pageNumber}: Got ${pageData.Result.length} records (less than ${pageSize}), assuming last page`);
+          hasMorePages = false;
         } else {
           pageNumber++;
         }
       } else {
-        hasMorePages = false; // No more data
+        console.log(`📄 Page ${pageNumber}: No records found, stopping pagination`);
+        hasMorePages = false;
       }
     }
+    
+    // Use paginated results if we got more records
+    if (paginatedMembers.length > allMembers.length) {
+      allMembers = paginatedMembers;
+      console.log(`✅ PAGINATION SUCCESS: Fetched ${allMembers.length} total Kaiser members across ${pageNumber - 1} pages`);
+    }
 
-    console.log(`✅ PAGINATION COMPLETE: Fetched ${allMembers.length} total Kaiser members across ${pageNumber} pages`);
+    console.log(`✅ FINAL RESULT: Fetched ${allMembers.length} total Kaiser members`);
     
     // Create a combined response object
     const membersData = {
       Result: allMembers,
       TotalRecords: allMembers.length,
       PaginationInfo: {
-        totalPages: pageNumber,
-        recordsPerPage: pageSize,
+        totalPages: 1,
+        recordsPerPage: allMembers.length,
         totalRecords: allMembers.length
       }
     };
@@ -333,6 +405,8 @@ export async function GET(request: NextRequest) {
       Kaiser_Next_Step_Date: member.Kaiser_Next_Step_Date,
         // Use Social_Worker_Assigned field for actual social workers (Kaiser_User_Assignment contains users/staff)
         Social_Worker_Assigned: member.Social_Worker_Assigned || '',
+      // Kaiser Tracker expects Staff_Assigned field (using Kaiser_User_Assignment for staff assignments)
+      Staff_Assigned: member.Kaiser_User_Assignment || member.Staff_Assigned || '',
       RCFE_Name: member.RCFE_Name,
       RCFE_Address: member.RCFE_Address,
       RCFE_City: member.RCFE_City,
@@ -341,7 +415,7 @@ export async function GET(request: NextRequest) {
       Next_Step_Due_Date: member.Next_Step_Due_Date || member.next_steps_date || '',
       workflow_step: member.workflow_step || '',
       workflow_notes: member.workflow_notes || '',
-      lastUpdated: member.Date_Modified || new Date().toISOString(),
+      last_updated: member.Date_Modified || new Date().toISOString(),
       created_at: member.Date_Created || new Date().toISOString(),
       
       // ILS Report Date Fields - try multiple possible field names

@@ -208,8 +208,8 @@ export default function AuthorizationTracker() {
       console.log(`✅ Fetched ${allMembers.length} total members from Caspio`);
       
       // Transform to authorization format using exact field names
-      const membersData = allMembers.map((member: any) => ({
-        id: member.recordId || `member-${Math.random()}`,
+      const membersData = allMembers.map((member: any, index: number) => ({
+        id: member.recordId || member.clientId2 || `member-${index}-${Date.now()}`,
         memberName: member.memberFirstName && member.memberLastName 
           ? `${member.memberFirstName} ${member.memberLastName}` 
           : 'Unknown Member',
