@@ -265,17 +265,15 @@ export default function SocialWorkerAssignmentsPage() {
   const socialWorkerGroups = useMemo(() => {
     console.log('🔍 SOCIAL WORKER GROUPING DEBUG:', {
       totalRcfeMembers: rcfeMembers.length,
-      membersWithSW: rcfeMembers.filter(m => m.assignedSocialWorker).length,
-      sampleMembers: rcfeMembers.slice(0, 5).map(m => ({
-        name: m.name,
-        assignedSocialWorker: m.assignedSocialWorker,
-        hasAssignment: !!m.assignedSocialWorker
-      })),
-      membersWithAssignments: rcfeMembers.filter(m => m.assignedSocialWorker && m.assignedSocialWorker.trim() !== '').slice(0, 3).map(m => ({
-        name: m.name,
-        assignedSocialWorker: m.assignedSocialWorker
-      }))
+      membersWithSW: rcfeMembers.filter(m => m.assignedSocialWorker).length
     });
+    
+    // Show sample members separately to avoid complex object issues
+    console.log('🔍 SAMPLE MEMBERS:', rcfeMembers.slice(0, 3));
+    
+    // Show members with assignments
+    const membersWithAssignments = rcfeMembers.filter(m => m.assignedSocialWorker && m.assignedSocialWorker.trim() !== '');
+    console.log('🔍 MEMBERS WITH ASSIGNMENTS:', membersWithAssignments.length, membersWithAssignments.slice(0, 3));
     
     const groups: Record<string, any[]> = {};
     
