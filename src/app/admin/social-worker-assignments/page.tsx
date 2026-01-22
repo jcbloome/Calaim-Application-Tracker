@@ -360,7 +360,8 @@ export default function SocialWorkerAssignmentsPage() {
             memberLastName: member.memberLastName,
             RCFE_Name: member.RCFE_Name,
             RCFE_Address: member.RCFE_Address,
-            RCFE_City_RCFE_Zip: member.RCFE_City_RCFE_Zip,
+            RCFE_City: member.RCFE_City,
+            RCFE_Zip: member.RCFE_Zip,
             CalAIM_Status: member.CalAIM_Status,
             Social_Worker_Assigned: member.Social_Worker_Assigned,
             hasAssignment: !!(member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '')
@@ -395,7 +396,8 @@ export default function SocialWorkerAssignmentsPage() {
           rcfeName: member.RCFE_Name || 'Unknown RCFE',
           rcfeAddress: member.RCFE_Address || 'Address not available',
           county: member.Member_County || 'Los Angeles',
-          city: member.RCFE_City_RCFE_Zip || member.Member_City || 'Unknown',
+          city: member.RCFE_City || member.Member_City || 'Unknown',
+          zip: member.RCFE_Zip || 'Unknown',
           assignedSocialWorker: member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '' ? member.Social_Worker_Assigned : undefined,
           lastVisit: member.Last_Visit_Date || undefined,
           nextVisit: member.Next_Visit_Date || undefined,
@@ -711,6 +713,8 @@ export default function SocialWorkerAssignmentsPage() {
                         <h4 className="font-medium text-gray-900">{member.memberName}</h4>
                         <div className="text-sm text-gray-600 mt-1">
                           <div>RCFE: {member.rcfeName}</div>
+                          {member.rcfeAddress && <div>Address: {member.rcfeAddress}</div>}
+                          <div>City: {member.city} {member.zip && `${member.zip}`}</div>
                           <div>County: {member.county}</div>
                           {member.lastVisit && <div>Last Visit: {member.lastVisit}</div>}
                           {member.nextVisit && <div>Next Visit: {member.nextVisit}</div>}
