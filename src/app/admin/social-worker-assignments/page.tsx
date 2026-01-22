@@ -266,7 +266,12 @@ export default function SocialWorkerAssignmentsPage() {
     console.log('🔍 SOCIAL WORKER GROUPING DEBUG:', {
       totalRcfeMembers: rcfeMembers.length,
       membersWithSW: rcfeMembers.filter(m => m.assignedSocialWorker).length,
-      sampleMembers: rcfeMembers.slice(0, 3).map(m => ({
+      sampleMembers: rcfeMembers.slice(0, 5).map(m => ({
+        name: m.name,
+        assignedSocialWorker: m.assignedSocialWorker,
+        hasAssignment: !!m.assignedSocialWorker
+      })),
+      membersWithAssignments: rcfeMembers.filter(m => m.assignedSocialWorker && m.assignedSocialWorker.trim() !== '').slice(0, 3).map(m => ({
         name: m.name,
         assignedSocialWorker: m.assignedSocialWorker
       }))
