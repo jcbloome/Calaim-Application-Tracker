@@ -88,7 +88,8 @@ export default function SocialWorkerAssignmentsPage() {
 
   // Load initial data
   useEffect(() => {
-    loadMockData();
+    // Auto-sync from Caspio on page load
+    syncFromCaspio();
   }, []);
 
   const loadMockData = () => {
