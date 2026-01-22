@@ -183,6 +183,8 @@ export async function GET(request: NextRequest) {
       id: member.Client_ID2 || `member-${Math.random().toString(36).substring(7)}`,
       Client_ID2: member.Client_ID2,
       client_ID2: member.Client_ID2, // Duplicate for compatibility
+      // Use Senior_Last_First_ID as the primary name field
+      memberName: member.Senior_Last_First_ID || `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
       memberFirstName: member.Senior_First || member.memberFirstName || member.Member_First_Name || member.FirstName || 'Unknown',
       memberLastName: member.Senior_Last || member.memberLastName || member.Member_Last_Name || member.LastName || 'Member',
       memberCounty: member.memberCounty || member.County || member.Member_County || 'Unknown',
@@ -199,6 +201,8 @@ export async function GET(request: NextRequest) {
         // Use Social_Worker_Assigned field for actual social workers (Kaiser_User_Assignment contains users/staff)
         Social_Worker_Assigned: member.Social_Worker_Assigned || '',
       RCFE_Name: member.RCFE_Name,
+      RCFE_Address: member.RCFE_Address,
+      RCFE_City_RCFE_Zip: member.RCFE_City_RCFE_Zip,
       pathway: member.Pathway || member.CalAIM_Pathway || 'Kaiser',
       Next_Step_Due_Date: member.Next_Step_Due_Date || member.next_steps_date || '',
       workflow_step: member.workflow_step || '',

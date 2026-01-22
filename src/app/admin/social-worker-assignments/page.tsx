@@ -351,7 +351,10 @@ export default function SocialWorkerAssignmentsPage() {
         // Show first 5 members with their Social_Worker_Assigned values
         data.members.slice(0, 5).forEach((member: any, index: number) => {
           console.log(`Member ${index + 1}:`, {
-            name: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
+            Senior_Last_First_ID: member.Senior_Last_First_ID,
+            memberName: member.memberName,
+            RCFE_Name: member.RCFE_Name,
+            RCFE_City_RCFE_Zip: member.RCFE_City_RCFE_Zip,
             CalAIM_Status: member.CalAIM_Status,
             Social_Worker_Assigned: member.Social_Worker_Assigned,
             hasAssignment: !!(member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '')
@@ -377,11 +380,11 @@ export default function SocialWorkerAssignmentsPage() {
         })
         .map((member: any, index: number) => ({
           id: `rcfe-member-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}-${member.client_ID2 || 'unknown'}`,
-          name: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
+          name: member.Senior_Last_First_ID || member.memberName || `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
           rcfeName: member.RCFE_Name || 'Unknown RCFE',
           rcfeAddress: member.RCFE_Address || 'Address not available',
           county: member.Member_County || 'Los Angeles',
-          city: member.Member_City || 'Unknown',
+          city: member.RCFE_City_RCFE_Zip || member.Member_City || 'Unknown',
           assignedSocialWorker: member.Social_Worker_Assigned && member.Social_Worker_Assigned.trim() !== '' ? member.Social_Worker_Assigned : undefined,
           lastVisit: member.Last_Visit_Date || undefined,
           nextVisit: member.Next_Visit_Date || undefined,
@@ -592,6 +595,58 @@ export default function SocialWorkerAssignmentsPage() {
 
 
       {/* Main Content */}
+      {/* Summary Card */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Social Worker Summary
+          </CardTitle>
+          <CardDescription>
+            Overview of all social workers and their caseloads
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-blue-600">{socialWorkerGroups.length}</div>
+              <div className="text-sm text-muted-foreground">Active Social Workers</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-600">{socialWorkerGroups.reduce((sum, group) => sum + group.memberCount, 0)}</div>
+              <div className="text-sm text-muted-foreground">Assigned Members</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-orange-600">{unassignedMembers.length}</div>
+              <div className="text-sm text-muted-foreground">Unassigned Members</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-purple-600">{rcfeMembers.length}</div>
+              <div className="text-sm text-muted-foreground">Total RCFE Members</div>
+            </div>
+          </div>
+          
+          {/* Social Worker List */}
+          <div className="mt-6">
+            <h4 className="font-medium mb-3">Social Workers & Caseloads:</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+              {socialWorkerGroups.map((group) => (
+                <div key={group.name} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                  <span className="text-sm font-medium">{group.name}</span>
+                  <Badge variant="outline">{group.memberCount} members</Badge>
+                </div>
+              ))}
+              {unassignedMembers.length > 0 && (
+                <div className="flex justify-between items-center p-2 bg-orange-50 rounded">
+                  <span className="text-sm font-medium">Unassigned</span>
+                  <Badge variant="destructive">{unassignedMembers.length} members</Badge>
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Social Worker Cards */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
