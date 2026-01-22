@@ -12,6 +12,7 @@ import {
   Search, 
   Users, 
   UserCheck, 
+  UserPlus,
   Home, 
   MapPin, 
   Mail, 
