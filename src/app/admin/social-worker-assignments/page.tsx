@@ -278,7 +278,12 @@ export default function SocialWorkerAssignmentsPage() {
         memberCount: members.length,
         members
       }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => {
+        // Put "Unassigned" at the end
+        if (a.name === 'Unassigned') return 1;
+        if (b.name === 'Unassigned') return -1;
+        return a.name.localeCompare(b.name);
+      });
   }, [rcfeMembers]);
 
   // Filter social worker groups based on search terms
@@ -374,14 +379,15 @@ export default function SocialWorkerAssignmentsPage() {
       if (data.members && data.members.length > 0) {
         console.log('🔍 Social Worker Assignment Debug (Social_Worker_Assigned field only):');
         
-        // Count assigned vs unassigned (only authorized members with RCFE)
-        const authorizedWithRCFE = data.members.filter((m: any) => 
-          m.CalAIM_Status === 'Authorized' && m.RCFE_Name && m.RCFE_Name.trim() !== ''
-        );
-        const assigned = authorizedWithRCFE.filter((m: any) => m.Social_Worker_Assigned && m.Social_Worker_Assigned.trim() !== '');
-        const unassigned = authorizedWithRCFE.filter((m: any) => !m.Social_Worker_Assigned || m.Social_Worker_Assigned.trim() === '');
+        // Count assigned vs unassigned (all authorized members)
+        const authorizedMembers = data.members.filter((m: any) => m.CalAIM_Status === 'Authorized');
+        const assigned = authorizedMembers.filter((m: any) => m.Social_Worker_Assigned && m.Social_Worker_Assigned.trim() !== '');
+        const unassigned = authorizedMembers.filter((m: any) => !m.Social_Worker_Assigned || m.Social_Worker_Assigned.trim() === '');
+        const withRCFE = authorizedMembers.filter((m: any) => m.RCFE_Name && m.RCFE_Name.trim() !== '');
+        const withoutRCFE = authorizedMembers.filter((m: any) => !m.RCFE_Name || m.RCFE_Name.trim() === '');
         
-        console.log(`📊 Summary: ${assigned.length} assigned, ${unassigned.length} unassigned (out of ${authorizedWithRCFE.length} total authorized with RCFE)`);
+        console.log(`📊 Summary: ${assigned.length} assigned, ${unassigned.length} unassigned (out of ${authorizedMembers.length} total authorized)`);
+        console.log(`📊 RCFE Status: ${withRCFE.length} with RCFE, ${withoutRCFE.length} without RCFE`);
         
         // Show first 5 members with their field values
         console.log('🔍 SOCIAL WORKER PAGE - First 5 members data:');
@@ -418,18 +424,17 @@ export default function SocialWorkerAssignmentsPage() {
         console.log('📈 Total unique social workers:', uniqueSocialWorkers.length);
       }
       
-      // Transform authorized RCFE members (both assigned and unassigned)
+      // Transform ALL authorized members (with or without RCFE)
       const transformedMembers: RCFEMember[] = data.members
         .filter((member: any) => {
-          const hasRCFE = member.RCFE_Name && member.RCFE_Name.trim() !== '';
           const isAuthorized = member.CalAIM_Status === 'Authorized';
-          return hasRCFE && isAuthorized;
+          return isAuthorized; // Include all authorized members regardless of RCFE
         })
         .map((member: any, index: number) => ({
           id: `rcfe-member-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}-${member.client_ID2 || 'unknown'}`,
           name: member.Senior_Last_First_ID || member.memberName || `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
-          rcfeName: member.RCFE_Name || 'Unknown RCFE',
-          rcfeAddress: member.RCFE_Address || 'Address not available',
+          rcfeName: member.RCFE_Name || 'No RCFE Assigned',
+          rcfeAddress: member.RCFE_Address || 'No address available',
           county: member.Member_County || 'Los Angeles',
           city: member.RCFE_City || member.Member_City || 'Unknown',
           zip: member.RCFE_Zip || 'Unknown',
@@ -440,13 +445,12 @@ export default function SocialWorkerAssignmentsPage() {
           careLevel: member.Care_Level || 'Medium'
         }));
 
-      // Transform social worker assignments - include ALL authorized members (assigned and unassigned)
+      // Transform social worker assignments - include ALL authorized members (with or without RCFE)
       const staffAssignments = data.members
         .filter((member: any) => {
-          const hasRCFE = member.RCFE_Name && member.RCFE_Name.trim() !== '';
           const isAuthorized = member.CalAIM_Status === 'Authorized';
-          // Show all authorized members with RCFE regardless of social worker assignment
-          return hasRCFE && isAuthorized;
+          // Show all authorized members regardless of RCFE or social worker assignment
+          return isAuthorized;
         })
         .map((member: any) => {
           // Use Social_Worker_Assigned field, or "Unassigned" for authorized members without assignment
