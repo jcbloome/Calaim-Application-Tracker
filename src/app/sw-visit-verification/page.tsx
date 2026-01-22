@@ -675,9 +675,9 @@ export default function SWVisitVerification() {
                   </Link>
                 </Button>
                 <Button asChild variant="outline" className="w-full">
-                  <Link href="/swvisit">
+                  <Link href="/admin/login">
                     <ArrowLeft className="h-4 w-4 mr-2" />
-                    Back to SW Portal
+                    Admin Login
                   </Link>
                 </Button>
               </div>

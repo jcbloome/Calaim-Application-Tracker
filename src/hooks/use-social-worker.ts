@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
-import { auth, firestore } from '@/firebase';
+import { auth, useFirestore } from '@/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
 interface SocialWorkerData {
@@ -18,13 +18,14 @@ interface SocialWorkerData {
 
 export function useSocialWorker() {
   const [user, loading, error] = useAuthState(auth);
+  const firestore = useFirestore();
   const [socialWorkerData, setSocialWorkerData] = useState<SocialWorkerData | null>(null);
   const [isSocialWorker, setIsSocialWorker] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const checkSocialWorkerStatus = async () => {
-      if (loading) return;
+      if (loading || !firestore) return;
       
       if (!user) {
         setIsSocialWorker(false);
@@ -34,31 +35,49 @@ export function useSocialWorker() {
       }
 
       try {
-        // For testing purposes, let's bypass the Firestore check and use mock data
         // Check if user exists in social workers collection
-        // const socialWorkerDoc = await getDoc(doc(firestore, 'socialWorkers', user.uid));
+        const socialWorkerDoc = await getDoc(doc(firestore, 'socialWorkers', user.uid));
         
-        // if (socialWorkerDoc.exists()) {
-        //   const data = socialWorkerDoc.data() as SocialWorkerData;
-        //   setSocialWorkerData(data);
-        //   setIsSocialWorker(true);
-        // } else {
-        // For testing purposes, assume current user is Billy Buckhalter
-        const mockData: SocialWorkerData = {
-          uid: user.uid,
-          email: user.email || 'billy.buckhalter@test.com',
-          displayName: 'Billy Buckhalter',
-          role: 'social_worker',
-          assignedMembers: [],
-          assignedRCFEs: [],
-          permissions: {
-            visitVerification: true,
-            memberQuestionnaire: true
+        if (socialWorkerDoc.exists()) {
+          const data = socialWorkerDoc.data() as SocialWorkerData;
+          setSocialWorkerData(data);
+          setIsSocialWorker(true);
+        } else {
+          // Check if this is a known social worker by email
+          const knownSocialWorkers = [
+            {
+              email: 'jcbloome@gmail.com',
+              name: 'fake fake',
+              uid: user.uid,
+              assignedMembers: [],
+              assignedRCFEs: []
+            }
+          ];
+          
+          const socialWorker = knownSocialWorkers.find(sw => 
+            sw.email.toLowerCase() === user.email?.toLowerCase()
+          );
+          
+          if (socialWorker) {
+            const mockData: SocialWorkerData = {
+              uid: user.uid,
+              email: user.email || socialWorker.email,
+              displayName: socialWorker.name,
+              role: 'social_worker',
+              assignedMembers: socialWorker.assignedMembers,
+              assignedRCFEs: socialWorker.assignedRCFEs,
+              permissions: {
+                visitVerification: true,
+                memberQuestionnaire: true
+              }
+            };
+            setSocialWorkerData(mockData);
+            setIsSocialWorker(true);
+          } else {
+            setIsSocialWorker(false);
+            setSocialWorkerData(null);
           }
-        };
-        setSocialWorkerData(mockData);
-        setIsSocialWorker(true);
-        // }
+        }
       } catch (error) {
         console.error('Error checking social worker status:', error);
         setIsSocialWorker(false);

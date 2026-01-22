@@ -13,9 +13,9 @@ export default function TestBillyPage() {
   useAutoTrackPortalAccess('assignments');
   
   const [mockUser] = useState({
-    uid: 'billy-buckhalter-test',
-    email: 'billy.buckhalter@test.com',
-    displayName: 'Billy Buckhalter'
+    uid: 'fake-fake-test',
+    email: 'jcbloome@gmail.com',
+    displayName: 'fake fake'
   });
 
   const [assignedData, setAssignedData] = useState<any>(null);
@@ -27,7 +27,7 @@ export default function TestBillyPage() {
       const response = await fetch(`/api/sw-visits?socialWorkerId=${encodeURIComponent(mockUser.displayName)}`);
       const data = await response.json();
       setAssignedData(data);
-      console.log('Billy\'s assignments:', data);
+      console.log('Social worker assignments:', data);
     } catch (error) {
       console.error('Error fetching assignments:', error);
     } finally {
@@ -43,7 +43,7 @@ export default function TestBillyPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <User className="h-5 w-5" />
-              Test Mode: Billy Buckhalter
+              Test Mode: Social Worker
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">

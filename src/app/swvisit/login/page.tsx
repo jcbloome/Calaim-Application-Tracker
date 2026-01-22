@@ -34,9 +34,11 @@ export default function SocialWorkerLogin() {
     setError('');
 
     try {
-      // For testing purposes, allow Billy Buckhalter to login
-      if (email.toLowerCase().includes('billy') || email.toLowerCase().includes('buckhalter')) {
-        console.log('🔧 Test login for Billy Buckhalter');
+      // Check for known social workers
+      const knownSocialWorkers = ['jcbloome@gmail.com'];
+      
+      if (knownSocialWorkers.includes(email.toLowerCase())) {
+        console.log('🔧 Social worker login for:', email);
         
         // Track login event
         await trackLogin();
@@ -62,7 +64,7 @@ export default function SocialWorkerLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-purple-50">
       <div className="container mx-auto px-4 py-16">
         <div className="max-w-md mx-auto">
           {/* Logo and Header */}
@@ -75,17 +77,19 @@ export default function SocialWorkerLogin() {
               className="mx-auto mb-6"
               priority
             />
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Social Worker Portal</h1>
-            <p className="text-gray-600">Secure access for field representatives</p>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent mb-2">
+              Social Worker Portal
+            </h1>
+            <p className="text-gray-600 font-medium">🏥 Secure Field Representative Access 🏥</p>
           </div>
 
           {/* Login Form */}
-          <Card className="shadow-xl border-0">
+          <Card className="shadow-xl border-0 bg-gradient-to-br from-white to-green-50">
             <CardHeader className="text-center pb-4">
-              <div className="bg-blue-100 rounded-full p-3 w-16 h-16 mx-auto mb-4">
-                <Users className="h-10 w-10 text-blue-600 mx-auto" />
+              <div className="bg-gradient-to-r from-green-100 to-blue-100 rounded-full p-3 w-16 h-16 mx-auto mb-4">
+                <Users className="h-10 w-10 text-green-600 mx-auto" />
               </div>
-              <CardTitle>Sign In to Your Portal</CardTitle>
+              <CardTitle className="text-green-700">🔐 Social Worker Access</CardTitle>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleLogin} className="space-y-4">
@@ -132,7 +136,7 @@ export default function SocialWorkerLogin() {
 
                 <Button 
                   type="submit" 
-                  className="w-full bg-blue-600 hover:bg-blue-700 py-3"
+                  className="w-full bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 py-3 text-white font-semibold"
                   disabled={isLoading}
                 >
                   {isLoading ? (
@@ -149,14 +153,14 @@ export default function SocialWorkerLogin() {
                 </Button>
               </form>
 
-              {/* Testing Notice */}
-              <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              {/* Social Worker Notice */}
+              <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
                 <div className="flex items-center gap-2 mb-2">
-                  <Shield className="h-4 w-4 text-amber-600" />
-                  <span className="text-sm font-medium text-amber-800">Testing Mode</span>
+                  <Shield className="h-4 w-4 text-green-600" />
+                  <span className="text-sm font-medium text-green-800">Social Worker Portal</span>
                 </div>
-                <p className="text-xs text-amber-700">
-                  For testing, use any email containing "billy" or "buckhalter" to access the system as Billy Buckhalter.
+                <p className="text-xs text-green-700">
+                  This portal is exclusively for authorized social workers. Use your assigned credentials to access member visit tools.
                 </p>
               </div>
             </CardContent>

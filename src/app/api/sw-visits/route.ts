@@ -108,12 +108,21 @@ export async function GET(req: NextRequest) {
     const result = await fetchAllCalAIMMembers(credentials);
     
     // Filter members assigned to this social worker
-    // Handle various name formats for Billy Buckhalter
+    // Handle various social worker identifications
     const normalizedSWId = socialWorkerId.toLowerCase();
-    const isBillyBuckhalter = normalizedSWId.includes('billy') || 
-                             normalizedSWId.includes('buckhalter') ||
-                             normalizedSWId === 'billy.buckhalter@test.com' ||
-                             normalizedSWId === 'buckhalter@test.com';
+    const knownSocialWorkers = {
+      'fake fake': ['jcbloome@gmail.com', 'fake fake'],
+      'billy buckhalter': ['billy.buckhalter@test.com', 'billy', 'buckhalter']
+    };
+    
+    // Find which social worker this is
+    let socialWorkerName = '';
+    for (const [name, identifiers] of Object.entries(knownSocialWorkers)) {
+      if (identifiers.some(id => normalizedSWId.includes(id.toLowerCase()))) {
+        socialWorkerName = name;
+        break;
+      }
+    }
     
     // Count members on hold before filtering
     const membersOnHold = result.members.filter(member => 
@@ -131,7 +140,13 @@ export async function GET(req: NextRequest) {
       
       const swName = member.Social_Worker_Assigned.toLowerCase();
       
-      if (isBillyBuckhalter) {
+      if (socialWorkerName === 'fake fake') {
+        // Match fake fake in various formats
+        return swName.includes('fake') || 
+               swName.includes('jcbloome');
+      }
+      
+      if (socialWorkerName === 'billy buckhalter') {
         // Match Billy Buckhalter in various formats
         return swName.includes('billy') || 
                swName.includes('buckhalter') ||
