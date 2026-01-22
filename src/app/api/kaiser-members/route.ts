@@ -177,7 +177,7 @@ export async function GET(request: NextRequest) {
       console.log('🔍 ALL AVAILABLE FIELDS:', Object.keys(membersData.Result[0]).sort());
       
       // Debug the specific fields we're looking for
-      console.log('🔍 FIELD MAPPING DEBUG:', {
+      console.log('🔍 FIELD MAPPING DEBUG - RAW CASPIO DATA:', {
         Senior_Last_First_ID: membersData.Result[0].Senior_Last_First_ID,
         Senior_First: membersData.Result[0].Senior_First,
         Senior_Last: membersData.Result[0].Senior_Last,
@@ -185,8 +185,13 @@ export async function GET(request: NextRequest) {
         RCFE_Address: membersData.Result[0].RCFE_Address,
         RCFE_City_RCFE_Zip: membersData.Result[0].RCFE_City_RCFE_Zip,
         CalAIM_Status: membersData.Result[0].CalAIM_Status,
-        Social_Worker_Assigned: membersData.Result[0].Social_Worker_Assigned
+        Social_Worker_Assigned: membersData.Result[0].Social_Worker_Assigned,
+        Member_County: membersData.Result[0].Member_County,
+        totalRecords: membersData.Result.length
       });
+      
+      // Show first member's complete raw data
+      console.log('🔍 COMPLETE FIRST MEMBER RAW DATA:', membersData.Result[0]);
       
       console.log('📋 Sample member data:', membersData.Result[0]);
     }
