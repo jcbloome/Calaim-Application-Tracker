@@ -25,7 +25,8 @@ export async function POST(request: NextRequest) {
 
     // Validate token
     let tokenData = resetTokenStore.get(token);
-    if (!tokenData) {
+    if (!tokenData && process.env.NODE_ENV !== 'development') {
+      // Only try Firestore in production where credentials are available
       try {
         const tokenDoc = await admin.firestore().collection('passwordResetTokens').doc(token).get();
         if (tokenDoc.exists) {
@@ -38,6 +39,8 @@ export async function POST(request: NextRequest) {
       } catch (lookupError) {
         console.warn('⚠️ Failed to read reset token from Firestore:', lookupError);
       }
+    } else if (!tokenData && process.env.NODE_ENV === 'development') {
+      console.log('🔧 Development mode: Skipping Firestore lookup (credentials not available)');
     }
     
     if (!tokenData) {
@@ -49,10 +52,12 @@ export async function POST(request: NextRequest) {
 
     if (Date.now() > tokenData.expires) {
       resetTokenStore.delete(token);
-      try {
-        await admin.firestore().collection('passwordResetTokens').doc(token).delete();
-      } catch (deleteError) {
-        console.warn('⚠️ Failed to delete expired Firestore token:', deleteError);
+      if (process.env.NODE_ENV !== 'development') {
+        try {
+          await admin.firestore().collection('passwordResetTokens').doc(token).delete();
+        } catch (deleteError) {
+          console.warn('⚠️ Failed to delete expired Firestore token:', deleteError);
+        }
       }
       return NextResponse.json(
         { error: 'Token has expired' },
@@ -72,10 +77,12 @@ export async function POST(request: NextRequest) {
 
       // Remove the used token
       resetTokenStore.delete(token);
-      try {
-        await admin.firestore().collection('passwordResetTokens').doc(token).delete();
-      } catch (deleteError) {
-        console.warn('⚠️ Failed to delete used Firestore token:', deleteError);
+      if (process.env.NODE_ENV !== 'development') {
+        try {
+          await admin.firestore().collection('passwordResetTokens').doc(token).delete();
+        } catch (deleteError) {
+          console.warn('⚠️ Failed to delete used Firestore token:', deleteError);
+        }
       }
       
       console.log('✅ Password updated successfully for:', email);

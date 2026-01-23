@@ -42,15 +42,21 @@ export async function POST(request: NextRequest) {
     // Store the token
     resetTokenStore.set(resetToken, { email, expires });
     console.log('🔑 Generated reset token for:', email);
-    try {
-      await adminDb.collection('passwordResetTokens').doc(resetToken).set({
-        email,
-        expires,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      console.log('💾 Stored reset token in Firestore');
-    } catch (storeError) {
-      console.warn('⚠️ Failed to store reset token in Firestore:', storeError);
+    
+    if (process.env.NODE_ENV !== 'development') {
+      // Only try Firestore in production where credentials are available
+      try {
+        await adminDb.collection('passwordResetTokens').doc(resetToken).set({
+          email,
+          expires,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        console.log('💾 Stored reset token in Firestore');
+      } catch (storeError) {
+        console.warn('⚠️ Failed to store reset token in Firestore:', storeError);
+      }
+    } else {
+      console.log('🔧 Development mode: Using in-memory storage only');
     }
 
     // Create a link to the custom reset password page
@@ -138,7 +144,8 @@ export async function GET(request: NextRequest) {
     let tokenData = resetTokenStore.get(token);
     console.log('💾 In-memory store check:', tokenData ? 'Found' : 'Not found');
     
-    if (!tokenData) {
+    if (!tokenData && process.env.NODE_ENV !== 'development') {
+      // Only try Firestore in production where credentials are available
       try {
         console.log('🔍 Checking Firestore for token...');
         const tokenDoc = await adminDb.collection('passwordResetTokens').doc(token).get();
@@ -160,6 +167,8 @@ export async function GET(request: NextRequest) {
       } catch (lookupError) {
         console.warn('⚠️ Failed to read reset token from Firestore:', lookupError);
       }
+    } else if (!tokenData && process.env.NODE_ENV === 'development') {
+      console.log('🔧 Development mode: Skipping Firestore lookup (credentials not available)');
     }
     
     if (!tokenData) {
