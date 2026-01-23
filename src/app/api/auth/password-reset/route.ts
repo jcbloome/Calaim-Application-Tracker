@@ -84,29 +84,35 @@ export async function POST(request: NextRequest) {
     }
 
     // Create a link to the custom reset password page
+    // Prefer the current request origin to avoid mismatched domains/envs
+    const forwardedProto = request.headers.get('x-forwarded-proto');
+    const forwardedHost = request.headers.get('x-forwarded-host');
+    const requestHost = request.headers.get('host');
+    const requestOrigin = forwardedHost
+      ? `${forwardedProto || 'https'}://${forwardedHost}`
+      : requestHost
+        ? `${forwardedProto || 'https'}://${requestHost}`
+        : '';
+
     // Clean up the base URL to handle potential concatenation issues
-    let baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    
-    // Handle cases where NEXT_PUBLIC_APP_URL might contain multiple URLs or be malformed
+    let baseUrl = requestOrigin || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     if (baseUrl.includes(',')) {
-      // If there are multiple URLs separated by commas, use the first one
       baseUrl = baseUrl.split(',')[0].trim();
     }
-    
-    // Ensure the URL doesn't end with a slash
     baseUrl = baseUrl.replace(/\/$/, '');
-    
-    // For development, always use localhost:3000 to avoid Firebase URL issues
+
+    // For development, always use localhost:3000
     if (process.env.NODE_ENV === 'development') {
       baseUrl = 'http://localhost:3000';
     }
-    
+
     const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`;
 
     // Send email using Resend with React component
     console.log('📤 Sending CalAIM branded email to:', email);
     console.log('🔗 Reset URL:', resetUrl);
     console.log('🌐 Base URL used:', baseUrl);
+    console.log('🌐 Request origin detected:', requestOrigin || 'none');
     console.log('🔧 Original NEXT_PUBLIC_APP_URL:', process.env.NEXT_PUBLIC_APP_URL);
     console.log('🏗️ NODE_ENV:', process.env.NODE_ENV);
     

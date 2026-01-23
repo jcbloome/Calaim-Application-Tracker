@@ -86,7 +86,7 @@ export default function InfoEligibilityPage() {
                 Program Information Page 3
               </h1>
               <div className="mt-4">
-                <GlossaryDialog />
+                <GlossaryDialog className="bg-blue-600 text-white hover:bg-blue-700 border-blue-600" />
               </div>
             </div>
 
