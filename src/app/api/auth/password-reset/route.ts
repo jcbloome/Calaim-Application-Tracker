@@ -49,23 +49,37 @@ export async function POST(request: NextRequest) {
     const resetToken = crypto.randomBytes(32).toString('hex');
     const expires = Date.now() + (60 * 60 * 1000); // 1 hour from now
     
-    // Store the token
-    resetTokenStore.set(resetToken, { email, expires });
-    console.log('🔑 Generated reset token for:', email);
+    // Store the token - always try Firestore first in production
+    let firestoreSuccess = false;
     
     if (process.env.NODE_ENV !== 'development') {
-      // Only try Firestore in production where credentials are available
       try {
         await adminDb.collection('passwordResetTokens').doc(resetToken).set({
           email,
           expires,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
-        console.log('💾 Stored reset token in Firestore');
+        console.log('💾 Stored reset token in Firestore successfully');
+        firestoreSuccess = true;
       } catch (storeError) {
-        console.warn('⚠️ Failed to store reset token in Firestore:', storeError);
+        console.error('❌ Failed to store reset token in Firestore:', storeError);
+        // If Firestore fails, we'll fall back to in-memory + return error
       }
-    } else {
+    }
+    
+    // Always store in memory as backup
+    resetTokenStore.set(resetToken, { email, expires });
+    console.log('🔑 Generated reset token for:', email);
+    
+    // In production, if Firestore failed, return an error since tokens won't persist
+    if (process.env.NODE_ENV !== 'development' && !firestoreSuccess) {
+      return NextResponse.json(
+        { error: 'Server configuration error: Unable to store reset token. Please contact support.' },
+        { status: 500 }
+      );
+    }
+    
+    if (process.env.NODE_ENV === 'development') {
       console.log('🔧 Development mode: Using in-memory storage only');
     }
 
