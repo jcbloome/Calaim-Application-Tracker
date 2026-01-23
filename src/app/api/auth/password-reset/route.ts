@@ -4,6 +4,7 @@ import PasswordResetEmail from '@/components/emails/PasswordResetEmail';
 import { renderAsync } from '@react-email/render';
 import crypto from 'crypto';
 import { resetTokenStore } from '@/lib/reset-tokens';
+import admin, { adminDb } from '@/firebase-admin';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -41,6 +42,16 @@ export async function POST(request: NextRequest) {
     // Store the token
     resetTokenStore.set(resetToken, { email, expires });
     console.log('🔑 Generated reset token for:', email);
+    try {
+      await adminDb.collection('passwordResetTokens').doc(resetToken).set({
+        email,
+        expires,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      console.log('💾 Stored reset token in Firestore');
+    } catch (storeError) {
+      console.warn('⚠️ Failed to store reset token in Firestore:', storeError);
+    }
 
     // Create a link to the custom reset password page
     // Clean up the base URL to handle potential concatenation issues
@@ -122,7 +133,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const tokenData = resetTokenStore.get(token);
+    let tokenData = resetTokenStore.get(token);
+    if (!tokenData) {
+      try {
+        const tokenDoc = await adminDb.collection('passwordResetTokens').doc(token).get();
+        if (tokenDoc.exists) {
+          const data = tokenDoc.data() as { email?: string; expires?: number } | undefined;
+          if (data?.email && data?.expires) {
+            tokenData = { email: data.email, expires: data.expires };
+            console.log('🔍 Found reset token in Firestore for:', data.email);
+          }
+        }
+      } catch (lookupError) {
+        console.warn('⚠️ Failed to read reset token from Firestore:', lookupError);
+      }
+    }
     
     if (!tokenData) {
       console.log('❌ Token not found in store');
@@ -143,6 +168,11 @@ export async function GET(request: NextRequest) {
     if (now > tokenData.expires) {
       console.log('❌ Token has expired');
       resetTokenStore.delete(token);
+      try {
+        await adminDb.collection('passwordResetTokens').doc(token).delete();
+      } catch (deleteError) {
+        console.warn('⚠️ Failed to delete expired Firestore token:', deleteError);
+      }
       return NextResponse.json(
         { error: 'Token has expired' },
         { status: 400 }

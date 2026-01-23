@@ -24,7 +24,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate token
-    const tokenData = resetTokenStore.get(token);
+    let tokenData = resetTokenStore.get(token);
+    if (!tokenData) {
+      try {
+        const tokenDoc = await admin.firestore().collection('passwordResetTokens').doc(token).get();
+        if (tokenDoc.exists) {
+          const data = tokenDoc.data() as { email?: string; expires?: number } | undefined;
+          if (data?.email && data?.expires) {
+            tokenData = { email: data.email, expires: data.expires };
+            console.log('🔍 Found reset token in Firestore for:', data.email);
+          }
+        }
+      } catch (lookupError) {
+        console.warn('⚠️ Failed to read reset token from Firestore:', lookupError);
+      }
+    }
     
     if (!tokenData) {
       return NextResponse.json(
@@ -35,6 +49,11 @@ export async function POST(request: NextRequest) {
 
     if (Date.now() > tokenData.expires) {
       resetTokenStore.delete(token);
+      try {
+        await admin.firestore().collection('passwordResetTokens').doc(token).delete();
+      } catch (deleteError) {
+        console.warn('⚠️ Failed to delete expired Firestore token:', deleteError);
+      }
       return NextResponse.json(
         { error: 'Token has expired' },
         { status: 400 }
@@ -53,6 +72,11 @@ export async function POST(request: NextRequest) {
 
       // Remove the used token
       resetTokenStore.delete(token);
+      try {
+        await admin.firestore().collection('passwordResetTokens').doc(token).delete();
+      } catch (deleteError) {
+        console.warn('⚠️ Failed to delete used Firestore token:', deleteError);
+      }
       
       console.log('✅ Password updated successfully for:', email);
       console.log('✅ User UID:', userRecord.uid);

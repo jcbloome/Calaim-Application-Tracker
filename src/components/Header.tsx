@@ -18,7 +18,6 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { useState } from 'react';
 import Image from 'next/image';
 import { useAdmin } from '@/hooks/use-admin';
-import { SessionTimer } from './SessionTimer';
 
 const navLinks = [
     { href: "/info", label: "Program Information" },
@@ -90,11 +89,10 @@ export function Header() {
             <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
           ) : showUserSession ? ( 
             <div className='flex items-center gap-3'>
-             <SessionTimer compact />
              <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="rounded-full">
-                  <User className="h-5 w-5" />
+                <Button variant="outline" size="icon" className="rounded-full h-11 w-11">
+                  <User className="h-6 w-6" />
                   <span className="sr-only">User menu</span>
                 </Button>
               </DropdownMenuTrigger>
@@ -155,7 +153,6 @@ export function Header() {
                             ) : showUserSession ? (
                                 <div className="flex flex-col gap-4">
                                      <p className="text-sm text-muted-foreground text-center truncate">{user.displayName || user.email}</p>
-                                     <SessionTimer className="w-full" />
                                       <Button onClick={() => { router.push('/profile'); setSheetOpen(false); }} variant="outline" className="w-full">
                                         <UserCog className="mr-2 h-4 w-4" />
                                         My Profile

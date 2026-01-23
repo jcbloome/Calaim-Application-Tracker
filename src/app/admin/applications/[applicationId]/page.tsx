@@ -814,7 +814,7 @@ function ApplicationDetailPageContent() {
   const { toast } = useToast();
   
   const applicationId = params.applicationId as string;
-  const appUserId = searchParams.get('userId'); 
+  const appUserId = searchParams.get('userId');
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});

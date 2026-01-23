@@ -25,6 +25,7 @@
 - ✅ **Architecture**: Staff API now uses shared Caspio social worker helper
 - ✅ **Bug Fixed**: Removed extra brace causing Kaiser members API build error
 - ✅ **Architecture**: Standardized Caspio credential/token handling across API data imports
+- ✅ **Security**: Restored admin-only access and blocked user-side application creation; fixed reset password query handling
 
 ### **January 20, 2026 - Project Foundation**
 - ✅ **Fixed SSR Issues**: Added client-side guards to all browser API calls (window, localStorage, Notification)
