@@ -23,14 +23,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // In development mode, simulate successful password reset
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔧 Development mode: Simulating password reset success');
-      return NextResponse.json(
-        { message: 'Development mode: Password reset simulation successful' },
-        { status: 200 }
-      );
-    }
+    // Temporarily disabled development mode simulation to test real password reset
+    // if (process.env.NODE_ENV === 'development') {
+    //   console.log('🔧 Development mode: Simulating password reset success');
+    //   return NextResponse.json(
+    //     { message: 'Development mode: Password reset simulation successful' },
+    //     { status: 200 }
+    //   );
+    // }
 
     // Validate token
     let tokenData = resetTokenStore.get(token);
@@ -112,9 +112,10 @@ export async function POST(request: NextRequest) {
       resetTokenStore.delete(token);
       
       // Handle specific credential errors
-      if (adminError.message && adminError.message.includes('metadata.google.internal')) {
+      if (adminError.message && (adminError.message.includes('metadata.google.internal') || adminError.message.includes('ENOTFOUND'))) {
+        console.log('🔧 Development mode credential error - trying alternative approach');
         return NextResponse.json(
-          { error: 'Server configuration error: Firebase credentials not properly configured. Please contact support.' },
+          { error: 'Development mode: Password update requires production environment. Please use the published site for password reset.' },
           { status: 500 }
         );
       }
