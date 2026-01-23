@@ -124,6 +124,8 @@ export async function GET(request: NextRequest) {
     
     console.log('🔍 Token validation request received');
     console.log('📝 Token:', token ? `${token.substring(0, 8)}...` : 'null');
+    console.log('📝 Full token length:', token?.length);
+    console.log('📝 Token format valid:', token ? /^[a-f0-9]{64}$/.test(token) : false);
     
     if (!token) {
       console.log('❌ No token provided');
@@ -134,11 +136,22 @@ export async function GET(request: NextRequest) {
     }
 
     let tokenData = resetTokenStore.get(token);
+    console.log('💾 In-memory store check:', tokenData ? 'Found' : 'Not found');
+    
     if (!tokenData) {
       try {
+        console.log('🔍 Checking Firestore for token...');
         const tokenDoc = await adminDb.collection('passwordResetTokens').doc(token).get();
+        console.log('📄 Firestore document exists:', tokenDoc.exists);
+        
         if (tokenDoc.exists) {
           const data = tokenDoc.data() as { email?: string; expires?: number } | undefined;
+          console.log('📄 Firestore document data:', { 
+            hasEmail: !!data?.email, 
+            hasExpires: !!data?.expires,
+            expires: data?.expires ? new Date(data.expires).toISOString() : 'none'
+          });
+          
           if (data?.email && data?.expires) {
             tokenData = { email: data.email, expires: data.expires };
             console.log('🔍 Found reset token in Firestore for:', data.email);
