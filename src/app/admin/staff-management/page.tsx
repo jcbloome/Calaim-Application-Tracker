@@ -55,6 +55,8 @@ export default function StaffManagementPage() {
     const [newStaffLastName, setNewStaffLastName] = useState('');
     const [newStaffEmail, setNewStaffEmail] = useState('');
     const [isAddingStaff, setIsAddingStaff] = useState(false);
+    const [staffNameFilter, setStaffNameFilter] = useState('');
+    const [staffRoleFilter, setStaffRoleFilter] = useState<'all' | 'Admin' | 'Super Admin'>('all');
 
     // Redirect if not super admin
     useEffect(() => {
@@ -91,7 +93,7 @@ export default function StaffManagementPage() {
                 return acc;
             }, {} as Record<string, any>);
 
-            const staff: StaffMember[] = allAdminIds.map(uid => {
+            let staff: StaffMember[] = allAdminIds.map(uid => {
                 const userData = users[uid] || {};
                 return {
                     uid,
@@ -101,6 +103,38 @@ export default function StaffManagementPage() {
                     email: userData.email || uid
                 };
             });
+
+            // Hydrate current user details if missing
+            if (currentUser?.uid) {
+                const displayName = currentUser.displayName || '';
+                const [firstNameFromAuth = '', ...rest] = displayName.split(' ');
+                const lastNameFromAuth = rest.join(' ').trim();
+                staff = staff.map(member => {
+                    if (member.uid !== currentUser.uid) {
+                        return member;
+                    }
+                    return {
+                        ...member,
+                        firstName: member.firstName || firstNameFromAuth,
+                        lastName: member.lastName || lastNameFromAuth,
+                        email: member.email || currentUser.email || member.uid
+                    };
+                });
+            }
+
+            // Ensure current super admin shows even if not in roles collections yet
+            if (isSuperAdmin && currentUser?.uid && !staff.some(member => member.uid === currentUser.uid)) {
+                const displayName = currentUser.displayName || '';
+                const [firstName = '', ...rest] = displayName.split(' ');
+                const lastName = rest.join(' ').trim();
+                staff.push({
+                    uid: currentUser.uid,
+                    role: 'Super Admin',
+                    firstName,
+                    lastName,
+                    email: currentUser.email || currentUser.uid
+                });
+            }
 
             setStaffList(staff);
         } catch (error: any) {
@@ -369,6 +403,30 @@ export default function StaffManagementPage() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
+                    <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="space-y-2">
+                            <Label htmlFor="staffNameFilter">Filter by name or email</Label>
+                            <Input
+                                id="staffNameFilter"
+                                value={staffNameFilter}
+                                onChange={(e) => setStaffNameFilter(e.target.value)}
+                                placeholder="Search name or email"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="staffRoleFilter">Filter by role</Label>
+                            <select
+                                id="staffRoleFilter"
+                                className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                value={staffRoleFilter}
+                                onChange={(e) => setStaffRoleFilter(e.target.value as 'all' | 'Admin' | 'Super Admin')}
+                            >
+                                <option value="all">All</option>
+                                <option value="Admin">Admin</option>
+                                <option value="Super Admin">Super Admin</option>
+                            </select>
+                        </div>
+                    </div>
                     {isLoadingStaff ? (
                         <div className="flex items-center justify-center py-8">
                             <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -376,14 +434,29 @@ export default function StaffManagementPage() {
                         </div>
                     ) : staffList.length > 0 ? (
                         <div className="space-y-4">
-                            {staffList.map((staff) => (
+                            {staffList
+                                .filter((staff) => {
+                                    const query = staffNameFilter.trim().toLowerCase();
+                                    if (query) {
+                                        const fullName = `${staff.firstName} ${staff.lastName}`.toLowerCase();
+                                        const email = (staff.email || '').toLowerCase();
+                                        if (!fullName.includes(query) && !email.includes(query)) {
+                                            return false;
+                                        }
+                                    }
+                                    if (staffRoleFilter !== 'all' && staff.role !== staffRoleFilter) {
+                                        return false;
+                                    }
+                                    return true;
+                                })
+                                .map((staff) => (
                                 <div key={staff.uid} className="p-4 border rounded-lg">
                                     <div className="flex items-center justify-between mb-4">
                                         <div>
                                             <h3 className="font-semibold">
-                                                {staff.firstName} {staff.lastName}
+                                                {(staff.firstName || staff.lastName) ? `${staff.firstName} ${staff.lastName}`.trim() : (staff.email || staff.uid)}
                                             </h3>
-                                            <p className="text-sm text-muted-foreground">{staff.email}</p>
+                                            <p className="text-sm text-muted-foreground">{staff.email || staff.uid}</p>
                                             <div className="flex items-center gap-2 mt-1">
                                                 <span className={`px-2 py-1 text-xs rounded-full ${
                                                     staff.role === 'Super Admin' 

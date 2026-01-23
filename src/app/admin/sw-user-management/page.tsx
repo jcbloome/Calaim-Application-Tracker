@@ -261,7 +261,7 @@ export default function SWUserManagementPage() {
           sw_id: staffSwId,
           phone: String(staff.phone || ''),
           department: String(staff.department || ''),
-          assignedMemberCount: 0,
+          assignedMemberCount: staff.assignedMemberCount ?? 0,
           hasPortalAccess: socialWorkers.some(sw => sw.email === staffEmail),
           isPortalActive: socialWorkers.find(sw => sw.email === staffEmail)?.isActive || false,
           syncedAt: new Date(),
@@ -926,7 +926,7 @@ export default function SWUserManagementPage() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>SW_ID</TableHead>
+                  <TableHead>Assigned Members</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Portal Access</TableHead>
                   <TableHead>Actions</TableHead>
@@ -959,7 +959,7 @@ export default function SWUserManagementPage() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">
-                          {staff.sw_id}
+                          {staff.assignedMemberCount ?? 0}
                         </Badge>
                       </TableCell>
                       <TableCell>

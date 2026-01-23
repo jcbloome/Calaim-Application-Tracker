@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resetTokenStore } from '@/lib/reset-tokens';
+// DO NOT MOVE THIS IMPORT. It must be early to initialize Firebase Admin.
+import '@/ai/firebase';
+import * as admin from 'firebase-admin';
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,21 +44,8 @@ export async function POST(request: NextRequest) {
     const email = tokenData.email;
     console.log('🔄 Resetting password for:', email);
 
-    // We need to use Firebase Admin SDK to update the password without requiring current password
-    // For now, let's use a workaround by generating a temporary password and then updating it
     try {
-      // Import Firebase Admin SDK
-      const admin = await import('firebase-admin');
-      
-      // Initialize admin if not already initialized
-      if (!admin.apps.length) {
-        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || '{}');
-        admin.initializeApp({
-          credential: admin.credential.cert(serviceAccount),
-        });
-      }
-
-      // Get user by email and update password
+      // Get user by email and update password using Firebase Admin SDK
       const userRecord = await admin.auth().getUserByEmail(email);
       await admin.auth().updateUser(userRecord.uid, {
         password: newPassword,
@@ -65,24 +55,35 @@ export async function POST(request: NextRequest) {
       resetTokenStore.delete(token);
       
       console.log('✅ Password updated successfully for:', email);
+      console.log('✅ User UID:', userRecord.uid);
 
       return NextResponse.json(
-        { message: 'Password updated successfully' },
+        { 
+          message: 'Password updated successfully',
+          uid: userRecord.uid 
+        },
         { status: 200 }
       );
 
-    } catch (adminError) {
-      console.error('Admin SDK error:', adminError);
+    } catch (adminError: any) {
+      console.error('❌ Admin SDK error:', adminError);
       
-      // Fallback: Return success but let the user know they need to sign in
+      // Remove token even on error to prevent reuse
       resetTokenStore.delete(token);
+      
+      // Return specific error message
+      if (adminError.code === 'auth/user-not-found') {
+        return NextResponse.json(
+          { error: 'User account not found. Please contact support.' },
+          { status: 404 }
+        );
+      }
       
       return NextResponse.json(
         { 
-          message: 'Password reset processed. Please try signing in with your new password.',
-          fallback: true 
+          error: `Failed to update password: ${adminError.message || 'Unknown error'}. Please try again or contact support.`
         },
-        { status: 200 }
+        { status: 500 }
       );
     }
 
