@@ -107,6 +107,7 @@ export async function POST(request: NextRequest) {
 
     } catch (adminError: any) {
       console.error('❌ Admin SDK error:', adminError);
+      console.error('❌ Full error details:', JSON.stringify(adminError, null, 2));
       
       // Remove token even on error to prevent reuse
       resetTokenStore.delete(token);
@@ -116,6 +117,22 @@ export async function POST(request: NextRequest) {
         console.log('🔧 Development mode credential error - trying alternative approach');
         return NextResponse.json(
           { error: 'Development mode: Password update requires production environment. Please use the published site for password reset.' },
+          { status: 500 }
+        );
+      }
+      
+      // Handle permission errors specifically
+      if (adminError.message && (
+        adminError.message.includes('PERMISSION_DENIED') || 
+        adminError.message.includes('serviceusage.serviceUsageConsumer') ||
+        adminError.message.includes('required permission')
+      )) {
+        console.log('🚫 Firebase Admin SDK permission error detected');
+        return NextResponse.json(
+          { 
+            error: 'Server configuration error: Firebase Admin SDK lacks required permissions. Please contact your administrator to update service account roles in Google Cloud Console.',
+            details: 'Required roles: Service Usage Consumer, Firebase Admin, Firebase Auth Admin'
+          },
           { status: 500 }
         );
       }
@@ -130,7 +147,8 @@ export async function POST(request: NextRequest) {
       
       return NextResponse.json(
         { 
-          error: `Failed to update password: ${adminError.message || 'Unknown error'}. Please contact support.`
+          error: `Failed to update password: ${adminError.message || 'Unknown error'}. Please contact support.`,
+          errorCode: adminError.code || 'unknown'
         },
         { status: 500 }
       );

@@ -7,6 +7,11 @@ if (!admin.apps.length) {
     // The FIREBASE_CONFIG environment variable contains the project configuration
     const firebaseConfig = process.env.FIREBASE_CONFIG ? JSON.parse(process.env.FIREBASE_CONFIG) : {};
     
+    // Log initialization details for debugging
+    console.log('🔧 Firebase Admin initialization starting...');
+    console.log('🔧 Project ID:', firebaseConfig.projectId || process.env.FIREBASE_PROJECT_ID || 'studio-2881432245-f1d94');
+    console.log('🔧 Environment:', process.env.NODE_ENV);
+    
     admin.initializeApp({
       projectId: firebaseConfig.projectId || process.env.FIREBASE_PROJECT_ID || 'studio-2881432245-f1d94',
       databaseURL: firebaseConfig.databaseURL || process.env.FIREBASE_DATABASE_URL,
@@ -14,6 +19,15 @@ if (!admin.apps.length) {
     });
     
     console.log('✅ Firebase Admin initialized successfully');
+    
+    // Test auth access
+    try {
+      await admin.auth().listUsers(1);
+      console.log('✅ Firebase Auth access confirmed');
+    } catch (authTestError) {
+      console.warn('⚠️ Firebase Auth access test failed:', authTestError);
+    }
+    
   } catch (error) {
     console.error('❌ Firebase Admin initialization error:', error);
     // In case of initialization error, try with minimal config
