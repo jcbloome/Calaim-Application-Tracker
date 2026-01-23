@@ -1,14 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import { sendPasswordResetEmail } from 'firebase/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/firebase';
 import { Loader2, Lock, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -32,26 +30,29 @@ export default function SWResetPasswordPage() {
     setError('');
 
     try {
-      await sendPasswordResetEmail(auth, email);
-      setIsSuccess(true);
-      toast({
-        title: 'Password Reset Email Sent',
-        description: 'Check your email for password reset instructions'
+      // Use the same custom API as regular users for consistency
+      const response = await fetch('/api/auth/password-reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
       });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setIsSuccess(true);
+        toast({
+          title: 'Password Reset Email Sent',
+          description: 'Check your email for password reset instructions'
+        });
+      } else {
+        setError(data.error || 'Failed to send password reset email. Please try again.');
+      }
     } catch (error: any) {
       console.error('Password reset error:', error);
-      
-      let errorMessage = 'Failed to send password reset email. Please try again.';
-      
-      if (error.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email address.';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Please enter a valid email address.';
-      } else if (error.code === 'auth/too-many-requests') {
-        errorMessage = 'Too many requests. Please try again later.';
-      }
-      
-      setError(errorMessage);
+      setError('Failed to send password reset email. Please try again.');
     } finally {
       setIsLoading(false);
     }

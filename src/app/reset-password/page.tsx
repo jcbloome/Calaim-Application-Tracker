@@ -44,16 +44,23 @@ function ResetPasswordContent() {
       if (token) {
         // Custom token - validate it
         try {
+          console.log('🔍 Validating token:', token.substring(0, 8) + '...');
           const response = await fetch(`/api/auth/password-reset?token=${token}`);
+          console.log('📡 API Response status:', response.status);
+          
           const data = await response.json();
+          console.log('📄 API Response data:', data);
           
           if (response.ok && data.valid) {
             setEmail(data.email);
             setResetValid(true);
+            console.log('✅ Token validation successful');
           } else {
+            console.log('❌ Token validation failed:', data.error);
             setError(data.error || 'Invalid or expired reset token');
           }
         } catch (error) {
+          console.error('❌ Token validation error:', error);
           setError('Failed to validate reset token');
         }
       } else {
