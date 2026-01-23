@@ -519,28 +519,6 @@ function formatNotesResponse(notes: ClientNote[], clientId2?: string): NextRespo
   });
 
   return NextResponse.json(response);
-
-  } catch (error: any) {
-    console.error('❌ Error fetching client notes:', error);
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: error.message || 'Failed to fetch client notes',
-        data: { 
-          notes: [],
-          notesByClient: {},
-          notesByUser: {},
-          totalNotes: 0,
-          newNotes: 0,
-          clients: 0,
-          assignedUsers: 0,
-          users: [],
-          sourceTable: 'none'
-        }
-      },
-      { status: 500 }
-    );
-  }
 }
 
 export async function POST(request: NextRequest) {

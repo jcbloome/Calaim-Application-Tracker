@@ -3,14 +3,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
-import { Search, Plus, MessageSquare, Bell, Calendar, User, Clock, Filter } from 'lucide-react';
+import { Search, MessageSquare, Bell, Calendar, User, Clock, Filter, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 
 // Types
@@ -57,7 +54,7 @@ interface Client {
 }
 
 export default function ClientNotesPage() {
-  const { user, isAdmin } = useAdmin();
+  const { user, isAdmin, isLoading, isUserLoading } = useAdmin();
   const [notesData, setNotesData] = useState<NotesData | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchingClients, setSearchingClients] = useState(false);
@@ -68,14 +65,6 @@ export default function ClientNotesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [showNewNoteDialog, setShowNewNoteDialog] = useState(false);
-  const [newNote, setNewNote] = useState({
-    clientId2: '',
-    comments: '',
-    followUpDate: '',
-    followUpAssignment: '',
-    followUpStatus: 'Open'
-  });
   const { toast } = useToast();
 
   // Search for clients by last name
@@ -125,7 +114,7 @@ export default function ClientNotesPage() {
   }, [clientSearch, selectedClientId]);
 
   // Fetch notes data for a specific client
-  const fetchNotesForClient = async (clientId2: string, clientName?: string) => {
+  const fetchNotesForClient = async (clientId2: string, clientName?: string, forceRefresh: boolean = false) => {
     // Ensure clientId2 is a string
     const clientId = String(clientId2 || '').trim();
     
@@ -142,6 +131,9 @@ export default function ClientNotesPage() {
       setLoading(true);
       const params = new URLSearchParams();
       params.append('clientId2', clientId);
+      if (forceRefresh) {
+        params.append('forceRefresh', 'true');
+      }
 
       const response = await fetch(`/api/client-notes?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch notes');
@@ -154,9 +146,16 @@ export default function ClientNotesPage() {
           setSelectedClientName(clientName);
         } else if (data.data.notes && data.data.notes.length > 0) {
           const firstNote = data.data.notes[0];
-          setSelectedClientName(firstNote.seniorFullName || clientId2);
+          setSelectedClientName(firstNote.seniorFullName || clientId);
         } else {
-          setSelectedClientName(clientId2);
+          setSelectedClientName(clientId);
+        }
+        
+        if (forceRefresh) {
+          toast({
+            title: "Success",
+            description: "Notes refreshed from Caspio",
+          });
         }
       } else {
         throw new Error(data.error || 'Failed to fetch notes');
@@ -202,65 +201,6 @@ export default function ClientNotesPage() {
     setStatusFilter('all');
   };
 
-  // Create new note
-  const createNote = async () => {
-    if (!selectedClientId || !newNote.comments) {
-      toast({
-        title: "Error",
-        description: "Client ID and comments are required",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/client-notes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...newNote,
-          clientId2: selectedClientId
-        }),
-      });
-
-      if (!response.ok) throw new Error('Failed to create note');
-
-      const data = await response.json();
-      if (data.success) {
-        toast({
-          title: "Success",
-          description: "Note created successfully",
-        });
-        
-        // Reset form and close dialog
-        setNewNote({
-          clientId2: '',
-          comments: '',
-          followUpDate: '',
-          followUpAssignment: '',
-          followUpStatus: 'Open'
-        });
-        setShowNewNoteDialog(false);
-        
-        // Refresh notes if we have a client selected
-        if (selectedClientId) {
-          fetchNotesForClient(selectedClientId);
-        }
-      } else {
-        throw new Error(data.error || 'Failed to create note');
-      }
-    } catch (error: any) {
-      console.error('Error creating note:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create note",
-        variant: "destructive",
-      });
-    }
-  };
-
   // Filter notes based on search and filters
   const filteredNotes = useMemo(() => {
     if (!notesData) return [];
@@ -282,11 +222,47 @@ export default function ClientNotesPage() {
     });
   }, [notesData, searchTerm, selectedUser, statusFilter]);
 
+  // Add timeout for loading state
+  useEffect(() => {
+    if (isLoading && !isUserLoading) {
+      // If we're stuck loading but user loading is done, there might be an issue
+      const timeout = setTimeout(() => {
+        console.warn('Authentication check taking longer than expected');
+      }, 5000);
+      return () => clearTimeout(timeout);
+    }
+  }, [isLoading, isUserLoading]);
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <Clock className="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-2" />
+            <div className="text-lg">
+              {isUserLoading ? 'Checking authentication...' : 'Loading...'}
+            </div>
+            {!isUserLoading && !user && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Please log in to continue
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!user || !isAdmin) {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
-          <div className="text-lg">Checking authentication...</div>
+          <div className="text-center">
+            <div className="text-lg mb-2">Access Denied</div>
+            <p className="text-sm text-muted-foreground">
+              {!user ? 'Please log in to view client notes' : 'You do not have permission to view this page'}
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -299,87 +275,10 @@ export default function ClientNotesPage() {
         <div>
           <h1 className="text-3xl font-bold">📝 Client Notes & Communication</h1>
           <p className="text-muted-foreground">
-            Select a client to view and manage their notes
+            Select a client to view notes synced from Caspio. Notes are automatically updated when you refresh.
           </p>
         </div>
         
-        {selectedClientId && (
-          <Dialog open={showNewNoteDialog} onOpenChange={setShowNewNoteDialog}>
-            <DialogTrigger asChild>
-              <Button className="bg-blue-600 hover:bg-blue-700">
-                <Plus className="w-4 h-4 mr-2" />
-                New Note
-              </Button>
-            </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Create New Client Note</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="clientId2">Client ID2 *</Label>
-                <Input
-                  id="clientId2"
-                  value={selectedClientId}
-                  disabled
-                  placeholder={selectedClientId || "Enter Client ID2"}
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="comments">Comments *</Label>
-                <Textarea
-                  id="comments"
-                  value={newNote.comments}
-                  onChange={(e) => setNewNote({ ...newNote, comments: e.target.value })}
-                  placeholder="Enter note comments..."
-                  rows={4}
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="followUpDate">Follow-up Date</Label>
-                  <Input
-                    id="followUpDate"
-                    type="date"
-                    value={newNote.followUpDate}
-                    onChange={(e) => setNewNote({ ...newNote, followUpDate: e.target.value })}
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="followUpAssignment">Assign to Staff</Label>
-                  <Select
-                    value={newNote.followUpAssignment}
-                    onValueChange={(value) => setNewNote({ ...newNote, followUpAssignment: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select staff member" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {notesData?.users.map((user) => (
-                        <SelectItem key={user.userId} value={user.userId}>
-                          {user.userFullName} ({user.role})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => setShowNewNoteDialog(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={createNote}>
-                  Create Note
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-          </Dialog>
-        )}
       </div>
 
       {/* Client Selection */}
@@ -448,9 +347,20 @@ export default function ClientNotesPage() {
                 </div>
               )}
             </div>
-            <Button variant="outline" onClick={handleClearClient}>
-              Change Client
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => fetchNotesForClient(selectedClientId, selectedClientName, true)}
+                disabled={loading}
+                size="sm"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+              <Button variant="outline" onClick={handleClearClient}>
+                Change Client
+              </Button>
+            </div>
           </div>
 
           {/* Filters */}
