@@ -2,7 +2,7 @@
 
 import React, { ReactNode, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAdmin } from '@/hooks/use-admin';
 import { useSocialWorker } from '@/hooks/use-social-worker';
@@ -125,42 +125,13 @@ const superAdminNavLinks = [
     icon: ShieldAlert, 
     isSubmenu: true,
     submenuItems: [
-      // Staff Management
-      { href: '/admin/staff-management', label: 'Staff Management', icon: Users },
-      { href: '/admin/sw-user-management', label: 'SW User Management', icon: UserCheck },
-      { href: '/admin/managerial-overview', label: 'Managerial Overview', icon: Kanban },
-      { href: '/admin/sw-claims-management', label: 'SW Claims Management', icon: DollarSign },
-      { href: '/admin/daily-tasks', label: 'Daily Task Tracker', icon: Calendar },
-      { href: '/admin/login-activity', label: 'Login Activity', icon: Activity },
-      { href: '/admin/profile', label: 'Profile Management', icon: UserIcon },
-      
-      // System Tools
-      { href: '/admin/super-admin-tools', label: 'System Tools', icon: Wrench },
-      { href: '/admin/notification-settings', label: 'Notification Settings', icon: Settings },
-      { href: '/admin/priority-note-monitor', label: 'Priority Note Monitor', icon: BellRing },
-      
-      // Data Management
-      { href: '/admin/batch-sync', label: 'Batch Sync', icon: RefreshCw },
-      { href: '/admin/intelligent-matching', label: 'Intelligent Matching', icon: Brain },
-      { href: '/admin/comprehensive-matching', label: 'Legacy Member Search', icon: Brain },
-      
-      // Caspio Integration
-      { href: '/admin/caspio-field-mapping', label: 'Field Mapping', icon: Map },
-      { href: '/admin/caspio-test', label: 'Caspio API Test', icon: Database },
-      { href: '/admin/migrate-drive', label: 'Google Drive Test', icon: FolderSync },
-      
-      // Communication System
-      { href: '/admin/client-notes', label: 'Client Notes System', icon: MessageSquareText },
-      { href: '/admin/system-note-log', label: 'System Note Log', icon: MessageSquareText },
-      { href: '/admin/super-admin-notes', label: 'Complete Note Log', icon: FileText },
-      
-      // Development & Testing
-      { href: '/admin/user-diagnostics', label: 'User Diagnostics', icon: TestTube2 },
-      { href: '/admin/email-test', label: 'Email Test Panel', icon: Mail },
-      { href: '/admin/test-emails', label: 'Email Testing', icon: Mail },
-      { href: '/admin/test-google-maps', label: 'Google Maps Test', icon: Map },
-      { href: '/admin/test-notifications', label: 'Notification Test', icon: Bell },
-      { href: '/admin/notification-demo', label: 'Notification Demo', icon: Bell }
+      // Consolidated Management Pages
+      { href: '/admin/user-staff-management', label: 'User & Staff Management', icon: Users },
+      { href: '/admin/operations-dashboard', label: 'Operations Dashboard', icon: Kanban },
+      { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },
+      { href: '/admin/data-integration', label: 'Data & Integration Tools', icon: Database },
+      { href: '/admin/communication-notes', label: 'Communication & Notes', icon: MessageSquareText },
+      { href: '/admin/development-testing', label: 'Development & Testing', icon: TestTube2 }
     ]
   }
 ];
@@ -170,6 +141,7 @@ function AdminHeader() {
   const { isSocialWorker } = useSocialWorker();
   const auth = useAuth();
   const pathname = usePathname();
+  const router = useRouter();
   const [openSubmenus, setOpenSubmenus] = useState<Set<string>>(new Set());
   const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null);
 
@@ -324,6 +296,11 @@ function AdminHeader() {
                   </p>
                 </div>
               </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => router.push('/admin/profile')}>
+                <UserIcon className="h-4 w-4 mr-2" />
+                My Profile
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleSignOut} className="text-red-600 focus:text-red-600">
                 <LogOut className="h-4 w-4 mr-2" />

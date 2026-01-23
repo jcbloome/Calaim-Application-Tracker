@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { 
   RefreshCw, 
   Search, 
@@ -21,7 +20,8 @@ import {
   Loader2,
   FileText,
   Eye,
-  Calendar
+  Calendar,
+  Bell
 } from 'lucide-react';
 import {
   Table,
@@ -177,11 +177,16 @@ export function SystemNoteLog() {
   const loadNotes = async () => {
     setIsLoading(true);
     try {
-      const functions = getFunctions();
-      const getSystemNotes = httpsCallable(functions, 'getSystemNoteLog');
+      const params = new URLSearchParams();
+      params.append('limit', '1000');
       
-      const result = await getSystemNotes();
-      const data = result.data as any;
+      const response = await fetch(`/api/admin/system-notes?${params.toString()}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
       
       if (data.success) {
         const notesWithDates = data.notes.map((note: any) => ({
