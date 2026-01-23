@@ -111,6 +111,14 @@ export async function POST(request: NextRequest) {
       // Remove token even on error to prevent reuse
       resetTokenStore.delete(token);
       
+      // Handle specific credential errors
+      if (adminError.message && adminError.message.includes('metadata.google.internal')) {
+        return NextResponse.json(
+          { error: 'Server configuration error: Firebase credentials not properly configured. Please contact support.' },
+          { status: 500 }
+        );
+      }
+      
       // Return specific error message
       if (adminError.code === 'auth/user-not-found') {
         return NextResponse.json(
@@ -121,7 +129,7 @@ export async function POST(request: NextRequest) {
       
       return NextResponse.json(
         { 
-          error: `Failed to update password: ${adminError.message || 'Unknown error'}. Please try again or contact support.`
+          error: `Failed to update password: ${adminError.message || 'Unknown error'}. Please contact support.`
         },
         { status: 500 }
       );

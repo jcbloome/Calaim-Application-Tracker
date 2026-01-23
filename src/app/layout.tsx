@@ -4,6 +4,7 @@ import './globals.css';
 import React from 'react';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { NotificationProvider } from '@/components/NotificationProvider';
+import { Toaster } from '@/components/ui/toaster';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -38,6 +39,7 @@ export default function RootLayout({
             {children}
           </NotificationProvider>
         </FirebaseClientProvider>
+        <Toaster />
       </body>
     </html>
   );

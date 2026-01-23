@@ -28,15 +28,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // In development mode, fallback to a simple success response
-    // This allows testing the UI flow without Firebase Admin SDK complications
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔧 Development mode: Simulating password reset email sent');
-      return NextResponse.json(
-        { message: 'Development mode: Password reset email simulation successful. Use any password to "reset".' },
-        { status: 200 }
-      );
-    }
+    // Temporarily disabled development mode simulation to test real email sending
+    // if (process.env.NODE_ENV === 'development') {
+    //   console.log('🔧 Development mode: Simulating password reset email sent');
+    //   return NextResponse.json(
+    //     { message: 'Development mode: Password reset email simulation successful. Use any password to "reset".' },
+    //     { status: 200 }
+    //   );
+    // }
 
     if (!process.env.RESEND_API_KEY) {
       console.error('❌ RESEND_API_KEY not set - email service not configured');
