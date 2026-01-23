@@ -1,28 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchAllCalAIMMembers, type CaspioCredentials } from '@/lib/caspio-api-utils';
+import { fetchAllCalAIMMembers, getCaspioCredentialsFromEnv } from '@/lib/caspio-api-utils';
 
 export async function GET(request: NextRequest) {
   try {
     console.log('🔍 Fetching ALL members from Caspio using partition strategy...');
 
-    // Get Caspio credentials from environment
-    const caspioBaseUrl = process.env.CASPIO_BASE_URL;
-    const caspioClientId = process.env.CASPIO_CLIENT_ID;
-    const caspioClientSecret = process.env.CASPIO_CLIENT_SECRET;
-
-    if (!caspioBaseUrl || !caspioClientId || !caspioClientSecret) {
-      console.error('❌ Missing Caspio credentials');
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Caspio credentials not configured'
-      }, { status: 500 });
-    }
-
-    const credentials: CaspioCredentials = {
-      baseUrl: caspioBaseUrl,
-      clientId: caspioClientId,
-      clientSecret: caspioClientSecret
-    };
+    const credentials = getCaspioCredentialsFromEnv();
 
     // Use the new utility module to fetch all members
     const result = await fetchAllCalAIMMembers(credentials);

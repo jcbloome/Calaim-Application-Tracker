@@ -25,6 +25,19 @@ export interface CaspioCredentials {
   clientSecret: string;
 }
 
+export function getCaspioCredentialsFromEnv(): CaspioCredentials {
+  const baseUrlRaw = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com';
+  const clientId = process.env.CASPIO_CLIENT_ID;
+  const clientSecret = process.env.CASPIO_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    throw new Error('Caspio credentials not configured');
+  }
+
+  const baseUrl = baseUrlRaw.replace(/\/rest\/v2\/?$/, '');
+  return { baseUrl, clientId, clientSecret };
+}
+
 export interface CaspioQueryOptions {
   table: string;
   partitionField?: string;
@@ -48,6 +61,19 @@ export interface CaspioMember {
   Pathway: string;
   last_updated: string;
   [key: string]: any;
+}
+
+export interface CaspioSocialWorker {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  sw_id: string;
+  phone?: string;
+  department?: string;
+  assignedMemberCount: number;
+  rate?: number | null;
+  isActive: boolean;
 }
 
 /**
@@ -295,6 +321,102 @@ export function transformCaspioMember(member: CaspioMember): any {
     pathway: member.Pathway || 'Unknown',
     last_updated: member.last_updated || new Date().toISOString()
   };
+}
+
+/**
+ * Fetch all social workers with assignment counts
+ * Uses the same full-member dataset logic as the assignments page.
+ */
+export async function fetchCaspioSocialWorkers(
+  credentials: CaspioCredentials
+): Promise<CaspioSocialWorker[]> {
+  const accessToken = await getCaspioToken(credentials);
+
+  const socialWorkerSelect = [
+    'SW_ID',
+    'SW_first',
+    'SW_last',
+    'SW_first_last',
+    'SW_Last_First',
+    'User_First',
+    'User_Last',
+    'SW_email',
+    'Role',
+    'SW_table_id',
+    'Rate'
+  ].join(',');
+  const socialWorkerUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Social_Worker/records?q.select=${encodeURIComponent(socialWorkerSelect)}`;
+
+  const swResponse = await fetch(socialWorkerUrl, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!swResponse.ok) {
+    throw new Error(`Failed to fetch social workers: ${swResponse.status} ${swResponse.statusText}`);
+  }
+
+  const swData = await swResponse.json();
+  const allSocialWorkers = swData.Result || [];
+
+  const transformedStaff: CaspioSocialWorker[] = allSocialWorkers
+    .map((sw: any) => {
+      const swId = (sw.SW_ID || sw.SW_table_id || '').toString().trim();
+      if (!swId) {
+        return null;
+      }
+
+      const firstName = (sw.SW_first || sw.User_First || '').toString().trim();
+      const lastName = (sw.SW_last || sw.User_Last || '').toString().trim();
+      const formulaName = (sw.SW_first_last || sw.SW_Last_First || '').toString().trim();
+      const fullName = formulaName || `${firstName} ${lastName}`.trim() || `SW ${swId}`;
+
+      return {
+        id: String(sw.SW_table_id || swId),
+        name: fullName,
+        email: sw.SW_email || '',
+        role: sw.Role || 'MSW',
+        sw_id: String(swId),
+        phone: '',
+        department: '',
+        assignedMemberCount: 0,
+        rate: sw.Rate || null,
+        isActive: true
+      };
+    })
+    .filter(Boolean) as CaspioSocialWorker[];
+
+  const result = await fetchAllCalAIMMembers(credentials, { includeRawData: true });
+  const rawMembers = result.rawMembers || [];
+
+  const byName: Record<string, number> = {};
+  const bySwId: Record<string, number> = {};
+
+  rawMembers.forEach((member: any) => {
+    const swId = String(member.SW_ID || '').trim();
+    if (swId) {
+      bySwId[swId] = (bySwId[swId] || 0) + 1;
+    }
+
+    const swName = normalizeSocialWorkerName(String(member.Social_Worker_Assigned || '').trim());
+    if (swName) {
+      byName[swName] = (byName[swName] || 0) + 1;
+    }
+  });
+
+  return transformedStaff.map((staff) => {
+    const staffId = String(staff.sw_id || '').trim();
+    const staffName = normalizeSocialWorkerName(String(staff.name || '').trim());
+    const countByName = staffName ? byName[staffName] ?? 0 : 0;
+    const countById = staffId ? bySwId[staffId] ?? 0 : 0;
+    return {
+      ...staff,
+      assignedMemberCount: Math.max(countByName, countById)
+    };
+  });
 }
 
 /**

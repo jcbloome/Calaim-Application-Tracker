@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { 
   fetchAllCalAIMMembers, 
-  CaspioCredentials 
+  getCaspioCredentialsFromEnv
 } from '@/lib/caspio-api-utils';
 import { 
   sendFlaggedVisitNotification,
@@ -98,11 +98,7 @@ export async function GET(req: NextRequest) {
     console.log('🔍 Fetching assigned members for SW:', socialWorkerId);
     
     // Use the same robust method as other APIs
-    const credentials: CaspioCredentials = {
-      baseUrl: process.env.CASPIO_BASE_URL!,
-      clientId: process.env.CASPIO_CLIENT_ID!,
-      clientSecret: process.env.CASPIO_CLIENT_SECRET!,
-    };
+    const credentials = getCaspioCredentialsFromEnv();
 
     // Fetch all members and filter by social worker assignment
     const result = await fetchAllCalAIMMembers(credentials);

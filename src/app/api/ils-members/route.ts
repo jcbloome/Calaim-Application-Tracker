@@ -1,55 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 
 export async function GET(request: NextRequest) {
   try {
     console.log('📥 Fetching ILS members from Caspio...');
 
-    // Get Caspio credentials from environment
-    const caspioBaseUrl = process.env.CASPIO_BASE_URL;
-    const clientId = process.env.CASPIO_CLIENT_ID;
-    const clientSecret = process.env.CASPIO_CLIENT_SECRET;
-
-    if (!caspioBaseUrl || !clientId || !clientSecret) {
-      console.error('❌ Missing Caspio environment variables');
-      return NextResponse.json(
-        { success: false, error: 'Missing Caspio configuration' },
-        { status: 500 }
-      );
-    }
+    const credentials = getCaspioCredentialsFromEnv();
 
     // Get OAuth token
-    const tokenUrl = `${caspioBaseUrl}/oauth/token`;
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: clientId,
-        client_secret: clientSecret,
-      }),
-    });
-
-    if (!tokenResponse.ok) {
-      console.error('❌ Failed to get Caspio OAuth token:', tokenResponse.status);
-      return NextResponse.json(
-        { success: false, error: 'Failed to authenticate with Caspio' },
-        { status: 500 }
-      );
-    }
-
-    const tokenData = await tokenResponse.json();
+    const accessToken = await getCaspioToken(credentials);
     console.log('✅ Got Caspio OAuth token');
 
     // Fetch ILS members from CalAIM_tbl_Members table
     // ILS members are those with ILS_View = 'Yes' or similar criteria
-    const membersUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=ILS_View='Yes'&q.limit=1000`;
+    const membersUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=ILS_View='Yes'&q.limit=1000`;
     
     const membersResponse = await fetch(membersUrl, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${tokenData.access_token}`,
+        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
     });

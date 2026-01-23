@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,34 +12,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get Caspio credentials
-    const caspioBaseUrl = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = process.env.CASPIO_CLIENT_ID || 'b4c7eac0b7b8e4b6e8c4d3a2f1e5d8c9a6b2c1d4e7f8a9b0c3d6e9f2a5b8c1d4e7';
-    const clientSecret = process.env.CASPIO_CLIENT_SECRET || 'f8e7d6c5b4a3928170e9f8d7c6b5a4938271f0e9d8c7b6a5948372e1f0d9c8b7a6';
-
-    // Get OAuth token
-    const tokenResponse = await fetch(`${caspioBaseUrl}/oauth/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: clientId,
-        client_secret: clientSecret,
-      }),
-    });
-
-    if (!tokenResponse.ok) {
-      throw new Error('Failed to get Caspio token');
-    }
-
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const credentials = getCaspioCredentialsFromEnv();
+    const accessToken = await getCaspioToken(credentials);
 
     // Update the member record in Caspio
     const updateResponse = await fetch(
-      `${caspioBaseUrl}/tables/CalAIM_tbl_Members/records?q.where=Client_ID2='${memberId}'`,
+      `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=Client_ID2='${memberId}'`,
       {
         method: 'PUT',
         headers: {

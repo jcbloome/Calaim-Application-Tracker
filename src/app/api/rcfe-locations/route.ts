@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 
 // Types for RCFE data
 interface RCFE {
@@ -19,35 +20,10 @@ export async function GET(request: NextRequest) {
   try {
     console.log('🏠 Fetching RCFE locations from Caspio...');
     
-    // Use environment variables for Caspio credentials
-    const caspioBaseUrl = process.env.CASPIO_BASE_URL;
-    const caspioClientId = process.env.CASPIO_CLIENT_ID;
-    const caspioClientSecret = process.env.CASPIO_CLIENT_SECRET;
-
-    if (!caspioBaseUrl || !caspioClientId || !caspioClientSecret) {
-      throw new Error('Missing Caspio environment variables');
-    }
+    const credentials = getCaspioCredentialsFromEnv();
     
     console.log('🔐 Getting Caspio access token...');
-    
-    const tokenResponse = await fetch(`${caspioBaseUrl}/oauth/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: caspioClientId,
-        client_secret: caspioClientSecret,
-      }),
-    });
-
-    if (!tokenResponse.ok) {
-      throw new Error('Failed to get Caspio access token');
-    }
-
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const accessToken = await getCaspioToken(credentials);
 
     // Try multiple possible RCFE table names
     const possibleTables = [
@@ -77,7 +53,7 @@ export async function GET(request: NextRequest) {
 
         do {
           // Use Caspio's correct pagination parameters (same as authorization tracker)
-          const rcfeUrl = `${caspioBaseUrl}/rest/v2/tables/${tableName}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
+          const rcfeUrl = `${credentials.baseUrl}/rest/v2/tables/${tableName}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
           console.log(`🌐 Fetching page ${pageNumber} from ${tableName} (pageSize: ${pageSize})...`);
 
           const rcfeResponse = await fetch(rcfeUrl, {

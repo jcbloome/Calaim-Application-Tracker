@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchCaspioSocialWorkers, getCaspioCredentialsFromEnv } from '@/lib/caspio-api-utils';
 
 export async function GET(request: NextRequest) {
   try {
@@ -57,11 +58,10 @@ export async function GET(request: NextRequest) {
     // Fetch Caspio MSW staff if requested
     if (includeCaspioStaff) {
       try {
-        const caspioResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/api/caspio-staff`);
-        const caspioData = await caspioResponse.json();
-        
-        if (caspioData.success && caspioData.staff.length > 0) {
-          const caspioStaff = caspioData.staff.map((staff: any) => ({
+        const credentials = getCaspioCredentialsFromEnv();
+        const caspioStaffData = await fetchCaspioSocialWorkers(credentials);
+        if (caspioStaffData.length > 0) {
+          const caspioStaff = caspioStaffData.map((staff: any) => ({
             id: staff.sw_id || staff.id,
             name: staff.name,
             email: staff.email,

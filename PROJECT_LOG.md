@@ -16,6 +16,16 @@
 
 ## 🗓️ **Development History**
 
+### **January 23, 2026 - Fixes**
+- ✅ **Bug Fixed**: Assigned member counts now populate in SW user management table
+- ✅ **Bug Fixed**: SW assignment counts now read Social_Worker_Assigned field in Caspio
+- ✅ **Bug Fixed**: SW assignment counts now key off Social_Worker_Assigned SW_ID
+- ✅ **Bug Fixed**: SW assignment counts now use full member dataset with normalized names
+- ✅ **Architecture**: Centralized Caspio social worker fetch/count logic in shared utility
+- ✅ **Architecture**: Staff API now uses shared Caspio social worker helper
+- ✅ **Bug Fixed**: Removed extra brace causing Kaiser members API build error
+- ✅ **Architecture**: Standardized Caspio credential/token handling across API data imports
+
 ### **January 20, 2026 - Project Foundation**
 - ✅ **Fixed SSR Issues**: Added client-side guards to all browser API calls (window, localStorage, Notification)
 - ✅ **Resolved Build Errors**: Fixed "window is not defined" errors in PushNotificationManager and notification-settings

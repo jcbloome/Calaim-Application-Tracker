@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 
 // Helper function to assign sample Kaiser statuses for demo purposes
 function getRandomKaiserStatus(index: number): string {
@@ -43,71 +44,24 @@ export async function GET(request: NextRequest) {
   try {
     console.log('🔍 Fetching Kaiser members from Caspio...');
 
-    // Get Caspio credentials from environment
-    const caspioBaseUrl = process.env.CASPIO_BASE_URL;
-    const caspioClientId = process.env.CASPIO_CLIENT_ID;
-    const caspioClientSecret = process.env.CASPIO_CLIENT_SECRET;
+    const credentials = getCaspioCredentialsFromEnv();
 
     console.log('🔧 Environment check:', {
-      hasBaseUrl: !!caspioBaseUrl,
-      hasClientId: !!caspioClientId,
-      hasClientSecret: !!caspioClientSecret,
-      baseUrl: caspioBaseUrl ? `${caspioBaseUrl.substring(0, 20)}...` : 'undefined'
+      hasBaseUrl: true,
+      hasClientId: true,
+      hasClientSecret: true,
+      baseUrl: credentials.baseUrl ? `${credentials.baseUrl.substring(0, 20)}...` : 'undefined'
     });
-
-    if (!caspioBaseUrl || !caspioClientId || !caspioClientSecret) {
-      console.error('❌ Missing Caspio credentials');
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Caspio credentials not configured',
-        debug: {
-          hasBaseUrl: !!caspioBaseUrl,
-          hasClientId: !!caspioClientId,
-          hasClientSecret: !!caspioClientSecret
-        }
-      }, { status: 500 });
-    }
 
     // Get OAuth token
     console.log('🔐 Getting Caspio OAuth token...');
-    const tokenResponse = await fetch(`${caspioBaseUrl}/oauth/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: caspioClientId,
-        client_secret: caspioClientSecret,
-      }),
-    });
-
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      console.error('❌ Failed to get Caspio token:', {
-        status: tokenResponse.status,
-        statusText: tokenResponse.statusText,
-        error: errorText
-      });
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Failed to authenticate with Caspio',
-        debug: {
-          status: tokenResponse.status,
-          statusText: tokenResponse.statusText,
-          error: errorText
-        }
-      }, { status: 500 });
-    }
-
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const accessToken = await getCaspioToken(credentials);
 
     // Fetch Kaiser members from CalAIM_tbl_Members where CalAIM_MCO = 'Kaiser'
     console.log('📊 Fetching Kaiser members...');
     
     // First, check total count available
-    const countUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.select=COUNT(*)`;
+    const countUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.select=COUNT(*)`;
     console.log('🔢 Checking total Kaiser member count...');
     
     try {
@@ -133,7 +87,7 @@ export async function GET(request: NextRequest) {
     
     // Approach 1: Try without pagination first (get default limit)
     console.log('🔄 Approach 1: Fetching without pagination...');
-    const simpleUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'`;
+    const simpleUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'`;
     console.log(`🔗 Simple Query URL:`, simpleUrl);
     
     const simpleResponse = await fetch(simpleUrl, {
@@ -154,7 +108,7 @@ export async function GET(request: NextRequest) {
     
     // Try with higher limit to get all 405 records
     console.log('🔄 Approach 2: Trying with higher limit to get all 405 records...');
-    const highLimitUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=500`;
+    const highLimitUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=500`;
     console.log(`🔗 High Limit Query URL:`, highLimitUrl);
     
     const highLimitResponse = await fetch(highLimitUrl, {
@@ -184,7 +138,7 @@ export async function GET(request: NextRequest) {
     let paginatedMembers: any[] = [];
 
     while (hasMorePages && pageNumber <= 10) { // 10 pages * 100 = 1000 records max
-      const queryUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=${pageSize}&q.pageNumber=${pageNumber}`;
+      const queryUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=${pageSize}&q.pageNumber=${pageNumber}`;
       console.log(`🔗 Page ${pageNumber} Query URL:`, queryUrl);
       
       const membersResponse = await fetch(queryUrl, {

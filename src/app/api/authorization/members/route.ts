@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-interface CaspioAuthResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-}
+import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 
 interface CaspioMemberRecord {
   Record_ID: string;
@@ -42,52 +37,10 @@ interface AuthorizationMember {
 }
 
 /**
- * Get OAuth token from Caspio
- */
-async function getCaspioToken(): Promise<string> {
-  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-  const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-  const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-  
-  const tokenUrl = `${baseUrl}/oauth/token`;
-  
-  console.log('Making OAuth request to:', tokenUrl);
-  console.log('Client ID:', clientId);
-  
-  // Use URLSearchParams for proper form encoding
-  const params = new URLSearchParams();
-  params.append('grant_type', 'client_credentials');
-  params.append('client_id', clientId);
-  params.append('client_secret', clientSecret);
-  
-  const response = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-    },
-    body: params.toString(),
-  });
-
-  console.log('OAuth response status:', response.status);
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Caspio OAuth failed:', { status: response.status, error: errorText });
-    throw new Error(`Failed to authenticate with Caspio: ${response.status} - ${errorText}`);
-  }
-
-  const data: CaspioAuthResponse = await response.json();
-  console.log('OAuth token received, expires in:', data.expires_in);
-  return data.access_token;
-}
-
-/**
  * Fetch members with authorization data from Caspio
  */
-async function fetchMembersFromCaspio(token: string): Promise<CaspioMemberRecord[]> {
-  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-  const apiUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
+async function fetchMembersFromCaspio(token: string, baseUrl: string): Promise<CaspioMemberRecord[]> {
+  const apiUrl = `${baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records`;
   
   // Only fetch members that have at least one authorization field
   const whereClause = `Authorization_Start_Date_T2038 IS NOT NULL OR Authorization_End_Date_T2038 IS NOT NULL OR Authorization_Start_Date_H2022 IS NOT NULL OR Authorization_End_Date_H2022 IS NOT NULL`;
@@ -137,12 +90,13 @@ export async function GET(request: NextRequest) {
     
     // Get OAuth token
     console.log('Getting Caspio OAuth token...');
-    const token = await getCaspioToken();
+    const credentials = getCaspioCredentialsFromEnv();
+    const token = await getCaspioToken(credentials);
     console.log('OAuth token obtained successfully');
     
     // Fetch members with authorization data
     console.log('Fetching members from Caspio...');
-    const caspioMembers = await fetchMembersFromCaspio(token);
+    const caspioMembers = await fetchMembersFromCaspio(token, credentials.baseUrl);
     console.log(`Fetched ${caspioMembers.length} members from Caspio`);
     
     // Transform data

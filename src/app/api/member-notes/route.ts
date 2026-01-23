@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { CaspioService } from '@/modules/caspio-integration';
 
 // Try to import Firebase Admin, but handle gracefully if not available
@@ -71,10 +72,10 @@ interface MemberNote {
   isILSNote?: boolean; // Tag for ILS-specific notes
 }
 
-// Caspio configuration - hardcoded for development
-const CASPIO_BASE_URL = 'https://c7ebl500.caspio.com';
-const CASPIO_CLIENT_ID = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-const CASPIO_CLIENT_SECRET = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+function getCaspioConfig() {
+  const credentials = getCaspioCredentialsFromEnv();
+  return { credentials, baseUrl: credentials.baseUrl };
+}
 
 // Handle full-text search using new Caspio module
 async function handleGlobalNoteSearchWithModule(searchQuery: string) {
@@ -517,28 +518,6 @@ async function withRetry<T>(
   throw lastError;
 }
 
-// Get Caspio access token
-async function getCaspioToken() {
-  const tokenUrl = `${CASPIO_BASE_URL}/oauth/token`;
-  const credentials = Buffer.from(`${CASPIO_CLIENT_ID}:${CASPIO_CLIENT_SECRET}`).toString('base64');
-
-  const response = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: 'grant_type=client_credentials',
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to get Caspio token: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.access_token;
-}
-
 // Temporary in-memory storage as fallback
 let memberNotesCache: { [clientId2: string]: MemberNote[] } = {};
 let syncStatusCache: { [clientId2: string]: any } = {};
@@ -763,13 +742,14 @@ async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
   return await withRetry(async () => {
     console.log(`🔄 First-time sync: importing all legacy notes for Client_ID2: ${clientId2}`);
     
-    const token = await getCaspioToken();
+    const { credentials, baseUrl } = getCaspioConfig();
+    const token = await getCaspioToken(credentials);
     
     // Fetch from regular notes table
-    const regularNotesUrl = `${CASPIO_BASE_URL}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}'&q.orderBy=Time_Stamp DESC&q.limit=1000`;
+    const regularNotesUrl = `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}'&q.orderBy=Time_Stamp DESC&q.limit=1000`;
     
     // Fetch from ILS notes table
-    const ilsNotesUrl = `${CASPIO_BASE_URL}/rest/v2/tables/CalAIM_Member_Notes_ILS/records?q.where=Client_ID2='${clientId2}'&q.orderBy=Timestamp DESC&q.limit=1000`;
+    const ilsNotesUrl = `${baseUrl}/rest/v2/tables/CalAIM_Member_Notes_ILS/records?q.where=Client_ID2='${clientId2}'&q.orderBy=Timestamp DESC&q.limit=1000`;
     
     const [regularResponse, ilsResponse] = await Promise.all([
       fetch(regularNotesUrl, {
@@ -875,13 +855,14 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
   return await withRetry(async () => {
     console.log(`🔄 Incremental sync: checking for new notes since ${lastSyncAt} for Client_ID2: ${clientId2}`);
     
-    const token = await getCaspioToken();
+    const { credentials, baseUrl } = getCaspioConfig();
+    const token = await getCaspioToken(credentials);
     
     // Query for new regular notes
-    const regularNotesUrl = `${CASPIO_BASE_URL}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}' AND Time_Stamp>'${lastSyncAt}'&q.orderBy=Time_Stamp DESC`;
+    const regularNotesUrl = `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}' AND Time_Stamp>'${lastSyncAt}'&q.orderBy=Time_Stamp DESC`;
     
     // Query for new ILS notes
-    const ilsNotesUrl = `${CASPIO_BASE_URL}/rest/v2/tables/CalAIM_Member_Notes_ILS/records?q.where=Client_ID2='${clientId2}' AND Timestamp>'${lastSyncAt}'&q.orderBy=Timestamp DESC`;
+    const ilsNotesUrl = `${baseUrl}/rest/v2/tables/CalAIM_Member_Notes_ILS/records?q.where=Client_ID2='${clientId2}' AND Timestamp>'${lastSyncAt}'&q.orderBy=Timestamp DESC`;
     
     const [regularResponse, ilsResponse] = await Promise.all([
       fetch(regularNotesUrl, {
@@ -1003,7 +984,8 @@ async function syncNoteToCaspio(note: MemberNote): Promise<void> {
   try {
     console.log(`📤 Syncing new note to connect_tbl_clientnotes: ${note.id}`);
     
-    const token = await getCaspioToken();
+    const { credentials, baseUrl } = getCaspioConfig();
+    const token = await getCaspioToken(credentials);
     
     // Create new record in connect_tbl_clientnotes
     const caspioData = {
@@ -1019,7 +1001,7 @@ async function syncNoteToCaspio(note: MemberNote): Promise<void> {
       Assigned_First: note.assignedToName || null
     };
 
-    const apiUrl = `${CASPIO_BASE_URL}/rest/v2/tables/connect_tbl_clientnotes/records`;
+    const apiUrl = `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records`;
     
     const response = await fetch(apiUrl, {
       method: 'POST',

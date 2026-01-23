@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 
 // Types for CalAIM Member data
 interface CalAIMMember {
@@ -32,35 +33,10 @@ export async function GET(request: NextRequest) {
   try {
     console.log('👥 Fetching CalAIM member locations from Caspio...');
     
-    // Use environment variables for Caspio credentials
-    const caspioBaseUrl = process.env.CASPIO_BASE_URL;
-    const caspioClientId = process.env.CASPIO_CLIENT_ID;
-    const caspioClientSecret = process.env.CASPIO_CLIENT_SECRET;
-
-    if (!caspioBaseUrl || !caspioClientId || !caspioClientSecret) {
-      throw new Error('Missing Caspio environment variables');
-    }
+    const credentials = getCaspioCredentialsFromEnv();
     
     console.log('🔐 Getting Caspio access token...');
-    
-    const tokenResponse = await fetch(`${caspioBaseUrl}/oauth/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: caspioClientId,
-        client_secret: caspioClientSecret,
-      }),
-    });
-
-    if (!tokenResponse.ok) {
-      throw new Error('Failed to get Caspio access token');
-    }
-
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const accessToken = await getCaspioToken(credentials);
 
     // Fetch ALL CalAIM members with improved pagination (same as kaiser-members API)
     const membersTable = 'CalAIM_tbl_Members';
@@ -71,7 +47,7 @@ export async function GET(request: NextRequest) {
     let hasMorePages = true;
 
     while (hasMorePages && pageNumber <= 10) { // Safety limit of 10 pages = 10,000 records
-      const membersUrl = `${caspioBaseUrl}/rest/v2/tables/${membersTable}/records?q.limit=${pageSize}&q.pageNumber=${pageNumber}`;
+      const membersUrl = `${credentials.baseUrl}/rest/v2/tables/${membersTable}/records?q.limit=${pageSize}&q.pageNumber=${pageNumber}`;
       console.log(`🔗 Page ${pageNumber} Query URL:`, membersUrl);
       
       const membersResponse = await fetch(membersUrl, {

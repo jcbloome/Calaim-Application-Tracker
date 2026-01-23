@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 
 interface Member {
   clientId2: string;
@@ -11,40 +12,14 @@ interface Member {
   noteCount: number;
 }
 
-// Caspio configuration - hardcoded for development
-const CASPIO_BASE_URL = 'https://c7ebl500.caspio.com';
-const CASPIO_CLIENT_ID = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-const CASPIO_CLIENT_SECRET = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-
-// Get Caspio access token
-async function getCaspioToken() {
-  const tokenUrl = `${CASPIO_BASE_URL}/oauth/token`;
-  const credentials = Buffer.from(`${CASPIO_CLIENT_ID}:${CASPIO_CLIENT_SECRET}`).toString('base64');
-
-  const response = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: 'grant_type=client_credentials',
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to get Caspio token: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.access_token;
-}
-
 // Fetch members from Caspio CalAIM_tbl_Members
 async function fetchCaspioMembers(search?: string, healthPlan?: string, status?: string, limit: number = 50, offset: number = 0) {
   try {
-    const token = await getCaspioToken();
+    const credentials = getCaspioCredentialsFromEnv();
+    const token = await getCaspioToken(credentials);
     
     // Build the query URL for CalAIM_tbl_Members table
-    let apiUrl = `${CASPIO_BASE_URL}/rest/v2/tables/CalAIM_tbl_Members/records`;
+    let apiUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records`;
     
     // Build query parameters
     const queryParams = new URLSearchParams();

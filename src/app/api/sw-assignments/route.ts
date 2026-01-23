@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,71 +15,24 @@ export async function GET(request: NextRequest) {
 
     console.log(`🔍 [SW-ASSIGNMENTS] Fetching assignments for SW: ${email}`);
 
-    // Get Caspio credentials from environment
-    const caspioBaseUrl = process.env.CASPIO_BASE_URL;
-    const caspioClientId = process.env.CASPIO_CLIENT_ID;
-    const caspioClientSecret = process.env.CASPIO_CLIENT_SECRET;
+    const credentials = getCaspioCredentialsFromEnv();
 
     console.log('🔧 [SW-ASSIGNMENTS] Environment check:', {
-      hasBaseUrl: !!caspioBaseUrl,
-      hasClientId: !!caspioClientId,
-      hasClientSecret: !!caspioClientSecret,
-      baseUrl: caspioBaseUrl ? `${caspioBaseUrl.substring(0, 20)}...` : 'undefined'
+      hasBaseUrl: true,
+      hasClientId: true,
+      hasClientSecret: true,
+      baseUrl: credentials.baseUrl ? `${credentials.baseUrl.substring(0, 20)}...` : 'undefined'
     });
-
-    if (!caspioBaseUrl || !caspioClientId || !caspioClientSecret) {
-      console.error('❌ [SW-ASSIGNMENTS] Missing Caspio credentials');
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Caspio credentials not configured',
-        debug: {
-          hasBaseUrl: !!caspioBaseUrl,
-          hasClientId: !!caspioClientId,
-          hasClientSecret: !!caspioClientSecret
-        }
-      }, { status: 500 });
-    }
 
     // Get OAuth token
     console.log('🔐 [SW-ASSIGNMENTS] Getting Caspio OAuth token...');
-    const tokenResponse = await fetch(`${caspioBaseUrl}/oauth/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: caspioClientId,
-        client_secret: caspioClientSecret,
-      }),
-    });
-
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      console.error('❌ [SW-ASSIGNMENTS] Failed to get Caspio token:', {
-        status: tokenResponse.status,
-        statusText: tokenResponse.statusText,
-        error: errorText
-      });
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Failed to authenticate with Caspio',
-        debug: {
-          status: tokenResponse.status,
-          statusText: tokenResponse.statusText,
-          error: errorText
-        }
-      }, { status: 500 });
-    }
-
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const accessToken = await getCaspioToken(credentials);
     console.log('✅ [SW-ASSIGNMENTS] Got Caspio access token');
 
     // Query members assigned to this social worker
     // Look for members where Social_Worker_Assigned or Kaiser_User_Assignment matches the email
     const query = `Social_Worker_Assigned='${email}' OR Kaiser_User_Assignment='${email}'`;
-    const membersUrl = `${caspioBaseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(query)}`;
+    const membersUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(query)}`;
 
     console.log('📊 [SW-ASSIGNMENTS] Fetching assigned members...');
     const membersResponse = await fetch(membersUrl, {

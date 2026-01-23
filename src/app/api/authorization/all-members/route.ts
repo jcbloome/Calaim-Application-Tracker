@@ -1,14 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { 
   fetchAllCalAIMMembers, 
-  CaspioCredentials 
+  getCaspioCredentialsFromEnv
 } from '@/lib/caspio-api-utils';
-
-interface CaspioAuthResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-}
 
 export async function GET(req: NextRequest) {
   try {
@@ -16,11 +10,7 @@ export async function GET(req: NextRequest) {
     console.log('🔍 Using MCO partitioning method for consistency and scalability...');
     
     // Use the same robust method as social worker assignments
-    const credentials: CaspioCredentials = {
-      baseUrl: process.env.CASPIO_BASE_URL!,
-      clientId: process.env.CASPIO_CLIENT_ID!,
-      clientSecret: process.env.CASPIO_CLIENT_SECRET!,
-    };
+    const credentials = getCaspioCredentialsFromEnv();
 
     // Fetch ALL members using the proven MCO partitioning approach, including raw data for authorization fields
     const result = await fetchAllCalAIMMembers(credentials, { includeRawData: true });
