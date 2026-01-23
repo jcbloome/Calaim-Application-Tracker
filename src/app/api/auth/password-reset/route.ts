@@ -18,12 +18,23 @@ export async function POST(request: NextRequest) {
     console.log('🔧 Environment check:');
     console.log('- RESEND_API_KEY:', process.env.RESEND_API_KEY ? `✅ Set (${process.env.RESEND_API_KEY.substring(0, 10)}...)` : '❌ Missing');
     console.log('- NEXT_PUBLIC_APP_URL:', process.env.NEXT_PUBLIC_APP_URL || 'Not set');
+    console.log('- NODE_ENV:', process.env.NODE_ENV);
     
     if (!email) {
       console.log('❌ No email provided');
       return NextResponse.json(
         { error: 'Email is required' },
         { status: 400 }
+      );
+    }
+
+    // In development mode, fallback to a simple success response
+    // This allows testing the UI flow without Firebase Admin SDK complications
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔧 Development mode: Simulating password reset email sent');
+      return NextResponse.json(
+        { message: 'Development mode: Password reset email simulation successful. Use any password to "reset".' },
+        { status: 200 }
       );
     }
 

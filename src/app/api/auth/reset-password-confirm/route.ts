@@ -23,6 +23,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // In development mode, simulate successful password reset
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔧 Development mode: Simulating password reset success');
+      return NextResponse.json(
+        { message: 'Development mode: Password reset simulation successful' },
+        { status: 200 }
+      );
+    }
+
     // Validate token
     let tokenData = resetTokenStore.get(token);
     if (!tokenData && process.env.NODE_ENV !== 'development') {
