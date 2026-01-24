@@ -10,9 +10,9 @@ import { type FormValues } from '../schema';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { PhoneInput } from '@/components/ui/phone-input';
 import { FormSection } from '@/components/FormSection';
+import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { User, Phone, Mail, Shield } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-
 
 export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
   const { control, watch, setValue, getValues, clearErrors } = useFormContext<FormValues>();
@@ -106,6 +106,11 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
 
   return (
     <div className="space-y-6">
+      {!isAdminView && (
+        <div className="mb-3">
+          <GlossaryDialog className="p-0 h-auto" />
+        </div>
+      )}
       {/* What is CalAIM Information Card */}
       <Card className="border-l-4 border-blue-500 bg-blue-50">
         <CardHeader>
@@ -502,8 +507,6 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
       <FormSection 
         title="Legal Representative" 
         icon={Shield} 
-        badge="Optional"
-        badgeVariant="outline"
         description="A legal representative (e.g., with Power of Attorney) might be distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role."
       >
             <FormField

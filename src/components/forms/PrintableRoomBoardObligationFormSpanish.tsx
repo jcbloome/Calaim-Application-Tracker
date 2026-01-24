@@ -22,12 +22,12 @@ export function PrintableRoomBoardObligationFormSpanish({
   return (
     <PrintableFormLayout
       title="Compromiso de Alojamiento y Comida"
-      subtitle="Apoyo Comunitario CalAIM para Transiciones de Vida Asistida"
+      subtitle=""
       formType="room-board-obligation"
       applicationData={{ id: applicationId }}
       showPrintButton={showPrintButton}
     >
-      <div className="space-y-6 text-sm print:text-xs">
+      <div className="space-y-4 text-sm print:text-xs">
         {/* Member Information */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1">
           <PrintableField label="Nombre del Miembro" value={memberName} width="full" />
@@ -36,11 +36,11 @@ export function PrintableRoomBoardObligationFormSpanish({
         </div>
 
         {/* Room and Board Explanation */}
-        <div className="p-4 print:p-6 border print:border-black">
-          <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
-            Entendiendo las Obligaciones de Alojamiento y Comida
+        <div className="p-3 print:p-4 border print:border-black">
+          <h3 className="text-base font-semibold text-gray-900 print:text-black mb-2">
+            Resumen de Alojamiento y Comida
           </h3>
-          <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
+          <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
             <p>
               <strong>Importante:</strong> Como participante del Apoyo Comunitario CalAIM, usted es responsable de pagar 
               la porción de "alojamiento y comida" de sus costos de vida asistida. El Plan de Atención Administrada (MCP) pagará 
@@ -49,15 +49,30 @@ export function PrintableRoomBoardObligationFormSpanish({
             <p>
               <strong>Alojamiento y Comida</strong> incluye: vivienda, comidas, servicios públicos y servicios básicos de la instalación.
             </p>
+            <p><strong>Servicios de Vida Asistida</strong> incluyen cuidado personal, medicamentos y servicios cubiertos.</p>
+          </div>
+        </div>
+
+        {/* NMOHC Information */}
+        <div className="p-3 print:p-4 border print:border-black">
+          <h3 className="text-base font-semibold text-gray-900 print:text-black mb-2">
+            Resumen de NMOHC
+          </h3>
+          <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
             <p>
-              <strong>Servicios de Vida Asistida</strong> incluyen: asistencia de cuidado personal, manejo de medicamentos, 
-              y otros servicios relacionados con la salud cubiertos por su MCP.
+              NMOHC aumenta el SSI cuando la persona vive en un RCFE con licencia. La tarifa cambia de
+              "Vida Independiente" a "NMOHC".
             </p>
+            <ul className="list-disc list-inside space-y-1 ml-4">
+              <li>Ingresos (2026): menos de $1,626.07/mes.</li>
+              <li>Activos: $2,000 individual ($3,000 pareja).</li>
+              <li>Llame a SSA (1-800-772-1213) para confirmar el nuevo pago.</li>
+            </ul>
           </div>
         </div>
 
         {/* Income Information */}
-        <PrintableFormSection title="Información de Ingresos Mensuales">
+        <PrintableFormSection title="Ingresos Mensuales">
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
@@ -72,23 +87,16 @@ export function PrintableRoomBoardObligationFormSpanish({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-                Si no recibe Seguro Social, ¿cuál es su fuente de ingresos mensuales?
+                Pago esperado de "alojamiento y comida" (Esta cantidad variará si el miembro recibe el pago de NMOHC): *
               </label>
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <span className="w-24 text-sm">Fuente:</span>
-                  <div className="flex-1 h-8 border-b border-gray-300 print:border-black"></div>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="w-24 text-sm">Cantidad:</span>
-                  <span className="text-lg font-semibold">$</span>
-                  <div className="w-32 h-8 border-b border-gray-300 print:border-black"></div>
-                  <span className="text-sm text-gray-600 print:text-black">por mes</span>
-                </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-lg font-semibold">$</span>
+                <div className="flex-1 h-12 border-b-2 border-gray-400 print:border-black"></div>
+                <span className="text-sm text-gray-600 print:text-black">por mes</span>
               </div>
             </div>
 
-            <div className="mt-4 p-3 print:p-4 border print:border-black bg-gray-50 print:bg-white">
+            <div className="mt-3 p-3 print:p-4 border print:border-black bg-gray-50 print:bg-white">
               <p className="text-sm print:text-xs text-gray-700 print:text-black">
                 <strong>Nota:</strong> Comprobante de ingresos (3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social O carta anual de adjudicación del Seguro Social) deberá ser cargado con su solicitud.
               </p>
@@ -97,41 +105,30 @@ export function PrintableRoomBoardObligationFormSpanish({
         </PrintableFormSection>
 
         {/* Payment Commitment */}
-        <div className="p-4 print:p-6 border-2 print:border-black">
-          <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
-            Compromiso de Pago de Alojamiento y Comida
+        <div className="p-3 print:p-4 border print:border-black">
+          <h3 className="text-base font-semibold text-gray-900 print:text-black mb-2">
+            Compromiso
           </h3>
-          <div className="space-y-4 text-sm print:text-xs text-gray-700 print:text-black">
-            <p>
-              Entiendo y reconozco que:
-            </p>
-            <ul className="list-disc list-inside space-y-2 ml-4">
-              <li>Estoy obligado a pagar la porción de alojamiento y comida de mis costos de vida asistida directamente a la instalación.</li>
-              <li>Si soy elegible para SSI/SSP y el pago de Atención No Médica Fuera del Hogar (NMOHC), mi SSI/SSP aumentará a $1,626.07 por mes.</li>
-              <li>Típicamente retendré $182 para necesidades personales, y la cantidad restante irá hacia alojamiento y comida.</li>
-              <li>Si no puedo pagar ninguna porción de alojamiento y comida, puede que no sea elegible para este programa de Apoyo Comunitario.</li>
-              <li>Los costos de alojamiento y comida varían según la instalación y ubicación en California.</li>
+          <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
+            <p>Entiendo y reconozco que:</p>
+            <ul className="list-disc list-inside space-y-1 ml-4">
+              <li>Debo pagar la porción de alojamiento y comida directamente a la instalación.</li>
+              <li>SSI/SSP + NMOHC puede aumentar el pago a alojamiento y comida.</li>
+              <li>Si no puedo pagar, podría no ser elegible.</li>
             </ul>
           </div>
         </div>
 
         {/* Acknowledgment and Signature */}
-        <div className="mt-8 p-4 print:p-6 border-2 print:border-black">
-          <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
-            Reconocimiento y Acuerdo
+        <div className="mt-6 p-3 print:p-4 border print:border-black">
+          <h3 className="text-base font-semibold text-gray-900 print:text-black mb-2">
+            Reconocimiento y Firma
           </h3>
-          <div className="space-y-4 text-sm print:text-xs text-gray-700 print:text-black">
-            <p>
-              Al firmar abajo, reconozco que he leído y entendido este Compromiso de Alojamiento y Comida. 
-              Entiendo mis responsabilidades financieras y acepto pagar la porción de alojamiento y comida como se describe arriba.
-            </p>
-            <p>
-              Entiendo que mi capacidad para participar en el programa de Apoyo Comunitario CalAIM depende de mi 
-              capacidad para cumplir con estas obligaciones de alojamiento y comida.
-            </p>
+          <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
+            <p>Al firmar abajo, reconozco este Compromiso de Alojamiento y Comida.</p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 print:gap-8 mt-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 print:gap-8 mt-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
                 Firma del Miembro/Representante *
@@ -147,16 +144,9 @@ export function PrintableRoomBoardObligationFormSpanish({
             </div>
           </div>
           
-          <div className="mt-6">
+          <div className="mt-4">
             <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
               Nombre en Letra de Molde
-            </label>
-            <div className="h-12 border-b-2 border-gray-300 print:border-black"></div>
-          </div>
-
-          <div className="mt-6">
-            <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-              Relación con el Miembro (si firma como representante)
             </label>
             <div className="h-12 border-b-2 border-gray-300 print:border-black"></div>
           </div>

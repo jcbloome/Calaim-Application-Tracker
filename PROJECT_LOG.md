@@ -26,6 +26,14 @@
 - ✅ **Bug Fixed**: Removed extra brace causing Kaiser members API build error
 - ✅ **Architecture**: Standardized Caspio credential/token handling across API data imports
 - ✅ **Security**: Restored admin-only access and blocked user-side application creation; fixed reset password query handling
+- ✅ **UI/UX**: Synced CS Summary printable layouts with updated ALW, ISP, and Room & Board content
+- ✅ **UI/UX**: Added hover definitions for CS Summary form acronyms
+- ✅ **UI/UX**: Styled Acronym Glossary trigger for program info pages
+- ✅ **UI/UX**: Moved Acronym Glossary link into first CS Summary card
+- ✅ **UI/UX**: Placed Acronym Glossary link above first card on all CS Summary steps
+- ✅ **UI/UX**: Removed Room & Board Commitment standalone form from pathways and printables
+- ✅ **UI/UX**: Restored Room & Board Commitment as a standalone form with NMOHC details
+- ✅ **Security**: Centralized hardcoded admin allowlist in shared helper
 
 ### **January 20, 2026 - Project Foundation**
 - ✅ **Fixed SSR Issues**: Added client-side guards to all browser API calls (window, localStorage, Notification)
@@ -117,7 +125,7 @@
 ---
 
 ## 📊 **Feature Counter Status**
-- **Features Since Last Audit**: 8/8 ⚠️ **AUDIT DUE**
+- **Features Since Last Audit**: 15/8 ⚠️ **AUDIT DUE**
 - **Last Audit**: January 20, 2026 (Initial Setup)
 - **Next Audit Due**: NOW - 8 features completed
 - **Recent Features**: Centralized Task Module, Workflow Automation Engine, Smart Task Hub, Eligibility Check System, Enhanced Eligibility System, Universal Eligibility Verification, SW Claims System, SW User Management

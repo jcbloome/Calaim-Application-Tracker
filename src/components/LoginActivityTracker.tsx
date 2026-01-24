@@ -16,6 +16,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 
 interface LoginLog {
   id: string;
@@ -265,13 +266,7 @@ export default function LoginActivityTracker() {
     const emailLower = email.toLowerCase();
     
     // Check if admin/staff
-    const adminEmails = [
-      'jason@carehomefinders.com',
-      'jason.bloome@connectionslos.com',
-      'jcbloome@gmail.com'
-    ];
-    
-    if (adminEmails.includes(emailLower)) {
+    if (isHardcodedAdminEmail(emailLower)) {
       return 'staff';
     }
     

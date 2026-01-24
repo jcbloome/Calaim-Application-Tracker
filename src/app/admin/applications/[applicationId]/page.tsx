@@ -1192,8 +1192,7 @@ function ApplicationDetailPageContent() {
   const waiverSubTasks = [
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
       { id: 'liability', label: 'Liability Waiver', completed: !!waiverFormStatus?.ackLiability },
-      { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc },
-      { id: 'room-board', label: 'Room & Board Acknowledgment', completed: !!waiverFormStatus?.ackRoomAndBoard }
+      { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc }
   ];
   
     const consolidatedMedicalDocuments = [

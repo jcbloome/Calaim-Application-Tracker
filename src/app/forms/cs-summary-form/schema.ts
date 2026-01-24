@@ -114,6 +114,7 @@ export const formSchema = z.object({
     ispFacilityName: requiredString,
     onALWWaitlist: z.enum(['Yes', 'No', 'Unknown'], { errorMap: () => ({ message: ' ' }) }),
     monthlyIncome: requiredString,
+    expectedRoomAndBoard: requiredString,
     ackRoomAndBoard: z.boolean().refine(val => val === true, {
       message: " ",
     }),

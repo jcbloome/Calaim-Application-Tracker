@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useEffect } from 'react';
+import { GlossaryDialog } from '@/components/GlossaryDialog';
 
 const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub-Acute", "Assisted Living", "Other"];
 
@@ -63,6 +64,9 @@ export default function Step2() {
 
   return (
     <div className="space-y-6">
+      <div className="mb-3">
+        <GlossaryDialog className="p-0 h-auto" />
+      </div>
       <Card className="border-l-4 border-accent">
         <CardHeader>
           <CardTitle>Location Information</CardTitle>
@@ -104,7 +108,19 @@ export default function Step2() {
                 <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={control} name="currentState" render={({ field }) => (
-                <FormItem><FormLabel>State <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                <FormItem>
+                  <FormLabel>State <span className="text-destructive">*</span></FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      value={field.value ?? ''}
+                      maxLength={2}
+                      onChange={e => field.onChange(e.target.value.toUpperCase())}
+                    />
+                  </FormControl>
+                  <FormDescription>Use 2-letter state code (e.g., CA).</FormDescription>
+                  <FormMessage />
+                </FormItem>
               )} />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -168,7 +184,20 @@ export default function Step2() {
                             <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                         )} />
                         <FormField control={control} name="customaryState" render={({ field }) => (
-                            <FormItem><FormLabel>State <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                            <FormItem>
+                              <FormLabel>State <span className="text-destructive">*</span></FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  value={field.value ?? ''}
+                                  disabled={copyAddress}
+                                  maxLength={2}
+                                  onChange={e => field.onChange(e.target.value.toUpperCase())}
+                                />
+                              </FormControl>
+                              <FormDescription>Use 2-letter state code (e.g., CA).</FormDescription>
+                              <FormMessage />
+                            </FormItem>
                         )} />
                     </div>
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

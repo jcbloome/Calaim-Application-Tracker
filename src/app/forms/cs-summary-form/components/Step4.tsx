@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Info, Home, AlertCircle } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { GlossaryDialog } from '@/components/GlossaryDialog';
 
 
 const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub-Acute", "Assisted Living", "Other"];
@@ -37,16 +38,23 @@ export default function Step4() {
 
   return (
     <div className="space-y-6">
+      <div className="mb-3">
+        <GlossaryDialog className="p-0 h-auto" />
+      </div>
       <Card className="border-l-4 border-accent">
           <CardHeader>
             <CardTitle>Individual Service Plan (ISP) Contact</CardTitle>
-            <CardDescription>
-                An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP) clinical team to determine the member's care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the "assisted living" portion). For Health Net, the tiered level is determined by Connections. For Kaiser, the tiered level is determined by Kaiser.
-                <br /><br />
-                Our MSW/RN needs to know who to contact to discuss the care needs of the member, review the Physician's report (602), and other clinical notes. Who is the best person to contact for the ISP? Please note this is not the primary care doctor but could be a SNF social worker, etc.
-            </CardDescription>
+          <CardDescription>Please review the ISP contact instructions below.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-blue-900">
+                <p className="text-sm">
+                    An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP) clinical team to determine the member's care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the "assisted living" portion). For Health Net, the tiered level is determined by Connections. For Kaiser, the tiered level is determined by Kaiser.
+                </p>
+                <p className="text-sm mt-3">
+                    Our MSW/RN needs to know who to contact to discuss the care needs of the member, review the Physician's report (602), and other clinical notes. Who is the best person to contact for the ISP? Please note this is not the primary care doctor but could be a SNF social worker, etc.
+                </p>
+            </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={control} name="ispFirstName" render={({ field }) => (
                     <FormItem><FormLabel>First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
@@ -77,7 +85,12 @@ export default function Step4() {
               )} />
 
                <div className="space-y-4 p-4 border rounded-md mt-4">
-                 <h3 className="font-medium text-base">ISP Assessment Location</h3>
+                <h3 className="font-medium text-base">ISP Assessment Location</h3>
+                 <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-blue-900">
+                    <p className="text-sm">
+                        The street address for the ISP assessment is only required for Kaiser members (which requires an in-person visit). For Health Net members, please put N/A in the below boxes.
+                    </p>
+                 </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField
                       control={control}
@@ -116,15 +129,127 @@ export default function Step4() {
                         <FormMessage />
                     </FormItem>
                 )} />
-                 <Alert variant="default" className="mt-4 bg-blue-50 border-blue-200 text-blue-800">
-                    <Info className="h-4 w-4 !text-blue-700" />
-                    <AlertTitle>Address Requirement</AlertTitle>
-                    <AlertDescription>
-                        The street address for the ISP assessment is only required for <strong>Kaiser Permanente</strong> members. For <strong>Health Net</strong> members, please enter "N/A".
-                    </AlertDescription>
-                </Alert>
             </div>
           </CardContent>
+      </Card>
+
+      <Card className="border-l-4 border-accent">
+        <CardHeader>
+          <CardTitle>Non-Medical Out-of-Home Care (NMOHC) Payment</CardTitle>
+          <CardDescription>NMOHC is a supplement to SSI for RCFE residents.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm text-muted-foreground">
+          <p>
+            Non-Medical Out-of-Home Care (NMOHC) is a payment supplement that boosts a person’s monthly SSI check because they live in a licensed assisted living home rather
+            than an apartment or house.
+          </p>
+          <p>
+            In California, if a person lives in a Residential Care Facility for the Elderly (RCFE), the state
+            recognizes that costs are much higher than someone living independently. To help cover this, the
+            person moves from the "Independent Living" rate to the "NMOHC" rate.
+          </p>
+          <div className="space-y-3">
+            <div>
+              <p className="font-medium text-foreground">1. Confirm Financial Eligibility (The "Paper" Test)</p>
+              <p>Since NMOHC is part of the SSI program, you can verify the financial requirements now.</p>
+              <ul className="list-disc pl-5 mt-2 space-y-1">
+                <li>Income: For 2026, total "countable" monthly income must be less than $1,626.07.</li>
+                <li>Assets: As of January 1, 2026, asset limits are reinstated. An individual must have less than $2,000 in countable resources ($3,000 for a couple).</li>
+                <li>Note: One car and the primary home are usually excluded from this limit.</li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-medium text-foreground">2. Verification with Social Security (The "Pre-Move" Call)</p>
+              <p>Contact SSA at 1-800-772-1213 or visit a local office for a living arrangement interview.</p>
+              <ul className="list-disc pl-5 mt-2 space-y-1">
+                <li>Tell them the person plans to move into a licensed RCFE.</li>
+                <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
+                <li>Pro tip: Ask the RCFE for their License Number and a draft Admission Agreement. SSA will need a signed version to update the check.</li>
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-l-4 border-accent">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Home className="h-6 w-6" />
+            <CardTitle>Room & Board Payments</CardTitle>
+          </div>
+          <CardDescription>Understanding the member's financial responsibility.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="prose prose-sm max-w-none text-gray-700 space-y-3 p-4 border rounded-lg bg-muted/30">
+            <p>The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible for paying the RCFE the "assisted living" portion.</p>
+            <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for "room and board" for a private room or to open up RCFEs in more expensive areas.</p>
+            <p>Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>
+            <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a "room and board" payment from the member (or their family).</p>
+            <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the "room and board" payment.</p>
+          </div>
+
+           <FormField
+              control={control}
+              name="monthlyIncome"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>What is member's total monthly income <span className="text-destructive">*</span></FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">$</span>
+                      <Input
+                        {...field}
+                        value={field.value ?? ''}
+                        type="number"
+                        className="pl-7"
+                      />
+                    </div>
+                  </FormControl>
+                  <FormDescription>Please note that proof of income (e.g., Social Security award letter) will need to be submitted later.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={control}
+              name="expectedRoomAndBoard"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>What is the member's expected "Room and Board" portion? (This amount will vary if the member receives the NMOHC payment, see above.) <span className="text-destructive">*</span></FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">$</span>
+                      <Input
+                        {...field}
+                        value={field.value ?? ''}
+                        type="number"
+                        className="pl-7"
+                      />
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          
+            <FormField
+              control={control}
+              name="ackRoomAndBoard"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                  <FormControl>
+                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel className="text-blue-700">
+                      I have read and understood the financial obligation for Room and Board. <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <FormMessage />
+                  </div>
+                </FormItem>
+              )}
+            />
+        </CardContent>
       </Card>
 
         <Card className="border-l-4 border-accent">
@@ -152,66 +277,6 @@ export default function Step4() {
                 />
             </CardContent>
         </Card>
-      
-      <Card className="border-l-4 border-accent">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <Home className="h-6 w-6" />
-            <CardTitle>Room & Board Payments</CardTitle>
-          </div>
-          <CardDescription>Understanding the member's financial responsibility.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="prose prose-sm max-w-none text-gray-700 space-y-3 p-4 border rounded-lg bg-muted/30">
-            <p>The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible for paying the RCFE the "assisted living" portion.</p>
-            <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for "room and board" for a private room or to open up RCFEs in more expensive areas.</p>
-            <p>Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>
-            <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a "room and board" payment from the member (or their family).</p>
-            <p>Working with CalAIM is at the discretion of the RCFEs. Many RCFEs, especially in more expensive areas, most likely will not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas.</p>
-          </div>
-
-           <FormField
-              control={control}
-              name="monthlyIncome"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>What is member's total monthly income <span className="text-destructive">*</span></FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">$</span>
-                      <Input
-                        {...field}
-                        value={field.value ?? ''}
-                        type="number"
-                        className="pl-7"
-                      />
-                    </div>
-                  </FormControl>
-                  <FormDescription>Please note that proof of income (e.g., Social Security award letter) will need to be submitted later.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          
-            <FormField
-              control={control}
-              name="ackRoomAndBoard"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>
-                      I have read and understood the financial obligation for Room and Board. <span className="text-destructive">*</span>
-                    </FormLabel>
-                    <FormMessage />
-                  </div>
-                </FormItem>
-              )}
-            />
-        </CardContent>
-      </Card>
       
       <Card className="border-l-4 border-accent">
         <CardHeader>

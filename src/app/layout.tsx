@@ -5,6 +5,7 @@ import React from 'react';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { NotificationProvider } from '@/components/NotificationProvider';
 import { Toaster } from '@/components/ui/toaster';
+import { SessionIsolationGate } from '@/components/SessionIsolationGate';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -36,6 +37,7 @@ export default function RootLayout({
       <body className={`min-h-screen bg-background font-sans antialiased ${inter.variable}`}>
         <FirebaseClientProvider>
           <NotificationProvider>
+            <SessionIsolationGate />
             {children}
           </NotificationProvider>
         </FirebaseClientProvider>

@@ -4,8 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { useAuth, useFirestore } from '@/firebase';
 import {
   signInWithEmailAndPassword,
-  browserLocalPersistence,
+  browserSessionPersistence,
   setPersistence,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import type { AuthError, User } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -50,7 +51,7 @@ export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
   const enhancedToast = useEnhancedToast();
-  const { user, isUserLoading } = useAdmin();
+  const { user, isUserLoading, isAdmin } = useAdmin();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -65,9 +66,13 @@ export default function LoginPage() {
       return; 
     }
     if (user) {
-      router.push('/applications');
+      if (isAdmin) {
+        router.push('/admin');
+      } else {
+        router.push('/applications');
+      }
     }
-  }, [user, isUserLoading, router]);
+  }, [user, isUserLoading, isAdmin, router]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,8 +99,8 @@ export default function LoginPage() {
         await auth.signOut();
       }
       
-      console.log('🔍 User Login Debug: Setting persistence');
-      await setPersistence(auth, browserLocalPersistence);
+      console.log('🔍 User Login Debug: Setting session-only persistence');
+      await setPersistence(auth, browserSessionPersistence);
       
       console.log('🔍 User Login Debug: Attempting sign in with email/password');
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -143,9 +148,25 @@ export default function LoginPage() {
     }
 
     setIsResettingPassword(true);
+    
+    // For development, try Firebase's built-in password reset first
+    if (process.env.NODE_ENV === 'development' || window.location.hostname === 'localhost') {
+      try {
+        console.log('🔧 Development mode: Using Firebase built-in password reset');
+        await sendPasswordResetEmail(auth!, resetEmail);
+        enhancedToast.success('Password Reset Email Sent', 'Check your email for a password reset link from Firebase. Note: This is the default Firebase email in development mode.');
+        setResetEmail('');
+        setIsResettingPassword(false);
+        return;
+      } catch (firebaseError: any) {
+        console.log('⚠️ Firebase password reset failed, trying custom API:', firebaseError);
+        // If Firebase fails, fall through to custom API
+      }
+    }
+    
     try {
-      // Use our custom password reset API exclusively - no more ugly Firebase emails!
-      const response = await fetch('/api/auth/password-reset', {
+      // Use simple password reset API that works in development
+      const response = await fetch('/api/auth/simple-password-reset', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -156,7 +177,11 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (response.ok) {
-        enhancedToast.success('Password Reset Email Sent', 'Check your email (including spam/junk folder) for a password reset link from the Connections CalAIM Application Portal.');
+        if (data.devMode) {
+          enhancedToast.success('Development Mode', data.message + ' ' + (data.suggestion || ''));
+        } else {
+          enhancedToast.success('Password Reset Email Sent', 'Check your email (including spam/junk folder) for a password reset link from the Connections CalAIM Application Portal.');
+        }
         setResetEmail('');
         return;
       } else {
@@ -167,11 +192,13 @@ export default function LoginPage() {
       let errorMessage = 'An unexpected error occurred. Please try again.';
       
       if (error.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email address.';
+        errorMessage = 'No account found with this email address. Try creating a new account instead.';
       } else if (error.code === 'auth/invalid-email') {
         errorMessage = 'Please enter a valid email address.';
       } else if (error.code === 'auth/too-many-requests') {
         errorMessage = 'Too many password reset attempts. Please try again later.';
+      } else if (error.message) {
+        errorMessage = error.message;
       }
       
       enhancedToast.error('Password Reset Failed', errorMessage);

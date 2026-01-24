@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import admin from '@/firebase-admin';
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,6 +14,9 @@ export async function POST(request: NextRequest) {
     console.log('🔍 Checking user:', email);
 
     try {
+      // Try to import and use Firebase Admin
+      const admin = await import('@/firebase-admin').then(m => m.default);
+      
       const userRecord = await admin.auth().getUserByEmail(email);
       console.log('✅ User found:', {
         uid: userRecord.uid,
@@ -45,17 +47,28 @@ export async function POST(request: NextRequest) {
       }
       
       console.error('❌ Error checking user:', userError);
+      
+      // If it's a credential error, provide a helpful message
+      if (userError.message?.includes('credential') || userError.message?.includes('ENOTFOUND')) {
+        return NextResponse.json({
+          error: 'Firebase Admin credentials not configured for local development. This is normal - you can still try logging in directly.',
+          details: userError.message,
+          suggestion: 'Try logging in at /login or creating an account at /signup'
+        }, { status: 500 });
+      }
+      
       return NextResponse.json(
         { error: `Error checking user: ${userError.message}` },
         { status: 500 }
       );
     }
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Check user failed:', error);
-    return NextResponse.json(
-      { error: 'Failed to check user' },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      error: 'Firebase Admin not available in development mode',
+      details: error.message,
+      suggestion: 'Try logging in directly at /login or creating an account at /signup'
+    }, { status: 500 });
   }
 }

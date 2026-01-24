@@ -4,7 +4,7 @@
 import React, { useState, useMemo, Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, FileCheck2, AlertCircle, Lock, ShieldCheck, FileText, HeartHandshake, Home } from 'lucide-react';
+import { ArrowLeft, Loader2, FileCheck2, AlertCircle, Lock, ShieldCheck, FileText, HeartHandshake } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Header } from '@/components/Header';
@@ -49,7 +49,6 @@ function WaiversFormComponent() {
     const [ackHipaa, setAckHipaa] = useState(false);
     const [ackLiability, setAckLiability] = useState(false);
     const [ackFoc, setAckFoc] = useState(false);
-    const [ackRoomAndBoard, setAckRoomAndBoard] = useState(false);
     const [focChoice, setFocChoice] = useState<'accept' | 'decline' | undefined>(undefined);
 
 
@@ -74,7 +73,6 @@ function WaiversFormComponent() {
                 setAckHipaa(form.ackHipaa || false);
                 setAckLiability(form.ackLiability || false);
                 setAckFoc(form.ackFoc || false);
-                setAckRoomAndBoard(form.ackRoomAndBoard || false);
                 setSignatureDate(form.dateCompleted ? new Date(form.dateCompleted.seconds * 1000).toLocaleDateString() : new Date().toLocaleDateString());
             } else {
                  setSignatureDate(new Date().toLocaleDateString());
@@ -85,7 +83,7 @@ function WaiversFormComponent() {
     }, [application]);
 
     const isFormComplete = () => {
-        if (!signerType || !signerName.trim() || !signerRelationship.trim() || !focChoice || !ackHipaa || !ackLiability || !ackFoc || !ackRoomAndBoard) return false;
+        if (!signerType || !signerName.trim() || !signerRelationship.trim() || !focChoice || !ackHipaa || !ackLiability || !ackFoc) return false;
         return true;
     };
 
@@ -118,7 +116,6 @@ function WaiversFormComponent() {
             ackHipaa: ackHipaa,
             ackLiability: ackLiability,
             ackFoc: ackFoc,
-            ackRoomAndBoard: ackRoomAndBoard,
             dateCompleted: Timestamp.now(),
         };
 
@@ -281,7 +278,7 @@ function WaiversFormComponent() {
                                 <p>If I accept these services, I will receive assistance from Connections Care Home Consultants to move into a community-based setting like an assisted living facility. They will help me find a place, coordinate paperwork, and ensure I am settled in. This will be authorized and paid for by my Managed Care Plan.</p>
                                 <p>If I decline these services, I am choosing to remain where I am, and I will not receive the transition support services offered by this program at this time.</p>
                                 <div className="p-4 border rounded-md space-y-3 mt-4 bg-background">
-                                    <h3 className="font-medium text-base">My Choice <span className="text-destructive">*</span></h3>
+                                    <h3 className="font-medium text-base text-amber-700">My Choice <span className="text-destructive">*</span></h3>
                                      <RadioGroup onValueChange={(value) => setFocChoice(value as 'accept' | 'decline')} value={focChoice} disabled={isReadOnly}>
                                         <div className="flex items-center space-x-2">
                                             <RadioGroupItem value="accept" id="accept" />
@@ -307,28 +304,6 @@ function WaiversFormComponent() {
                                 </Alert>
                             </Section>
 
-                            <Section title="Room & Board Payments" icon={Home}>
-                                <div className="prose prose-sm max-w-none text-gray-700 space-y-3 p-4 border rounded-lg bg-muted/30">
-                                    <p>The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible for paying the RCFE the "assisted living" portion.</p>
-                                    <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for "room and board" for a private room or to open up RCFEs in more expensive areas.</p>
-                                    <p>Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>
-                                    <p>Members who cannot pay any "room and board" portion or who do not have families who could pay this portion are not eligible for the CS since program requirements mandate a "room and board" payment from the member (or their family).</p>
-                                    <p>Working with CalAIM is at the discretion of the RCFEs. Many RCFEs, especially in more expensive areas, most likely will not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas.</p>
-                                </div>
-                                <Alert variant="warning" className="mt-4">
-                                    <AlertCircle className="h-4 w-4" />
-                                    <AlertTitle>Acknowledgment of Financial Responsibility</AlertTitle>
-                                    <AlertDescription>
-                                        <div className="flex items-start space-x-2 mt-2">
-                                            <Checkbox id="ack-room-and-board" checked={ackRoomAndBoard} onCheckedChange={(c) => setAckRoomAndBoard(!!c)} disabled={isReadOnly} />
-                                            <label htmlFor="ack-room-and-board" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                               I have read and understood the member is responsible for a "room and board" payment to the facility.
-                                            </label>
-                                        </div>
-                                    </AlertDescription>
-                                </Alert>
-                            </Section>
-                            
                             <div className="mt-8 pt-6 border-t">
                                 <h3 className="text-base font-semibold text-gray-800">Electronic Signature</h3>
                                 <div className="space-y-4 mt-4">

@@ -173,12 +173,6 @@ export function PrintableCsSummaryFormContent() {
                         <CheckboxField label="N/A" />
                     </div>
                     </div>
-                <p className="text-xs font-medium text-gray-700 mt-4">Pathway Selection</p>
-                    <div className="flex gap-6">
-                    <CheckboxField label="SNF Transition" />
-                    <CheckboxField label="SNF Diversion" />
-                </div>
-                
                 <div className="mt-4 space-y-4 text-xs">
                     <div className="p-4 border rounded-md">
                         <h3 className="text-sm font-medium text-gray-800">SNF Transition Eligibility Requirements</h3>
@@ -187,6 +181,7 @@ export function PrintableCsSummaryFormContent() {
                             <li>Has resided in a SNF for at least 60 consecutive days (which can include a combination of Medicare and Medi-Cal days and back and forth from SNF-hospital-SNF); and</li>
                             <li>Is willing to live in RCFE as an alternative to a SNF; and</li>
                             <li>Is able to safely reside in RCFE with appropriate and cost-effective supports and services.</li>
+                            <li>Members recently discharged from SNFs, with the 60-day consecutive stay requirement, should also be considered as SNF transition.</li>
                         </ul>
                     </div>
                     <div className="p-4 border rounded-md">
@@ -200,6 +195,11 @@ export function PrintableCsSummaryFormContent() {
                             <Field label="Reason for SNF Diversion (if applicable)" className="sm:col-span-2 mt-2" />
                     </div>
                     <CheckboxField label="All criteria for the selected pathway (SNF Diversion/Transition) have been met." />
+                </div>
+                <p className="text-xs font-medium text-gray-700 mt-4">Pathway Selection</p>
+                    <div className="flex gap-6">
+                    <CheckboxField label="SNF Transition" />
+                    <CheckboxField label="SNF Diversion" />
                 </div>
                 </div>
             </div>
@@ -228,13 +228,14 @@ export function PrintableCsSummaryFormContent() {
                     </div>
                     
                     <h3 className="text-sm font-medium text-gray-800 mt-4">ISP Assessment Location</h3>
+                    <p className="text-xs text-gray-600 my-2">The street address for the ISP assessment is only required for Kaiser members (which requires an in-person visit). For Health Net members, please put N/A in the below boxes.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                         <Field label="Type of Location" />
                         <Field label="Facility Name" />
                     </div>
-                    <Field label="Street Address" description="Street Address, City, State, ZIP. Required for Kaiser members only." />
+                    <Field label="Street Address" description="Street Address, City, State, ZIP." />
                     
-                <h3 className="text-sm font-medium text-gray-800 mt-4">Assisted Living Waiver (ALW) Status</h3>
+                <h3 className="text-sm font-medium text-gray-800 mt-4">CalAIM vs. Assisted Living Waiver (ALW)</h3>
                 <p className="text-xs text-gray-700 mt-1">Is the member currently on the ALW waitlist?</p>
                 <div className="flex gap-6">
                     <CheckboxField label="Yes" />
@@ -265,15 +266,38 @@ export function PrintableCsSummaryFormContent() {
 
                 <div>
                     <SectionTitle>Room & Board Payments</SectionTitle>
+                    <div className="prose prose-sm max-w-none text-gray-700 space-y-2 p-4 border rounded-lg bg-gray-50 text-xs mb-4">
+                        <p><strong>Non-Medical Out-of-Home Care (NMOHC)</strong> is a payment supplement that boosts a person’s monthly SSI because they live in a licensed assisted living home (RCFE).</p>
+                        <p>In California, if a person lives in an RCFE, the state recognizes higher costs and moves the person from the "Independent Living" rate to the "NMOHC" rate.</p>
+                        <p><strong>1. Confirm Financial Eligibility (The "Paper" Test)</strong></p>
+                        <ul className="list-disc pl-5 space-y-1">
+                            <li>Income: For 2026, total "countable" monthly income must be less than $1,626.07.</li>
+                            <li>Assets: As of January 1, 2026, asset limits are reinstated. An individual must have less than $2,000 in countable resources ($3,000 for a couple).</li>
+                            <li>Note: One car and the primary home are usually excluded.</li>
+                        </ul>
+                        <p><strong>2. Get a Medical Assessment (The "Care" Test)</strong></p>
+                        <ul className="list-disc pl-5 space-y-1">
+                            <li>SSP 22 Form: Authorization for Non-Medical Out-of-Home Care.</li>
+                            <li>Physician/Social Worker Signature: Confirms assistance needs or protective supervision.</li>
+                        </ul>
+                        <p><strong>3. Verification with Social Security (The "Pre-Move" Call)</strong></p>
+                        <ul className="list-disc pl-5 space-y-1">
+                            <li>Call SSA at 1-800-772-1213 or visit a local office for a living arrangement interview.</li>
+                            <li>Tell them the person plans to move into a licensed RCFE.</li>
+                            <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
+                            <li>Pro tip: Ask the RCFE for their License Number and a draft Admission Agreement.</li>
+                        </ul>
+                    </div>
                     <div className="prose prose-sm max-w-none text-gray-700 space-y-3 p-4 border rounded-lg bg-gray-50 text-xs">
                         <p>The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible for paying the RCFE the "assisted living" portion.</p>
                         <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for "room and board" for a private room or to open up RCFEs in more expensive areas.</p>
                         <p>For example, Mr. Johnson is eligible for NMOHC and receives $500/month. The NMOHC will bump up the payment to the RCFE to $1,444.07 for "room and board" and he will retain $182 for personal needs expenses.</p>
                         <p>Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>
                         <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a "room and board" payment from the member (or their family).</p>
-                        <p>Working with CalAIM is at the discretion of the RCFEs. Many RCFEs, especially in more expensive areas, most likely will not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas.</p>
+                        <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the "room and board" payment.</p>
                     </div>
                     <Field label="Total Monthly Income" />
+                    <Field label="Expected \"Room and Board\" Portion (This amount will vary if the member receives the NMOHC payment, see above.)" />
                     <p className="text-xs text-gray-500 pt-1">Please note that proof of income (e.g., Social Security award letter) will need to be submitted later.</p>
                     <CheckboxField label="I have read and understood the financial obligation for Room and Board." />
                 </div>

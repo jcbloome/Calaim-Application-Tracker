@@ -11,6 +11,7 @@ import {
 import { doc, getDoc, Firestore } from 'firebase/firestore';
 import { auth, db } from '@/firebase';
 import { FirebaseErrorHandler } from '../utils/errorHandler';
+import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import type { FirebaseUser, AdminRole } from '../types';
 
 export class AuthService {
@@ -117,7 +118,7 @@ export class AuthService {
     try {
       // Check hardcoded admin email first
       const user = this.auth.currentUser;
-      if (user?.email === 'jason@carehomefinders.com') {
+      if (isHardcodedAdminEmail(user?.email)) {
         return {
           isAdmin: true,
           isSuperAdmin: true,

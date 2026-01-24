@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import type { FormValues } from '../schema';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
+import { GlossaryDialog } from '@/components/GlossaryDialog';
 
 export default function Step3() {
   const { control, watch } = useFormContext<FormValues>();
@@ -21,6 +22,9 @@ export default function Step3() {
   
   return (
     <div className="space-y-6">
+      <div className="mb-3">
+        <GlossaryDialog className="p-0 h-auto" />
+      </div>
        <Card className="border-l-4 border-accent">
         <CardHeader>
           <CardTitle>Health Plan</CardTitle>
@@ -81,8 +85,8 @@ export default function Step3() {
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Important!</AlertTitle>
                 <AlertDescription className="prose prose-sm max-w-none">
-                    <p>To enroll in the CalAIM program through Connections, you must be a member of Health Net or Kaiser. If you are currently in another Medi-Cal managed care plan, you will need to switch.</p>
-                    <p>In California, members enrolled in Medi-Cal MCPs can switch providers at any time. The change is effective at the beginning of the next month. For example, if a member wants to switch from one MCP on January 15th, he will be enrolled in the new MCP on February 1st.</p>
+                    <p className="mb-4">To enroll in the CalAIM program through Connections, you must be a member of Health Net or Kaiser. If you are currently in another Medi-Cal managed care plan, you will need to switch.</p>
+                    <p className="mb-4">In California, members enrolled in Medi-Cal MCPs can switch providers at any time. The change is effective at the beginning of the next month. For example, if a member wants to switch from one MCP on January 15th, he will be enrolled in the new MCP on February 1st.</p>
                     <p>You can change your health plan by contacting California Health Care Options at 1-800-430-4263 or visiting their website.</p>
                 </AlertDescription>
             </Alert>
@@ -95,29 +99,6 @@ export default function Step3() {
           <CardDescription>Choose the pathway that best describes the member's situation.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <FormField
-            control={control}
-            name="pathway"
-            render={({ field }) => (
-              <FormItem className="space-y-3">
-                <FormLabel>Pathway Selection <span className="text-destructive">*</span></FormLabel>
-                <FormControl>
-                  <RadioGroup onValueChange={field.onChange} value={field.value} className="flex flex-col space-y-2">
-                    <FormItem className="flex items-center space-x-3 space-y-0">
-                        <FormControl><RadioGroupItem value="SNF Transition" /></FormControl>
-                        <FormLabel className="font-normal">SNF Transition - For members currently in a Skilled Nursing Facility who want to move to a community setting.</FormLabel>
-                    </FormItem>
-                     <FormItem className="flex items-center space-x-3 space-y-0">
-                        <FormControl><RadioGroupItem value="SNF Diversion" /></FormControl>
-                        <FormLabel className="font-normal">SNF Diversion - For members at risk of SNF admission who can be safely cared for in the community (e.g., from home or hospital, etc.).</FormLabel>
-                    </FormItem>
-                  </RadioGroup>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
             <div className="space-y-6">
                 <div className="p-4 border rounded-md">
                     <h3 className="font-semibold text-lg">SNF Transition Eligibility Requirements</h3>
@@ -126,8 +107,8 @@ export default function Step3() {
                         <li>Has resided in a SNF for at least 60 consecutive days (which can include a combination of Medicare and Medi-Cal days and back and forth from SNF-hospital-SNF); and</li>
                         <li>Is willing to live in RCFE as an alternative to a SNF; and</li>
                         <li>Is able to safely reside in RCFE with appropriate and cost-effective supports and services.</li>
+                        <li>Members recently discharged from SNFs, with the 60-day consecutive stay requirement, should also be considered as SNF transition.</li>
                     </ul>
-                    <p className="text-sm text-muted-foreground mt-2">(Members recently discharged from SNFs, with the 60-day consecutive stay requirement, should also be considered as SNF transition)</p>
                 </div>
                 <div className="p-4 border rounded-md">
                     <h3 className="font-semibold text-lg">SNF Diversion Eligibility Requirements</h3>
@@ -155,6 +136,29 @@ export default function Step3() {
                     )}
                 />
             </div>
+
+          <FormField
+            control={control}
+            name="pathway"
+            render={({ field }) => (
+              <FormItem className="space-y-3">
+                <FormLabel>Pathway Selection <span className="text-destructive">*</span></FormLabel>
+                <FormControl>
+                  <RadioGroup onValueChange={field.onChange} value={field.value} className="flex flex-col space-y-2">
+                    <FormItem className="flex items-center space-x-3 space-y-0">
+                        <FormControl><RadioGroupItem value="SNF Transition" /></FormControl>
+                        <FormLabel className="font-normal">SNF Transition - For members currently in a Skilled Nursing Facility who want to move to a community setting.</FormLabel>
+                    </FormItem>
+                     <FormItem className="flex items-center space-x-3 space-y-0">
+                        <FormControl><RadioGroupItem value="SNF Diversion" /></FormControl>
+                        <FormLabel className="font-normal">SNF Diversion - For members at risk of SNF admission who can be safely cared for in the community (e.g., from home or hospital, etc.).</FormLabel>
+                    </FormItem>
+                  </RadioGroup>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           
             <div className="space-y-4 p-4 border rounded-md">
                 <FormField

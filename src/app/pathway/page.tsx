@@ -40,7 +40,6 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
-import { MultiUploadCard } from '@/components/MultiUploadCard';
 
 const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => {
   const commonRequirements = [
@@ -430,7 +429,7 @@ function PathwayPageContent() {
     const formsToUpdate = Object.entries(consolidatedUploadChecks)
       .filter(([, isChecked]) => isChecked)
       .map(([formName]) => formName);
-      
+
     if (formsToUpdate.length === 0) return;
 
     const consolidatedId = 'consolidated-medical-upload';
@@ -438,29 +437,29 @@ function PathwayPageContent() {
     setUploadProgress(prev => ({ ...prev, [consolidatedId]: 0 }));
 
     try {
-        const uploadResult = await doUpload(files, 'consolidated_medical');
-        if (uploadResult) {
-            const updates: Partial<FormStatusType>[] = formsToUpdate.map(formName => ({
-                name: formName,
-                status: 'Completed',
-                fileName: files.map(f => f.name).join(', '),
-                filePath: uploadResult.path,
-                downloadURL: uploadResult.downloadURL,
-                dateCompleted: Timestamp.now(),
-            }));
-            await handleFormStatusUpdate(updates);
-            toast({ title: 'Upload Successful', description: 'Consolidated documents have been uploaded.' });
-        }
-    } catch(error) {
-        toast({ variant: 'destructive', title: 'Upload Failed', description: 'Could not upload consolidated documents.' });
+      const uploadResult = await doUpload(files, 'consolidated_medical');
+      if (uploadResult) {
+        const updates: Partial<FormStatusType>[] = formsToUpdate.map(formName => ({
+          name: formName,
+          status: 'Completed',
+          fileName: files.map(f => f.name).join(', '),
+          filePath: uploadResult.path,
+          downloadURL: uploadResult.downloadURL,
+          dateCompleted: Timestamp.now(),
+        }));
+        await handleFormStatusUpdate(updates);
+        toast({ title: 'Upload Successful', description: 'Consolidated documents have been uploaded.' });
+      }
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Upload Failed', description: 'Could not upload consolidated documents.' });
     } finally {
-        setUploading(prev => ({ ...prev, [consolidatedId]: false }));
-        setUploadProgress(prev => ({ ...prev, [consolidatedId]: 0 }));
-        setConsolidatedUploadChecks({ 'LIC 602A - Physician\'s Report': false, 'Medicine List': false, 'SNF Facesheet': false });
-        event.target.value = '';
+      setUploading(prev => ({ ...prev, [consolidatedId]: false }));
+      setUploadProgress(prev => ({ ...prev, [consolidatedId]: 0 }));
+      setConsolidatedUploadChecks({ 'LIC 602A - Physician\'s Report': false, 'Medicine List': false, 'SNF Facesheet': false });
+      event.target.value = '';
     }
   };
-  
+
   const handleFileRemove = async (form: FormStatusType) => {
     if (!form.filePath) {
       await handleFormStatusUpdate([{ name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null }]);
@@ -583,8 +582,7 @@ function PathwayPageContent() {
   const waiverSubTasks = [
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
       { id: 'liability', label: 'Liability Waiver', completed: !!waiverFormStatus?.ackLiability },
-      { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc },
-      { id: 'room-board', label: 'Room & Board Acknowledgment', completed: !!waiverFormStatus?.ackRoomAndBoard }
+      { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc }
   ];
 
   const consolidatedMedicalDocuments = [
@@ -592,7 +590,6 @@ function PathwayPageContent() {
       { id: 'med-list-check', name: 'Medicine List' },
       { id: 'facesheet-check', name: 'SNF Facesheet' },
   ].filter(doc => pathwayRequirements.some(req => req.title === doc.name));
-
 
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
@@ -708,7 +705,6 @@ function PathwayPageContent() {
   const consolidatedProgress = uploadProgress['consolidated-medical-upload'];
   const isAnyConsolidatedChecked = Object.values(consolidatedUploadChecks).some(v => v);
 
-
   return (
     <>
       <Header />
@@ -740,19 +736,31 @@ function PathwayPageContent() {
                     <div className="truncate col-span-2 sm:col-span-1"><strong>Application ID:</strong> <span className="font-mono text-xs">{application.id}</span></div>
                     <div><strong>Status:</strong> <span className="font-semibold">{application.status}</span></div>
                 </div>
-                <div>
-                    <div className="flex justify-between text-sm text-muted-foreground mb-1">
-                        <span className="font-medium">Application Progress</span>
-                        <span>{completedCount} of {totalCount} required items completed</span>
+                <div className="space-y-2">
+                    <div className="flex justify-between text-sm text-muted-foreground">
+                        <span className="font-medium">Document Checklist</span>
+                        <span>{completedCount} of {totalCount} completed</span>
                     </div>
-                    <Progress value={progress} className="h-2" />
+                    <div className="space-y-2 rounded-md border p-3">
+                        {pathwayRequirements.map((req) => {
+                            const formInfo = formStatusMap.get(req.title);
+                            const isCompleted = formInfo?.status === 'Completed';
+                            return (
+                                <div key={req.id} className="flex items-center gap-2 text-sm">
+                                    <Checkbox checked={isCompleted} disabled />
+                                    <span className={cn(isCompleted ? 'text-green-700' : 'text-muted-foreground')}>
+                                        {req.title}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
-                
                 </CardContent>
                 {(!isReadOnly && (application.status === 'In Progress' || application.status === 'Requires Revision')) && (
                     <CardFooter>
                         <Button 
-                            className="w-full" 
+                            className="w-full bg-emerald-600 text-white hover:bg-emerald-700" 
                             disabled={!allRequiredFormsComplete || isSubmitting}
                             onClick={handleSubmitApplication}
                         >
@@ -793,7 +801,7 @@ function PathwayPageContent() {
                             <div className="flex justify-between items-start gap-4">
                                 <CardTitle className="text-lg flex items-center gap-2"><Package className="h-5 w-5 text-muted-foreground"/>Consolidated Medical Documents (Optional)</CardTitle>
                             </div>
-                            <CardDescription>For convenience, you can upload multiple medical forms at once. Select the documents you are uploading below.</CardDescription>
+                            <CardDescription>Upload LIC 602A, medicine list, and SNF facesheet together when applicable.</CardDescription>
                         </CardHeader>
                         <CardContent className="flex flex-col flex-grow justify-end gap-4">
                             {isConsolidatedUploading && (
@@ -824,44 +832,8 @@ function PathwayPageContent() {
                         </CardContent>
                     </Card>
                 )}
-
-                {/* Multi Upload Card */}
-                {!isReadOnly && (
-                    <MultiUploadCard
-                        applicationComponents={pathwayRequirements
-                            .filter(req => req.type === 'Upload')
-                            .map(req => ({
-                                id: req.id,
-                                title: req.title,
-                                description: req.description,
-                                required: true
-                            }))
-                        }
-                        onUploadComplete={(files) => {
-                            // Handle the uploaded files
-                            console.log('Uploaded files:', files);
-                            // TODO: Update form status for each component
-                            files.forEach(({ components, url }) => {
-                                const updates = components.map(componentId => {
-                                    const requirement = pathwayRequirements.find(req => req.id === componentId);
-                                    return {
-                                        name: requirement?.title,
-                                        status: 'Completed' as const,
-                                        uploadUrl: url
-                                    };
-                                });
-                                handleFormStatusUpdate(updates);
-                            });
-                            
-                            toast({
-                                title: "Documents Uploaded",
-                                description: "Your documents have been successfully uploaded and assigned to the application components.",
-                            });
-                        }}
-                        className="md:col-span-2"
-                    />
-                )}
             </div>
+
         </div>
       </main>
     </>

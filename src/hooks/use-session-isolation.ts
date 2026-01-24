@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useAuth, useFirestore } from '@/firebase';
 import { usePathname, useRouter } from 'next/navigation';
 import { doc, getDoc } from 'firebase/firestore';
+import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 
 type SessionType = 'admin' | 'user';
 
@@ -23,8 +24,8 @@ export function useSessionIsolation(currentSessionType: SessionType) {
 
     const checkIfUserIsAdmin = async (userEmail: string, userId: string): Promise<boolean> => {
       try {
-        // Check hardcoded admin email
-        if (userEmail === 'jason@carehomefinders.com') {
+        // Check hardcoded admin emails
+        if (isHardcodedAdminEmail(userEmail)) {
           return true;
         }
 

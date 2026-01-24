@@ -382,10 +382,26 @@ export function PrintableCsSummaryFormSpanish({
           value={data.ispFacilityName}
           width="half"
         />
+
+        <PrintableField
+          label="CalAIM vs. Assisted Living Waiver (ALW): En lista de espera de ALW"
+          value={data.onALWWaitlist}
+          type="radio"
+          options={['Sí', 'No', 'Desconocido']}
+          width="full"
+        />
         
         <PrintableField
           label="Ingresos Mensuales"
           value={data.monthlyIncome}
+          placeholder="$0.00"
+          required
+          width="half"
+        />
+
+        <PrintableField
+          label="Porción Esperada de \"Room and Board\" (Esta cantidad variará si el miembro recibe el pago de NMOHC, ver arriba.)"
+          value={data.expectedRoomAndBoard}
           placeholder="$0.00"
           required
           width="half"

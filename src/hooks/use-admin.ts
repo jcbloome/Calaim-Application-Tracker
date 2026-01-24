@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { useUser, useFirestore } from '@/firebase';
+import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import type { User } from 'firebase/auth';
 
 interface AdminStatus {
@@ -43,32 +44,47 @@ export function useAdmin(): AdminStatus {
       return;
     }
 
-    // Simple admin check - check hardcoded admin emails
-    const adminEmails = [
-      'jason@carehomefinders.com',
-      'jason.bloome@connectionslos.com', // Add your work email
-      'jcbloome@gmail.com' // Add your personal email if needed
-    ];
-    
-    const isAdminUser = adminEmails.includes(user.email || '');
-    console.log('🔍 useAdmin: Admin check result:', {
-      userEmail: user.email,
-      isAdminUser,
-      adminEmails
-    });
-    
-    if (isAdminUser) {
-      console.log('✅ useAdmin: User recognized as admin');
-      setIsAdmin(true);
-      setIsSuperAdmin(true);
-      setIsLoading(false);
-    } else {
-      console.log('❌ useAdmin: User NOT recognized as admin');
-      setIsAdmin(false);
-      setIsSuperAdmin(false);
-      setIsLoading(false);
-    }
-  }, [user, isUserLoading]);
+    const checkAdminRoles = async () => {
+      const isEmailAdmin = isHardcodedAdminEmail(user.email);
+
+      if (!firestore) {
+        setIsAdmin(isEmailAdmin);
+        setIsSuperAdmin(isEmailAdmin);
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const adminRoleRef = doc(firestore, 'roles_admin', user.uid);
+        const superAdminRoleRef = doc(firestore, 'roles_super_admin', user.uid);
+
+        const [adminDoc, superAdminDoc] = await Promise.all([
+          getDoc(adminRoleRef),
+          getDoc(superAdminRoleRef)
+        ]);
+
+        const isAdminUser = isEmailAdmin || adminDoc.exists() || superAdminDoc.exists();
+        const isSuperAdminUser = isEmailAdmin || superAdminDoc.exists();
+
+        console.log('🔍 useAdmin: Admin check result:', {
+          userEmail: user.email,
+          isAdminUser,
+          isSuperAdminUser
+        });
+
+        setIsAdmin(isAdminUser);
+        setIsSuperAdmin(isSuperAdminUser);
+      } catch (error) {
+        console.error('❌ useAdmin: Error checking admin roles', error);
+        setIsAdmin(isEmailAdmin);
+        setIsSuperAdmin(isEmailAdmin);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkAdminRoles();
+  }, [user, isUserLoading, firestore]);
 
   return {
     user,

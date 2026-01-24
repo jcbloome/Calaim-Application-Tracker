@@ -24,7 +24,7 @@ service cloud.firestore {
     match /syncedSocialWorkers/{syncedWorkerId} {
       // Super admins can manage synced social worker data
       allow read, write: if request.auth != null && 
-                         request.auth.token.email in ['jason@carehomefinders.com', 'jason.bloome@connectionslos.com', 'jcbloome@gmail.com'];
+                         request.auth.token.email in ['jason@carehomefinders.com'];
     }
     
     // SW Claims collection
@@ -37,15 +37,15 @@ service cloud.firestore {
       allow read: if request.auth != null && 
                   (resource.data.socialWorkerEmail == request.auth.token.email ||
                    // Super admins can read all claims
-                   request.auth.token.email in ['jason@carehomefinders.com', 'jason.bloome@connectionslos.com', 'jcbloome@gmail.com']);
+                   request.auth.token.email in ['jason@carehomefinders.com']);
       
       // Only super admins can update claim status
       allow update: if request.auth != null && 
-                    request.auth.token.email in ['jason@carehomefinders.com', 'jason.bloome@connectionslos.com', 'jcbloome@gmail.com'];
+                    request.auth.token.email in ['jason@carehomefinders.com'];
       
       // Super admins can delete claims
       allow delete: if request.auth != null && 
-                    request.auth.token.email in ['jason@carehomefinders.com', 'jason.bloome@connectionslos.com', 'jcbloome@gmail.com'];
+                    request.auth.token.email in ['jason@carehomefinders.com'];
     }
   }
 }

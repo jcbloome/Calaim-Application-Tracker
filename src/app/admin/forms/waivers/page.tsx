@@ -195,7 +195,7 @@ function WaiversFormComponent() {
                         <p>If I accept these services, I will receive assistance from Connections Care Home Consultants to move into a community-based setting like an assisted living facility. They will help me find a place, coordinate paperwork, and ensure I am settled in. This will be authorized and paid for by my Managed Care Plan.</p>
                         <p>If I decline these services, I am choosing to remain where I am, and I will not receive the transition support services offered by this program at this time.</p>
                         <div className="p-4 border rounded-md space-y-3 mt-4 bg-background">
-                            <h3 className="font-medium text-base">My Choice</h3>
+                            <h3 className="font-medium text-base text-amber-700">My Choice</h3>
                              <RadioGroup value={focChoice} disabled>
                                 <div className="flex items-center space-x-2">
                                     <RadioGroupItem value="accept" id="accept" />

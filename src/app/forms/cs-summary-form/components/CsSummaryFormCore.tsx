@@ -38,7 +38,7 @@ const steps = [
       'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty', 
       'onALWWaitlist', 'hasPrefRCFE', 
       'rcfeName', 'rcfeAddress', 'rcfeAdminName', 'rcfeAdminPhone', 'rcfeAdminEmail',
-      'monthlyIncome', 'ackRoomAndBoard'
+      'monthlyIncome', 'expectedRoomAndBoard', 'ackRoomAndBoard'
   ]},
 ];
 
@@ -391,7 +391,6 @@ function CsSummaryFormComponent() {
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                       <div>
                           <h1 className="text-2xl font-bold">CS Member Summary</h1>
-                          {!isAdminView && <GlossaryDialog className="p-0 h-auto mt-2" />}
                       </div>
                       {!isAdminView && (
                           <Button 

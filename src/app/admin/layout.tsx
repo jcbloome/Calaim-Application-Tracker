@@ -180,11 +180,8 @@ function AdminHeader() {
     // Super admins see everything
     combinedNavLinks = [...adminNavLinks, ...superAdminNavLinks];
   } else {
-    // Regular admins see admin nav links, but hide SW tab unless it's the test account
-    const isTestAccount = user?.email === 'jcbloome@gmail.com';
-    if (!isTestAccount) {
-      combinedNavLinks = adminNavLinks.filter(nav => nav.label !== 'SW');
-    }
+    // Regular admins see admin nav links, hide SW tab for all regular admins
+    combinedNavLinks = adminNavLinks.filter(nav => nav.label !== 'SW');
   }
 
   return (
