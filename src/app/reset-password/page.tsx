@@ -45,7 +45,18 @@ function ResetPasswordContent() {
         // Custom token - validate it
         try {
           console.log('🔍 Validating token:', token.substring(0, 8) + '...');
-          const response = await fetch(`/api/auth/password-reset?token=${token}`);
+          console.log('🔍 Full token:', token);
+          console.log('🔍 Token length:', token.length);
+          
+          // Add timeout to prevent hanging
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+          
+          const response = await fetch(`/api/auth/password-reset?token=${token}`, {
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          
           console.log('📡 API Response status:', response.status);
           
           const data = await response.json();
@@ -59,9 +70,13 @@ function ResetPasswordContent() {
             console.log('❌ Token validation failed:', data.error);
             setError(data.error || 'Invalid or expired reset token');
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error('❌ Token validation error:', error);
-          setError('Failed to validate reset token');
+          if (error.name === 'AbortError') {
+            setError('Request timed out. Please try again or request a new reset link.');
+          } else {
+            setError('Failed to validate reset token. Please try again.');
+          }
         }
       } else {
         setError('Invalid or missing reset parameters');
