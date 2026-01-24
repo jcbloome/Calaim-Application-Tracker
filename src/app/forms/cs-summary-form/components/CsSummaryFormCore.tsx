@@ -358,24 +358,6 @@ function CsSummaryFormComponent() {
     );
   }
 
-  if (!internalApplicationId && !isAdminView) {
-    return (
-      <div className="flex-grow flex items-center justify-center px-4 py-10">
-        <div className="w-full max-w-lg space-y-4">
-          <Alert>
-            <AlertTitle>Application creation requires an admin</AlertTitle>
-            <AlertDescription>
-              New member applications must be created by an administrator. Please contact your
-              care team to start a new application.
-            </AlertDescription>
-          </Alert>
-          <Button asChild className="w-full">
-            <Link href="/applications">Back to My Applications</Link>
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   const progress = (currentStep / steps.length) * 100;
 

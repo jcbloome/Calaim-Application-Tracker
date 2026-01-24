@@ -3,7 +3,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Trash2, Loader2, Bell, Mail } from 'lucide-react';
+import { Trash2, Loader2, Bell, Mail, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -314,6 +314,12 @@ export default function MyApplicationsPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2 self-stretch sm:self-center flex-wrap">
+                    <Button asChild>
+                        <Link href="/forms/cs-summary-form">
+                            <Plus className="mr-2 h-4 w-4" />
+                            Start New Application
+                        </Link>
+                    </Button>
                     {selected.length > 0 && (
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -337,13 +343,6 @@ export default function MyApplicationsPage() {
                     )}
                 </div>
             </div>
-            <Alert className="bg-slate-50">
-              <AlertTitle>Admin-created applications only</AlertTitle>
-              <AlertDescription>
-                New member applications are created by administrators. If you need a new application,
-                please contact your care team.
-              </AlertDescription>
-            </Alert>
         </div>
 
         {error && 
