@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -238,6 +238,7 @@ export default function CaspioTestPage() {
   const [dynamicCaspioFields, setDynamicCaspioFields] = useState<string[]>(caspioMembersFieldNames);
   const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
   const { toast } = useToast();
+  const [lockedMappings, setLockedMappings] = useState<{[key: string]: string} | null>(null);
   
   // Use new Caspio integration module
   const { 
@@ -250,6 +251,22 @@ export default function CaspioTestPage() {
     performFullSync, 
     clearError 
   } = useCaspioSync();
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = localStorage.getItem('calaim_cs_caspio_mapping');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object') {
+          setLockedMappings(parsed);
+          setFieldMappings(parsed);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load saved field mappings:', error);
+    }
+  }, []);
 
   const refreshCaspioFields = async () => {
     // Rate limiting: prevent calls within 5 seconds of each other
@@ -569,9 +586,10 @@ export default function CaspioTestPage() {
       </div>
 
       <Tabs defaultValue="sync-test" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="sync-test">Sync Test</TabsTrigger>
           <TabsTrigger value="interactive-mapping">Field Mapping</TabsTrigger>
+          <TabsTrigger value="mapping-preview">Mapping Preview</TabsTrigger>
         </TabsList>
 
         <TabsContent value="sync-test" className="space-y-6">
@@ -922,8 +940,47 @@ export default function CaspioTestPage() {
                       variant="outline" 
                       size="sm"
                       onClick={() => setFieldMappings({})}
+                      disabled={!!lockedMappings}
                     >
                       Clear All
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (Object.keys(fieldMappings).length === 0) {
+                          toast({
+                            variant: "destructive",
+                            title: "No Mappings to Lock",
+                            description: "Map at least one field before locking.",
+                          });
+                          return;
+                        }
+                        setLockedMappings(fieldMappings);
+                        localStorage.setItem('calaim_cs_caspio_mapping', JSON.stringify(fieldMappings));
+                        toast({
+                          title: "Mappings Locked",
+                          description: "Field mapping saved and ready for export.",
+                          className: 'bg-green-100 text-green-900 border-green-200',
+                        });
+                      }}
+                      disabled={!!lockedMappings}
+                    >
+                      Lock Mappings
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setLockedMappings(null);
+                        localStorage.removeItem('calaim_cs_caspio_mapping');
+                        toast({
+                          title: "Mappings Unlocked",
+                          description: "You can edit mappings again.",
+                        });
+                      }}
+                      disabled={!lockedMappings}
+                    >
+                      Unlock
                     </Button>
                     <Button
                       size="sm"
@@ -981,6 +1038,7 @@ export default function CaspioTestPage() {
                               }));
                             }
                           }}
+                          disabled={!!lockedMappings}
                         >
                           <SelectTrigger className="w-full">
                             <SelectValue placeholder="Select CalAIM field..." />
@@ -1053,6 +1111,71 @@ export default function CaspioTestPage() {
                   </div>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="mapping-preview" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Locked Mapping Preview</CardTitle>
+              <CardDescription>
+                This locked mapping is used for exporting CS Summary data via connect_tbl_clients first (to obtain Client_ID2),
+                then writing to CalAIM_tbl_Members.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {lockedMappings ? (
+                <>
+                  <div className="rounded border p-4 bg-white">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm text-muted-foreground">
+                        Total mappings: {Object.keys(lockedMappings).length}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(JSON.stringify(lockedMappings, null, 2));
+                          toast({
+                            title: "Mapping Copied",
+                            description: "Locked mapping copied as JSON.",
+                          });
+                        }}
+                      >
+                        <Copy className="mr-2 h-4 w-4" />
+                        Copy Mapping JSON
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-80 overflow-y-auto">
+                      {Object.entries(lockedMappings).map(([csField, caspioField]) => (
+                        <div key={csField} className="rounded border p-3 bg-gray-50">
+                          <div className="text-xs text-blue-700 font-medium">CS Summary</div>
+                          <div className="font-mono text-sm">{csField}</div>
+                          <div className="text-xs text-gray-500 mt-2">→ CalAIM_tbl_Members</div>
+                          <div className="font-mono text-sm">{caspioField}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded border p-4 bg-blue-50">
+                    <h4 className="font-medium text-blue-900 mb-2">Export Flow</h4>
+                    <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                      <li>Submit CS Summary data to `connect_tbl_clients`.</li>
+                      <li>Read back `Client_ID2`.</li>
+                      <li>Write mapped fields to `CalAIM_tbl_Members`.</li>
+                    </ol>
+                  </div>
+                </>
+              ) : (
+                <Alert variant="destructive">
+                  <AlertTitle>No Locked Mapping</AlertTitle>
+                  <AlertDescription>
+                    Lock your mappings first to generate the export mapping preview.
+                  </AlertDescription>
+                </Alert>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
