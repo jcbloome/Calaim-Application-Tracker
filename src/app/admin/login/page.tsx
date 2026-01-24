@@ -137,6 +137,24 @@ export default function AdminLoginPage() {
         emailVerified: userCredential.user.emailVerified
       });
 
+      addDebugLog('Requesting admin session cookie');
+      const idToken = await userCredential.user.getIdToken();
+      const sessionResponse = await fetch('/api/auth/admin-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
+
+      if (!sessionResponse.ok) {
+        const sessionData = await sessionResponse.json().catch(() => ({}));
+        const sessionError = sessionData?.error || 'Admin access not granted.';
+        addDebugLog('Admin session setup failed', { sessionError });
+        await auth.signOut();
+        setError(sessionError);
+        setIsLoading(false);
+        return;
+      }
+
       // Track the login event
       addDebugLog('Tracking login event');
       await trackLogin(firestore, userCredential.user, 'Admin');

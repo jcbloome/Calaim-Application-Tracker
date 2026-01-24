@@ -40,6 +40,7 @@ export function Header() {
     // Clear session storage to ensure fresh login next time
     sessionStorage.removeItem('auth_session_active');
     localStorage.clear(); // Clear all local storage for complete logout
+    fetch('/api/auth/admin-session', { method: 'DELETE' }).catch(() => undefined);
     
     // After signing out, always return to the public home page.
     window.location.href = '/';
@@ -53,6 +54,7 @@ export function Header() {
     // Clear session storage to ensure fresh login next time
     sessionStorage.removeItem('auth_session_active');
     localStorage.clear();
+    fetch('/api/auth/admin-session', { method: 'DELETE' }).catch(() => undefined);
     
     // Redirect to home page where user can choose admin or user login
     window.location.href = '/';

@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCaspioSync } from '@/modules/caspio-integration';
+import { useAuth } from '@/firebase';
 
 interface TestResult {
   member: string;
@@ -124,78 +125,8 @@ const csSummaryFields = {
   rcfeAdminEmail: ""
 };
 
-// CalAIM Members Table Field Names (for dropdown selection)
-const caspioMembersFieldNames = [
-  'client_ID2',
-  'Client_ID2', 
-  'Senior_First',
-  'Senior_Last',
-  'memberFirstName',
-  'memberLastName',
-  'memberMediCalNum',
-  'memberMrn',
-  'MCP_CIN',
-  'MC',
-  'memberCounty',
-  'Member_County',
-  'memberDob',
-  'memberAge',
-  'sex',
-  'memberLanguage',
-  'CalAIM_MCO',
-  'CalAIM_MCP',
-  'HealthPlan',
-  'healthPlan',
-  'CalAIM_Status',
-  'Kaiser_Status',
-  'pathway',
-  'SNF_Diversion_or_Transition',
-  'bestContactFirstName',
-  'bestContactLastName',
-  'bestContactPhone',
-  'bestContactEmail',
-  'bestContactRelationship',
-  'bestContactLanguage',
-  'secondaryContactFirstName',
-  'secondaryContactLastName',
-  'secondaryContactPhone',
-  'secondaryContactEmail',
-  'secondaryContactRelationship',
-  'referrerFirstName',
-  'referrerLastName',
-  'referrerPhone',
-  'referrerEmail',
-  'referrerRelationship',
-  'agency',
-  'currentLocation',
-  'currentAddress',
-  'currentCity',
-  'currentState',
-  'currentZip',
-  'currentCounty',
-  'ispFirstName',
-  'ispLastName',
-  'ispPhone',
-  'ispEmail',
-  'ispFacilityName',
-  'rcfeName',
-  'rcfeAddress',
-  'rcfeAdminName',
-  'rcfeAdminPhone',
-  'rcfeAdminEmail',
-  'Kaiser_T2038_Requested_Date',
-  'Kaiser_T2038_Received_Date',
-  'Kaiser_Tier_Level_Requested_Date',
-  'Kaiser_Tier_Level_Received_Date',
-  'ILS_RCFE_Sent_For_Contract_Date',
-  'ILS_RCFE_Received_Contract_Date',
-  'DateCreated',
-  'LastUpdated',
-  'created_date',
-  'last_updated',
-  'next_steps_date',
-  'kaiser_user_assignment'
-];
+// CalAIM Members Table Field Names (loaded from Caspio)
+const caspioMembersFieldNames: string[] = [];
 
 // CalAIM Members Table Fields
 const caspioMembersFields = {
@@ -296,6 +227,7 @@ const caspioMembersFields = {
 };
 
 export default function CaspioTestPage() {
+  const auth = useAuth();
   const [isRunning, setIsRunning] = useState(false);
   const [testResults, setTestResults] = useState<TestResponse | null>(null);
   const [isSingleTestRunning, setIsSingleTestRunning] = useState(false);
@@ -339,27 +271,54 @@ export default function CaspioTestPage() {
     try {
       console.log('🔄 [FIELD-REFRESH] Starting Caspio field refresh...');
       
-      // Call Firebase function with timeout
-      const functions = getFunctions();
-      const getCaspioFields = httpsCallable(functions, 'getCaspioTableFields');
-      
-      // Set a client-side timeout as well
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Client timeout: Request took too long')), 20000);
+      if (!auth?.currentUser) {
+        toast({
+          variant: "destructive",
+          title: "Admin Session Missing",
+          description: "Please sign out and sign back in to refresh Caspio fields.",
+        });
+        return;
+      }
+
+      const idToken = await auth.currentUser.getIdToken().catch(() => undefined);
+      const response = await fetch('/api/caspio-table-fields', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({ tableName: 'CalAIM_tbl_Members' }),
       });
-      
-      const refreshPromise = getCaspioFields({ tableName: 'CalAIM_tbl_Members' });
-      
-      const result = await Promise.race([refreshPromise, timeoutPromise]) as any;
-      const data = result.data as any;
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const details = data?.details ? ` ${data.details}` : '';
+        throw new Error(`${data?.error || 'Failed to fetch Caspio fields'}${details}`);
+      }
       
       if (data.success && data.fields) {
-        setDynamicCaspioFields(data.fields);
-        console.log('✅ [FIELD-REFRESH] Successfully updated field list');
-        toast({
-          title: "Caspio Fields Refreshed",
-          description: `Found ${data.fields.length} fields in CalAIM_tbl_Members table`,
+        const normalizedFields = Array.isArray(data.fields)
+          ? data.fields.filter((field: any) => typeof field === 'string')
+          : [];
+
+        setDynamicCaspioFields(normalizedFields);
+        console.log('✅ [FIELD-REFRESH] Successfully updated field list', {
+          count: normalizedFields.length,
+          sample: normalizedFields.slice(0, 5)
         });
+        if (normalizedFields.length === 0) {
+          toast({
+            variant: "destructive",
+            title: "No Caspio Fields Returned",
+            description: `Schema returned 0 fields. Check Caspio table name or schema. URL: ${data.schemaUrl || 'unknown'}`,
+          });
+        } else {
+          toast({
+            title: "Caspio Fields Refreshed",
+            description: `Found ${normalizedFields.length} fields in CalAIM_tbl_Members table`,
+          });
+        }
       } else {
         throw new Error(data.message || 'Failed to fetch Caspio fields');
       }
@@ -610,11 +569,9 @@ export default function CaspioTestPage() {
       </div>
 
       <Tabs defaultValue="sync-test" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="sync-test">Sync Test</TabsTrigger>
-          <TabsTrigger value="field-mapping">Field Reference</TabsTrigger>
-          <TabsTrigger value="interactive-mapping">Interactive Mapping</TabsTrigger>
-          <TabsTrigger value="sample-data">Sample Data</TabsTrigger>
+          <TabsTrigger value="interactive-mapping">Field Mapping</TabsTrigger>
         </TabsList>
 
         <TabsContent value="sync-test" className="space-y-6">
@@ -937,139 +894,17 @@ export default function CaspioTestPage() {
       )}
         </TabsContent>
 
-        <TabsContent value="field-mapping" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Map className="h-5 w-5" />
-                CS Summary Form → CalAIM Members Table Field Mapping
-              </CardTitle>
-              <CardDescription>
-                Map fields from the CS Summary form to the corresponding CalAIM Members table fields
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* CS Summary Form Fields */}
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-blue-600">CS Summary Form Fields</h3>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={refreshAppFields}
-                      disabled={isRefreshingAppFields}
-                      className="text-blue-600 border-blue-600 hover:bg-blue-50"
-                    >
-                      {isRefreshingAppFields ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                      )}
-                      Refresh App Fields
-                    </Button>
-                  </div>
-                  <div className="space-y-4 max-h-96 overflow-y-auto border rounded-lg p-4">
-                    {Object.entries(csSummaryFields).map(([key, value]) => (
-                      <div key={key} className="flex flex-col gap-1 p-2 border-b">
-                        <div className="flex items-center justify-between">
-                          <Label className="font-medium text-sm">{key}</Label>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => navigator.clipboard.writeText(key)}
-                            className="h-6 w-6 p-0"
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <Input 
-                          value={value?.toString() || ''} 
-                          readOnly 
-                          className="text-xs bg-blue-50"
-                          placeholder="Sample data"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* CalAIM Members Table Fields */}
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-green-600">CalAIM Members Table Fields</h3>
-                    <div className="flex flex-col items-end gap-1">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={refreshCaspioFields}
-                        disabled={isRefreshingCaspioFields}
-                        className="text-green-600 border-green-600 hover:bg-green-50"
-                      >
-                        {isRefreshingCaspioFields ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="mr-2 h-4 w-4" />
-                        )}
-                        Refresh Caspio Fields
-                      </Button>
-                      {lastRefreshTime > 0 && (
-                        <span className="text-xs text-gray-500">
-                          Last: {new Date(lastRefreshTime).toLocaleTimeString()}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-4 max-h-96 overflow-y-auto border rounded-lg p-4">
-                    {Object.entries(caspioMembersFields).map(([key, value]) => (
-                      <div key={key} className="flex flex-col gap-1 p-2 border-b">
-                        <div className="flex items-center justify-between">
-                          <Label className="font-medium text-sm">{key}</Label>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => navigator.clipboard.writeText(key)}
-                            className="h-6 w-6 p-0"
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <Input 
-                          value={value?.toString() || ''} 
-                          readOnly 
-                          className="text-xs bg-green-50"
-                          placeholder="Caspio field (empty)"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <h4 className="font-medium text-yellow-800 mb-2">Field Mapping Notes:</h4>
-                <ul className="text-sm text-yellow-700 space-y-1">
-                  <li>• <strong>Direct Matches:</strong> memberFirstName → memberFirstName, memberLastName → memberLastName</li>
-                  <li>• <strong>Alternative Names:</strong> memberFirstName → Senior_First, memberMrn → MCP_CIN</li>
-                  <li>• <strong>MCO Restriction:</strong> healthPlan must be "Kaiser" or "Health Net" only</li>
-                  <li>• <strong>ID Fields:</strong> client_ID2 and Client_ID2 are the same field with different casing</li>
-                  <li>• <strong>Status Fields:</strong> CalAIM_Status, Kaiser_Status track different workflow stages</li>
-                  <li>• <strong>Date Fields:</strong> Multiple date tracking fields for Kaiser processes and ILS contracts</li>
-                </ul>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+        {/* Field Reference tab removed per request */}
 
         <TabsContent value="interactive-mapping" className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Map className="h-5 w-5" />
-                Interactive Field Mapping Tool
+                CS Summary → CalAIM Field Mapping
               </CardTitle>
               <CardDescription>
-                Map each CS Summary form field to its corresponding CalAIM Members table field
+                Map each CS Summary field (with example) to a CalAIM_tbl_Members field
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1090,25 +925,18 @@ export default function CaspioTestPage() {
                     >
                       Clear All
                     </Button>
-                    <Button 
+                    <Button
                       size="sm"
-                      onClick={() => {
-                        // Auto-map obvious matches
-                        const autoMappings: {[key: string]: string} = {};
-                        Object.keys(csSummaryFields).forEach(csField => {
-                          if (dynamicCaspioFields.includes(csField)) {
-                            autoMappings[csField] = csField;
-                          }
-                        });
-                        setFieldMappings(autoMappings);
-                        toast({
-                          title: "Auto-mapping Complete",
-                          description: `Mapped ${Object.keys(autoMappings).length} obvious matches`,
-                          className: 'bg-green-100 text-green-900 border-green-200',
-                        });
-                      }}
+                      variant="outline"
+                      onClick={refreshCaspioFields}
+                      disabled={isRefreshingCaspioFields}
                     >
-                      Auto-Map Matches
+                      {isRefreshingCaspioFields ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                      )}
+                      Refresh Caspio Fields
                     </Button>
                   </div>
                 </div>
@@ -1119,7 +947,7 @@ export default function CaspioTestPage() {
                     <div key={csField} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-3 border rounded-lg bg-gray-50">
                       {/* CS Summary Field */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-blue-700">CS Summary Field</Label>
+                        <Label className="text-sm font-medium text-blue-700">CS Summary Field (Example)</Label>
                         <div className="p-2 bg-blue-100 rounded border">
                           <div className="font-mono text-sm font-medium">{csField}</div>
                           <div className="text-xs text-blue-600 mt-1 truncate">
@@ -1135,7 +963,7 @@ export default function CaspioTestPage() {
 
                       {/* CalAIM Members Field Selection */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-green-700">CalAIM Members Field</Label>
+                        <Label className="text-sm font-medium text-green-700">CalAIM_tbl_Members Field</Label>
                         <Select 
                           value={fieldMappings[csField] || 'no-mapping'} 
                           onValueChange={(value) => {
@@ -1159,11 +987,17 @@ export default function CaspioTestPage() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="no-mapping">-- No Mapping --</SelectItem>
-                            {dynamicCaspioFields.map(fieldName => (
-                              <SelectItem key={fieldName} value={fieldName}>
-                                {fieldName}
+                            {dynamicCaspioFields.length === 0 ? (
+                              <SelectItem value="no-fields" disabled>
+                                No Caspio fields loaded — click “Refresh Caspio Fields”
                               </SelectItem>
-                            ))}
+                            ) : (
+                              dynamicCaspioFields.map(fieldName => (
+                                <SelectItem key={fieldName} value={fieldName}>
+                                  {fieldName}
+                                </SelectItem>
+                              ))
+                            )}
                           </SelectContent>
                         </Select>
                         {fieldMappings[csField] && (
@@ -1171,6 +1005,12 @@ export default function CaspioTestPage() {
                             ✓ Mapped to: {fieldMappings[csField]}
                           </div>
                         )}
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Fields loaded: {dynamicCaspioFields.length}</span>
+                          {lastRefreshTime > 0 && (
+                            <span>Last refresh: {new Date(lastRefreshTime).toLocaleTimeString()}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1217,159 +1057,7 @@ export default function CaspioTestPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="sample-data" className="space-y-6">
-          {/* MCO Restriction Notice */}
-          <Card className="border-orange-500 bg-orange-50">
-            <CardHeader>
-              <CardTitle className="text-orange-800">🏥 MCO Restriction</CardTitle>
-              <CardDescription className="text-orange-700">
-                All mock applications must use only Kaiser Permanente or Health Net as MCO
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-3 bg-white border border-orange-200 rounded">
-                  <h4 className="font-medium text-orange-900 mb-2">✅ Allowed MCOs:</h4>
-                  <ul className="text-sm text-orange-800 space-y-1">
-                    <li>• Kaiser Permanente</li>
-                    <li>• Health Net</li>
-                  </ul>
-                </div>
-                <div className="p-3 bg-white border border-orange-200 rounded">
-                  <h4 className="font-medium text-orange-900 mb-2">❌ Not Allowed:</h4>
-                  <ul className="text-sm text-orange-800 space-y-1">
-                    <li>• Blue Cross Blue Shield</li>
-                    <li>• Anthem</li>
-                    <li>• Other MCOs</li>
-                  </ul>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* CS Summary Sample Data */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-blue-600">CS Summary Form Sample Data</CardTitle>
-                <CardDescription>Complete sample data for all CS Summary form fields</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  value={JSON.stringify(csSummaryFields, null, 2)}
-                  readOnly
-                  className="h-96 font-mono text-xs"
-                />
-                <Button
-                  onClick={() => navigator.clipboard.writeText(JSON.stringify(csSummaryFields, null, 2))}
-                  className="mt-2 w-full"
-                  variant="outline"
-                >
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copy CS Summary Sample Data
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* CalAIM Members Sample Data */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-green-600">CalAIM Members Table Structure</CardTitle>
-                <CardDescription>All available fields in the CalAIM Members table</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  value={JSON.stringify(caspioMembersFields, null, 2)}
-                  readOnly
-                  className="h-96 font-mono text-xs"
-                />
-                <Button
-                  onClick={() => navigator.clipboard.writeText(JSON.stringify(caspioMembersFields, null, 2))}
-                  className="mt-2 w-full"
-                  variant="outline"
-                >
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copy Members Table Structure
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Field Categories */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Field Categories & Mapping Strategy</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold text-blue-600 mb-2">Member Information</h4>
-                  <ul className="text-sm space-y-1">
-                    <li>• memberFirstName → Senior_First</li>
-                    <li>• memberLastName → Senior_Last</li>
-                    <li>• memberDob → memberDob</li>
-                    <li>• memberAge → memberAge</li>
-                    <li>• sex → sex</li>
-                    <li>• memberLanguage → memberLanguage</li>
-                  </ul>
-                </div>
-                
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold text-green-600 mb-2">Health Plan & IDs</h4>
-                  <ul className="text-sm space-y-1">
-                    <li>• memberMediCalNum → MC</li>
-                    <li>• memberMrn → MCP_CIN (Kaiser/Health Net)</li>
-                    <li>• healthPlan → CalAIM_MCO (Kaiser/Health Net only)</li>
-                    <li>• pathway → SNF_Diversion_or_Transition</li>
-                  </ul>
-                </div>
-                
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold text-purple-600 mb-2">Contact Information</h4>
-                  <ul className="text-sm space-y-1">
-                    <li>• bestContactFirstName → bestContactFirstName</li>
-                    <li>• bestContactLastName → bestContactLastName</li>
-                    <li>• bestContactPhone → bestContactPhone</li>
-                    <li>• bestContactEmail → bestContactEmail</li>
-                    <li>• referrerFirstName → referrerFirstName</li>
-                  </ul>
-                </div>
-                
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold text-orange-600 mb-2">Location Data</h4>
-                  <ul className="text-sm space-y-1">
-                    <li>• currentLocation → currentLocation</li>
-                    <li>• currentAddress → currentAddress</li>
-                    <li>• currentCity → currentCity</li>
-                    <li>• currentCounty → Member_County</li>
-                  </ul>
-                </div>
-                
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold text-red-600 mb-2">ISP & RCFE</h4>
-                  <ul className="text-sm space-y-1">
-                    <li>• ispFirstName → ispFirstName</li>
-                    <li>• ispLastName → ispLastName</li>
-                    <li>• ispFacilityName → ispFacilityName</li>
-                    <li>• rcfeName → rcfeName</li>
-                    <li>• rcfeAdminName → rcfeAdminName</li>
-                  </ul>
-                </div>
-                
-                <div className="p-4 border rounded-lg">
-                  <h4 className="font-semibold text-gray-600 mb-2">Administrative</h4>
-                  <ul className="text-sm space-y-1">
-                    <li>• client_ID2 (generated)</li>
-                    <li>• CalAIM_Status (workflow)</li>
-                    <li>• Kaiser_Status (Kaiser only)</li>
-                    <li>• DateCreated (auto)</li>
-                    <li>• LastUpdated (auto)</li>
-                  </ul>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+        {/* Sample Data tab removed per request */}
       </Tabs>
     </div>
   );

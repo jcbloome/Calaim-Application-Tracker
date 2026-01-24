@@ -8,7 +8,6 @@ import { PrintableWaiversFormSpanish } from './PrintableWaiversFormSpanish';
 import { PrintableDeclarationFormSpanish } from './PrintableDeclarationFormSpanish';
 import { PrintableGlossaryFormSpanish } from './PrintableGlossaryFormSpanish';
 import { PrintableProgramInfoFormSpanish } from './PrintableProgramInfoFormSpanish';
-import { PrintableRoomBoardObligationFormSpanish } from './PrintableRoomBoardObligationFormSpanish';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 
 interface PrintableFullPackageSpanishProps {
@@ -138,20 +137,6 @@ export function PrintableFullPackageSpanish({
           ? `${applicationData.memberFirstName} ${applicationData.memberLastName}` 
           : ''}
         memberMrn={applicationData.memberMrn || ''}
-        applicationId={applicationId}
-        showPrintButton={false}
-      />
-
-      {/* Page Break */}
-      <div className="page-break print:page-break-before"></div>
-
-      {/* Room and Board Commitment */}
-      <PrintableRoomBoardObligationFormSpanish 
-        memberName={applicationData.memberFirstName && applicationData.memberLastName 
-          ? `${applicationData.memberFirstName} ${applicationData.memberLastName}` 
-          : ''}
-        memberMrn={applicationData.memberMrn || ''}
-        memberDob={applicationData.memberDob || ''}
         applicationId={applicationId}
         showPrintButton={false}
       />
