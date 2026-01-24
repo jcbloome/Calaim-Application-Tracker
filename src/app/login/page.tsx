@@ -74,35 +74,61 @@ export default function LoginPage() {
     setIsLoading(true);
     setError(null);
 
+    console.log('🔍 User Login Debug: Sign in attempt started', { email });
+
     if (!auth || !firestore) {
       const errorMsg = 'Firebase services are not available.';
+      console.log('🔍 User Login Debug: Firebase services check failed', { 
+        authExists: !!auth, 
+        firestoreExists: !!firestore 
+      });
       setError(errorMsg);
       setIsLoading(false);
       return;
     }
 
     try {
+      console.log('🔍 User Login Debug: Checking current user');
       if (auth.currentUser) {
+        console.log('🔍 User Login Debug: Signing out current user', { currentUser: auth.currentUser.email });
         await auth.signOut();
       }
       
+      console.log('🔍 User Login Debug: Setting persistence');
       await setPersistence(auth, browserLocalPersistence);
+      
+      console.log('🔍 User Login Debug: Attempting sign in with email/password');
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      console.log('🔍 User Login Debug: Sign in successful', { 
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+        emailVerified: userCredential.user.emailVerified
+      });
 
       // Track the login event
+      console.log('🔍 User Login Debug: Tracking login event');
       await trackLogin(firestore, userCredential.user, 'User');
       
+      console.log('🔍 User Login Debug: Showing success toast');
       enhancedToast.success('Successfully signed in!', 'Redirecting to your dashboard...');
     } catch (err) {
       const authError = err as AuthError;
+      console.log('🔍 User Login Debug: Sign in error caught', { 
+        code: authError.code,
+        message: authError.message,
+        fullError: authError
+      });
+      
       let errorMessage = 'Invalid email or password. Please try again.';
       if (authError.code === 'auth/user-not-found' || authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
         errorMessage = 'Invalid email or password. Please check your credentials and try again.';
       } else if (authError.code === 'auth/too-many-requests') {
           errorMessage = 'Access to this account has been temporarily disabled due to many failed login attempts. You can immediately restore it by resetting your password or you can try again later.';
       } else {
-        errorMessage = `An unexpected error occurred: ${authError.message}`;
+        errorMessage = `An unexpected error occurred: ${authError.message} (Code: ${authError.code})`;
       }
+      console.log('🔍 User Login Debug: Setting error message', { errorMessage });
       setError(errorMessage);
     } finally {
       setIsLoading(false);
