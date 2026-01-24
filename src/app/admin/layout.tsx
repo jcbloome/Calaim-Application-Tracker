@@ -408,13 +408,35 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   // Allow access to login page without authentication
   const isLoginPage = pathname === '/admin/login';
 
+  // Debug logging for admin layout
+  useEffect(() => {
+    console.log('🔍 Admin Layout Debug:', {
+      pathname,
+      isLoginPage,
+      loading,
+      isAdmin,
+      userEmail: user?.email,
+      timestamp: new Date().toLocaleTimeString()
+    });
+  }, [pathname, isLoginPage, loading, isAdmin, user?.email]);
+
   useEffect(() => {
     if (!loading) {
+      console.log('🔍 Admin Layout Auth Check:', {
+        isAdmin,
+        isLoginPage,
+        userEmail: user?.email,
+        willRedirect: !isAdmin && !isLoginPage
+      });
+      
       if (!isAdmin && !isLoginPage) {
+        console.log('🚫 Redirecting to login - user not recognized as admin');
         router.replace('/admin/login');
+      } else if (isAdmin && isLoginPage) {
+        console.log('✅ Admin detected on login page - should redirect to dashboard');
       }
     }
-  }, [loading, isAdmin, isLoginPage, router]);
+  }, [loading, isAdmin, isLoginPage, router, user?.email]);
 
   // Show loading spinner while checking authentication (but not for login page)
   if (loading && !isLoginPage) {
