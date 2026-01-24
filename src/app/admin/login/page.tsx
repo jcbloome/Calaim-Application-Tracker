@@ -22,7 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, Loader2, LogIn, ShieldAlert, LogOut, Mail } from 'lucide-react';
+import { Eye, EyeOff, Loader2, LogIn, ShieldAlert, LogOut, Mail, Bug, ChevronDown, ChevronUp } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 // import { useAdmin } from '@/hooks/use-admin';
@@ -61,6 +61,29 @@ export default function AdminLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
+  const [debugInfo, setDebugInfo] = useState<any[]>([]);
+  const [showDebug, setShowDebug] = useState(false);
+
+  // Add debug logging function
+  const addDebugLog = (message: string, data?: any) => {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      message,
+      data: data ? JSON.stringify(data, null, 2) : null
+    };
+    console.log(`🔍 Admin Login Debug: ${message}`, data);
+    setDebugInfo(prev => [...prev.slice(-9), logEntry]); // Keep last 10 entries
+  };
+
+  // Debug Firebase state on component mount
+  useEffect(() => {
+    addDebugLog('Component mounted');
+    addDebugLog('Auth state', { 
+      authExists: !!auth, 
+      firestoreExists: !!firestore,
+      currentUser: auth?.currentUser?.email || 'none'
+    });
+  }, [auth, firestore]);
 
   // Disabled automatic redirect to prevent conflicts with admin layout
   // useEffect(() => {
@@ -81,44 +104,77 @@ export default function AdminLoginPage() {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
+    
+    addDebugLog('Sign in attempt started', { email });
 
     if (!auth || !firestore) {
-      setError('Firebase services are not available.');
+      const errorMsg = 'Firebase services are not available.';
+      addDebugLog('Firebase services check failed', { 
+        authExists: !!auth, 
+        firestoreExists: !!firestore 
+      });
+      setError(errorMsg);
       setIsLoading(false);
       return;
     }
 
     try {
+      addDebugLog('Checking current user');
       if (auth.currentUser) {
+        addDebugLog('Signing out current user', { currentUser: auth.currentUser.email });
         await auth.signOut();
       }
       
+      addDebugLog('Setting persistence');
       await setPersistence(auth, browserLocalPersistence);
+      
+      addDebugLog('Attempting sign in with email/password');
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      addDebugLog('Sign in successful', { 
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+        emailVerified: userCredential.user.emailVerified
+      });
 
       // Track the login event
+      addDebugLog('Tracking login event');
       await trackLogin(firestore, userCredential.user, 'Admin');
       
+      addDebugLog('Showing success toast');
       toast({
         title: 'Sign In Successful!',
         description: 'Redirecting to admin panel...',
       });
 
+      addDebugLog('Starting redirect timer');
       // Manual redirect after successful login
       setTimeout(() => {
         if (typeof window !== 'undefined') {
+          addDebugLog('Executing redirect to /admin');
           window.location.href = '/admin';
         }
       }, 1000);
 
     } catch (err) {
       const authError = err as AuthError;
+      addDebugLog('Sign in error caught', { 
+        code: authError.code,
+        message: authError.message,
+        fullError: authError
+      });
+      
       let errorMessage = 'An unexpected error occurred.';
        if (authError.code === 'auth/user-not-found' || authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
         errorMessage = 'Invalid email or password. Please check your credentials and try again.';
       } else if (authError.code === 'auth/too-many-requests') {
           errorMessage = 'Access to this account has been temporarily disabled due to many failed login attempts. You can immediately restore it by resetting your password or you can try again later.';
+      } else {
+        // Include the actual error for debugging
+        errorMessage = `${errorMessage} (Error: ${authError.code || 'unknown'})`;
       }
+      
+      addDebugLog('Setting error message', { errorMessage });
       setError(errorMessage);
       setIsLoading(false); // Only set loading to false on error.
     }
@@ -298,6 +354,70 @@ export default function AdminLoginPage() {
               </Link>
             </div>
           </CardContent>
+        </Card>
+
+        {/* Debug Panel */}
+        <Card className="mt-4 shadow-lg border-orange-200">
+          <CardHeader className="pb-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDebug(!showDebug)}
+              className="w-full justify-between"
+            >
+              <div className="flex items-center">
+                <Bug className="mr-2 h-4 w-4" />
+                Debug Information
+              </div>
+              {showDebug ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </Button>
+          </CardHeader>
+          {showDebug && (
+            <CardContent className="pt-0">
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                <div className="text-sm font-medium text-gray-700">
+                  Firebase Status:
+                </div>
+                <div className="text-xs bg-gray-50 p-2 rounded">
+                  <div>Auth: {auth ? '✅ Connected' : '❌ Not Available'}</div>
+                  <div>Firestore: {firestore ? '✅ Connected' : '❌ Not Available'}</div>
+                  <div>Current User: {auth?.currentUser?.email || 'None'}</div>
+                </div>
+                
+                <div className="text-sm font-medium text-gray-700 mt-4">
+                  Recent Debug Logs:
+                </div>
+                <div className="space-y-1">
+                  {debugInfo.length === 0 ? (
+                    <div className="text-xs text-gray-500 italic">No debug logs yet</div>
+                  ) : (
+                    debugInfo.map((log, index) => (
+                      <div key={index} className="text-xs bg-gray-50 p-2 rounded">
+                        <div className="font-mono text-gray-600">
+                          {new Date(log.timestamp).toLocaleTimeString()}
+                        </div>
+                        <div className="font-medium">{log.message}</div>
+                        {log.data && (
+                          <pre className="mt-1 text-xs text-gray-600 whitespace-pre-wrap overflow-x-auto">
+                            {log.data}
+                          </pre>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDebugInfo([])}
+                  className="w-full mt-2"
+                >
+                  Clear Debug Logs
+                </Button>
+              </div>
+            </CardContent>
+          )}
         </Card>
       </div>
     </main>
