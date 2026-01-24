@@ -147,14 +147,9 @@ export default function AdminLoginPage() {
         description: 'Redirecting to admin panel...',
       });
 
-      addDebugLog('Starting redirect timer');
-      // Manual redirect after successful login
-      setTimeout(() => {
-        if (typeof window !== 'undefined') {
-          addDebugLog('Executing redirect to /admin');
-          window.location.href = '/admin';
-        }
-      }, 1000);
+      addDebugLog('Login successful - admin layout will handle redirect');
+      // Let the admin layout handle the redirect automatically
+      setIsLoading(false);
 
     } catch (err) {
       const authError = err as AuthError;

@@ -433,7 +433,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         console.log('🚫 Redirecting to login - user not recognized as admin');
         router.replace('/admin/login');
       } else if (isAdmin && isLoginPage) {
-        console.log('✅ Admin detected on login page - should redirect to dashboard');
+        console.log('✅ Admin detected on login page - redirecting to dashboard');
+        router.replace('/admin');
       }
     }
   }, [loading, isAdmin, isLoginPage, router, user?.email]);
