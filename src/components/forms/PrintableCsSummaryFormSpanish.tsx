@@ -2,7 +2,12 @@
 
 import React from 'react';
 import { PrintableFormLayout } from './PrintableFormLayout';
-import { PrintableField, PrintableFormSection, PrintableFormRow, PrintableSignatureBlock } from './PrintableFormFields';
+import {
+  PrintableField,
+  PrintableFormSection,
+  PrintableFormRow,
+  PrintableSignatureBlock
+} from './PrintableFormFields';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 
 interface PrintableCsSummaryFormSpanishProps {
