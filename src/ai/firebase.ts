@@ -13,40 +13,70 @@ import * as admin from 'firebase-admin';
 
 // Check if the app is already initialized to prevent errors.
 if (!admin.apps.length) {
-  // Check for service account JSON first (for local development)
-  const serviceAccountJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON || process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  
+  const serviceAccountJson =
+    process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON || process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  let initialized = false;
+
   if (serviceAccountJson) {
-    // Use service account JSON (local development or explicit credentials)
     try {
       const serviceAccount = JSON.parse(serviceAccountJson);
-      console.log('[firebase.ts] Initializing Firebase Admin SDK with service account JSON...');
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-      });
-      console.log('[firebase.ts] ✅ Firebase Admin SDK initialized successfully with service account.');
+      const hasRequiredFields =
+        !!serviceAccount?.project_id && !!serviceAccount?.client_email && !!serviceAccount?.private_key;
+
+      if (!hasRequiredFields) {
+        console.warn(
+          '[firebase.ts] Service account JSON missing required fields. Falling back to ADC.'
+        );
+      } else {
+        console.log('[firebase.ts] Initializing Firebase Admin SDK with service account JSON...');
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+        });
+        initialized = true;
+        console.log('[firebase.ts] ✅ Firebase Admin SDK initialized successfully with service account.');
+      }
     } catch (jsonError: any) {
       console.error(
-        '[firebase.ts] CRITICAL: Failed to parse service account JSON or initialize with it.',
+        '[firebase.ts] Failed to parse service account JSON. Falling back to ADC.',
         jsonError
       );
-      throw new Error(`Firebase Admin SDK failed to initialize: ${jsonError.message}`);
     }
-  } else {
-    // Try Application Default Credentials (for Google Cloud environments)
+  }
+
+  if (!initialized) {
     try {
       console.log('[firebase.ts] Attempting to initialize Firebase Admin SDK with ADC...');
       admin.initializeApp();
+      initialized = true;
       console.log('[firebase.ts] ✅ Firebase Admin SDK initialized successfully with ADC.');
     } catch (adcError: any) {
       console.error(
-        '[firebase.ts] CRITICAL: Firebase Admin SDK initialization failed.',
-        'ADC failed and no service account JSON provided.',
-        'Error:', adcError.message
+        '[firebase.ts] Firebase Admin SDK initialization failed via ADC.',
+        'Error:',
+        adcError?.message || adcError
       );
-      throw new Error(
-        `Firebase Admin SDK failed to initialize. Please set GOOGLE_APPLICATION_CREDENTIALS_JSON or FIREBASE_SERVICE_ACCOUNT_KEY environment variable with your service account JSON.`
-      );
+
+      if (process.env.NODE_ENV === 'development') {
+        try {
+          const projectId =
+            process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'studio-2881432245-f1d94';
+          admin.initializeApp({
+            projectId,
+            storageBucket: 'studio-2881432245-f1d94.firebasestorage.app',
+          });
+          initialized = true;
+          console.log('[firebase.ts] ✅ Firebase Admin SDK initialized in development fallback mode.');
+        } catch (fallbackError: any) {
+          console.error('[firebase.ts] Development fallback initialization failed.', fallbackError);
+          throw new Error(
+            `Firebase Admin SDK failed to initialize. Please provide valid service account JSON or ADC.`
+          );
+        }
+      } else {
+        throw new Error(
+          `Firebase Admin SDK failed to initialize. Please set GOOGLE_APPLICATION_CREDENTIALS_JSON or FIREBASE_SERVICE_ACCOUNT_KEY with your service account JSON.`
+        );
+      }
     }
   }
 } else {

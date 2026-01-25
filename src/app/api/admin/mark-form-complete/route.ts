@@ -1,22 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-
-// Initialize Firebase Admin
-if (!getApps().length) {
-  try {
-    initializeApp({
-      credential: cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-      }),
-    });
-  } catch (error) {
-    console.error('Firebase Admin initialization error:', error);
-  }
-}
+import admin, { adminDb } from '@/firebase-admin';
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,8 +12,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const db = getFirestore();
-    const appRef = db.collection('users').doc(userId).collection('applications').doc(applicationId);
+    const appRef = adminDb.collection('users').doc(userId).collection('applications').doc(applicationId);
     
     // Get the current application
     const appDoc = await appRef.get();
@@ -50,7 +32,7 @@ export async function POST(request: NextRequest) {
         return {
           ...form,
           status: 'Completed',
-          dateCompleted: Timestamp.now(),
+          dateCompleted: admin.firestore.Timestamp.now(),
           completedBy: adminName || 'Admin',
           fileName: form.fileName || 'Marked complete by admin'
         };
@@ -63,7 +45,7 @@ export async function POST(request: NextRequest) {
       updatedForms.push({
         name: formName,
         status: 'Completed',
-        dateCompleted: Timestamp.now(),
+        dateCompleted: admin.firestore.Timestamp.now(),
         completedBy: adminName || 'Admin',
         fileName: 'Marked complete by admin'
       });
@@ -72,7 +54,7 @@ export async function POST(request: NextRequest) {
     // Update the application
     await appRef.update({
       forms: updatedForms,
-      lastUpdated: Timestamp.now()
+      lastUpdated: admin.firestore.Timestamp.now()
     });
 
     return NextResponse.json({
