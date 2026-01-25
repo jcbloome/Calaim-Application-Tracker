@@ -34,6 +34,9 @@
 - ✅ **UI/UX**: Restored full Spanish printable CS Summary layout
 - ✅ **UI/UX**: Added draft save/load for Caspio field mappings
 - ✅ **Bug Fixed**: Avoided Spanish printable build errors by rendering without JSX
+- ✅ **Security**: Prevented admin redirect to admin login on user pages
+- ✅ **UI/UX**: Removed CS Summary signature blocks and extended line fields
+- ✅ **UI/UX**: Removed expected room and board portion question from CS Summary
 - ✅ **UI/UX**: Removed Room & Board Commitment standalone form from pathways and printables
 - ✅ **UI/UX**: Restored Room & Board Commitment as a standalone form with NMOHC details
 - ✅ **Security**: Centralized hardcoded admin allowlist in shared helper

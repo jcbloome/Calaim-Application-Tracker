@@ -94,7 +94,7 @@ export function PrintableField({
 
       default:
         return (
-          <div className="w-full border-b-2 border-gray-400 print:border-black h-8 flex items-end pb-1">
+          <div className="w-full border-b-2 border-gray-400 print:border-black h-10 flex items-end pb-2">
             {placeholder && (
               <span className="text-xs text-gray-400 italic print:text-gray-600">
                 {placeholder}

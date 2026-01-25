@@ -38,7 +38,7 @@ const steps = [
       'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty', 
       'onALWWaitlist', 'hasPrefRCFE', 
       'rcfeName', 'rcfeAddress', 'rcfeAdminName', 'rcfeAdminPhone', 'rcfeAdminEmail',
-      'monthlyIncome', 'expectedRoomAndBoard', 'ackRoomAndBoard'
+      'monthlyIncome', 'ackRoomAndBoard'
   ]},
 ];
 

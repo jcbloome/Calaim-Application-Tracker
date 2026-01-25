@@ -78,7 +78,6 @@ export type Application = {
   ispFacilityName?: string;
   onALWWaitlist?: 'Yes' | 'No' | 'Unknown';
   monthlyIncome?: string;
-  expectedRoomAndBoard?: string;
   ackRoomAndBoard?: boolean;
   hasPrefRCFE?: 'Yes' | 'No';
   rcfeName?: string | null;

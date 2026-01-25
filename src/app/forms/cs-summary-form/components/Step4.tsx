@@ -212,28 +212,6 @@ export default function Step4() {
             />
             <FormField
               control={control}
-              name="expectedRoomAndBoard"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>What is the member's expected "Room and Board" portion? (This amount will vary if the member receives the NMOHC payment, see above.) <span className="text-destructive">*</span></FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">$</span>
-                      <Input
-                        {...field}
-                        value={field.value ?? ''}
-                        type="number"
-                        className="pl-7"
-                      />
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          
-            <FormField
-              control={control}
               name="ackRoomAndBoard"
               render={({ field }) => (
                 <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">

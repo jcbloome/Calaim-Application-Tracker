@@ -5,8 +5,7 @@ import { PrintableFormLayout } from './PrintableFormLayout';
 import {
   PrintableField,
   PrintableFormSection,
-  PrintableFormRow,
-  PrintableSignatureBlock
+  PrintableFormRow
 } from './PrintableFormFields';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 
@@ -154,13 +153,6 @@ export function PrintableCsSummaryFormSpanish({
       }),
       buildField({ label: 'Ingresos Mensuales', value: data.monthlyIncome, placeholder: '$0.00', required: true, width: 'half' }),
       buildField({
-        label: 'Porción Esperada de "Room and Board" (Esta cantidad variará si el miembro recibe el pago de NMOHC, ver arriba.)',
-        value: data.expectedRoomAndBoard,
-        placeholder: '$0.00',
-        required: true,
-        width: 'half'
-      }),
-      buildField({
         label: 'Reconoce Responsabilidad de Alojamiento y Comida',
         value: data.ackRoomAndBoard ? 'Sí' : 'No',
         type: 'radio',
@@ -183,18 +175,6 @@ export function PrintableCsSummaryFormSpanish({
       buildField({ label: 'Teléfono del Administrador', value: data.rcfeAdminPhone, width: 'half' }),
       buildField({ label: 'Correo Electrónico del Administrador', value: data.rcfeAdminEmail, width: 'full' }),
     ]),
-    React.createElement('div', { className: 'mt-12 print:mt-16 space-y-8' }, [
-      React.createElement(PrintableSignatureBlock, {
-        key: 'member-signature',
-        title: 'Firma del Miembro/Representante Legal',
-        subtitle: 'Certifico que la información proporcionada en este formulario es precisa y completa según mi conocimiento.'
-      }),
-      React.createElement(PrintableSignatureBlock, {
-        key: 'referrer-signature',
-        title: 'Firma del Referente/Personal',
-        subtitle: 'He revisado esta información con el miembro/representante y confirmo su precisión.'
-      })
-    ]),
     React.createElement('div', {
       className: 'mt-12 print:mt-16 p-4 print:p-6 bg-gray-50 print:bg-white border print:border-black text-center'
     }, [
@@ -208,15 +188,15 @@ export function PrintableCsSummaryFormSpanish({
       }, [
         React.createElement('div', { key: 'office-date' }, [
           React.createElement('label', { className: 'block text-sm font-medium mb-2' }, 'Fecha Recibida:'),
-          React.createElement('div', { className: 'h-8 border-b border-gray-300 print:border-black' })
+          React.createElement('div', { className: 'h-10 border-b-2 border-gray-300 print:border-black' })
         ]),
         React.createElement('div', { key: 'office-processed' }, [
           React.createElement('label', { className: 'block text-sm font-medium mb-2' }, 'Procesado Por:'),
-          React.createElement('div', { className: 'h-8 border-b border-gray-300 print:border-black' })
+          React.createElement('div', { className: 'h-10 border-b-2 border-gray-300 print:border-black' })
         ]),
         React.createElement('div', { key: 'office-id' }, [
           React.createElement('label', { className: 'block text-sm font-medium mb-2' }, 'ID de Aplicación:'),
-          React.createElement('div', { className: 'h-8 border-b border-gray-300 print:border-black' })
+          React.createElement('div', { className: 'h-10 border-b-2 border-gray-300 print:border-black' })
         ])
       ])
     ])

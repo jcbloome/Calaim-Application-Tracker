@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { PrintableFormLayout } from './PrintableFormLayout';
-import { PrintableField, PrintableFormSection, PrintableFormRow, PrintableSignatureBlock } from './PrintableFormFields';
+import { PrintableField, PrintableFormSection, PrintableFormRow } from './PrintableFormFields';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 
 interface PrintableCsSummaryFormProps {
@@ -400,14 +400,6 @@ export function PrintableCsSummaryForm({
         />
 
         <PrintableField
-          label="Expected Room and Board Portion (This amount will vary if the member receives the NMOHC payment, see above.)"
-          value={data.expectedRoomAndBoard}
-          placeholder="$0.00"
-          required
-          width="half"
-        />
-        
-        <PrintableField
           label="Acknowledges Room & Board Responsibility"
           value={data.ackRoomAndBoard ? 'Yes' : 'No'}
           type="radio"
@@ -457,19 +449,6 @@ export function PrintableCsSummaryForm({
         />
       </PrintableFormSection>
 
-      {/* Signature Blocks */}
-      <div className="mt-12 print:mt-16 space-y-8">
-        <PrintableSignatureBlock
-          title="Member/Legal Representative Signature"
-          subtitle="I certify that the information provided in this form is accurate and complete to the best of my knowledge."
-        />
-        
-        <PrintableSignatureBlock
-          title="Referrer/Staff Signature"
-          subtitle="I have reviewed this information with the member/representative and confirm its accuracy."
-        />
-      </div>
-
       {/* Form Footer */}
       <div className="mt-12 print:mt-16 p-4 print:p-6 bg-gray-50 print:bg-white border print:border-black text-center">
         <p className="text-sm print:text-xs text-gray-600 print:text-black mb-2">
@@ -478,15 +457,15 @@ export function PrintableCsSummaryForm({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 print:gap-6 text-left">
           <div>
             <label className="block text-sm font-medium mb-2">Date Received:</label>
-            <div className="h-8 border-b border-gray-300 print:border-black"></div>
+            <div className="h-10 border-b-2 border-gray-300 print:border-black"></div>
           </div>
           <div>
             <label className="block text-sm font-medium mb-2">Processed By:</label>
-            <div className="h-8 border-b border-gray-300 print:border-black"></div>
+            <div className="h-10 border-b-2 border-gray-300 print:border-black"></div>
           </div>
           <div>
             <label className="block text-sm font-medium mb-2">Application ID:</label>
-            <div className="h-8 border-b border-gray-300 print:border-black"></div>
+            <div className="h-10 border-b-2 border-gray-300 print:border-black"></div>
           </div>
         </div>
       </div>

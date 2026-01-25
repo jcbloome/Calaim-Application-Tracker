@@ -167,8 +167,8 @@ export function PrintableFormLayout({
               <strong>Connect CalAIM Community Support Program</strong>
             </p>
             <p>
-              For questions or assistance, please contact your assigned case worker or 
-              visit our website for more information.
+              For questions or assistance, contact Connections Care Home Consultants at
+              800-330-5993 or email us at calaim@carehomefinders.com.
             </p>
             <div className="mt-4 pt-4 border-t print:border-t print:border-gray-300">
               <p className="text-xs print:text-xs">

@@ -56,25 +56,20 @@ export function useSessionIsolation(currentSessionType: SessionType) {
       // If user is logged in and trying to access user side, check if they're an admin
       if (auth.currentUser && isUserPath) {
         const isAdmin = await checkIfUserIsAdmin(auth.currentUser.email || '', auth.currentUser.uid);
-        
+
         if (isAdmin) {
-          console.log('Session isolation: Admin user attempting to access user side, redirecting to admin');
-          
-          // Clear session data and redirect to admin
+          // Clear session data and sign out without forcing admin login.
           localStorage.removeItem('calaim_session_type');
           localStorage.removeItem('calaim_admin_context');
           sessionStorage.clear();
-          
+
           await auth.signOut();
-          router.push('/admin/login');
           return;
         }
       }
 
       // If switching between admin and user sides, force logout
       if (storedSessionType && storedSessionType !== newSessionType && auth.currentUser) {
-        console.log(`Session isolation: Switching from ${storedSessionType} to ${newSessionType}, signing out`);
-        
         // Clear all session data
         localStorage.removeItem('calaim_session_type');
         localStorage.removeItem('calaim_admin_context');
