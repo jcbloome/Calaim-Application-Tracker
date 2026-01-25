@@ -11,10 +11,10 @@ interface PrintableCsSummaryFormSpanishProps {
   showPrintButton?: boolean;
 }
 
-export function PrintableCsSummaryFormSpanish({ 
-  data = {}, 
+export function PrintableCsSummaryFormSpanish({
+  data = {},
   applicationId,
-  showPrintButton = true 
+  showPrintButton = true,
 }: PrintableCsSummaryFormSpanishProps) {
   return (
     <PrintableFormLayout
