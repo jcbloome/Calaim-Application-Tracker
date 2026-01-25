@@ -31,6 +31,7 @@
 - ✅ **UI/UX**: Styled Acronym Glossary trigger for program info pages
 - ✅ **UI/UX**: Moved Acronym Glossary link into first CS Summary card
 - ✅ **UI/UX**: Placed Acronym Glossary link above first card on all CS Summary steps
+- ✅ **UI/UX**: Restored full Spanish printable CS Summary layout
 - ✅ **UI/UX**: Removed Room & Board Commitment standalone form from pathways and printables
 - ✅ **UI/UX**: Restored Room & Board Commitment as a standalone form with NMOHC details
 - ✅ **Security**: Centralized hardcoded admin allowlist in shared helper
