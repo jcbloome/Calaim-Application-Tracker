@@ -239,6 +239,9 @@ export default function CaspioTestPage() {
   const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
   const { toast } = useToast();
   const [lockedMappings, setLockedMappings] = useState<{[key: string]: string} | null>(null);
+  const [hasDraftMappings, setHasDraftMappings] = useState(false);
+  const draftKey = 'calaim_cs_caspio_mapping_draft';
+  const lockedKey = 'calaim_cs_caspio_mapping';
   
   // Use new Caspio integration module
   const { 
@@ -255,18 +258,42 @@ export default function CaspioTestPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      const stored = localStorage.getItem('calaim_cs_caspio_mapping');
+      const stored = localStorage.getItem(lockedKey);
+      let lockedLoaded = false;
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed && typeof parsed === 'object') {
           setLockedMappings(parsed);
           setFieldMappings(parsed);
+          lockedLoaded = true;
+        }
+      }
+      if (!lockedLoaded) {
+        const draftStored = localStorage.getItem(draftKey);
+        if (draftStored) {
+          const parsedDraft = JSON.parse(draftStored);
+          if (parsedDraft && typeof parsedDraft === 'object') {
+            setFieldMappings(parsedDraft);
+            setHasDraftMappings(Object.keys(parsedDraft).length > 0);
+          }
         }
       }
     } catch (error) {
       console.error('Failed to load saved field mappings:', error);
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (lockedMappings) return;
+    if (Object.keys(fieldMappings).length === 0) {
+      localStorage.removeItem(draftKey);
+      setHasDraftMappings(false);
+      return;
+    }
+    localStorage.setItem(draftKey, JSON.stringify(fieldMappings));
+    setHasDraftMappings(true);
+  }, [fieldMappings, lockedMappings]);
 
   const refreshCaspioFields = async () => {
     // Rate limiting: prevent calls within 5 seconds of each other
@@ -956,7 +983,9 @@ export default function CaspioTestPage() {
                           return;
                         }
                         setLockedMappings(fieldMappings);
-                        localStorage.setItem('calaim_cs_caspio_mapping', JSON.stringify(fieldMappings));
+                        localStorage.setItem(lockedKey, JSON.stringify(fieldMappings));
+                        localStorage.removeItem(draftKey);
+                        setHasDraftMappings(false);
                         toast({
                           title: "Mappings Locked",
                           description: "Field mapping saved and ready for export.",
@@ -972,7 +1001,7 @@ export default function CaspioTestPage() {
                       size="sm"
                       onClick={() => {
                         setLockedMappings(null);
-                        localStorage.removeItem('calaim_cs_caspio_mapping');
+                        localStorage.removeItem(lockedKey);
                         toast({
                           title: "Mappings Unlocked",
                           description: "You can edit mappings again.",
@@ -981,6 +1010,65 @@ export default function CaspioTestPage() {
                       disabled={!lockedMappings}
                     >
                       Unlock
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (Object.keys(fieldMappings).length === 0) {
+                          toast({
+                            variant: "destructive",
+                            title: "No Mappings to Save",
+                            description: "Map at least one field before saving.",
+                          });
+                          return;
+                        }
+                        localStorage.setItem(draftKey, JSON.stringify(fieldMappings));
+                        setHasDraftMappings(true);
+                        toast({
+                          title: "Progress Saved",
+                          description: "Draft mappings saved. You can return later.",
+                        });
+                      }}
+                      disabled={!!lockedMappings}
+                    >
+                      Save Progress
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const draftStored = localStorage.getItem(draftKey);
+                        if (!draftStored) {
+                          toast({
+                            variant: "destructive",
+                            title: "No Saved Draft",
+                            description: "There is no saved mapping draft to load.",
+                          });
+                          return;
+                        }
+                        try {
+                          const parsedDraft = JSON.parse(draftStored);
+                          if (parsedDraft && typeof parsedDraft === 'object') {
+                            setFieldMappings(parsedDraft);
+                            setHasDraftMappings(Object.keys(parsedDraft).length > 0);
+                            toast({
+                              title: "Draft Loaded",
+                              description: "Saved mapping draft restored.",
+                            });
+                          }
+                        } catch (error: any) {
+                          console.error('Failed to load mapping draft:', error);
+                          toast({
+                            variant: "destructive",
+                            title: "Draft Load Failed",
+                            description: error.message || "Could not load saved draft.",
+                          });
+                        }
+                      }}
+                      disabled={!hasDraftMappings || !!lockedMappings}
+                    >
+                      Load Draft
                     </Button>
                     <Button
                       size="sm"
