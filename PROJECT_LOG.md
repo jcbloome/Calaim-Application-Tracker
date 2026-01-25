@@ -40,6 +40,8 @@
 - ✅ **UI/UX**: Removed Room & Board Commitment standalone form from pathways and printables
 - ✅ **UI/UX**: Restored Room & Board Commitment as a standalone form with NMOHC details
 - ✅ **Security**: Centralized hardcoded admin allowlist in shared helper
+- ✅ **Bug Fixed**: Restored Room & Board Commitment page and added to printable packages
+- ✅ **UI/UX**: Added online Room & Board Commitment form with e-signature
 
 ### **January 20, 2026 - Project Foundation**
 - ✅ **Fixed SSR Issues**: Added client-side guards to all browser API calls (window, localStorage, Notification)
@@ -131,10 +133,10 @@
 ---
 
 ## 📊 **Feature Counter Status**
-- **Features Since Last Audit**: 15/8 ⚠️ **AUDIT DUE**
+- **Features Since Last Audit**: 17/8 ⚠️ **AUDIT DUE**
 - **Last Audit**: January 20, 2026 (Initial Setup)
 - **Next Audit Due**: NOW - 8 features completed
-- **Recent Features**: Centralized Task Module, Workflow Automation Engine, Smart Task Hub, Eligibility Check System, Enhanced Eligibility System, Universal Eligibility Verification, SW Claims System, SW User Management
+- **Recent Features**: Centralized Task Module, Workflow Automation Engine, Smart Task Hub, Eligibility Check System, Enhanced Eligibility System, Universal Eligibility Verification, SW Claims System, SW User Management, Room & Board Commitment printables, Room & Board Commitment online form
 
 ---
 

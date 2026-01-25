@@ -4,6 +4,7 @@ import React, { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Printer, Download, Loader2 } from 'lucide-react';
 import { PrintableCsSummaryForm } from './PrintableCsSummaryForm';
+import { PrintableRoomBoardObligationForm } from './PrintableRoomBoardObligationForm';
 import { PrintableWaiversForm } from './PrintableWaiversForm';
 import { PrintableDeclarationForm } from './PrintableDeclarationForm';
 import { PrintableGlossaryForm } from './PrintableGlossaryForm';
@@ -124,6 +125,20 @@ export function PrintableFullPackage({
       {/* CS Summary Form */}
       <PrintableCsSummaryForm 
         data={applicationData}
+        applicationId={applicationId}
+        showPrintButton={false}
+      />
+
+      {/* Page Break */}
+      <div className="page-break print:page-break-before"></div>
+
+      {/* Room and Board Commitment */}
+      <PrintableRoomBoardObligationForm
+        memberName={applicationData.memberFirstName && applicationData.memberLastName
+          ? `${applicationData.memberFirstName} ${applicationData.memberLastName}`
+          : ''}
+        memberMrn={applicationData.memberMrn || ''}
+        memberDob={applicationData.memberDob || ''}
         applicationId={applicationId}
         showPrintButton={false}
       />

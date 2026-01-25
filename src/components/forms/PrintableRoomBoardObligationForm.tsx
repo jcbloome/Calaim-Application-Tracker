@@ -35,39 +35,37 @@ export function PrintableRoomBoardObligationForm({
           <PrintableField label="Date of Birth" value={memberDob} type="date" width="full" />
         </div>
 
-        {/* Room and Board Explanation */}
+        {/* Room and Board Payment Summary */}
         <div className="p-3 print:p-4 border print:border-black">
           <h3 className="text-base font-semibold text-gray-900 print:text-black mb-2">
-            Room and Board Overview
+            Room and Board Payment Summary
           </h3>
           <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
             <p>
-              <strong>Important:</strong> As a CalAIM Community Support participant, you are responsible for paying 
-              the "room and board" portion of your assisted living costs. The Managed Care Plan (MCP) will pay 
-              for the "assisted living services" portion.
+              The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible
+              for paying the RCFE the "assisted living" portion.
             </p>
             <p>
-              <strong>Room and Board</strong> includes: housing, meals, utilities, and basic facility services.
+              For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped
+              up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the
+              $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at least
+              $1,447.00 to the RCFE. Members who receive more than this amount can pay more for "room and board" for a
+              private room or to open up RCFEs in more expensive areas.
             </p>
-            <p><strong>Assisted Living Services</strong> include personal care, meds, and covered health services.</p>
-          </div>
-        </div>
-
-        {/* NMOHC Information */}
-        <div className="p-3 print:p-4 border print:border-black">
-          <h3 className="text-base font-semibold text-gray-900 print:text-black mb-2">
-            NMOHC Summary
-          </h3>
-          <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
             <p>
-              NMOHC boosts monthly SSI for people living in licensed assisted living homes (RCFE). The rate moves
-              from "Independent Living" to the "NMOHC" rate.
+              Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be
+              flexible depending on the RCFE and the assessed tiered level.
             </p>
-            <ul className="list-disc list-inside space-y-1 ml-4">
-              <li>Income limit (2026): less than $1,626.07/month.</li>
-              <li>Asset limits reinstated: $2,000 individual ($3,000 couple).</li>
-              <li>Call SSA (1-800-772-1213) to confirm the new payment.</li>
-            </ul>
+            <p>
+              Members who cannot pay any room and board portion usually are not eligible for the CS since program
+              requirements mandate a "room and board" payment from the member (or their family).
+            </p>
+            <p>
+              Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not
+              participate in CalAIM. Families looking to place members in expensive real estate areas should have the
+              realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting
+              CalAIM members, RCFEs will need to know the "room and board" payment.
+            </p>
           </div>
         </div>
 
@@ -76,18 +74,7 @@ export function PrintableRoomBoardObligationForm({
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-                My current monthly Social Security income is: *
-              </label>
-              <div className="flex items-center space-x-2">
-                <span className="text-lg font-semibold">$</span>
-                <div className="flex-1 h-12 border-b-2 border-gray-400 print:border-black"></div>
-                <span className="text-sm text-gray-600 print:text-black">per month</span>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-                Expected "room and board" payment (This amount will vary if the member receives the NMOHC payment): *
+                Member's current monthly Social Security income is: *
               </label>
               <div className="flex items-center space-x-2">
                 <span className="text-lg font-semibold">$</span>
@@ -98,7 +85,7 @@ export function PrintableRoomBoardObligationForm({
 
             <div className="mt-3 p-3 print:p-4 border print:border-black bg-gray-50 print:bg-white">
               <p className="text-sm print:text-xs text-gray-700 print:text-black">
-                <strong>Note:</strong> Proof of income (3 months of bank statements showing Social Security income OR Social Security annual award letter) will need to be uploaded with your application.
+                <strong>Note:</strong> Please note that proof of income (e.g, Social Security award letter or 3 month's of bank statements showing Social Security income) will need to be submitted as part of this application package.
               </p>
             </div>
           </div>
@@ -116,6 +103,13 @@ export function PrintableRoomBoardObligationForm({
               <li>SSI/SSP + NMOHC may increase the payment toward room and board.</li>
               <li>If I cannot pay any room and board, I may be ineligible.</li>
             </ul>
+            <div className="flex items-start gap-2 pt-2">
+              <div className="h-4 w-4 border border-gray-400 print:border-black mt-0.5" />
+              <p>
+                If Member is eligible for NMOHC he/she agrees to pay the required NMOHC portion (while retaining the
+                personal need expenses).
+              </p>
+            </div>
           </div>
         </div>
 
@@ -125,7 +119,10 @@ export function PrintableRoomBoardObligationForm({
             Acknowledgment and Signature
           </h3>
           <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
-            <p>By signing below, I acknowledge this Room and Board Commitment.</p>
+            <p>
+              By signing below, I acknowledge this Room and Board Commitment and agree that, if eligible for NMOHC, I will
+              pay the NMOHC supplement minus personal need expenses to the RCFE/ARF.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 print:gap-8 mt-6">
@@ -151,12 +148,6 @@ export function PrintableRoomBoardObligationForm({
             <div className="h-12 border-b-2 border-gray-300 print:border-black"></div>
           </div>
 
-        </div>
-
-        {/* Footer */}
-        <div className="mt-8 text-center text-xs text-gray-500 print:text-gray-700">
-          <p>For questions about CalAIM Community Supports, please contact Connections at (800) 993-1778.</p>
-          <p>More information available at <a href="https://www.connections.com/calaim" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-blue-800 hover:underline">www.connections.com/calaim</a></p>
         </div>
       </div>
     </PrintableFormLayout>

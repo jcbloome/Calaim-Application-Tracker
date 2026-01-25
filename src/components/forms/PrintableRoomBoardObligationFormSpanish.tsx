@@ -35,39 +35,37 @@ export function PrintableRoomBoardObligationFormSpanish({
           <PrintableField label="Fecha de Nacimiento" value={memberDob} type="date" width="full" />
         </div>
 
-        {/* Room and Board Explanation */}
+        {/* Room and Board Payment Summary */}
         <div className="p-3 print:p-4 border print:border-black">
           <h3 className="text-base font-semibold text-gray-900 print:text-black mb-2">
-            Resumen de Alojamiento y Comida
+            Resumen de Pago de Alojamiento y Comida
           </h3>
           <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
             <p>
-              <strong>Importante:</strong> Como participante del Apoyo Comunitario CalAIM, usted es responsable de pagar 
-              la porción de "alojamiento y comida" de sus costos de vida asistida. El Plan de Atención Administrada (MCP) pagará 
-              por la porción de "servicios de vida asistida".
+              El miembro del MCP es responsable de pagar al RCFE la porción de "alojamiento y comida" y el MCP es
+              responsable de pagar al RCFE la porción de "servicios de vida asistida".
             </p>
             <p>
-              <strong>Alojamiento y Comida</strong> incluye: vivienda, comidas, servicios públicos y servicios básicos de la instalación.
+              Para miembros elegibles para SSI/SSP y el pago 2026 de Non-Medical Out of Home Care (NMOHC), el SSI/SSP sube
+              a $1,626.07. El miembro normalmente conserva $182 para gastos personales y el RCFE recibe el saldo de
+              $1,444.07 como pago por "alojamiento y comida". Además, los miembros elegibles para NMOHC pagarán al menos
+              $1,447.00 al RCFE. Los miembros que reciben más pueden pagar más por "alojamiento y comida" para un cuarto
+              privado o para abrir opciones en áreas más costosas.
             </p>
-            <p><strong>Servicios de Vida Asistida</strong> incluyen cuidado personal, medicamentos y servicios cubiertos.</p>
-          </div>
-        </div>
-
-        {/* NMOHC Information */}
-        <div className="p-3 print:p-4 border print:border-black">
-          <h3 className="text-base font-semibold text-gray-900 print:text-black mb-2">
-            Resumen de NMOHC
-          </h3>
-          <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
             <p>
-              NMOHC aumenta el SSI cuando la persona vive en un RCFE con licencia. La tarifa cambia de
-              "Vida Independiente" a "NMOHC".
+              Los miembros no elegibles para NMOHC aún tendrán una obligación de "alojamiento y comida", pero el monto
+              podría ser flexible según el RCFE y el nivel escalonado evaluado.
             </p>
-            <ul className="list-disc list-inside space-y-1 ml-4">
-              <li>Ingresos (2026): menos de $1,626.07/mes.</li>
-              <li>Activos: $2,000 individual ($3,000 pareja).</li>
-              <li>Llame a SSA (1-800-772-1213) para confirmar el nuevo pago.</li>
-            </ul>
+            <p>
+              Los miembros que no pueden pagar ninguna porción de alojamiento y comida generalmente no son elegibles para
+              el CS, ya que los requisitos del programa exigen un pago de "alojamiento y comida" del miembro (o su familia).
+            </p>
+            <p>
+              Trabajar con CalAIM es a discreción de los RCFEs. Los RCFEs, especialmente en áreas más costosas, podrían no
+              participar en CalAIM. Las familias que buscan colocar a miembros en áreas de bienes raíces costosos deben
+              tener la expectativa realista de que los RCFEs de CalAIM podrían estar ubicados en áreas más asequibles. Antes
+              de aceptar miembros de CalAIM, los RCFEs necesitarán conocer el pago de "alojamiento y comida".
+            </p>
           </div>
         </div>
 
@@ -76,18 +74,7 @@ export function PrintableRoomBoardObligationFormSpanish({
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-                Mis ingresos mensuales actuales del Seguro Social son: *
-              </label>
-              <div className="flex items-center space-x-2">
-                <span className="text-lg font-semibold">$</span>
-                <div className="flex-1 h-12 border-b-2 border-gray-400 print:border-black"></div>
-                <span className="text-sm text-gray-600 print:text-black">por mes</span>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-                Pago esperado de "alojamiento y comida" (Esta cantidad variará si el miembro recibe el pago de NMOHC): *
+                Los ingresos mensuales actuales del Seguro Social del miembro son: *
               </label>
               <div className="flex items-center space-x-2">
                 <span className="text-lg font-semibold">$</span>
@@ -98,7 +85,7 @@ export function PrintableRoomBoardObligationFormSpanish({
 
             <div className="mt-3 p-3 print:p-4 border print:border-black bg-gray-50 print:bg-white">
               <p className="text-sm print:text-xs text-gray-700 print:text-black">
-                <strong>Nota:</strong> Comprobante de ingresos (3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social O carta anual de adjudicación del Seguro Social) deberá ser cargado con su solicitud.
+                <strong>Nota:</strong> Tenga en cuenta que se deberá presentar comprobante de ingresos (por ejemplo, carta de adjudicación del Seguro Social o 3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social) como parte de este paquete de solicitud.
               </p>
             </div>
           </div>
@@ -116,6 +103,12 @@ export function PrintableRoomBoardObligationFormSpanish({
               <li>SSI/SSP + NMOHC puede aumentar el pago a alojamiento y comida.</li>
               <li>Si no puedo pagar, podría no ser elegible.</li>
             </ul>
+            <div className="flex items-start gap-2 pt-2">
+              <div className="h-4 w-4 border border-gray-400 print:border-black mt-0.5" />
+              <p>
+                Si el miembro es elegible para NMOHC, él/ella acepta pagar la porción requerida de NMOHC (mientras conserva los gastos personales).
+              </p>
+            </div>
           </div>
         </div>
 
@@ -125,7 +118,10 @@ export function PrintableRoomBoardObligationFormSpanish({
             Reconocimiento y Firma
           </h3>
           <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
-            <p>Al firmar abajo, reconozco este Compromiso de Alojamiento y Comida.</p>
+            <p>
+              Al firmar abajo, reconozco este Compromiso de Alojamiento y Comida y acepto que, si soy elegible para NMOHC,
+              pagaré el suplemento de NMOHC menos los gastos personales al RCFE/ARF.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 print:gap-8 mt-6">
@@ -150,12 +146,6 @@ export function PrintableRoomBoardObligationFormSpanish({
             </label>
             <div className="h-12 border-b-2 border-gray-300 print:border-black"></div>
           </div>
-        </div>
-
-        {/* Footer */}
-        <div className="mt-8 text-center text-xs text-gray-500 print:text-gray-700">
-          <p>Para preguntas sobre los Apoyos Comunitarios CalAIM, por favor contacte a Connections al (800) 993-1778.</p>
-          <p>Más información disponible en <a href="https://www.connections.com/calaim" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-blue-800 hover:underline">www.connections.com/calaim</a></p>
         </div>
       </div>
     </PrintableFormLayout>

@@ -4,6 +4,7 @@ import React, { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Printer, Download, Loader2 } from 'lucide-react';
 import { PrintableCsSummaryFormSpanish } from './PrintableCsSummaryFormSpanish';
+import { PrintableRoomBoardObligationFormSpanish } from './PrintableRoomBoardObligationFormSpanish';
 import { PrintableWaiversFormSpanish } from './PrintableWaiversFormSpanish';
 import { PrintableDeclarationFormSpanish } from './PrintableDeclarationFormSpanish';
 import { PrintableGlossaryFormSpanish } from './PrintableGlossaryFormSpanish';
@@ -124,6 +125,20 @@ export function PrintableFullPackageSpanish({
       {/* CS Summary Form */}
       <PrintableCsSummaryFormSpanish 
         data={applicationData}
+        applicationId={applicationId}
+        showPrintButton={false}
+      />
+
+      {/* Page Break */}
+      <div className="page-break print:page-break-before"></div>
+
+      {/* Room and Board Commitment */}
+      <PrintableRoomBoardObligationFormSpanish
+        memberName={applicationData.memberFirstName && applicationData.memberLastName
+          ? `${applicationData.memberFirstName} ${applicationData.memberLastName}`
+          : ''}
+        memberMrn={applicationData.memberMrn || ''}
+        memberDob={applicationData.memberDob || ''}
         applicationId={applicationId}
         showPrintButton={false}
       />

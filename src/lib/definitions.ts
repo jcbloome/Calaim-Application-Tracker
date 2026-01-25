@@ -107,6 +107,7 @@ export type FormStatus = {
   signerName?: string | null;
   signerRelationship?: string | null;
   ackRoomAndBoard?: boolean;
+  ackNmoHC?: boolean;
   ackHipaa?: boolean;
   ackLiability?: boolean;
   ackFoc?: boolean;
