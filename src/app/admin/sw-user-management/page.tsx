@@ -22,7 +22,8 @@ import {
   setDoc, 
   updateDoc, 
   deleteDoc,
-  serverTimestamp 
+  serverTimestamp,
+  writeBatch
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/firebase';
@@ -270,14 +271,48 @@ export default function SWUserManagementPage() {
         };
       });
       
-      setSyncedStaff(caspioWithStatus);
+      // Persist Caspio names to Firestore so they don't fall back to SW_ID
+      const batch = writeBatch(firestore);
+      let savedCount = 0;
+      caspioWithStatus.forEach((staff) => {
+        const staffSwId = String(staff.sw_id || '').trim();
+        if (!staffSwId) return;
+        const docId = `sw_${staffSwId}`;
+        batch.set(
+          doc(firestore, 'syncedSocialWorkers', docId),
+          {
+            name: staff.name || `SW ${staffSwId}`,
+            email: staff.email || '',
+            role: staff.role || 'MSW',
+            sw_id: staffSwId,
+            phone: staff.phone || '',
+            department: staff.department || '',
+            assignedMemberCount: staff.assignedMemberCount ?? 0,
+            syncedAt: serverTimestamp(),
+            syncedBy: adminUser?.email || adminUser?.uid || 'system'
+          },
+          { merge: true }
+        );
+        savedCount += 1;
+      });
+      if (savedCount > 0) {
+        await batch.commit();
+      }
+
+      setSyncedStaff(
+        caspioWithStatus.map((staff) => ({
+          ...staff,
+          isInFirestore: staff.sw_id ? true : staff.isInFirestore,
+          needsSync: staff.sw_id ? false : staff.needsSync
+        }))
+      );
       
       const newCount = caspioWithStatus.filter(s => s.needsSync).length;
       const existingCount = caspioWithStatus.filter(s => s.isInFirestore).length;
       
       toast({
         title: 'Loaded from Caspio',
-        description: `Found ${caspioStaff.length} social workers. ${newCount} new, ${existingCount} already in Firestore.`
+        description: `Found ${caspioStaff.length} social workers. ${savedCount} name records saved to Firestore.`
       });
       
     } catch (error: any) {
