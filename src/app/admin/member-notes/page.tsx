@@ -538,17 +538,17 @@ export default function MemberNotesPage() {
               Member Search
             </CardTitle>
             <CardDescription>
-              Search for members to view their notes
+              Search by last name to view notes
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="search">Search CalAIM Members</Label>
+              <Label htmlFor="search">Search CalAIM Members (Last Name)</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="search"
-                  placeholder="Search CalAIM members by name, Client ID, or RCFE name..."
+                  placeholder="Type last name..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -560,7 +560,7 @@ export default function MemberNotesPage() {
               <p className="text-xs text-muted-foreground">
                 {searchTerm.trim() ? 
                   `Searching Caspio for "${searchTerm}"...` : 
-                  'Enter search terms to find CalAIM members from Caspio database'
+                  'Enter last name letters to find CalAIM members'
                 }
               </p>
             </div>

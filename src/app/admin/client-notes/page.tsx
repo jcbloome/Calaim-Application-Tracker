@@ -96,11 +96,10 @@ export default function ClientNotesPage() {
     }
   };
 
-  // Debounced autocomplete search with minimum character requirement
+  // Debounced autocomplete search by last name prefix
   useEffect(() => {
     if (!selectedClientId) {
-      // Require at least 2 characters to reduce API calls
-      if (clientSearch.trim().length >= 2) {
+      if (clientSearch.trim().length >= 1) {
         const timeoutId = setTimeout(() => {
           searchClientsByLastName(clientSearch.trim());
         }, 500); // 500ms debounce to reduce API calls
@@ -298,7 +297,7 @@ export default function ClientNotesPage() {
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            Type at least 2 characters of a last name to see matching clients (autocomplete)
+            Type the first letter(s) of a last name to see matching clients.
           </p>
 
           {/* Client Search Results */}

@@ -26,8 +26,9 @@ async function fetchCaspioMembers(search?: string, healthPlan?: string, status?:
     
     // Add search filters
     if (search) {
-      // Search in first name, last name, or Client_ID2 - using correct field names
-      queryParams.append('q.where', `Senior_First LIKE '%${search}%' OR Senior_Last LIKE '%${search}%' OR Client_ID2 LIKE '%${search}%'`);
+      // Search by last name prefix only
+      const escapedSearch = search.replace(/'/g, "''");
+      queryParams.append('q.where', `Senior_Last LIKE '${escapedSearch}%'`);
     }
     
     // Add health plan filter
