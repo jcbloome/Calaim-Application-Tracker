@@ -176,6 +176,11 @@ async function getCaspioAccessToken(): Promise<string> {
 function transformToCaspioFormat(firebaseData: any): CaspioApplication {
   const now = new Date().toISOString();
   
+  const rcfeAdminFullName = [firebaseData.rcfeAdminFirstName, firebaseData.rcfeAdminLastName]
+    .filter(Boolean)
+    .join(' ')
+    .trim() || firebaseData.rcfeAdminName || null;
+
   return {
     // Member Information
     MemberFirstName: firebaseData.memberFirstName || '',
@@ -252,10 +257,10 @@ function transformToCaspioFormat(firebaseData: any): CaspioApplication {
     ISPAddress: firebaseData.ispAddress || '',
     ISPFacilityName: firebaseData.ispFacilityName || '',
     OnALWWaitlist: firebaseData.onALWWaitlist || 'Unknown',
-    HasPrefRCFE: firebaseData.hasPrefRCFE || 'No',
+    Has_Selected_RCFE: firebaseData.hasPrefRCFE || 'No',
     RCFEName: firebaseData.rcfeName,
     RCFEAddress: firebaseData.rcfeAddress,
-    RCFEAdminName: firebaseData.rcfeAdminName,
+    RCFEAdminName: rcfeAdminFullName,
     RCFEAdminPhone: firebaseData.rcfeAdminPhone,
     RCFEAdminEmail: firebaseData.rcfeAdminEmail,
     

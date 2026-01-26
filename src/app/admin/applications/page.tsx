@@ -9,7 +9,7 @@ import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
 import { Button } from '@/components/ui/button';
-import { Filter, Trash2, List, FileCheck2, Database, AlertTriangle, Plus } from 'lucide-react';
+import { Filter, Trash2, Database, AlertTriangle, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -28,7 +28,6 @@ import { errorEmitter } from '@/firebase/error-emitter';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
-import { format } from 'date-fns';
 
 export default function AdminApplicationsPage() {
   const firestore = useFirestore();
@@ -151,50 +150,6 @@ export default function AdminApplicationsPage() {
     });
   }, [allApplications, healthPlanFilter, pathwayFilter, statusFilter, memberFilter]);
   
-  const activityLog = useMemo(() => {
-    if (!allApplications) return [];
-    
-    const allActivities = allApplications.flatMap((app, appIndex) => 
-        app.forms
-            ?.filter(form => form.status === 'Completed' && form.dateCompleted)
-            .map((form, formIndex) => {
-                // Create a more robust unique ID using multiple factors
-                // Handle both Firestore Timestamp objects and regular Date objects
-                let timestamp: number;
-                if (form.dateCompleted?.seconds) {
-                    // Firestore Timestamp object
-                    timestamp = form.dateCompleted.seconds;
-                } else if (form.dateCompleted?.getTime) {
-                    // Regular Date object
-                    timestamp = Math.floor(form.dateCompleted.getTime() / 1000);
-                } else {
-                    // Fallback to current time
-                    timestamp = Math.floor(Date.now() / 1000);
-                }
-                const uniqueId = `${app.source || 'unknown'}-${app.id}-${appIndex}-${formIndex}-${form.name.replace(/\s+/g, '-')}-${timestamp}`;
-                
-                return {
-                    id: uniqueId,
-                    appId: app.id,
-                    userId: app.userId,
-                    appName: `${app.memberFirstName} ${app.memberLastName}`,
-                    referrerName: app.referrerName,
-                    formName: form.name,
-                    date: form.dateCompleted!.toDate(),
-                    action: form.type === 'Upload' ? 'Uploaded' : 'Completed',
-                };
-            }) || []
-    );
-
-    // Remove any potential duplicates by ID (just in case)
-    const uniqueActivities = allActivities.filter((activity, index, self) => 
-        index === self.findIndex(a => a.id === activity.id)
-    );
-
-    return uniqueActivities
-      .sort((a, b) => b.date.getTime() - a.date.getTime())
-      .slice(0, 10); // Get the 10 most recent activities
-  }, [allApplications]);
 
   const handleSelectionChange = (id: string, checked: boolean) => {
     setSelected(prev => checked ? [...prev, id] : prev.filter(item => item !== id));
@@ -530,43 +485,6 @@ export default function AdminApplicationsPage() {
                     </CardContent>
                 </Card>
             </div>
-             <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><List className="h-5 w-5" /> Recent Activity Log</CardTitle>
-                    <CardDescription>The latest documents completed across all applications.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    {activityLog.length > 0 ? (
-                        <ul className="space-y-4">
-                            {activityLog.map((activity) => (
-                                <li key={activity.id} className="flex gap-4">
-                                    <div className="flex-shrink-0">
-                                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-                                            <FileCheck2 className="h-5 w-5 text-muted-foreground" />
-                                        </span>
-                                    </div>
-                                    <div className="flex-grow">
-                                        <p className="text-sm font-medium">
-                                            <Link href={`/admin/applications/${activity.appId}?userId=${activity.userId}`} className="hover:underline">
-                                                {activity.appName}
-                                            </Link>
-                                        </p>
-                                        <p className="text-xs text-muted-foreground">{activity.action} "{activity.formName}" by <span className="font-semibold">{activity.referrerName}</span></p>
-                                        <p className="text-xs text-muted-foreground">{format(activity.date, 'PPP p')}</p>
-                                    </div>
-                                </li>
-                            ))}
-                        </ul>
-                    ) : (
-                        <p className="text-sm text-center text-muted-foreground py-4">No recent activity.</p>
-                    )}
-                </CardContent>
-                <CardFooter>
-                    <Button asChild variant="outline" className="w-full">
-                        <Link href="/admin/progress-tracker">View Full Progress Tracker</Link>
-                    </Button>
-                </CardFooter>
-            </Card>
         </div>
     </div>
   );

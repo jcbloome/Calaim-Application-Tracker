@@ -1,6 +1,6 @@
 'use client';
 
-import React, { ReactNode, useEffect, useState } from 'react';
+import React, { ReactNode, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -36,7 +36,7 @@ import {
   MessageSquareText,
   FileText,
   TestTube2,
-  Map,
+  Map as MapIcon,
   Calendar,
   DollarSign,
   Navigation,
@@ -51,7 +51,7 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/firebase';
+import { useAuth, useFirestore } from '@/firebase';
 import { NotificationManager } from '@/components/CursorStyleNotification';
 import { StaffNotificationBell } from '@/components/StaffNotificationBell';
 import { SocialWorkerRedirect } from '@/components/SocialWorkerRedirect';
@@ -74,6 +74,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { collection, collectionGroup, onSnapshot } from 'firebase/firestore';
 
 const adminNavLinks = [
   { 
@@ -113,7 +114,7 @@ const adminNavLinks = [
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/california-map-enhanced', label: 'Map Intelligence', icon: Navigation },
-      { href: '/admin/california-counties', label: 'County Analysis', icon: Map },
+      { href: '/admin/california-counties', label: 'County Analysis', icon: MapIcon },
       { href: '/admin/reports', label: 'Reports', icon: FileText }
     ]
   },
@@ -140,10 +141,15 @@ function AdminHeader() {
   const { user, isSuperAdmin } = useAdmin();
   const { isSocialWorker } = useSocialWorker();
   const auth = useAuth();
+  const firestore = useFirestore();
   const pathname = usePathname();
   const router = useRouter();
   const [openSubmenus, setOpenSubmenus] = useState<Set<string>>(new Set());
   const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null);
+  const [newCsSummaryCount, setNewCsSummaryCount] = useState(0);
+  const [newUploadCount, setNewUploadCount] = useState(0);
+  const previousCsCount = useRef(0);
+  const previousUploadCount = useRef(0);
 
   const handleSignOut = async () => {
     if (auth) {
@@ -168,6 +174,116 @@ function AdminHeader() {
 
   const handleMouseLeave = () => {
     setHoveredSubmenu(null);
+  };
+
+  useEffect(() => {
+    if (!firestore) return;
+    const userAppsQuery = collectionGroup(firestore, 'applications');
+    const adminAppsQuery = collection(firestore, 'applications');
+
+    let userApps: any[] = [];
+    let adminApps: any[] = [];
+
+    const computeCount = () => {
+      const combined = [...userApps, ...adminApps];
+      const deduped = new Map<string, any>();
+      combined.forEach((app) => {
+        const key = `${app.id}-${app.userId || 'admin'}`;
+        deduped.set(key, app);
+      });
+
+      const dedupedApps = Array.from(deduped.values());
+      const csSummaryCount = dedupedApps.filter((app) => {
+        const forms = app.forms || [];
+        const hasCompletedSummary = forms.some((form: any) =>
+          (form.name === 'CS Member Summary' || form.name === 'CS Summary') && form.status === 'Completed'
+        );
+        const reviewed = Boolean(app.applicationChecked);
+        return hasCompletedSummary && !reviewed;
+      }).length;
+
+      const uploadCount = dedupedApps.reduce((total: number, app: any) => {
+        const forms = app.forms || [];
+        const unacknowledgedUploads = forms.filter((form: any) => {
+          const isCompleted = form.status === 'Completed';
+          const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
+          return isCompleted && !isSummary && !form.acknowledged;
+        }).length;
+        return total + unacknowledgedUploads;
+      }, 0);
+
+      if (csSummaryCount > previousCsCount.current && typeof window !== 'undefined') {
+        if ('Notification' in window) {
+          const showNotification = () => {
+            try {
+              new Notification('New CS Summary Received', {
+                body: `${csSummaryCount} new CS Summary form${csSummaryCount === 1 ? '' : 's'} need review.`,
+              });
+            } catch (error) {
+              console.warn('Notification failed:', error);
+            }
+          };
+
+          if (Notification.permission === 'granted') {
+            showNotification();
+          } else if (Notification.permission === 'default') {
+            Notification.requestPermission().then((permission) => {
+              if (permission === 'granted') {
+                showNotification();
+              }
+            });
+          }
+        }
+      }
+
+      previousCsCount.current = csSummaryCount;
+      previousUploadCount.current = uploadCount;
+      setNewCsSummaryCount(csSummaryCount);
+      setNewUploadCount(uploadCount);
+    };
+
+    const unsubUserApps = onSnapshot(userAppsQuery, (snapshot) => {
+      userApps = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      computeCount();
+    });
+
+    const unsubAdminApps = onSnapshot(adminAppsQuery, (snapshot) => {
+      adminApps = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      computeCount();
+    });
+
+    return () => {
+      unsubUserApps();
+      unsubAdminApps();
+    };
+  }, [firestore]);
+
+  const renderCsSummaryBadge = () => {
+    if (newCsSummaryCount <= 0) return null;
+    return (
+      <Link
+        href="/admin/applications"
+        className="ml-2 inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700 hover:bg-green-200"
+        title="CS Summary forms need review"
+      >
+        <BellRing className="h-3 w-3" />
+        {newCsSummaryCount}
+      </Link>
+    );
+  };
+
+  const renderUploadBadge = () => {
+    if (newUploadCount <= 0) return null;
+    return (
+      <Link
+        href="/admin/applications"
+        className="ml-2 inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700 hover:bg-blue-200"
+        title="New uploaded documents need acknowledgement"
+      >
+        <Bell className="h-3 w-3" />
+        {newUploadCount}
+      </Link>
+    );
   };
 
   // Filter navigation based on user role
@@ -217,6 +333,8 @@ function AdminHeader() {
                         >
                           <navItem.icon className="h-4 w-4" />
                           {navItem.label}
+                          {navItem.label === 'Dashboard' && renderCsSummaryBadge()}
+                          {navItem.label === 'Dashboard' && renderUploadBadge()}
                           <ChevronDown className="h-3 w-3 ml-1" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -240,6 +358,8 @@ function AdminHeader() {
                               >
                                 <item.icon className="h-4 w-4" />
                                 {item.label}
+                                {navItem.label === 'Dashboard' && item.href === '/admin' && renderCsSummaryBadge()}
+                                {navItem.label === 'Dashboard' && item.href === '/admin' && renderUploadBadge()}
                               </Link>
                             </DropdownMenuItem>
                           )
@@ -336,6 +456,8 @@ function AdminHeader() {
                           <div className="flex items-center gap-3">
                             <navItem.icon className="h-4 w-4" />
                             {navItem.label}
+                            {navItem.label === 'Dashboard' && renderCsSummaryBadge()}
+                            {navItem.label === 'Dashboard' && renderUploadBadge()}
                           </div>
                           <ChevronRight 
                             className={cn(
@@ -365,6 +487,8 @@ function AdminHeader() {
                                   >
                                     <item.icon className="h-4 w-4" />
                                     {item.label}
+                                    {navItem.label === 'Dashboard' && item.href === '/admin' && renderCsSummaryBadge()}
+                                    {navItem.label === 'Dashboard' && item.href === '/admin' && renderUploadBadge()}
                                   </Link>
                                 </SheetClose>
                               )

@@ -16,6 +16,21 @@
 
 ## 🗓️ **Development History**
 
+### **January 25, 2026 - Updates**
+- ✅ **UI/UX**: Added review/acknowledgement alerts (green/blue) and removed admin login debug panel
+- ✅ **UI/UX**: Added CS Summary review stats cards and document acknowledgement in Activity Log
+- ✅ **Feature Added**: Cached CalAIM_tbl_Members Caspio field list in Firestore for faster CS Summary field mapping
+- ✅ **UI/UX**: Added Caspio sent status indicator and cached field timestamp in admin mapping/tools
+- ✅ **Security**: Blocked duplicate CS Summary submissions when Medi-Cal exists in Caspio
+- ✅ **Bug Fixed**: Avoided Caspio columns endpoint 404 blocking field refresh
+- ✅ **UI/UX**: Removed mapping list tab from Caspio test UI
+- ✅ **UI/UX**: Restored two-column layout for CS Summary and Caspio mapping options
+- ✅ **UI/UX**: Added preferred RCFE cities and split RCFE admin name fields in CS Summary (online + printable)
+- ✅ **UI/UX**: Simplified Caspio sync test UI and auto-load locked mock payload preview
+- ✅ **UI/UX**: Added Caspio field mapping preview + confirmation before admin send
+- ✅ **Data**: Updated Kaiser status progression list to match Caspio table
+- ✅ **UI/UX**: Added admin application delete with confirmation
+
 ### **January 23, 2026 - Fixes**
 - ✅ **Bug Fixed**: Assigned member counts now populate in SW user management table
 - ✅ **Bug Fixed**: SW assignment counts now read Social_Worker_Assigned field in Caspio
@@ -133,10 +148,10 @@
 ---
 
 ## 📊 **Feature Counter Status**
-- **Features Since Last Audit**: 17/8 ⚠️ **AUDIT DUE**
+- **Features Since Last Audit**: 21/8 ⚠️ **AUDIT DUE**
 - **Last Audit**: January 20, 2026 (Initial Setup)
 - **Next Audit Due**: NOW - 8 features completed
-- **Recent Features**: Centralized Task Module, Workflow Automation Engine, Smart Task Hub, Eligibility Check System, Enhanced Eligibility System, Universal Eligibility Verification, SW Claims System, SW User Management, Room & Board Commitment printables, Room & Board Commitment online form
+- **Recent Features**: Centralized Task Module, Workflow Automation Engine, Smart Task Hub, Eligibility Check System, Enhanced Eligibility System, Universal Eligibility Verification, SW Claims System, SW User Management, Room & Board Commitment printables, Room & Board Commitment online form, Caspio field cache for CS Summary mapping, duplicate Medi-Cal guardrail, CS Summary review stats + activity acknowledgements, review/acknowledgement alert indicators
 
 ---
 

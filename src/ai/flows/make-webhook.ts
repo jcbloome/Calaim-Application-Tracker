@@ -94,7 +94,9 @@ const WebhookInputSchema = z.object({
   hasPrefRCFE: z.enum(['Yes', 'No']),
   rcfeName: z.string().optional().nullable(),
   rcfeAddress: z.string().optional().nullable(),
-  rcfeAdminName: z.string().optional().nullable(),
+  rcfePreferredCities: z.string().optional().nullable(),
+  rcfeAdminFirstName: z.string().optional().nullable(),
+  rcfeAdminLastName: z.string().optional().nullable(),
   rcfeAdminPhone: z.string().optional().nullable(),
   rcfeAdminEmail: z.string().email().optional().nullable(),
 

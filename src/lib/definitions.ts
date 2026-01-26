@@ -1,7 +1,26 @@
 
 import { Timestamp, FieldValue } from 'firebase/firestore';
 
-export type ApplicationStatus = 'In Progress' | 'Completed & Submitted' | 'Requires Revision' | 'Approved' | 'Deleted';
+export type ApplicationStatus =
+  | 'In Progress'
+  | 'Completed & Submitted'
+  | 'Requires Revision'
+  | 'Approved'
+  | 'Deleted'
+  | 'Application in Review'
+  | 'Authorization Requested'
+  | 'Authorization Received (Doc Collection)'
+  | 'RN/Visit Scheduled'
+  | 'Tier Level Requested'
+  | 'Tier Level Recieved'
+  | 'Locating RCFEs'
+  | 'RCFE Found'
+  | 'Room and Board Committment Letter Required'
+  | 'Room and Board Letter Completed'
+  | 'RCFE Connected with ILS for Contracting'
+  | 'RCFE Contract Received'
+  | '(Ready for Placement)'
+  | 'Member Placed at RCFE';
 
 export type Application = {
   id: string;
@@ -82,7 +101,9 @@ export type Application = {
   hasPrefRCFE?: 'Yes' | 'No';
   rcfeName?: string | null;
   rcfeAddress?: string | null;
-  rcfeAdminName?: string | null;
+  rcfePreferredCities?: string | null;
+  rcfeAdminFirstName?: string | null;
+  rcfeAdminLastName?: string | null;
   rcfeAdminPhone?: string | null;
   rcfeAdminEmail?: string | null;
   // Notification settings

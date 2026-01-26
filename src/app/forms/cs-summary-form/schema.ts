@@ -120,7 +120,9 @@ export const formSchema = z.object({
     hasPrefRCFE: z.enum(['Yes', 'No'], { errorMap: () => ({ message: ' ' }) }),
     rcfeName: optionalString,
     rcfeAddress: optionalString,
-    rcfeAdminName: optionalString,
+    rcfePreferredCities: optionalString,
+    rcfeAdminFirstName: optionalString,
+    rcfeAdminLastName: optionalString,
     rcfeAdminPhone: optionalPhone,
     rcfeAdminEmail: optionalEmail,
   })

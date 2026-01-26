@@ -3,13 +3,12 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Activity, FileCheck2, List } from 'lucide-react';
+import { Users, Activity, FileCheck2, ClipboardCheck, FileText, AlertCircle } from 'lucide-react';
 import { ApplicationListSkeleton } from '@/components/ui/application-skeleton';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore, type WithId } from '@/firebase';
 import { collection, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
-import { format } from 'date-fns';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './applications/components/AdminApplicationsTable';
@@ -88,6 +87,33 @@ export default function AdminDashboardPage() {
     };
   }, [allApplications]);
 
+  const csSummaryStats = useMemo(() => {
+    const result = {
+      received: 0,
+      needsReview: 0,
+      reviewed: 0,
+    };
+
+    if (!allApplications) return result;
+
+    allApplications.forEach((app) => {
+      const forms = app.forms || [];
+      const hasCompletedSummary = forms.some((form: any) =>
+        (form.name === 'CS Member Summary' || form.name === 'CS Summary') && form.status === 'Completed'
+      );
+      if (!hasCompletedSummary) return;
+
+      result.received += 1;
+      if (app.applicationChecked) {
+        result.reviewed += 1;
+      } else {
+        result.needsReview += 1;
+      }
+    });
+
+    return result;
+  }, [allApplications]);
+
   const recentApplications = useMemo(() => {
     if (!allApplications) return [];
     return [...allApplications]
@@ -96,29 +122,7 @@ export default function AdminDashboardPage() {
         const timeB = b.lastUpdated ? (b.lastUpdated as Timestamp).toMillis() : 0;
         return timeB - timeA;
       })
-      .slice(0, 5);
-  }, [allApplications]);
-  
-  const activityLog = useMemo(() => {
-    if (!allApplications) return [];
-    
-    const allActivities = allApplications.flatMap(app => 
-        app.forms
-            ?.filter(form => form.status === 'Completed' && form.dateCompleted)
-            .map(form => ({
-                appId: app.id,
-                userId: app.userId,
-                appName: `${app.memberFirstName} ${app.memberLastName}`,
-                referrerName: app.referrerName,
-                formName: form.name,
-                date: form.dateCompleted!.toDate(),
-                action: form.type === 'Upload' ? 'Uploaded' : 'Completed',
-            })) || []
-    );
-
-    return allActivities
-      .sort((a, b) => b.date.getTime() - a.date.getTime())
-      .slice(0, 5); // Get the 5 most recent activities
+      .slice(0, 10);
   }, [allApplications]);
 
   if (isAdminLoading || isLoadingApps) {
@@ -133,33 +137,13 @@ export default function AdminDashboardPage() {
         </div>
         
         {/* Recent Applications Skeleton */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-          <Card className="col-span-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <Card className="md:col-span-2 lg:col-span-3">
             <CardHeader>
               <Skeleton className="h-6 w-48" />
             </CardHeader>
             <CardContent>
               <ApplicationListSkeleton />
-            </CardContent>
-          </Card>
-          
-          {/* Activity Log Skeleton */}
-          <Card className="col-span-3">
-            <CardHeader>
-              <Skeleton className="h-6 w-32" />
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="flex items-center space-x-4">
-                    <Skeleton className="h-2 w-2 rounded-full" />
-                    <div className="space-y-1 flex-1">
-                      <Skeleton className="h-4 w-full" />
-                      <Skeleton className="h-3 w-20" />
-                    </div>
-                  </div>
-                ))}
-              </div>
             </CardContent>
           </Card>
         </div>
@@ -194,6 +178,39 @@ export default function AdminDashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card className="border-l-4 border-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">New CS Summary Forms</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{csSummaryStats.received}</div>
+            <p className="text-xs text-muted-foreground">Completed CS Summary forms</p>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-amber-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Needs Review</CardTitle>
+            <AlertCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{csSummaryStats.needsReview}</div>
+            <p className="text-xs text-muted-foreground">Pending staff review</p>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-green-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Reviewed</CardTitle>
+            <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{csSummaryStats.reviewed}</div>
+            <p className="text-xs text-muted-foreground">Marked as checked</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <Card className="border-l-4 border-blue-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               Total Applications
             </CardTitle>
@@ -225,16 +242,16 @@ export default function AdminDashboardPage() {
         </Card>
       </div>
       
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            <div className="xl:col-span-2">
+      <div className="grid grid-cols-1 gap-6">
+            <div>
                <Card>
                 <CardHeader className="flex items-center justify-between flex-row">
                     <div>
                       <CardTitle>Recent Applications</CardTitle>
-                      <CardDescription>A list of the 5 most recently updated applications.</CardDescription>
+                      <CardDescription>A list of the 10 most recently updated applications.</CardDescription>
                     </div>
                     <Button asChild variant="outline">
-                        <Link href="/admin/applications">View All</Link>
+                        <Link href="/admin/applications">More</Link>
                     </Button>
                 </CardHeader>
                 <CardContent>
@@ -242,39 +259,6 @@ export default function AdminDashboardPage() {
                 </CardContent>
               </Card>
             </div>
-            
-            <Card>
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2"><List className="h-5 w-5" /> Recent Activity</CardTitle>
-                <CardDescription>The latest documents completed across all applications.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                {activityLog.length > 0 ? (
-                    <ul className="space-y-4">
-                        {activityLog.map((activity, index) => (
-                            <li key={`${activity.appId}-${activity.formName}-${index}`} className="flex gap-4">
-                                <div className="flex-shrink-0">
-                                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-                                        <FileCheck2 className="h-5 w-5 text-muted-foreground" />
-                                    </span>
-                                </div>
-                                <div className="flex-grow">
-                                    <p className="text-sm font-medium">
-                                        <Link href={`/admin/applications/${activity.appId}?userId=${activity.userId}`} className="hover:underline">
-                                            {activity.appName}
-                                        </Link>
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">{activity.action} "{activity.formName}" by <span className="font-semibold">{activity.referrerName}</span></p>
-                                    <p className="text-xs text-muted-foreground">{format(activity.date, 'PPP p')}</p>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                ) : (
-                    <p className="text-sm text-center text-muted-foreground py-4">No recent activity.</p>
-                )}
-            </CardContent>
-          </Card>
         </div>
 
     </div>

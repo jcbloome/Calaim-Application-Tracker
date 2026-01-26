@@ -92,7 +92,9 @@ const csSummaryFields = {
   hasPrefRCFE: "",
   rcfeName: "",
   rcfeAddress: "",
-  rcfeAdminName: "",
+  rcfePreferredCities: "",
+  rcfeAdminFirstName: "",
+  rcfeAdminLastName: "",
   rcfeAdminPhone: "",
   rcfeAdminEmail: ""
 };

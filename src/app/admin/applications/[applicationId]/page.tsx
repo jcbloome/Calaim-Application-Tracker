@@ -38,13 +38,14 @@ import {
   Download,
   Bell,
   BellOff,
+  BellRing,
   Eye,
   EyeOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
-import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Label } from '@/components/ui/label';
@@ -69,12 +70,11 @@ import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
+import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
 import { SyncToCaspioButton } from '@/components/SyncToCaspioButton';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import { DuplicateClientChecker } from '@/components/DuplicateClientChecker';
-import TaskScheduler from '@/components/TaskScheduler';
 import NoteTracker from '@/components/NoteTracker';
 import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusProgress } from '@/lib/kaiser-status-progression';
 
@@ -182,7 +182,7 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/admin/forms/review', editHref: '/admin/forms/edit', icon: FileText },
     { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, and Freedom of Choice waiver form.', type: 'online-form', href: '/admin/forms/waivers', icon: FileText },
-    { id: 'room-board-obligation', title: 'Room and Board Commitment', description: 'Complete and sign this required financial commitment form online.', type: 'online-form', icon: FileText, href: '/forms/room-board-obligation' },
+    { id: 'room-board-obligation', title: 'Room and Board Commitment', description: 'Upload the signed room and board commitment form.', type: 'Upload', icon: UploadCloud, href: '/forms/room-board-obligation' },
     { id: 'proof-of-income', title: "Proof of Income", description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'Upload', icon: UploadCloud, href: '#' },
     { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'Upload', icon: UploadCloud, href: '#' },
@@ -407,7 +407,7 @@ function StaffApplicationTracker({ application }: { application: Application }) 
                         className="space-y-2"
                     >
                         {steps.map((step, index) => (
-                            <div key={step} className="flex items-center space-x-2">
+                            <div key={`${step}-${index}`} className="flex items-center space-x-2">
                                 <RadioGroupItem value={step} id={`step-${index}`} />
                                 <Label htmlFor={`step-${index}`}>{step}</Label>
                             </div>
@@ -428,6 +428,8 @@ function AdminActions({ application }: { application: Application }) {
     const [emailRemindersEnabled, setEmailRemindersEnabled] = useState((application as any)?.emailRemindersEnabled ?? false);
     const [reviewNotificationSent, setReviewNotificationSent] = useState((application as any)?.reviewNotificationSent ?? false);
     const [isUpdatingNotifications, setIsUpdatingNotifications] = useState(false);
+    const [isCaspioDialogOpen, setIsCaspioDialogOpen] = useState(false);
+    const [caspioMappingPreview, setCaspioMappingPreview] = useState<Record<string, string> | null>(null);
     const { toast } = useToast();
     const router = useRouter();
 
@@ -436,6 +438,54 @@ function AdminActions({ application }: { application: Application }) {
         if (!firestore || !application.userId || !application.id) return null;
         return doc(firestore, `users/${application.userId}/applications`, application.id);
     }, [firestore, application.id, application.userId]);
+
+    const kaiserStatusOptions: Application['status'][] = [
+        'Application in Review',
+        'Authorization Requested',
+        'Authorization Received (Doc Collection)',
+        'RN/Visit Scheduled',
+        'Tier Level Requested',
+        'Tier Level Recieved',
+        'Locating RCFEs',
+        'RCFE Found',
+        'Room and Board Committment Letter Required',
+        'Room and Board Letter Completed',
+        'RCFE Connected with ILS for Contracting',
+        'RCFE Contract Received',
+        '(Ready for Placement)',
+        'Member Placed at RCFE',
+    ];
+
+    const standardStatusOptions: Application['status'][] = [
+        'In Progress',
+        'Requires Revision',
+        'Approved',
+        'Completed & Submitted',
+    ];
+
+    const statusOptions = application.healthPlan?.toLowerCase().includes('kaiser')
+        ? kaiserStatusOptions
+        : standardStatusOptions;
+
+    useEffect(() => {
+        if (!isCaspioDialogOpen || typeof window === 'undefined') return;
+        try {
+            const stored = localStorage.getItem('calaim_cs_caspio_mapping');
+            if (!stored) {
+                setCaspioMappingPreview(null);
+                return;
+            }
+            const parsed = JSON.parse(stored);
+            if (parsed && typeof parsed === 'object') {
+                setCaspioMappingPreview(parsed);
+                return;
+            }
+            setCaspioMappingPreview(null);
+        } catch (error) {
+            console.warn('Failed to load Caspio mapping preview:', error);
+            setCaspioMappingPreview(null);
+        }
+    }, [isCaspioDialogOpen]);
 
     const handleNotificationUpdate = async (type: 'emailReminders' | 'reviewNotification' | 'statusReminders', enabled: boolean) => {
         setIsUpdatingNotifications(true);
@@ -558,7 +608,7 @@ function AdminActions({ application }: { application: Application }) {
         }
     };
 
-    const sendToCaspio = async () => {
+    const sendToCaspio = async (mappingOverride?: Record<string, string> | null) => {
         setIsSendingToCaspio(true);
         
         try {
@@ -566,7 +616,10 @@ function AdminActions({ application }: { application: Application }) {
             const publishToCaspio = httpsCallable(functions, 'publishCsSummaryToCaspioSimple');
             
             console.log('📤 Sending application data to Caspio:', application);
-            const result = await publishToCaspio(application);
+            const result = await publishToCaspio({
+                applicationData: application,
+                mapping: mappingOverride || caspioMappingPreview || null
+            });
             const data = result.data as any;
             console.log('📥 Caspio response:', data);
             
@@ -614,6 +667,38 @@ function AdminActions({ application }: { application: Application }) {
         }
     };
 
+    const handleDeleteApplication = async () => {
+        if (!firestore) {
+            toast({ variant: 'destructive', title: 'Error', description: 'Firestore not available.' });
+            return;
+        }
+
+        try {
+            if (application.userId) {
+                const userDocRef = doc(firestore, `users/${application.userId}/applications`, application.id);
+                await deleteDoc(userDocRef);
+            }
+
+            if (!application.userId || application.id.startsWith('admin_app_')) {
+                const adminDocRef = doc(firestore, 'applications', application.id);
+                await deleteDoc(adminDocRef);
+            }
+
+            toast({
+                title: 'Application Deleted',
+                description: 'The application has been removed.',
+                className: 'bg-green-100 text-green-900 border-green-200',
+            });
+            router.push('/admin/applications');
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Delete Failed',
+                description: error.message || 'Could not delete the application.',
+            });
+        }
+    };
+
     return (
         <Dialog>
             <Card>
@@ -626,30 +711,101 @@ function AdminActions({ application }: { application: Application }) {
                         <Button variant="outline" className="w-full">Update Status</Button>
                     </DialogTrigger>
                     
-                    <Button 
-                        onClick={sendToCaspio}
-                        disabled={isSendingToCaspio || (application as any)?.caspioSent}
-                        className="w-full"
-                        variant={(application as any)?.caspioSent ? "secondary" : "default"}
-                    >
-                        {isSendingToCaspio ? (
-                            <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Sending to Caspio...
-                            </>
-                        ) : (application as any)?.caspioSent ? (
-                            <>
-                                <CheckCircle2 className="mr-2 h-4 w-4" />
-                                Sent to Caspio
-                            </>
-                        ) : (
-                            <>
-                                <Database className="mr-2 h-4 w-4" />
-                                Send CS Summary to Caspio
-                            </>
-                        )}
-                    </Button>
+                    <AlertDialog open={isCaspioDialogOpen} onOpenChange={setIsCaspioDialogOpen}>
+                        <AlertDialogTrigger asChild>
+                            <Button
+                                disabled={isSendingToCaspio || (application as any)?.caspioSent}
+                                className="w-full"
+                                variant={(application as any)?.caspioSent ? "secondary" : "default"}
+                            >
+                                {isSendingToCaspio ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Sending to Caspio...
+                                    </>
+                                ) : (application as any)?.caspioSent ? (
+                                    <>
+                                        <CheckCircle2 className="mr-2 h-4 w-4" />
+                                        Sent to Caspio
+                                    </>
+                                ) : (
+                                    <>
+                                        <Database className="mr-2 h-4 w-4" />
+                                        Send CS Summary to Caspio
+                                    </>
+                                )}
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent className="max-w-3xl">
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Confirm Send to Caspio</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Review the field mapping that will be used for this submission before sending.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            {caspioMappingPreview && Object.keys(caspioMappingPreview).length > 0 ? (
+                                <div className="space-y-3">
+                                    <div className="text-sm text-muted-foreground">
+                                        Mapped fields: {Object.keys(caspioMappingPreview).length}
+                                    </div>
+                                    <div className="max-h-64 overflow-y-auto rounded border p-3 text-xs">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
+                                            {Object.entries(caspioMappingPreview).map(([csField, caspioField]) => {
+                                                const value = (application as any)?.[csField];
+                                                return (
+                                                    <div key={`${csField}-${caspioField}`} className="font-mono">
+                                                        {csField} → {caspioField}
+                                                        <span className="text-muted-foreground">: {value ?? '—'}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <Alert variant="destructive">
+                                    <AlertTitle>No locked mapping found</AlertTitle>
+                                    <AlertDescription>
+                                        Save and lock your CS Summary mapping before sending to Caspio.
+                                    </AlertDescription>
+                                </Alert>
+                            )}
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                    onClick={() => {
+                                        sendToCaspio(caspioMappingPreview);
+                                    }}
+                                    disabled={!caspioMappingPreview || Object.keys(caspioMappingPreview).length === 0}
+                                >
+                                    Confirm & Send
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
                     
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button variant="destructive" className="w-full">
+                                Delete Application
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Delete this application?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    This will permanently remove the application record. This action cannot be undone.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleDeleteApplication}>
+                                    Delete
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+
                     {/* Update Status Reminders Toggle */}
                     <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
                         <div className="flex items-center space-x-2">
@@ -775,12 +931,13 @@ function AdminActions({ application }: { application: Application }) {
                             <SelectTrigger id="status-select">
                                 <SelectValue placeholder="Select new status..." />
                             </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="In Progress">In Progress</SelectItem>
-                                <SelectItem value="Requires Revision">Requires Revision</SelectItem>
-                                <SelectItem value="Approved">Approved</SelectItem>
-                                <SelectItem value="Completed & Submitted">Completed & Submitted</SelectItem>
-                            </SelectContent>
+                        <SelectContent>
+                            {statusOptions.map((option) => (
+                                <SelectItem key={option} value={option}>
+                                    {option}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
                         </Select>
                     </div>
                     <div className="space-y-2">
@@ -837,6 +994,16 @@ function ApplicationDetailPageContent() {
     if (isUserLoading || !firestore || !applicationId || !appUserId) return null;
     return doc(firestore, `users/${appUserId}/applications`, applicationId);
   }, [firestore, applicationId, appUserId, isUserLoading]);
+
+  const getStaffOptions = (healthPlan?: Application['healthPlan']) => {
+    if (healthPlan === 'Kaiser') {
+      return ['Jesse', 'Nick', 'John'];
+    }
+    if (healthPlan === 'Health Net') {
+      return ['Monica', 'Leidy', 'Letitia'];
+    }
+    return ['Jesse', 'Nick', 'John', 'Monica', 'Leidy', 'Letitia'];
+  };
 
   const activityLog = useMemo(() => {
     if (!application?.forms) return [];
@@ -1189,6 +1356,15 @@ function ApplicationDetailPageContent() {
 
   const needsUrgentAttention = application.hasLegalRep === 'no_has_rep';
 
+  const completedForms = (application.forms || []).filter((form) => form.status === 'Completed');
+  const pendingFormAlerts = completedForms.filter((form) => {
+    const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
+    if (isSummary) {
+      return !application.applicationChecked;
+    }
+    return !form.acknowledged;
+  });
+
   const waiverSubTasks = [
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
       { id: 'liability', label: 'Liability Waiver', completed: !!waiverFormStatus?.ackLiability },
@@ -1502,7 +1678,8 @@ function ApplicationDetailPageContent() {
                                 try {
                                     const updateData = {
                                         applicationChecked: checked,
-                                        applicationCheckedDate: checked ? new Date().toISOString() : null
+                                        applicationCheckedDate: checked ? new Date().toISOString() : null,
+                                        ...(checked ? {} : { applicationCheckedBy: null })
                                     };
                                     
                                     if (docRef) {
@@ -1528,14 +1705,71 @@ function ApplicationDetailPageContent() {
                             Application checked by staff
                         </Label>
                     </div>
+                    {(application as any)?.applicationChecked && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 ml-6">
+                            <div className="space-y-1">
+                                <Label className="text-xs text-muted-foreground">Staff Reviewer</Label>
+                                <Select
+                                    value={(application as any)?.applicationCheckedBy || ''}
+                                    onValueChange={async (value) => {
+                                        if (!docRef) return;
+                                        const updateData = { applicationCheckedBy: value };
+                                        await setDoc(docRef, updateData, { merge: true });
+                                        setApplication(prev => prev ? { ...prev, ...updateData } : null);
+                                    }}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select staff" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {getStaffOptions(application.healthPlan).map((name) => (
+                                            <SelectItem key={name} value={name}>
+                                                {name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-xs text-muted-foreground">Date Reviewed</Label>
+                                <div className="text-sm font-medium">
+                                    {(application as any)?.applicationCheckedDate
+                                        ? format(new Date((application as any).applicationCheckedDate), 'PPP p')
+                                        : 'Not set'}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     {(application as any)?.applicationChecked && (application as any)?.applicationCheckedDate && (
                         <div className="text-xs text-muted-foreground ml-6">
                             Checked on: {format(new Date((application as any).applicationCheckedDate), 'PPP p')}
                         </div>
                     )}
                 </div>
+                <div className="space-y-2">
+                    <Label className="text-sm font-medium">Documents needing acknowledgement</Label>
+                    {pendingFormAlerts.length === 0 ? (
+                        <div className="text-xs text-muted-foreground ml-6">No documents pending acknowledgement.</div>
+                    ) : (
+                        <div className="space-y-1 ml-6">
+                            {pendingFormAlerts.map((form) => {
+                                const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
+                                return (
+                                    <div key={`${form.name}-${form.status}-${form.dateCompleted?.seconds || form.dateCompleted || ''}`} className="flex items-center gap-2 text-sm">
+                                        {isSummary ? (
+                                            <BellRing className="h-4 w-4 text-green-600" />
+                                        ) : (
+                                            <Bell className="h-4 w-4 text-blue-600" />
+                                        )}
+                                        <span>{form.name}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
             </div>
-            
+
             {/* Application Progression Field */}
             <div className="border-t pt-4">
                 <div className="space-y-3">
@@ -1605,6 +1839,7 @@ function ApplicationDetailPageContent() {
                     )}
                 </div>
             </div>
+            
             <div>
                 <div className="flex justify-between text-sm text-muted-foreground mb-1">
                     <span className="font-medium">User-Submitted Documents</span>
@@ -1722,13 +1957,7 @@ function ApplicationDetailPageContent() {
       </div>
 
       <aside className="lg:col-span-1 space-y-6">
-        <StaffApplicationTracker application={application} />
         <AdminActions application={application} />
-        <TaskScheduler 
-          memberId={application.id}
-          memberName={`${application.memberFirstName} ${application.memberLastName}`}
-          currentAssignee={(application as any)?.kaiser_user_assignment}
-        />
         <NoteTracker 
           memberId={(application as any)?.client_ID2 || application.id}
           memberName={`${application.memberFirstName} ${application.memberLastName}`}

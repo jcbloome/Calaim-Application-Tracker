@@ -37,7 +37,8 @@ const steps = [
       'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail', 
       'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty', 
       'onALWWaitlist', 'hasPrefRCFE', 
-      'rcfeName', 'rcfeAddress', 'rcfeAdminName', 'rcfeAdminPhone', 'rcfeAdminEmail',
+      'rcfeName', 'rcfeAddress', 'rcfePreferredCities',
+      'rcfeAdminFirstName', 'rcfeAdminLastName', 'rcfeAdminPhone', 'rcfeAdminEmail',
       'monthlyIncome', 'ackRoomAndBoard'
   ]},
 ];
@@ -248,8 +249,10 @@ function CsSummaryFormComponent() {
     
     if (currentStep < steps.length) {
         const savedAppId = await saveProgress(true);
-        if(savedAppId) {
-          const newUrl = `${appUserId ? '/admin' : ''}/forms/cs-summary-form?applicationId=${savedAppId}&step=${currentStep + 1}${appUserId ? `&userId=${appUserId}`: ''}`;
+        if (savedAppId) {
+          const newUrl = appUserId
+            ? `/admin/forms/edit?applicationId=${savedAppId}&step=${currentStep + 1}&userId=${appUserId}`
+            : `/forms/cs-summary-form?applicationId=${savedAppId}&step=${currentStep + 1}`;
           router.push(newUrl);
           setCurrentStep(currentStep + 1);
           window.scrollTo(0, 0);
@@ -260,7 +263,9 @@ function CsSummaryFormComponent() {
   const prevStep = async () => {
     const savedAppId = await saveProgress(true);
     if (currentStep > 1 && savedAppId) {
-      const newUrl = `${appUserId ? '/admin' : ''}/forms/cs-summary-form?applicationId=${savedAppId}&step=${currentStep - 1}${appUserId ? `&userId=${appUserId}`: ''}`;
+      const newUrl = appUserId
+        ? `/admin/forms/edit?applicationId=${savedAppId}&step=${currentStep - 1}&userId=${appUserId}`
+        : `/forms/cs-summary-form?applicationId=${savedAppId}&step=${currentStep - 1}`;
       router.push(newUrl);
       setCurrentStep(currentStep - 1);
       window.scrollTo(0, 0);
@@ -333,7 +338,9 @@ function CsSummaryFormComponent() {
              return;
         }
         
-        const reviewUrl = `${appUserId ? '/admin' : ''}/forms/cs-summary-form/review?applicationId=${finalAppId}${appUserId ? `&userId=${appUserId}`: ''}`;
+        const reviewUrl = appUserId
+          ? `/admin/forms/review?applicationId=${finalAppId}&userId=${appUserId}`
+          : `/forms/cs-summary-form/review?applicationId=${finalAppId}`;
         router.push(reviewUrl);
         
     } catch (error) {

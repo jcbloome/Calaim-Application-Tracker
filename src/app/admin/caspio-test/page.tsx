@@ -8,11 +8,28 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Loader2, Database, CheckCircle2, AlertTriangle, Users, ArrowRight, Map, Copy, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useCaspioSync } from '@/modules/caspio-integration';
 import { useAuth } from '@/firebase';
 
@@ -44,11 +61,8 @@ const csSummaryFields = {
   memberLastName: "",
   memberDob: "",
   sex: "",
-  memberAge: null,
   memberMediCalNum: "",
-  confirmMemberMediCalNum: "",
   memberMrn: "",
-  confirmMemberMrn: "",
   memberLanguage: "",
   
   // Step 1 - Referrer Info
@@ -120,7 +134,9 @@ const csSummaryFields = {
   hasPrefRCFE: "",
   rcfeName: "",
   rcfeAddress: "",
-  rcfeAdminName: "",
+  rcfePreferredCities: "",
+  rcfeAdminFirstName: "",
+  rcfeAdminLastName: "",
   rcfeAdminPhone: "",
   rcfeAdminEmail: ""
 };
@@ -232,16 +248,34 @@ export default function CaspioTestPage() {
   const [testResults, setTestResults] = useState<TestResponse | null>(null);
   const [isSingleTestRunning, setIsSingleTestRunning] = useState(false);
   const [singleTestResults, setSingleTestResults] = useState<any>(null);
+  const [singleTestPreviewOpen, setSingleTestPreviewOpen] = useState(false);
+  const [singleTestPreviewFields, setSingleTestPreviewFields] = useState<string[]>([]);
+  const [singleTestPreviewCounts, setSingleTestPreviewCounts] = useState<{ payload?: number; mapped?: number } | null>(null);
+  const [singleTestPreviewPayload, setSingleTestPreviewPayload] = useState<Record<string, any> | null>(null);
+  const [singleTestSendStatus, setSingleTestSendStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [singleTestSendError, setSingleTestSendError] = useState<string | null>(null);
+  const [clearAllOpen, setClearAllOpen] = useState(false);
+  const [isSingleTestPreviewLoading, setIsSingleTestPreviewLoading] = useState(false);
   const [fieldMappings, setFieldMappings] = useState<{[key: string]: string}>({});
   const [isRefreshingCaspioFields, setIsRefreshingCaspioFields] = useState(false);
   const [isRefreshingAppFields, setIsRefreshingAppFields] = useState(false);
+  const [isLoadingCachedFields, setIsLoadingCachedFields] = useState(false);
   const [dynamicCaspioFields, setDynamicCaspioFields] = useState<string[]>(caspioMembersFieldNames);
   const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
   const { toast } = useToast();
   const [lockedMappings, setLockedMappings] = useState<{[key: string]: string} | null>(null);
   const [hasDraftMappings, setHasDraftMappings] = useState(false);
+  const [hasLockedMappings, setHasLockedMappings] = useState(false);
+  const [lockedMappingCount, setLockedMappingCount] = useState(0);
+  const [draftName, setDraftName] = useState('');
+  const [namedDrafts, setNamedDrafts] = useState<Record<string, {[key: string]: string}>>({});
+  const [selectedDraftName, setSelectedDraftName] = useState('');
+  const [lastDraftName, setLastDraftName] = useState('');
   const draftKey = 'calaim_cs_caspio_mapping_draft';
   const lockedKey = 'calaim_cs_caspio_mapping';
+  const caspioFieldsKey = 'calaim_caspio_fields_cache';
+  const namedDraftsKey = 'calaim_cs_caspio_mapping_named_drafts';
+  const lastDraftNameKey = 'calaim_cs_caspio_mapping_last_draft_name';
   
   // Use new Caspio integration module
   const { 
@@ -262,9 +296,12 @@ export default function CaspioTestPage() {
       let lockedLoaded = false;
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed && typeof parsed === 'object') {
+          if (parsed && typeof parsed === 'object') {
           setLockedMappings(parsed);
           setFieldMappings(parsed);
+            const count = Object.keys(parsed).length;
+            setLockedMappingCount(count);
+            setHasLockedMappings(count > 0);
           lockedLoaded = true;
         }
       }
@@ -278,10 +315,36 @@ export default function CaspioTestPage() {
           }
         }
       }
+      const namedDraftsStored = localStorage.getItem(namedDraftsKey);
+      if (namedDraftsStored) {
+        const parsedNamed = JSON.parse(namedDraftsStored);
+        if (parsedNamed && typeof parsedNamed === 'object') {
+          setNamedDrafts(parsedNamed);
+        }
+      }
+      const lastDraftStored = localStorage.getItem(lastDraftNameKey);
+      if (lastDraftStored) {
+        setLastDraftName(lastDraftStored);
+      }
     } catch (error) {
       console.error('Failed to load saved field mappings:', error);
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (hasLockedMappings) return;
+    const stored = localStorage.getItem(lockedKey);
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored);
+      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+        setHasLockedMappings(true);
+      }
+    } catch (error) {
+      console.warn('Failed to parse locked mapping cache:', error);
+    }
+  }, [hasLockedMappings, lockedKey]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -294,6 +357,187 @@ export default function CaspioTestPage() {
     localStorage.setItem(draftKey, JSON.stringify(fieldMappings));
     setHasDraftMappings(true);
   }, [fieldMappings, lockedMappings]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const blocked = new Set(['CalAIM_Status']);
+    let didUpdate = false;
+    const cleanedMappings: {[key: string]: string} = {};
+    Object.entries(fieldMappings).forEach(([csField, caspioField]) => {
+      if (blocked.has(caspioField)) {
+        didUpdate = true;
+        return;
+      }
+      cleanedMappings[csField] = caspioField;
+    });
+    if (didUpdate) {
+      setFieldMappings(cleanedMappings);
+    }
+    if (lockedMappings) {
+      let lockedUpdated = false;
+      const cleanedLocked: {[key: string]: string} = {};
+      Object.entries(lockedMappings).forEach(([csField, caspioField]) => {
+        if (blocked.has(caspioField)) {
+          lockedUpdated = true;
+          return;
+        }
+        cleanedLocked[csField] = caspioField;
+      });
+      if (lockedUpdated) {
+        setLockedMappings(cleanedLocked);
+        localStorage.setItem(lockedKey, JSON.stringify(cleanedLocked));
+        const count = Object.keys(cleanedLocked).length;
+        setLockedMappingCount(count);
+        setHasLockedMappings(count > 0);
+      }
+    }
+  }, [fieldMappings, lockedMappings, lockedKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const loadCachedCaspioFields = async () => {
+      setIsLoadingCachedFields(true);
+      try {
+        const idToken = await auth?.currentUser?.getIdToken().catch(() => undefined);
+        const response = await fetch('/api/caspio-table-fields?tableName=CalAIM_tbl_Members', {
+          method: 'GET',
+          headers: {
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          console.warn('Cached Caspio field load failed:', data?.error || data);
+          throw new Error(data?.error || 'Failed to load cached Caspio fields');
+        }
+
+        if (data.success && Array.isArray(data.fields)) {
+          setDynamicCaspioFields(data.fields);
+          if (data.updatedAt) {
+            setLastRefreshTime(new Date(data.updatedAt).getTime());
+          }
+          if (data.fields.length > 0) {
+            localStorage.setItem(caspioFieldsKey, JSON.stringify({
+              fields: data.fields,
+              updatedAt: Date.now(),
+            }));
+          }
+        }
+      } catch (error: any) {
+        console.warn('Failed to load cached Caspio fields:', error?.message || error);
+        const fallback = localStorage.getItem(caspioFieldsKey);
+        if (fallback) {
+          try {
+            const parsed = JSON.parse(fallback);
+            if (Array.isArray(parsed?.fields)) {
+              setDynamicCaspioFields(parsed.fields);
+              if (parsed.updatedAt) {
+                setLastRefreshTime(parsed.updatedAt);
+              }
+            }
+          } catch (parseError) {
+            console.warn('Failed to parse local Caspio field cache:', parseError);
+          }
+        }
+      } finally {
+        setIsLoadingCachedFields(false);
+      }
+    };
+
+    loadCachedCaspioFields();
+  }, [auth?.currentUser]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (dynamicCaspioFields.length === 0) return;
+    localStorage.setItem(caspioFieldsKey, JSON.stringify({
+      fields: dynamicCaspioFields,
+      updatedAt: Date.now(),
+    }));
+  }, [dynamicCaspioFields]);
+
+  const loadSavedCaspioFields = async () => {
+    if (typeof window === 'undefined') return;
+    try {
+      const fallback = localStorage.getItem(caspioFieldsKey);
+      if (fallback) {
+        const parsed = JSON.parse(fallback);
+        if (Array.isArray(parsed?.fields) && parsed.fields.length > 0) {
+          setDynamicCaspioFields(parsed.fields);
+          if (parsed.updatedAt) {
+            setLastRefreshTime(parsed.updatedAt);
+          }
+          toast({
+            title: "Saved Fields Loaded",
+            description: `Loaded ${parsed.fields.length} cached fields from this browser.`,
+          });
+          return;
+        }
+      }
+
+      const idToken = await auth?.currentUser?.getIdToken().catch(() => undefined);
+      const response = await fetch('/api/caspio-table-fields?tableName=CalAIM_tbl_Members', {
+        method: 'GET',
+        headers: {
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success && Array.isArray(data.fields) && data.fields.length > 0) {
+        setDynamicCaspioFields(data.fields);
+        if (data.updatedAt) {
+          setLastRefreshTime(new Date(data.updatedAt).getTime());
+        } else {
+          setLastRefreshTime(Date.now());
+        }
+        localStorage.setItem(caspioFieldsKey, JSON.stringify({
+          fields: data.fields,
+          updatedAt: Date.now(),
+        }));
+        toast({
+          title: "Saved Fields Loaded",
+          description: `Loaded ${data.fields.length} fields from saved cache.`,
+        });
+        return;
+      }
+      throw new Error('No cached fields returned from API.');
+    } catch (error: any) {
+      const fallback = localStorage.getItem(caspioFieldsKey);
+      if (!fallback) {
+        toast({
+          variant: "destructive",
+          title: "No Saved Fields",
+          description: "No saved Caspio field list found in this browser.",
+        });
+        return;
+      }
+      try {
+        const parsed = JSON.parse(fallback);
+        if (Array.isArray(parsed?.fields) && parsed.fields.length > 0) {
+          setDynamicCaspioFields(parsed.fields);
+          if (parsed.updatedAt) {
+            setLastRefreshTime(parsed.updatedAt);
+          }
+          toast({
+            title: "Saved Fields Loaded",
+            description: `Loaded ${parsed.fields.length} cached fields from this browser.`,
+          });
+          return;
+        }
+        throw new Error('Saved cache is empty.');
+      } catch (parseError: any) {
+        toast({
+          variant: "destructive",
+          title: "Load Failed",
+          description: parseError.message || "Could not load saved Caspio fields.",
+        });
+      }
+    }
+  };
 
   const refreshCaspioFields = async () => {
     // Rate limiting: prevent calls within 5 seconds of each other
@@ -347,6 +591,11 @@ export default function CaspioTestPage() {
           : [];
 
         setDynamicCaspioFields(normalizedFields);
+        setLastRefreshTime(Date.now());
+        localStorage.setItem(caspioFieldsKey, JSON.stringify({
+          fields: normalizedFields,
+          updatedAt: Date.now(),
+        }));
         console.log('✅ [FIELD-REFRESH] Successfully updated field list', {
           count: normalizedFields.length,
           sample: normalizedFields.slice(0, 5)
@@ -469,11 +718,111 @@ export default function CaspioTestPage() {
     }
   };
 
+  const getLockedFieldNames = () => {
+    if (!lockedMappings || Object.keys(lockedMappings).length === 0) {
+      return null;
+    }
+    return Object.values(lockedMappings).filter((field) => field !== 'CalAIM_Status');
+  };
+
+  const buildSingleClientPayload = () => {
+    const fieldNames = getLockedFieldNames();
+    if (!fieldNames) return null;
+    return {
+      fieldNames,
+      testClient: {
+        firstName: 'TestClient',
+        lastName: `Single-${new Date().toISOString().substring(0, 19).replace(/[:.]/g, '-')}`,
+        seniorFirst: 'Senior',
+        seniorLast: `Guardian-${new Date().toISOString().substring(0, 10)}`,
+      mco: Math.random() > 0.5 ? 'Kaiser' : 'Health Net'
+      }
+    };
+  };
+
+  const loadSingleClientPreview = async (openDialog: boolean) => {
+    setIsSingleTestPreviewLoading(true);
+    try {
+      const payload = buildSingleClientPayload();
+      if (!payload) {
+        if (openDialog) {
+          toast({
+            variant: 'destructive',
+            title: 'Locked Mapping Required',
+            description: 'Lock your field mappings before running the sync test.',
+          });
+        }
+        return;
+      }
+      const response = await fetch('/api/caspio-single-client-test', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...payload,
+          dryRun: true,
+        }),
+      });
+
+      const data = await response.json().catch(async () => ({
+        success: false,
+        message: await response.text()
+      }));
+
+      if (!response.ok) {
+        const errorMessage = data?.message || data?.error || `API failed: ${response.status} ${response.statusText}`;
+        throw new Error(errorMessage);
+      }
+
+      setSingleTestPreviewFields(Array.isArray(data.payloadFields) ? data.payloadFields : []);
+      setSingleTestPreviewCounts({
+        payload: data.payloadFieldCount,
+        mapped: data.mappedFieldCount
+      });
+      setSingleTestPreviewPayload(data?.payloadPreview && typeof data.payloadPreview === 'object' ? data.payloadPreview : null);
+      if (openDialog) {
+        setSingleTestPreviewOpen(true);
+      }
+      setSingleTestSendStatus('idle');
+      setSingleTestSendError(null);
+    } catch (error: any) {
+      console.error('❌ Single client preview failed:', error);
+      if (openDialog) {
+        toast({
+          variant: 'destructive',
+          title: 'Preview Error',
+          description: `Single client preview failed: ${error.message}`,
+        });
+      }
+    } finally {
+      setIsSingleTestPreviewLoading(false);
+    }
+  };
+
+  const previewSingleClientTest = async () => loadSingleClientPreview(true);
+
+  useEffect(() => {
+    if (!lockedMappings) return;
+    loadSingleClientPreview(false);
+  }, [lockedMappings]);
+
   const runSingleClientTest = async () => {
     setIsSingleTestRunning(true);
     setSingleTestResults(null);
+    setSingleTestSendStatus('idle');
+    setSingleTestSendError(null);
 
     try {
+      const payload = buildSingleClientPayload();
+      if (!payload) {
+        toast({
+          variant: 'destructive',
+          title: 'Locked Mapping Required',
+          description: 'Lock your field mappings before sending to Caspio.',
+        });
+        return;
+      }
       console.log('🧪 Starting Single Client → Member Test...');
       
       const response = await fetch('/api/caspio-single-client-test', {
@@ -481,33 +830,33 @@ export default function CaspioTestPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          testClient: {
-            firstName: 'TestClient',
-            lastName: `Single-${new Date().toISOString().substring(0, 19).replace(/[:.]/g, '-')}`,
-            seniorFirst: 'Senior',
-            seniorLast: `Guardian-${new Date().toISOString().substring(0, 10)}`,
-            mco: Math.random() > 0.5 ? 'Kaiser Permanente' : 'Health Net'
-          }
-        })
+        body: JSON.stringify(payload)
       });
       
+      const data = await response.json().catch(async () => ({
+        success: false,
+        message: await response.text()
+      }));
+
       if (!response.ok) {
-        throw new Error(`API failed: ${response.status} ${response.statusText}`);
+        const errorMessage = data?.message || data?.error || `API failed: ${response.status} ${response.statusText}`;
+        throw new Error(errorMessage);
       }
-      
-      const data = await response.json();
       console.log('📊 Single client test results:', data);
       
       setSingleTestResults(data);
       
       if (data.success) {
+        setSingleTestSendStatus('success');
         toast({
           title: 'Single Client Test Successful! ✅',
-          description: `Client created with ID: ${data.clientId}, Member record linked successfully`,
+          description: `Client created with ID: ${data.clientId}. ${data.mappedFieldCount ?? 0} fields imported into CalAIM_tbl_Members.`,
           className: 'bg-green-100 text-green-900 border-green-200',
+          duration: 3000,
         });
       } else {
+        setSingleTestSendStatus('error');
+        setSingleTestSendError(data.message || 'Unknown error occurred');
         toast({
           variant: 'destructive',
           title: 'Single Client Test Failed',
@@ -517,6 +866,8 @@ export default function CaspioTestPage() {
       
     } catch (error: any) {
       console.error('❌ Single client test failed:', error);
+      setSingleTestSendStatus('error');
+      setSingleTestSendError(error.message || 'Unknown error occurred');
       toast({
         variant: 'destructive',
         title: 'Test Error',
@@ -602,54 +953,39 @@ export default function CaspioTestPage() {
     }
   };
 
+  const lockedMappingEntries = lockedMappings
+    ? Object.entries(lockedMappings).sort(([a], [b]) => a.localeCompare(b))
+    : [];
+  const autoSaveLabel = lastDraftName || 'Draft 1';
+  const getNextDraftName = () => {
+    const names = Object.keys(namedDrafts);
+    const usedNumbers = names
+      .map((name) => {
+        const match = name.match(/^Draft\s+(\d+)$/i);
+        return match ? Number(match[1]) : null;
+      })
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    const nextNumber = usedNumbers.length === 0 ? 1 : Math.max(...usedNumbers) + 1;
+    return `Draft ${nextNumber}`;
+  };
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-center gap-3 mb-6">
         <Database className="h-8 w-8 text-primary" />
         <div>
           <h1 className="text-3xl font-bold">Caspio Member Sync & Field Mapping</h1>
-          <p className="text-muted-foreground">Test sync workflow and map CS Summary form fields to CalAIM Members table</p>
+          <p className="text-muted-foreground">Test sync workflow and map CS Summary form fields to Caspio CalAIM_tbl_Members</p>
         </div>
       </div>
 
-      <Tabs defaultValue="sync-test" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="sync-test">Sync Test</TabsTrigger>
+      <Tabs defaultValue="interactive-mapping" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="interactive-mapping">Field Mapping</TabsTrigger>
-          <TabsTrigger value="mapping-preview">Mapping Preview</TabsTrigger>
+          <TabsTrigger value="sync-test">Sync Test</TabsTrigger>
         </TabsList>
 
         <TabsContent value="sync-test" className="space-y-6">
-          {/* EMERGENCY DIRECT TEST BUTTON - VERY VISIBLE */}
-          <Card className="border-green-500 bg-green-50">
-        <CardHeader>
-          <CardTitle className="text-green-800">🚀 WORKING CASPIO TEST</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Button 
-            onClick={async () => {
-              console.log('🚀 EMERGENCY DIRECT API TEST...');
-              try {
-                const response = await fetch('/api/caspio-simple-test', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' }
-                });
-                const result = await response.json();
-                console.log('📊 Result:', result);
-                alert(`RESULT: ${result.success ? 'SUCCESS ✅' : 'FAILED ❌'}\n${result.message}`);
-              } catch (error: any) {
-                console.error('❌ Error:', error);
-                alert(`ERROR: ${error.message}`);
-              }
-            }}
-            size="lg"
-            className="w-full bg-green-600 hover:bg-green-700 text-white"
-          >
-            🚀 CLICK HERE - WORKING CASPIO TEST
-          </Button>
-        </CardContent>
-      </Card>
-
       {/* Single Client Test - NEW */}
       <Card className="border-blue-500 bg-blue-50">
         <CardHeader>
@@ -658,49 +994,188 @@ export default function CaspioTestPage() {
             Single Client → Member Test
           </CardTitle>
           <CardDescription className="text-blue-700">
-            Test the complete workflow: Create client record → Link to member table with enhanced fields
+            Uses locked mapping fields to create mock data, preview mapped fields, then send to Caspio.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 border border-blue-200 rounded-lg bg-white">
-              <h4 className="font-medium text-blue-900 mb-2">Test Client Data:</h4>
-              <ul className="text-sm text-blue-800 space-y-1">
-                <li>• <strong>Name:</strong> Test Subject[1-100] (random number)</li>
-                <li>• <strong>Senior:</strong> Senior Guardian[number]</li>
-                <li>• <strong>MCO:</strong> Kaiser Permanente OR Health Net (random)</li>
-                <li>• <strong>Fields:</strong> Senior_First, Senior_Last, CalAIM_MCO, client_ID2</li>
-              </ul>
-            </div>
-            <div className="p-4 border border-blue-200 rounded-lg bg-white">
-              <h4 className="font-medium text-blue-900 mb-2">Expected Workflow:</h4>
-              <ul className="text-sm text-blue-800 space-y-1">
-                <li>• 1️⃣ Create record in connect_tbl_clients</li>
-                <li>• 2️⃣ Get client_ID2 from response</li>
-                <li>• 3️⃣ Retrieve client record with all fields</li>
-                <li>• 4️⃣ Create linked record in CalAIM_tbl_Members</li>
-              </ul>
-            </div>
-          </div>
-          
           <Button 
-            onClick={runSingleClientTest}
-            disabled={isSingleTestRunning}
+            onClick={previewSingleClientTest}
+            disabled={isSingleTestRunning || isSingleTestPreviewLoading || !lockedMappings}
             size="lg"
             className="w-full bg-blue-600 hover:bg-blue-700 text-white"
           >
-            {isSingleTestRunning ? (
+            {isSingleTestRunning || isSingleTestPreviewLoading ? (
               <>
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                Testing Single Client → Member Workflow...
+                Preparing Field Preview...
               </>
             ) : (
               <>
                 <Database className="mr-2 h-5 w-5" />
-                Run Single Client → Member Test
+                Load Mock Data → Preview Mapped Fields
               </>
             )}
           </Button>
+          {!lockedMappings && (
+            <div className="text-xs text-blue-700">
+              Lock your field mappings first to run the sync test.
+            </div>
+          )}
+          <AlertDialog open={singleTestPreviewOpen} onOpenChange={setSingleTestPreviewOpen}>
+            <AlertDialogContent className="max-w-2xl">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Mapped Fields Preview</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Mock data has been prepared from your locked mappings. Review before sending to Caspio.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              {singleTestSendStatus === 'success' && (
+                <Alert className="border-green-200 bg-green-50 text-green-900">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <AlertTitle>Sent to Caspio</AlertTitle>
+                  <AlertDescription>
+                    Payload sent successfully. Checkmark indicates the send completed.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {singleTestSendStatus === 'error' && (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Send Failed</AlertTitle>
+                  <AlertDescription>
+                    {singleTestSendError || 'Could not send payload to Caspio.'}
+                  </AlertDescription>
+                </Alert>
+              )}
+              <div className="text-sm text-muted-foreground space-y-1">
+                <div>Locked mappings: {lockedMappingEntries.length}</div>
+                <div>Payload fields: {singleTestPreviewCounts?.payload ?? 0}</div>
+                <div>Mapped fields (written): {singleTestPreviewCounts?.mapped ?? 0}</div>
+              </div>
+              {lockedMappingEntries.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Locked field mappings</div>
+                  <div className="max-h-48 overflow-y-auto rounded border p-3 text-xs">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
+                      {lockedMappingEntries.map(([csField, caspioField]) => (
+                        <div key={csField} className="font-mono">
+                          {csField} → {caspioField}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Payload fields to send (with mock data)</div>
+                <div className="max-h-48 overflow-y-auto rounded border p-3 text-xs">
+                  {singleTestPreviewPayload ? (
+                    <div className="grid grid-cols-1 gap-y-1">
+                      {Object.entries(singleTestPreviewPayload).map(([field, value]) => (
+                        <div key={field} className="font-mono">
+                          {field}: <span className="text-muted-foreground">{String(value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : singleTestPreviewFields.length === 0 ? (
+                    <div>No fields returned from preview.</div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
+                      {singleTestPreviewFields.map((field) => (
+                        <div key={field} className="font-mono">{field}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    runSingleClientTest();
+                  }}
+                >
+                  Send to Caspio
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </CardContent>
+      </Card>
+
+      {/* Locked Mapping Verification */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Map className="h-5 w-5" />
+            Locked Mapping Verification
+          </CardTitle>
+          <CardDescription>
+            Shows which locked mapping fields are included in the mock payload and last test payload.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!lockedMappings ? (
+            <Alert variant="destructive">
+              <AlertTitle>No Locked Mapping</AlertTitle>
+              <AlertDescription>
+                Lock your field mappings first to verify which fields are sent.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            (() => {
+              const previewFields = new Set<string>(
+                Array.isArray(singleTestPreviewFields) ? singleTestPreviewFields : []
+              );
+              const payloadFields = new Set<string>(
+                Array.isArray(singleTestResults?.payloadFields) ? singleTestResults.payloadFields : []
+              );
+              const entries = Object.entries(lockedMappings);
+              const failed = entries.filter(([, caspioField]) => !previewFields.has(caspioField) && !payloadFields.has(caspioField));
+
+              return (
+                <>
+                  <div className="text-sm text-muted-foreground">
+                    Total locked mappings: {entries.length} • Included in mock payload: {entries.length - failed.length} • Missing: {failed.length}
+                  </div>
+                  <div className="rounded border p-3 space-y-2 max-h-64 overflow-y-auto">
+                    {entries.map(([csField, caspioField]) => {
+                      const isIncluded = previewFields.has(caspioField) || payloadFields.has(caspioField);
+                      return (
+                        <div key={`${csField}-${caspioField}`} className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-2">
+                            {isIncluded ? (
+                              <CheckCircle2 className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <AlertTriangle className="h-4 w-4 text-destructive" />
+                            )}
+                            <span className="font-mono">{csField}</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className="font-mono text-green-700">{caspioField}</span>
+                          </div>
+                          <span className={`text-xs ${isIncluded ? 'text-green-600' : 'text-destructive'}`}>
+                            {isIncluded ? 'Included' : 'Missing'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {failed.length > 0 && (
+                    <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      <div className="font-medium mb-1">Error Log</div>
+                      <div className="space-y-1">
+                        {failed.map(([csField, caspioField]) => (
+                          <div key={`${csField}-${caspioField}-error`}>
+                            Missing in payload: {csField} → {caspioField}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()
+          )}
         </CardContent>
       </Card>
 
@@ -755,104 +1230,6 @@ export default function CaspioTestPage() {
         </Card>
       )}
 
-      {/* Test Description */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Test Workflow
-          </CardTitle>
-          <CardDescription>
-            This test validates the complete member sync process with mock data
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="flex items-center gap-3 p-4 border rounded-lg">
-              <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-semibold">1</div>
-              <div>
-                <div className="font-medium">Add to Client Table</div>
-                <div className="text-sm text-muted-foreground">Create client record, get client_ID2</div>
-              </div>
-            </div>
-            
-            <div className="flex items-center justify-center">
-              <ArrowRight className="h-6 w-6 text-muted-foreground" />
-            </div>
-            
-            <div className="flex items-center gap-3 p-4 border rounded-lg">
-              <div className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-sm font-semibold">2</div>
-              <div>
-                <div className="font-medium">Add to CalAIM Members</div>
-                <div className="text-sm text-muted-foreground">Link with client_ID2, add MCO info</div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">Test Data (Mock Members - Kaiser/Health Net Only):</h4>
-            <ul className="text-sm text-blue-800 space-y-1">
-              <li>• Test Subject1 → Kaiser Permanente</li>
-              <li>• Test Subject2 → Health Net</li>
-              <li>• Test Subject3 → Kaiser Permanente</li>
-            </ul>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Run Test Button */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Run Test</CardTitle>
-          <CardDescription>
-            Execute the Caspio member sync test with mock data
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button 
-            onClick={runCaspioMemberSyncTest}
-            disabled={isRunning}
-            size="lg"
-            className="w-full mb-4"
-          >
-            {isRunning ? (
-              <>
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                Running Caspio Member Sync Test...
-              </>
-            ) : (
-              <>
-                <Database className="mr-2 h-5 w-5" />
-                Run Caspio Member Sync Test
-              </>
-            )}
-          </Button>
-          
-          {/* NEW DIRECT TEST BUTTON */}
-          <Button 
-            onClick={async () => {
-              console.log('🚀 DIRECT API TEST - bypassing all caching...');
-              try {
-                const response = await fetch('/api/caspio-simple-test', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' }
-                });
-                const result = await response.json();
-                console.log('📊 DIRECT result:', result);
-                alert(`Direct test result: ${result.success ? 'SUCCESS' : 'FAILED'}\n${result.message}`);
-              } catch (error: any) {
-                console.error('❌ Direct test error:', error);
-                alert(`Direct test error: ${error.message}`);
-              }
-            }}
-            size="lg"
-            className="w-full"
-            variant="outline"
-          >
-            🚀 DIRECT API TEST (Bypass Cache)
-          </Button>
-        </CardContent>
-      </Card>
 
       {/* Test Results */}
       {testResults && (
@@ -944,119 +1321,210 @@ export default function CaspioTestPage() {
         <TabsContent value="interactive-mapping" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2">
                 <Map className="h-5 w-5" />
-                CS Summary → CalAIM Field Mapping
+              CS Summary → Caspio CalAIM_tbl_Members
               </CardTitle>
               <CardDescription>
-                Map each CS Summary field (with example) to a CalAIM_tbl_Members field
+              Map each CS Summary field (with example) to a Caspio CalAIM_tbl_Members field
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
                 {/* Mapping Controls */}
-                <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex flex-col gap-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                   <div>
                     <h4 className="font-medium text-blue-900">Field Mapping Progress</h4>
                     <p className="text-sm text-blue-700">
                       {Object.keys(fieldMappings).length} of {Object.keys(csSummaryFields).length} fields mapped
                     </p>
+                    <p className="text-xs text-blue-700 mt-1">
+                      Last updated: {isLoadingCachedFields ? 'Loading cached fields...' : (lastRefreshTime > 0 ? new Date(lastRefreshTime).toLocaleString() : 'Not yet loaded')}
+                    </p>
                   </div>
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => setFieldMappings({})}
-                      disabled={!!lockedMappings}
-                    >
-                      Clear All
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        if (Object.keys(fieldMappings).length === 0) {
+                  <div className="flex flex-wrap items-center gap-2">
+                    <AlertDialog open={clearAllOpen} onOpenChange={setClearAllOpen}>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          Clear All
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Clear all mappings?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will remove all field mappings and unlock any locked mapping. This cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => {
+                              setFieldMappings({});
+                              setLockedMappings(null);
+                              localStorage.removeItem(lockedKey);
+                              setHasLockedMappings(false);
+                              setLockedMappingCount(0);
+                            }}
+                          >
+                            Clear All
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant={lockedMappings ? 'default' : 'outline'} size="sm">
+                          {lockedMappings ? (
+                            <>
+                              <CheckCircle2 className="mr-2 h-4 w-4 text-green-100" />
+                              Locked Actions
+                            </>
+                          ) : (
+                            'Mapping Lock Actions'
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            if (Object.keys(fieldMappings).length === 0) {
+                              toast({
+                                variant: "destructive",
+                                title: "No Mappings to Lock",
+                                description: "Map at least one field before locking.",
+                              });
+                              return;
+                            }
+                            setLockedMappings(fieldMappings);
+                            localStorage.setItem(lockedKey, JSON.stringify(fieldMappings));
+                            localStorage.removeItem(draftKey);
+                            setHasDraftMappings(false);
+                            const count = Object.keys(fieldMappings).length;
+                            setLockedMappingCount(count);
+                            setHasLockedMappings(count > 0);
+                            toast({
+                              title: "Mappings Locked",
+                              description: "Field mapping saved and ready for export.",
+                              className: 'bg-green-100 text-green-900 border-green-200',
+                              duration: 3000,
+                            });
+                          }}
+                          disabled={!!lockedMappings}
+                        >
+                          Lock Mappings
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setLockedMappings(null);
+                            if (lockedMappings) {
+                              setFieldMappings(lockedMappings);
+                            }
+                            toast({
+                              title: "Mappings Unlocked",
+                              description: "You can edit mappings again.",
+                            });
+                          }}
+                          disabled={!lockedMappings}
+                        >
+                          Unlock
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            const stored = localStorage.getItem(lockedKey);
+                            if (!stored) {
+                              toast({
+                                variant: "destructive",
+                                title: "No Locked Mapping",
+                                description: "There is no locked mapping to load.",
+                              });
+                              return;
+                            }
+                            try {
+                              const parsed = JSON.parse(stored);
+                              if (parsed && typeof parsed === 'object') {
+                                setLockedMappings(parsed);
+                                setFieldMappings(parsed);
+                                const count = Object.keys(parsed).length;
+                                setLockedMappingCount(count);
+                                setHasLockedMappings(count > 0);
+                                toast({
+                                  title: "Locked Mapping Loaded",
+                                  description: "Saved locked mapping restored.",
+                                });
+                              }
+                            } catch (error: any) {
+                              toast({
+                                variant: "destructive",
+                                title: "Load Failed",
+                                description: error.message || "Could not load locked mapping.",
+                              });
+                            }
+                          }}
+                          disabled={!hasLockedMappings}
+                        >
+                          Load Locked{hasLockedMappings && lockedMappingCount > 0 ? ` (${lockedMappingCount})` : ''}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    {lockedMappings && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setLockedMappings(null);
+                          setFieldMappings(lockedMappings);
                           toast({
-                            variant: "destructive",
-                            title: "No Mappings to Lock",
-                            description: "Map at least one field before locking.",
+                            title: "Mappings Unlocked",
+                            description: "You can edit mappings again.",
                           });
-                          return;
-                        }
-                        setLockedMappings(fieldMappings);
-                        localStorage.setItem(lockedKey, JSON.stringify(fieldMappings));
-                        localStorage.removeItem(draftKey);
-                        setHasDraftMappings(false);
-                        toast({
-                          title: "Mappings Locked",
-                          description: "Field mapping saved and ready for export.",
-                          className: 'bg-green-100 text-green-900 border-green-200',
-                        });
-                      }}
+                        }}
+                      >
+                        Unlock
+                      </Button>
+                    )}
+                    <Select
+                      value={selectedDraftName}
+                      onValueChange={setSelectedDraftName}
                       disabled={!!lockedMappings}
                     >
-                      Lock Mappings
-                    </Button>
+                      <SelectTrigger className="h-9 w-48">
+                        <SelectValue placeholder="Select draft" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.keys(namedDrafts).length === 0 ? (
+                          <SelectItem value="no-drafts" disabled>
+                            No saved drafts
+                          </SelectItem>
+                        ) : (
+                          Object.keys(namedDrafts).map((name) => (
+                            <SelectItem key={name} value={name}>
+                              {name}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        setLockedMappings(null);
-                        localStorage.removeItem(lockedKey);
-                        toast({
-                          title: "Mappings Unlocked",
-                          description: "You can edit mappings again.",
-                        });
-                      }}
-                      disabled={!lockedMappings}
-                    >
-                      Unlock
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        if (Object.keys(fieldMappings).length === 0) {
-                          toast({
-                            variant: "destructive",
-                            title: "No Mappings to Save",
-                            description: "Map at least one field before saving.",
-                          });
-                          return;
-                        }
-                        localStorage.setItem(draftKey, JSON.stringify(fieldMappings));
-                        setHasDraftMappings(true);
-                        toast({
-                          title: "Progress Saved",
-                          description: "Draft mappings saved. You can return later.",
-                        });
-                      }}
-                      disabled={!!lockedMappings}
-                    >
-                      Save Progress
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const draftStored = localStorage.getItem(draftKey);
-                        if (!draftStored) {
+                        if (!selectedDraftName || !namedDrafts[selectedDraftName]) {
                           toast({
                             variant: "destructive",
                             title: "No Saved Draft",
-                            description: "There is no saved mapping draft to load.",
+                            description: "Select a draft to load.",
                           });
                           return;
                         }
                         try {
-                          const parsedDraft = JSON.parse(draftStored);
-                          if (parsedDraft && typeof parsedDraft === 'object') {
-                            setFieldMappings(parsedDraft);
-                            setHasDraftMappings(Object.keys(parsedDraft).length > 0);
-                            toast({
-                              title: "Draft Loaded",
-                              description: "Saved mapping draft restored.",
-                            });
-                          }
+                          const selectedDraft = namedDrafts[selectedDraftName];
+                          setFieldMappings(selectedDraft);
+                          setHasDraftMappings(Object.keys(selectedDraft).length > 0);
+                          toast({
+                            title: "Draft Loaded",
+                            description: `Draft "${selectedDraftName}" restored.`,
+                          });
                         } catch (error: any) {
                           console.error('Failed to load mapping draft:', error);
                           toast({
@@ -1070,6 +1538,8 @@ export default function CaspioTestPage() {
                     >
                       Load Draft
                     </Button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       size="sm"
                       variant="outline"
@@ -1089,10 +1559,8 @@ export default function CaspioTestPage() {
                 {/* Field Mapping Grid */}
                 <div className="grid grid-cols-1 gap-4 max-h-96 overflow-y-auto border rounded-lg p-4">
                   {Object.entries(csSummaryFields).map(([csField, sampleValue]) => (
-                    <div key={csField} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-3 border rounded-lg bg-gray-50">
-                      {/* CS Summary Field */}
+                    <div key={csField} className="grid grid-cols-2 gap-3 p-3 border rounded-lg bg-gray-50">
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-blue-700">CS Summary Field (Example)</Label>
                         <div className="p-2 bg-blue-100 rounded border">
                           <div className="font-mono text-sm font-medium">{csField}</div>
                           <div className="text-xs text-blue-600 mt-1 truncate">
@@ -1101,19 +1569,12 @@ export default function CaspioTestPage() {
                         </div>
                       </div>
 
-                      {/* Mapping Arrow */}
-                      <div className="flex items-center justify-center">
-                        <ArrowRight className="h-5 w-5 text-gray-400" />
-                      </div>
-
-                      {/* CalAIM Members Field Selection */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-green-700">CalAIM_tbl_Members Field</Label>
-                        <Select 
-                          value={fieldMappings[csField] || 'no-mapping'} 
+                        <Label className="sr-only">Map to Caspio field</Label>
+                        <Select
+                          value={fieldMappings[csField] || 'no-mapping'}
                           onValueChange={(value) => {
                             if (value === 'no-mapping') {
-                              // Remove the mapping if "No Mapping" is selected
                               setFieldMappings(prev => {
                                 const newMappings = { ...prev };
                                 delete newMappings[csField];
@@ -1129,16 +1590,18 @@ export default function CaspioTestPage() {
                           disabled={!!lockedMappings}
                         >
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select CalAIM field..." />
+                            <SelectValue placeholder="Select Caspio field..." />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="no-mapping">-- No Mapping --</SelectItem>
                             {dynamicCaspioFields.length === 0 ? (
                               <SelectItem value="no-fields" disabled>
-                                No Caspio fields loaded — click “Refresh Caspio Fields”
+                                {isLoadingCachedFields ? 'Loading cached Caspio fields...' : 'No Caspio fields loaded — click “Refresh Caspio Fields”'}
                               </SelectItem>
                             ) : (
-                              dynamicCaspioFields.map(fieldName => (
+                              dynamicCaspioFields
+                                .filter((fieldName) => fieldName !== 'CalAIM_Status')
+                                .map(fieldName => (
                                 <SelectItem key={fieldName} value={fieldName}>
                                   {fieldName}
                                 </SelectItem>
@@ -1160,6 +1623,53 @@ export default function CaspioTestPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+
+                <div className="p-4 border rounded-lg bg-white space-y-3">
+                  <div className="text-sm text-muted-foreground">
+                    Auto-save is enabled for each selection. Use a name below to save this draft.
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      value={draftName}
+                      onChange={(event) => setDraftName(event.target.value)}
+                      placeholder={autoSaveLabel}
+                      className="h-9 w-64"
+                      disabled={!!lockedMappings}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (Object.keys(fieldMappings).length === 0) {
+                          toast({
+                            variant: "destructive",
+                            title: "No Mappings to Save",
+                            description: "Map at least one field before saving.",
+                          });
+                          return;
+                        }
+                        const resolvedDraftName = draftName.trim() || getNextDraftName();
+                        const updatedDrafts = {
+                          ...namedDrafts,
+                          [resolvedDraftName]: fieldMappings,
+                        };
+                        setNamedDrafts(updatedDrafts);
+                        setLastDraftName(resolvedDraftName);
+                        localStorage.setItem(namedDraftsKey, JSON.stringify(updatedDrafts));
+                        localStorage.setItem(lastDraftNameKey, resolvedDraftName);
+                        setHasDraftMappings(true);
+                        toast({
+                          title: "Draft Saved",
+                          description: `Draft "${resolvedDraftName}" saved.`,
+                        });
+                        setDraftName('');
+                      }}
+                      disabled={!!lockedMappings}
+                    >
+                      Save Draft
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Export Mappings */}
@@ -1199,71 +1709,6 @@ export default function CaspioTestPage() {
                   </div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="mapping-preview" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Locked Mapping Preview</CardTitle>
-              <CardDescription>
-                This locked mapping is used for exporting CS Summary data via connect_tbl_clients first (to obtain Client_ID2),
-                then writing to CalAIM_tbl_Members.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {lockedMappings ? (
-                <>
-                  <div className="rounded border p-4 bg-white">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm text-muted-foreground">
-                        Total mappings: {Object.keys(lockedMappings).length}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          navigator.clipboard.writeText(JSON.stringify(lockedMappings, null, 2));
-                          toast({
-                            title: "Mapping Copied",
-                            description: "Locked mapping copied as JSON.",
-                          });
-                        }}
-                      >
-                        <Copy className="mr-2 h-4 w-4" />
-                        Copy Mapping JSON
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-80 overflow-y-auto">
-                      {Object.entries(lockedMappings).map(([csField, caspioField]) => (
-                        <div key={csField} className="rounded border p-3 bg-gray-50">
-                          <div className="text-xs text-blue-700 font-medium">CS Summary</div>
-                          <div className="font-mono text-sm">{csField}</div>
-                          <div className="text-xs text-gray-500 mt-2">→ CalAIM_tbl_Members</div>
-                          <div className="font-mono text-sm">{caspioField}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded border p-4 bg-blue-50">
-                    <h4 className="font-medium text-blue-900 mb-2">Export Flow</h4>
-                    <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-                      <li>Submit CS Summary data to `connect_tbl_clients`.</li>
-                      <li>Read back `Client_ID2`.</li>
-                      <li>Write mapped fields to `CalAIM_tbl_Members`.</li>
-                    </ol>
-                  </div>
-                </>
-              ) : (
-                <Alert variant="destructive">
-                  <AlertTitle>No Locked Mapping</AlertTitle>
-                  <AlertDescription>
-                    Lock your mappings first to generate the export mapping preview.
-                  </AlertDescription>
-                </Alert>
-              )}
             </CardContent>
           </Card>
         </TabsContent>

@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Calendar, 
   User, 
@@ -25,10 +26,12 @@ import {
   Mail,
   Phone,
   MessageSquare,
-  Activity
+  Activity,
+  Bell,
+  BellRing
 } from 'lucide-react';
 import { useFirestore } from '@/firebase';
-import { collection, getDocs, collectionGroup, query, orderBy, limit, where, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, collectionGroup, doc, updateDoc } from 'firebase/firestore';
 import { format, isToday, isYesterday, isThisWeek, isThisMonth, parseISO } from 'date-fns';
 
 interface ActivityLogEntry {
@@ -46,6 +49,10 @@ interface ActivityLogEntry {
   newValue?: string;
   source: 'application' | 'notes' | 'caspio' | 'system' | 'manual';
   priority: 'low' | 'medium' | 'high';
+  formIndex?: number;
+  appPath?: string;
+  acknowledged?: boolean;
+  needsReviewType?: 'cs_summary' | 'document' | null;
 }
 
 const ACTIVITY_TYPES = [
@@ -110,8 +117,11 @@ export default function ActivityLogPage() {
         const memberName = `${appData.memberFirstName || ''} ${appData.memberLastName || ''}`.trim();
         
         if (appData.forms && Array.isArray(appData.forms)) {
-          appData.forms.forEach((form: any) => {
+          appData.forms.forEach((form: any, formIndex: number) => {
             if (form.status === 'Completed' && form.dateCompleted) {
+              const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
+              const needsCsReview = isSummary && !appData.applicationChecked;
+              const needsDocAck = !isSummary && !form.acknowledged;
               allActivities.push({
                 id: `${doc.id}-${form.name}-${form.dateCompleted?.seconds || Date.now()}`,
                 date: form.dateCompleted.toDate ? form.dateCompleted.toDate() : new Date(form.dateCompleted),
@@ -124,7 +134,11 @@ export default function ActivityLogPage() {
                 notes: form.notes || '',
                 formName: form.name,
                 source: 'application',
-                priority: 'medium'
+                priority: 'medium',
+                formIndex,
+                appPath: doc.ref.path,
+                acknowledged: Boolean(form.acknowledged),
+                needsReviewType: needsCsReview ? 'cs_summary' : (needsDocAck ? 'document' : null)
               });
             }
           });
@@ -156,8 +170,11 @@ export default function ActivityLogPage() {
         const memberName = `${appData.memberFirstName || ''} ${appData.memberLastName || ''}`.trim();
         
         if (appData.forms && Array.isArray(appData.forms)) {
-          appData.forms.forEach((form: any) => {
+          appData.forms.forEach((form: any, formIndex: number) => {
             if (form.status === 'Completed' && form.dateCompleted) {
+              const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
+              const needsCsReview = isSummary && !appData.applicationChecked;
+              const needsDocAck = !isSummary && !form.acknowledged;
               allActivities.push({
                 id: `admin-${doc.id}-${form.name}-${form.dateCompleted?.seconds || Date.now()}`,
                 date: form.dateCompleted.toDate ? form.dateCompleted.toDate() : new Date(form.dateCompleted),
@@ -170,7 +187,11 @@ export default function ActivityLogPage() {
                 notes: form.notes || '',
                 formName: form.name,
                 source: 'application',
-                priority: 'medium'
+                priority: 'medium',
+                formIndex,
+                appPath: doc.ref.path,
+                acknowledged: Boolean(form.acknowledged),
+                needsReviewType: needsCsReview ? 'cs_summary' : (needsDocAck ? 'document' : null)
               });
             }
           });
@@ -299,6 +320,32 @@ export default function ActivityLogPage() {
       dateRange: 'all',
       source: 'all'
     });
+  };
+
+  const handleAcknowledge = async (activity: ActivityLogEntry, checked: boolean) => {
+    if (!firestore || activity.formIndex === undefined || !activity.appPath) return;
+    try {
+      const docRef = doc(firestore, activity.appPath);
+      await updateDoc(docRef, {
+        [`forms.${activity.formIndex}.acknowledged`]: checked,
+      });
+      setActivities((prev) =>
+        prev.map((entry) =>
+          entry.id === activity.id ? { ...entry, acknowledged: checked } : entry
+        )
+      );
+      toast({
+        title: checked ? 'Document acknowledged' : 'Acknowledgement removed',
+        description: `${activity.formName || 'Document'} updated.`,
+      });
+    } catch (error) {
+      console.error('Error acknowledging document:', error);
+      toast({
+        title: 'Update failed',
+        description: 'Could not update acknowledgement status.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const getActivityIcon = (type: string) => {
@@ -472,8 +519,10 @@ export default function ActivityLogPage() {
                     <TableHead className="w-[140px]">Date</TableHead>
                     <TableHead className="w-[180px]">Member</TableHead>
                     <TableHead className="w-[60px]">Type</TableHead>
+                    <TableHead className="w-[70px]">Alert</TableHead>
                     <TableHead>Activity</TableHead>
                     <TableHead className="w-[120px]">Staff</TableHead>
+                    <TableHead className="w-[110px]">Acknowledged</TableHead>
                     <TableHead className="w-[100px]">Priority</TableHead>
                     <TableHead>Notes</TableHead>
                   </TableRow>
@@ -497,6 +546,15 @@ export default function ActivityLogPage() {
                           {getActivityIcon(activity.activityType)}
                         </div>
                       </TableCell>
+                      <TableCell>
+                        {activity.needsReviewType === 'cs_summary' ? (
+                          <BellRing className="h-4 w-4 text-green-600" />
+                        ) : activity.needsReviewType === 'document' ? (
+                          <Bell className="h-4 w-4 text-blue-600" />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-sm">
                         <div className="font-medium">{activity.description}</div>
                         {activity.formName && (
@@ -512,6 +570,17 @@ export default function ActivityLogPage() {
                         <div className="font-medium">{activity.staffMember}</div>
                         {activity.userName && activity.userName !== activity.staffMember && (
                           <div className="text-xs text-gray-500">by {activity.userName}</div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {activity.activityType === 'form_completed' || activity.activityType === 'form_uploaded' ? (
+                          <Checkbox
+                            checked={activity.acknowledged || false}
+                            onCheckedChange={(value) => handleAcknowledge(activity, Boolean(value))}
+                            aria-label="Acknowledge document"
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
                       <TableCell>

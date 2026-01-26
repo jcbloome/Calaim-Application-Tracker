@@ -468,10 +468,13 @@ function transformToMembersFormat(firebaseData: any, clientId: string): any {
     ISPAddress: firebaseData.ispAddress || '',
     ISPFacilityName: firebaseData.ispFacilityName || '',
     OnALWWaitlist: firebaseData.onALWWaitlist || 'Unknown',
-    HasPrefRCFE: firebaseData.hasPrefRCFE || 'No',
+    Has_Selected_RCFE: firebaseData.hasPrefRCFE || 'No',
     RCFEName: firebaseData.rcfeName || null,
     RCFEAddress: firebaseData.rcfeAddress || null,
-    RCFEAdminName: firebaseData.rcfeAdminName || null,
+    RCFEAdminName: [firebaseData.rcfeAdminFirstName, firebaseData.rcfeAdminLastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim() || firebaseData.rcfeAdminName || null,
     RCFEAdminPhone: firebaseData.rcfeAdminPhone || null,
     RCFEAdminEmail: firebaseData.rcfeAdminEmail || null,
   };

@@ -128,6 +128,25 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
         const requiredForms = getRequiredFormsForPathway(application.pathway as FormValues['pathway']);
         
         try {
+            const mrn = application.memberMrn?.trim();
+            if (mrn) {
+                const lookupResponse = await fetch(`/api/caspio-member-exists?mrn=${encodeURIComponent(mrn)}`);
+                const lookupData = await lookupResponse.json();
+
+                if (!lookupResponse.ok) {
+                    throw new Error(lookupData?.error || 'Failed to verify medical record number');
+                }
+
+                if (lookupData?.exists) {
+                    toast({
+                        variant: 'destructive',
+                        title: 'Medical Record Number Already Exists',
+                        description: 'This medical record number already exists in Caspio. Please remove the Caspio record before submitting again.',
+                    });
+                    return;
+                }
+            }
+
             await setDoc(applicationDocRef, {
                 status: 'In Progress',
                 forms: requiredForms,
@@ -299,6 +318,18 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                             <Field label="On ALW Waitlist?" value={application.onALWWaitlist} />
                             <Field label="Has Preferred RCFE?" value={application.hasPrefRCFE} />
                             <Field label="RCFE Name" value={application.rcfeName} fullWidth />
+                            <Field
+                                label="Preferred RCFE Cities"
+                                value={application.rcfePreferredCities}
+                                fullWidth
+                            />
+                            <Field
+                                label="RCFE Administrator"
+                                value={[application.rcfeAdminFirstName, application.rcfeAdminLastName].filter(Boolean).join(' ')}
+                                fullWidth
+                            />
+                            <Field label="Administrator Phone" value={application.rcfeAdminPhone} />
+                            <Field label="Administrator Email" value={application.rcfeAdminEmail} />
                         </Section>
 
                         {!isReadOnly && !isAdminView && (

@@ -171,7 +171,13 @@ export function PrintableCsSummaryFormSpanish({
       }),
       buildField({ label: 'Nombre del RCFE', value: data.rcfeName, width: 'full' }),
       buildField({ label: 'Dirección del RCFE', value: data.rcfeAddress, width: 'full' }),
-      buildField({ label: 'Nombre del Administrador del RCFE', value: data.rcfeAdminName, width: 'half' }),
+      buildField({
+        label: 'Ciudades Preferidas para RCFE',
+        value: data.rcfePreferredCities,
+        width: 'full'
+      }),
+      buildField({ label: 'Nombre del Administrador del RCFE', value: data.rcfeAdminFirstName, width: 'half' }),
+      buildField({ label: 'Apellido del Administrador del RCFE', value: data.rcfeAdminLastName, width: 'half' }),
       buildField({ label: 'Teléfono del Administrador', value: data.rcfeAdminPhone, width: 'half' }),
       buildField({ label: 'Correo Electrónico del Administrador', value: data.rcfeAdminEmail, width: 'full' }),
     ]),

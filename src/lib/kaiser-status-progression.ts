@@ -11,12 +11,19 @@ export interface KaiserStatus {
 }
 
 export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
-  // Initial Request Phase
+  {
+    id: 36,
+    status: 'T2038, Not Requested, Doc Collection',
+    sortOrder: 0,
+    description: 'T2038 not requested; documentation collection underway',
+    category: 'completion',
+    isActive: false
+  },
   {
     id: 35,
-    status: 'T2038 Request Received',
+    status: 'T2038 Request Ready',
     sortOrder: 1,
-    description: 'Initial T2038 request has been received and logged',
+    description: 'T2038 request is ready to be submitted',
     category: 'initial',
     isActive: true
   },
@@ -30,25 +37,25 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
   },
   {
     id: 21,
-    status: 'T2038 received, pending review',
+    status: 'T2038 received, Need First Contact',
     sortOrder: 4,
-    description: 'T2038 documentation received and awaiting review',
+    description: 'T2038 received; first contact still needed',
     category: 'initial',
     isActive: true
   },
   {
     id: 20,
-    status: 'T2038 received, pending review',
+    status: 'T2038 received, doc collection',
     sortOrder: 5,
-    description: 'T2038 documentation received and pending review process',
+    description: 'T2038 received; document collection in progress',
     category: 'initial',
     isActive: true
   },
   {
     id: 33,
-    status: 'T2038 Auth Only',
+    status: 'T2038 Auth Only Email',
     sortOrder: 5.4,
-    description: 'T2038 authorization only, no additional services',
+    description: 'T2038 authorization only email sent',
     category: 'authorization',
     isActive: true
   },
@@ -56,7 +63,7 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
     id: 40,
     status: 'RN Visit Needed',
     sortOrder: 6.5,
-    description: 'Registered Nurse visit required for assessment',
+    description: 'RN visit required for assessment',
     category: 'assessment',
     isActive: true
   },
@@ -70,7 +77,7 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
   },
   {
     id: 4,
-    status: 'RN Visit',
+    status: 'RN Visit Complete',
     sortOrder: 8,
     description: 'RN visit completed for member assessment',
     category: 'assessment',
@@ -78,9 +85,9 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
   },
   {
     id: 31,
-    status: 'Tier Level Requested',
+    status: 'Tier Level Request Needed',
     sortOrder: 9,
-    description: 'Tier level determination has been requested',
+    description: 'Tier level request is needed',
     category: 'assessment',
     isActive: true
   },
@@ -150,18 +157,34 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
   },
   {
     id: 47,
-    status: 'ILS Contract Emailed',
+    status: 'ILS/RCFE Contract Email Needed',
     sortOrder: 15.5,
-    description: 'Independent Living Services contract has been emailed',
+    description: 'ILS/RCFE contract email needs to be sent',
     category: 'authorization',
     isActive: true
   },
   {
-    id: 38,
-    status: 'ILS Sent for Contract',
-    sortOrder: 16,
-    description: 'ILS documentation sent for contract processing',
+    id: 49,
+    status: 'ILS/RCFE Contract Email Sent',
+    sortOrder: 15.7,
+    description: 'ILS/RCFE contract email sent',
     category: 'authorization',
+    isActive: true
+  },
+  {
+    id: 50,
+    status: 'ILS/RCFE Connection Confirmed',
+    sortOrder: 15.9,
+    description: 'ILS/RCFE connection confirmed',
+    category: 'authorization',
+    isActive: true
+  },
+  {
+    id: 51,
+    status: 'ILS Contracted and Member Moved In',
+    sortOrder: 20,
+    description: 'ILS contracted and member has moved in',
+    category: 'completion',
     isActive: true
   },
   {
@@ -178,14 +201,6 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
     sortOrder: 23,
     description: 'Case is temporarily on hold',
     category: 'inactive',
-    isActive: false
-  },
-  {
-    id: 36,
-    status: 'T2038, Not Required',
-    sortOrder: 0,
-    description: 'T2038 authorization determined not required',
-    category: 'completion',
     isActive: false
   }
 ];

@@ -1180,11 +1180,32 @@ export const syncMemberToCaspio = onCall({
 });
 
 // Publish CS Summary to Caspio Function
+type CsSummaryPayload = {
+  applicationData?: any;
+  mapping?: Record<string, string> | null;
+};
+
+const buildMemberDataFromMapping = (applicationData: any, mapping?: Record<string, string> | null) => {
+  const memberData: Record<string, any> = {};
+  if (!mapping) return memberData;
+
+  Object.entries(mapping).forEach(([csField, caspioField]) => {
+    if (!caspioField || caspioField === 'CalAIM_Status') return;
+    const value = applicationData?.[csField];
+    if (value === undefined || value === null || value === '') return;
+    memberData[caspioField] = value;
+  });
+
+  return memberData;
+};
+
 export const publishCsSummaryToCaspio = onCall({
   secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret]
 }, async (request) => {
   try {
-    const applicationData = request.data;
+    const payload = request.data as CsSummaryPayload;
+    const applicationData = payload?.applicationData ?? request.data;
+    const mapping = payload?.mapping ?? null;
     
     if (!applicationData) {
       throw new HttpsError('invalid-argument', 'Application data is required');
@@ -1247,7 +1268,8 @@ export const publishCsSummaryToCaspio = onCall({
       }
     }
     
-    // Transform and insert data (simplified for now)
+    // Transform and insert data using real CS Summary values only
+    const mappedFields = buildMemberDataFromMapping(applicationData, mapping);
     const memberData = {
       ApplicationID: applicationData.id || '',
       UserID: applicationData.userId || '',
@@ -1256,7 +1278,7 @@ export const publishCsSummaryToCaspio = onCall({
       MemberLastName: lastName,
       MemberDOB: applicationData.memberDob || '',
       MemberMediCalNum: applicationData.memberMediCalNum || '',
-      // Add more fields as needed
+      ...mappedFields
     };
     
     const insertResponse = await fetch(`${baseUrl}/tables/${membersTable}/records`, {
@@ -1290,6 +1312,9 @@ export const publishCsSummaryToCaspio = onCall({
     throw new HttpsError('internal', `Unexpected error: ${error.message}`);
   }
 });
+
+// Backward-compatible wrapper for older clients
+export const publishCsSummaryToCaspioSimple = publishCsSummaryToCaspio;
 // Authorization Tracker
 export { fetchAuthorizationMembers, updateMemberAuthorization } from './authorization-tracker';
 

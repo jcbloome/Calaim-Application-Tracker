@@ -290,9 +290,43 @@ export default function Step4() {
                         <FormItem><FormLabel>Facility Address {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
-                <FormField control={control} name="rcfeAdminName" render={({ field }) => (
-                    <FormItem><FormLabel>Administrator Name {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                )} />
+                <FormField
+                  control={control}
+                  name="rcfePreferredCities"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Preferred RCFE Cities {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value ?? ''}
+                          onChange={e => field.onChange(formatName(e.target.value))}
+                          placeholder="Enter up to 3 cities, separated by commas"
+                        />
+                      </FormControl>
+                      <FormDescription>Example: Los Angeles, Long Beach, Pasadena</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField control={control} name="rcfeAdminFirstName" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Administrator First Name {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel>
+                      <FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={control} name="rcfeAdminLastName" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Administrator Last Name {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel>
+                      <FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="rcfeAdminPhone" render={({ field }) => (
                         <FormItem><FormLabel>Administrator Phone {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><PhoneInput placeholder="(xxx) xxx-xxxx" {...field} /></FormControl><FormMessage /></FormItem>

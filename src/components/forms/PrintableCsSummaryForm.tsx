@@ -430,12 +430,24 @@ export function PrintableCsSummaryForm({
           value={data.rcfeAddress}
           width="full"
         />
+
+        <PrintableField
+          label="Preferred RCFE Cities"
+          value={data.rcfePreferredCities}
+          width="full"
+        />
         
         <PrintableField
-          label="RCFE Administrator Name"
-          value={data.rcfeAdminName}
+          label="RCFE Administrator First Name"
+          value={data.rcfeAdminFirstName}
           width="half"
         />
+        <PrintableField
+          label="RCFE Administrator Last Name"
+          value={data.rcfeAdminLastName}
+          width="half"
+        />
+        
         <PrintableField
           label="Administrator Phone"
           value={data.rcfeAdminPhone}

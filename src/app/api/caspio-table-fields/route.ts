@@ -1,36 +1,92 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 
-export async function POST(request: NextRequest) {
-  try {
-    const adminSession = request.cookies.get('calaim_admin_session')?.value;
-    if (!adminSession) {
-      const authHeader = request.headers.get('authorization');
-      const tokenMatch = authHeader?.match(/^Bearer\s+(.+)$/i);
-      if (!tokenMatch) {
-        return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
-      }
+async function verifyAdminAccess(request: NextRequest) {
+  const adminSession = request.cookies.get('calaim_admin_session')?.value;
+  if (adminSession) {
+    return { isAdmin: true };
+  }
 
+  const authHeader = request.headers.get('authorization');
+  const tokenMatch = authHeader?.match(/^Bearer\s+(.+)$/i);
+  if (!tokenMatch) {
+    return { isAdmin: false, error: 'Admin access required' };
+  }
+
+  const adminModule = await import('@/firebase-admin');
+  const admin = adminModule.default;
+  const adminDb = adminModule.adminDb;
+
+  const decoded = await admin.auth().verifyIdToken(tokenMatch[1]);
+  const email = decoded.email?.toLowerCase();
+  const uid = decoded.uid;
+
+  let isAdmin = isHardcodedAdminEmail(email);
+  if (!isAdmin && uid) {
+    const [adminDoc, superAdminDoc] = await Promise.all([
+      adminDb.collection('roles_admin').doc(uid).get(),
+      adminDb.collection('roles_super_admin').doc(uid).get()
+    ]);
+    isAdmin = adminDoc.exists || superAdminDoc.exists;
+  }
+
+  return { isAdmin };
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const access = await verifyAdminAccess(request);
+    if (!access.isAdmin) {
+      return NextResponse.json({ error: access.error || 'Admin access required' }, { status: 403 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const tableName = searchParams.get('tableName') || 'CalAIM_tbl_Members';
+
+    try {
       const adminModule = await import('@/firebase-admin');
-      const admin = adminModule.default;
       const adminDb = adminModule.adminDb;
 
-      const decoded = await admin.auth().verifyIdToken(tokenMatch[1]);
-      const email = decoded.email?.toLowerCase();
-      const uid = decoded.uid;
+      const settingsRef = adminDb.collection('admin-settings').doc('caspio-table-fields');
+      const settingsSnap = await settingsRef.get();
+      const data = settingsSnap.exists ? settingsSnap.data() : undefined;
+      const tableData = (data?.tables && (data.tables as Record<string, any>)[tableName]) || null;
+      const fields = Array.isArray(tableData?.fields) ? tableData.fields : [];
+      const updatedAt = tableData?.updatedAt?.toDate?.() ? tableData.updatedAt.toDate().toISOString() : null;
 
-      let isAdmin = isHardcodedAdminEmail(email);
-      if (!isAdmin && uid) {
-        const [adminDoc, superAdminDoc] = await Promise.all([
-          adminDb.collection('roles_admin').doc(uid).get(),
-          adminDb.collection('roles_super_admin').doc(uid).get()
-        ]);
-        isAdmin = adminDoc.exists || superAdminDoc.exists;
-      }
+      return NextResponse.json({
+        success: true,
+        fields,
+        tableName,
+        cached: !!tableData,
+        updatedAt,
+        message: `Loaded ${fields.length} cached fields from ${tableName}`
+      });
+    } catch (cacheError: any) {
+      console.warn('Caspio field cache read skipped:', cacheError?.message || cacheError);
+      return NextResponse.json({
+        success: true,
+        fields: [],
+        tableName,
+        cached: false,
+        updatedAt: null,
+        message: 'No cached fields available (cache read skipped)',
+      });
+    }
+  } catch (error: any) {
+    console.error('Caspio field cache fetch failed:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch cached Caspio fields', details: error.message },
+      { status: 500 }
+    );
+  }
+}
 
-      if (!isAdmin) {
-        return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
-      }
+export async function POST(request: NextRequest) {
+  try {
+    const access = await verifyAdminAccess(request);
+    if (!access.isAdmin) {
+      return NextResponse.json({ error: access.error || 'Admin access required' }, { status: 403 });
     }
 
     const { tableName = 'CalAIM_tbl_Members' } = await request.json();
@@ -93,9 +149,12 @@ export async function POST(request: NextRequest) {
     let fields = schemaData.Result?.Fields?.map((field: any) => field.Name) || [];
     const resultKeys = schemaData?.Result ? Object.keys(schemaData.Result) : [];
 
-    // Fallback to columns endpoint if schema doesn't include fields
+    let fieldsUrl: string | undefined;
+    let columnsUrl: string | undefined;
+
+    // Fallback to fields/columns endpoints if schema doesn't include fields
     if (fields.length === 0) {
-      const fieldsUrl = `${restBaseUrl}/tables/${encodedTableName}/fields`;
+      fieldsUrl = `${restBaseUrl}/tables/${encodedTableName}/fields`;
       const fieldsResponse = await fetch(fieldsUrl, {
         method: 'GET',
         headers: {
@@ -107,52 +166,49 @@ export async function POST(request: NextRequest) {
       if (fieldsResponse.ok) {
         const fieldsData = await fieldsResponse.json();
         fields = fieldsData.Result?.map((field: any) => field.Name) || [];
-        if (fields.length > 0) {
-          return NextResponse.json({
-            success: true,
-            fields,
-            tableName,
-            message: `Successfully retrieved ${fields.length} field names from ${tableName}`,
-            schemaUrl,
-            fieldsUrl,
-            resultKeys,
-            timestamp: new Date().toISOString(),
-          });
-        }
       }
 
-      const columnsUrl = `${restBaseUrl}/tables/${encodedTableName}/columns`;
-      const columnsResponse = await fetch(columnsUrl, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Accept: 'application/json',
-        },
-      });
-
-      if (!columnsResponse.ok) {
-        const errorText = await columnsResponse.text();
-        return NextResponse.json(
-          { error: `Columns request failed: ${columnsResponse.status}`, details: errorText, schemaUrl, fieldsUrl, columnsUrl },
-          { status: 502 }
-        );
-      }
-
-      const columnsData = await columnsResponse.json();
-      fields = columnsData.Result?.map((col: any) => col.Name) || [];
-      if (fields.length > 0) {
-        return NextResponse.json({
-          success: true,
-          fields,
-          tableName,
-          message: `Successfully retrieved ${fields.length} field names from ${tableName}`,
-          schemaUrl,
-          fieldsUrl,
-          columnsUrl,
-          resultKeys,
-          timestamp: new Date().toISOString(),
+      if (fields.length === 0) {
+        columnsUrl = `${restBaseUrl}/tables/${encodedTableName}/columns`;
+        const columnsResponse = await fetch(columnsUrl, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: 'application/json',
+          },
         });
+
+        if (!columnsResponse.ok) {
+          const errorText = await columnsResponse.text();
+          return NextResponse.json(
+            { error: `Columns request failed: ${columnsResponse.status}`, details: errorText, schemaUrl, fieldsUrl, columnsUrl },
+            { status: 502 }
+          );
+        }
+
+        const columnsData = await columnsResponse.json();
+        fields = columnsData.Result?.map((col: any) => col.Name) || [];
       }
+    }
+
+    let cacheWarning: string | undefined;
+    try {
+      const adminModule = await import('@/firebase-admin');
+      const adminDb = adminModule.adminDb;
+      const admin = adminModule.default;
+      const settingsRef = adminDb.collection('admin-settings').doc('caspio-table-fields');
+
+      await settingsRef.set({
+        tables: {
+          [tableName]: {
+            fields,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }
+        }
+      }, { merge: true });
+    } catch (cacheError: any) {
+      cacheWarning = cacheError?.message || 'Cache write skipped';
+      console.warn('Caspio field cache write skipped:', cacheWarning);
     }
 
     return NextResponse.json({
@@ -161,8 +217,12 @@ export async function POST(request: NextRequest) {
       tableName,
       message: `Successfully retrieved ${fields.length} field names from ${tableName}`,
       schemaUrl,
+      fieldsUrl,
+      columnsUrl,
       resultKeys,
       timestamp: new Date().toISOString(),
+      cached: !cacheWarning,
+      cacheWarning,
     });
   } catch (error: any) {
     console.error('Caspio table field fetch failed:', error);
