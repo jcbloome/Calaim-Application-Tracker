@@ -12,7 +12,8 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔐 Custom password reset request received');
     const { email, role } = await request.json();
-    console.log('📧 Email:', email);
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    console.log('📧 Email:', normalizedEmail);
     
     // Debug environment variables
     console.log('🔧 Environment check:');
@@ -20,12 +21,28 @@ export async function POST(request: NextRequest) {
     console.log('- NEXT_PUBLIC_APP_URL:', process.env.NEXT_PUBLIC_APP_URL || 'Not set');
     console.log('- NODE_ENV:', process.env.NODE_ENV);
     
-    if (!email) {
+    if (!normalizedEmail) {
       console.log('❌ No email provided');
       return NextResponse.json(
         { error: 'Email is required' },
         { status: 400 }
       );
+    }
+
+    let resolvedRole: 'sw' | 'user' = role === 'sw' ? 'sw' : 'user';
+    if (resolvedRole !== 'sw') {
+      try {
+        const swSnapshot = await adminDb
+          .collection('socialWorkers')
+          .where('email', '==', normalizedEmail)
+          .limit(1)
+          .get();
+        if (!swSnapshot.empty) {
+          resolvedRole = 'sw';
+        }
+      } catch (roleError) {
+        console.warn('⚠️ Failed to determine user role from Firestore:', roleError);
+      }
     }
 
     // Temporarily disabled development mode simulation to test real email sending
@@ -55,7 +72,7 @@ export async function POST(request: NextRequest) {
     if (process.env.NODE_ENV !== 'development') {
       try {
         await adminDb.collection('passwordResetTokens').doc(resetToken).set({
-          email,
+          email: normalizedEmail,
           expires,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
@@ -68,8 +85,8 @@ export async function POST(request: NextRequest) {
     }
     
     // Always store in memory as backup
-    resetTokenStore.set(resetToken, { email, expires });
-    console.log('🔑 Generated reset token for:', email);
+    resetTokenStore.set(resetToken, { email: normalizedEmail, expires });
+    console.log('🔑 Generated reset token for:', normalizedEmail);
     
     // In production, if Firestore failed, return an error since tokens won't persist
     if (process.env.NODE_ENV !== 'development' && !firestoreSuccess) {
@@ -106,11 +123,11 @@ export async function POST(request: NextRequest) {
       baseUrl = 'http://localhost:3000';
     }
 
-    const resetPath = role === 'sw' ? '/sw-reset-password' : '/reset-password';
+    const resetPath = resolvedRole === 'sw' ? '/sw-reset-password' : '/reset-password';
     const resetUrl = `${baseUrl}${resetPath}?token=${resetToken}`;
 
     // Send email using Resend with React component
-    console.log('📤 Sending CalAIM branded email to:', email);
+    console.log('📤 Sending CalAIM branded email to:', normalizedEmail);
     console.log('🔗 Reset URL:', resetUrl);
     console.log('🌐 Base URL used:', baseUrl);
     console.log('🌐 Request origin detected:', requestOrigin || 'none');
@@ -121,12 +138,12 @@ export async function POST(request: NextRequest) {
       // Render the React email component to HTML
       const emailHtml = await renderAsync(PasswordResetEmail({
         resetUrl,
-        userEmail: email,
+        userEmail: normalizedEmail,
       }));
 
       const emailResult = await resend.emails.send({
         from: 'Connections CalAIM Application Portal <noreply@carehomefinders.com>',
-        to: email,
+        to: normalizedEmail,
         subject: 'Reset Your Connections CalAIM Application Portal Password',
         html: emailHtml,
       });
@@ -134,7 +151,7 @@ export async function POST(request: NextRequest) {
       console.log('✅ Email sent successfully:', emailResult);
 
       return NextResponse.json(
-        { message: 'Password reset email sent! Check your inbox for the reset link.' },
+        { message: 'Password reset email sent! Check your inbox for the reset link.', role: resolvedRole },
         { status: 200 }
       );
     } catch (emailError) {

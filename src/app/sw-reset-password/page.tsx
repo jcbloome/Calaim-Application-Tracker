@@ -32,7 +32,21 @@ function SWResetPasswordContent() {
 
   const token = searchParams.get('token');
   const oobCode = searchParams.get('oobCode');
+  const emailParam = searchParams.get('email');
+  const sentParam = searchParams.get('sent');
   const isResetFlow = Boolean(token || oobCode);
+
+  useEffect(() => {
+    if (!isResetFlow && emailParam && !email) {
+      setEmail(emailParam);
+    }
+  }, [emailParam, isResetFlow, email]);
+
+  useEffect(() => {
+    if (!isResetFlow && sentParam === '1') {
+      setIsSuccess(true);
+    }
+  }, [isResetFlow, sentParam]);
 
   useEffect(() => {
     if (!isResetFlow) return;

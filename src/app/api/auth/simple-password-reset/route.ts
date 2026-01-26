@@ -6,9 +6,10 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔐 Simple password reset request received');
     const { email } = await request.json();
-    console.log('📧 Email:', email);
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    console.log('📧 Email:', normalizedEmail);
     
-    if (!email) {
+    if (!normalizedEmail) {
       console.log('❌ No email provided');
       return NextResponse.json(
         { error: 'Email is required' },
@@ -23,14 +24,30 @@ export async function POST(request: NextRequest) {
       try {
         // Check if user exists first
         const auth = getAuth(admin.app());
-        await auth.getUserByEmail(email);
+        await auth.getUserByEmail(normalizedEmail);
         console.log('✅ User found, would send Firebase password reset email');
+
+        let role: 'sw' | 'user' = 'user';
+        try {
+          const swSnapshot = await admin
+            .firestore()
+            .collection('socialWorkers')
+            .where('email', '==', normalizedEmail)
+            .limit(1)
+            .get();
+          if (!swSnapshot.empty) {
+            role = 'sw';
+          }
+        } catch (roleError) {
+          console.warn('⚠️ Failed to determine user role from Firestore:', roleError);
+        }
         
         // In development, we can't actually send the email without proper config
         // But we can simulate success and provide instructions
         return NextResponse.json({
           message: 'Development mode: Password reset would be sent via Firebase. For testing, try creating a new account or contact an admin.',
           devMode: true,
+          role,
           suggestion: 'Try going to /signup to create a new account, or use /debug-login to test different passwords.'
         }, { status: 200 });
         
@@ -61,7 +78,7 @@ export async function POST(request: NextRequest) {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email: normalizedEmail }),
     });
 
     const customResetData = await customResetResponse.json();

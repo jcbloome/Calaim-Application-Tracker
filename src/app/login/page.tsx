@@ -153,7 +153,8 @@ export default function LoginPage() {
     if (process.env.NODE_ENV === 'development' || window.location.hostname === 'localhost') {
       try {
         console.log('🔧 Development mode: Using Firebase built-in password reset');
-        await sendPasswordResetEmail(auth!, resetEmail);
+        const normalizedResetEmail = resetEmail.trim().toLowerCase();
+        await sendPasswordResetEmail(auth!, normalizedResetEmail);
         enhancedToast.success('Password Reset Email Sent', 'Check your email for a password reset link from Firebase. Note: This is the default Firebase email in development mode.');
         setResetEmail('');
         setIsResettingPassword(false);
@@ -166,12 +167,13 @@ export default function LoginPage() {
     
     try {
       // Use simple password reset API that works in development
+      const normalizedResetEmail = resetEmail.trim().toLowerCase();
       const response = await fetch('/api/auth/simple-password-reset', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email: resetEmail }),
+        body: JSON.stringify({ email: normalizedResetEmail }),
       });
 
       const data = await response.json();
@@ -182,7 +184,11 @@ export default function LoginPage() {
         } else {
           enhancedToast.success('Password Reset Email Sent', 'Check your email (including spam/junk folder) for a password reset link from the Connections CalAIM Application Portal.');
         }
-        setResetEmail('');
+        if (data.role === 'sw') {
+          router.push(`/sw-reset-password?email=${encodeURIComponent(normalizedResetEmail)}&sent=1`);
+        } else {
+          setResetEmail('');
+        }
         return;
       } else {
         throw new Error(data.error || 'Failed to send password reset email');
