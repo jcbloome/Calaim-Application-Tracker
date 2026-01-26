@@ -11,7 +11,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 export async function POST(request: NextRequest) {
   try {
     console.log('🔐 Custom password reset request received');
-    const { email } = await request.json();
+    const { email, role } = await request.json();
     console.log('📧 Email:', email);
     
     // Debug environment variables
@@ -106,7 +106,8 @@ export async function POST(request: NextRequest) {
       baseUrl = 'http://localhost:3000';
     }
 
-    const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`;
+    const resetPath = role === 'sw' ? '/sw-reset-password' : '/reset-password';
+    const resetUrl = `${baseUrl}${resetPath}?token=${resetToken}`;
 
     // Send email using Resend with React component
     console.log('📤 Sending CalAIM branded email to:', email);
