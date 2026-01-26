@@ -17,6 +17,7 @@
 ## 🗓️ **Development History**
 
 ### **January 25, 2026 - Updates**
+- ✅ **UI/UX**: Simplified Activity Dashboard cards to CS Summary/doc review counts
 - ✅ **UI/UX**: Added review/acknowledgement alerts (green/blue) and removed admin login debug panel
 - ✅ **UI/UX**: Added CS Summary review stats cards and document acknowledgement in Activity Log
 - ✅ **Feature Added**: Cached CalAIM_tbl_Members Caspio field list in Firestore for faster CS Summary field mapping

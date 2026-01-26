@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Activity, FileCheck2, ClipboardCheck, FileText, AlertCircle } from 'lucide-react';
+import { ClipboardCheck, FileText, AlertCircle } from 'lucide-react';
 import { ApplicationListSkeleton } from '@/components/ui/application-skeleton';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdmin } from '@/hooks/use-admin';
@@ -76,17 +76,6 @@ export default function AdminDashboardPage() {
     fetchApps();
   }, [fetchApps]);
 
-  const stats = useMemo(() => {
-    if (!allApplications) {
-      return { total: 0, revisions: 0, approved: 0 };
-    }
-    return {
-      total: allApplications.length,
-      revisions: allApplications.filter(app => app.status === 'Requires Revision').length,
-      approved: allApplications.filter(app => app.status === 'Approved').length,
-    };
-  }, [allApplications]);
-
   const csSummaryStats = useMemo(() => {
     const result = {
       received: 0,
@@ -109,6 +98,34 @@ export default function AdminDashboardPage() {
       } else {
         result.needsReview += 1;
       }
+    });
+
+    return result;
+  }, [allApplications]);
+
+  const documentStats = useMemo(() => {
+    const result = {
+      received: 0,
+      needsReview: 0,
+      reviewed: 0,
+    };
+
+    if (!allApplications) return result;
+
+    allApplications.forEach((app) => {
+      const forms = app.forms || [];
+      forms.forEach((form: any) => {
+        const isCompleted = form.status === 'Completed';
+        const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
+        if (!isCompleted || isSummary) return;
+
+        result.received += 1;
+        if (form.acknowledged) {
+          result.reviewed += 1;
+        } else {
+          result.needsReview += 1;
+        }
+      });
     });
 
     return result;
@@ -175,30 +192,20 @@ export default function AdminDashboardPage() {
 
       {/* Daily Notifications Dashboard */}
       <DailyNotificationDashboard />
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="border-l-4 border-blue-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">New CS Summary Forms</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{csSummaryStats.received}</div>
-            <p className="text-xs text-muted-foreground">Completed CS Summary forms</p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card className="border-l-4 border-amber-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Needs Review</CardTitle>
+            <CardTitle className="text-sm font-medium">CS Summary Needs Review</CardTitle>
             <AlertCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{csSummaryStats.needsReview}</div>
-            <p className="text-xs text-muted-foreground">Pending staff review</p>
+            <p className="text-xs text-muted-foreground">Awaiting staff review</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-green-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Reviewed</CardTitle>
+            <CardTitle className="text-sm font-medium">CS Summary Reviewed</CardTitle>
             <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -206,38 +213,34 @@ export default function AdminDashboardPage() {
             <p className="text-xs text-muted-foreground">Marked as checked</p>
           </CardContent>
         </Card>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card className="border-l-4 border-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Total Applications
-            </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">New Documents Received</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
+            <div className="text-2xl font-bold">{documentStats.received}</div>
+            <p className="text-xs text-muted-foreground">Completed non-CS forms</p>
           </CardContent>
         </Card>
-        <Card className="border-l-4 border-yellow-500">
+        <Card className="border-l-4 border-amber-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Pending Revisions
-            </CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Documents Need Review</CardTitle>
+            <AlertCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.revisions}</div>
+            <div className="text-2xl font-bold">{documentStats.needsReview}</div>
+            <p className="text-xs text-muted-foreground">Awaiting acknowledgement</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-green-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Approvals</CardTitle>
-            <FileCheck2 className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Documents Reviewed</CardTitle>
+            <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.approved}</div>
+            <div className="text-2xl font-bold">{documentStats.reviewed}</div>
+            <p className="text-xs text-muted-foreground">Acknowledged by staff</p>
           </CardContent>
         </Card>
       </div>
