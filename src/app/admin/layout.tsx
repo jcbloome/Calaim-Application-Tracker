@@ -349,7 +349,7 @@ function AdminHeader() {
     if (items.length === 0) return null;
 
     return (
-      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         {items.map((item) => (
           <Link
             key={item.key}
@@ -382,15 +382,15 @@ function AdminHeader() {
 
   return (
     <div className="bg-card border-b sticky top-0 z-40">
-      <div className="container mx-auto flex items-center justify-between h-16 px-4 sm:px-6">
-        <div className="flex items-center gap-6">
+      <div className="container mx-auto flex flex-wrap items-center justify-between min-h-16 gap-3 px-4 py-2 sm:px-6">
+        <div className="flex flex-wrap items-center gap-4">
           <Link href="/admin" className="shrink-0">
             <Image
               src="/calaimlogopdf.png"
               alt="Connect CalAIM Logo"
               width={240}
               height={67}
-              className="w-48 h-auto object-contain"
+              className="w-32 sm:w-40 md:w-48 h-auto object-contain"
               priority
             />
           </Link>
@@ -597,8 +597,10 @@ function AdminHeader() {
       </div>
       {renderPlanBadges() && (
         <div className="border-t border-border bg-muted/30">
-          <div className="container mx-auto px-4 sm:px-6 py-2 flex items-center gap-3">
-            <span className="text-xs font-medium text-muted-foreground">Action items:</span>
+          <div className="container mx-auto px-4 sm:px-6 py-2 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground w-full sm:w-auto">
+              Action items:
+            </span>
             {renderPlanBadges()}
           </div>
         </div>
@@ -675,7 +677,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <SocialWorkerRedirect />
       <div className="flex flex-col min-h-screen">
         <AdminHeader />
-        <main className="flex-grow p-4 sm:p-6 md:p-8 bg-slate-50/50">
+        <main className="flex-grow min-w-0 p-4 sm:p-6 md:p-8 bg-slate-50/50">
           {children}
         </main>
       </div>

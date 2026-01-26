@@ -136,16 +136,16 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
                     Quick View
                 </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+            <DialogContent className="w-[95vw] sm:max-w-5xl max-h-[90vh] flex flex-col">
                 <DialogHeader className="flex-shrink-0">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                             <DialogTitle className="text-xl">CS Summary: {application.memberFirstName} {application.memberLastName}</DialogTitle>
                             <DialogDescription>
                                 Complete CS Member Summary form data • {application.healthPlan} • {application.pathway}
                             </DialogDescription>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             <Button variant="outline" size="sm" asChild>
                                 <Link href={`/admin/applications/${application.id}?userId=${application.userId}`}>
                                     <ExternalLink className="h-4 w-4 mr-2" />
@@ -588,9 +588,9 @@ export const AdminApplicationsTable = ({
                 isNew && "border-l-4 border-l-blue-400 bg-blue-50",
                 isRecentlyUpdated && "border-l-4 border-l-amber-400 bg-amber-50"
               )}>
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                <div className="flex flex-col gap-2">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
                       {onSelectionChange && selected && (
                         <Checkbox
                           checked={selected.includes(app.id)}
@@ -614,18 +614,16 @@ export const AdminApplicationsTable = ({
                       {(app as any).assignedStaff && ` • Staff: ${(app as any).assignedStaff}`}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 ml-2">
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
                     <Badge variant="outline" className={getBadgeVariant(app.status)}>
                       {app.status}
                     </Badge>
-                    <div className="flex items-center gap-1">
-                      <QuickViewDialog application={app} />
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>
-                          View Details
-                        </Link>
-                      </Button>
-                    </div>
+                    <QuickViewDialog application={app} />
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>
+                        View Details
+                      </Link>
+                    </Button>
                   </div>
                 </div>
               </div>

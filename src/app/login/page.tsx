@@ -222,9 +222,9 @@ export default function LoginPage() {
       <main className="flex-grow flex items-center justify-center bg-slate-50 p-4 min-h-screen">
         <Card className="w-full max-w-md shadow-2xl">
           <CardHeader className="items-center text-center p-6">
-            <CardTitle className="text-3xl font-bold">Member Login</CardTitle>
+            <CardTitle className="text-3xl font-bold">Connect CalAIM Login</CardTitle>
             <CardDescription className="text-base">
-              Enter your credentials to access your CalAIM applications.
+              Enter your credentials to begin a new or access existing CalAIM applications.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-6">
