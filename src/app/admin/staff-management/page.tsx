@@ -319,7 +319,7 @@ export default function StaffManagementPage() {
     return (
         <div className="container mx-auto p-6 space-y-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
                     <Users className="h-8 w-8 text-primary" />
                     <div>
@@ -328,6 +328,11 @@ export default function StaffManagementPage() {
                             Manage staff assignments, notifications, and permissions
                         </p>
                     </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <Button asChild variant="outline">
+                        <a href="/admin/social-worker-assignments">Staff Assignments</a>
+                    </Button>
                 </div>
             </div>
 
@@ -433,7 +438,7 @@ export default function StaffManagementPage() {
                             <span>Loading staff members...</span>
                         </div>
                     ) : staffList.length > 0 ? (
-                        <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {staffList
                                 .filter((staff) => {
                                     const query = staffNameFilter.trim().toLowerCase();
@@ -450,22 +455,20 @@ export default function StaffManagementPage() {
                                     return true;
                                 })
                                 .map((staff) => (
-                                <div key={staff.uid} className="p-4 border rounded-lg">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div>
-                                            <h3 className="font-semibold">
+                                <div key={staff.uid} className="p-3 border rounded-lg">
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="space-y-1">
+                                            <h3 className="text-sm font-semibold">
                                                 {(staff.firstName || staff.lastName) ? `${staff.firstName} ${staff.lastName}`.trim() : (staff.email || staff.uid)}
                                             </h3>
-                                            <p className="text-sm text-muted-foreground">{staff.email || staff.uid}</p>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <span className={`px-2 py-1 text-xs rounded-full ${
-                                                    staff.role === 'Super Admin' 
-                                                        ? 'bg-red-100 text-red-800' 
-                                                        : 'bg-blue-100 text-blue-800'
-                                                }`}>
-                                                    {staff.role}
-                                                </span>
-                                            </div>
+                                            <p className="text-xs text-muted-foreground">{staff.email || staff.uid}</p>
+                                            <span className={`inline-flex px-2 py-0.5 text-xs rounded-full ${
+                                                staff.role === 'Super Admin' 
+                                                    ? 'bg-red-100 text-red-800' 
+                                                    : 'bg-blue-100 text-blue-800'
+                                            }`}>
+                                                {staff.role}
+                                            </span>
                                         </div>
                                         <div className="flex items-center gap-2">
                                             {staff.uid !== currentUser?.uid && (
@@ -498,11 +501,11 @@ export default function StaffManagementPage() {
                                             )}
                                         </div>
                                     </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                        <div className="flex items-center justify-between gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
                                                 <Bell className={`h-4 w-4 ${notificationRecipients.includes(staff.uid) ? 'text-primary' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`notif-${staff.uid}`} className="text-sm font-medium">General Notifications</Label>
+                                                <Label htmlFor={`notif-${staff.uid}`} className="text-sm font-medium">General</Label>
                                             </div>
                                             <Checkbox 
                                                 id={`notif-${staff.uid}`} 
@@ -511,10 +514,10 @@ export default function StaffManagementPage() {
                                                 aria-label={`Toggle general notifications for ${staff.email}`} 
                                             />
                                         </div>
-                                        <div className="flex items-center justify-between gap-4">
+                                        <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
                                                 <Bell className={`h-4 w-4 ${healthNetRecipients.includes(staff.uid) ? 'text-blue-600' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`healthnet-${staff.uid}`} className="text-sm font-medium">Health Net Applications</Label>
+                                                <Label htmlFor={`healthnet-${staff.uid}`} className="text-sm font-medium">HN Apps</Label>
                                             </div>
                                             <Checkbox 
                                                 id={`healthnet-${staff.uid}`} 
@@ -523,10 +526,10 @@ export default function StaffManagementPage() {
                                                 aria-label={`Toggle Health Net notifications for ${staff.email}`} 
                                             />
                                         </div>
-                                        <div className="flex items-center justify-between gap-4">
+                                        <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
                                                 <Bell className={`h-4 w-4 ${kaiserRecipients.includes(staff.uid) ? 'text-red-600' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`kaiser-${staff.uid}`} className="text-sm font-medium">Kaiser Applications</Label>
+                                                <Label htmlFor={`kaiser-${staff.uid}`} className="text-sm font-medium">Kaiser Apps</Label>
                                             </div>
                                             <Checkbox 
                                                 id={`kaiser-${staff.uid}`} 
@@ -535,10 +538,10 @@ export default function StaffManagementPage() {
                                                 aria-label={`Toggle Kaiser notifications for ${staff.email}`} 
                                             />
                                         </div>
-                                        <div className="flex items-center justify-between gap-4">
+                                        <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
                                                 <Mail className={`h-4 w-4 ${ilsNotePermissions.includes(staff.uid) ? 'text-green-600' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`ils-${staff.uid}`} className="text-sm font-medium">ILS Note Permissions</Label>
+                                                <Label htmlFor={`ils-${staff.uid}`} className="text-sm font-medium">ILS Notes</Label>
                                             </div>
                                             <Checkbox 
                                                 id={`ils-${staff.uid}`} 
@@ -550,13 +553,12 @@ export default function StaffManagementPage() {
                                     </div>
                                     
                                     {/* Staff Assignment Configuration */}
-                                    <div className="mt-4 pt-4 border-t">
-                                        <h4 className="text-sm font-medium mb-3 text-muted-foreground">Staff Assignment Availability</h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div className="flex items-center justify-between gap-4">
+                                    <div className="mt-3 pt-3 border-t">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div className="flex items-center justify-between gap-3">
                                                 <div className="flex items-center gap-2">
                                                     <Users className={`h-4 w-4 ${kaiserAssignmentStaff.includes(staff.uid) ? 'text-red-600' : 'text-muted-foreground'}`} />
-                                                    <Label htmlFor={`kaiser-assign-${staff.uid}`} className="text-sm font-medium">Available for Kaiser Assignments</Label>
+                                                    <Label htmlFor={`kaiser-assign-${staff.uid}`} className="text-sm font-medium">Kaiser Assign</Label>
                                                 </div>
                                                 <Checkbox 
                                                     id={`kaiser-assign-${staff.uid}`} 
@@ -565,10 +567,10 @@ export default function StaffManagementPage() {
                                                     aria-label={`Toggle Kaiser assignment availability for ${staff.email}`} 
                                                 />
                                             </div>
-                                            <div className="flex items-center justify-between gap-4">
+                                            <div className="flex items-center justify-between gap-3">
                                                 <div className="flex items-center gap-2">
                                                     <Users className={`h-4 w-4 ${healthNetAssignmentStaff.includes(staff.uid) ? 'text-blue-600' : 'text-muted-foreground'}`} />
-                                                    <Label htmlFor={`healthnet-assign-${staff.uid}`} className="text-sm font-medium">Available for Health Net Assignments</Label>
+                                                    <Label htmlFor={`healthnet-assign-${staff.uid}`} className="text-sm font-medium">Health Net Assign</Label>
                                                 </div>
                                                 <Checkbox 
                                                     id={`healthnet-assign-${staff.uid}`} 
