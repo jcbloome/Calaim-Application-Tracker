@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, Suspense } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { useFirestore, type WithId } from '@/firebase';
 import { collection, doc, writeBatch, getDocs, collectionGroup, Timestamp } from 'firebase/firestore';
@@ -28,8 +28,9 @@ import { errorEmitter } from '@/firebase/error-emitter';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 
-export default function AdminApplicationsPage() {
+function AdminApplicationsPageContent() {
   const firestore = useFirestore();
   const { toast } = useToast();
   const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -43,7 +44,9 @@ export default function AdminApplicationsPage() {
   const [pathwayFilter, setPathwayFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [memberFilter, setMemberFilter] = useState('');
+  const [reviewFilter, setReviewFilter] = useState<'all' | 'cs' | 'docs'>('all');
   const [isPushingToCaspio, setIsPushingToCaspio] = useState(false);
+  const searchParams = useSearchParams();
 
   const fetchAllApplications = useCallback(async () => {
     if (!firestore || !isAdmin) {
@@ -139,6 +142,19 @@ export default function AdminApplicationsPage() {
     fetchAllApplications();
   }, [fetchAllApplications]);
 
+  useEffect(() => {
+    const plan = (searchParams.get('plan') || '').toLowerCase();
+    const review = (searchParams.get('review') || '').toLowerCase();
+
+    if (plan) {
+      if (plan.includes('kaiser')) setHealthPlanFilter('Kaiser');
+      if (plan.includes('health') || plan.includes('hn')) setHealthPlanFilter('Health Net');
+    }
+
+    if (review === 'cs') setReviewFilter('cs');
+    if (review === 'docs') setReviewFilter('docs');
+  }, [searchParams]);
+
   const filteredApplications = useMemo(() => {
     return allApplications.filter(app => {
       const healthPlanMatch = healthPlanFilter === 'all' || app.healthPlan === healthPlanFilter;
@@ -146,9 +162,24 @@ export default function AdminApplicationsPage() {
       const statusMatch = statusFilter === 'all' || app.status === statusFilter;
       const memberMatch = !memberFilter || `${app.memberFirstName} ${app.memberLastName}`.toLowerCase().includes(memberFilter.toLowerCase());
 
-      return healthPlanMatch && pathwayMatch && statusMatch && memberMatch;
+      const forms = app.forms || [];
+      const hasCompletedSummary = forms.some((form: any) =>
+        (form.name === 'CS Member Summary' || form.name === 'CS Summary') && form.status === 'Completed'
+      );
+      const hasUnacknowledgedDocs = forms.some((form: any) => {
+        const isCompleted = form.status === 'Completed';
+        const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
+        return isCompleted && !isSummary && !form.acknowledged;
+      });
+
+      const reviewMatch =
+        reviewFilter === 'all' ||
+        (reviewFilter === 'cs' && hasCompletedSummary && !app.applicationChecked) ||
+        (reviewFilter === 'docs' && hasUnacknowledgedDocs);
+
+      return healthPlanMatch && pathwayMatch && statusMatch && memberMatch && reviewMatch;
     });
-  }, [allApplications, healthPlanFilter, pathwayFilter, statusFilter, memberFilter]);
+  }, [allApplications, healthPlanFilter, pathwayFilter, statusFilter, memberFilter, reviewFilter]);
   
 
   const handleSelectionChange = (id: string, checked: boolean) => {
@@ -487,5 +518,13 @@ export default function AdminApplicationsPage() {
             </div>
         </div>
     </div>
+  );
+}
+
+export default function AdminApplicationsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64">Loading applications...</div>}>
+      <AdminApplicationsPageContent />
+    </Suspense>
   );
 }

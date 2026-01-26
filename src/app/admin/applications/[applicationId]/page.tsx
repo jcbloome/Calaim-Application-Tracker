@@ -1365,6 +1365,57 @@ function ApplicationDetailPageContent() {
     return !form.acknowledged;
   });
 
+  const handleApplicationReviewed = async (checked: boolean) => {
+    try {
+      const updateData = {
+        applicationChecked: checked,
+        applicationCheckedDate: checked ? new Date().toISOString() : null,
+        ...(checked ? {} : { applicationCheckedBy: null })
+      };
+
+      if (docRef) {
+        await setDoc(docRef, updateData, { merge: true });
+        setApplication(prev => prev ? { ...prev, ...updateData } : null);
+
+        toast({
+          title: checked ? "Application Marked as Checked" : "Application Check Removed",
+          description: checked ? "Application has been marked as reviewed" : "Application check status removed",
+        });
+      }
+    } catch (error) {
+      console.error('Error updating application checked status:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update application status",
+      });
+    }
+  };
+
+  const handleFormReviewed = async (formName: string, checked: boolean) => {
+    if (!docRef) return;
+    try {
+      const updatedForms = (application.forms || []).map((form) =>
+        form.name === formName ? { ...form, acknowledged: checked } : form
+      );
+
+      await setDoc(docRef, { forms: updatedForms }, { merge: true });
+      setApplication(prev => prev ? { ...prev, forms: updatedForms } : null);
+
+      toast({
+        title: checked ? 'Document marked as reviewed' : 'Review removed',
+        description: `${formName} ${checked ? 'acknowledged' : 'set back to pending'}.`,
+      });
+    } catch (error) {
+      console.error('Error updating form review status:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update document review status",
+      });
+    }
+  };
+
   const waiverSubTasks = [
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
       { id: 'liability', label: 'Liability Waiver', completed: !!waiverFormStatus?.ackLiability },
@@ -1674,32 +1725,7 @@ function ApplicationDetailPageContent() {
                         <Checkbox
                             id="application-checked"
                             checked={(application as any)?.applicationChecked || false}
-                            onCheckedChange={async (checked) => {
-                                try {
-                                    const updateData = {
-                                        applicationChecked: checked,
-                                        applicationCheckedDate: checked ? new Date().toISOString() : null,
-                                        ...(checked ? {} : { applicationCheckedBy: null })
-                                    };
-                                    
-                                    if (docRef) {
-                                        await setDoc(docRef, updateData, { merge: true });
-                                        setApplication(prev => prev ? { ...prev, ...updateData } : null);
-                                        
-                                        toast({
-                                            title: checked ? "Application Marked as Checked" : "Application Check Removed",
-                                            description: checked ? "Application has been marked as reviewed" : "Application check status removed",
-                                        });
-                                    }
-                                } catch (error) {
-                                    console.error('Error updating application checked status:', error);
-                                    toast({
-                                        variant: "destructive",
-                                        title: "Error",
-                                        description: "Failed to update application status",
-                                    });
-                                }
-                            }}
+                            onCheckedChange={(checked) => handleApplicationReviewed(Boolean(checked))}
                         />
                         <Label htmlFor="application-checked" className="text-sm font-medium">
                             Application checked by staff
@@ -1752,19 +1778,12 @@ function ApplicationDetailPageContent() {
                         <div className="text-xs text-muted-foreground ml-6">No documents pending acknowledgement.</div>
                     ) : (
                         <div className="space-y-1 ml-6">
-                            {pendingFormAlerts.map((form) => {
-                                const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
-                                return (
-                                    <div key={`${form.name}-${form.status}-${form.dateCompleted?.seconds || form.dateCompleted || ''}`} className="flex items-center gap-2 text-sm">
-                                        {isSummary ? (
-                                            <BellRing className="h-4 w-4 text-green-600" />
-                                        ) : (
-                                            <Bell className="h-4 w-4 text-blue-600" />
-                                        )}
-                                        <span>{form.name}</span>
-                                    </div>
-                                );
-                            })}
+                            {pendingFormAlerts.map((form) => (
+                                <div key={`${form.name}-${form.status}-${form.dateCompleted?.seconds || form.dateCompleted || ''}`} className="flex items-center gap-2 text-sm">
+                                    <span className="h-2 w-2 rounded-full bg-blue-600" />
+                                    {form.name}
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>
@@ -1854,18 +1873,47 @@ function ApplicationDetailPageContent() {
             {pathwayRequirements.map((req) => {
                 const formInfo = formStatusMap.get(req.title);
                 const status = formInfo?.status || 'Pending';
+                const isSummary = req.title === 'CS Member Summary' || req.title === 'CS Summary';
+                const isReviewed = isSummary
+                  ? Boolean((application as any)?.applicationChecked)
+                  : Boolean(formInfo?.acknowledged);
+                const needsReview = status === 'Completed' && !isReviewed;
                 
                 return (
                     <Card key={req.id} className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
                         <CardHeader className="pb-4">
                             <div className="flex justify-between items-start gap-4">
                                 <CardTitle className="text-lg">{req.title}</CardTitle>
+                                {needsReview && (
+                                  <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-1">
+                                    <BellRing className="h-3 w-3" />
+                                    Needs review
+                                  </div>
+                                )}
                             </div>
                             <CardDescription>{req.description}</CardDescription>
                         </CardHeader>
                         <CardContent className="flex flex-col flex-grow justify-end gap-4">
                             <StatusIndicator status={status} />
                             {getFormAction(req)}
+                            {status === 'Completed' && (
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  id={`reviewed-${req.id}`}
+                                  checked={isReviewed}
+                                  onCheckedChange={(checked) => {
+                                    if (isSummary) {
+                                      handleApplicationReviewed(Boolean(checked));
+                                    } else {
+                                      handleFormReviewed(req.title, Boolean(checked));
+                                    }
+                                  }}
+                                />
+                                <Label htmlFor={`reviewed-${req.id}`} className="text-xs text-muted-foreground">
+                                  Reviewed
+                                </Label>
+                              </div>
+                            )}
                             {status === 'Pending' && (
                                 <Button
                                     variant="outline"

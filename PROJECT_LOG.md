@@ -17,6 +17,20 @@
 ## 🗓️ **Development History**
 
 ### **January 25, 2026 - Updates**
+- ✅ **Build**: Switched font loading to local system stack for offline builds
+- ✅ **Bug Fixed**: Wrapped admin applications filters in Suspense to fix build
+- ✅ **UI/UX**: Added blue dot markers for acknowledgement list items
+- ✅ **UI/UX**: Simplified dashboard dropdown and acknowledgement list styling
+- ✅ **UI/UX**: Added per-card review indicators and checkboxes on application page
+- ✅ **Bug Fixed**: Prevented access denied flashes on Kaiser/ILS pages
+- ✅ **UI/UX**: Linked action badges to filtered applications list
+- ✅ **UI/UX**: Added HN vs Kaiser breakdown in review cards
+- ✅ **UI/UX**: Moved HN/Kaiser action badges below main navigation
+- ✅ **Bug Fixed**: Guarded tasks API parsing to avoid HTML/JSON errors
+- ✅ **UI/UX**: Removed daily dashboard stat cards and new documents card
+- ✅ **Bug Fixed**: Moved nav badges to subnavigation and avoided nested links
+- ✅ **UI/UX**: Added HN/Kaiser document and CS Summary indicators in dashboard submenu
+- ✅ **Bug Fixed**: Prevented Google Maps load event errors from triggering console overlay
 - ✅ **UI/UX**: Simplified Activity Dashboard cards to CS Summary/doc review counts
 - ✅ **UI/UX**: Added review/acknowledgement alerts (green/blue) and removed admin login debug panel
 - ✅ **UI/UX**: Added CS Summary review stats cards and document acknowledgement in Activity Log

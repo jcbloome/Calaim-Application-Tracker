@@ -105,9 +105,18 @@ export default function MyTasksPage() {
     try {
       // Fetch tasks from API
       const response = await fetch(`/api/staff/tasks?userId=${user.uid}`);
-      const data = await response.json();
-      
-      if (data.success) {
+      const contentType = response.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      const data = isJson ? await response.json() : null;
+      const errorText = !isJson ? await response.text() : null;
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error || errorText || `Request failed with status ${response.status}`
+        );
+      }
+
+      if (data?.success) {
         setTasks(data.tasks || []);
         
         toast({
@@ -116,7 +125,7 @@ export default function MyTasksPage() {
           className: 'bg-green-100 text-green-900 border-green-200',
         });
       } else {
-        throw new Error(data.error || 'Failed to load tasks');
+        throw new Error(data?.error || 'Failed to load tasks');
       }
       
     } catch (error: any) {

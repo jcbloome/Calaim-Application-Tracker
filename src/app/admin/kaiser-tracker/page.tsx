@@ -821,7 +821,7 @@ function StaffMemberManagementModal({
 }
 
 export default function KaiserTrackerPage() {
-  const { isAdmin, user } = useAdmin();
+  const { isAdmin, isLoading: isAdminLoading, user } = useAdmin();
   const { toast } = useToast();
 
   // State declarations
@@ -1378,6 +1378,16 @@ export default function KaiserTrackerPage() {
     // Only fetch data when user manually clicks sync button, not on page load
     // fetchCaspioData();
   }, []);
+
+  if (isAdminLoading) {
+    return (
+      <div className="container mx-auto py-8">
+        <div className="flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAdmin) {
     return (

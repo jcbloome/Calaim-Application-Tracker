@@ -1,16 +1,10 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
 import './globals.css';
 import React from 'react';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { NotificationProvider } from '@/components/NotificationProvider';
 import { Toaster } from '@/components/ui/toaster';
 import { SessionIsolationGate } from '@/components/SessionIsolationGate';
-
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-});
 
 export const metadata: Metadata = {
   title: 'Connect CalAIM',
@@ -34,7 +28,7 @@ export default function RootLayout({
         <meta name="theme-color" content="#000000" />
         <link rel="icon" href="/favicon.ico" />
       </head>
-      <body className={`min-h-screen bg-background font-sans antialiased ${inter.variable}`}>
+      <body className="min-h-screen bg-background font-sans antialiased">
         <FirebaseClientProvider>
           <NotificationProvider>
             <SessionIsolationGate />

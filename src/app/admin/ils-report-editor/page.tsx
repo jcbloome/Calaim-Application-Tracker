@@ -62,7 +62,7 @@ const BOTTLENECK_STATUSES = [
 ];
 
 export default function ILSReportEditorPage() {
-  const { isAdmin, isUserLoading } = useAdmin();
+  const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const [members, setMembers] = useState<ILSReportMember[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -472,7 +472,7 @@ export default function ILSReportEditorPage() {
 
   // Removed auto-loading useEffect - now only loads when "Load Members" button is pressed
 
-  if (isUserLoading) {
+  if (isAdminLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>

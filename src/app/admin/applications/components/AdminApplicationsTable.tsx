@@ -69,6 +69,13 @@ const getUnacknowledgedDocsCount = (app: WithId<Application & FormValues>) => {
   }).length;
 };
 
+const getPlanBellColor = (app: WithId<Application & FormValues>) => {
+  const plan = String(app.healthPlan || '').toLowerCase();
+  if (plan.includes('health net')) return 'text-green-600';
+  if (plan.includes('kaiser')) return 'text-blue-600';
+  return 'text-muted-foreground';
+};
+
 const QuickViewField = ({ label, value, fullWidth = false }: { label: string, value?: string | number | boolean | null, fullWidth?: boolean }) => (
     <div className={fullWidth ? 'col-span-2' : ''}>
         <p className="text-sm text-muted-foreground">{label}</p>
@@ -409,6 +416,7 @@ export const AdminApplicationsTable = ({
                 differenceInHours(lastUpdatedDate, submissionDate) > 1;
               const csSummaryNeedsReview = getCsSummaryNeedsReview(app);
               const unacknowledgedDocsCount = getUnacknowledgedDocsCount(app);
+              const bellColor = getPlanBellColor(app);
 
               return (
               <TableRow key={app.uniqueKey || `app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
@@ -434,7 +442,7 @@ export const AdminApplicationsTable = ({
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger>
-                              <BellRing className="h-4 w-4 text-green-600" />
+                              <BellRing className={`h-4 w-4 ${bellColor}`} />
                             </TooltipTrigger>
                             <TooltipContent>
                               <p>CS Summary needs review</p>
@@ -446,7 +454,7 @@ export const AdminApplicationsTable = ({
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger>
-                              <Bell className="h-4 w-4 text-blue-600" />
+                              <Bell className={`h-4 w-4 ${bellColor}`} />
                             </TooltipTrigger>
                             <TooltipContent>
                               <p>{unacknowledgedDocsCount} document{unacknowledgedDocsCount === 1 ? '' : 's'} need acknowledgement</p>
@@ -572,6 +580,7 @@ export const AdminApplicationsTable = ({
               differenceInHours(lastUpdatedDate, submissionDate) > 1;
             const csSummaryNeedsReview = getCsSummaryNeedsReview(app);
             const unacknowledgedDocsCount = getUnacknowledgedDocsCount(app);
+            const bellColor = getPlanBellColor(app);
 
             return (
               <div key={app.uniqueKey || `mobile-app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
@@ -595,8 +604,8 @@ export const AdminApplicationsTable = ({
                       {isNew && <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs"><Sparkles className="h-3 w-3 mr-1" /> New</Badge>}
                       {isRecentlyUpdated && <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs">Updated</Badge>}
                       {(app as any)?.caspioSent && <CheckCircle2 className="h-4 w-4 text-green-600" />}
-                      {csSummaryNeedsReview && <BellRing className="h-4 w-4 text-green-600" />}
-                      {unacknowledgedDocsCount > 0 && <Bell className="h-4 w-4 text-blue-600" />}
+                      {csSummaryNeedsReview && <BellRing className={`h-4 w-4 ${bellColor}`} />}
+                      {unacknowledgedDocsCount > 0 && <Bell className={`h-4 w-4 ${bellColor}`} />}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yy')}` : 'Created: N/A'}

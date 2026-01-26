@@ -148,6 +148,10 @@ function AdminHeader() {
   const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null);
   const [newCsSummaryCount, setNewCsSummaryCount] = useState(0);
   const [newUploadCount, setNewUploadCount] = useState(0);
+  const [hnCsCount, setHnCsCount] = useState(0);
+  const [hnDocCount, setHnDocCount] = useState(0);
+  const [kaiserCsCount, setKaiserCsCount] = useState(0);
+  const [kaiserDocCount, setKaiserDocCount] = useState(0);
   const previousCsCount = useRef(0);
   const previousUploadCount = useRef(0);
 
@@ -193,12 +197,25 @@ function AdminHeader() {
       });
 
       const dedupedApps = Array.from(deduped.values());
+      let nextHnCs = 0;
+      let nextHnDocs = 0;
+      let nextKaiserCs = 0;
+      let nextKaiserDocs = 0;
+
       const csSummaryCount = dedupedApps.filter((app) => {
         const forms = app.forms || [];
         const hasCompletedSummary = forms.some((form: any) =>
           (form.name === 'CS Member Summary' || form.name === 'CS Summary') && form.status === 'Completed'
         );
         const reviewed = Boolean(app.applicationChecked);
+        if (hasCompletedSummary && !reviewed) {
+          const plan = String(app.healthPlan || '').toLowerCase();
+          if (plan.includes('kaiser')) {
+            nextKaiserCs += 1;
+          } else if (plan.includes('health net')) {
+            nextHnCs += 1;
+          }
+        }
         return hasCompletedSummary && !reviewed;
       }).length;
 
@@ -207,7 +224,16 @@ function AdminHeader() {
         const unacknowledgedUploads = forms.filter((form: any) => {
           const isCompleted = form.status === 'Completed';
           const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
-          return isCompleted && !isSummary && !form.acknowledged;
+          const isPending = isCompleted && !isSummary && !form.acknowledged;
+          if (isPending) {
+            const plan = String(app.healthPlan || '').toLowerCase();
+            if (plan.includes('kaiser')) {
+              nextKaiserDocs += 1;
+            } else if (plan.includes('health net')) {
+              nextHnDocs += 1;
+            }
+          }
+          return isPending;
         }).length;
         return total + unacknowledgedUploads;
       }, 0);
@@ -240,6 +266,10 @@ function AdminHeader() {
       previousUploadCount.current = uploadCount;
       setNewCsSummaryCount(csSummaryCount);
       setNewUploadCount(uploadCount);
+      setHnCsCount(nextHnCs);
+      setHnDocCount(nextHnDocs);
+      setKaiserCsCount(nextKaiserCs);
+      setKaiserDocCount(nextKaiserDocs);
     };
 
     const unsubUserApps = onSnapshot(userAppsQuery, (snapshot) => {
@@ -261,28 +291,78 @@ function AdminHeader() {
   const renderCsSummaryBadge = () => {
     if (newCsSummaryCount <= 0) return null;
     return (
-      <Link
-        href="/admin/applications"
-        className="ml-2 inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700 hover:bg-green-200"
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700"
         title="CS Summary forms need review"
       >
         <BellRing className="h-3 w-3" />
         {newCsSummaryCount}
-      </Link>
+      </span>
     );
   };
 
   const renderUploadBadge = () => {
     if (newUploadCount <= 0) return null;
     return (
-      <Link
-        href="/admin/applications"
-        className="ml-2 inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700 hover:bg-blue-200"
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700"
         title="New uploaded documents need acknowledgement"
       >
         <Bell className="h-3 w-3" />
         {newUploadCount}
-      </Link>
+      </span>
+    );
+  };
+
+  const renderPlanBadges = () => {
+    const items = [
+      {
+        key: 'hn-doc',
+        label: 'HN(D)',
+        count: hnDocCount,
+        dot: 'bg-green-600',
+        href: '/admin/applications?plan=health-net&review=docs',
+      },
+      {
+        key: 'hn-cs',
+        label: 'HN(CS)',
+        count: hnCsCount,
+        dot: 'bg-green-600',
+        href: '/admin/applications?plan=health-net&review=cs',
+      },
+      {
+        key: 'k-doc',
+        label: 'K(D)',
+        count: kaiserDocCount,
+        dot: 'bg-blue-600',
+        href: '/admin/applications?plan=kaiser&review=docs',
+      },
+      {
+        key: 'k-cs',
+        label: 'K(CS)',
+        count: kaiserCsCount,
+        dot: 'bg-blue-600',
+        href: '/admin/applications?plan=kaiser&review=cs',
+      },
+    ].filter((item) => item.count > 0);
+
+    if (items.length === 0) return null;
+
+    return (
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        {items.map((item) => (
+          <Link
+            key={item.key}
+            href={item.href}
+            className="inline-flex items-center gap-2 rounded-full border border-border px-2.5 py-1 hover:bg-accent"
+            title="View matching applications"
+          >
+            <span className={`h-2 w-2 rounded-full ${item.dot}`} />
+            <span className="font-semibold text-foreground">{item.label}</span>
+            <span className="text-muted-foreground">{item.count}</span>
+          </Link>
+        ))}
+      </div>
     );
   };
 
@@ -333,8 +413,6 @@ function AdminHeader() {
                         >
                           <navItem.icon className="h-4 w-4" />
                           {navItem.label}
-                          {navItem.label === 'Dashboard' && renderCsSummaryBadge()}
-                          {navItem.label === 'Dashboard' && renderUploadBadge()}
                           <ChevronDown className="h-3 w-3 ml-1" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -358,8 +436,9 @@ function AdminHeader() {
                               >
                                 <item.icon className="h-4 w-4" />
                                 {item.label}
-                                {navItem.label === 'Dashboard' && item.href === '/admin' && renderCsSummaryBadge()}
-                                {navItem.label === 'Dashboard' && item.href === '/admin' && renderUploadBadge()}
+                                {navItem.label === 'Dashboard' && item.href === '/admin' && (
+                                  <span className="ml-auto flex items-center gap-2" />
+                                )}
                               </Link>
                             </DropdownMenuItem>
                           )
@@ -456,8 +535,6 @@ function AdminHeader() {
                           <div className="flex items-center gap-3">
                             <navItem.icon className="h-4 w-4" />
                             {navItem.label}
-                            {navItem.label === 'Dashboard' && renderCsSummaryBadge()}
-                            {navItem.label === 'Dashboard' && renderUploadBadge()}
                           </div>
                           <ChevronRight 
                             className={cn(
@@ -487,8 +564,9 @@ function AdminHeader() {
                                   >
                                     <item.icon className="h-4 w-4" />
                                     {item.label}
-                                    {navItem.label === 'Dashboard' && item.href === '/admin' && renderCsSummaryBadge()}
-                                    {navItem.label === 'Dashboard' && item.href === '/admin' && renderUploadBadge()}
+                                    {navItem.label === 'Dashboard' && item.href === '/admin' && (
+                                      <span className="ml-auto flex items-center gap-2" />
+                                    )}
                                   </Link>
                                 </SheetClose>
                               )
@@ -517,6 +595,14 @@ function AdminHeader() {
           </Sheet>
         </div>
       </div>
+      {renderPlanBadges() && (
+        <div className="border-t border-border bg-muted/30">
+          <div className="container mx-auto px-4 sm:px-6 py-2 flex items-center gap-3">
+            <span className="text-xs font-medium text-muted-foreground">Action items:</span>
+            {renderPlanBadges()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

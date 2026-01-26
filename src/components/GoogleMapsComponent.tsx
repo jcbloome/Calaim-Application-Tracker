@@ -96,7 +96,8 @@ export default function GoogleMapsComponent({
           
           script.onerror = (event) => {
             (window as any).googleMapsLoading = false;
-            console.error('❌ Google Maps script failed to load:', event);
+            const eventType = (event as Event | undefined)?.type || 'error';
+            console.warn(`⚠️ Google Maps script failed to load (${eventType})`);
             if (mounted) setError('Failed to load Google Maps API - Check API key restrictions');
           };
           

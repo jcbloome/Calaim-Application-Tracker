@@ -15,7 +15,6 @@ import { AdminApplicationsTable } from './applications/components/AdminApplicati
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
-import { DailyNotificationDashboard } from '@/components/DailyNotificationDashboard';
 
 export default function AdminDashboardPage() {
   const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -81,6 +80,10 @@ export default function AdminDashboardPage() {
       received: 0,
       needsReview: 0,
       reviewed: 0,
+      hnNeedsReview: 0,
+      kaiserNeedsReview: 0,
+      hnReviewed: 0,
+      kaiserReviewed: 0,
     };
 
     if (!allApplications) return result;
@@ -93,10 +96,18 @@ export default function AdminDashboardPage() {
       if (!hasCompletedSummary) return;
 
       result.received += 1;
+      const plan = String(app.healthPlan || '').toLowerCase();
+      const isKaiser = plan.includes('kaiser');
+      const isHn = plan.includes('health net');
+
       if (app.applicationChecked) {
         result.reviewed += 1;
+        if (isKaiser) result.kaiserReviewed += 1;
+        if (isHn) result.hnReviewed += 1;
       } else {
         result.needsReview += 1;
+        if (isKaiser) result.kaiserNeedsReview += 1;
+        if (isHn) result.hnNeedsReview += 1;
       }
     });
 
@@ -108,6 +119,10 @@ export default function AdminDashboardPage() {
       received: 0,
       needsReview: 0,
       reviewed: 0,
+      hnNeedsReview: 0,
+      kaiserNeedsReview: 0,
+      hnReviewed: 0,
+      kaiserReviewed: 0,
     };
 
     if (!allApplications) return result;
@@ -120,10 +135,18 @@ export default function AdminDashboardPage() {
         if (!isCompleted || isSummary) return;
 
         result.received += 1;
+        const plan = String(app.healthPlan || '').toLowerCase();
+        const isKaiser = plan.includes('kaiser');
+        const isHn = plan.includes('health net');
+
         if (form.acknowledged) {
           result.reviewed += 1;
+          if (isKaiser) result.kaiserReviewed += 1;
+          if (isHn) result.hnReviewed += 1;
         } else {
           result.needsReview += 1;
+          if (isKaiser) result.kaiserNeedsReview += 1;
+          if (isHn) result.hnNeedsReview += 1;
         }
       });
     });
@@ -190,9 +213,7 @@ export default function AdminDashboardPage() {
         </p>
       </div>
 
-      {/* Daily Notifications Dashboard */}
-      <DailyNotificationDashboard />
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-l-4 border-amber-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">CS Summary Needs Review</CardTitle>
@@ -200,7 +221,7 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{csSummaryStats.needsReview}</div>
-            <p className="text-xs text-muted-foreground">Awaiting staff review</p>
+            <p className="text-xs text-muted-foreground">HN {csSummaryStats.hnNeedsReview} • K {csSummaryStats.kaiserNeedsReview}</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-green-500">
@@ -210,17 +231,7 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{csSummaryStats.reviewed}</div>
-            <p className="text-xs text-muted-foreground">Marked as checked</p>
-          </CardContent>
-        </Card>
-        <Card className="border-l-4 border-blue-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">New Documents Received</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{documentStats.received}</div>
-            <p className="text-xs text-muted-foreground">Completed non-CS forms</p>
+            <p className="text-xs text-muted-foreground">HN {csSummaryStats.hnReviewed} • K {csSummaryStats.kaiserReviewed}</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-amber-500">
@@ -230,7 +241,7 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{documentStats.needsReview}</div>
-            <p className="text-xs text-muted-foreground">Awaiting acknowledgement</p>
+            <p className="text-xs text-muted-foreground">HN {documentStats.hnNeedsReview} • K {documentStats.kaiserNeedsReview}</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-green-500">
@@ -240,7 +251,7 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{documentStats.reviewed}</div>
-            <p className="text-xs text-muted-foreground">Acknowledged by staff</p>
+            <p className="text-xs text-muted-foreground">HN {documentStats.hnReviewed} • K {documentStats.kaiserReviewed}</p>
           </CardContent>
         </Card>
       </div>
