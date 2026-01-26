@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, useFirestore } from '@/firebase';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 
 interface SocialWorkerData {
   uid: string;
@@ -28,6 +28,7 @@ export function useSocialWorker() {
   const [socialWorkerData, setSocialWorkerData] = useState<SocialWorkerData | null>(null);
   const [isSocialWorker, setIsSocialWorker] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [status, setStatus] = useState<'unknown' | 'active' | 'inactive' | 'not-found' | 'error'>('unknown');
 
   useEffect(() => {
     const checkSocialWorkerStatus = async () => {
@@ -36,6 +37,7 @@ export function useSocialWorker() {
       if (!user) {
         setIsSocialWorker(false);
         setSocialWorkerData(null);
+        setStatus('not-found');
         setIsLoading(false);
         return;
       }
@@ -56,6 +58,7 @@ export function useSocialWorker() {
               lastLogin: data.lastLogin?.toDate ? data.lastLogin.toDate() : undefined
             });
             setIsSocialWorker(true);
+            setStatus('active');
             
             // Update last login timestamp
             try {
@@ -69,16 +72,62 @@ export function useSocialWorker() {
             // Account exists but is inactive
             setIsSocialWorker(false);
             setSocialWorkerData(null);
+            setStatus('inactive');
             console.warn('Social worker account is inactive');
           }
         } else {
-          setIsSocialWorker(false);
-          setSocialWorkerData(null);
+          // Fallback: look up by email in case legacy docs used email IDs
+          const normalizedEmail = user.email?.trim().toLowerCase();
+          if (normalizedEmail) {
+            const emailQuery = query(
+              collection(firestore, 'socialWorkers'),
+              where('email', '==', normalizedEmail)
+            );
+            const emailSnapshot = await getDocs(emailQuery);
+            if (!emailSnapshot.empty) {
+              const emailDoc = emailSnapshot.docs[0];
+              const data = emailDoc.data() as SocialWorkerData;
+              const isActive = !!data.isActive;
+              setSocialWorkerData({
+                ...data,
+                uid: user.uid,
+                createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
+                lastLogin: data.lastLogin?.toDate ? data.lastLogin.toDate() : undefined
+              });
+              setIsSocialWorker(isActive);
+              setStatus(isActive ? 'active' : 'inactive');
+
+              // Migrate to UID-based doc for consistent lookups
+              try {
+                await setDoc(
+                  doc(firestore, 'socialWorkers', user.uid),
+                  {
+                    ...data,
+                    email: normalizedEmail,
+                    migratedFrom: emailDoc.id,
+                    updatedAt: serverTimestamp()
+                  },
+                  { merge: true }
+                );
+              } catch (migrationError) {
+                console.warn('Failed to migrate social worker doc to UID:', migrationError);
+              }
+            } else {
+              setIsSocialWorker(false);
+              setSocialWorkerData(null);
+              setStatus('not-found');
+            }
+          } else {
+            setIsSocialWorker(false);
+            setSocialWorkerData(null);
+            setStatus('not-found');
+          }
         }
       } catch (error) {
         console.error('Error checking social worker status:', error);
         setIsSocialWorker(false);
         setSocialWorkerData(null);
+        setStatus('error');
       } finally {
         setIsLoading(false);
       }
@@ -110,6 +159,7 @@ export function useSocialWorker() {
     socialWorkerData,
     isLoading: loading || isLoading,
     error,
+    status,
     // Permission helpers
     hasPermission,
     canAccessVisitVerification,

@@ -401,7 +401,8 @@ export default function SWUserManagementPage() {
         }
       } else {
         // Enable portal access
-        if (!staffMember.email || !staffMember.email.includes('@')) {
+        const normalizedEmail = staffMember.email?.trim().toLowerCase();
+        if (!normalizedEmail || !normalizedEmail.includes('@')) {
           toast({
             variant: 'destructive',
             title: 'No Email Address',
@@ -414,15 +415,11 @@ export default function SWUserManagementPage() {
         const tempPassword = `SW${Math.random().toString(36).slice(-6)}!`;
         
         // Create Firebase Auth user
-        const userCredential = await createUserWithEmailAndPassword(
-          auth, 
-          staffMember.email, 
-          tempPassword
-        );
+        const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, tempPassword);
 
         // Create social worker document
         const socialWorkerData: Omit<SocialWorkerUser, 'uid'> = {
-          email: staffMember.email,
+          email: normalizedEmail,
           displayName: staffMember.name,
           role: 'social_worker',
           isActive: true,
@@ -483,7 +480,8 @@ export default function SWUserManagementPage() {
     if (!firestore || !adminUser) return;
     
     // Validation
-    if (!newUser.email || !newUser.displayName || !newUser.password) {
+    const normalizedEmail = newUser.email?.trim().toLowerCase();
+    if (!normalizedEmail || !newUser.displayName || !newUser.password) {
       toast({
         variant: 'destructive',
         title: 'Missing Information',
@@ -513,15 +511,11 @@ export default function SWUserManagementPage() {
     setIsCreating(true);
     try {
       // Create Firebase Auth user
-      const userCredential = await createUserWithEmailAndPassword(
-        auth, 
-        newUser.email, 
-        newUser.password
-      );
+      const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, newUser.password);
 
       // Create social worker document
       const socialWorkerData: Omit<SocialWorkerUser, 'uid'> = {
-        email: newUser.email,
+        email: normalizedEmail,
         displayName: newUser.displayName,
         role: 'social_worker',
         isActive: true,

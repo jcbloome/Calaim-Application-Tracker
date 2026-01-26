@@ -366,8 +366,8 @@ function SWResetPasswordContent() {
             className="w-48 h-auto object-contain mx-auto mb-4"
             priority
           />
-          <h1 className="text-2xl font-bold text-gray-900">Reset Password</h1>
-          <p className="text-gray-600 mt-2">Enter your email to receive a password reset link</p>
+          <h1 className="text-2xl font-bold text-gray-900">Social Worker Reset Password</h1>
+          <p className="text-gray-600 mt-2">Enter your email to receive a Social Worker reset link</p>
         </div>
 
         {/* Reset Form */}
@@ -375,7 +375,7 @@ function SWResetPasswordContent() {
           <CardHeader className="space-y-1">
             <CardTitle className="text-xl flex items-center gap-2">
               <Lock className="h-5 w-5 text-primary" />
-              Forgot Password
+              Social Worker Forgot Password
             </CardTitle>
             <CardDescription>
               We'll send you a link to reset your password

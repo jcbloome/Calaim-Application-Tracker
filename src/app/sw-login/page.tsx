@@ -18,13 +18,14 @@ import Link from 'next/link';
 export default function SWLoginPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { isSocialWorker, isLoading: swLoading } = useSocialWorker();
+  const { isSocialWorker, isLoading: swLoading, status: swStatus } = useSocialWorker();
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [loginAttempted, setLoginAttempted] = useState(false);
 
   // Redirect if already logged in as social worker
   useEffect(() => {
@@ -32,6 +33,29 @@ export default function SWLoginPage() {
       router.push('/sw-portal/submit-claims');
     }
   }, [isSocialWorker, swLoading, router]);
+
+  useEffect(() => {
+    if (!loginAttempted || swLoading) return;
+
+    if (isSocialWorker) {
+      setIsLoading(false);
+      setError('');
+      return;
+    }
+
+    let message = 'Access denied. You are not authorized to access the Social Worker portal.';
+    if (swStatus === 'inactive') {
+      message = 'Your Social Worker account is inactive. Please contact your administrator to enable access.';
+    } else if (swStatus === 'not-found') {
+      message = 'This email is not enabled for Social Worker access. Please contact your administrator.';
+    } else if (swStatus === 'error') {
+      message = 'We could not verify your Social Worker access. Please try again or contact support.';
+    }
+
+    setError(message);
+    setIsLoading(false);
+    auth.signOut().catch(() => null);
+  }, [loginAttempted, swLoading, isSocialWorker, swStatus]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,23 +69,16 @@ export default function SWLoginPage() {
     setError('');
 
     try {
+      const normalizedEmail = email.trim().toLowerCase();
       // Sign in with Firebase Auth
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
       
-      // The useSocialWorker hook will automatically check if this user is a social worker
-      // If they are, they'll be redirected by the useEffect above
+      setLoginAttempted(true);
       
       toast({
         title: 'Login Successful',
         description: 'Welcome to the Social Worker Portal'
       });
-
-      // Small delay to let the hook check social worker status
-      setTimeout(() => {
-        // If not redirected by now, they're not a social worker
-        setError('Access denied. You are not authorized to access the Social Worker portal.');
-        setIsLoading(false);
-      }, 2000);
 
     } catch (error: any) {
       console.error('Login error:', error);
@@ -78,6 +95,7 @@ export default function SWLoginPage() {
         errorMessage = 'Too many failed attempts. Please try again later.';
       }
       
+      setLoginAttempted(false);
       setError(errorMessage);
       setIsLoading(false);
     }
@@ -203,7 +221,7 @@ export default function SWLoginPage() {
                   className="text-sm text-primary hover:underline flex items-center justify-center gap-1"
                 >
                   <Lock className="h-4 w-4" />
-                  Forgot Password?
+                  Social Worker Forgot Your Password?
                 </Link>
               </div>
               <div className="text-center text-sm text-gray-600">
