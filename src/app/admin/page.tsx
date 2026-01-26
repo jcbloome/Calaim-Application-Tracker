@@ -3,6 +3,7 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { ClipboardCheck, FileText, AlertCircle } from 'lucide-react';
 import { ApplicationListSkeleton } from '@/components/ui/application-skeleton';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -221,7 +222,14 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{csSummaryStats.needsReview}</div>
-            <p className="text-xs text-muted-foreground">HN {csSummaryStats.hnNeedsReview} • K {csSummaryStats.kaiserNeedsReview}</p>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+                HN(CS) {csSummaryStats.hnNeedsReview}
+              </Badge>
+              <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">
+                K(CS) {csSummaryStats.kaiserNeedsReview}
+              </Badge>
+            </div>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-green-500">
@@ -231,7 +239,14 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{csSummaryStats.reviewed}</div>
-            <p className="text-xs text-muted-foreground">HN {csSummaryStats.hnReviewed} • K {csSummaryStats.kaiserReviewed}</p>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+                HN(CS) {csSummaryStats.hnReviewed}
+              </Badge>
+              <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">
+                K(CS) {csSummaryStats.kaiserReviewed}
+              </Badge>
+            </div>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-amber-500">
@@ -241,7 +256,14 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{documentStats.needsReview}</div>
-            <p className="text-xs text-muted-foreground">HN {documentStats.hnNeedsReview} • K {documentStats.kaiserNeedsReview}</p>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+                HN(D) {documentStats.hnNeedsReview}
+              </Badge>
+              <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">
+                K(D) {documentStats.kaiserNeedsReview}
+              </Badge>
+            </div>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-green-500">
@@ -251,7 +273,14 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{documentStats.reviewed}</div>
-            <p className="text-xs text-muted-foreground">HN {documentStats.hnReviewed} • K {documentStats.kaiserReviewed}</p>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+                HN(D) {documentStats.hnReviewed}
+              </Badge>
+              <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">
+                K(D) {documentStats.kaiserReviewed}
+              </Badge>
+            </div>
           </CardContent>
         </Card>
       </div>

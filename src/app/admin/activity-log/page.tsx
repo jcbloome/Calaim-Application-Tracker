@@ -27,8 +27,6 @@ import {
   Phone,
   MessageSquare,
   Activity,
-  Bell,
-  BellRing
 } from 'lucide-react';
 import { useFirestore } from '@/firebase';
 import { collection, getDocs, collectionGroup, doc, updateDoc } from 'firebase/firestore';
@@ -53,6 +51,7 @@ interface ActivityLogEntry {
   appPath?: string;
   acknowledged?: boolean;
   needsReviewType?: 'cs_summary' | 'document' | null;
+  healthPlan?: string;
 }
 
 const ACTIVITY_TYPES = [
@@ -75,6 +74,20 @@ const DATE_FILTERS = [
   { value: 'this_month', label: 'This Month' },
   { value: 'last_30_days', label: 'Last 30 Days' }
 ];
+
+const getPlanBadgeLabel = (plan?: string) => {
+  const normalized = String(plan || '').toLowerCase();
+  if (normalized.includes('health net')) return 'HN';
+  if (normalized.includes('kaiser')) return 'K';
+  return 'Other';
+};
+
+const getPlanBadgeClass = (plan?: string) => {
+  const normalized = String(plan || '').toLowerCase();
+  if (normalized.includes('health net')) return 'bg-green-100 text-green-800 border-green-200';
+  if (normalized.includes('kaiser')) return 'bg-blue-100 text-blue-800 border-blue-200';
+  return 'bg-gray-100 text-gray-800 border-gray-200';
+};
 
 export default function ActivityLogPage() {
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -138,7 +151,8 @@ export default function ActivityLogPage() {
                 formIndex,
                 appPath: doc.ref.path,
                 acknowledged: Boolean(form.acknowledged),
-                needsReviewType: needsCsReview ? 'cs_summary' : (needsDocAck ? 'document' : null)
+                needsReviewType: needsCsReview ? 'cs_summary' : (needsDocAck ? 'document' : null),
+                healthPlan: appData.healthPlan
               });
             }
           });
@@ -159,7 +173,8 @@ export default function ActivityLogPage() {
             oldValue: '',
             newValue: appData.status,
             source: 'application',
-            priority: appData.status === 'Requires Revision' ? 'high' : 'low'
+            priority: appData.status === 'Requires Revision' ? 'high' : 'low',
+            healthPlan: appData.healthPlan
           });
         }
       });
@@ -191,7 +206,8 @@ export default function ActivityLogPage() {
                 formIndex,
                 appPath: doc.ref.path,
                 acknowledged: Boolean(form.acknowledged),
-                needsReviewType: needsCsReview ? 'cs_summary' : (needsDocAck ? 'document' : null)
+                needsReviewType: needsCsReview ? 'cs_summary' : (needsDocAck ? 'document' : null),
+                healthPlan: appData.healthPlan
               });
             }
           });
@@ -548,9 +564,19 @@ export default function ActivityLogPage() {
                       </TableCell>
                       <TableCell>
                         {activity.needsReviewType === 'cs_summary' ? (
-                          <BellRing className="h-4 w-4 text-green-600" />
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] px-1.5 py-0.5 ${getPlanBadgeClass(activity.healthPlan)}`}
+                          >
+                            {getPlanBadgeLabel(activity.healthPlan)}(CS)
+                          </Badge>
                         ) : activity.needsReviewType === 'document' ? (
-                          <Bell className="h-4 w-4 text-blue-600" />
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] px-1.5 py-0.5 ${getPlanBadgeClass(activity.healthPlan)}`}
+                          >
+                            {getPlanBadgeLabel(activity.healthPlan)}(D)
+                          </Badge>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}

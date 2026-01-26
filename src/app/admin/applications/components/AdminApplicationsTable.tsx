@@ -17,7 +17,7 @@ import { format, parse, differenceInHours } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AlertTriangle, Sparkles, Calendar, User, FileText, UserCheck, ExternalLink, CheckCircle2, Loader2, Mail, Bell, BellRing } from 'lucide-react';
+import { AlertTriangle, Sparkles, Calendar, User, FileText, UserCheck, ExternalLink, CheckCircle2, Loader2, Mail, Bell } from 'lucide-react';
 import type { Application } from '@/lib/definitions';
 import { ApplicationCardSkeleton, ApplicationTableSkeleton } from '@/components/ApplicationCardSkeleton';
 import { EmptyState } from '@/components/EmptyState';
@@ -69,11 +69,18 @@ const getUnacknowledgedDocsCount = (app: WithId<Application & FormValues>) => {
   }).length;
 };
 
-const getPlanBellColor = (app: WithId<Application & FormValues>) => {
+const getPlanBadgeLabel = (app: WithId<Application & FormValues>) => {
   const plan = String(app.healthPlan || '').toLowerCase();
-  if (plan.includes('health net')) return 'text-green-600';
-  if (plan.includes('kaiser')) return 'text-blue-600';
-  return 'text-muted-foreground';
+  if (plan.includes('health net')) return 'HN';
+  if (plan.includes('kaiser')) return 'K';
+  return 'Other';
+};
+
+const getPlanBadgeClass = (app: WithId<Application & FormValues>) => {
+  const plan = String(app.healthPlan || '').toLowerCase();
+  if (plan.includes('health net')) return 'bg-green-100 text-green-800 border-green-200';
+  if (plan.includes('kaiser')) return 'bg-blue-100 text-blue-800 border-blue-200';
+  return 'bg-gray-100 text-gray-800 border-gray-200';
 };
 
 const QuickViewField = ({ label, value, fullWidth = false }: { label: string, value?: string | number | boolean | null, fullWidth?: boolean }) => (
@@ -416,7 +423,8 @@ export const AdminApplicationsTable = ({
                 differenceInHours(lastUpdatedDate, submissionDate) > 1;
               const csSummaryNeedsReview = getCsSummaryNeedsReview(app);
               const unacknowledgedDocsCount = getUnacknowledgedDocsCount(app);
-              const bellColor = getPlanBellColor(app);
+              const planLabel = getPlanBadgeLabel(app);
+              const planBadgeClass = getPlanBadgeClass(app);
 
               return (
               <TableRow key={app.uniqueKey || `app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
@@ -441,8 +449,13 @@ export const AdminApplicationsTable = ({
                       {csSummaryNeedsReview && (
                         <TooltipProvider>
                           <Tooltip>
-                            <TooltipTrigger>
-                              <BellRing className={`h-4 w-4 ${bellColor}`} />
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-1.5 py-0.5 ${planBadgeClass}`}
+                              >
+                                {planLabel}(CS)
+                              </Badge>
                             </TooltipTrigger>
                             <TooltipContent>
                               <p>CS Summary needs review</p>
@@ -453,8 +466,13 @@ export const AdminApplicationsTable = ({
                       {unacknowledgedDocsCount > 0 && (
                         <TooltipProvider>
                           <Tooltip>
-                            <TooltipTrigger>
-                              <Bell className={`h-4 w-4 ${bellColor}`} />
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-1.5 py-0.5 ${planBadgeClass}`}
+                              >
+                                {planLabel}(D){unacknowledgedDocsCount > 1 ? ` ${unacknowledgedDocsCount}` : ''}
+                              </Badge>
                             </TooltipTrigger>
                             <TooltipContent>
                               <p>{unacknowledgedDocsCount} document{unacknowledgedDocsCount === 1 ? '' : 's'} need acknowledgement</p>
@@ -580,7 +598,8 @@ export const AdminApplicationsTable = ({
               differenceInHours(lastUpdatedDate, submissionDate) > 1;
             const csSummaryNeedsReview = getCsSummaryNeedsReview(app);
             const unacknowledgedDocsCount = getUnacknowledgedDocsCount(app);
-            const bellColor = getPlanBellColor(app);
+            const planLabel = getPlanBadgeLabel(app);
+            const planBadgeClass = getPlanBadgeClass(app);
 
             return (
               <div key={app.uniqueKey || `mobile-app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
@@ -604,8 +623,22 @@ export const AdminApplicationsTable = ({
                       {isNew && <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs"><Sparkles className="h-3 w-3 mr-1" /> New</Badge>}
                       {isRecentlyUpdated && <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs">Updated</Badge>}
                       {(app as any)?.caspioSent && <CheckCircle2 className="h-4 w-4 text-green-600" />}
-                      {csSummaryNeedsReview && <BellRing className={`h-4 w-4 ${bellColor}`} />}
-                      {unacknowledgedDocsCount > 0 && <Bell className={`h-4 w-4 ${bellColor}`} />}
+                      {csSummaryNeedsReview && (
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1.5 py-0.5 ${planBadgeClass}`}
+                        >
+                          {planLabel}(CS)
+                        </Badge>
+                      )}
+                      {unacknowledgedDocsCount > 0 && (
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1.5 py-0.5 ${planBadgeClass}`}
+                        >
+                          {planLabel}(D){unacknowledgedDocsCount > 1 ? ` ${unacknowledgedDocsCount}` : ''}
+                        </Badge>
+                      )}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yy')}` : 'Created: N/A'}

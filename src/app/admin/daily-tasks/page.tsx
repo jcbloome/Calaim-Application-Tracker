@@ -331,7 +331,7 @@ export default function DailyTasksPage() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Calendar className="h-8 w-8 text-primary" />
           <div>
@@ -341,7 +341,7 @@ export default function DailyTasksPage() {
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={resetForm}>
@@ -574,84 +574,173 @@ export default function DailyTasksPage() {
         </CardHeader>
         <CardContent>
           {tasks.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Task</TableHead>
-                  <TableHead>Member</TableHead>
-                  <TableHead>Health Plan</TableHead>
-                  <TableHead>Assigned To</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Due Date</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tasks.map((task) => (
-                  <TableRow key={task.id}>
-                    <TableCell>
-                      <Badge variant="outline" className={getPriorityColor(task.priority)}>
-                        {getPriorityIcon(task.priority)}
-                        <span className="ml-1 capitalize">{task.priority}</span>
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">{task.title}</div>
-                      {task.description && (
-                        <div className="text-sm text-muted-foreground mt-1">{task.description}</div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {task.memberName ? (
-                        <div>
-                          <div className="font-medium">{task.memberName}</div>
-                          {task.memberClientId && (
-                            <div className="text-sm text-muted-foreground">ID: {task.memberClientId}</div>
+            <>
+              <div className="hidden lg:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Priority</TableHead>
+                      <TableHead>Task</TableHead>
+                      <TableHead>Member</TableHead>
+                      <TableHead>Health Plan</TableHead>
+                      <TableHead>Assigned To</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Due Date</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {tasks.map((task) => (
+                      <TableRow key={task.id}>
+                        <TableCell>
+                          <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                            {getPriorityIcon(task.priority)}
+                            <span className="ml-1 capitalize">{task.priority}</span>
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{task.title}</div>
+                          {task.description && (
+                            <div className="text-sm text-muted-foreground mt-1">{task.description}</div>
                           )}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">No member assigned</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {task.healthPlan ? (
-                        <Badge variant="outline" className={
-                          task.healthPlan === 'Kaiser' ? 'bg-green-50 text-green-700 border-green-200' :
-                          task.healthPlan === 'Health Net' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                          'bg-gray-50 text-gray-700 border-gray-200'
-                        }>
-                          {task.healthPlan}
+                        </TableCell>
+                        <TableCell>
+                          {task.memberName ? (
+                            <div>
+                              <div className="font-medium">{task.memberName}</div>
+                              {task.memberClientId && (
+                                <div className="text-sm text-muted-foreground">ID: {task.memberClientId}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">No member assigned</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {task.healthPlan ? (
+                            <Badge variant="outline" className={
+                              task.healthPlan === 'Kaiser' ? 'bg-green-50 text-green-700 border-green-200' :
+                              task.healthPlan === 'Health Net' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                              'bg-gray-50 text-gray-700 border-gray-200'
+                            }>
+                              {task.healthPlan}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{task.assignedToName || 'Unassigned'}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={getStatusColor(task.status)}>
+                            {task.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className={`text-sm ${
+                            task.dueDate < today && task.status !== 'completed' ? 'text-red-600 font-medium' : 
+                            task.dueDate === today ? 'text-orange-600 font-medium' : 
+                            'text-gray-600'
+                          }`}>
+                            {format(new Date(task.dueDate), 'MMM d, yyyy')}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openEditDialog(task)}
+                            >
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleUpdateTask(task.id!, { 
+                                status: task.status === 'completed' ? 'pending' : 'completed' 
+                              })}
+                            >
+                              <CheckCircle className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleDeleteTask(task.id!)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="lg:hidden space-y-3">
+                {tasks.map((task) => (
+                  <Card key={task.id} className="border border-border">
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                          {getPriorityIcon(task.priority)}
+                          <span className="ml-1 capitalize">{task.priority}</span>
                         </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">{task.assignedToName || 'Unassigned'}</div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={getStatusColor(task.status)}>
-                        {task.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className={`text-sm ${
-                        task.dueDate < today && task.status !== 'completed' ? 'text-red-600 font-medium' : 
-                        task.dueDate === today ? 'text-orange-600 font-medium' : 
-                        'text-gray-600'
-                      }`}>
-                        {format(new Date(task.dueDate), 'MMM d, yyyy')}
+                        <Badge variant="outline" className={getStatusColor(task.status)}>
+                          {task.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                        </Badge>
+                        {task.healthPlan && (
+                          <Badge
+                            variant="outline"
+                            className={
+                              task.healthPlan === 'Kaiser'
+                                ? 'bg-green-50 text-green-700 border-green-200'
+                                : task.healthPlan === 'Health Net'
+                                ? 'bg-orange-50 text-orange-700 border-orange-200'
+                                : 'bg-gray-50 text-gray-700 border-gray-200'
+                            }
+                          >
+                            {task.healthPlan}
+                          </Badge>
+                        )}
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
+                      <div>
+                        <div className="font-medium">{task.title}</div>
+                        {task.description && (
+                          <div className="text-sm text-muted-foreground mt-1">{task.description}</div>
+                        )}
+                      </div>
+                      <div className="text-sm text-muted-foreground space-y-1">
+                        {task.memberName ? (
+                          <div>
+                            <span className="font-medium text-foreground">{task.memberName}</span>
+                            {task.memberClientId && (
+                              <span className="ml-2 text-muted-foreground">ID: {task.memberClientId}</span>
+                            )}
+                          </div>
+                        ) : (
+                          <div>No member assigned</div>
+                        )}
+                        <div>Assigned: {task.assignedToName || 'Unassigned'}</div>
+                        <div className={`${
+                          task.dueDate < today && task.status !== 'completed'
+                            ? 'text-red-600 font-medium'
+                            : task.dueDate === today
+                            ? 'text-orange-600 font-medium'
+                            : 'text-gray-600'
+                        }`}>
+                          Due: {format(new Date(task.dueDate), 'MMM d, yyyy')}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => openEditDialog(task)}
                         >
-                          <Edit className="h-3 w-3" />
+                          <Edit className="h-3 w-3 mr-1" />
+                          Edit
                         </Button>
                         <Button
                           size="sm"
@@ -660,21 +749,23 @@ export default function DailyTasksPage() {
                             status: task.status === 'completed' ? 'pending' : 'completed' 
                           })}
                         >
-                          <CheckCircle className="h-3 w-3" />
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          {task.status === 'completed' ? 'Reopen' : 'Complete'}
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => handleDeleteTask(task.id!)}
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Trash2 className="h-3 w-3 mr-1" />
+                          Delete
                         </Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
+                    </CardContent>
+                  </Card>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+            </>
           ) : (
             <div className="text-center py-8">
               <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />

@@ -146,6 +146,14 @@ function StaffAssignmentDropdown({
         }
     };
 
+    const caspioSentDate = (application as any)?.caspioSentDate;
+    const caspioSentLabel = caspioSentDate
+        ? format(
+            typeof caspioSentDate?.toDate === 'function' ? caspioSentDate.toDate() : new Date(caspioSentDate),
+            'MMM d, yyyy h:mm a'
+        )
+        : 'Date unavailable';
+
     return (
         <Select
             value={(application as any)?.assignedStaffId || ''}
@@ -726,7 +734,7 @@ function AdminActions({ application }: { application: Application }) {
                                 ) : (application as any)?.caspioSent ? (
                                     <>
                                         <CheckCircle2 className="mr-2 h-4 w-4" />
-                                        Sent to Caspio
+                                        Verified Sent
                                     </>
                                 ) : (
                                     <>
@@ -882,9 +890,11 @@ function AdminActions({ application }: { application: Application }) {
                     </div>
                     
                     {(application as any)?.caspioSent && (
-                        <p className="text-xs text-muted-foreground text-center">
-                            CS Summary data has been published to Caspio database
-                        </p>
+                        <div className="flex items-center justify-center gap-2 text-xs text-green-700">
+                            <CheckCircle2 className="h-4 w-4" />
+                            <span>Verified sent to Caspio</span>
+                            <span className="text-muted-foreground">• {caspioSentLabel}</span>
+                        </div>
                     )}
                     
                     {/* Duplicate Client Check */}

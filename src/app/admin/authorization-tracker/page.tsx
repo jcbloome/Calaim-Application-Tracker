@@ -94,6 +94,23 @@ const getDaysRemaining = (endDate?: string): number | undefined => {
   }
 };
 
+const getHealthPlanBadgeClass = (plan?: string) => {
+  const normalized = String(plan || '').toLowerCase();
+  if (normalized.includes('health net')) return 'bg-green-50 text-green-700 border-green-200';
+  if (normalized.includes('kaiser')) return 'bg-blue-50 text-blue-700 border-blue-200';
+  return 'bg-gray-50 text-gray-700 border-gray-200';
+};
+
+const formatDateSafe = (dateString?: string) => {
+  if (!dateString) return '-';
+  try {
+    const date = parseISO(dateString);
+    return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
+  } catch {
+    return '-';
+  }
+};
+
 export default function AuthorizationTracker() {
   const { user, isAdmin } = useAdmin();
   const { toast } = useToast();
@@ -521,12 +538,12 @@ export default function AuthorizationTracker() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold">Authorization Tracker</h1>
           <p className="text-muted-foreground">Track T2038 and H2022 authorization dates and renewals</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={fetchAuthorizationData} disabled={isLoading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh Data
@@ -808,269 +825,341 @@ export default function AuthorizationTracker() {
               <p>Loading authorization data...</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table data-testid="members-table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      <Button 
-                        variant="ghost" 
-                        className="h-auto p-0 font-semibold hover:bg-transparent"
-                        onClick={() => handleSort('memberName')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Member
-                          {getSortIcon('memberName')}
-                        </div>
-                      </Button>
-                    </TableHead>
-                    <TableHead>
-                      <Button 
-                        variant="ghost" 
-                        className="h-auto p-0 font-semibold hover:bg-transparent"
-                        onClick={() => handleSort('healthPlan')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Health Plan
-                          {getSortIcon('healthPlan')}
-                        </div>
-                      </Button>
-                    </TableHead>
-                    <TableHead>
-                      <Button 
-                        variant="ghost" 
-                        className="h-auto p-0 font-semibold hover:bg-transparent"
-                        onClick={() => handleSort('t2038Status')}
-                      >
-                        <div className="flex items-center gap-2">
-                          T2038 Status
-                          {getSortIcon('t2038Status')}
-                        </div>
-                      </Button>
-                    </TableHead>
-                    <TableHead>T2038 Start Date</TableHead>
-                    <TableHead>
-                      <Button 
-                        variant="ghost" 
-                        className="h-auto p-0 font-semibold hover:bg-transparent"
-                        onClick={() => handleSort('t2038EndDate')}
-                      >
-                        <div className="flex items-center gap-2">
-                          T2038 End Date
-                          {getSortIcon('t2038EndDate')}
-                        </div>
-                      </Button>
-                    </TableHead>
-                    <TableHead>T2038 Request Date</TableHead>
-                    <TableHead>
-                      <Button 
-                        variant="ghost" 
-                        className="h-auto p-0 font-semibold hover:bg-transparent"
-                        onClick={() => handleSort('h2022Status')}
-                      >
-                        <div className="flex items-center gap-2">
-                          H2022 Status
-                          {getSortIcon('h2022Status')}
-                        </div>
-                      </Button>
-                    </TableHead>
-                    <TableHead>H2022 Start Date</TableHead>
-                    <TableHead>
-                      <Button 
-                        variant="ghost" 
-                        className="h-auto p-0 font-semibold hover:bg-transparent"
-                        onClick={() => handleSort('h2022EndDate')}
-                      >
-                        <div className="flex items-center gap-2">
-                          H2022 End Date
-                          {getSortIcon('h2022EndDate')}
-                        </div>
-                      </Button>
-                    </TableHead>
-                    <TableHead>H2022 Request Date</TableHead>
-                    <TableHead>Contact</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAndSortedMembers.length === 0 ? (
+            <>
+              <div className="hidden lg:block overflow-x-auto">
+                <Table data-testid="members-table">
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center py-8">
-                        {members.length === 0 ? (
-                          <div className="text-muted-foreground">
-                            <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                            <p className="font-medium">No Authorization Data Loaded</p>
-                            <p className="text-sm">Click 'Refresh Data' to load authorization data from Caspio</p>
+                      <TableHead>
+                        <Button 
+                          variant="ghost" 
+                          className="h-auto p-0 font-semibold hover:bg-transparent"
+                          onClick={() => handleSort('memberName')}
+                        >
+                          <div className="flex items-center gap-2">
+                            Member
+                            {getSortIcon('memberName')}
                           </div>
-                        ) : (
-                          <div className="text-muted-foreground">
-                            <Filter className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                            <p className="font-medium">No Members Match Current Filters</p>
-                            <p className="text-sm">Try adjusting your search criteria or clear filters</p>
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button 
+                          variant="ghost" 
+                          className="h-auto p-0 font-semibold hover:bg-transparent"
+                          onClick={() => handleSort('healthPlan')}
+                        >
+                          <div className="flex items-center gap-2">
+                            Health Plan
+                            {getSortIcon('healthPlan')}
                           </div>
-                        )}
-                      </TableCell>
+                        </Button>
+                      </TableHead>
+                      <TableHead>
+                        <Button 
+                          variant="ghost" 
+                          className="h-auto p-0 font-semibold hover:bg-transparent"
+                          onClick={() => handleSort('t2038Status')}
+                        >
+                          <div className="flex items-center gap-2">
+                            T2038 Status
+                            {getSortIcon('t2038Status')}
+                          </div>
+                        </Button>
+                      </TableHead>
+                      <TableHead>T2038 Start Date</TableHead>
+                      <TableHead>
+                        <Button 
+                          variant="ghost" 
+                          className="h-auto p-0 font-semibold hover:bg-transparent"
+                          onClick={() => handleSort('t2038EndDate')}
+                        >
+                          <div className="flex items-center gap-2">
+                            T2038 End Date
+                            {getSortIcon('t2038EndDate')}
+                          </div>
+                        </Button>
+                      </TableHead>
+                      <TableHead>T2038 Request Date</TableHead>
+                      <TableHead>
+                        <Button 
+                          variant="ghost" 
+                          className="h-auto p-0 font-semibold hover:bg-transparent"
+                          onClick={() => handleSort('h2022Status')}
+                        >
+                          <div className="flex items-center gap-2">
+                            H2022 Status
+                            {getSortIcon('h2022Status')}
+                          </div>
+                        </Button>
+                      </TableHead>
+                      <TableHead>H2022 Start Date</TableHead>
+                      <TableHead>
+                        <Button 
+                          variant="ghost" 
+                          className="h-auto p-0 font-semibold hover:bg-transparent"
+                          onClick={() => handleSort('h2022EndDate')}
+                        >
+                          <div className="flex items-center gap-2">
+                            H2022 End Date
+                            {getSortIcon('h2022EndDate')}
+                          </div>
+                        </Button>
+                      </TableHead>
+                      <TableHead>H2022 Request Date</TableHead>
+                      <TableHead>Contact</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
-                  ) : (
-                    filteredAndSortedMembers.map((member) => (
-                    <TableRow key={member.id} className={member.needsAttention ? 'bg-red-50' : ''}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{member.memberName}</p>
-                          <p className="text-sm text-muted-foreground">MRN: {member.mrn}</p>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredAndSortedMembers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={11} className="text-center py-8">
+                          {members.length === 0 ? (
+                            <div className="text-muted-foreground">
+                              <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                              <p className="font-medium">No Authorization Data Loaded</p>
+                              <p className="text-sm">Click 'Refresh Data' to load authorization data from Caspio</p>
+                            </div>
+                          ) : (
+                            <div className="text-muted-foreground">
+                              <Filter className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                              <p className="font-medium">No Members Match Current Filters</p>
+                              <p className="text-sm">Try adjusting your search criteria or clear filters</p>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredAndSortedMembers.map((member) => (
+                      <TableRow key={member.id} className={member.needsAttention ? 'bg-red-50' : ''}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{member.memberName}</p>
+                            <p className="text-sm text-muted-foreground">MRN: {member.mrn}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={getHealthPlanBadgeClass(member.healthPlan)}>
+                            {member.healthPlan}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {getStatusBadge(member.t2038Status, member.t2038DaysRemaining)}
+                        </TableCell>
+                        <TableCell>
+                          {member.authStartDateT2038 ? (
+                            <div className="text-sm">
+                              {(() => {
+                                try {
+                                  const date = parseISO(member.authStartDateT2038);
+                                  return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
+                                } catch {
+                                  return '-';
+                                }
+                              })()}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {member.authEndDateT2038 ? (
+                            <div className="text-sm">
+                              {(() => {
+                                try {
+                                  const date = parseISO(member.authEndDateT2038);
+                                  return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
+                                } catch {
+                                  return '-';
+                                }
+                              })()}
+                              {member.authExtRequestDateT2038 && (
+                                <p className="text-xs text-muted-foreground">
+                                  Ext Req: {(() => {
+                                    try {
+                                      const date = parseISO(member.authExtRequestDateT2038);
+                                      return isNaN(date.getTime()) ? '-' : format(date, 'MMM d');
+                                    } catch {
+                                      return '-';
+                                    }
+                                  })()}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {member.authExtRequestDateT2038 ? (
+                            <div className="text-sm">
+                              {(() => {
+                                try {
+                                  const date = parseISO(member.authExtRequestDateT2038);
+                                  return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
+                                } catch {
+                                  return '-';
+                                }
+                              })()}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {getStatusBadge(member.h2022Status, member.h2022DaysRemaining)}
+                        </TableCell>
+                        <TableCell>
+                          {member.authStartDateH2022 ? (
+                            <div className="text-sm">
+                              {(() => {
+                                try {
+                                  const date = parseISO(member.authStartDateH2022);
+                                  return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
+                                } catch {
+                                  return '-';
+                                }
+                              })()}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {member.authEndDateH2022 ? (
+                            <div className="text-sm">
+                              {(() => {
+                                try {
+                                  const date = parseISO(member.authEndDateH2022);
+                                  return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
+                                } catch {
+                                  return '-';
+                                }
+                              })()}
+                              {member.authExtRequestDateH2022 && (
+                                <p className="text-xs text-muted-foreground">
+                                  Ext Req: {(() => {
+                                    try {
+                                      const date = parseISO(member.authExtRequestDateH2022);
+                                      return isNaN(date.getTime()) ? '-' : format(date, 'MMM d');
+                                    } catch {
+                                      return '-';
+                                    }
+                                  })()}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {member.authExtRequestDateH2022 ? (
+                            <div className="text-sm">
+                              {(() => {
+                                try {
+                                  const date = parseISO(member.authExtRequestDateH2022);
+                                  return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
+                                } catch {
+                                  return '-';
+                                }
+                              })()}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <p className="font-medium">{member.primaryContact}</p>
+                            {member.contactPhone && (
+                              <p className="text-muted-foreground flex items-center gap-1">
+                                <Phone className="h-3 w-3" />
+                                {member.contactPhone}
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <UpdateAuthorizationDialog 
+                            member={member} 
+                            onUpdate={fetchAuthorizationData}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="lg:hidden space-y-3">
+                {filteredAndSortedMembers.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    {members.length === 0 ? (
+                      <>
+                        <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p className="font-medium">No Authorization Data Loaded</p>
+                        <p className="text-sm">Click 'Refresh Data' to load authorization data from Caspio</p>
+                      </>
+                    ) : (
+                      <>
+                        <Filter className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p className="font-medium">No Members Match Current Filters</p>
+                        <p className="text-sm">Try adjusting your search criteria or clear filters</p>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  filteredAndSortedMembers.map((member) => (
+                    <Card key={member.id} className={member.needsAttention ? 'border-l-4 border-l-red-500' : ''}>
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="font-medium">{member.memberName}</div>
+                          <Badge variant="outline" className={getHealthPlanBadgeClass(member.healthPlan)}>
+                            {member.healthPlan}
+                          </Badge>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{member.healthPlan}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        {getStatusBadge(member.t2038Status, member.t2038DaysRemaining)}
-                      </TableCell>
-                      <TableCell>
-                        {member.authStartDateT2038 ? (
-                          <div className="text-sm">
-                            {(() => {
-                              try {
-                                const date = parseISO(member.authStartDateT2038);
-                                return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
-                              } catch {
-                                return '-';
-                              }
-                            })()}
+                        <div className="text-sm text-muted-foreground">MRN: {member.mrn}</div>
+                        <div className="grid gap-2 text-sm">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-muted-foreground">T2038:</span>
+                            {getStatusBadge(member.t2038Status, member.t2038DaysRemaining)}
                           </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {member.authEndDateT2038 ? (
-                          <div className="text-sm">
-                            {(() => {
-                              try {
-                                const date = parseISO(member.authEndDateT2038);
-                                return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
-                              } catch {
-                                return '-';
-                              }
-                            })()}
-                            {member.authExtRequestDateT2038 && (
-                              <p className="text-xs text-muted-foreground">
-                                Ext Req: {(() => {
-                                  try {
-                                    const date = parseISO(member.authExtRequestDateT2038);
-                                    return isNaN(date.getTime()) ? '-' : format(date, 'MMM d');
-                                  } catch {
-                                    return '-';
-                                  }
-                                })()}
-                              </p>
-                            )}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-muted-foreground">H2022:</span>
+                            {getStatusBadge(member.h2022Status, member.h2022DaysRemaining)}
                           </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {member.authExtRequestDateT2038 ? (
-                          <div className="text-sm">
-                            {(() => {
-                              try {
-                                const date = parseISO(member.authExtRequestDateT2038);
-                                return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
-                              } catch {
-                                return '-';
-                              }
-                            })()}
+                        </div>
+                        <div className="grid gap-2 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">T2038 End:</span>{' '}
+                            {formatDateSafe(member.authEndDateT2038)}
                           </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {getStatusBadge(member.h2022Status, member.h2022DaysRemaining)}
-                      </TableCell>
-                      <TableCell>
-                        {member.authStartDateH2022 ? (
-                          <div className="text-sm">
-                            {(() => {
-                              try {
-                                const date = parseISO(member.authStartDateH2022);
-                                return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
-                              } catch {
-                                return '-';
-                              }
-                            })()}
+                          <div>
+                            <span className="text-muted-foreground">H2022 End:</span>{' '}
+                            {formatDateSafe(member.authEndDateH2022)}
                           </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {member.authEndDateH2022 ? (
-                          <div className="text-sm">
-                            {(() => {
-                              try {
-                                const date = parseISO(member.authEndDateH2022);
-                                return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
-                              } catch {
-                                return '-';
-                              }
-                            })()}
-                            {member.authExtRequestDateH2022 && (
-                              <p className="text-xs text-muted-foreground">
-                                Ext Req: {(() => {
-                                  try {
-                                    const date = parseISO(member.authExtRequestDateH2022);
-                                    return isNaN(date.getTime()) ? '-' : format(date, 'MMM d');
-                                  } catch {
-                                    return '-';
-                                  }
-                                })()}
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {member.authExtRequestDateH2022 ? (
-                          <div className="text-sm">
-                            {(() => {
-                              try {
-                                const date = parseISO(member.authExtRequestDateH2022);
-                                return isNaN(date.getTime()) ? '-' : format(date, 'MMM d, yyyy');
-                              } catch {
-                                return '-';
-                              }
-                            })()}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
+                        </div>
                         <div className="text-sm">
-                          <p className="font-medium">{member.primaryContact}</p>
+                          <div className="font-medium">{member.primaryContact}</div>
                           {member.contactPhone && (
-                            <p className="text-muted-foreground flex items-center gap-1">
+                            <div className="text-muted-foreground flex items-center gap-1">
                               <Phone className="h-3 w-3" />
                               {member.contactPhone}
-                            </p>
+                            </div>
                           )}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <UpdateAuthorizationDialog 
-                          member={member} 
-                          onUpdate={fetchAuthorizationData}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  )))}
-                </TableBody>
-              </Table>
-            </div>
+                        <div>
+                          <UpdateAuthorizationDialog 
+                            member={member} 
+                            onUpdate={fetchAuthorizationData}
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

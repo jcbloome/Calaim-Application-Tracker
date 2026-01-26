@@ -201,12 +201,7 @@ export function SyncStatusIndicator({
   };
 
   if (!clientId) {
-    return (
-      <div className={`flex items-center gap-2 text-sm text-muted-foreground ${className}`}>
-        <Database className="h-4 w-4" />
-        <span>No Client ID - Cannot Sync</span>
-      </div>
-    );
+    return null;
   }
 
   return (
