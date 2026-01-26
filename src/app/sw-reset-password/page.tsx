@@ -233,10 +233,10 @@ function SWResetPasswordContent() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
         <Card className="w-full max-w-md shadow-lg">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Set New Password</CardTitle>
-            <CardDescription>Enter your new password below</CardDescription>
-          </CardHeader>
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Welcome Social Worker!</CardTitle>
+          <CardDescription>Set your new password below</CardDescription>
+        </CardHeader>
           <CardContent>
             <form onSubmit={async (e) => {
               e.preventDefault();
