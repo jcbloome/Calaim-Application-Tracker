@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { confirmPasswordReset } from 'firebase/auth';
+import { confirmPasswordReset, sendPasswordResetEmail } from 'firebase/auth';
 import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -83,29 +83,27 @@ function SWResetPasswordContent() {
     setError('');
 
     try {
-      // Use the same custom API as regular users for consistency
-      const response = await fetch('/api/auth/password-reset', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, role: 'sw' }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setIsSuccess(true);
-        toast({
-          title: 'Password Reset Email Sent',
-          description: 'Check your email for password reset instructions'
-        });
-      } else {
-        setError(data.error || 'Failed to send password reset email. Please try again.');
+      if (!auth) {
+        setError('Authentication service not available');
+        return;
       }
+
+      const normalizedEmail = email.trim().toLowerCase();
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const actionCodeSettings = {
+        url: `${origin}/sw-reset-password`,
+        handleCodeInApp: true
+      };
+
+      await sendPasswordResetEmail(auth, normalizedEmail, actionCodeSettings);
+      setIsSuccess(true);
+      toast({
+        title: 'Password Reset Email Sent',
+        description: 'Check your email for Social Worker reset instructions.'
+      });
     } catch (error: any) {
       console.error('Password reset error:', error);
-      setError('Failed to send password reset email. Please try again.');
+      setError(error?.message || 'Failed to send password reset email. Please try again.');
     } finally {
       setIsLoading(false);
     }
