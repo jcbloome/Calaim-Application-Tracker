@@ -232,9 +232,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    let role: 'sw' | 'user' = 'user';
+    try {
+      const swSnapshot = await adminDb
+        .collection('socialWorkers')
+        .where('email', '==', tokenData.email)
+        .limit(1)
+        .get();
+      if (!swSnapshot.empty) {
+        role = 'sw';
+      }
+    } catch (roleError) {
+      console.warn('⚠️ Failed to determine user role from Firestore:', roleError);
+    }
+
     console.log('✅ Token is valid');
     return NextResponse.json(
-      { email: tokenData.email, valid: true },
+      { email: tokenData.email, valid: true, role },
       { status: 200 }
     );
 

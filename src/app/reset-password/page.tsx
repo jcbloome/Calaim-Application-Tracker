@@ -63,6 +63,10 @@ function ResetPasswordContent() {
           console.log('📄 API Response data:', data);
           
           if (response.ok && data.valid) {
+            if (data.role === 'sw') {
+              router.replace(`/sw-reset-password?token=${token}`);
+              return;
+            }
             setEmail(data.email);
             setResetValid(true);
             console.log('✅ Token validation successful');
