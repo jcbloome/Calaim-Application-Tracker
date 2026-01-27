@@ -16,7 +16,7 @@ import { GlossaryDialog } from '@/components/GlossaryDialog';
 
 const infoSections = [
    {
-    title: 'Room & Board Payments',
+    title: '"Room and Board" and "Assisted Living" Payments',
     content: [
         "The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is responsible for paying the RCFE the 'assisted living' portion.",
         "For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for \"room and board\". Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for 'room and board' for a private room or to open up RCFEs in more expensive areas.",
@@ -32,6 +32,13 @@ const infoSections = [
         "This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.",
         "Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.",
         <>Read more about eliminating share of cost at the <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">California Advocates for Nursing Home Reform (CANHR)</a>.</>
+    ],
+  },
+  {
+    title: 'Benefitscal.com',
+    content: [
+      "A one stop shop to apply and review Medi-Cal benefits including possible share of cost information and to add for the member an authorized representative/power of attorney.",
+      <>Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">www.benefitscal.com</a> for current SOC verification and more information.</>
     ],
   },
   {

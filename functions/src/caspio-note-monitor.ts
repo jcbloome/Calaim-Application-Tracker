@@ -31,6 +31,7 @@ interface NotificationPayload {
     memberName: string;
     priority: string;
     actionUrl: string;
+    message: string;
   };
 }
 
@@ -143,7 +144,8 @@ async function sendPriorityNoteNotification(note: CaspioNote, staffTokens: strin
       clientId2: note.clientId2,
       memberName: note.memberName,
       priority: note.priority,
-      actionUrl: `/admin/member/${note.clientId2}?tab=notes&highlight=${note.noteId}`
+      actionUrl: `/admin/member/${note.clientId2}?tab=notes&highlight=${note.noteId}`,
+      message: note.noteContent
     }
   };
   
@@ -155,6 +157,19 @@ async function sendPriorityNoteNotification(note: CaspioNote, staffTokens: strin
         body: payload.body,
       },
       data: payload.data,
+      webpush: {
+        notification: {
+          title: payload.title,
+          body: payload.body,
+          icon: '/calaimlogopdf.png',
+          badge: '/calaimlogopdf.png',
+          tag: `priority-${note.noteId}`,
+          requireInteraction: true,
+        },
+        fcmOptions: {
+          link: payload.data.actionUrl
+        }
+      },
       tokens: staffTokens,
     };
     

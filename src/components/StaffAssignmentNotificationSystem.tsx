@@ -108,7 +108,7 @@ export default function StaffAssignmentNotificationSystem() {
           priority: 'High',
           duration: 0, // Stay until manually dismissed
           sound: settings.soundEnabled,
-          soundType: 'arrow-target',
+          soundType: 'mellow-note',
           animation: 'slide' // More subtle than bounce
         });
         console.log('✅ System tray notification created with ID:', notificationId);

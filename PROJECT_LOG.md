@@ -16,6 +16,13 @@
 
 ## 🗓️ **Development History**
 
+### **January 26, 2026 - Updates**
+- ✅ **UI/UX**: Added bell notification links/reply actions and multi-recipient interoffice notes
+- ✅ **Bug Fixed**: Restored Complete Note Log by hardening all-notes API fetch
+- ✅ **UI/UX**: Unified system note log with complete note log and action links
+- ✅ **UI/UX**: Removed legacy system note log route in favor of unified log
+- ✅ **Bug Fixed**: Restored tray popups by using user auth hook in real-time listener
+
 ### **January 25, 2026 - Updates**
 - ✅ **Build**: Switched font loading to local system stack for offline builds
 - ✅ **Bug Fixed**: Wrapped admin applications filters in Suspense to fix build
@@ -41,6 +48,14 @@
 - ✅ **Bug Fixed**: Added social worker login email fallback and clearer access errors
 - ✅ **UI/UX**: Routed SW reset requests to SW screen when detected
 - ✅ **UI/UX**: Added mock SW visit tracking flow button with full walkthrough
+- ✅ **UI/UX**: Added admin authorization uploads with T2038/H2022 selector by plan
+- ✅ **UI/UX**: Moved SOC/BenefitsCal content to page 3 and printable program info
+- ✅ **Feature Added**: Staff note notifications now use persistent popups and resolve flow
+- ✅ **Feature Added**: Added RCFE bulk email sender with preview and Caspio registration list
+- ✅ **UI/UX**: Renamed page 3 room and board card title
+- ✅ **UI/UX**: Matched room and board title in printable program info
+- ✅ **Feature Added**: Added interoffice note sender on admin application page
+- ✅ **UI/UX**: Added SW portal mock viewer with social worker selection
 - ✅ **UI/UX**: Removed mapping list tab from Caspio test UI
 - ✅ **UI/UX**: Restored two-column layout for CS Summary and Caspio mapping options
 - ✅ **UI/UX**: Added preferred RCFE cities and split RCFE admin name fields in CS Summary (online + printable)

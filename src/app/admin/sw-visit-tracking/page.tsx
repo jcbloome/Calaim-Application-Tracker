@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { 
   FileBarChart,
   Calendar,
@@ -26,7 +27,9 @@ import {
   LogIn,
   Monitor,
   Smartphone,
-  Activity
+  Activity,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 interface VisitRecord {
@@ -81,6 +84,10 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [showMockFlow, setShowMockFlow] = useState(false);
+  const [mockSocialWorker, setMockSocialWorker] = useState('');
+  const [mockStepIndex, setMockStepIndex] = useState(0);
+  const [expandedVisitId, setExpandedVisitId] = useState<string | null>(null);
+  const [expandedSignoffId, setExpandedSignoffId] = useState<string | null>(null);
 
   useEffect(() => {
     loadTrackingData();
@@ -90,7 +97,9 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
     setLoading(true);
     try {
       // Fetch real login events
-      const loginResponse = await fetch(`/api/sw-visits/login-tracking?days=${dateFilter === 'all' ? '30' : dateFilter}`);
+      const loginResponse = await fetch(
+        `/api/sw-visits/login-tracking?days=${dateFilter === 'all' ? '30' : dateFilter}`
+      );
       if (loginResponse.ok) {
         const loginData = await loginResponse.json();
         setLoginEvents(loginData.events || []);
@@ -214,6 +223,53 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
     return <Badge variant="destructive">Needs Attention ({score})</Badge>;
   };
 
+  const mockFlowSteps = [
+    {
+      title: 'Login',
+      portalTitle: 'SW Login',
+      description: 'Log in to the portal with SW credentials.',
+      nextAction: 'Continue to assignments'
+    },
+    {
+      title: 'Assignments',
+      portalTitle: 'My Visit Assignments',
+      description: 'See assigned members, RCFE details, and visit schedules.',
+      nextAction: 'Select a member visit'
+    },
+    {
+      title: 'Visit Verification',
+      portalTitle: 'Verify Visit',
+      description: 'Confirm location and start the visit verification workflow.',
+      nextAction: 'Begin questionnaire'
+    },
+    {
+      title: 'Questionnaire',
+      portalTitle: 'Visit Questionnaire',
+      description: 'Complete the visit questions and submit responses.',
+      nextAction: 'Capture RCFE sign-off'
+    },
+    {
+      title: 'RCFE Sign-Off',
+      portalTitle: 'RCFE Sign-Off',
+      description: 'Collect RCFE staff sign-off and finalize the visit.',
+      nextAction: 'Submit visit'
+    },
+    {
+      title: 'Submission',
+      portalTitle: 'Visit Submitted',
+      description: 'Visit is submitted for admin review and reporting.',
+      nextAction: 'Return to assignments'
+    }
+  ];
+
+  const availableSocialWorkers = Array.from(new Set([
+    ...loginEvents.map(event => event.socialWorkerName),
+    ...visitRecords.map(record => record.socialWorkerName)
+  ])).filter(Boolean);
+
+  const activeMockStep = mockFlowSteps[mockStepIndex];
+  const mockWorkerLabel = mockSocialWorker.trim() || 'Selected Social Worker';
+
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -265,81 +321,155 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-3">
-                <div className="border rounded-lg p-3">
-                  <p className="font-semibold flex items-center gap-2">
-                    <LogIn className="h-4 w-4 text-blue-600" />
-                    1) Social Worker Login
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    SW logs in and opens the visit assignments list.
-                  </p>
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="mock-sw-name">Social Worker</Label>
+                  <Input
+                    id="mock-sw-name"
+                    value={mockSocialWorker}
+                    onChange={(event) => setMockSocialWorker(event.target.value)}
+                    placeholder="Type SW name..."
+                  />
                 </div>
-                <div className="border rounded-lg p-3">
-                  <p className="font-semibold flex items-center gap-2">
-                    <Users className="h-4 w-4 text-blue-600" />
-                    2) Select Member + RCFE
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Assignments show the member, RCFE, and visit date.
-                  </p>
+                <div className="space-y-2">
+                  <Label htmlFor="mock-sw-select">Quick Select</Label>
+                  <Select value={mockSocialWorker} onValueChange={(value) => setMockSocialWorker(value)}>
+                    <SelectTrigger id="mock-sw-select">
+                      <SelectValue placeholder="Select recent SW" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableSocialWorkers.length === 0 && (
+                        <SelectItem value="none" disabled>
+                          No recent social workers
+                        </SelectItem>
+                      )}
+                      {availableSocialWorkers.map((name) => (
+                        <SelectItem key={name} value={name}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="border rounded-lg p-3">
-                  <p className="font-semibold flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-green-600" />
-                    3) Geolocation Verified
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Location check confirms the SW is on-site.
-                  </p>
-                </div>
-                <div className="border rounded-lg p-3">
-                  <p className="font-semibold flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    4) Visit Completed
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Questionnaire is completed and saved with a score.
-                  </p>
+                <div className="space-y-2">
+                  <Label>Advance Portal Step</Label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setMockStepIndex((prev) => Math.max(0, prev - 1))}
+                      disabled={mockStepIndex === 0}
+                    >
+                      Back
+                    </Button>
+                    <Button
+                      onClick={() => setMockStepIndex((prev) => Math.min(mockFlowSteps.length - 1, prev + 1))}
+                      disabled={mockStepIndex === mockFlowSteps.length - 1}
+                    >
+                      Next
+                    </Button>
+                  </div>
                 </div>
               </div>
-              <div className="space-y-3">
-                <div className="border rounded-lg p-3">
-                  <p className="font-semibold flex items-center gap-2">
-                    <Flag className="h-4 w-4 text-red-600" />
-                    5) Flagged Issues (if any)
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Low scores or urgent concerns trigger review flags.
-                  </p>
+
+              <Card className="border-dashed">
+                <CardHeader>
+                  <CardTitle className="text-lg">
+                    {activeMockStep.title} • {mockWorkerLabel}
+                  </CardTitle>
+                  <CardDescription>
+                    Step {mockStepIndex + 1} of {mockFlowSteps.length}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 text-base text-foreground">
+                    <Monitor className="h-4 w-4 text-blue-600" />
+                    Portal View: {activeMockStep.portalTitle}
+                  </div>
+                  <p>{activeMockStep.description}</p>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    Next action: {activeMockStep.nextAction}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <div className="border rounded-lg p-3">
+                    <p className="font-semibold flex items-center gap-2">
+                      <LogIn className="h-4 w-4 text-blue-600" />
+                      1) Social Worker Login
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      SW logs in and opens the visit assignments list.
+                    </p>
+                  </div>
+                  <div className="border rounded-lg p-3">
+                    <p className="font-semibold flex items-center gap-2">
+                      <Users className="h-4 w-4 text-blue-600" />
+                      2) Select Member + RCFE
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Assignments show the member, RCFE, and visit date.
+                    </p>
+                  </div>
+                  <div className="border rounded-lg p-3">
+                    <p className="font-semibold flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-green-600" />
+                      3) Geolocation Verified
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Location check confirms the SW is on-site.
+                    </p>
+                  </div>
+                  <div className="border rounded-lg p-3">
+                    <p className="font-semibold flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      4) Visit Completed
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Questionnaire is completed and saved with a score.
+                    </p>
+                  </div>
                 </div>
-                <div className="border rounded-lg p-3">
-                  <p className="font-semibold flex items-center gap-2">
-                    <Building className="h-4 w-4 text-blue-600" />
-                    6) RCFE Staff Sign-Off
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    RCFE staff signs to confirm the visit occurred.
-                  </p>
-                </div>
-                <div className="border rounded-lg p-3">
-                  <p className="font-semibold flex items-center gap-2">
-                    <FileBarChart className="h-4 w-4 text-blue-600" />
-                    7) Admin Review + Reporting
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Admin monitors visits, flags, and compliance metrics.
-                  </p>
-                </div>
-                <div className="border rounded-lg p-3">
-                  <p className="font-semibold flex items-center gap-2">
-                    <Download className="h-4 w-4 text-blue-600" />
-                    8) Export + Audit Trail
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Reports are exported for audit and compliance reviews.
-                  </p>
+                <div className="space-y-3">
+                  <div className="border rounded-lg p-3">
+                    <p className="font-semibold flex items-center gap-2">
+                      <Flag className="h-4 w-4 text-red-600" />
+                      5) Flagged Issues (if any)
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Low scores or urgent concerns trigger review flags.
+                    </p>
+                  </div>
+                  <div className="border rounded-lg p-3">
+                    <p className="font-semibold flex items-center gap-2">
+                      <Building className="h-4 w-4 text-blue-600" />
+                      6) RCFE Staff Sign-Off
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      RCFE staff signs to confirm the visit occurred.
+                    </p>
+                  </div>
+                  <div className="border rounded-lg p-3">
+                    <p className="font-semibold flex items-center gap-2">
+                      <FileBarChart className="h-4 w-4 text-blue-600" />
+                      7) Admin Review + Reporting
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Admin monitors visits, flags, and compliance metrics.
+                    </p>
+                  </div>
+                  <div className="border rounded-lg p-3">
+                    <p className="font-semibold flex items-center gap-2">
+                      <Download className="h-4 w-4 text-blue-600" />
+                      8) Export + Audit Trail
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Reports are exported for audit and compliance reviews.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -505,9 +635,20 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                         </span>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setExpandedVisitId((prev) => (prev === visit.id ? null : visit.id))
+                      }
+                    >
                       <Eye className="h-4 w-4 mr-2" />
-                      View Details
+                      {expandedVisitId === visit.id ? 'Hide Details' : 'View Details'}
+                      {expandedVisitId === visit.id ? (
+                        <ChevronUp className="h-4 w-4 ml-2" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 ml-2" />
+                      )}
                     </Button>
                   </div>
                   
@@ -522,6 +663,51 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                           <li key={index}>• {reason}</li>
                         ))}
                       </ul>
+                    </div>
+                  )}
+
+                  {expandedVisitId === visit.id && (
+                    <div className="border rounded-lg p-3 bg-muted/40">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Visit ID:</span>
+                          <span className="ml-2 font-medium">{visit.visitId}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">RCFE Address:</span>
+                          <span className="ml-2 font-medium">{visit.rcfeAddress}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Status:</span>
+                          <span className="ml-2 font-medium">{visit.status}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Geolocation:</span>
+                          <span className="ml-2 font-medium">
+                            {visit.geolocationVerified ? 'Verified' : 'Not Verified'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Sign-Off:</span>
+                          <span className="ml-2 font-medium">
+                            {visit.signedOff ? `Signed by ${visit.rcfeStaffName}` : 'Pending'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Score:</span>
+                          <span className="ml-2 font-medium">{visit.totalScore}</span>
+                        </div>
+                      </div>
+                      {visit.flagReasons.length > 0 && (
+                        <div className="mt-3 text-sm">
+                          <p className="text-muted-foreground mb-1">Flag Reasons:</p>
+                          <ul className="list-disc pl-5 space-y-1">
+                            {visit.flagReasons.map((reason, index) => (
+                              <li key={`${visit.id}-reason-${index}`}>{reason}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   )}
                   
@@ -588,9 +774,20 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                         </div>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setExpandedSignoffId((prev) => (prev === signoff.id ? null : signoff.id))
+                      }
+                    >
                       <Eye className="h-4 w-4 mr-2" />
-                      View Sign-Off
+                      {expandedSignoffId === signoff.id ? 'Hide Sign-Off' : 'View Sign-Off'}
+                      {expandedSignoffId === signoff.id ? (
+                        <ChevronUp className="h-4 w-4 ml-2" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 ml-2" />
+                      )}
                     </Button>
                   </div>
                   
@@ -605,6 +802,23 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                       </span>
                     )}
                   </div>
+
+                  {expandedSignoffId === signoff.id && (
+                    <div className="border rounded-lg p-3 bg-muted/40 text-sm space-y-2">
+                      <div>
+                        <span className="text-muted-foreground">RCFE Staff Title:</span>
+                        <span className="ml-2 font-medium">{signoff.rcfeStaffTitle}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Completed Visits:</span>
+                        <span className="ml-2 font-medium">{signoff.completedVisits}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Flagged Visits:</span>
+                        <span className="ml-2 font-medium text-red-600">{signoff.flaggedVisits}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
               

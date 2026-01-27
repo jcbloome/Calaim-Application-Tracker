@@ -52,7 +52,6 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth, useFirestore } from '@/firebase';
-import { NotificationManager } from '@/components/CursorStyleNotification';
 import { StaffNotificationBell } from '@/components/StaffNotificationBell';
 import { SocialWorkerRedirect } from '@/components/SocialWorkerRedirect';
 import {
@@ -663,17 +662,15 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   // If this is the login page, render it without the admin layout
   if (isLoginPage) {
     return (
-      <NotificationManager>
-        <div className="min-h-screen">
-          {children}
-        </div>
-      </NotificationManager>
+      <div className="min-h-screen">
+        {children}
+      </div>
     );
   }
   
   // If loading is done and user is an admin, show the full admin layout.
   return (
-    <NotificationManager>
+    <>
       <SocialWorkerRedirect />
       <div className="flex flex-col min-h-screen">
         <AdminHeader />
@@ -681,6 +678,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
-    </NotificationManager>
+    </>
   );
 }

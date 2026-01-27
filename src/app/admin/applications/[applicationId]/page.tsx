@@ -38,6 +38,7 @@ import {
   Download,
   Bell,
   BellOff,
+  MessageSquare,
   BellRing,
   Eye,
   EyeOff,
@@ -45,7 +46,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
-import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Label } from '@/components/ui/label';
@@ -72,7 +73,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
-import { SyncToCaspioButton } from '@/components/SyncToCaspioButton';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import { DuplicateClientChecker } from '@/components/DuplicateClientChecker';
 import NoteTracker from '@/components/NoteTracker';
@@ -186,7 +186,18 @@ const healthNetSteps = [
   "Authorization Status"
 ];
 
-const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => {
+const getAuthorizationTypes = (healthPlan?: string) => {
+  const normalized = String(healthPlan || '').toLowerCase();
+  if (normalized.includes('health net')) {
+    return ['T2038', 'H2022'];
+  }
+  return ['T2038'];
+};
+
+const getPathwayRequirements = (
+  pathway: 'SNF Transition' | 'SNF Diversion',
+  healthPlan?: string
+) => {
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/admin/forms/review', editHref: '/admin/forms/edit', icon: FileText },
     { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, and Freedom of Choice waiver form.', type: 'online-form', href: '/admin/forms/waivers', icon: FileText },
@@ -917,16 +928,6 @@ function AdminActions({ application }: { application: Application }) {
                       }}
                     />
                     
-                    <SyncToCaspioButton
-                        memberId={application.id}
-                        memberName={`${application.memberFirstName} ${application.memberLastName}`}
-                        variant="outline"
-                        className="w-full"
-                        onSyncComplete={(result) => {
-                            console.log('Sync completed:', result);
-                            // Optionally refresh application data or update UI
-                        }}
-                    />
                 </CardContent>
             </Card>
             <DialogContent>
@@ -990,6 +991,63 @@ function ApplicationDetailPageContent() {
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [staffList, setStaffList] = useState<Array<{ uid: string; name: string; email: string; role?: string }>>([]);
+  const [isLoadingStaff, setIsLoadingStaff] = useState(false);
+  const [interofficeNote, setInterofficeNote] = useState<{
+    recipientIds: string[];
+    priority: 'Regular' | 'Immediate';
+    message: string;
+    followUpDate?: string;
+  }>({
+    recipientIds: [],
+    priority: 'Regular',
+    message: '',
+    followUpDate: ''
+  });
+  const [authorizationUpload, setAuthorizationUpload] = useState<{
+    type: string;
+    startDate: string;
+    endDate: string;
+    file: File | null;
+  }>({
+    type: '',
+    startDate: '',
+    endDate: '',
+    file: null
+  });
+  const [authorizationUploading, setAuthorizationUploading] = useState(false);
+  const [authorizationUploadProgress, setAuthorizationUploadProgress] = useState(0);
+  const [authorizationSearch, setAuthorizationSearch] = useState('');
+  const [memberNotifications, setMemberNotifications] = useState<Array<{
+    id: string;
+    title: string;
+    message: string;
+    priority: string;
+    createdAt: any;
+    createdByName?: string;
+    type?: string;
+  }>>([]);
+
+  const mergeCurrentUserIntoStaff = (
+    staff: Array<{ uid: string; name: string; email: string; role?: string }>
+  ) => {
+    if (!user) return staff;
+    const currentUid = user.uid || user.email || 'current-user';
+    const currentEmail = user.email || '';
+    const exists = staff.some(
+      (member) => member.uid === currentUid || (currentEmail && member.email === currentEmail)
+    );
+    if (exists) return staff;
+    return [
+      ...staff,
+      {
+        uid: currentUid,
+        name: user.displayName || user.email || 'Current User',
+        email: currentEmail,
+        role: 'Admin'
+      }
+    ];
+  };
   
   const [consolidatedUploadChecks, setConsolidatedUploadChecks] = useState<Record<string, boolean>>({
     'LIC 602A - Physician\'s Report': false,
@@ -1037,6 +1095,61 @@ function ApplicationDetailPageContent() {
     );
   }, [application]);
 
+  const authorizationTypes = useMemo(
+    () => getAuthorizationTypes(application?.healthPlan),
+    [application?.healthPlan]
+  );
+
+  const authorizationRecords = useMemo(() => {
+    return ((application as any)?.authorizationRecords || []) as Array<{
+      id?: string;
+      type?: string;
+      startDate?: string;
+      endDate?: string;
+      fileName?: string;
+      downloadURL?: string;
+      uploadedAt?: any;
+      createdByName?: string;
+      expiryNotifiedAt?: string;
+    }>;
+  }, [application]);
+
+  const interofficeNotes = useMemo(() => {
+    return ((application as any)?.interofficeNotes || []) as Array<{
+      id?: string;
+      message?: string;
+      priority?: 'Regular' | 'Immediate';
+      createdAt?: string;
+      createdByName?: string;
+      recipientId?: string;
+      recipientName?: string;
+      followUpDate?: string;
+      followUpNotifiedAt?: string;
+    }>;
+  }, [application]);
+
+  const memberIdForNotes = useMemo(() => {
+    return (application as any)?.client_ID2 || application?.id || '';
+  }, [application]);
+
+  const filteredAuthorizationRecords = useMemo(() => {
+    if (!authorizationSearch.trim()) return authorizationRecords;
+    const query = authorizationSearch.toLowerCase();
+    return authorizationRecords.filter((record) => {
+      const fields = [
+        record.type,
+        record.fileName,
+        record.startDate,
+        record.endDate,
+        record.createdByName
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return fields.includes(query);
+    });
+  }, [authorizationRecords, authorizationSearch]);
+
   useEffect(() => {
     if (!docRef) {
       if (!isUserLoading) setIsLoading(false);
@@ -1060,6 +1173,465 @@ function ApplicationDetailPageContent() {
 
     return () => unsubscribe();
   }, [docRef, isUserLoading]);
+
+  useEffect(() => {
+    if (!firestore || !memberIdForNotes) return;
+    const notificationsQuery = query(
+      collection(firestore, 'staff_notifications'),
+      where('clientId2', '==', memberIdForNotes)
+    );
+
+    const unsubscribe = onSnapshot(
+      notificationsQuery,
+      (snapshot) => {
+        const items = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data() as any;
+          return {
+            id: docSnap.id,
+            title: data.title || 'Note',
+            message: data.message || '',
+            priority: data.priority || 'Medium',
+            createdAt: data.timestamp || data.createdAt,
+            createdByName: data.createdByName || data.senderName,
+            type: data.type
+          };
+        }).sort((a, b) => {
+          const aTime = a.createdAt?.toDate?.() || new Date(0);
+          const bTime = b.createdAt?.toDate?.() || new Date(0);
+          return bTime.getTime() - aTime.getTime();
+        });
+        setMemberNotifications(items);
+      },
+      (error) => {
+        console.error('Failed to load member notifications:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [firestore, memberIdForNotes]);
+
+  useEffect(() => {
+    const STAFF_CACHE_KEY = 'interoffice_admin_staff_cache_v1';
+    const STAFF_CACHE_TTL_MS = 5 * 60 * 1000;
+
+    const readCache = () => {
+      try {
+        const raw = sessionStorage.getItem(STAFF_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as { timestamp: number; staff: typeof staffList };
+        if (!parsed?.staff?.length) return null;
+        return {
+          ...parsed,
+          staff: mergeCurrentUserIntoStaff(parsed.staff)
+        };
+      } catch (error) {
+        console.warn('Staff cache read failed:', error);
+        return null;
+      }
+    };
+
+    const writeCache = (staff: typeof staffList) => {
+      try {
+        sessionStorage.setItem(
+          STAFF_CACHE_KEY,
+          JSON.stringify({ timestamp: Date.now(), staff })
+        );
+      } catch (error) {
+        console.warn('Staff cache write failed:', error);
+      }
+    };
+
+    const chunkArray = <T,>(items: T[], size: number): T[][] => {
+      const chunks: T[][] = [];
+      for (let i = 0; i < items.length; i += size) {
+        chunks.push(items.slice(i, i + size));
+      }
+      return chunks;
+    };
+
+    const fetchAdminStaffFromFirestore = async () => {
+      if (!firestore) return [];
+      try {
+        const [adminSnap, superAdminSnap] = await Promise.all([
+          getDocs(collection(firestore, 'roles_admin')),
+          getDocs(collection(firestore, 'roles_super_admin'))
+        ]);
+
+        const adminIds = adminSnap.docs.map((docItem) => docItem.id);
+        const superAdminIds = superAdminSnap.docs.map((docItem) => docItem.id);
+        const allIds = Array.from(new Set([...adminIds, ...superAdminIds]));
+
+        if (allIds.length === 0) return [];
+
+        const idChunks = chunkArray(allIds, 10);
+        const users: Array<{ uid: string; name: string; email: string; role: string }> = [];
+
+        for (const chunk of idChunks) {
+          const usersSnap = await getDocs(
+            query(collection(firestore, 'users'), where(documentId(), 'in', chunk))
+          );
+          usersSnap.forEach((docItem) => {
+            const data = docItem.data() as any;
+            const role = superAdminIds.includes(docItem.id) ? 'Super Admin' : 'Admin';
+            users.push({
+              uid: docItem.id,
+              name: data.firstName && data.lastName ? `${data.firstName} ${data.lastName}` : data.email || 'Unknown Staff',
+              email: data.email || '',
+              role
+            });
+          });
+        }
+
+        return users.sort((a, b) => a.name.localeCompare(b.name));
+      } catch (error) {
+        console.error('Firestore staff fallback failed:', error);
+        return [];
+      }
+    };
+
+    const loadStaffMembers = async () => {
+      try {
+        setIsLoadingStaff(true);
+        const fallback = await fetchAdminStaffFromFirestore();
+        if (fallback.length > 0) {
+          const merged = mergeCurrentUserIntoStaff(fallback);
+          setStaffList(merged);
+          writeCache(merged);
+          return;
+        }
+      } catch (loadError) {
+        console.error('Error loading staff members:', loadError);
+      } finally {
+        setIsLoadingStaff(false);
+      }
+    };
+
+    const cached = readCache();
+    if (cached?.staff?.length) {
+      setStaffList(cached.staff);
+    }
+
+    if (cached && Date.now() - cached.timestamp < STAFF_CACHE_TTL_MS) {
+      setIsLoadingStaff(false);
+      return;
+    }
+
+    loadStaffMembers();
+  }, [user, firestore]);
+
+  const handleSendInterofficeNote = async () => {
+    if (!firestore || !application || !applicationId || !docRef) return;
+    if (interofficeNote.recipientIds.length === 0 || !interofficeNote.message.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing Details',
+        description: 'Select at least one staff member and enter a message.'
+      });
+      return;
+    }
+
+    const memberName = `${application.memberFirstName} ${application.memberLastName}`;
+    const clientId2 = (application as any)?.client_ID2 || application.id;
+    const recipients = staffList.filter((staff) => interofficeNote.recipientIds.includes(staff.uid));
+    if (recipients.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No Recipients',
+        description: 'Selected staff members were not found.'
+      });
+      return;
+    }
+    const priorityValue = interofficeNote.priority === 'Immediate' ? 'Urgent' : 'Low';
+    const noteRecords = recipients.map((recipient) => ({
+      id: `interoffice-${Date.now()}-${recipient.uid}`,
+      message: interofficeNote.message.trim(),
+      priority: interofficeNote.priority,
+      createdAt: new Date().toISOString(),
+      createdBy: user?.uid || 'system',
+      createdByName: user?.displayName || user?.email || 'Admin',
+      recipientId: recipient.uid,
+      recipientName: recipient.name,
+      followUpDate: interofficeNote.followUpDate || '',
+      followUpNotifiedAt: ''
+    }));
+
+    try {
+      const existingNotes = ((application as any)?.interofficeNotes || []) as Array<any>;
+      await setDoc(docRef!, { interofficeNotes: [...existingNotes, ...noteRecords] }, { merge: true });
+
+      await Promise.all(
+        recipients.map((recipient) =>
+          addDoc(collection(firestore, 'staff_notifications'), {
+            userId: recipient.uid,
+            title: `Interoffice Note: ${memberName}`,
+            message: interofficeNote.message.trim(),
+            memberName,
+            clientId2,
+            applicationId,
+            type: 'interoffice_note',
+            priority: priorityValue,
+            status: 'Open',
+            isRead: false,
+            createdBy: user?.uid || 'system',
+            createdByName: user?.displayName || user?.email || 'Admin',
+            senderName: user?.displayName || user?.email || 'Admin',
+            timestamp: serverTimestamp(),
+            actionUrl: `/admin/applications/${applicationId}?userId=${appUserId}`
+          })
+        )
+      );
+
+      toast({
+        title: 'Interoffice Note Sent',
+        description: `Sent to ${recipients.length} staff member${recipients.length === 1 ? '' : 's'}.`
+      });
+
+      setInterofficeNote((prev) => ({
+        ...prev,
+        message: '',
+        recipientIds: [],
+        priority: 'Regular',
+        followUpDate: ''
+      }));
+    } catch (sendError) {
+      console.error('Error sending interoffice note:', sendError);
+      toast({
+        variant: 'destructive',
+        title: 'Send Failed',
+        description: 'Could not send the interoffice note.'
+      });
+    }
+  };
+
+  const formatAuthorizationDate = (value?: any) => {
+    if (!value) return 'N/A';
+    if (typeof value === 'string') {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString();
+    }
+    if (typeof value?.toDate === 'function') {
+      return value.toDate().toLocaleDateString();
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? 'N/A' : parsed.toLocaleDateString();
+  };
+
+  const getDaysUntil = (value?: any) => {
+    if (!value) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    const now = new Date();
+    const diffMs = parsed.getTime() - now.getTime();
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  };
+
+  const handleAuthorizationUpload = async () => {
+    if (!application || !docRef || !storage || !firestore) return;
+
+    if (!authorizationUpload.type || !authorizationUpload.startDate || !authorizationUpload.endDate) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing Details',
+        description: 'Select an authorization type and enter start/end dates.'
+      });
+      return;
+    }
+
+    if (!authorizationUpload.file) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing File',
+        description: 'Upload the authorization document.'
+      });
+      return;
+    }
+
+    try {
+      setAuthorizationUploading(true);
+      setAuthorizationUploadProgress(0);
+
+      const file = authorizationUpload.file;
+      const safeType = authorizationUpload.type.replace(/[^a-z0-9-_]/gi, '_');
+      const filePath = `authorizations/${appUserId}/${applicationId}/${safeType}-${Date.now()}-${file.name}`;
+      const fileRef = ref(storage, filePath);
+      const uploadTask = uploadBytesResumable(fileRef, file);
+
+      const downloadURL = await new Promise<string>((resolve, reject) => {
+        uploadTask.on(
+          'state_changed',
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            setAuthorizationUploadProgress(progress);
+          },
+          (error) => reject(error),
+          async () => {
+            const url = await getDownloadURL(uploadTask.snapshot.ref);
+            resolve(url);
+          }
+        );
+      });
+
+      const existingRecords = ((application as any)?.authorizationRecords || []) as Array<any>;
+      const newRecord = {
+        id: `auth-${Date.now()}`,
+        type: authorizationUpload.type,
+        startDate: authorizationUpload.startDate,
+        endDate: authorizationUpload.endDate,
+        fileName: file.name,
+        downloadURL,
+        uploadedAt: serverTimestamp(),
+        createdBy: user?.uid || 'system',
+        createdByName: user?.displayName || user?.email || 'Admin'
+      };
+
+      await setDoc(docRef, { authorizationRecords: [...existingRecords, newRecord] }, { merge: true });
+
+      toast({
+        title: 'Authorization Uploaded',
+        description: `${authorizationUpload.type} authorization saved.`
+      });
+
+      setAuthorizationUpload({
+        type: '',
+        startDate: '',
+        endDate: '',
+        file: null
+      });
+      setAuthorizationUploadProgress(0);
+    } catch (uploadError) {
+      console.error('Authorization upload failed:', uploadError);
+      toast({
+        variant: 'destructive',
+        title: 'Upload Failed',
+        description: 'Could not upload the authorization.'
+      });
+    } finally {
+      setAuthorizationUploading(false);
+    }
+  };
+
+  useEffect(() => {
+    const notifyExpiringAuthorizations = async () => {
+      if (!firestore || !docRef) return;
+      if (authorizationRecords.length === 0) return;
+
+      const deydry = staffList.find((staff) =>
+        staff.name?.toLowerCase().includes('deydry')
+      );
+      if (!deydry) return;
+
+      const memberName = `${application?.memberFirstName} ${application?.memberLastName}`;
+      const clientId2 = (application as any)?.client_ID2 || application?.id;
+      const now = new Date();
+      const threshold = new Date(now);
+      threshold.setDate(threshold.getDate() + 30);
+
+      let hasUpdates = false;
+      const updatedRecords = authorizationRecords.map((record) => {
+        if (!record.endDate || record.expiryNotifiedAt) return record;
+        const endDate = new Date(record.endDate);
+        if (Number.isNaN(endDate.getTime())) return record;
+        if (endDate <= threshold) {
+          hasUpdates = true;
+          return { ...record, expiryNotifiedAt: new Date().toISOString() };
+        }
+        return record;
+      });
+
+      if (!hasUpdates) return;
+
+      try {
+        const expiringRecords = authorizationRecords.filter((record) => {
+          if (!record.endDate || record.expiryNotifiedAt) return false;
+          const endDate = new Date(record.endDate);
+          if (Number.isNaN(endDate.getTime())) return false;
+          return endDate <= threshold;
+        });
+
+        await Promise.all(
+          expiringRecords.map((record) =>
+            addDoc(collection(firestore, 'staff_notifications'), {
+              userId: deydry.uid,
+              title: `Authorization expiring soon: ${memberName}`,
+              message: `${record.type || 'Authorization'} expires on ${formatAuthorizationDate(record.endDate)}.`,
+              memberName,
+              clientId2,
+              type: 'authorization_expiry',
+              priority: 'Urgent',
+              status: 'Open',
+              isRead: false,
+              createdBy: user?.uid || 'system',
+              createdByName: user?.displayName || user?.email || 'System',
+              senderName: user?.displayName || user?.email || 'System',
+              timestamp: serverTimestamp(),
+              actionUrl: `/admin/applications/${applicationId}?userId=${appUserId}`
+            })
+          )
+        );
+
+        await setDoc(docRef, { authorizationRecords: updatedRecords }, { merge: true });
+      } catch (error) {
+        console.error('Failed to notify expiring authorizations:', error);
+      }
+    };
+
+    notifyExpiringAuthorizations();
+  }, [authorizationRecords, staffList, firestore, docRef, application, appUserId, applicationId, user]);
+
+  useEffect(() => {
+    const notifyFollowUps = async () => {
+      if (!firestore || !docRef || interofficeNotes.length === 0) return;
+      const today = new Date();
+
+      const pendingNotes = interofficeNotes.filter((note) => {
+        if (!note.followUpDate || note.followUpNotifiedAt) return false;
+        const followUp = new Date(note.followUpDate);
+        if (Number.isNaN(followUp.getTime())) return false;
+        return followUp <= today;
+      });
+
+      if (pendingNotes.length === 0) return;
+
+      try {
+        const memberName = `${application?.memberFirstName} ${application?.memberLastName}`;
+        const clientId2 = (application as any)?.client_ID2 || application?.id;
+
+        await Promise.all(
+          pendingNotes.map((note) =>
+            addDoc(collection(firestore, 'staff_notifications'), {
+              userId: note.recipientId,
+              title: `Follow-up due: ${memberName}`,
+              message: note.message || 'Follow-up is due.',
+              memberName,
+              clientId2,
+              type: 'interoffice_followup',
+              priority: 'High',
+              status: 'Open',
+              isRead: false,
+              createdBy: user?.uid || 'system',
+              createdByName: user?.displayName || user?.email || 'System',
+              senderName: user?.displayName || user?.email || 'System',
+              timestamp: serverTimestamp(),
+              actionUrl: `/admin/applications/${applicationId}?userId=${appUserId}`
+            })
+          )
+        );
+
+        const updatedNotes = interofficeNotes.map((note) => {
+          if (!note.followUpDate || note.followUpNotifiedAt) return note;
+          const followUp = new Date(note.followUpDate);
+          if (Number.isNaN(followUp.getTime()) || followUp > today) return note;
+          return { ...note, followUpNotifiedAt: new Date().toISOString() };
+        });
+
+        await setDoc(docRef, { interofficeNotes: updatedNotes }, { merge: true });
+      } catch (error) {
+        console.error('Failed to send follow-up reminders:', error);
+      }
+    };
+
+    notifyFollowUps();
+  }, [interofficeNotes, firestore, docRef, application, appUserId, applicationId, user]);
 
   // Auto-assign staff useEffect temporarily disabled to prevent endless looping
   // useEffect(() => {
@@ -1094,6 +1666,12 @@ function ApplicationDetailPageContent() {
           const existingForm = existingForms.get(update.name!);
           if (existingForm) {
               existingForms.set(update.name!, { ...existingForm, ...update });
+          } else if (update.name) {
+              existingForms.set(update.name, {
+                name: update.name,
+                status: update.status || 'Pending',
+                ...update
+              });
           }
       });
 
@@ -1222,6 +1800,7 @@ function ApplicationDetailPageContent() {
             await handleFormStatusUpdate([{
                 name: requirementTitle,
                 status: 'Completed',
+                type: 'Upload',
                 fileName: files.map(f => f.name).join(', '),
                 filePath: uploadResult.path,
                 downloadURL: uploadResult.downloadURL,
@@ -1260,6 +1839,7 @@ function ApplicationDetailPageContent() {
             const updates: Partial<FormStatusType>[] = formsToUpdate.map(formName => ({
                 name: formName,
                 status: 'Completed',
+                type: 'Upload',
                 fileName: files.map(f => f.name).join(', '),
                 filePath: uploadResult.path,
                 downloadURL: uploadResult.downloadURL,
@@ -1349,7 +1929,10 @@ function ApplicationDetailPageContent() {
     );
   }
   
-  const pathwayRequirements = getPathwayRequirements(application.pathway as 'SNF Transition' | 'SNF Diversion');
+  const pathwayRequirements = getPathwayRequirements(
+    application.pathway as 'SNF Transition' | 'SNF Diversion',
+    application.healthPlan
+  );
   const formStatusMap = new Map(application.forms?.map(f => [f.name, f]));
   
   const completedCount = pathwayRequirements.reduce((acc, req) => {
@@ -2020,6 +2603,271 @@ function ApplicationDetailPageContent() {
           memberId={(application as any)?.client_ID2 || application.id}
           memberName={`${application.memberFirstName} ${application.memberLastName}`}
         />
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5" />
+              Interoffice Notes
+            </CardTitle>
+            <CardDescription>
+              Send staff-only notes tied to this application.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="interoffice-recipient">Recipients</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="interoffice-recipient"
+                    variant="outline"
+                    className="w-full justify-between"
+                    disabled={isLoadingStaff}
+                  >
+                    {isLoadingStaff
+                      ? 'Loading staff...'
+                      : interofficeNote.recipientIds.length === 0
+                        ? 'Select staff members'
+                        : `${interofficeNote.recipientIds.length} selected`}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="p-2 w-72">
+                  <div className="max-h-56 overflow-auto space-y-2">
+                    {staffList.map((staff) => {
+                      const checked = interofficeNote.recipientIds.includes(staff.uid);
+                      return (
+                        <label key={staff.uid} className="flex items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(value) => {
+                              setInterofficeNote((prev) => ({
+                                ...prev,
+                                recipientIds: value
+                                  ? [...prev.recipientIds, staff.uid]
+                                  : prev.recipientIds.filter((id) => id !== staff.uid)
+                              }));
+                            }}
+                          />
+                          <span>{staff.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="interoffice-priority">Priority</Label>
+              <Select
+                value={interofficeNote.priority}
+                onValueChange={(value: 'Regular' | 'Immediate') =>
+                  setInterofficeNote((prev) => ({ ...prev, priority: value }))
+                }
+              >
+                <SelectTrigger id="interoffice-priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Regular">Regular (no desktop popup)</SelectItem>
+                  <SelectItem value="Immediate">Immediate (desktop popup)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="interoffice-message">Message</Label>
+              <Textarea
+                id="interoffice-message"
+                rows={4}
+                value={interofficeNote.message}
+                onChange={(event) =>
+                  setInterofficeNote((prev) => ({ ...prev, message: event.target.value }))
+                }
+                placeholder="Enter staff-only instructions or updates..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="interoffice-followup">Follow-up date (optional)</Label>
+              <Input
+                id="interoffice-followup"
+                type="date"
+                value={interofficeNote.followUpDate || ''}
+                onChange={(event) =>
+                  setInterofficeNote((prev) => ({ ...prev, followUpDate: event.target.value }))
+                }
+              />
+            </div>
+            <Button onClick={handleSendInterofficeNote} className="w-full">
+              Send Interoffice Note
+            </Button>
+
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              Member Notes (Top 5)
+            </CardTitle>
+            <CardDescription>
+              Notes and replies tied to this member from the notification system.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {memberNotifications.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No member-specific notes yet.</p>
+            ) : (
+              memberNotifications.slice(0, 5).map((note) => (
+                <div key={note.id} className="rounded-md border p-2 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{note.title}</span>
+                    <Badge variant="outline">{note.priority}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{note.message}</p>
+                  <div className="mt-2 text-xs text-muted-foreground flex items-center justify-between">
+                    <span>{note.createdByName || 'System'}</span>
+                    <span>
+                      {(note.createdAt?.toDate?.() || new Date(note.createdAt)).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+            <Button asChild variant="outline" size="sm" className="w-full">
+              <Link href={`/admin/my-notes?member=${encodeURIComponent(`${application.memberFirstName} ${application.memberLastName}`)}`}>
+                View full notes
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UploadCloud className="h-5 w-5" />
+              Authorization Uploads (Interoffice)
+            </CardTitle>
+            <CardDescription>
+              Track authorization windows and upload documents. Use search to find previous auths for reauthorizations.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="authorization-type">Authorization Type</Label>
+              <Select
+                value={authorizationUpload.type}
+                onValueChange={(value) => setAuthorizationUpload((prev) => ({ ...prev, type: value }))}
+              >
+                <SelectTrigger id="authorization-type">
+                  <SelectValue placeholder="Select authorization type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {authorizationTypes.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="authorization-start">Start Date</Label>
+                <Input
+                  id="authorization-start"
+                  type="date"
+                  value={authorizationUpload.startDate}
+                  onChange={(event) =>
+                    setAuthorizationUpload((prev) => ({ ...prev, startDate: event.target.value }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="authorization-end">End Date</Label>
+                <Input
+                  id="authorization-end"
+                  type="date"
+                  value={authorizationUpload.endDate}
+                  onChange={(event) =>
+                    setAuthorizationUpload((prev) => ({ ...prev, endDate: event.target.value }))
+                  }
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="authorization-file">Authorization Document</Label>
+              <Input
+                id="authorization-file"
+                type="file"
+                onChange={(event) =>
+                  setAuthorizationUpload((prev) => ({
+                    ...prev,
+                    file: event.target.files?.[0] || null
+                  }))
+                }
+              />
+            </div>
+            {authorizationUploading && (
+              <Progress value={authorizationUploadProgress} className="h-1 w-full" />
+            )}
+            <Button
+              onClick={handleAuthorizationUpload}
+              className="w-full"
+              disabled={authorizationUploading}
+            >
+              {authorizationUploading ? 'Uploading...' : 'Save Authorization'}
+            </Button>
+
+            <Separator />
+
+            <div className="space-y-2">
+              <Label htmlFor="authorization-search">Search Previous Authorizations</Label>
+              <Input
+                id="authorization-search"
+                value={authorizationSearch}
+                onChange={(event) => setAuthorizationSearch(event.target.value)}
+                placeholder="Search by type, date, or file name..."
+              />
+            </div>
+
+            {filteredAuthorizationRecords.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No authorization records found.</p>
+            ) : (
+              <div className="space-y-3">
+                {filteredAuthorizationRecords.map((record) => {
+                  const daysUntilEnd = getDaysUntil(record.endDate);
+                  const isExpiringSoon = typeof daysUntilEnd === 'number' && daysUntilEnd <= 30;
+                  return (
+                  <div key={record.id || `${record.type}-${record.startDate}`} className="rounded-md border p-3 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-medium">
+                        {record.type || 'Authorization'}
+                        {isExpiringSoon && (
+                          <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">
+                            Expiring in {daysUntilEnd} days
+                          </span>
+                        )}
+                      </div>
+                      {record.downloadURL && (
+                        <Button asChild variant="ghost" size="sm">
+                          <a href={record.downloadURL} target="_blank" rel="noopener noreferrer">
+                            <Download className="mr-2 h-4 w-4" />
+                            View
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                    <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                      <div>Start: {formatAuthorizationDate(record.startDate)}</div>
+                      <div>End: {formatAuthorizationDate(record.endDate)}</div>
+                      <div>Uploaded: {formatAuthorizationDate(record.uploadedAt)}</div>
+                      {record.fileName && <div>File: {record.fileName}</div>}
+                      {record.createdByName && <div>Uploaded by: {record.createdByName}</div>}
+                    </div>
+                  </div>
+                )})}
+              </div>
+            )}
+          </CardContent>
+        </Card>
          <Card>
             <CardHeader>
                 <CardTitle className="flex items-center gap-2"><List className="h-5 w-5" /> Uploaded Files</CardTitle>

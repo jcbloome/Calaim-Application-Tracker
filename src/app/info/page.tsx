@@ -58,14 +58,7 @@ const infoSections: InfoSection[] = [
         "Medicare is a federal health insurance program mainly for people 65 or older. Medi-Cal is California's Medicaid program for low-income individuals. The CalAIM program is a Medi-Cal benefit.",
     ],
   },
-  {
-    title: 'Benefitscal.com & Share of Cost (SOC)',
-    content: [
-        "A one stop shop to apply and review Medi-Cal benefits including possible share of cost information and to add for the member an authorized representative/power of attorney.",
-        "Share of Cost (SOC) is usually triggered if a member receives more than $1,800/month, although this number can vary by county and by particular circumstances. Members in SNFs may not show a SOC since the facility receives most of their income, but this may change when transitioning to community living.",
-    ],
-    website: 'www.benefitscal.com',
-  },
+ 
 ];
 
 

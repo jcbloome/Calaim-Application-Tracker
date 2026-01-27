@@ -27,6 +27,7 @@ import { useWindowsNotifications } from '@/components/WindowsNotification';
 import { useCursorNotifications, useTabNotifications } from '@/components/CursorStyleNotification';
 
 const SOUND_OPTIONS = [
+  { value: 'mellow-note', label: 'Mellow Note 🎵', description: 'Soft, calm notification tone' },
   { value: 'arrow-target', label: 'Arrow Hit Target 🎯', description: 'Satisfying target hit sound' },
   { value: 'bell', label: 'Bell Chime 🔔', description: 'Classic notification bell' },
   { value: 'chime', label: 'Soft Chime ✨', description: 'Gentle notification sound' },
@@ -74,7 +75,7 @@ export default function NotificationDemoPage() {
     message: 'This is a sample notification to test the system!',
     type: 'success' as any,
     priority: 'Medium' as any,
-    soundType: 'arrow-target' as any,
+    soundType: 'mellow-note' as any,
     position: 'top-right' as any,
     duration: 5000,
     author: 'Demo User',

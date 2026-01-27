@@ -12,8 +12,10 @@ interface WindowsNotificationProps {
   memberName?: string;
   priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
   duration?: number;
+  minimizeAfter?: number;
+  pendingLabel?: string;
   sound?: boolean;
-  soundType?: 'arrow-target' | 'bell' | 'chime' | 'pop' | 'windows-default' | 'success-ding' | 'message-swoosh' | 'alert-beep' | 'coin-drop' | 'bubble-pop' | 'typewriter-ding' | 'glass-ping' | 'wooden-knock' | 'digital-blip' | 'water-drop' | 'silent';
+  soundType?: 'mellow-note' | 'arrow-target' | 'bell' | 'chime' | 'pop' | 'windows-default' | 'success-ding' | 'message-swoosh' | 'alert-beep' | 'coin-drop' | 'bubble-pop' | 'typewriter-ding' | 'glass-ping' | 'wooden-knock' | 'digital-blip' | 'water-drop' | 'silent';
   animation?: 'bounce' | 'slide' | 'fade' | 'pulse';
   onClose?: () => void;
   onClick?: () => void;

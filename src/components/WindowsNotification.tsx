@@ -26,8 +26,10 @@ interface WindowsNotificationProps {
   memberName?: string;
   priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
   duration?: number;
+  minimizeAfter?: number;
+  pendingLabel?: string;
   sound?: boolean;
-  soundType?: 'arrow-target' | 'bell' | 'chime' | 'pop' | 'windows-default' | 'success-ding' | 'message-swoosh' | 'alert-beep' | 'coin-drop' | 'bubble-pop' | 'typewriter-ding' | 'glass-ping' | 'wooden-knock' | 'digital-blip' | 'water-drop' | 'silent';
+  soundType?: 'mellow-note' | 'arrow-target' | 'bell' | 'chime' | 'pop' | 'windows-default' | 'success-ding' | 'message-swoosh' | 'alert-beep' | 'coin-drop' | 'bubble-pop' | 'typewriter-ding' | 'glass-ping' | 'wooden-knock' | 'digital-blip' | 'water-drop' | 'silent';
   animation?: 'bounce' | 'slide' | 'fade' | 'pulse';
   onClose?: () => void;
   onClick?: () => void;
@@ -82,14 +84,19 @@ export default function WindowsNotification({
   memberName,
   priority,
   duration = 5000,
+  minimizeAfter = 7000,
+  pendingLabel = 'Pending note',
   sound = true,
-  soundType = 'arrow-target',
+  soundType = 'mellow-note',
   animation = 'slide',
   onClose,
   onClick
 }: WindowsNotificationProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const isUrgent = priority === 'Urgent';
+  const urgentAccentClass = 'bg-orange-500';
 
   const config = TYPE_CONFIGS[type];
   const IconComponent = config.icon;
@@ -103,6 +110,9 @@ export default function WindowsNotification({
       let audioBuffer: AudioBuffer;
 
       switch (soundType) {
+        case 'mellow-note':
+          audioBuffer = generateMellowNoteSound(audioContext);
+          break;
         case 'arrow-target':
           audioBuffer = generateArrowTargetSound(audioContext);
           break;
@@ -151,7 +161,7 @@ export default function WindowsNotification({
         case 'silent':
           return; // No sound for silent mode
         default:
-          audioBuffer = generateArrowTargetSound(audioContext);
+          audioBuffer = generateMellowNoteSound(audioContext);
       }
 
       const source = audioContext.createBufferSource();
@@ -183,6 +193,25 @@ export default function WindowsNotification({
   };
 
   // Generate other sounds (simplified versions)
+  const generateMellowNoteSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.7;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    const base = 440;
+    const harmonic = 660;
+
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 2.8);
+      data[i] = envelope * (
+        Math.sin(2 * Math.PI * base * t) * 0.18 +
+        Math.sin(2 * Math.PI * harmonic * t) * 0.12
+      );
+    }
+
+    return buffer;
+  };
   const generateBellSound = (audioContext: AudioContext): AudioBuffer => {
     const duration = 0.6;
     const sampleRate = audioContext.sampleRate;
@@ -472,20 +501,64 @@ export default function WindowsNotification({
       setTimeout(() => playSound(), 200);
     }
 
-    // Auto close
+    let closeTimer: NodeJS.Timeout | undefined;
+    let minimizeTimer: NodeJS.Timeout | undefined;
+
+    if (minimizeAfter > 0) {
+      minimizeTimer = setTimeout(() => {
+        setIsMinimized(true);
+      }, minimizeAfter);
+    }
+
+    // Auto close (optional)
     if (duration > 0) {
-      const timer = setTimeout(() => {
+      closeTimer = setTimeout(() => {
         handleClose();
       }, duration);
-
-      return () => clearTimeout(timer);
     }
+
+    return () => {
+      if (closeTimer) clearTimeout(closeTimer);
+      if (minimizeTimer) clearTimeout(minimizeTimer);
+    };
   }, []);
+
+  if (isMinimized) {
+    return (
+      <Card
+        className={cn(
+          'fixed bottom-4 right-4 z-50 cursor-pointer shadow-lg border bg-gray-900 text-white',
+          isUrgent ? 'border-orange-500' : 'border-gray-700',
+          getAnimationClasses()
+        )}
+        onClick={() => setIsMinimized(false)}
+      >
+        <div className="flex items-center gap-2 px-3 py-2">
+          <div className={cn('p-1 rounded-full', isUrgent ? `${urgentAccentClass} animate-pulse` : 'bg-gray-700')}>
+            <Bell className="h-3 w-3 text-white" />
+          </div>
+          <span className="text-xs text-gray-200">{pendingLabel}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-6 w-6 p-0 hover:bg-gray-700 text-gray-300 hover:text-white"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleClose();
+            }}
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card 
       className={cn(
-        'fixed bottom-4 right-4 z-50 w-80 cursor-pointer shadow-lg border border-gray-600 bg-gray-900 text-white',
+        'fixed bottom-4 right-4 z-50 w-80 cursor-pointer shadow-lg border bg-gray-900 text-white',
+        isUrgent ? 'border-orange-500' : 'border-gray-600',
         getAnimationClasses()
       )}
       onClick={handleClick}
@@ -494,15 +567,23 @@ export default function WindowsNotification({
         {/* Header */}
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-full bg-blue-500">
+            <div className={cn('p-1.5 rounded-full', isUrgent ? `${urgentAccentClass} animate-pulse` : 'bg-blue-500')}>
               <IconComponent className="h-4 w-4 text-white" />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase tracking-wide text-gray-300">
+                Connections Note
+              </span>
               <span className="font-semibold text-sm text-white">
                 {title}
               </span>
+            </div>
+            <div className="flex items-center gap-2">
               {priority && (
-                <Badge className="text-xs bg-orange-500 text-white border-orange-400">
+                <Badge className={cn(
+                  'text-xs text-white',
+                  isUrgent ? 'bg-orange-500 border-orange-400 animate-pulse' : 'bg-orange-500 border-orange-400'
+                )}>
                   {priority}
                 </Badge>
               )}
@@ -523,7 +604,9 @@ export default function WindowsNotification({
 
         {/* Content */}
         <div className="space-y-2">
-          <p className="text-sm text-gray-200">{message}</p>
+          <p className="text-sm font-semibold text-white leading-snug">
+            {message}
+          </p>
           
           {/* Author and Member info */}
           <div className="flex items-center gap-4 text-xs text-gray-400">

@@ -3,6 +3,7 @@ import './globals.css';
 import React from 'react';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { NotificationProvider } from '@/components/NotificationProvider';
+import { RealTimeNotifications } from '@/components/RealTimeNotifications';
 import { Toaster } from '@/components/ui/toaster';
 import { SessionIsolationGate } from '@/components/SessionIsolationGate';
 
@@ -32,6 +33,7 @@ export default function RootLayout({
         <FirebaseClientProvider>
           <NotificationProvider>
             <SessionIsolationGate />
+            <RealTimeNotifications />
             {children}
           </NotificationProvider>
         </FirebaseClientProvider>

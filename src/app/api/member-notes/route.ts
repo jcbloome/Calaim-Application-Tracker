@@ -65,6 +65,8 @@ interface MemberNote {
   source: 'Caspio' | 'ILS' | 'App' | 'Admin';
   isRead: boolean;
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  status?: 'Open' | 'Closed';
+  resolvedAt?: string;
   followUpDate?: string;
   tags?: string[];
   isLegacy?: boolean; // Tag for notes imported from Caspio
@@ -319,6 +321,7 @@ async function saveNotesToFirestore(notes: MemberNote[]): Promise<void> {
         createdAt: note.createdAt ? Timestamp.fromDate(new Date(note.createdAt)) : Timestamp.now(),
         updatedAt: note.updatedAt ? Timestamp.fromDate(new Date(note.updatedAt)) : Timestamp.now(),
         followUpDate: note.followUpDate ? Timestamp.fromDate(new Date(note.followUpDate)) : null,
+        resolvedAt: note.resolvedAt ? Timestamp.fromDate(new Date(note.resolvedAt)) : null,
         syncedAt: note.syncedAt ? Timestamp.fromDate(new Date(note.syncedAt)) : Timestamp.now()
       };
       
@@ -577,6 +580,8 @@ function validateAndCleanNote(rawNote: any): MemberNote {
     source: validateSource(rawNote.source),
     isRead: Boolean(rawNote.isRead),
     priority: validatePriority(rawNote.priority || rawNote.Follow_Up_Status),
+    status: normalizeNoteStatus(rawNote.status || rawNote.Note_Status || rawNote.Follow_Up_Status),
+    resolvedAt: isValidDate(rawNote.resolvedAt) ? new Date(rawNote.resolvedAt).toISOString() : undefined,
     followUpDate: isValidDate(rawNote.followUpDate || rawNote.Follow_Up_Date) 
       ? new Date(rawNote.followUpDate || rawNote.Follow_Up_Date).toISOString() 
       : undefined,
@@ -612,6 +617,13 @@ function validatePriority(priority: any): MemberNote['priority'] {
   }
   
   return 'Medium'; // Default
+}
+
+function normalizeNoteStatus(status: any): MemberNote['status'] {
+  if (typeof status !== 'string') return 'Open';
+  const normalized = status.toLowerCase();
+  if (normalized.includes('closed') || normalized.includes('resolved')) return 'Closed';
+  return 'Open';
 }
 
 export async function GET(request: NextRequest) {
@@ -709,22 +721,35 @@ export async function POST(request: NextRequest) {
 
     const createdNote = await caspioService.createNote(noteData);
     
-    // Create Firestore notification if needed
-    if (adminDb && sendNotification && recipientIds?.length > 0) {
-      await createFirestoreNotification({
-        recipientIds,
-        title: `New ${priority} Priority Note`,
-        message: noteText.substring(0, 100) + (noteText.length > 100 ? '...' : ''),
-        priority: priority.toLowerCase(),
-        type: 'member_note',
-        actionUrl: `/admin/member-notes?clientId2=${clientId2}`,
-        createdBy: authorId || createdBy
+    const shouldNotify = Boolean(
+      assignedTo && ['High', 'Urgent'].includes(priority || '')
+        ? true
+        : sendNotification && assignedTo
+    );
+
+    if (adminDb && shouldNotify && assignedTo) {
+      await sendNoteNotification({
+        id: createdNote.id,
+        clientId2: String(clientId2 || '').trim(),
+        memberName: memberName || 'Unknown Member',
+        noteText,
+        noteType: category || 'General',
+        createdBy: createdBy || authorId || 'system',
+        createdByName: createdByName || authorName || 'System',
+        assignedTo,
+        assignedToName,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        source: 'Admin',
+        isRead: false,
+        priority: (priority || 'Medium') as MemberNote['priority'],
+        status: 'Open'
       });
     }
 
     return NextResponse.json({
       success: true,
-      note: createdNote,
+      note: { ...createdNote, status: 'Open' },
       message: 'Note created successfully using Caspio module'
     });
 
@@ -994,7 +1019,7 @@ async function syncNoteToCaspio(note: MemberNote): Promise<void> {
       User_ID: parseInt(note.createdBy),
       Time_Stamp: note.createdAt,
       Follow_Up_Date: note.followUpDate || null,
-      Note_Status: note.noteType,
+      Note_Status: note.status || 'Open',
       Follow_Up_Status: note.priority === 'High' ? '🔴 Urgent' : '🟢 Open',
       User_Full_Name: note.createdByName,
       Follow_Up_Assignment: note.assignedTo || null,
@@ -1046,15 +1071,21 @@ async function sendNoteNotification(note: MemberNote): Promise<void> {
     
     // Create a notification record in Firestore for real-time notifications
     const notification = {
-      recipientId: note.assignedTo, // Single recipient for staff-notifications collection
+      userId: note.assignedTo,
       title: `Priority Note: ${note.memberName}`,
-      content: note.noteText.substring(0, 200) + (note.noteText.length > 200 ? '...' : ''),
+      message: note.noteText.substring(0, 200) + (note.noteText.length > 200 ? '...' : ''),
       memberName: note.memberName,
       priority: note.priority,
-      type: 'member_note',
+      type: 'note_assignment',
       isRead: false,
+      status: note.status || 'Open',
       requiresStaffAction: note.priority === 'High' || note.priority === 'Urgent',
-      createdAt: Timestamp.now(),
+      timestamp: Timestamp.now(),
+      noteId: note.id,
+      clientId2: note.clientId2,
+      senderName: note.createdByName,
+      createdBy: note.createdBy,
+      createdByName: note.createdByName,
       actionUrl: `/admin/member-notes?clientId2=${note.clientId2}`,
       metadata: {
         noteId: note.id,
@@ -1064,45 +1095,10 @@ async function sendNoteNotification(note: MemberNote): Promise<void> {
       }
     };
 
-    // Save to Firestore staff-notifications collection for real-time updates
-    await adminDb.collection('staff-notifications').add(notification);
+    // Save to Firestore staff_notifications collection for real-time updates
+    await adminDb.collection('staff_notifications').add(notification);
     
     console.log(`🔔 Real-time notification created for ${note.assignedToName} (Priority: ${note.priority})`);
-    
-    // Send email notification
-    try {
-      // Get staff email (in production, this would be a database lookup)
-      const staffEmail = getStaffEmail(note.assignedTo);
-      
-      if (staffEmail) {
-        // Import email function if it exists
-        try {
-          const { sendNoteAssignmentEmail } = await import('@/app/actions/send-email');
-          
-          await sendNoteAssignmentEmail({
-            to: staffEmail,
-            staffName: note.assignedToName,
-            memberName: note.memberName,
-            noteContent: note.noteText,
-            priority: note.priority.toLowerCase() as 'low' | 'medium' | 'high',
-            assignedBy: note.createdByName,
-            noteType: note.noteType,
-            source: 'portal',
-            clientId2: note.clientId2
-          });
-          
-          console.log(`📧 Email sent to ${staffEmail} for note assignment`);
-        } catch (importError) {
-          console.warn('⚠️ Email function not available, skipping email notification');
-        }
-      } else {
-        console.warn(`⚠️ No email found for staff ID: ${note.assignedTo}`);
-      }
-    } catch (emailError) {
-      console.error('❌ Failed to send email notification:', emailError);
-      // Don't throw error - notification was still saved to Firestore
-    }
-    
     console.log(`✅ Notification saved to Firestore for ${note.assignedToName}`);
 
   } catch (error) {
@@ -1180,6 +1176,27 @@ export async function PUT(request: NextRequest) {
       ...updates,
       updatedAt: new Date().toISOString()
     };
+
+    if (adminDb && updates.status === 'Closed') {
+      try {
+        const notificationsSnapshot = await adminDb
+          .collection('staff_notifications')
+          .where('noteId', '==', id)
+          .get();
+
+        const batch = adminDb.batch();
+        notificationsSnapshot.docs.forEach((docSnap) => {
+          batch.update(docSnap.ref, {
+            status: 'Closed',
+            resolvedAt: Timestamp.now(),
+            isRead: true
+          });
+        });
+        await batch.commit();
+      } catch (error) {
+        console.error('❌ Failed to update staff notifications for resolved note:', error);
+      }
+    }
 
     // In production, also sync update to Caspio if it's a Caspio note
     if (memberNotes[noteIndex].source === 'Caspio') {

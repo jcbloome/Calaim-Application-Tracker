@@ -55,6 +55,8 @@ interface Note {
   isRead?: boolean;
   applicationId?: string;
   senderName?: string;
+  actionUrl?: string;
+  clientId2?: string;
 }
 
 interface StaffMember {
@@ -233,6 +235,13 @@ export default function SuperAdminNoteLog() {
 
   const getNoteContent = (note: Note) => {
     return note.noteContent || note.Note_Content || note.Note_Text || note.message || note.title || 'No content available';
+  };
+
+  const getNoteLink = (note: Note) => {
+    if (note.actionUrl) return note.actionUrl;
+    if (note.applicationId) return `/admin/applications/${note.applicationId}`;
+    if (note.clientId2) return `/admin/applications/${note.clientId2}`;
+    return null;
   };
 
   const exportToCSV = () => {
@@ -501,14 +510,14 @@ export default function SuperAdminNoteLog() {
                         <div>{format(new Date(note.timestamp), 'HH:mm')}</div>
                       </TableCell>
                       <TableCell>
-                        {note.applicationId && (
+                        {getNoteLink(note) && (
                           <Button
                             variant="ghost"
                             size="sm"
                             asChild
                             title="View application"
                           >
-                            <Link href={`/admin/applications/${note.applicationId}`}>
+                            <Link href={getNoteLink(note) as string}>
                               <ExternalLink className="h-3 w-3" />
                             </Link>
                           </Button>

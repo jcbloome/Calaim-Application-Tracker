@@ -64,6 +64,9 @@ export {
   getPriorityNotesForDashboard
 } from './caspio-note-monitor';
 
+// Export morning digest notifications
+export { sendMorningNoteDigest } from './morning-notifications';
+
 // Export Caspio Member Sync Test functions
 export { testCaspioMemberSync } from './caspio-member-sync-test';
 

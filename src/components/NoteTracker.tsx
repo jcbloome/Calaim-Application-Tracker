@@ -30,7 +30,7 @@ import {
   Star
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
-import { useAuth } from '@/firebase';
+import { useUser } from '@/firebase';
 import { useGlobalNotifications } from '@/components/NotificationProvider';
 
 interface Note {
@@ -93,7 +93,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
   // Category filtering removed
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [showArchived, setShowArchived] = useState(false);
-  const { user } = useAuth();
+  const { user } = useUser();
   const { toast } = useToast();
   const { showNotification } = useGlobalNotifications();
   const notesEndRef = useRef<HTMLDivElement>(null);
@@ -115,6 +115,11 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
     setIsLoading(true);
     try {
       const response = await fetch(`/api/member-notes?clientId2=${encodeURIComponent(memberId)}&includeArchived=${showArchived}`);
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok || !contentType.includes('application/json')) {
+        const fallbackText = await response.text();
+        throw new Error(`Notes API error: ${response.status} ${response.statusText} - ${fallbackText.slice(0, 120)}`);
+      }
       const data = await response.json();
       
       if (data.success && data.notes) {
@@ -148,7 +153,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
       toast({
         variant: 'destructive',
         title: 'Load Failed',
-        description: 'Could not load member notes',
+        description: error?.message || 'Could not load member notes',
       });
     } finally {
       setIsLoading(false);
@@ -159,6 +164,11 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
   const loadStaffMembers = async () => {
     try {
       const response = await fetch('/api/staff-members');
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok || !contentType.includes('application/json')) {
+        const fallbackText = await response.text();
+        throw new Error(`Staff API error: ${response.status} ${response.statusText} - ${fallbackText.slice(0, 120)}`);
+      }
       const data = await response.json();
       
       if (data.success && data.staff) {

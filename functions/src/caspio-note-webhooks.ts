@@ -1,7 +1,6 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { getFirestore } from 'firebase-admin/firestore';
-import { sendResendEmailNotification } from './resend-email-service';
 
 // Lazy initialization of Firestore
 let _db: admin.firestore.Firestore | null = null;
@@ -23,8 +22,9 @@ interface CalAIMNoteData {
   Note_Content?: string;
   Staff_Name?: string;
   Note_Type?: string;
-  Priority?: 'low' | 'medium' | 'high';
+  Priority?: string;
   Created_By?: string;
+  Assigned_Staff?: string;
 }
 
 // Interface for connect_tbl_client_notes table
@@ -35,8 +35,10 @@ interface ClientNoteData {
   Note_Text?: string;
   Staff_Member?: string;
   Note_Category?: string;
-  Priority?: 'low' | 'medium' | 'high';
+  Priority?: string;
   Created_By?: string;
+  Follow_Up_Assignment?: string;
+  Assigned_First?: string;
 }
 
 // Staff email mapping
@@ -92,14 +94,21 @@ async function sendStaffNotifications(noteData: any, noteId: string, tableType: 
   const db = getDb();
   
   // Determine which staff to notify based on table type and note content
-  let staffToNotify: string[] = [];
-  
-  if (tableType === 'calaim_members') {
-    // For CalAIM notes, always notify the standard list
-    staffToNotify = STAFF_EMAIL_MAPPING['All'];
-  } else {
-    // For client notes, you might want different logic
-    staffToNotify = STAFF_EMAIL_MAPPING['All'];
+  const priorityValue = String(noteData.Priority || '').toLowerCase();
+  const isPriorityNote = priorityValue.includes('high') || priorityValue.includes('urgent') || priorityValue.includes('🔴');
+  if (!isPriorityNote) {
+    return [];
+  }
+
+  const assignmentKey = noteData.Follow_Up_Assignment
+    || noteData.Assigned_Staff
+    || noteData.Assigned_First
+    || noteData.Staff_Member
+    || noteData.Staff_Name;
+
+  const staffToNotify = getStaffEmailsForAssignment(assignmentKey);
+  if (staffToNotify.length === 0) {
+    return [];
   }
 
   const notifications = [];
@@ -117,62 +126,37 @@ async function sendStaffNotifications(noteData: any, noteId: string, tableType: 
         senderName: noteData.Staff_Name || noteData.Staff_Member || 'System',
         memberName: noteData.Member_Name || noteData.Client_Name || 'Unknown',
         type: 'note',
-        priority: noteData.Priority || 'medium',
+        priority: noteData.Priority || 'high',
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         isRead: false,
+        status: 'Open',
         applicationId: noteData.Client_ID2 || noteData.Client_ID,
       };
 
       const notificationRef = await db.collection('staff_notifications').add(notificationData);
       notifications.push(notificationRef.id);
 
-      // Send email notification
-      try {
-        await sendResendEmailNotification({
-          to: [email],
-          subject: `New ${tableType === 'calaim_members' ? 'CalAIM Member' : 'Client'} Note - ${noteData.Member_Name || noteData.Client_Name}`,
-          htmlContent: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #2563eb;">New Note Notification</h2>
-              <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                <p><strong>Member/Client:</strong> ${noteData.Member_Name || noteData.Client_Name || 'Unknown'}</p>
-                <p><strong>Staff:</strong> ${noteData.Staff_Name || noteData.Staff_Member || 'System'}</p>
-                <p><strong>Date:</strong> ${noteData.Note_Date || new Date().toLocaleDateString()}</p>
-                <p><strong>Priority:</strong> ${noteData.Priority || 'Medium'}</p>
-                <div style="margin-top: 15px;">
-                  <strong>Note:</strong>
-                  <div style="background: white; padding: 15px; border-radius: 4px; margin-top: 5px;">
-                    ${noteData.Note_Content || noteData.Note_Text || 'No content provided'}
-                  </div>
-                </div>
-              </div>
-              <p style="color: #64748b; font-size: 14px;">
-                This notification was automatically generated from your Caspio database.
-              </p>
-            </div>
-          `,
-          textContent: `
-New Note Notification
-
-Member/Client: ${noteData.Member_Name || noteData.Client_Name || 'Unknown'}
-Staff: ${noteData.Staff_Name || noteData.Staff_Member || 'System'}
-Date: ${noteData.Note_Date || new Date().toLocaleDateString()}
-Priority: ${noteData.Priority || 'Medium'}
-
-Note: ${noteData.Note_Content || noteData.Note_Text || 'No content provided'}
-
-This notification was automatically generated from your Caspio database.
-          `,
-          type: 'note_notification',
-          memberName: noteData.Member_Name || noteData.Client_Name
-        });
-      } catch (emailError) {
-        console.error('Error sending email notification:', emailError);
-      }
     }
   }
 
   return notifications;
+}
+
+function getStaffEmailsForAssignment(assignment?: string): string[] {
+  if (!assignment) return [];
+  const trimmed = String(assignment).trim();
+  if (!trimmed) return [];
+
+  if (trimmed.includes('@')) {
+    return [trimmed];
+  }
+
+  const match = Object.keys(STAFF_EMAIL_MAPPING).find((key) => key.toLowerCase() === trimmed.toLowerCase());
+  if (match) {
+    return STAFF_EMAIL_MAPPING[match];
+  }
+
+  return [];
 }
 
 // Webhook endpoint for CalAIM_Members_Notes_ILS table

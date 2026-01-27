@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -56,14 +56,37 @@ export function PriorityNoteMonitor() {
   const [testing, setTesting] = useState(false);
   const { toast } = useToast();
 
-  const functions = getFunctions();
-  const testMonitoring = httpsCallable(functions, 'testPriorityNoteMonitoring');
-  const getPriorityNotes = httpsCallable(functions, 'getPriorityNotesForDashboard');
+  const functions = useMemo(() => {
+    try {
+      return getFunctions();
+    } catch (error) {
+      console.error('Priority note monitor functions init failed:', error);
+      return null;
+    }
+  }, []);
+
+  const testMonitoring = useMemo(() => {
+    if (!functions) return null;
+    return httpsCallable(functions, 'testPriorityNoteMonitoring');
+  }, [functions]);
+
+  const getPriorityNotes = useMemo(() => {
+    if (!functions) return null;
+    return httpsCallable(functions, 'getPriorityNotesForDashboard');
+  }, [functions]);
 
   /**
    * Load priority notes for dashboard
    */
   const loadPriorityNotes = async () => {
+    if (!getPriorityNotes) {
+      toast({
+        title: "Priority Notes Unavailable",
+        description: "Firebase Functions are not available in this environment.",
+        variant: "destructive",
+      });
+      return;
+    }
     setLoading(true);
     try {
       const result = await getPriorityNotes();
@@ -99,6 +122,14 @@ export function PriorityNoteMonitor() {
    * Test the monitoring system
    */
   const runTest = async () => {
+    if (!testMonitoring) {
+      toast({
+        title: "Test Unavailable",
+        description: "Firebase Functions are not available in this environment.",
+        variant: "destructive",
+      });
+      return;
+    }
     setTesting(true);
     try {
       const result = await testMonitoring();

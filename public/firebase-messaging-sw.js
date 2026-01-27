@@ -20,17 +20,18 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   console.log('📱 Received background message:', payload);
 
-  const notificationTitle = payload.notification?.title || '📝 CalAIM Note Assignment';
+  const notificationTitle = payload.notification?.title || 'Connections Note';
+  const fallbackBody = payload.data?.message || 'You have a new note assignment';
   const notificationOptions = {
-    body: payload.notification?.body || 'You have a new note assignment',
+    body: payload.notification?.body || fallbackBody,
     icon: '/calaimlogopdf.png',
     badge: '/calaimlogopdf.png',
     tag: payload.data?.notificationId || 'calaim-note',
-    requireInteraction: payload.data?.priority === 'urgent',
+    requireInteraction: ['urgent', 'high'].includes(String(payload.data?.priority || '').toLowerCase()),
     silent: false,
     vibrate: [200, 100, 200],
     data: {
-      url: payload.data?.url || '/admin/client-notes',
+      url: payload.data?.actionUrl || payload.data?.url || '/admin/my-notes',
       noteId: payload.data?.noteId,
       clientId2: payload.data?.clientId2,
       notificationId: payload.data?.notificationId

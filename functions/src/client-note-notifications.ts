@@ -120,6 +120,8 @@ export const sendNoteNotification = onCall(
                   clientName: noteData.clientName,
                   notificationId: notificationRef.id,
                   priority: notificationType === 'followup' ? 'high' : 'normal',
+                  message: notification.message,
+                  actionUrl: `/admin/client-notes?client=${noteData.clientId2}`,
                   url: `/admin/client-notes?client=${noteData.clientId2}`,
                   timestamp: new Date().toISOString()
                 },

@@ -1,14 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as admin from 'firebase-admin';
-
-// Initialize Firebase Admin if not already initialized
-if (!admin.apps.length) {
-  try {
-    admin.initializeApp();
-  } catch (error) {
-    console.warn('Firebase Admin already initialized or initialization failed:', error);
-  }
-}
+import admin, { adminDb } from '@/firebase-admin';
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,48 +9,70 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type');
     const priority = searchParams.get('priority');
 
-    const db = admin.firestore();
     const notes: any[] = [];
     const staffSet = new Set<string>();
 
     // Fetch from multiple collections
     const collections = [
-      { name: 'client_notes', tableType: 'client_notes' },
-      { name: 'calaim_members', tableType: 'calaim_members' },
-      { name: 'staff_notes', tableType: 'staff_note' },
-      { name: 'systemNotes', tableType: 'system_note' }
+      { name: 'staff_notifications', tableType: 'notification', source: 'notification' },
+      { name: 'client_notes', tableType: 'client_notes', source: 'caspio' },
+      { name: 'calaim_members', tableType: 'calaim_members', source: 'caspio' },
+      { name: 'staff_notes', tableType: 'staff_note', source: 'staff' },
+      { name: 'systemNotes', tableType: 'system_note', source: 'system' }
     ];
 
     for (const collection of collections) {
       try {
-        let query: any = db.collection(collection.name)
+        let query: any = adminDb.collection(collection.name)
           .orderBy('timestamp', 'desc')
           .limit(limit);
-
-        const snapshot = await query.get();
+        let snapshot: admin.firestore.QuerySnapshot;
+        try {
+          snapshot = await query.get();
+        } catch (orderError) {
+          // Fallback for collections without timestamp
+          snapshot = await adminDb.collection(collection.name).limit(limit).get();
+        }
         
         snapshot.docs.forEach(doc => {
           const data = doc.data();
+          const rawPriority = String(data.priority || '').toLowerCase();
+          const normalizedPriority = rawPriority.includes('urgent')
+            ? 'high'
+            : rawPriority.includes('high')
+              ? 'high'
+              : rawPriority.includes('medium')
+                ? 'medium'
+                : rawPriority.includes('low')
+                  ? 'low'
+                  : undefined;
+          const staffName = data.staffName || data.senderName || data.createdByName;
           
           // Apply filters
-          if (staff && data.staffName !== staff && data.senderName !== staff) {
+          if (staff && staffName !== staff) {
             return;
           }
-          if (priority && data.priority !== priority) {
+          if (priority && normalizedPriority !== priority) {
             return;
           }
           if (type && collection.tableType !== type) {
             return;
           }
 
-          if (data.staffName) staffSet.add(data.staffName);
-          if (data.senderName) staffSet.add(data.senderName);
+          if (staffName) staffSet.add(staffName);
 
           notes.push({
             id: doc.id,
             ...data,
             tableType: collection.tableType,
-            timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toISOString() : new Date().toISOString()
+            source: collection.source,
+            staffName,
+            priority: normalizedPriority || data.priority,
+            timestamp: data.timestamp?.toDate
+              ? data.timestamp.toDate().toISOString()
+              : data.createdAt?.toDate
+                ? data.createdAt.toDate().toISOString()
+                : data.createdAt || data.created_at || new Date().toISOString()
           });
         });
       } catch (error: any) {

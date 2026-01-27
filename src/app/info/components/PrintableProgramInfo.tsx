@@ -51,11 +51,13 @@ export function PrintableProgramInfo() {
             <SectionTitle>Medicare vs. Medi-Cal</SectionTitle>
             <p>Medicare is a federal health insurance program mainly for people 65 or older. Medi-Cal is California's Medicaid program for low-income individuals. The CalAIM program is a Medi-Cal benefit.</p>
 
-            <SectionTitle>Benefitscal.com & Share of Cost (SOC)</SectionTitle>
-            <p>A one stop shop to apply and review Medi-Cal benefits including possible share of cost information and to add for the member an authorized representative/power of attorney.</p>
+            <SectionTitle>Share of Cost (SOC)</SectionTitle>
             <div style={{ backgroundColor: '#fef3c7', padding: '12px', border: '1px solid #d97706', borderRadius: '6px', margin: '12px 0' }}>
               <p><strong>SOC Threshold Information:</strong> Share of Cost is usually triggered if a member receives more than <strong>$1,800/month</strong>, although this number can vary by county and by particular circumstances. Members in SNFs may not show a SOC since the facility receives most of their income, but this may change when transitioning to community living.</p>
             </div>
+
+            <SectionTitle>Benefitscal.com</SectionTitle>
+            <p>A one stop shop to apply and review Medi-Cal benefits including possible share of cost information and to add for the member an authorized representative/power of attorney.</p>
             <p>Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">www.benefitscal.com</a> for current SOC verification and more information.</p>
 
             <SectionTitle>Managed Care Plans We Work With</SectionTitle>
@@ -89,7 +91,7 @@ export function PrintableProgramInfo() {
                 </li>
             </ul>
 
-            <SectionTitle>Room &amp; Board Payments</SectionTitle>
+            <SectionTitle>"Room and Board" and "Assisted Living" Payments</SectionTitle>
             <p>The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is responsible for paying the RCFE the 'assisted living' portion.</p>
             <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for 'room and board' for a private room or to open up RCFEs in more expensive areas.</p>
             <p>Members not eligible for the NMOHC will still have a 'room and board' obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>

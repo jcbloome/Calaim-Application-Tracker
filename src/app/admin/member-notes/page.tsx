@@ -61,6 +61,7 @@ interface MemberNote {
   source: 'Caspio' | 'App' | 'Admin';
   isRead: boolean;
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  status?: 'Open' | 'Closed';
   followUpDate?: string;
   tags?: string[];
 }
@@ -89,7 +90,8 @@ export default function MemberNotesPage() {
     type: 'all',
     priority: 'all',
     assignedTo: 'all',
-    source: 'all'
+    source: 'all',
+    status: 'all'
   });
 
   // ILS permissions state
@@ -103,6 +105,7 @@ export default function MemberNotesPage() {
     assignedTo: '',
     assignedToName: '',
     priority: 'Medium' as MemberNote['priority'],
+    status: 'Open' as MemberNote['status'],
     followUpDate: '',
     tags: [] as string[]
   });
@@ -349,6 +352,7 @@ export default function MemberNotesPage() {
         memberName: `${selectedMember.firstName} ${selectedMember.lastName}`,
         noteText: newNote.noteText,
         priority: newNote.priority,
+        status: newNote.status || 'Open',
         assignedTo: newNote.assignedTo || undefined,
         assignedToName: newNote.assignedToName || undefined,
         followUpDate: newNote.followUpDate || undefined,
@@ -356,7 +360,9 @@ export default function MemberNotesPage() {
         authorName: user?.displayName || user?.email || 'Current User', // Required field
         createdBy: user?.uid || 'current-user',
         createdByName: user?.displayName || user?.email || 'Current User',
-        tags: newNote.tags
+        tags: newNote.tags,
+        sendNotification: Boolean(newNote.assignedTo && ['High', 'Urgent'].includes(newNote.priority)),
+        recipientIds: newNote.assignedTo ? [newNote.assignedTo] : []
       };
 
       const response = await fetch('/api/member-notes', {
@@ -377,6 +383,7 @@ export default function MemberNotesPage() {
           assignedTo: '',
           assignedToName: '',
           priority: 'Medium',
+          status: 'Open',
           followUpDate: '',
           tags: []
         });
@@ -412,6 +419,10 @@ export default function MemberNotesPage() {
     if (noteFilter.priority !== 'all' && note.priority !== noteFilter.priority) return false;
     if (noteFilter.assignedTo !== 'all' && note.assignedTo !== noteFilter.assignedTo) return false;
     if (noteFilter.source !== 'all' && note.source !== noteFilter.source) return false;
+    if (noteFilter.status !== 'all') {
+      const currentStatus = note.status || 'Open';
+      if (noteFilter.status !== currentStatus) return false;
+    }
     return true;
   });
 
@@ -432,6 +443,42 @@ export default function MemberNotesPage() {
       case 'App': return 'bg-purple-100 text-purple-800 border-purple-200';
       case 'Admin': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
       default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const handleResolveNote = async (note: MemberNote) => {
+    try {
+      const response = await fetch('/api/member-notes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: note.id,
+          clientId2: note.clientId2,
+          status: 'Closed',
+          resolvedAt: new Date().toISOString()
+        })
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to resolve note');
+      }
+
+      setMemberNotes(prev => prev.map(existing => (
+        existing.id === note.id ? { ...existing, status: 'Closed' } : existing
+      )));
+
+      toast({
+        title: 'Note Resolved',
+        description: 'This note has been marked as closed.'
+      });
+    } catch (error: any) {
+      console.error('Error resolving note:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to resolve note',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -857,6 +904,17 @@ export default function MemberNotesPage() {
                       <SelectItem value="Admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>
+
+                  <Select value={noteFilter.status} onValueChange={(value) => setNoteFilter(prev => ({ ...prev, status: value }))}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="Open">Open</SelectItem>
+                      <SelectItem value="Closed">Closed</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Notes List */}
@@ -873,6 +931,9 @@ export default function MemberNotesPage() {
                           </Badge>
                           <Badge variant="outline" className={getSourceColor(note.source)}>
                             {note.source}
+                          </Badge>
+                          <Badge variant="outline">
+                            {note.status || 'Open'}
                           </Badge>
                           {!note.isRead && (
                             <Badge className="bg-blue-600">
@@ -898,12 +959,24 @@ export default function MemberNotesPage() {
                             </>
                           )}
                         </div>
-                        {note.followUpDate && (
-                          <div className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            Follow-up: {format(new Date(note.followUpDate), 'MMM d, yyyy')}
-                          </div>
-                        )}
+                        <div className="flex items-center gap-3">
+                          {note.followUpDate && (
+                            <div className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              Follow-up: {format(new Date(note.followUpDate), 'MMM d, yyyy')}
+                            </div>
+                          )}
+                          {(note.status || 'Open') !== 'Closed' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-xs"
+                              onClick={() => handleResolveNote(note)}
+                            >
+                              Mark Resolved
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}

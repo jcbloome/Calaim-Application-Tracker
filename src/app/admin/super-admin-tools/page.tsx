@@ -5,7 +5,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Settings, Database, TestTube, FileText, Upload, RefreshCw, HardDrive, Globe, Zap, Code, Bug, Wrench } from 'lucide-react';
+import { Loader2, Settings, Database, TestTube, FileText, Upload, RefreshCw, HardDrive, Globe, Zap, Code, Bug, Wrench, Mail } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
@@ -41,6 +41,14 @@ const tools: ToolCard[] = [
         description: 'Test email notification system and templates',
         icon: <FileText className="h-6 w-6" />,
         href: '/admin/email-test',
+        category: 'testing',
+        status: 'beta'
+    },
+    {
+        title: 'RCFE Bulk Email',
+        description: 'Send bulk messages to registered RCFE contacts',
+        icon: <Mail className="h-6 w-6" />,
+        href: '/admin/rcfe-bulk-email',
         category: 'testing',
         status: 'beta'
     },

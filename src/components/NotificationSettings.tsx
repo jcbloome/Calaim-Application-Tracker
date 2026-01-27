@@ -74,7 +74,7 @@ const DEFAULT_SETTINGS: NotificationSettings = {
     taskAssignments: true,
     urgentPriority: true,
     sound: true,
-    soundType: 'arrow-target'
+    soundType: 'mellow-note'
   },
   visualEffects: {
     enabled: true,
@@ -93,6 +93,7 @@ const DEFAULT_SETTINGS: NotificationSettings = {
 };
 
 const SOUND_OPTIONS = [
+  { value: 'mellow-note', label: 'Mellow Note 🎵', description: 'Soft, calm notification tone' },
   { value: 'arrow-target', label: 'Arrow Hit Target 🎯', description: 'Satisfying target hit sound' },
   { value: 'bell', label: 'Bell Chime 🔔', description: 'Classic notification bell' },
   { value: 'chime', label: 'Soft Chime ✨', description: 'Gentle notification sound' },

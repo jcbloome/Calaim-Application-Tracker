@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Bell, MessageSquare, Clock, User, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,10 +10,13 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { format } from 'date-fns';
 import { useAdmin } from '@/hooks/use-admin';
+import { useFirestore } from '@/firebase';
+import { collection, doc, limit, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
+import { useRouter } from 'next/navigation';
 
 interface StaffNotification {
   id: string;
-  type: 'note_assignment' | 'note_mention' | 'member_update' | 'task_assignment';
+  type: 'note_assignment' | 'note_mention' | 'member_update' | 'task_assignment' | 'interoffice_note' | 'interoffice_followup' | 'authorization_expiry' | 'interoffice_reply';
   title: string;
   message: string;
   noteId?: string;
@@ -24,6 +27,10 @@ interface StaffNotification {
   isRead: boolean;
   createdBy: string;
   createdByName: string;
+  status?: 'Open' | 'Closed';
+  actionUrl?: string;
+  applicationId?: string;
+  isGeneral?: boolean;
 }
 
 interface StaffNotificationBellProps {
@@ -33,88 +40,83 @@ interface StaffNotificationBellProps {
 
 export function StaffNotificationBell({ userId, className = '' }: StaffNotificationBellProps) {
   const { user } = useAdmin();
+  const firestore = useFirestore();
+  const router = useRouter();
   const [notifications, setNotifications] = useState<StaffNotification[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
+  const seenNotificationsRef = useRef<Set<string>>(new Set());
 
   const effectiveUserId = userId || user?.uid;
 
   useEffect(() => {
-    if (!effectiveUserId) return;
+    if (!effectiveUserId || !firestore) return;
 
-    fetchNotifications();
-    
-    // Set up polling for new notifications every 30 seconds
-    const interval = setInterval(fetchNotifications, 30000);
-    
-    return () => clearInterval(interval);
-  }, [effectiveUserId]);
+    setIsLoading(true);
+    const notificationsQuery = query(
+      collection(firestore, 'staff_notifications'),
+      where('userId', '==', effectiveUserId),
+      limit(200)
+    );
 
-  const fetchNotifications = async () => {
-    if (!effectiveUserId) return;
+    const unsubscribe = onSnapshot(
+      notificationsQuery,
+      (snapshot) => {
+        const nextNotifications: StaffNotification[] = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data() as any;
+          const timestamp = data?.timestamp?.toDate?.() || data?.createdAt || new Date();
+          const isGeneral = Boolean(data.isGeneral);
+          return {
+            id: docSnap.id,
+            type: data.type || 'note_assignment',
+            title: data.title || 'New Note',
+            message: data.message || 'A note requires your attention.',
+            noteId: data.noteId,
+            clientId2: data.clientId2,
+            memberName: data.memberName,
+            priority: normalizePriority(data.priority),
+            createdAt: new Date(timestamp).toISOString(),
+            isRead: Boolean(data.isRead),
+            createdBy: data.createdBy || 'system',
+            createdByName: data.senderName || data.createdByName || 'System',
+            status: data.status === 'Closed' ? 'Closed' : 'Open',
+            actionUrl: data.actionUrl || (isGeneral ? '/admin/my-notes' : undefined),
+            applicationId: data.applicationId,
+            isGeneral
+          };
+        }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    try {
-      setIsLoading(true);
-      
-      // Sample notifications - in production this would come from API
-      const sampleNotifications: StaffNotification[] = [
-        {
-          id: '1',
-          type: 'note_assignment',
-          title: 'New Note Assigned',
-          message: 'You have been assigned a high priority note for John Doe',
-        noteId: 'note_123',
-        clientId2: 'KAI-12345',
-        memberName: 'Sample Member A',
-        priority: 'High',
-        createdAt: '2026-01-17T14:30:00Z',
-          isRead: false,
-          createdBy: 'sarah_johnson',
-          createdByName: 'Sarah Johnson, MSW'
-        },
-        {
-          id: '2',
-          type: 'member_update',
-          title: 'Member Status Update',
-        message: 'Sample Member B has been moved to Authorized status',
-        clientId2: 'HN-67890',
-        memberName: 'Sample Member B',
-        priority: 'Medium',
-        createdAt: '2026-01-17T12:15:00Z',
-          isRead: false,
-          createdBy: 'admin',
-          createdByName: 'System Administrator'
-        },
-        {
-          id: '3',
-          type: 'note_mention',
-          title: 'Mentioned in Note',
-          message: 'You were mentioned in a note for Robert Johnson',
-        noteId: 'note_456',
-        clientId2: 'KAI-11111',
-        memberName: 'Sample Member C',
-        priority: 'Low',
-        createdAt: '2026-01-17T10:00:00Z',
-          isRead: true,
-          createdBy: 'mike_wilson',
-          createdByName: 'Dr. Mike Wilson, RN'
-        }
-      ];
+        setNotifications(nextNotifications);
+        setUnreadCount(nextNotifications.filter(n => !n.isRead && n.status !== 'Closed').length);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error('Error fetching notifications:', error);
+        setIsLoading(false);
+      }
+    );
 
-      setNotifications(sampleNotifications);
-      setUnreadCount(sampleNotifications.filter(n => !n.isRead).length);
-      
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-    } finally {
-      setIsLoading(false);
-    }
+    return () => unsubscribe();
+  }, [effectiveUserId, firestore]);
+
+  const normalizePriority = (priority: string | undefined): StaffNotification['priority'] => {
+    const normalized = String(priority || '').toLowerCase();
+    if (normalized.includes('urgent') || normalized.includes('🔴')) return 'Urgent';
+    if (normalized.includes('high')) return 'High';
+    if (normalized.includes('low')) return 'Low';
+    return 'Medium';
   };
+
 
   const markAsRead = async (notificationId: string) => {
     try {
-      // In production, this would call the API to mark as read
+      if (!firestore) return;
+      await updateDoc(doc(firestore, 'staff_notifications', notificationId), {
+        isRead: true,
+        readAt: new Date().toISOString()
+      });
+
       setNotifications(prev => 
         prev.map(notification => 
           notification.id === notificationId 
@@ -130,9 +132,35 @@ export function StaffNotificationBell({ userId, className = '' }: StaffNotificat
     }
   };
 
+  const markAsResolved = async (notificationId: string) => {
+    try {
+      if (!firestore) return;
+      await updateDoc(doc(firestore, 'staff_notifications', notificationId), {
+        status: 'Closed',
+        resolvedAt: new Date().toISOString(),
+        isRead: true
+      });
+      if (typeof window !== 'undefined' && (window as any).dismissStaffNotification) {
+        (window as any).dismissStaffNotification(notificationId);
+      }
+    } catch (error) {
+      console.error('Error resolving notification:', error);
+    }
+  };
+
   const markAllAsRead = async () => {
     try {
-      // In production, this would call the API to mark all as read
+      if (!firestore) return;
+      const unread = notifications.filter(n => !n.isRead && n.status !== 'Closed');
+      await Promise.all(
+        unread.map((notification) =>
+          updateDoc(doc(firestore, 'staff_notifications', notification.id), {
+            isRead: true,
+            readAt: new Date().toISOString()
+          })
+        )
+      );
+
       setNotifications(prev => 
         prev.map(notification => ({ ...notification, isRead: true }))
       );
@@ -158,11 +186,43 @@ export function StaffNotificationBell({ userId, className = '' }: StaffNotificat
     switch (type) {
       case 'note_assignment': return <MessageSquare className="h-4 w-4" />;
       case 'note_mention': return <MessageSquare className="h-4 w-4" />;
+      case 'interoffice_note': return <MessageSquare className="h-4 w-4" />;
+      case 'interoffice_followup': return <Clock className="h-4 w-4" />;
+      case 'authorization_expiry': return <AlertCircle className="h-4 w-4" />;
       case 'member_update': return <User className="h-4 w-4" />;
       case 'task_assignment': return <Clock className="h-4 w-4" />;
       default: return <Bell className="h-4 w-4" />;
     }
   };
+
+  const getNotificationLink = (notification: StaffNotification) => {
+    const baseUrl = notification.isGeneral ? '/admin/my-notes' : notification.actionUrl;
+    const memberUrl = notification.applicationId
+      ? `/admin/applications/${notification.applicationId}`
+      : null;
+    const isDashboard =
+      baseUrl === '/admin' ||
+      baseUrl === '/admin/activity' ||
+      baseUrl === '/admin/activity-dashboard' ||
+      baseUrl === '/admin/dashboard';
+    if (memberUrl && (!baseUrl || isDashboard)) {
+      return memberUrl;
+    }
+    return baseUrl || memberUrl || '/admin/my-notes';
+  };
+
+  useEffect(() => {
+    if (!effectiveUserId) return;
+    const openNotifications = notifications.filter((notification) => {
+      if (notification.status === 'Closed' || notification.isRead) return false;
+      return true;
+    });
+
+    openNotifications.forEach((notification) => {
+      if (seenNotificationsRef.current.has(notification.id)) return;
+      seenNotificationsRef.current.add(notification.id);
+    });
+  }, [notifications]);
 
   if (!effectiveUserId) {
     return null;
@@ -232,10 +292,7 @@ export function StaffNotificationBell({ userId, className = '' }: StaffNotificat
                         if (!notification.isRead) {
                           markAsRead(notification.id);
                         }
-                        // In production, this could navigate to the relevant page
-                        if (notification.noteId) {
-                          console.log(`Navigate to note: ${notification.noteId}`);
-                        }
+                        router.push(getNotificationLink(notification));
                       }}
                     >
                       <div className="flex items-start gap-3">
@@ -247,10 +304,15 @@ export function StaffNotificationBell({ userId, className = '' }: StaffNotificat
                             <p className={`text-sm font-medium ${!notification.isRead ? 'text-gray-900' : 'text-gray-600'}`}>
                               {notification.title}
                             </p>
-                            <Badge variant="outline" className={`text-xs ${getPriorityColor(notification.priority)}`}>
+                          <Badge variant="outline" className={`text-xs ${getPriorityColor(notification.priority)}`}>
                               {notification.priority}
                             </Badge>
                           </div>
+                        {notification.status && (
+                          <p className="text-xs text-gray-500 mb-1">
+                            Status: {notification.status}
+                          </p>
+                        )}
                           <p className="text-sm text-gray-600 mb-2">
                             {notification.message}
                           </p>
@@ -263,6 +325,54 @@ export function StaffNotificationBell({ userId, className = '' }: StaffNotificat
                             <span>From: {notification.createdByName}</span>
                             <span>{format(new Date(notification.createdAt), 'MMM d, h:mm a')}</span>
                           </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="text-xs"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              router.push(getNotificationLink(notification));
+                            }}
+                          >
+                            View
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-xs"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              router.push(`/admin/my-notes?replyTo=${notification.id}`);
+                            }}
+                          >
+                            Reply
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-xs"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              router.push('/admin/my-notes?compose=1#compose-note');
+                            }}
+                          >
+                            New Note
+                          </Button>
+                          {notification.status !== 'Closed' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                markAsResolved(notification.id);
+                              }}
+                            >
+                              Mark Resolved
+                            </Button>
+                          )}
                         </div>
                         {!notification.isRead && (
                           <div className="w-2 h-2 bg-blue-600 rounded-full mt-2"></div>

@@ -3,31 +3,34 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useState, useEffect, Suspense } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, query, where, onSnapshot, doc, updateDoc, writeBatch, serverTimestamp, getDocs, documentId } from 'firebase/firestore';
 
 interface StaffNotification {
   id: string;
-  type: 'individual' | 'member-related' | 'system' | 'member-note';
+  type: string;
   title: string;
   content: string;
   memberName?: string;
   memberId?: string;
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
-  isPrivate: boolean;
   isRead: boolean;
-  createdAt: any; // Firebase Timestamp
+  createdAt: any;
   authorName: string;
-  authorId: string;
   recipientId: string;
-  requiresStaffAction: boolean;
-  category: 'notification' | 'informational';
+  senderId?: string;
+  applicationId?: string;
+  actionUrl?: string;
+  status?: 'Open' | 'Closed';
 }
 
 function MyNotesContent() {
@@ -38,6 +41,23 @@ function MyNotesContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [notifications, setNotifications] = useState<StaffNotification[]>([]);
   const [isLoadingNotes, setIsLoadingNotes] = useState(true);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [replyOpen, setReplyOpen] = useState<Record<string, boolean>>({});
+  const [isSendingReply, setIsSendingReply] = useState<Record<string, boolean>>({});
+  const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
+  const [isLoadingStaff, setIsLoadingStaff] = useState(false);
+  const [generalNote, setGeneralNote] = useState<{
+    recipientId: string;
+    title: string;
+    message: string;
+    priority: 'Regular' | 'Immediate';
+  }>({
+    recipientId: '',
+    title: '',
+    message: '',
+    priority: 'Regular'
+  });
+  const [isSendingGeneral, setIsSendingGeneral] = useState(false);
 
   // Load notifications from Firestore
   useEffect(() => {
@@ -51,8 +71,8 @@ function MyNotesContent() {
     try {
       // Query notifications sent TO the current user
       const notificationsQuery = query(
-        collection(firestore, 'notifications'),
-        where('recipientIds', 'array-contains', user.uid)
+        collection(firestore, 'staff_notifications'),
+        where('userId', '==', user.uid)
       );
 
       const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
@@ -62,20 +82,20 @@ function MyNotesContent() {
           const data = doc.data();
           userNotifications.push({
             id: doc.id,
-            type: data.type || 'individual',
+            type: data.type || 'notification',
             title: data.title || 'Notification',
-            content: data.content || data.message || '',
+            content: data.message || data.content || '',
             memberName: data.memberName || undefined,
-            memberId: data.memberId || undefined,
+            memberId: data.clientId2 || data.memberId || undefined,
             priority: data.priority || 'Medium',
-            isPrivate: data.isPrivate || false,
-            isRead: data.read || false,
-            createdAt: data.createdAt || data.timestamp,
-            authorName: data.authorName || data.senderName || 'System',
-            authorId: data.authorId || data.senderId || 'system',
-            recipientId: data.recipientId || user.uid,
-            requiresStaffAction: data.requiresStaffAction || false,
-            category: data.category || 'notification'
+            isRead: Boolean(data.isRead),
+            createdAt: data.timestamp || data.createdAt,
+            authorName: data.createdByName || data.senderName || 'System',
+            recipientId: data.userId || user.uid,
+            senderId: data.createdBy || data.senderId,
+            applicationId: data.applicationId || undefined,
+            actionUrl: data.actionUrl || undefined,
+            status: data.status === 'Closed' ? 'Closed' : 'Open'
           });
         });
 
@@ -112,12 +132,81 @@ function MyNotesContent() {
     }
   }, [firestore, user?.uid, toast]);
 
+  useEffect(() => {
+    const replyTo = searchParams.get('replyTo');
+    if (!replyTo || notifications.length === 0) return;
+    const target = notifications.find((note) => note.id === replyTo);
+    if (!target) return;
+    setReplyOpen((prev) => ({ ...prev, [replyTo]: true }));
+  }, [searchParams, notifications]);
+
+  useEffect(() => {
+    const compose = searchParams.get('compose');
+    if (compose !== '1') return;
+    if (typeof window === 'undefined') return;
+    const element = document.getElementById('compose-note');
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const loadAdminStaff = async () => {
+      if (!firestore) return;
+      try {
+        setIsLoadingStaff(true);
+        const [adminSnap, superAdminSnap] = await Promise.all([
+          getDocs(collection(firestore, 'roles_admin')),
+          getDocs(collection(firestore, 'roles_super_admin'))
+        ]);
+        const adminIds = adminSnap.docs.map((docItem) => docItem.id);
+        const superAdminIds = superAdminSnap.docs.map((docItem) => docItem.id);
+        const allIds = Array.from(new Set([...adminIds, ...superAdminIds]));
+        if (allIds.length === 0) {
+          setStaffList([]);
+          return;
+        }
+
+        const chunks: string[][] = [];
+        for (let i = 0; i < allIds.length; i += 10) {
+          chunks.push(allIds.slice(i, i + 10));
+        }
+
+        const users: Array<{ uid: string; name: string }> = [];
+        for (const chunk of chunks) {
+          const usersSnap = await getDocs(
+            query(collection(firestore, 'users'), where(documentId(), 'in', chunk))
+          );
+          usersSnap.forEach((docItem) => {
+            const data = docItem.data() as any;
+            users.push({
+              uid: docItem.id,
+              name: data.firstName && data.lastName
+                ? `${data.firstName} ${data.lastName}`
+                : data.email || 'Unknown Staff'
+            });
+          });
+        }
+
+        users.sort((a, b) => a.name.localeCompare(b.name));
+        setStaffList(users);
+      } catch (error) {
+        console.error('Failed to load admin staff:', error);
+        setStaffList([]);
+      } finally {
+        setIsLoadingStaff(false);
+      }
+    };
+
+    loadAdminStaff();
+  }, [firestore]);
+
   // Mark notification as read
   const markAsRead = async (notificationId: string) => {
     if (!firestore) return;
     
     try {
-      await updateDoc(doc(firestore, 'notifications', notificationId), { read: true });
+      await updateDoc(doc(firestore, 'staff_notifications', notificationId), { isRead: true });
       toast({
         title: "Success",
         description: "Notification marked as read",
@@ -149,7 +238,7 @@ function MyNotesContent() {
 
       const batch = writeBatch(firestore);
       unreadNotifications.forEach(notification => {
-        batch.update(doc(firestore, 'notifications', notification.id), { read: true });
+        batch.update(doc(firestore, 'staff_notifications', notification.id), { isRead: true });
       });
       
       await batch.commit();
@@ -165,6 +254,128 @@ function MyNotesContent() {
         description: "Failed to mark notifications as read",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleReplySend = async (notification: StaffNotification) => {
+    if (!firestore || !user?.uid) return;
+    if (!notification.senderId) {
+      toast({
+        title: "Missing Sender",
+        description: "This note does not have a sender to reply to.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const message = replyDrafts[notification.id]?.trim();
+    if (!message) {
+      toast({
+        title: "Missing Reply",
+        description: "Enter a reply message before sending.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsSendingReply((prev) => ({ ...prev, [notification.id]: true }));
+      await addDoc(collection(firestore, 'staff_notifications'), {
+        userId: notification.senderId,
+        title: `Reply: ${notification.title}`,
+        message,
+        memberName: notification.memberName,
+        clientId2: notification.memberId,
+        applicationId: notification.applicationId,
+        type: 'interoffice_reply',
+        priority: 'Medium',
+        status: 'Open',
+        isRead: false,
+        createdBy: user.uid,
+        createdByName: user.displayName || user.email || 'Staff',
+        senderName: user.displayName || user.email || 'Staff',
+        timestamp: serverTimestamp(),
+        replyToId: notification.id,
+        threadId: notification.id,
+        actionUrl: notification.actionUrl || (notification.applicationId ? `/admin/applications/${notification.applicationId}` : '/admin/my-notes')
+      });
+
+      toast({
+        title: "Reply Sent",
+        description: "Your reply was sent to the original sender.",
+      });
+      setReplyDrafts((prev) => ({ ...prev, [notification.id]: '' }));
+      setReplyOpen((prev) => ({ ...prev, [notification.id]: false }));
+    } catch (error) {
+      console.error('❌ Failed to send reply:', error);
+      toast({
+        title: "Error",
+        description: "Failed to send reply.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSendingReply((prev) => ({ ...prev, [notification.id]: false }));
+    }
+  };
+
+  const handleSendGeneralNote = async () => {
+    if (!firestore || !user?.uid) return;
+    if (!generalNote.recipientId || !generalNote.message.trim()) {
+      toast({
+        title: "Missing Details",
+        description: "Select a staff member and enter a message.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const recipient = staffList.find((staff) => staff.uid === generalNote.recipientId);
+    if (!recipient) {
+      toast({
+        title: "Recipient Not Found",
+        description: "Selected staff member was not found.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsSendingGeneral(true);
+      await addDoc(collection(firestore, 'staff_notifications'), {
+        userId: recipient.uid,
+        title: generalNote.title?.trim() || 'General Note',
+        message: generalNote.message.trim(),
+        type: 'interoffice_note',
+        priority: generalNote.priority === 'Immediate' ? 'Urgent' : 'Low',
+        status: 'Open',
+        isRead: false,
+        createdBy: user.uid,
+        createdByName: user.displayName || user.email || 'Staff',
+        senderName: user.displayName || user.email || 'Staff',
+        timestamp: serverTimestamp(),
+        isGeneral: true,
+        actionUrl: '/admin/my-notes'
+      });
+
+      toast({
+        title: "Note Sent",
+        description: `Sent to ${recipient.name}.`,
+      });
+
+      setGeneralNote({
+        recipientId: '',
+        title: '',
+        message: '',
+        priority: 'Regular'
+      });
+    } catch (error) {
+      console.error('Failed to send general note:', error);
+      toast({
+        title: "Error",
+        description: "Failed to send note.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSendingGeneral(false);
     }
   };
 
@@ -261,6 +472,79 @@ function MyNotesContent() {
           )}
         </div>
       </div>
+
+      <Card id="compose-note">
+        <CardHeader>
+          <CardTitle>Send General Staff Note</CardTitle>
+          <CardDescription>
+            Send a non-member note to another staff member. This stays in the app only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="general-recipient">Recipient</Label>
+            <Select
+              value={generalNote.recipientId}
+              onValueChange={(value) => setGeneralNote((prev) => ({ ...prev, recipientId: value }))}
+              disabled={isLoadingStaff}
+            >
+              <SelectTrigger id="general-recipient">
+                <SelectValue placeholder={isLoadingStaff ? 'Loading staff...' : 'Select staff member'} />
+              </SelectTrigger>
+              <SelectContent>
+                {staffList.map((staff) => (
+                  <SelectItem key={staff.uid} value={staff.uid}>
+                    {staff.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="general-title">Title (optional)</Label>
+            <Input
+              id="general-title"
+              value={generalNote.title}
+              onChange={(e) => setGeneralNote((prev) => ({ ...prev, title: e.target.value }))}
+              placeholder="General Note"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="general-message">Message</Label>
+            <Textarea
+              id="general-message"
+              rows={3}
+              value={generalNote.message}
+              onChange={(e) => setGeneralNote((prev) => ({ ...prev, message: e.target.value }))}
+              placeholder="Write a note for staff..."
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="general-priority">Priority</Label>
+            <Select
+              value={generalNote.priority}
+              onValueChange={(value: 'Regular' | 'Immediate') =>
+                setGeneralNote((prev) => ({ ...prev, priority: value }))
+              }
+            >
+              <SelectTrigger id="general-priority">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Regular">Regular (no popup)</SelectItem>
+                <SelectItem value="Immediate">Immediate (popup)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Button onClick={handleSendGeneralNote} disabled={isSendingGeneral} className="w-full">
+            {isSendingGeneral ? 'Sending...' : 'Send Note'}
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Search */}
       <div className="relative">
@@ -360,8 +644,40 @@ function MyNotesContent() {
                           Mark Read
                         </Button>
                       )}
+                      <Button
+                        onClick={() =>
+                          setReplyOpen((prev) => ({
+                            ...prev,
+                            [notification.id]: !prev[notification.id]
+                          }))
+                        }
+                        variant="outline"
+                        size="sm"
+                      >
+                        Reply
+                      </Button>
                     </div>
                   </div>
+
+                  {replyOpen[notification.id] && (
+                    <div className="mt-3 space-y-2">
+                      <Textarea
+                        rows={3}
+                        value={replyDrafts[notification.id] || ''}
+                        onChange={(e) =>
+                          setReplyDrafts((prev) => ({ ...prev, [notification.id]: e.target.value }))
+                        }
+                        placeholder="Write a reply to the sender..."
+                      />
+                      <Button
+                        onClick={() => handleReplySend(notification)}
+                        size="sm"
+                        disabled={isSendingReply[notification.id]}
+                      >
+                        {isSendingReply[notification.id] ? 'Sending...' : 'Send Reply'}
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))
