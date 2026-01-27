@@ -80,6 +80,7 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
+  const [showMockFlow, setShowMockFlow] = useState(false);
 
   useEffect(() => {
     loadTrackingData();
@@ -239,11 +240,112 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
             Comprehensive tracking and monitoring of social worker visits and sign-offs
           </p>
         </div>
-        <Button className="gap-2">
-          <Download className="h-4 w-4" />
-          Export Report
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={showMockFlow ? 'default' : 'outline'}
+            className="gap-2"
+            onClick={() => setShowMockFlow((prev) => !prev)}
+          >
+            <Activity className="h-4 w-4" />
+            {showMockFlow ? 'Hide Mock Flow' : 'Mock SW Visit Flow'}
+          </Button>
+          <Button className="gap-2">
+            <Download className="h-4 w-4" />
+            Export Report
+          </Button>
+        </div>
       </div>
+
+      {showMockFlow && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-blue-600" />
+              Mock SW Visit Tracking Flow (Start → Finish)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <div className="border rounded-lg p-3">
+                  <p className="font-semibold flex items-center gap-2">
+                    <LogIn className="h-4 w-4 text-blue-600" />
+                    1) Social Worker Login
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    SW logs in and opens the visit assignments list.
+                  </p>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <p className="font-semibold flex items-center gap-2">
+                    <Users className="h-4 w-4 text-blue-600" />
+                    2) Select Member + RCFE
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Assignments show the member, RCFE, and visit date.
+                  </p>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <p className="font-semibold flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-green-600" />
+                    3) Geolocation Verified
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Location check confirms the SW is on-site.
+                  </p>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <p className="font-semibold flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    4) Visit Completed
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Questionnaire is completed and saved with a score.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div className="border rounded-lg p-3">
+                  <p className="font-semibold flex items-center gap-2">
+                    <Flag className="h-4 w-4 text-red-600" />
+                    5) Flagged Issues (if any)
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Low scores or urgent concerns trigger review flags.
+                  </p>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <p className="font-semibold flex items-center gap-2">
+                    <Building className="h-4 w-4 text-blue-600" />
+                    6) RCFE Staff Sign-Off
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    RCFE staff signs to confirm the visit occurred.
+                  </p>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <p className="font-semibold flex items-center gap-2">
+                    <FileBarChart className="h-4 w-4 text-blue-600" />
+                    7) Admin Review + Reporting
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Admin monitors visits, flags, and compliance metrics.
+                  </p>
+                </div>
+                <div className="border rounded-lg p-3">
+                  <p className="font-semibold flex items-center gap-2">
+                    <Download className="h-4 w-4 text-blue-600" />
+                    8) Export + Audit Trail
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Reports are exported for audit and compliance reviews.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

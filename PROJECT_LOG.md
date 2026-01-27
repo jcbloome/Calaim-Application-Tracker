@@ -40,6 +40,7 @@
 - ✅ **Bug Fixed**: Avoided Caspio columns endpoint 404 blocking field refresh
 - ✅ **Bug Fixed**: Added social worker login email fallback and clearer access errors
 - ✅ **UI/UX**: Routed SW reset requests to SW screen when detected
+- ✅ **UI/UX**: Added mock SW visit tracking flow button with full walkthrough
 - ✅ **UI/UX**: Removed mapping list tab from Caspio test UI
 - ✅ **UI/UX**: Restored two-column layout for CS Summary and Caspio mapping options
 - ✅ **UI/UX**: Added preferred RCFE cities and split RCFE admin name fields in CS Summary (online + printable)
