@@ -25,6 +25,8 @@ interface CalAIMNoteData {
   Priority?: string;
   Created_By?: string;
   Assigned_Staff?: string;
+  Immediate?: string | boolean;
+  Immediate_Check?: string | boolean;
 }
 
 // Interface for connect_tbl_client_notes table
@@ -39,6 +41,8 @@ interface ClientNoteData {
   Created_By?: string;
   Follow_Up_Assignment?: string;
   Assigned_First?: string;
+  Immediate?: string | boolean;
+  Immediate_Check?: string | boolean;
 }
 
 // Staff email mapping
@@ -95,8 +99,21 @@ async function sendStaffNotifications(noteData: any, noteId: string, tableType: 
   
   // Determine which staff to notify based on table type and note content
   const priorityValue = String(noteData.Priority || '').toLowerCase();
-  const isPriorityNote = priorityValue.includes('high') || priorityValue.includes('urgent') || priorityValue.includes('🔴');
-  if (!isPriorityNote) {
+  const immediateValue = String(
+    noteData.Immediate_Check ?? noteData.Immediate ?? ''
+  ).toLowerCase();
+  const isImmediate =
+    immediateValue === 'yes' ||
+    immediateValue === 'true' ||
+    immediateValue === '1' ||
+    immediateValue.includes('immediate') ||
+    immediateValue.includes('urgent');
+  const isPriorityNote =
+    priorityValue.includes('high') ||
+    priorityValue.includes('urgent') ||
+    priorityValue.includes('🔴') ||
+    priorityValue.includes('immediate');
+  if (!isPriorityNote && !isImmediate) {
     return [];
   }
 
@@ -112,6 +129,49 @@ async function sendStaffNotifications(noteData: any, noteId: string, tableType: 
   }
 
   const notifications = [];
+  const clientId2 = String(noteData.Client_ID2 || noteData.Client_ID || '').trim();
+  const memberName = noteData.Member_Name || noteData.Client_Name || 'Unknown';
+
+  const normalizedPriority = isImmediate || priorityValue.includes('urgent') || priorityValue.includes('immediate')
+    ? 'Urgent'
+    : priorityValue.includes('high')
+      ? 'High'
+      : priorityValue.includes('medium')
+        ? 'Medium'
+        : 'Low';
+
+  const resolveApplicationContext = async (id?: string) => {
+    if (!id) return { applicationId: null as string | null, actionUrl: null as string | null };
+    try {
+      const snapshot = await db.collectionGroup('applications')
+        .where('client_ID2', '==', id)
+        .limit(1)
+        .get();
+      if (!snapshot.empty) {
+        const appDoc = snapshot.docs[0];
+        const applicationId = appDoc.id;
+        const userId = appDoc.ref.parent.parent?.id || '';
+        return {
+          applicationId,
+          actionUrl: userId
+            ? `/admin/applications/${applicationId}?userId=${userId}`
+            : `/admin/applications/${applicationId}`
+        };
+      }
+    } catch (error) {
+      console.warn('Failed to resolve application by client_ID2:', error);
+    }
+    return {
+      applicationId: null,
+      actionUrl: id ? `/admin/member-notes?clientId2=${encodeURIComponent(id)}` : '/admin/member-notes'
+    };
+  };
+
+  const appContext = await resolveApplicationContext(clientId2);
+  const noteMessageBase = noteData.Note_Content || noteData.Note_Text || 'New note added';
+  const noteMessage = appContext.applicationId
+    ? noteMessageBase
+    : `See Caspio record for member. ${noteMessageBase}`;
   
   for (const email of staffToNotify) {
     const userId = await getStaffUserIdFromEmail(email);
@@ -122,15 +182,17 @@ async function sendStaffNotifications(noteData: any, noteId: string, tableType: 
         userId,
         noteId,
         title: `New ${tableType === 'calaim_members' ? 'CalAIM Member' : 'Client'} Note`,
-        message: noteData.Note_Content || noteData.Note_Text || 'New note added',
+        message: noteMessage,
         senderName: noteData.Staff_Name || noteData.Staff_Member || 'System',
-        memberName: noteData.Member_Name || noteData.Client_Name || 'Unknown',
+        memberName,
         type: 'note',
-        priority: noteData.Priority || 'high',
+        priority: normalizedPriority,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         isRead: false,
         status: 'Open',
-        applicationId: noteData.Client_ID2 || noteData.Client_ID,
+        applicationId: appContext.applicationId || undefined,
+        clientId2: clientId2 || undefined,
+        actionUrl: appContext.actionUrl || undefined
       };
 
       const notificationRef = await db.collection('staff_notifications').add(notificationData);

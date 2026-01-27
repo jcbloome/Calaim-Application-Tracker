@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,6 +34,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { format } from 'date-fns';
+import { useSearchParams } from 'next/navigation';
 
 interface Member {
   clientId2: string;
@@ -69,6 +70,9 @@ interface MemberNote {
 export default function MemberNotesPage() {
   const { toast } = useToast();
   const { user, isAdmin } = useAdmin();
+  const searchParams = useSearchParams();
+  const preselectId = searchParams.get('clientId2') || searchParams.get('memberId') || '';
+  const autoSelectRef = useRef(false);
 
   // State management
   const [members, setMembers] = useState<Member[]>([]);
@@ -226,8 +230,24 @@ export default function MemberNotesPage() {
     return () => clearTimeout(timeoutId);
   }, [searchTerm, fetchMembers]);
 
+  useEffect(() => {
+    if (!preselectId || searchTerm) return;
+    setSearchTerm(preselectId);
+  }, [preselectId, searchTerm]);
+
   // Since we're doing server-side search, we don't need client-side filtering
   const filteredMembers = members;
+
+  useEffect(() => {
+    if (!preselectId || autoSelectRef.current || filteredMembers.length === 0) return;
+    const match = filteredMembers.find(
+      (member) => String(member.clientId2).trim() === String(preselectId).trim()
+    );
+    if (!match) return;
+    autoSelectRef.current = true;
+    handleMemberSelect(match);
+    handleRequestNotes(match);
+  }, [filteredMembers, preselectId]);
 
   const handleMemberSelect = (member: Member) => {
     setSelectedMember(member);
