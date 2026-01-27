@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -67,7 +67,7 @@ interface MemberNote {
   tags?: string[];
 }
 
-export default function MemberNotesPage() {
+function MemberNotesPageContent() {
   const { toast } = useToast();
   const { user, isAdmin } = useAdmin();
   const searchParams = useSearchParams();
@@ -1017,5 +1017,13 @@ export default function MemberNotesPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function MemberNotesPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>}>
+      <MemberNotesPageContent />
+    </Suspense>
   );
 }
