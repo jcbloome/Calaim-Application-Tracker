@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useUser } from '@/firebase';
+import { usePathname } from 'next/navigation';
 import {
   collection,
   query,
@@ -46,6 +47,7 @@ interface NotificationData {
 
 export function RealTimeNotifications() {
   const { user } = useUser();
+  const pathname = usePathname();
   const { showNotification } = useGlobalNotifications();
   const seenNotificationsRef = useRef<Set<string>>(new Set());
 
@@ -70,7 +72,8 @@ export function RealTimeNotifications() {
   };
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !user.uid) return;
+    if (!pathname?.startsWith('/admin')) return;
 
     console.log('🔔 Setting up real-time notifications for user:', user.uid);
 
@@ -157,7 +160,7 @@ export function RealTimeNotifications() {
     return () => {
       unsubscribeHandlers.forEach((unsubscribe) => unsubscribe());
     };
-  }, [user]);
+  }, [user, pathname]);
 
   return null;
 }
