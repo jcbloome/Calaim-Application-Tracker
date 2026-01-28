@@ -1,0 +1,34 @@
+{
+  "name": "CalAIM Admin",
+  "short_name": "CalAIM Admin",
+  "description": "CalAIM admin portal and notification system",
+  "start_url": "/admin/login?redirect=/admin/my-notes",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/connectadminfavicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon",
+      "purpose": "any"
+    },
+    {
+      "src": "/littlelogoadmin.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["business", "productivity", "medical"],
+  "scope": "/",
+  "lang": "en-US",
+  "dir": "ltr"
+}

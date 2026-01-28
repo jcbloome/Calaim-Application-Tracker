@@ -6,6 +6,7 @@ import { NotificationProvider } from '@/components/NotificationProvider';
 import { RealTimeNotifications } from '@/components/RealTimeNotifications';
 import { Toaster } from '@/components/ui/toaster';
 import { SessionIsolationGate } from '@/components/SessionIsolationGate';
+import PWAServiceWorker from '@/components/PWAServiceWorker';
 
 export const metadata: Metadata = {
   title: 'Connect CalAIM',
@@ -25,14 +26,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#000000" />
         <link rel="icon" href="/favicon.ico" />
+        <link rel="icon" href="/littlelogo.png" type="image/png" sizes="any" />
+        <link rel="apple-touch-icon" href="/littlelogo.png" />
       </head>
       <body className="min-h-screen bg-background font-sans antialiased">
         <FirebaseClientProvider>
           <NotificationProvider>
             <SessionIsolationGate />
+            <PWAServiceWorker />
             <RealTimeNotifications />
             {children}
           </NotificationProvider>

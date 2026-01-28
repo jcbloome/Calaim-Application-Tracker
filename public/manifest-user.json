@@ -1,0 +1,28 @@
+{
+  "name": "CalAIM User",
+  "short_name": "CalAIM User",
+  "description": "CalAIM user portal for referral agencies",
+  "start_url": "/login",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/littlelogo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["business", "productivity", "medical"],
+  "scope": "/",
+  "lang": "en-US",
+  "dir": "ltr"
+}
