@@ -126,6 +126,27 @@ export default function NotificationSettings() {
   const [testingSound, setTestingSound] = useState(false);
   const { toast } = useToast();
 
+  const persistSettings = (nextSettings: NotificationSettings) => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem('notificationSettings', JSON.stringify(nextSettings));
+    } catch (error) {
+      console.warn('Failed to cache notification settings:', error);
+    }
+  };
+
+  const readCachedSettings = () => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem('notificationSettings');
+      if (!raw) return null;
+      return JSON.parse(raw) as NotificationSettings;
+    } catch (error) {
+      console.warn('Failed to read cached notification settings:', error);
+      return null;
+    }
+  };
+
   // Load notification settings
   const loadSettings = async () => {
     setIsLoading(true);
@@ -137,11 +158,16 @@ export default function NotificationSettings() {
       const data = result.data as any;
       
       if (data.success && data.settings) {
-        setSettings({ ...DEFAULT_SETTINGS, ...data.settings });
+        const merged = { ...DEFAULT_SETTINGS, ...data.settings };
+        setSettings(merged);
+        persistSettings(merged);
       }
     } catch (error: any) {
       console.error('Error loading notification settings:', error);
-      // Use default settings if loading fails
+      const cached = readCachedSettings();
+      if (cached) {
+        setSettings({ ...DEFAULT_SETTINGS, ...cached });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -581,11 +607,16 @@ export default function NotificationSettings() {
       }
       
       current[path[path.length - 1]] = value;
+      persistSettings(newSettings);
       return newSettings;
     });
   };
 
   useEffect(() => {
+    const cached = readCachedSettings();
+    if (cached) {
+      setSettings({ ...DEFAULT_SETTINGS, ...cached });
+    }
     loadSettings();
   }, []);
 

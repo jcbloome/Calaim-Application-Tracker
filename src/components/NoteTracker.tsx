@@ -112,6 +112,11 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
 
   // Load notes
   const loadNotes = async () => {
+    if (!memberId) {
+      setNotes([]);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
       const response = await fetch(`/api/member-notes?clientId2=${encodeURIComponent(memberId)}&includeArchived=${showArchived}`);
@@ -162,6 +167,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
 
   // Load staff members
   const loadStaffMembers = async () => {
+    if (!memberId) return;
     try {
       const response = await fetch('/api/staff-members');
       const contentType = response.headers.get('content-type') || '';
@@ -417,6 +423,10 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
   }, [notes.length]);
 
   useEffect(() => {
+    if (!memberId) {
+      setNotes([]);
+      return;
+    }
     loadNotes();
     loadStaffMembers();
   }, [memberId, showArchived]);

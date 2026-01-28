@@ -7,8 +7,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { useState, useEffect, Suspense } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
@@ -22,6 +25,7 @@ interface StaffNotification {
   content: string;
   memberName?: string;
   memberId?: string;
+  healthPlan?: string;
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   isRead: boolean;
   createdAt: any;
@@ -31,10 +35,11 @@ interface StaffNotification {
   applicationId?: string;
   actionUrl?: string;
   status?: 'Open' | 'Closed';
+  isGeneral?: boolean;
 }
 
 function MyNotesContent() {
-  const { user, isAdmin, loading } = useAdmin();
+  const { user, isAdmin, loading, isUserLoading } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
   const searchParams = useSearchParams();
@@ -47,17 +52,19 @@ function MyNotesContent() {
   const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [generalNote, setGeneralNote] = useState<{
-    recipientId: string;
+    recipientIds: string[];
     title: string;
     message: string;
     priority: 'Regular' | 'Immediate';
   }>({
-    recipientId: '',
+    recipientIds: [],
     title: '',
     message: '',
     priority: 'Regular'
   });
   const [isSendingGeneral, setIsSendingGeneral] = useState(false);
+  const [showAllNotes, setShowAllNotes] = useState(false);
+  const [highlightNoteId, setHighlightNoteId] = useState<string | null>(null);
 
   // Load notifications from Firestore
   useEffect(() => {
@@ -87,6 +94,7 @@ function MyNotesContent() {
             content: data.message || data.content || '',
             memberName: data.memberName || undefined,
             memberId: data.clientId2 || data.memberId || undefined,
+            healthPlan: data.healthPlan || undefined,
             priority: data.priority || 'Medium',
             isRead: Boolean(data.isRead),
             createdAt: data.timestamp || data.createdAt,
@@ -95,7 +103,8 @@ function MyNotesContent() {
             senderId: data.createdBy || data.senderId,
             applicationId: data.applicationId || undefined,
             actionUrl: data.actionUrl || undefined,
-            status: data.status === 'Closed' ? 'Closed' : 'Open'
+            status: data.status === 'Closed' ? 'Closed' : 'Open',
+            isGeneral: Boolean(data.isGeneral)
           });
         });
 
@@ -111,7 +120,7 @@ function MyNotesContent() {
         
         console.log(`📋 Loaded ${userNotifications.length} notifications for user`);
       }, (error) => {
-        console.error('❌ Error loading notifications:', error);
+        console.warn('⚠️ Error loading notifications:', error instanceof Error ? error.message : String(error));
         setIsLoadingNotes(false);
         toast({
           title: "Error",
@@ -122,7 +131,7 @@ function MyNotesContent() {
 
       return () => unsubscribe();
     } catch (error) {
-      console.error('❌ Error setting up notifications listener:', error);
+      console.warn('⚠️ Error setting up notifications listener:', error instanceof Error ? error.message : String(error));
       setIsLoadingNotes(false);
       toast({
         title: "Error", 
@@ -139,6 +148,17 @@ function MyNotesContent() {
     if (!target) return;
     setReplyOpen((prev) => ({ ...prev, [replyTo]: true }));
   }, [searchParams, notifications]);
+
+  useEffect(() => {
+    const noteId = searchParams.get('noteId');
+    if (!noteId) return;
+    setHighlightNoteId(noteId);
+    setShowAllNotes(true);
+    const element = document.getElementById(`note-${noteId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const compose = searchParams.get('compose');
@@ -319,7 +339,7 @@ function MyNotesContent() {
 
   const handleSendGeneralNote = async () => {
     if (!firestore || !user?.uid) return;
-    if (!generalNote.recipientId || !generalNote.message.trim()) {
+    if (generalNote.recipientIds.length === 0 || !generalNote.message.trim()) {
       toast({
         title: "Missing Details",
         description: "Select a staff member and enter a message.",
@@ -328,8 +348,8 @@ function MyNotesContent() {
       return;
     }
 
-    const recipient = staffList.find((staff) => staff.uid === generalNote.recipientId);
-    if (!recipient) {
+    const recipients = staffList.filter((staff) => generalNote.recipientIds.includes(staff.uid));
+    if (recipients.length === 0) {
       toast({
         title: "Recipient Not Found",
         description: "Selected staff member was not found.",
@@ -340,29 +360,33 @@ function MyNotesContent() {
 
     try {
       setIsSendingGeneral(true);
-      await addDoc(collection(firestore, 'staff_notifications'), {
-        userId: recipient.uid,
-        title: generalNote.title?.trim() || 'General Note',
-        message: generalNote.message.trim(),
-        type: 'interoffice_note',
-        priority: generalNote.priority === 'Immediate' ? 'Urgent' : 'Low',
-        status: 'Open',
-        isRead: false,
-        createdBy: user.uid,
-        createdByName: user.displayName || user.email || 'Staff',
-        senderName: user.displayName || user.email || 'Staff',
-        timestamp: serverTimestamp(),
-        isGeneral: true,
-        actionUrl: '/admin/my-notes'
-      });
+      await Promise.all(
+        recipients.map((recipient) =>
+          addDoc(collection(firestore, 'staff_notifications'), {
+            userId: recipient.uid,
+            title: generalNote.title?.trim() || 'General Note',
+            message: generalNote.message.trim(),
+            type: 'interoffice_note',
+            priority: generalNote.priority === 'Immediate' ? 'Urgent' : 'Low',
+            status: 'Open',
+            isRead: false,
+            createdBy: user.uid,
+            createdByName: user.displayName || user.email || 'Staff',
+            senderName: user.displayName || user.email || 'Staff',
+            timestamp: serverTimestamp(),
+            isGeneral: true,
+            actionUrl: '/admin/my-notes'
+          })
+        )
+      );
 
       toast({
         title: "Note Sent",
-        description: `Sent to ${recipient.name}.`,
+        description: `Sent to ${recipients.length} staff member${recipients.length === 1 ? '' : 's'}.`,
       });
 
       setGeneralNote({
-        recipientId: '',
+        recipientIds: [],
         title: '',
         message: '',
         priority: 'Regular'
@@ -385,10 +409,22 @@ function MyNotesContent() {
     // The useEffect will handle reloading
   };
 
+  const tagParam = searchParams.get('tags') || '';
+  const activeTags = tagParam
+    .split(',')
+    .map((tag) => tag.trim().toLowerCase())
+    .filter(Boolean);
+
+  const isInterofficeNotification = (notification: StaffNotification) => {
+    const originType = String(notification.type || '').toLowerCase();
+    return Boolean(notification.isGeneral) || originType.includes('interoffice');
+  };
+
   // Filter notifications based on search term
   const filteredNotifications = notifications.filter(notification => {
+    if (!isInterofficeNotification(notification)) return false;
     if (!searchTerm) return true;
-    
+
     const searchLower = searchTerm.toLowerCase();
     return (
       notification.title?.toLowerCase().includes(searchLower) ||
@@ -397,6 +433,39 @@ function MyNotesContent() {
       notification.authorName?.toLowerCase().includes(searchLower)
     );
   });
+
+  const hasPriority = (notification: StaffNotification) => {
+    const value = String(notification.priority || '').toLowerCase();
+    return value === 'urgent' || value === 'high';
+  };
+
+  const hasGeneral = (notification: StaffNotification) => {
+    const originType = String(notification.type || '').toLowerCase();
+    return Boolean(notification.isGeneral) || originType.includes('interoffice');
+  };
+
+  const tagFilteredNotifications = activeTags.length === 0
+    ? filteredNotifications
+    : filteredNotifications.filter((notification) => {
+        const matchesPriority = activeTags.includes('priority') && hasPriority(notification);
+        const matchesGeneral = activeTags.includes('general') && hasGeneral(notification);
+        return matchesPriority || matchesGeneral;
+      });
+
+  const recentNotifications = showAllNotes ? tagFilteredNotifications : tagFilteredNotifications.slice(0, 5);
+
+  const getMemberLink = (notification: StaffNotification) => {
+    if (notification.applicationId) {
+      return `/admin/applications/${notification.applicationId}`;
+    }
+    if (notification.memberId) {
+      return `/admin/member-notes?clientId2=${encodeURIComponent(notification.memberId)}`;
+    }
+    if (notification.actionUrl && !notification.actionUrl.includes('/admin/my-notes')) {
+      return notification.actionUrl;
+    }
+    return null;
+  };
 
   // Get priority color
   const getPriorityColor = (priority: string) => {
@@ -421,7 +490,7 @@ function MyNotesContent() {
     }
   };
 
-  if (loading) {
+  if (loading || isUserLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -432,16 +501,16 @@ function MyNotesContent() {
     );
   }
 
-  if (!isAdmin) {
+  if (!user && !loading && !isUserLoading) {
     return (
       <div className="container mx-auto p-6">
         <Card>
           <CardContent className="flex items-center justify-center h-64">
             <div className="text-center">
               <MessageSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">Access Restricted</h3>
+              <h3 className="text-lg font-medium mb-2">Sign In Required</h3>
               <p className="text-muted-foreground">
-                You need admin permissions to access notifications.
+                Please sign in to view your notifications.
               </p>
             </div>
           </CardContent>
@@ -473,88 +542,281 @@ function MyNotesContent() {
         </div>
       </div>
 
-      <Card id="compose-note">
-        <CardHeader>
-          <CardTitle>Send General Staff Note</CardTitle>
-          <CardDescription>
-            Send a non-member note to another staff member. This stays in the app only.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-2">
-            <Label htmlFor="general-recipient">Recipient</Label>
-            <Select
-              value={generalNote.recipientId}
-              onValueChange={(value) => setGeneralNote((prev) => ({ ...prev, recipientId: value }))}
-              disabled={isLoadingStaff}
-            >
-              <SelectTrigger id="general-recipient">
-                <SelectValue placeholder={isLoadingStaff ? 'Loading staff...' : 'Select staff member'} />
-              </SelectTrigger>
-              <SelectContent>
-                {staffList.map((staff) => (
-                  <SelectItem key={staff.uid} value={staff.uid}>
-                    {staff.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Recent Notes</CardTitle>
+                  <CardDescription>Newest notifications assigned to you.</CardDescription>
+                  {activeTags.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {activeTags.map((tag) => (
+                        <Badge key={tag} variant="secondary" className="capitalize">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAllNotes((prev) => !prev)}
+                >
+                  {showAllNotes ? 'Show Recent' : 'Open Full List'}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search notifications..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              {!isLoadingNotes && recentNotifications.length === 0 && (
+                <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+                  {searchTerm ? 'No notifications match your search.' : 'No notifications found.'}
+                </div>
+              )}
+              {recentNotifications.map((notification) => {
+                const memberLink = getMemberLink(notification);
+                const isGeneralNote = hasGeneral(notification);
+                const isPriorityNote = hasPriority(notification);
+                const displayTitle = `Re: ${notification.memberName || 'General Note'}`;
+                return (
+                  <Card
+                    key={notification.id}
+                    id={`note-${notification.id}`}
+                    className={`transition-colors hover:bg-accent/50 ${
+                      !notification.isRead ? 'border-blue-200 bg-blue-50/30' : ''
+                    } ${highlightNoteId === notification.id ? 'ring-2 ring-blue-200' : ''}`}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center flex-wrap gap-2">
+                            <h3 className={`font-medium ${!notification.isRead ? 'text-blue-900' : ''}`}>
+                              {displayTitle}
+                            </h3>
+                            {isPriorityNote && (
+                              <Badge variant="outline" className={getPriorityColor(notification.priority)}>
+                                Priority
+                              </Badge>
+                            )}
+                            {isGeneralNote && (
+                              <Badge variant="secondary">
+                                General
+                              </Badge>
+                            )}
+                            {!notification.isRead && (
+                              <Badge variant="default" className="bg-blue-600">
+                                New
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {notification.content}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                            <div className="flex items-center space-x-1">
+                              <User className="h-3 w-3" />
+                          <span>From: {notification.authorName}</span>
+                            </div>
+                            <div className="flex items-center space-x-1">
+                              <Calendar className="h-3 w-3" />
+                              <span>{formatTimestamp(notification.createdAt)}</span>
+                            </div>
+                            {notification.memberName && (
+                              <div className="flex items-center space-x-1">
+                                <MessageSquare className="h-3 w-3" />
+                                <span>Member: {notification.memberName}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          {notification.isRead && (
+                            <div className="flex items-center gap-2 text-xs text-green-600">
+                              <CheckCircle2 className="h-4 w-4" />
+                              <span>Viewed</span>
+                            </div>
+                          )}
+                          {!notification.isRead && (
+                            <Button
+                              onClick={() => markAsRead(notification.id)}
+                              variant="outline"
+                              size="sm"
+                            >
+                              Mark Viewed
+                            </Button>
+                          )}
+                          {memberLink && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={async () => {
+                                if (!notification.isRead) {
+                                  await markAsRead(notification.id);
+                                }
+                                window.location.href = memberLink;
+                              }}
+                            >
+                              View Member
+                            </Button>
+                          )}
+                          <Button
+                            onClick={() =>
+                              setReplyOpen((prev) => ({
+                                ...prev,
+                                [notification.id]: !prev[notification.id]
+                              }))
+                            }
+                            variant="outline"
+                            size="sm"
+                          >
+                            Reply
+                          </Button>
+                        </div>
+                      </div>
+                      {replyOpen[notification.id] && (
+                        <div className="mt-3 space-y-2">
+                          <Textarea
+                            rows={3}
+                            value={replyDrafts[notification.id] || ''}
+                            onChange={(e) =>
+                              setReplyDrafts((prev) => ({ ...prev, [notification.id]: e.target.value }))
+                            }
+                            placeholder="Write a reply to the sender..."
+                          />
+                          <Button
+                            onClick={() => handleReplySend(notification)}
+                            size="sm"
+                            disabled={isSendingReply[notification.id]}
+                          >
+                            {isSendingReply[notification.id] ? 'Sending...' : 'Send Reply'}
+                          </Button>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </CardContent>
+          </Card>
+          {!isLoadingNotes && tagFilteredNotifications.length > 0 && (
+            <Card className="bg-muted/50">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span>
+                    Showing {recentNotifications.length} of {tagFilteredNotifications.length} notification{tagFilteredNotifications.length !== 1 ? 's' : ''}
+                    {searchTerm && ` matching "${searchTerm}"`}
+                  </span>
+                  <span>
+                    {tagFilteredNotifications.filter(n => !n.isRead).length} unread
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+        <div className="space-y-4">
+          <Card id="compose-note">
+            <CardHeader>
+              <CardTitle>Send Staff Note</CardTitle>
+              <CardDescription>
+                Message one or more staff members directly from here.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2">
+                <Label>Recipients</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between" disabled={isLoadingStaff}>
+                      {isLoadingStaff
+                        ? 'Loading staff...'
+                        : generalNote.recipientIds.length === 0
+                          ? 'Select staff'
+                          : `${generalNote.recipientIds.length} selected`}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-2 w-72">
+                    <div className="max-h-56 overflow-auto space-y-2">
+                      {staffList.map((staff) => {
+                        const checked = generalNote.recipientIds.includes(staff.uid);
+                        return (
+                          <label key={staff.uid} className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(value) => {
+                                setGeneralNote((prev) => ({
+                                  ...prev,
+                                  recipientIds: value
+                                    ? [...prev.recipientIds, staff.uid]
+                                    : prev.recipientIds.filter((id) => id !== staff.uid)
+                                }));
+                              }}
+                            />
+                            <span>{staff.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="general-title">Title (optional)</Label>
-            <Input
-              id="general-title"
-              value={generalNote.title}
-              onChange={(e) => setGeneralNote((prev) => ({ ...prev, title: e.target.value }))}
-              placeholder="General Note"
-            />
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="general-title">Title (optional)</Label>
+                <Input
+                  id="general-title"
+                  value={generalNote.title}
+                  onChange={(e) => setGeneralNote((prev) => ({ ...prev, title: e.target.value }))}
+                  placeholder="General Note"
+                />
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="general-message">Message</Label>
-            <Textarea
-              id="general-message"
-              rows={3}
-              value={generalNote.message}
-              onChange={(e) => setGeneralNote((prev) => ({ ...prev, message: e.target.value }))}
-              placeholder="Write a note for staff..."
-            />
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="general-message">Message</Label>
+                <Textarea
+                  id="general-message"
+                  rows={4}
+                  value={generalNote.message}
+                  onChange={(e) => setGeneralNote((prev) => ({ ...prev, message: e.target.value }))}
+                  placeholder="Write a note for staff..."
+                />
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="general-priority">Priority</Label>
-            <Select
-              value={generalNote.priority}
-              onValueChange={(value: 'Regular' | 'Immediate') =>
-                setGeneralNote((prev) => ({ ...prev, priority: value }))
-              }
-            >
-              <SelectTrigger id="general-priority">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Regular">Regular (no popup)</SelectItem>
-                <SelectItem value="Immediate">Immediate (popup)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="general-priority">Priority</Label>
+                <Select
+                  value={generalNote.priority}
+                  onValueChange={(value: 'Regular' | 'Immediate') =>
+                    setGeneralNote((prev) => ({ ...prev, priority: value }))
+                  }
+                >
+                  <SelectTrigger id="general-priority">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Regular">Regular (no popup)</SelectItem>
+                    <SelectItem value="Immediate">Immediate (popup)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <Button onClick={handleSendGeneralNote} disabled={isSendingGeneral} className="w-full">
-            {isSendingGeneral ? 'Sending...' : 'Send Note'}
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search notifications..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10"
-        />
+              <Button onClick={handleSendGeneralNote} disabled={isSendingGeneral} className="w-full">
+                {isSendingGeneral ? 'Sending...' : 'Send Note'}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Loading State */}
@@ -564,139 +826,6 @@ function MyNotesContent() {
             <div className="text-center">
               <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">Loading notifications...</p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-
-      {/* Notifications List */}
-      {!isLoadingNotes && (
-        <div className="space-y-4">
-          {filteredNotifications.length === 0 ? (
-            <Card>
-              <CardContent className="flex items-center justify-center h-32">
-                <div className="text-center">
-                  <MessageSquare className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-muted-foreground">
-                    {searchTerm ? 'No notifications match your search' : 'No notifications found'}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            filteredNotifications.map((notification) => (
-              <Card 
-                key={notification.id} 
-                className={`transition-colors hover:bg-accent/50 ${
-                  !notification.isRead ? 'border-blue-200 bg-blue-50/30' : ''
-                }`}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between space-x-4">
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <h3 className={`font-medium ${!notification.isRead ? 'text-blue-900' : ''}`}>
-                          {notification.title}
-                        </h3>
-                        <Badge 
-                          variant="outline" 
-                          className={getPriorityColor(notification.priority)}
-                        >
-                          {notification.priority}
-                        </Badge>
-                        {!notification.isRead && (
-                          <Badge variant="default" className="bg-blue-600">
-                            New
-                          </Badge>
-                        )}
-                      </div>
-                      
-                      <p className="text-sm text-muted-foreground">
-                        {notification.content}
-                      </p>
-                      
-                      <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                        <div className="flex items-center space-x-1">
-                          <User className="h-3 w-3" />
-                          <span>{notification.authorName}</span>
-                        </div>
-                        <div className="flex items-center space-x-1">
-                          <Calendar className="h-3 w-3" />
-                          <span>{formatTimestamp(notification.createdAt)}</span>
-                        </div>
-                        {notification.memberName && (
-                          <div className="flex items-center space-x-1">
-                            <MessageSquare className="h-3 w-3" />
-                            <span>Member: {notification.memberName}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="flex flex-col space-y-2">
-                      {!notification.isRead && (
-                        <Button 
-                          onClick={() => markAsRead(notification.id)}
-                          variant="outline" 
-                          size="sm"
-                        >
-                          Mark Read
-                        </Button>
-                      )}
-                      <Button
-                        onClick={() =>
-                          setReplyOpen((prev) => ({
-                            ...prev,
-                            [notification.id]: !prev[notification.id]
-                          }))
-                        }
-                        variant="outline"
-                        size="sm"
-                      >
-                        Reply
-                      </Button>
-                    </div>
-                  </div>
-
-                  {replyOpen[notification.id] && (
-                    <div className="mt-3 space-y-2">
-                      <Textarea
-                        rows={3}
-                        value={replyDrafts[notification.id] || ''}
-                        onChange={(e) =>
-                          setReplyDrafts((prev) => ({ ...prev, [notification.id]: e.target.value }))
-                        }
-                        placeholder="Write a reply to the sender..."
-                      />
-                      <Button
-                        onClick={() => handleReplySend(notification)}
-                        size="sm"
-                        disabled={isSendingReply[notification.id]}
-                      >
-                        {isSendingReply[notification.id] ? 'Sending...' : 'Send Reply'}
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* Summary */}
-      {!isLoadingNotes && filteredNotifications.length > 0 && (
-        <Card className="bg-muted/50">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>
-                Showing {filteredNotifications.length} notification{filteredNotifications.length !== 1 ? 's' : ''}
-                {searchTerm && ` matching "${searchTerm}"`}
-              </span>
-              <span>
-                {filteredNotifications.filter(n => !n.isRead).length} unread
-              </span>
             </div>
           </CardContent>
         </Card>

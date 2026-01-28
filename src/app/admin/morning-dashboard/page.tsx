@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CaspioModeNotice } from '@/components/admin/CaspioModeNotice';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 
-export default function MorningDashboardPage() {
+function MorningDashboardContent() {
   const { isAdmin, user, isLoading } = useAdmin();
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -442,5 +442,22 @@ export default function MorningDashboardPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function MorningDashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading Morning Dashboard...</p>
+          </div>
+        </div>
+      }
+    >
+      <MorningDashboardContent />
+    </Suspense>
   );
 }

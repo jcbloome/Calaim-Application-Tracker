@@ -29,11 +29,28 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, message: 'No applications found to process.' });
     }
 
-    const allApplications = applicationsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Application & FormValues));
-    
-    const appsToRemind = allApplications.filter(app => 
-        (app.status === 'In Progress' || app.status === 'Requires Revision') &&
-        app.forms?.some(form => form.status === 'Pending')
+    const allApplications = applicationsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ref: doc.ref,
+      data: doc.data() as Application & FormValues
+    }));
+
+    const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const isDueForReminder = (lastSent: any) => {
+      if (!lastSent) return true;
+      const lastDate = typeof lastSent?.toDate === 'function'
+        ? lastSent.toDate()
+        : new Date(lastSent);
+      if (Number.isNaN(lastDate.getTime())) return true;
+      return now - lastDate.getTime() >= TWO_DAYS_MS;
+    };
+
+    const appsToRemind = allApplications.filter(({ data }) =>
+      data.emailRemindersEnabled === true &&
+      (data.status === 'In Progress' || data.status === 'Requires Revision') &&
+      data.forms?.some(form => form.status === 'Pending') &&
+      isDueForReminder((data as any).emailReminderLastSentAt)
     );
     
     if (appsToRemind.length === 0) {
@@ -42,11 +59,24 @@ export async function GET(request: Request) {
 
     // 3. Call your existing email logic with the fetched data.
     // The data is stringified and parsed to handle non-serializable Firestore Timestamps.
-    const result = await sendReminderEmails(JSON.parse(JSON.stringify(appsToRemind)));
+    const result = await sendReminderEmails(
+      JSON.parse(JSON.stringify(appsToRemind.map(({ data }) => data)))
+    );
 
     if (!result.success) {
       // If the email sending failed, return a 500 error to make the cron job status reflect the failure.
       return NextResponse.json(result, { status: 500 });
+    }
+
+    if (result.sentApplicationIds?.length) {
+      const batch = firestore.batch();
+      appsToRemind.forEach(({ id, ref }) => {
+        if (!result.sentApplicationIds?.includes(id)) return;
+        batch.update(ref, {
+          emailReminderLastSentAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      await batch.commit();
     }
 
     return NextResponse.json(result);

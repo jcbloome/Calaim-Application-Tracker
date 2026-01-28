@@ -73,7 +73,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { collection, collectionGroup, onSnapshot } from 'firebase/firestore';
+import { collection, collectionGroup, doc, getDocs, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 
 const adminNavLinks = [
   { 
@@ -151,8 +151,11 @@ function AdminHeader() {
   const [hnDocCount, setHnDocCount] = useState(0);
   const [kaiserCsCount, setKaiserCsCount] = useState(0);
   const [kaiserDocCount, setKaiserDocCount] = useState(0);
-  const previousCsCount = useRef(0);
-  const previousUploadCount = useRef(0);
+  const [hasAdminSessionCookie, setHasAdminSessionCookie] = useState(false);
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    setHasAdminSessionCookie(document.cookie.includes('calaim_admin_session='));
+  }, []);
 
   const handleSignOut = async () => {
     if (auth) {
@@ -180,12 +183,15 @@ function AdminHeader() {
   };
 
   useEffect(() => {
-    if (!firestore) return;
+    if (!firestore || !user?.uid) return;
     const userAppsQuery = collectionGroup(firestore, 'applications');
     const adminAppsQuery = collection(firestore, 'applications');
 
     let userApps: any[] = [];
     let adminApps: any[] = [];
+    let unsubUserApps: (() => void) | undefined;
+    let unsubAdminApps: (() => void) | undefined;
+    let isActive = true;
 
     const computeCount = () => {
       const combined = [...userApps, ...adminApps];
@@ -237,32 +243,7 @@ function AdminHeader() {
         return total + unacknowledgedUploads;
       }, 0);
 
-      if (csSummaryCount > previousCsCount.current && typeof window !== 'undefined') {
-        if ('Notification' in window) {
-          const showNotification = () => {
-            try {
-              new Notification('New CS Summary Received', {
-                body: `${csSummaryCount} new CS Summary form${csSummaryCount === 1 ? '' : 's'} need review.`,
-              });
-            } catch (error) {
-              console.warn('Notification failed:', error);
-            }
-          };
-
-          if (Notification.permission === 'granted') {
-            showNotification();
-          } else if (Notification.permission === 'default') {
-            Notification.requestPermission().then((permission) => {
-              if (permission === 'granted') {
-                showNotification();
-              }
-            });
-          }
-        }
-      }
-
-      previousCsCount.current = csSummaryCount;
-      previousUploadCount.current = uploadCount;
+      
       setNewCsSummaryCount(csSummaryCount);
       setNewUploadCount(uploadCount);
       setHnCsCount(nextHnCs);
@@ -271,21 +252,57 @@ function AdminHeader() {
       setKaiserDocCount(nextKaiserDocs);
     };
 
-    const unsubUserApps = onSnapshot(userAppsQuery, (snapshot) => {
+    unsubUserApps = onSnapshot(userAppsQuery, (snapshot) => {
       userApps = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       computeCount();
     });
 
-    const unsubAdminApps = onSnapshot(adminAppsQuery, (snapshot) => {
+    unsubAdminApps = onSnapshot(adminAppsQuery, (snapshot) => {
       adminApps = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       computeCount();
     });
 
     return () => {
-      unsubUserApps();
-      unsubAdminApps();
+      isActive = false;
+      unsubUserApps?.();
+      unsubAdminApps?.();
     };
-  }, [firestore]);
+  }, [firestore, user?.uid]);
+
+  useEffect(() => {
+    if (!firestore || !user?.uid) return;
+    if (typeof window === 'undefined') return;
+    const cacheKey = `purged-system-notifications-${user.uid}`;
+    if (sessionStorage.getItem(cacheKey) === 'true') return;
+
+    const purgeSystemNotifications = async () => {
+      try {
+        const snapshot = await getDocs(
+          query(
+            collection(firestore, 'staff_notifications'),
+            where('userId', '==', user.uid),
+            where('type', 'in', ['cs_summary', 'document_upload'])
+          )
+        );
+
+        if (snapshot.empty) {
+          sessionStorage.setItem(cacheKey, 'true');
+          return;
+        }
+
+        const batch = writeBatch(firestore);
+        snapshot.docs.forEach((docSnap) => {
+          batch.delete(doc(firestore, 'staff_notifications', docSnap.id));
+        });
+        await batch.commit();
+        sessionStorage.setItem(cacheKey, 'true');
+      } catch (error) {
+        console.warn('Failed to purge system notifications:', error);
+      }
+    };
+
+    purgeSystemNotifications();
+  }, [firestore, user?.uid]);
 
   const renderCsSummaryBadge = () => {
     if (newCsSummaryCount <= 0) return null;
@@ -609,9 +626,12 @@ function AdminHeader() {
 }
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  const { user, loading, isAdmin } = useAdmin();
+  const { user, loading, isAdmin, isUserLoading } = useAdmin();
   const pathname = usePathname();
   const router = useRouter();
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [authGraceExpired, setAuthGraceExpired] = useState(false);
+  const [hasAdminSessionCookie, setHasAdminSessionCookie] = useState(false);
 
   // Allow access to login page without authentication
   const isLoginPage = pathname === '/admin/login';
@@ -629,23 +649,61 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }, [pathname, isLoginPage, loading, isAdmin, user?.email]);
 
   useEffect(() => {
-    if (!loading) {
+    setAuthGraceExpired(false);
+    const timer = setTimeout(() => setAuthGraceExpired(true), 3000);
+    return () => clearTimeout(timer);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    setHasAdminSessionCookie(document.cookie.includes('calaim_admin_session='));
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!loading && !isUserLoading) {
+      const currentSearch = typeof window !== 'undefined' ? window.location.search : '';
+      const intendedPath = `${pathname}${currentSearch}`;
+      const redirectParam = typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('redirect')
+        : null;
+      const safeRedirect =
+        redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('/admin/login')
+          ? redirectParam
+          : '/admin';
+
+      const allowNonAdmin = pathname?.startsWith('/admin/my-notes');
+
       console.log('🔍 Admin Layout Auth Check:', {
         isAdmin,
         isLoginPage,
         userEmail: user?.email,
-        willRedirect: !isAdmin && !isLoginPage
+        willRedirect: !user || (!isAdmin && !isLoginPage && !allowNonAdmin)
       });
-      
-      if (!isAdmin && !isLoginPage) {
+
+      if (!user && !isLoginPage && !hasAdminSessionCookie && authGraceExpired) {
+        if (redirectTimerRef.current) {
+          clearTimeout(redirectTimerRef.current);
+        }
+        redirectTimerRef.current = setTimeout(() => {
+          if (!user && !hasAdminSessionCookie && authGraceExpired) {
+            console.log('🚫 Redirecting to login - user not signed in');
+            router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
+          }
+        }, 1200);
+      } else if (!isAdmin && !isLoginPage && !allowNonAdmin) {
         console.log('🚫 Redirecting to login - user not recognized as admin');
-        router.replace('/admin/login');
+        router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
       } else if (isAdmin && isLoginPage) {
         console.log('✅ Admin detected on login page - redirecting to dashboard');
-        router.replace('/admin');
+        router.replace(safeRedirect);
       }
     }
-  }, [loading, isAdmin, isLoginPage, router, user?.email]);
+    return () => {
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current);
+      }
+    };
+  }, [loading, isUserLoading, isAdmin, isLoginPage, router, user, pathname, hasAdminSessionCookie, authGraceExpired]);
 
   // Show loading spinner while checking authentication (but not for login page)
   if (loading && !isLoginPage) {

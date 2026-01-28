@@ -16,6 +16,9 @@
 
 ## 🗓️ **Development History**
 
+### **January 28, 2026 - Updates**
+- ✅ **Bug Fixed**: Restricted staff notifications to immediate interoffice notes, purged system CS/doc alerts, and stabilized admin auth builds
+
 ### **January 26, 2026 - Updates**
 - ✅ **UI/UX**: Added bell notification links/reply actions and multi-recipient interoffice notes
 - ✅ **Bug Fixed**: Restored Complete Note Log by hardening all-notes API fetch

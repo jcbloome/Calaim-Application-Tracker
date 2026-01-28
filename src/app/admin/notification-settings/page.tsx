@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/firebase';
 import { 
@@ -22,12 +23,15 @@ import {
   VolumeX
 } from 'lucide-react';
 import { usePushNotifications } from '@/components/PushNotificationManager';
+import { playNotificationSound, type NotificationSoundType } from '@/lib/notification-sounds';
 
 interface NotificationSettings {
   enablePushNotifications: boolean;
   enableEmailNotifications: boolean;
   enableSystemTray: boolean;
   notificationSound: boolean;
+  soundType: string;
+  displayStyle: 'standard' | 'compact';
   urgentOnly: boolean;
   quietHours: {
     enabled: boolean;
@@ -42,6 +46,8 @@ export default function NotificationSettingsPage() {
     enableEmailNotifications: false,
     enableSystemTray: true,
     notificationSound: true,
+    soundType: 'mellow-note',
+    displayStyle: 'standard',
     urgentOnly: false,
     quietHours: {
       enabled: false,
@@ -51,12 +57,34 @@ export default function NotificationSettingsPage() {
   });
   const [loading, setLoading] = useState(false);
   const [fcmToken, setFcmToken] = useState<string | null>(null);
+  const [isClient, setIsClient] = useState(false);
+  const [isTestingSound, setIsTestingSound] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
   const { isEnabled: pushEnabled, isSupported: pushSupported, requestPermission } = usePushNotifications();
+  const SOUND_OPTIONS = [
+    { value: 'mellow-note', label: 'Mellow Note' },
+    { value: 'arrow-target', label: 'Arrow Hit Target' },
+    { value: 'bell', label: 'Bell Chime' },
+    { value: 'chime', label: 'Soft Chime' },
+    { value: 'pop', label: 'Pop' },
+    { value: 'windows-default', label: 'Windows Default' },
+    { value: 'success-ding', label: 'Success Ding' },
+    { value: 'message-swoosh', label: 'Message Swoosh' },
+    { value: 'alert-beep', label: 'Alert Beep' },
+    { value: 'coin-drop', label: 'Coin Drop' },
+    { value: 'bubble-pop', label: 'Bubble Pop' },
+    { value: 'typewriter-ding', label: 'Typewriter Ding' },
+    { value: 'glass-ping', label: 'Glass Ping' },
+    { value: 'wooden-knock', label: 'Wooden Knock' },
+    { value: 'digital-blip', label: 'Digital Blip' },
+    { value: 'water-drop', label: 'Water Drop' },
+    { value: 'silent', label: 'Silent' }
+  ];
 
   // Load user's notification settings
   useEffect(() => {
+    setIsClient(true);
     if (user) {
       loadNotificationSettings();
     }
@@ -89,6 +117,16 @@ export default function NotificationSettingsPage() {
       // Save to backend (this would be a real API call)
       if (typeof window !== 'undefined') {
         localStorage.setItem(`notification-settings-${user.uid}`, JSON.stringify(settings));
+        localStorage.setItem('notificationSettings', JSON.stringify({
+          browserNotifications: {
+            enabled: settings.enableSystemTray,
+            newNotes: true,
+            taskAssignments: true,
+            urgentPriority: !settings.urgentOnly,
+            sound: settings.notificationSound,
+            soundType: settings.soundType
+          }
+        }));
       }
       
       // If push notifications are enabled, ensure we have permission
@@ -165,6 +203,22 @@ export default function NotificationSettingsPage() {
     });
   };
 
+  const handleTestSound = async () => {
+    if (typeof window === 'undefined') return;
+    if (!settings.notificationSound) {
+      toast({
+        title: "Sound Disabled",
+        description: "Enable notification sound to test it.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsTestingSound(true);
+    await playNotificationSound(settings.soundType as NotificationSoundType);
+    setIsTestingSound(false);
+  };
+
   const getNotificationStatus = () => {
     if (!pushSupported) {
       return { status: 'unsupported', color: 'text-gray-500', icon: XCircle };
@@ -201,13 +255,27 @@ export default function NotificationSettingsPage() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="flex items-center space-x-3">
-              <StatusIcon className={`w-5 h-5 ${notificationStatus.color}`} />
-              <div>
-                <p className="font-medium">Push Notifications</p>
-                <p className="text-sm text-muted-foreground capitalize">
-                  {notificationStatus.status}
-                </p>
-              </div>
+              {isClient ? (
+                <>
+                  <StatusIcon className={`w-5 h-5 ${notificationStatus.color}`} />
+                  <div>
+                    <p className="font-medium">Push Notifications</p>
+                    <p className="text-sm text-muted-foreground capitalize">
+                      {notificationStatus.status}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Info className="w-5 h-5 text-gray-500" />
+                  <div>
+                    <p className="font-medium">Push Notifications</p>
+                    <p className="text-sm text-muted-foreground capitalize">
+                      loading
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
             
             <div className="flex items-center space-x-3">
@@ -215,7 +283,7 @@ export default function NotificationSettingsPage() {
               <div>
                 <p className="font-medium">Device Support</p>
                 <p className="text-sm text-muted-foreground">
-                  {pushSupported ? 'Supported' : 'Not Supported'}
+                  {isClient ? (pushSupported ? 'Supported' : 'Not Supported') : 'Checking'}
                 </p>
               </div>
             </div>
@@ -231,7 +299,7 @@ export default function NotificationSettingsPage() {
             </div>
           </div>
 
-          {!pushSupported && (
+          {isClient && !pushSupported && (
             <Alert className="mt-4">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
@@ -240,7 +308,7 @@ export default function NotificationSettingsPage() {
             </Alert>
           )}
 
-          {pushSupported && !pushEnabled && (
+          {isClient && pushSupported && !pushEnabled && (
             <Alert className="mt-4">
               <Info className="h-4 w-4" />
               <AlertDescription>
@@ -328,6 +396,38 @@ export default function NotificationSettingsPage() {
               />
             </div>
           </div>
+          {settings.notificationSound && (
+            <div className="space-y-2 pl-6">
+              <Label className="text-sm font-medium">Sound Type</Label>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <Select
+                  value={settings.soundType}
+                  onValueChange={(value) => setSettings(prev => ({ ...prev, soundType: value }))}
+                >
+                  <SelectTrigger className="sm:w-64">
+                    <SelectValue placeholder="Select sound" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SOUND_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestSound}
+                  disabled={isTestingSound || settings.soundType === 'silent'}
+                >
+                  <Volume2 className="w-4 h-4 mr-2" />
+                  {isTestingSound ? 'Playing...' : 'Test Sound'}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Urgent Only */}
           <div className="flex items-center justify-between">
@@ -343,6 +443,21 @@ export default function NotificationSettingsPage() {
                 setSettings(prev => ({ ...prev, urgentOnly: checked }))
               }
             />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-base font-medium">Notification Style</Label>
+            <Select
+              value={settings.displayStyle}
+              onValueChange={(value: 'standard' | 'compact') => setSettings(prev => ({ ...prev, displayStyle: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select style" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="standard">Standard (full card)</SelectItem>
+                <SelectItem value="compact">Compact (reduced)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>

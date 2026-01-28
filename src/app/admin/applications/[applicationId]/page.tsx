@@ -1018,6 +1018,15 @@ function ApplicationDetailPageContent() {
   const [authorizationUploading, setAuthorizationUploading] = useState(false);
   const [authorizationUploadProgress, setAuthorizationUploadProgress] = useState(0);
   const [authorizationSearch, setAuthorizationSearch] = useState('');
+  const [ispUpload, setIspUpload] = useState<{
+    planDate: string;
+    file: File | null;
+  }>({
+    planDate: '',
+    file: null
+  });
+  const [ispUploading, setIspUploading] = useState(false);
+  const [ispUploadProgress, setIspUploadProgress] = useState(0);
   const [memberNotifications, setMemberNotifications] = useState<Array<{
     id: string;
     title: string;
@@ -1111,6 +1120,17 @@ function ApplicationDetailPageContent() {
       uploadedAt?: any;
       createdByName?: string;
       expiryNotifiedAt?: string;
+    }>;
+  }, [application]);
+
+  const ispRecords = useMemo(() => {
+    return ((application as any)?.ispRecords || []) as Array<{
+      id?: string;
+      planDate?: string;
+      fileName?: string;
+      downloadURL?: string;
+      uploadedAt?: any;
+      createdByName?: string;
     }>;
   }, [application]);
 
@@ -1507,6 +1527,87 @@ function ApplicationDetailPageContent() {
       });
     } finally {
       setAuthorizationUploading(false);
+    }
+  };
+
+  const handleIspUpload = async () => {
+    if (!application || !docRef || !storage || !firestore) return;
+
+    if (!ispUpload.planDate) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing Date',
+        description: 'Enter the ISP date.'
+      });
+      return;
+    }
+
+    if (!ispUpload.file) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing File',
+        description: 'Upload the ISP document.'
+      });
+      return;
+    }
+
+    try {
+      setIspUploading(true);
+      setIspUploadProgress(0);
+
+      const file = ispUpload.file;
+      const safeDate = ispUpload.planDate.replace(/[^0-9-]/g, '');
+      const filePath = `isps/${appUserId}/${applicationId}/${safeDate}-${Date.now()}-${file.name}`;
+      const fileRef = ref(storage, filePath);
+      const uploadTask = uploadBytesResumable(fileRef, file);
+
+      const downloadURL = await new Promise<string>((resolve, reject) => {
+        uploadTask.on(
+          'state_changed',
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            setIspUploadProgress(progress);
+          },
+          (error) => reject(error),
+          async () => {
+            const url = await getDownloadURL(uploadTask.snapshot.ref);
+            resolve(url);
+          }
+        );
+      });
+
+      const existingRecords = ((application as any)?.ispRecords || []) as Array<any>;
+      const newRecord = {
+        id: `isp-${Date.now()}`,
+        planDate: ispUpload.planDate,
+        fileName: file.name,
+        downloadURL,
+        uploadedAt: serverTimestamp(),
+        createdBy: user?.uid || 'system',
+        createdByName: user?.displayName || user?.email || 'Admin'
+      };
+
+      await setDoc(docRef, { ispRecords: [...existingRecords, newRecord] }, { merge: true });
+
+      toast({
+        title: 'ISP Uploaded',
+        description: 'Individual Service Plan saved.'
+      });
+
+      setIspUpload({
+        planDate: '',
+        file: null
+      });
+      setIspUploadProgress(0);
+    } catch (uploadError) {
+      console.error('ISP upload failed:', uploadError);
+      toast({
+        variant: 'destructive',
+        title: 'Upload Failed',
+        description: 'Could not upload the ISP.'
+      });
+    } finally {
+      setIspUploading(false);
     }
   };
 
@@ -2599,10 +2700,29 @@ function ApplicationDetailPageContent() {
 
       <aside className="lg:col-span-1 space-y-6">
         <AdminActions application={application} />
-        <NoteTracker 
-          memberId={(application as any)?.client_ID2 || application.id}
-          memberName={`${application.memberFirstName} ${application.memberLastName}`}
-        />
+        {(application as any)?.client_ID2 ? (
+          <NoteTracker 
+            memberId={(application as any)?.client_ID2}
+            memberName={`${application.memberFirstName} ${application.memberLastName}`}
+          />
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5" />
+                Notes & Communication
+              </CardTitle>
+              <CardDescription>
+                Notes load once a Caspio Client_ID2 is linked to this application.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                This member is not yet linked to a Caspio record, so notes cannot be fetched.
+              </p>
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -2864,6 +2984,84 @@ function ApplicationDetailPageContent() {
                     </div>
                   </div>
                 )})}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Individual Service Plans
+            </CardTitle>
+            <CardDescription>
+              Upload Individual Service Plans for backend record-keeping (not part of the pathway).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="isp-date">ISP Date</Label>
+              <Input
+                id="isp-date"
+                type="date"
+                value={ispUpload.planDate}
+                onChange={(event) =>
+                  setIspUpload((prev) => ({ ...prev, planDate: event.target.value }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="isp-file">ISP Document</Label>
+              <Input
+                id="isp-file"
+                type="file"
+                onChange={(event) =>
+                  setIspUpload((prev) => ({
+                    ...prev,
+                    file: event.target.files?.[0] || null
+                  }))
+                }
+              />
+            </div>
+            {ispUploading && (
+              <Progress value={ispUploadProgress} className="h-1 w-full" />
+            )}
+            <Button
+              onClick={handleIspUpload}
+              className="w-full"
+              disabled={ispUploading}
+            >
+              {ispUploading ? 'Uploading...' : 'Save ISP'}
+            </Button>
+
+            <Separator />
+
+            {ispRecords.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No ISP records uploaded yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {ispRecords.map((record) => (
+                  <div key={record.id || `${record.planDate}-${record.fileName}`} className="rounded-md border p-3 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-medium">
+                        ISP {formatAuthorizationDate(record.planDate)}
+                      </div>
+                      {record.downloadURL && (
+                        <Button asChild variant="ghost" size="sm">
+                          <a href={record.downloadURL} target="_blank" rel="noopener noreferrer">
+                            <Download className="mr-2 h-4 w-4" />
+                            View
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                    <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                      {record.fileName && <div>File: {record.fileName}</div>}
+                      {record.createdByName && <div>Uploaded by: {record.createdByName}</div>}
+                      <div>Uploaded: {formatAuthorizationDate(record.uploadedAt)}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>

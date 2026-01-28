@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 
 const communicationTools = [
   {
@@ -26,7 +26,7 @@ const communicationTools = [
   }
 ];
 
-export default function CommunicationNotesPage() {
+function CommunicationNotesContent() {
   const { isSuperAdmin, isLoading } = useAdmin();
   const router = useRouter();
 
@@ -82,5 +82,19 @@ export default function CommunicationNotesPage() {
         })}
       </div>
     </div>
+  );
+}
+
+export default function CommunicationNotesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      }
+    >
+      <CommunicationNotesContent />
+    </Suspense>
   );
 }

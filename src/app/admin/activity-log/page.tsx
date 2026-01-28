@@ -31,12 +31,15 @@ import {
 import { useFirestore } from '@/firebase';
 import { collection, getDocs, collectionGroup, doc, updateDoc } from 'firebase/firestore';
 import { format, isToday, isYesterday, isThisWeek, isThisMonth, parseISO } from 'date-fns';
+import Link from 'next/link';
 
 interface ActivityLogEntry {
   id: string;
   date: Date;
   memberName: string;
   memberId: string;
+  applicationId?: string;
+  appUserId?: string;
   activityType: 'form_completed' | 'form_uploaded' | 'status_change' | 'note_added' | 'assignment_change' | 'email_sent' | 'call_made' | 'other';
   description: string;
   staffMember: string;
@@ -89,13 +92,23 @@ const getPlanBadgeClass = (plan?: string) => {
   return 'bg-gray-100 text-gray-800 border-gray-200';
 };
 
+  const getPlanFilterLink = (plan?: string, reviewType?: ActivityLogEntry['needsReviewType']) => {
+    if (!reviewType) return null;
+    const normalized = String(plan || '').toLowerCase();
+    const planKey = normalized.includes('health net') ? 'health-net' : normalized.includes('kaiser') ? 'kaiser' : null;
+    if (!planKey) return null;
+    const reviewKey = reviewType === 'cs_summary' ? 'cs' : reviewType === 'document' ? 'docs' : null;
+    if (!reviewKey) return null;
+    return `/admin/applications?plan=${planKey}&review=${reviewKey}`;
+  };
+
 export default function ActivityLogPage() {
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const { toast } = useToast();
   const firestore = useFirestore();
   
   const [activities, setActivities] = useState<ActivityLogEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [filters, setFilters] = useState({
     member: '',
     staff: 'all',
@@ -128,6 +141,7 @@ export default function ActivityLogPage() {
       userAppsSnapshot.docs.forEach(doc => {
         const appData = doc.data();
         const memberName = `${appData.memberFirstName || ''} ${appData.memberLastName || ''}`.trim();
+        const appUserId = appData.userId || doc.ref.path.split('/')[1];
         
         if (appData.forms && Array.isArray(appData.forms)) {
           appData.forms.forEach((form: any, formIndex: number) => {
@@ -140,6 +154,8 @@ export default function ActivityLogPage() {
                 date: form.dateCompleted.toDate ? form.dateCompleted.toDate() : new Date(form.dateCompleted),
                 memberName,
                 memberId: appData.client_ID2 || doc.id,
+                applicationId: doc.id,
+                appUserId,
                 activityType: form.type === 'Upload' ? 'form_uploaded' : 'form_completed',
                 description: `${form.type === 'Upload' ? 'Uploaded' : 'Completed'} ${form.name}`,
                 staffMember: form.completedBy || appData.referrerName || 'System',
@@ -165,6 +181,8 @@ export default function ActivityLogPage() {
             date: appData.lastUpdated.toDate ? appData.lastUpdated.toDate() : new Date(appData.lastUpdated),
             memberName,
             memberId: appData.client_ID2 || doc.id,
+            applicationId: doc.id,
+            appUserId,
             activityType: 'status_change',
             description: `Application status: ${appData.status}`,
             staffMember: appData.referrerName || 'System',
@@ -195,6 +213,7 @@ export default function ActivityLogPage() {
                 date: form.dateCompleted.toDate ? form.dateCompleted.toDate() : new Date(form.dateCompleted),
                 memberName,
                 memberId: appData.client_ID2 || doc.id,
+                applicationId: doc.id,
                 activityType: form.type === 'Upload' ? 'form_uploaded' : 'form_completed',
                 description: `${form.type === 'Upload' ? 'Uploaded' : 'Completed'} ${form.name}`,
                 staffMember: form.completedBy || 'Admin',
@@ -210,6 +229,26 @@ export default function ActivityLogPage() {
                 healthPlan: appData.healthPlan
               });
             }
+          });
+        }
+
+        if (appData.lastUpdated) {
+          allActivities.push({
+            id: `admin-${doc.id}-status-${appData.lastUpdated?.seconds || Date.now()}`,
+            date: appData.lastUpdated.toDate ? appData.lastUpdated.toDate() : new Date(appData.lastUpdated),
+            memberName,
+            memberId: appData.client_ID2 || doc.id,
+            applicationId: doc.id,
+            activityType: 'status_change',
+            description: `Application status: ${appData.status}`,
+            staffMember: appData.referrerName || 'System',
+            userName: appData.referrerName || '',
+            notes: `Pathway: ${appData.pathway}, Health Plan: ${appData.healthPlan}`,
+            oldValue: '',
+            newValue: appData.status,
+            source: 'application',
+            priority: appData.status === 'Requires Revision' ? 'high' : 'low',
+            healthPlan: appData.healthPlan
           });
         }
       });
@@ -237,6 +276,33 @@ export default function ActivityLogPage() {
         });
       } catch (error) {
         console.log('Could not fetch notifications:', error);
+      }
+
+      // 3. Fetch staff notifications (notes)
+      try {
+        const staffNotificationsSnapshot = await getDocs(collection(firestore, 'staff_notifications'));
+        staffNotificationsSnapshot.docs.forEach(doc => {
+          const noteData = doc.data() as any;
+          if (!noteData?.timestamp) return;
+          allActivities.push({
+            id: `staff-note-${doc.id}`,
+            date: noteData.timestamp?.toDate ? noteData.timestamp.toDate() : new Date(noteData.timestamp),
+            memberName: noteData.memberName || 'General Note',
+            memberId: noteData.clientId2 || noteData.memberId || '',
+            applicationId: noteData.applicationId,
+            appUserId: noteData.userId || undefined,
+            activityType: 'note_added',
+            description: noteData.title || 'Note added',
+            staffMember: noteData.senderName || noteData.createdByName || 'System',
+            userName: noteData.senderName || noteData.createdByName || '',
+            notes: noteData.message || '',
+            source: 'notes',
+            priority: String(noteData.priority || '').toLowerCase().includes('high') ? 'high' : 'low',
+            healthPlan: noteData.healthPlan || ''
+          });
+        });
+      } catch (error) {
+        console.log('Could not fetch staff notifications:', error);
       }
 
       // Sort by date (most recent first)
@@ -269,9 +335,7 @@ export default function ActivityLogPage() {
     }
   };
 
-  useEffect(() => {
-    fetchActivityData();
-  }, [firestore, isAdmin]);
+  // Manual refresh only - no auto-load
 
   // Filter activities based on current filters
   const filteredActivities = useMemo(() => {
@@ -551,7 +615,20 @@ export default function ActivityLogPage() {
                       </TableCell>
                       <TableCell className="font-medium text-sm">
                         <div>
-                          <div className="font-medium">{activity.memberName}</div>
+                          {activity.applicationId ? (
+                            <Link
+                              href={
+                                activity.appUserId
+                                  ? `/admin/applications/${activity.applicationId}?userId=${activity.appUserId}`
+                                  : `/admin/applications/${activity.applicationId}`
+                              }
+                              className="font-medium text-blue-700 hover:underline"
+                            >
+                              {activity.memberName}
+                            </Link>
+                          ) : (
+                            <div className="font-medium">{activity.memberName}</div>
+                          )}
                           {activity.memberId && (
                             <div className="text-xs text-gray-500">ID: {activity.memberId}</div>
                           )}
@@ -563,20 +640,18 @@ export default function ActivityLogPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {activity.needsReviewType === 'cs_summary' ? (
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] px-1.5 py-0.5 ${getPlanBadgeClass(activity.healthPlan)}`}
+                        {activity.needsReviewType ? (
+                          <Link
+                            href={getPlanFilterLink(activity.healthPlan, activity.needsReviewType) || '#'}
+                            className="inline-flex items-center"
                           >
-                            {getPlanBadgeLabel(activity.healthPlan)}(CS)
-                          </Badge>
-                        ) : activity.needsReviewType === 'document' ? (
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] px-1.5 py-0.5 ${getPlanBadgeClass(activity.healthPlan)}`}
-                          >
-                            {getPlanBadgeLabel(activity.healthPlan)}(D)
-                          </Badge>
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] px-1.5 py-0.5 ${getPlanBadgeClass(activity.healthPlan)}`}
+                            >
+                              {getPlanBadgeLabel(activity.healthPlan)}({activity.needsReviewType === 'cs_summary' ? 'CS' : 'D'})
+                            </Badge>
+                          </Link>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}

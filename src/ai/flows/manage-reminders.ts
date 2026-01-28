@@ -16,6 +16,7 @@ interface SendRemindersOutput {
     success: boolean;
     sentCount: number;
     message: string;
+    sentApplicationIds?: string[];
 }
 
 /**
@@ -24,6 +25,7 @@ interface SendRemindersOutput {
  */
 export async function sendReminderEmails(applications: Application[]): Promise<SendRemindersOutput> {
     let sentCount = 0;
+    const sentApplicationIds: string[] = [];
     try {
         const firestore = admin.firestore();
 
@@ -72,13 +74,16 @@ export async function sendReminderEmails(applications: Application[]): Promise<S
                     incompleteItems,
                 });
                 sentCount++;
+                if (app.id) {
+                    sentApplicationIds.push(app.id);
+                }
             }
         }
         
-        return { success: true, sentCount, message: `Sent ${sentCount} reminder emails.` };
+        return { success: true, sentCount, sentApplicationIds, message: `Sent ${sentCount} reminder emails.` };
 
     } catch (error: any) {
         console.error('[sendReminderEmails] Error:', error);
-        return { success: false, sentCount: 0, message: `Failed to send reminders: ${error.message}` };
+        return { success: false, sentCount: 0, sentApplicationIds, message: `Failed to send reminders: ${error.message}` };
     }
 }

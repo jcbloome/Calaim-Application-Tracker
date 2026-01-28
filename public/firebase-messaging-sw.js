@@ -17,8 +17,10 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 // Handle background messages when app is not in focus
-messaging.onBackgroundMessage((payload) => {
+messaging.onBackgroundMessage(async (payload) => {
   console.log('📱 Received background message:', payload);
+  // Disable native OS notifications to keep a single in-app notification system.
+  return;
 
   const notificationTitle = payload.notification?.title || 'Connections Note';
   const fallbackBody = payload.data?.message || 'You have a new note assignment';
@@ -60,31 +62,7 @@ self.addEventListener('notificationclick', (event) => {
   
   event.notification.close();
 
-  if (event.action === 'view') {
-    // Open the app and navigate to the specific note
-    const urlToOpen = event.notification.data.url || '/admin/client-notes';
-    
-    event.waitUntil(
-      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-        // Check if app is already open
-        for (const client of clientList) {
-          if (client.url.includes('admin') && 'focus' in client) {
-            client.focus();
-            client.postMessage({
-              type: 'NOTIFICATION_CLICKED',
-              data: event.notification.data
-            });
-            return;
-          }
-        }
-        
-        // If app is not open, open it
-        if (clients.openWindow) {
-          return clients.openWindow(urlToOpen);
-        }
-      })
-    );
-  } else if (event.action === 'dismiss') {
+  if (event.action === 'dismiss') {
     // Mark notification as read via API call
     if (event.notification.data.notificationId) {
       fetch('/api/notifications/mark-read', {
@@ -97,7 +75,30 @@ self.addEventListener('notificationclick', (event) => {
         }),
       }).catch(err => console.error('Failed to mark notification as read:', err));
     }
+    return;
   }
+
+  // Default behavior: open or focus the app and navigate to the note
+  const urlToOpen = event.notification.data.url || '/admin/my-notes';
+  const absoluteUrl = new URL(urlToOpen, self.location.origin).href;
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          if ('navigate' in client) {
+            return client.navigate(absoluteUrl).then(() => client.focus());
+          }
+          client.focus();
+          return;
+        }
+      }
+      
+      if (clients.openWindow) {
+        return clients.openWindow(absoluteUrl);
+      }
+    })
+  );
 });
 
 // Handle push subscription changes
