@@ -28,8 +28,9 @@ export default function RootLayout({
       <head>
         <meta name="theme-color" content="#000000" />
         <link rel="icon" href="/favicon.ico" />
-        <link rel="icon" href="/littlelogo.png" type="image/png" sizes="any" />
-        <link rel="apple-touch-icon" href="/littlelogo.png" />
+        <link rel="icon" href="/user-android-chrome-192x192.png" type="image/png" sizes="192x192" />
+        <link rel="icon" href="/user-android-chrome-512x512.png" type="image/png" sizes="512x512" />
+        <link rel="apple-touch-icon" href="/user-apple-touch-icon.png" />
       </head>
       <body className="min-h-screen bg-background font-sans antialiased">
         <FirebaseClientProvider>
