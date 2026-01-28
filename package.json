@@ -7,6 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "desktop:dev": "npm --prefix desktop run dev",
+    "desktop:build": "npm --prefix desktop run build",
+    "desktop:start": "npm --prefix desktop run start",
+    "desktop:dist:win": "npm --prefix desktop run dist:win",
     "fix-git": "git config --local --unset-all credential.helper"
   },
   "dependencies": {

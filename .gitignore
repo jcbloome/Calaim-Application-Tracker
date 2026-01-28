@@ -5,6 +5,9 @@
 /.pnp
 .pnp.js
 .yarn/install-state.gz
+desktop/node_modules
+desktop/dist
+desktop/release
 
 # testing
 /coverage

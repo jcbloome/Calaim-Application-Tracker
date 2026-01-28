@@ -1,0 +1,46 @@
+{
+  "name": "calaim-desktop",
+  "version": "0.1.1",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "electron dist/main.js",
+    "dev": "npm run build && electron dist/main.js",
+    "pack": "npm run build && electron-builder --dir",
+    "dist:win": "npm run build && electron-builder --win"
+  },
+  "build": {
+    "appId": "com.connectionsilos.calaimdesktop",
+    "productName": "Connect CalAIM Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "assets/**",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/tray.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Connect CalAIM Desktop"
+    }
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "electron": "^32.0.1",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5"
+  }
+}
