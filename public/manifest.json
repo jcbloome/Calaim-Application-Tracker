@@ -2,7 +2,7 @@
   "name": "CalAIM Application Tracker",
   "short_name": "CalAIM Tracker",
   "description": "CalAIM member management and notification system",
-  "start_url": "/admin/morning-dashboard",
+  "start_url": "/login",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#2563eb",

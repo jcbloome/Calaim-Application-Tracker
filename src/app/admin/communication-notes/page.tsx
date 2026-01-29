@@ -18,6 +18,13 @@ const communicationTools = [
     color: 'text-blue-600'
   },
   {
+    title: 'Add Client Note',
+    description: 'Create a new client note for an existing Client_ID2 in Caspio',
+    icon: MessageSquareText,
+    href: '/admin/client-notes?compose=1',
+    color: 'text-green-600'
+  },
+  {
     title: 'Complete Note Log',
     description: 'Unified audit trail of ALL notes: client notes, staff notes, system notifications, and CalAIM member notes',
     icon: FileText,

@@ -72,6 +72,7 @@ interface MemberNote {
   isLegacy?: boolean; // Tag for notes imported from Caspio
   syncedAt?: string; // When this note was synced from Caspio
   isILSNote?: boolean; // Tag for ILS-specific notes
+  deleted?: boolean;
 }
 
 function getCaspioConfig() {
@@ -255,7 +256,7 @@ async function getNotesFromFirestore(clientId2: string): Promise<MemberNote[]> {
         followUpDate: data.followUpDate?.toDate?.()?.toISOString() || data.followUpDate,
         syncedAt: data.syncedAt?.toDate?.()?.toISOString() || data.syncedAt
       } as MemberNote;
-    });
+    }).filter(note => !note.deleted);
 
     console.log(`✅ Retrieved ${notes.length} notes from Firestore for Client_ID2: ${clientId2}`);
     
@@ -266,6 +267,21 @@ async function getNotesFromFirestore(clientId2: string): Promise<MemberNote[]> {
   } catch (error) {
     console.error('❌ Error fetching notes from Firestore, falling back to cache:', error);
     return memberNotesCache[clientId2] || [];
+  }
+}
+
+async function getDeletedMemberNoteIds(clientId2: string): Promise<Set<string>> {
+  if (!adminDb) return new Set();
+  try {
+    const snapshot = await adminDb
+      .collection(MEMBER_NOTES_COLLECTION)
+      .where('clientId2', '==', clientId2)
+      .where('deleted', '==', true)
+      .get();
+    return new Set(snapshot.docs.map((docSnap: any) => docSnap.id));
+  } catch (error) {
+    console.warn('Failed to load deleted member note ids:', error);
+    return new Set();
   }
 }
 
@@ -811,6 +827,8 @@ async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
     const syncTime = new Date().toISOString();
     let importedCount = 0;
 
+    const deletedIds = await getDeletedMemberNoteIds(clientId2);
+
     // Transform regular Caspio notes with validation
     const transformedRegularNotes: MemberNote[] = caspioNotes.map(caspioNote => 
       validateAndCleanNote({
@@ -841,7 +859,8 @@ async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
     );
 
     // Combine all notes and sort by timestamp
-    const allTransformedNotes = [...transformedRegularNotes, ...transformedILSNotes];
+    const allTransformedNotes = [...transformedRegularNotes, ...transformedILSNotes]
+      .filter((note) => !deletedIds.has(note.id));
     allTransformedNotes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     // Store in cache and Firestore
@@ -928,6 +947,8 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
     const syncTime = new Date().toISOString();
     let importedCount = 0;
 
+    const deletedIds = await getDeletedMemberNoteIds(clientId2);
+
     // Transform new regular notes
     const newTransformedRegularNotes: MemberNote[] = newCaspioNotes.map(caspioNote => ({
       id: `caspio_${caspioNote.PK_ID}`,
@@ -975,7 +996,8 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
     }));
 
     // Combine new notes
-    const allNewNotes = [...newTransformedRegularNotes, ...newTransformedILSNotes];
+    const allNewNotes = [...newTransformedRegularNotes, ...newTransformedILSNotes]
+      .filter((note) => !deletedIds.has(note.id));
     
     // Add new notes to existing cache and sort
     const existingNotes = memberNotesCache[clientId2] || [];
@@ -1146,10 +1168,48 @@ function getStaffDisplayName(staffId: string): string {
   return staffNameMap[staffId] || staffId;
 }
 
+async function logSystemNoteAction(payload: {
+  action: string;
+  noteId?: string;
+  memberName?: string;
+  clientId2?: string;
+  status?: string;
+  source?: string;
+  actorName?: string;
+  actorEmail?: string;
+}) {
+  if (!adminDb) return;
+  try {
+    const noteRef = adminDb.collection('systemNotes').doc();
+    await noteRef.set({
+      id: noteRef.id,
+      senderName: payload.actorName || 'System',
+      senderEmail: payload.actorEmail || '',
+      recipientName: 'System Log',
+      recipientEmail: '',
+      memberName: payload.memberName || '',
+      applicationId: payload.clientId2 || '',
+      noteContent: [
+        payload.action,
+        payload.noteId ? `Note ID: ${payload.noteId}` : null,
+        payload.memberName ? `Member: ${payload.memberName}` : null,
+        payload.status ? `Status: ${payload.status}` : null,
+        payload.source ? `Source: ${payload.source}` : null
+      ].filter(Boolean).join(' • '),
+      noteType: 'system',
+      priority: 'low',
+      timestamp: FieldValue ? FieldValue.serverTimestamp() : new Date(),
+      wasNotificationSent: false
+    });
+  } catch (error) {
+    console.warn('Failed to log system note action:', error);
+  }
+}
+
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, clientId2, ...updates } = body;
+    const { id, clientId2, actorName, actorEmail, ...updates } = body;
 
     if (!id || !clientId2) {
       return NextResponse.json(
@@ -1203,6 +1263,19 @@ export async function PUT(request: NextRequest) {
       await syncNoteToCaspio(memberNotes[noteIndex]);
     }
 
+    if (updates.status) {
+      await logSystemNoteAction({
+        action: `Member note status updated`,
+        noteId: id,
+        memberName: memberNotes[noteIndex].memberName,
+        clientId2,
+        status: updates.status,
+        source: memberNotes[noteIndex].source,
+        actorName,
+        actorEmail
+      });
+    }
+
     return NextResponse.json({
       success: true,
       note: memberNotes[noteIndex],
@@ -1213,6 +1286,83 @@ export async function PUT(request: NextRequest) {
     console.error('Error updating member note:', error);
     return NextResponse.json(
       { success: false, error: error.message || 'Failed to update note' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id, clientId2, actorName, actorEmail } = body || {};
+
+    if (!id || !clientId2) {
+      return NextResponse.json(
+        { success: false, error: 'Note ID and Client ID are required' },
+        { status: 400 }
+      );
+    }
+
+    const memberNotes = memberNotesCache[clientId2] || [];
+    const noteIndex = memberNotes.findIndex(note => note.id === id);
+    if (noteIndex === -1) {
+      return NextResponse.json(
+        { success: false, error: 'Note not found' },
+        { status: 404 }
+      );
+    }
+
+    const deletedNote = memberNotes[noteIndex];
+    memberNotes.splice(noteIndex, 1);
+    memberNotesCache[clientId2] = memberNotes;
+
+    if (adminDb) {
+      await adminDb.collection(MEMBER_NOTES_COLLECTION).doc(id).set({
+        deleted: true,
+        deletedAt: FieldValue ? FieldValue.serverTimestamp() : new Date(),
+        deletedBy: actorEmail || actorName || 'System'
+      }, { merge: true });
+    }
+
+    if (adminDb) {
+      try {
+        const notificationsSnapshot = await adminDb
+          .collection('staff_notifications')
+          .where('noteId', '==', id)
+          .get();
+        const batch = adminDb.batch();
+        notificationsSnapshot.docs.forEach((docSnap: any) => {
+          batch.update(docSnap.ref, {
+            status: 'Closed',
+            isRead: true,
+            resolvedAt: FieldValue ? FieldValue.serverTimestamp() : new Date()
+          });
+        });
+        await batch.commit();
+      } catch (error) {
+        console.warn('Failed to update staff notifications for deleted note:', error);
+      }
+    }
+
+    await logSystemNoteAction({
+      action: 'Member note deleted',
+      noteId: id,
+      memberName: deletedNote.memberName,
+      clientId2,
+      status: deletedNote.status || 'Open',
+      source: deletedNote.source,
+      actorName,
+      actorEmail
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Note deleted successfully'
+    });
+  } catch (error: any) {
+    console.error('Error deleting member note:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to delete note' },
       { status: 500 }
     );
   }

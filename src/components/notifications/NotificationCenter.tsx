@@ -141,12 +141,7 @@ export function NotificationCenter({
           </CardHeader>
           
           <CardContent className="p-0">
-            {filteredNotifications.length === 0 ? (
-              <div className="p-6 text-center text-muted-foreground">
-                <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>No notifications</p>
-              </div>
-            ) : (
+            {filteredNotifications.length === 0 ? null : (
               <ScrollArea className="h-96">
                 <div className="space-y-1">
                   {filteredNotifications.map((notification, index) => (

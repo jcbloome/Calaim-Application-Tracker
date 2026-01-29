@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Bell, Target, CalendarDays, ListTodo, MessageSquare, FileText, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format, isToday, isTomorrow, isYesterday, addDays, startOfDay, endOfDay } from 'date-fns';
@@ -78,6 +79,8 @@ export default function MyTasksPage() {
   const [selectedTab, setSelectedTab] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [desktopActive, setDesktopActive] = useState(false);
+  const [suppressWebWhenDesktopActive, setSuppressWebWhenDesktopActive] = useState(false);
   
   // Member card modal state
   const [selectedMember, setSelectedMember] = useState<MemberCardData | null>(null);
@@ -97,6 +100,73 @@ export default function MyTasksPage() {
       fetchMyTasks();
     }
   }, [user?.uid]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const readSettings = () => {
+      try {
+        const raw = localStorage.getItem('notificationSettings');
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as any;
+        const nextValue = parsed?.userControls?.suppressWebWhenDesktopActive;
+        setSuppressWebWhenDesktopActive(nextValue === undefined ? true : Boolean(nextValue));
+      } catch {
+        setSuppressWebWhenDesktopActive(true);
+      }
+    };
+    readSettings();
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'notificationSettings') {
+        readSettings();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!window.desktopNotifications) {
+      setDesktopActive(false);
+      return;
+    }
+    setDesktopActive(true);
+    let unsubscribe: (() => void) | undefined;
+    window.desktopNotifications.getState()
+      .then(() => setDesktopActive(true))
+      .catch(() => setDesktopActive(true));
+    unsubscribe = window.desktopNotifications.onChange(() => {
+      setDesktopActive(true);
+    });
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!desktopActive) return;
+    if (suppressWebWhenDesktopActive) return;
+    updateSuppressSetting(true);
+  }, [desktopActive, suppressWebWhenDesktopActive]);
+
+  const updateSuppressSetting = (nextValue: boolean) => {
+    setSuppressWebWhenDesktopActive(nextValue);
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem('notificationSettings');
+      const parsed = raw ? JSON.parse(raw) as any : {};
+      const updated = {
+        ...parsed,
+        userControls: {
+          ...(parsed?.userControls || {}),
+          suppressWebWhenDesktopActive: nextValue
+        }
+      };
+      localStorage.setItem('notificationSettings', JSON.stringify(updated));
+    } catch (error) {
+      console.warn('Failed to update notification settings:', error);
+    }
+  };
 
   const fetchMyTasks = async () => {
     if (!user?.uid) return;
@@ -157,6 +227,7 @@ export default function MyTasksPage() {
         const tomorrow = addDays(new Date(), 1);
         if (taskDate <= tomorrow) return false;
       }
+      if (selectedTab === 'followup' && task.taskType !== 'follow_up') return false;
       if (selectedTab === 'completed' && task.status !== 'completed') return false;
 
       // Priority filter
@@ -176,7 +247,8 @@ export default function MyTasksPage() {
       overdue: tasks.filter(t => t.status === 'overdue').length,
       today: tasks.filter(t => isToday(new Date(t.dueDate)) && t.status !== 'completed').length,
       upcoming: tasks.filter(t => new Date(t.dueDate) > addDays(now, 1) && t.status !== 'completed').length,
-      completed: tasks.filter(t => t.status === 'completed').length
+      completed: tasks.filter(t => t.status === 'completed').length,
+      followup: tasks.filter(t => t.taskType === 'follow_up' && t.status !== 'completed').length
     };
   }, [tasks]);
 
@@ -431,6 +503,26 @@ export default function MyTasksPage() {
         </Button>
       </div>
 
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Desktop App Active</CardTitle>
+          <CardDescription>
+            {desktopActive
+              ? 'Suppress in-app task alerts to avoid duplicate notifications while the desktop tray is running.'
+              : 'Desktop tray not detected. In-app alerts will display normally.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            {desktopActive ? 'Hide in-app alerts when desktop is active' : 'Desktop app not detected (suppression still available)'}
+          </div>
+          <Switch
+            checked={suppressWebWhenDesktopActive}
+            onCheckedChange={updateSuppressSetting}
+          />
+        </CardContent>
+      </Card>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
@@ -532,11 +624,12 @@ export default function MyTasksPage() {
 
       {/* Tasks Tabs */}
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="all">All ({taskCounts.all})</TabsTrigger>
           <TabsTrigger value="overdue">Overdue ({taskCounts.overdue})</TabsTrigger>
           <TabsTrigger value="today">Today ({taskCounts.today})</TabsTrigger>
           <TabsTrigger value="upcoming">Upcoming ({taskCounts.upcoming})</TabsTrigger>
+          <TabsTrigger value="followup">Follow-ups ({taskCounts.followup})</TabsTrigger>
           <TabsTrigger value="completed">Completed ({taskCounts.completed})</TabsTrigger>
         </TabsList>
 
@@ -548,6 +641,7 @@ export default function MyTasksPage() {
                 {selectedTab === 'overdue' && 'Overdue Tasks'}
                 {selectedTab === 'today' && 'Tasks Due Today'}
                 {selectedTab === 'upcoming' && 'Upcoming Tasks'}
+                {selectedTab === 'followup' && 'Follow-up Required'}
                 {selectedTab === 'completed' && 'Completed Tasks'}
               </CardTitle>
               <CardDescription>
@@ -569,6 +663,7 @@ export default function MyTasksPage() {
                      selectedTab === 'overdue' ? 'No overdue tasks.' :
                      selectedTab === 'today' ? 'No tasks due today.' :
                      selectedTab === 'upcoming' ? 'No upcoming tasks.' :
+                     selectedTab === 'followup' ? 'No follow-ups required right now.' :
                      'No completed tasks.'}
                   </p>
                 </div>

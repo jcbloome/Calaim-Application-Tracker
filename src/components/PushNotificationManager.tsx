@@ -11,11 +11,11 @@ interface PushNotificationManagerProps {
 
 const shouldSuppressBrowserNotifications = () => {
   if (typeof window === 'undefined') return false;
-  if (!window.desktopNotifications) return false;
   try {
     const raw = localStorage.getItem('notificationSettings');
     const parsed = raw ? JSON.parse(raw) as any : {};
-    const userSuppress = Boolean(parsed?.userControls?.suppressWebWhenDesktopActive);
+    const userSuppress = parsed?.userControls?.suppressWebWhenDesktopActive;
+    const webAppEnabled = parsed?.userControls?.webAppNotificationsEnabled;
     let globalForce = false;
     try {
       const rawGlobal = localStorage.getItem('notificationSettingsGlobal');
@@ -26,7 +26,10 @@ const shouldSuppressBrowserNotifications = () => {
     } catch {
       globalForce = false;
     }
-    return globalForce || userSuppress;
+    if (webAppEnabled === true) return globalForce;
+    if (webAppEnabled === false) return true;
+    const defaultSuppress = userSuppress === undefined;
+    return globalForce || userSuppress === true || defaultSuppress;
   } catch {
     return false;
   }

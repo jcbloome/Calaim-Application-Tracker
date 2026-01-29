@@ -80,6 +80,19 @@ export function PrintableProgramInfoForm({
         </p>
       </div>
 
+      {/* Importance of ISP Contact */}
+      <div className="col-span-full mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
+          Importance of the ISP Contact
+        </h2>
+        <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+          The Individual Service Plan (ISP) is a clinical assessment required to determine the member’s
+          level of care and to secure Managed Care Plan (MCP) authorization. Connections must know who
+          to contact to review clinical notes and coordinate the ISP (often a SNF social worker or care
+          coordinator—not the primary care doctor).
+        </p>
+      </div>
+
       {/* Types of Assisted Living */}
       <div className="col-span-full mb-8">
         <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">

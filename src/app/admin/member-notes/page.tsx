@@ -7,6 +7,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -35,6 +47,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { format } from 'date-fns';
 import { useSearchParams } from 'next/navigation';
+import { ToastAction } from '@/components/ui/toast';
 
 interface Member {
   clientId2: string;
@@ -78,6 +91,7 @@ function MemberNotesPageContent() {
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [memberNotes, setMemberNotes] = useState<MemberNote[]>([]);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isNotesLoading, setIsNotesLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -121,6 +135,9 @@ function MemberNotesPageContent() {
   // Health monitoring
   const [healthStatus, setHealthStatus] = useState<any>(null);
   const [showHealthDetails, setShowHealthDetails] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<MemberNote | null>(null);
+  const deleteTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const deletedNotesRef = useRef<Map<string, MemberNote>>(new Map());
 
   // Fetch members from Caspio API with search
   const fetchMembers = useCallback(async (search: string = '') => {
@@ -446,6 +463,16 @@ function MemberNotesPageContent() {
     return true;
   });
 
+  useEffect(() => {
+    if (filteredNotes.length === 0) {
+      setSelectedNoteId(null);
+      return;
+    }
+    if (!selectedNoteId || !filteredNotes.some((note) => note.id === selectedNoteId)) {
+      setSelectedNoteId(filteredNotes[0].id);
+    }
+  }, [filteredNotes, selectedNoteId]);
+
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'Urgent': return 'bg-red-100 text-red-800 border-red-200';
@@ -466,16 +493,19 @@ function MemberNotesPageContent() {
     }
   };
 
-  const handleResolveNote = async (note: MemberNote) => {
+  const handleToggleStatus = async (note: MemberNote) => {
     try {
+      const nextStatus = (note.status || 'Open') === 'Closed' ? 'Open' : 'Closed';
       const response = await fetch('/api/member-notes', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: note.id,
           clientId2: note.clientId2,
-          status: 'Closed',
-          resolvedAt: new Date().toISOString()
+          status: nextStatus,
+          resolvedAt: nextStatus === 'Closed' ? new Date().toISOString() : null,
+          actorName: user?.displayName || user?.email || 'Admin',
+          actorEmail: user?.email || ''
         })
       });
 
@@ -485,12 +515,12 @@ function MemberNotesPageContent() {
       }
 
       setMemberNotes(prev => prev.map(existing => (
-        existing.id === note.id ? { ...existing, status: 'Closed' } : existing
+        existing.id === note.id ? { ...existing, status: nextStatus } : existing
       )));
 
       toast({
-        title: 'Note Resolved',
-        description: 'This note has been marked as closed.'
+        title: `Note ${nextStatus === 'Closed' ? 'Closed' : 'Reopened'}`,
+        description: `This note has been marked as ${nextStatus.toLowerCase()}.`
       });
     } catch (error: any) {
       console.error('Error resolving note:', error);
@@ -500,6 +530,71 @@ function MemberNotesPageContent() {
         variant: 'destructive'
       });
     }
+  };
+
+  const commitDeleteNote = async (note: MemberNote) => {
+    try {
+      const response = await fetch('/api/member-notes', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: note.id,
+          clientId2: note.clientId2,
+          actorName: user?.displayName || user?.email || 'Admin',
+          actorEmail: user?.email || ''
+        })
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to delete note');
+      }
+      deletedNotesRef.current.delete(note.id);
+    } catch (error: any) {
+      console.error('Error deleting note:', error);
+      deletedNotesRef.current.delete(note.id);
+      setMemberNotes(prev => [note, ...prev]);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete note',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const requestDeleteNote = (note: MemberNote) => {
+    deletedNotesRef.current.set(note.id, note);
+    setMemberNotes(prev => prev.filter(existing => existing.id !== note.id));
+
+    const timer = setTimeout(() => {
+      deleteTimersRef.current.delete(note.id);
+      commitDeleteNote(note);
+    }, 5000);
+    deleteTimersRef.current.set(note.id, timer);
+
+    toast({
+      title: 'Note Deleted',
+      description: 'You can undo this action for a few seconds.',
+      action: (
+        <ToastAction
+          altText="Undo delete"
+          onClick={() => {
+            const existingTimer = deleteTimersRef.current.get(note.id);
+            if (existingTimer) {
+              clearTimeout(existingTimer);
+              deleteTimersRef.current.delete(note.id);
+            }
+            const cached = deletedNotesRef.current.get(note.id);
+            if (cached) {
+              deletedNotesRef.current.delete(note.id);
+              setMemberNotes(prev => [cached, ...prev]);
+            }
+          }}
+        >
+          Undo
+        </ToastAction>
+      )
+    });
   };
 
   return (
@@ -937,40 +1032,65 @@ function MemberNotesPageContent() {
                   </Select>
                 </div>
 
-                {/* Notes List */}
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {filteredNotes.map((note) => (
-                    <div key={note.id} className={`p-4 border rounded-lg ${!note.isRead ? 'border-blue-200 bg-blue-50' : ''}`}>
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex gap-2">
-                          <Badge variant="outline" className={getPriorityColor(note.priority)}>
-                            {note.priority}
-                          </Badge>
-                          <Badge variant="outline">
-                            {note.noteType}
-                          </Badge>
-                          <Badge variant="outline" className={getSourceColor(note.source)}>
-                            {note.source}
-                          </Badge>
-                          <Badge variant="outline">
-                            {note.status || 'Open'}
-                          </Badge>
-                          {!note.isRead && (
-                            <Badge className="bg-blue-600">
-                              <Bell className="h-3 w-3 mr-1" />
-                              New
+                <div className="flex flex-wrap items-center gap-2 px-4">
+                  <Button
+                    size="sm"
+                    variant={noteFilter.status === 'all' ? 'default' : 'outline'}
+                    onClick={() => setNoteFilter(prev => ({ ...prev, status: 'all' }))}
+                  >
+                    All
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={noteFilter.status === 'Open' ? 'default' : 'outline'}
+                    onClick={() => setNoteFilter(prev => ({ ...prev, status: 'Open' }))}
+                  >
+                    Open
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={noteFilter.status === 'Closed' ? 'default' : 'outline'}
+                    onClick={() => setNoteFilter(prev => ({ ...prev, status: 'Closed' }))}
+                  >
+                    Closed
+                  </Button>
+                </div>
+
+                {/* Notes List + Detail */}
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-4">
+                  <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                    {filteredNotes.map((note) => (
+                      <div
+                        key={note.id}
+                        onClick={() => setSelectedNoteId(note.id)}
+                        className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                          selectedNoteId === note.id ? 'border-primary bg-primary/5' : ''
+                        } ${!note.isRead ? 'border-blue-200 bg-blue-50' : ''}`}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex gap-2 flex-wrap">
+                            <Badge variant="outline" className={getPriorityColor(note.priority)}>
+                              {note.priority}
                             </Badge>
-                          )}
+                            <Badge variant="outline">{note.noteType}</Badge>
+                            <Badge variant="outline" className={getSourceColor(note.source)}>
+                              {note.source}
+                            </Badge>
+                            <Badge variant="outline">{note.status || 'Open'}</Badge>
+                            {!note.isRead && (
+                              <Badge className="bg-blue-600">
+                                <Bell className="h-3 w-3 mr-1" />
+                                New
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {format(new Date(note.createdAt), 'MMM d, yyyy h:mm a')}
+                          </div>
                         </div>
-                        <div className="text-sm text-muted-foreground">
-                          {format(new Date(note.createdAt), 'MMM d, yyyy h:mm a')}
-                        </div>
-                      </div>
-                      
-                      <p className="text-sm mb-3">{note.noteText}</p>
-                      
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <div>
+                        
+                        <p className="text-sm mb-2 line-clamp-2">{note.noteText}</p>
+                        <div className="text-xs text-muted-foreground">
                           <span className="font-medium">By:</span> {note.createdByName}
                           {note.assignedToName && (
                             <>
@@ -979,37 +1099,110 @@ function MemberNotesPageContent() {
                             </>
                           )}
                         </div>
-                        <div className="flex items-center gap-3">
-                          {note.followUpDate && (
-                            <div className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3" />
-                              Follow-up: {format(new Date(note.followUpDate), 'MMM d, yyyy')}
-                            </div>
-                          )}
-                          {(note.status || 'Open') !== 'Closed' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-6 text-xs"
-                              onClick={() => handleResolveNote(note)}
-                            >
-                              Mark Resolved
-                            </Button>
-                          )}
-                        </div>
                       </div>
-                    </div>
-                  ))}
-                  
-                  {filteredNotes.length === 0 && (
-                    <div className="text-center py-8">
-                      <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                      <h3 className="text-lg font-medium mb-2">No Notes Found</h3>
-                      <p className="text-muted-foreground">
-                        No notes match the current filters
-                      </p>
-                    </div>
-                  )}
+                    ))}
+                    
+                    {filteredNotes.length === 0 && (
+                      <div className="text-center py-8">
+                        <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-medium mb-2">No Notes Found</h3>
+                        <p className="text-muted-foreground">
+                          No notes match the current filters
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <Card className="sticky top-4">
+                      <CardHeader>
+                        <CardTitle>Note Details</CardTitle>
+                        <CardDescription>Selected note information</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {filteredNotes.length === 0 || !selectedNoteId ? (
+                          <div className="text-sm text-muted-foreground">Select a note to view details.</div>
+                        ) : (
+                          (() => {
+                            const note = filteredNotes.find((n) => n.id === selectedNoteId);
+                            if (!note) return <div className="text-sm text-muted-foreground">Select a note to view details.</div>;
+                            return (
+                              <div className="space-y-3 text-sm">
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="outline" className={getPriorityColor(note.priority)}>
+                                    {note.priority}
+                                  </Badge>
+                                  <Badge variant="outline">{note.noteType}</Badge>
+                                  <Badge variant="outline">{note.status || 'Open'}</Badge>
+                                  <Badge variant="outline" className={getSourceColor(note.source)}>
+                                    {note.source}
+                                  </Badge>
+                                </div>
+                                <div>
+                                  <p className="font-medium">Note</p>
+                                  <p className="text-muted-foreground whitespace-pre-wrap">{note.noteText}</p>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  <div>Created: {format(new Date(note.createdAt), 'MMM d, yyyy h:mm a')}</div>
+                                  <div>By: {note.createdByName}</div>
+                                  {note.assignedToName && <div>Assigned to: {note.assignedToName}</div>}
+                                  {note.followUpDate && (
+                                    <div>Follow-up: {format(new Date(note.followUpDate), 'MMM d, yyyy')}</div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-muted-foreground text-xs">
+                                    {(note.status || 'Open') === 'Closed' ? 'Closed' : 'Open'}
+                                  </span>
+                                  <Switch
+                                    checked={(note.status || 'Open') !== 'Closed'}
+                                    onCheckedChange={() => handleToggleStatus(note)}
+                                  />
+                                  <AlertDialog open={deleteTarget?.id === note.id} onOpenChange={(open) => {
+                                    if (!open) setDeleteTarget(null);
+                                  }}>
+                                    <AlertDialogTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 text-xs text-red-600 hover:text-red-700"
+                                        onClick={() => setDeleteTarget(note)}
+                                      >
+                                        <Trash2 className="h-3 w-3 mr-1" />
+                                        Delete
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>Delete this note?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          This removes the note from Caspio and Firestore. You will have a brief chance to undo.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction
+                                          onClick={() => {
+                                            if (deleteTarget) {
+                                              requestDeleteNote(deleteTarget);
+                                            }
+                                            setDeleteTarget(null);
+                                          }}
+                                          className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                        >
+                                          Delete
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                </div>
+                              </div>
+                            );
+                          })()
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
                 </div>
               </div>
             )}

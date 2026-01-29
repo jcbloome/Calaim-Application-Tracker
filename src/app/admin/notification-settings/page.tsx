@@ -381,9 +381,9 @@ export default function NotificationSettingsPage() {
           {/* Suppress Web When Desktop Active */}
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
-              <Label className="text-base font-medium">Suppress Web Alerts When Desktop Is Active</Label>
+              <Label className="text-base font-medium">Suppress In-App Alerts When Desktop Is Active</Label>
               <p className="text-sm text-muted-foreground">
-                Hide browser notifications while the desktop app is running
+                Prevent duplicate in-app alerts while the desktop app is running
               </p>
             </div>
             <Switch

@@ -26,6 +26,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import Image from 'next/image';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 
 async function trackLogin(firestore: any, user: User, role: 'Admin' | 'User') {
   if (!firestore || !user) return;
@@ -201,6 +202,9 @@ export default function AdminLoginClient() {
             className="w-64 h-auto object-contain mx-auto"
             priority
           />
+        </div>
+        <div className="mb-6">
+          <PWAInstallPrompt />
         </div>
         <Card className="shadow-2xl">
           <CardHeader className="items-center text-center p-6">

@@ -33,11 +33,12 @@ interface NotificationSystemProps {
 
 const shouldSuppressBrowserNotifications = () => {
   if (typeof window === 'undefined') return false;
-  if (!window.desktopNotifications) return false;
   try {
     const raw = localStorage.getItem('notificationSettings');
     const parsed = raw ? JSON.parse(raw) as any : {};
-    const userSuppress = Boolean(parsed?.userControls?.suppressWebWhenDesktopActive);
+    const userSuppress = parsed?.userControls?.suppressWebWhenDesktopActive;
+    const webAppEnabled = parsed?.userControls?.webAppNotificationsEnabled;
+    const webAppEnabled = parsed?.userControls?.webAppNotificationsEnabled;
     let globalForce = false;
     try {
       const rawGlobal = localStorage.getItem('notificationSettingsGlobal');
@@ -48,7 +49,10 @@ const shouldSuppressBrowserNotifications = () => {
     } catch {
       globalForce = false;
     }
-    return globalForce || userSuppress;
+    if (webAppEnabled === true) return globalForce;
+    if (webAppEnabled === false) return true;
+    const defaultSuppress = userSuppress === undefined;
+    return globalForce || userSuppress === true || defaultSuppress;
   } catch {
     return false;
   }
@@ -313,12 +317,7 @@ export default function NotificationSystem({ userId, className = '' }: Notificat
               <div className="p-4 text-center text-muted-foreground">
                 Loading notifications...
               </div>
-            ) : notifications.length === 0 ? (
-              <div className="p-4 text-center text-muted-foreground">
-                <Bell className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                <p>No notifications</p>
-              </div>
-            ) : (
+            ) : notifications.length === 0 ? null : (
               <div className="p-2">
                 {notifications.map((notification) => (
                   <Card

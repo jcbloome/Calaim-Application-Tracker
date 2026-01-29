@@ -36,16 +36,10 @@ export function PrintableField({
       case 'textarea':
         const textareaHeight = `${rows * 24}px`; // Approximate line height
         return (
-          <div 
+          <div
             className="w-full border border-gray-400 print:border-black bg-white p-2"
             style={{ minHeight: textareaHeight }}
-          >
-            {placeholder && (
-              <span className="text-xs text-gray-400 italic print:text-gray-600">
-                {placeholder}
-              </span>
-            )}
-          </div>
+          />
         );
 
       case 'checkbox':
@@ -74,33 +68,17 @@ export function PrintableField({
 
       case 'select':
         return (
-          <div className="w-full border border-gray-400 print:border-black bg-white p-2 h-10 flex items-center">
-            {placeholder && (
-              <span className="text-xs text-gray-400 italic print:text-gray-600">
-                {placeholder}
-              </span>
-            )}
-          </div>
+          <div className="w-full border border-gray-400 print:border-black bg-white p-2 h-10 flex items-center" />
         );
 
       case 'date':
         return (
-          <div className="w-full border border-gray-400 print:border-black bg-white p-2 h-10 flex items-center">
-            <span className="text-xs text-gray-400 italic print:text-gray-600">
-              MM/DD/YYYY
-            </span>
-          </div>
+          <div className="w-full border border-gray-400 print:border-black bg-white p-2 h-10 flex items-center" />
         );
 
       default:
         return (
-          <div className="w-full border-b-2 border-gray-400 print:border-black h-10 flex items-end pb-2">
-            {placeholder && (
-              <span className="text-xs text-gray-400 italic print:text-gray-600">
-                {placeholder}
-              </span>
-            )}
-          </div>
+          <div className="w-full border-b-2 border-gray-400 print:border-black h-10 flex items-end pb-2" />
         );
     }
   };

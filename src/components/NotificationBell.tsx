@@ -33,11 +33,11 @@ interface NotificationBellProps {
 
 const shouldSuppressBrowserNotifications = () => {
   if (typeof window === 'undefined') return false;
-  if (!window.desktopNotifications) return false;
   try {
     const raw = localStorage.getItem('notificationSettings');
     const parsed = raw ? JSON.parse(raw) as any : {};
-    const userSuppress = Boolean(parsed?.userControls?.suppressWebWhenDesktopActive);
+    const userSuppress = parsed?.userControls?.suppressWebWhenDesktopActive;
+    const webAppEnabled = parsed?.userControls?.webAppNotificationsEnabled;
     let globalForce = false;
     try {
       const rawGlobal = localStorage.getItem('notificationSettingsGlobal');
@@ -48,9 +48,24 @@ const shouldSuppressBrowserNotifications = () => {
     } catch {
       globalForce = false;
     }
-    return globalForce || userSuppress;
+    if (webAppEnabled === true) return globalForce;
+    if (webAppEnabled === false) return true;
+    const defaultSuppress = userSuppress === undefined;
+    return globalForce || userSuppress === true || defaultSuppress;
   } catch {
     return false;
+  }
+};
+
+const isWebAppNotificationsEnabled = () => {
+  if (typeof window === 'undefined') return true;
+  try {
+    const raw = localStorage.getItem('notificationSettings');
+    const parsed = raw ? JSON.parse(raw) as any : {};
+    const value = parsed?.userControls?.webAppNotificationsEnabled;
+    return value === undefined ? true : Boolean(value);
+  } catch {
+    return true;
   }
 };
 
@@ -114,6 +129,12 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
   const [isLoading, setIsLoading] = useState(true);
   const { user } = useUser();
   const firestore = useFirestore();
+  const suppressWeb = shouldSuppressBrowserNotifications();
+  const webAppEnabled = isWebAppNotificationsEnabled();
+
+  if (!webAppEnabled || suppressWeb) {
+    return null;
+  }
 
   useEffect(() => {
     if (!firestore || !user?.uid) {
@@ -233,15 +254,17 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         
-        {isLoading ? (
+        {suppressWeb ? (
+          <DropdownMenuItem disabled>
+            <span className="text-muted-foreground">
+              Desktop app active — notifications are handled in the tray.
+            </span>
+          </DropdownMenuItem>
+        ) : isLoading ? (
           <DropdownMenuItem disabled>
             <span className="text-muted-foreground">Loading...</span>
           </DropdownMenuItem>
-        ) : notifications.length === 0 ? (
-          <DropdownMenuItem disabled>
-            <span className="text-muted-foreground">No new notifications</span>
-          </DropdownMenuItem>
-        ) : (
+        ) : notifications.length === 0 ? null : (
           <>
             {notifications.map((notification) => (
               <DropdownMenuItem key={notification.id} className="flex-col items-start p-3 cursor-pointer">

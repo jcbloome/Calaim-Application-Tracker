@@ -40,7 +40,7 @@ const testingTools = [
   },
   {
     title: 'Notification Test',
-    description: 'Test push notifications, browser notifications, and alert systems',
+    description: 'Test desktop notifications and alert systems',
     icon: Bell,
     href: '/admin/test-notifications',
     color: 'text-orange-600'

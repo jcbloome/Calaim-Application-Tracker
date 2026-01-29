@@ -20,6 +20,7 @@ interface ClientNote {
   userFullName?: string;
   userRole?: string;
   isNew?: boolean;
+  deleted?: boolean;
 }
 
 interface UserRegistration {
@@ -41,7 +42,86 @@ async function getNotesFromFirestore(clientId2: string | null, userId: string | 
   }
   
   const snapshot = await notesRef.orderBy('timeStamp', 'desc').get();
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ClientNote));
+  return snapshot.docs
+    .map(doc => ({ id: doc.id, ...doc.data() } as ClientNote))
+    .filter(note => !note.deleted);
+}
+
+async function getDeletedClientNoteIds(clientId2?: string | null): Promise<Set<string>> {
+  if (!clientId2) return new Set();
+  const firestore = admin.firestore();
+  try {
+    const snapshot = await firestore
+      .collection('client_notes')
+      .where('clientId2', '==', clientId2)
+      .where('deleted', '==', true)
+      .get();
+    return new Set(snapshot.docs.map(doc => doc.id));
+  } catch (error) {
+    console.warn('Failed to load deleted client note ids:', error);
+    return new Set();
+  }
+}
+
+async function getCaspioAccessToken() {
+  const dataBaseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+  const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
+  const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const tokenUrl = 'https://c7ebl500.caspio.com/oauth/token';
+
+  const tokenResponse = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: 'grant_type=client_credentials'
+  });
+
+  if (!tokenResponse.ok) {
+    throw new Error('Failed to get Caspio access token');
+  }
+
+  const tokenData = await tokenResponse.json();
+  return { accessToken: tokenData.access_token, dataBaseUrl };
+}
+
+async function logSystemNoteAction(payload: {
+  action: string;
+  noteId?: string;
+  memberName?: string;
+  clientId2?: string;
+  status?: string;
+  actorName?: string;
+  actorEmail?: string;
+}) {
+  try {
+    const firestore = admin.firestore();
+    const noteRef = firestore.collection('systemNotes').doc();
+    await noteRef.set({
+      id: noteRef.id,
+      senderName: payload.actorName || 'System',
+      senderEmail: payload.actorEmail || '',
+      recipientName: 'System Log',
+      recipientEmail: '',
+      memberName: payload.memberName || '',
+      applicationId: payload.clientId2 || '',
+      noteContent: [
+        payload.action,
+        payload.noteId ? `Note ID: ${payload.noteId}` : null,
+        payload.memberName ? `Member: ${payload.memberName}` : null,
+        payload.status ? `Status: ${payload.status}` : null
+      ].filter(Boolean).join(' • '),
+      noteType: 'system',
+      priority: 'low',
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      wasNotificationSent: false
+    });
+  } catch (error) {
+    console.warn('Failed to log system note action:', error);
+  }
 }
 
 // Helper function to get sync metadata from Firestore
@@ -196,31 +276,7 @@ async function fetchFromCaspioAndSave(
   includeAll: boolean = false
 ): Promise<ClientNote[]> {
     
-    // Use same authentication pattern as other APIs
-    const dataBaseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-    
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = 'https://c7ebl500.caspio.com/oauth/token';
-    
-    console.log('🔐 Getting Caspio access token...');
-    
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: 'grant_type=client_credentials'
-    });
-
-    if (!tokenResponse.ok) {
-      throw new Error('Failed to get Caspio access token');
-    }
-
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const { accessToken, dataBaseUrl } = await getCaspioAccessToken();
 
     // Fetch client notes from connect_tbl_clientnotes
     const notesTable = 'connect_tbl_clientnotes';
@@ -422,22 +478,25 @@ async function fetchFromCaspioAndSave(
       };
     });
 
-    // Sort by timestamp (newest first)
-    notes.sort((a, b) => new Date(b.timeStamp).getTime() - new Date(a.timeStamp).getTime());
+    const deletedIds = await getDeletedClientNoteIds(clientId2);
+    const filteredNotes = notes.filter(note => !deletedIds.has(note.noteId || note.id));
 
-    console.log(`✅ Processed ${notes.length} client notes from Caspio`);
+    // Sort by timestamp (newest first)
+    filteredNotes.sort((a, b) => new Date(b.timeStamp).getTime() - new Date(a.timeStamp).getTime());
+
+    console.log(`✅ Processed ${filteredNotes.length} client notes from Caspio`);
 
     // Save to Firestore if we have a clientId2
-    if (clientId2 && notes.length > 0) {
+    if (clientId2 && filteredNotes.length > 0) {
       try {
-        await saveNotesToFirestore(notes, clientId2);
+        await saveNotesToFirestore(filteredNotes, clientId2);
       } catch (saveError) {
         console.error('⚠️ Failed to save notes to Firestore:', saveError);
         // Don't fail the request if save fails
       }
     }
 
-    return notes;
+    return filteredNotes;
 }
 
 // Helper function to format notes response
@@ -535,29 +594,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Use same authentication pattern
-    const dataBaseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-    
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = 'https://c7ebl500.caspio.com/oauth/token';
-    
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
+    const { accessToken, dataBaseUrl } = await getCaspioAccessToken();
+
+    // Verify client exists in Caspio
+    const clientCheckUrl = `${dataBaseUrl}/tables/connect_tbl_clients/records?q.where=Client_ID2='${noteData.clientId2}'&q.limit=1`;
+    const clientCheckResponse = await fetch(clientCheckUrl, {
+      method: 'GET',
       headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: 'grant_type=client_credentials'
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
     });
-
-    if (!tokenResponse.ok) {
-      throw new Error('Failed to get Caspio access token');
+    if (!clientCheckResponse.ok) {
+      throw new Error('Failed to verify client in Caspio');
     }
-
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const clientCheck = await clientCheckResponse.json();
+    if (!clientCheck?.Result || clientCheck.Result.length === 0) {
+      return NextResponse.json(
+        { success: false, message: 'Client_ID2 not found in Caspio. Notes can only be created for existing clients.' },
+        { status: 404 }
+      );
+    }
 
     // Prepare note data for Caspio
     const caspioNoteData = {
@@ -591,6 +648,39 @@ export async function POST(request: NextRequest) {
 
     const insertResult = await insertResponse.json();
     console.log('✅ Note created successfully:', insertResult);
+    const caspioNoteId = insertResult?.Result?.Note_ID || insertResult?.Result?.note_id || insertResult?.Result?.ID;
+
+    let firestoreSaved = false;
+    if (caspioNoteId) {
+      try {
+        const firestore = admin.firestore();
+        await firestore.doc(`client_notes/${caspioNoteId}`).set({
+          id: caspioNoteId,
+          noteId: caspioNoteId,
+          clientId2: String(noteData.clientId2),
+          userId: noteData.userId || null,
+          comments: noteData.comments,
+          timeStamp: new Date().toISOString(),
+          followUpDate: noteData.followUpDate || '',
+          followUpAssignment: noteData.followUpAssignment || '',
+          followUpStatus: noteData.followUpStatus || 'Open',
+          syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+          syncedFrom: 'caspio'
+        }, { merge: true });
+        firestoreSaved = true;
+      } catch (firestoreError) {
+        console.warn('⚠️ Failed to save note to Firestore:', firestoreError);
+      }
+    }
+
+    await logSystemNoteAction({
+      action: 'Client note created',
+      noteId: String(caspioNoteId || ''),
+      clientId2: String(noteData.clientId2),
+      status: noteData.followUpStatus || 'Open',
+      actorName: noteData.actorName || 'Staff',
+      actorEmail: noteData.actorEmail || ''
+    });
 
     // If note is assigned to staff, send push notification
     if (noteData.userId && noteData.followUpAssignment) {
@@ -607,7 +697,7 @@ export async function POST(request: NextRequest) {
             functionName: 'sendNoteNotification',
             data: {
               noteData: {
-                noteId: insertResult.Result?.Note_ID || 'new-note',
+                noteId: caspioNoteId || 'new-note',
                 clientId2: noteData.clientId2,
                 clientName: `Client ${noteData.clientId2}`, // You could look this up from clients table
                 assignedUserId: noteData.followUpAssignment,
@@ -637,8 +727,14 @@ export async function POST(request: NextRequest) {
       success: true,
       message: 'Note created successfully' + (noteData.followUpAssignment ? ' and notification sent' : ''),
       data: {
-        noteId: insertResult.Result?.Note_ID,
-        ...caspioNoteData
+        noteId: caspioNoteId,
+        ...caspioNoteData,
+        caspioSaved: true,
+        firestoreSaved
+      },
+      sync: {
+        caspio: true,
+        firestore: firestoreSaved
       }
     });
 
@@ -649,6 +745,119 @@ export async function POST(request: NextRequest) {
         success: false, 
         error: error.message || 'Failed to create client note'
       },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { noteId, clientId2, followUpStatus, actorName, actorEmail } = body || {};
+
+    if (!noteId || !clientId2 || !followUpStatus) {
+      return NextResponse.json(
+        { success: false, error: 'Note ID, client ID, and status are required' },
+        { status: 400 }
+      );
+    }
+
+    const { accessToken, dataBaseUrl } = await getCaspioAccessToken();
+    const updateUrl = `${dataBaseUrl}/tables/connect_tbl_clientnotes/records?q.where=Note_ID='${noteId}'`;
+    const updateResponse = await fetch(updateUrl, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        Follow_Up_Status: followUpStatus
+      })
+    });
+
+    if (!updateResponse.ok) {
+      const errorText = await updateResponse.text();
+      throw new Error(`Failed to update Caspio note: ${updateResponse.status} ${errorText}`);
+    }
+
+    const firestore = admin.firestore();
+    await firestore.doc(`client_notes/${noteId}`).set({
+      followUpStatus,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    await logSystemNoteAction({
+      action: 'Client note status updated',
+      noteId,
+      clientId2,
+      status: followUpStatus,
+      actorName,
+      actorEmail
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Note status updated'
+    });
+  } catch (error: any) {
+    console.error('❌ Error updating client note status:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to update note status' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { noteId, clientId2, actorName, actorEmail } = body || {};
+
+    if (!noteId || !clientId2) {
+      return NextResponse.json(
+        { success: false, error: 'Note ID and client ID are required' },
+        { status: 400 }
+      );
+    }
+
+    const { accessToken, dataBaseUrl } = await getCaspioAccessToken();
+    const deleteUrl = `${dataBaseUrl}/tables/connect_tbl_clientnotes/records?q.where=Note_ID='${noteId}'`;
+    const deleteResponse = await fetch(deleteUrl, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!deleteResponse.ok) {
+      const errorText = await deleteResponse.text();
+      throw new Error(`Failed to delete Caspio note: ${deleteResponse.status} ${errorText}`);
+    }
+
+    const firestore = admin.firestore();
+    await firestore.doc(`client_notes/${noteId}`).set({
+      deleted: true,
+      deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+      deletedBy: actorEmail || actorName || 'System'
+    }, { merge: true });
+
+    await logSystemNoteAction({
+      action: 'Client note deleted',
+      noteId,
+      clientId2,
+      actorName,
+      actorEmail
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Note deleted'
+    });
+  } catch (error: any) {
+    console.error('❌ Error deleting client note:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to delete note' },
       { status: 500 }
     );
   }

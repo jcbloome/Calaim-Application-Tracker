@@ -55,6 +55,15 @@ export function RealTimeNotifications() {
   const pendingNotesRef = useRef<Map<string, NotificationData>>(new Map());
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const summaryNotificationIdRef = useRef<string | null>(null);
+  const latestSummaryRef = useRef<{
+    type: 'note' | 'urgent';
+    title: string;
+    message: string;
+    author: string;
+    pendingLabel: string;
+    links: Array<{ label: string; url: string }>;
+    soundType: string;
+  } | null>(null);
   const [desktopState, setDesktopState] = useState<DesktopNotificationState | null>(null);
   const [notificationPrefs, setNotificationPrefs] = useState({
     enabled: true,
@@ -64,6 +73,7 @@ export function RealTimeNotifications() {
     sound: true,
     soundType: 'mellow-note'
   });
+  const [webAppEnabled, setWebAppEnabled] = useState(true);
   const [globalControls, setGlobalControls] = useState({
     masterSwitch: true,
     quietHours: {
@@ -86,6 +96,7 @@ export function RealTimeNotifications() {
         const parsed = JSON.parse(raw) as any;
         const browser = parsed?.browserNotifications;
         const globals = parsed?.globalControls;
+        const nextWebEnabled = parsed?.userControls?.webAppNotificationsEnabled;
         if (!browser) return;
         setNotificationPrefs((prev) => ({
           ...prev,
@@ -96,6 +107,9 @@ export function RealTimeNotifications() {
           sound: browser.sound ?? prev.sound,
           soundType: browser.soundType || prev.soundType
         }));
+        if (nextWebEnabled !== undefined) {
+          setWebAppEnabled(Boolean(nextWebEnabled));
+        }
         if (globals) {
           setGlobalControls((prev) => ({
             ...prev,
@@ -163,6 +177,66 @@ export function RealTimeNotifications() {
     return () => {
       if (unsubscribe) unsubscribe();
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!window.desktopNotifications?.onExpand) return;
+    const unsubscribe = window.desktopNotifications.onExpand(() => {
+      const summary = latestSummaryRef.current;
+      if (!summary) return;
+      if (summaryNotificationIdRef.current) {
+        removeNotification(summaryNotificationIdRef.current);
+        summaryNotificationIdRef.current = null;
+      }
+      const summaryId = showNotification({
+        keyId: 'staff-note-summary-expanded',
+        type: summary.type,
+        title: summary.title,
+        message: summary.message,
+        author: summary.author,
+        memberName: '',
+        priority: undefined,
+        tagLabel: undefined,
+        startMinimized: false,
+        lockToTray: true,
+        duration: 0,
+        minimizeAfter: 12000,
+        pendingLabel: summary.pendingLabel,
+        sound: false,
+        soundType: summary.soundType as any,
+        animation: 'slide',
+        links: summary.links,
+        onClick: undefined
+      });
+      summaryNotificationIdRef.current = summaryId;
+    });
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [removeNotification, showNotification]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem('notificationSettings');
+      const parsed = raw ? JSON.parse(raw) as any : {};
+      const nextWebEnabled = parsed?.userControls?.webAppNotificationsEnabled;
+      const normalizedWebEnabled = nextWebEnabled === undefined ? true : Boolean(nextWebEnabled);
+      const desktopPresent = Boolean((window as any).desktopNotifications);
+      const nextSuppress = parsed?.userControls?.suppressWebWhenDesktopActive;
+      setWebAppEnabled(normalizedWebEnabled);
+      localStorage.setItem('notificationSettings', JSON.stringify({
+        ...parsed,
+        userControls: {
+          ...(parsed?.userControls || {}),
+          suppressWebWhenDesktopActive: nextSuppress === undefined ? desktopPresent : nextSuppress,
+          webAppNotificationsEnabled: normalizedWebEnabled
+        }
+      }));
+    } catch (error) {
+      console.warn('Failed to default suppress setting:', error);
+    }
   }, []);
 
   const isWithinQuietHours = () => {
@@ -309,17 +383,19 @@ export function RealTimeNotifications() {
           const shouldSuppressWeb = typeof window === 'undefined'
             ? false
             : (() => {
-                if (!window.desktopNotifications) return false;
-                let userSuppress = false;
+                let userSuppress: boolean | undefined;
+                let webAppEnabled: boolean | undefined;
                 let globalForce = globalPolicy.forceSuppressWebWhenDesktopActive;
                 try {
                   const raw = localStorage.getItem('notificationSettings');
                   if (raw) {
                     const parsed = JSON.parse(raw) as any;
-                    userSuppress = Boolean(parsed?.userControls?.suppressWebWhenDesktopActive);
+                    userSuppress = parsed?.userControls?.suppressWebWhenDesktopActive;
+                    webAppEnabled = parsed?.userControls?.webAppNotificationsEnabled;
                   }
                 } catch {
-                  userSuppress = false;
+                  userSuppress = undefined;
+                  webAppEnabled = undefined;
                 }
                 if (!globalForce) {
                   try {
@@ -332,11 +408,14 @@ export function RealTimeNotifications() {
                     globalForce = globalPolicy.forceSuppressWebWhenDesktopActive;
                   }
                 }
-                return globalForce || userSuppress;
+                if (webAppEnabled === true) return globalForce;
+                if (webAppEnabled === false) return true;
+                const defaultSuppress = userSuppress === undefined;
+                return globalForce || userSuppress === true || defaultSuppress;
               })();
           const shouldShowWebToast = typeof window === 'undefined'
             ? false
-            : (!window.desktopNotifications || !shouldSuppressWeb);
+            : !shouldSuppressWeb;
 
           if (!canShowNotifications()) {
             if (summaryNotificationIdRef.current) {
@@ -360,31 +439,47 @@ export function RealTimeNotifications() {
           const subjectLabel = count === 1
             ? (sortedPending[0]?.memberName || 'Note')
             : (uniqueMembers.length === 1 ? uniqueMembers[0] : 'Multiple notes');
+          const highlightNote = sortedPending.find((note) => note.priority === 'urgent') || sortedPending[0];
+          const highlightSender = highlightNote?.senderName || senderSummary;
+          const highlightSubject = highlightNote?.memberName || subjectLabel;
           const summaryTitle = count === 1
-            ? `From ${senderSummary} · Re: ${subjectLabel}`
-            : `Re: ${subjectLabel}`;
-          const senderLabel = count === 1 ? `From: ${senderSummary}` : 'From: Multiple staff';
+            ? `From ${highlightSender} · Re: ${highlightSubject}`
+            : `Re: ${highlightSubject}`;
+          const senderLabel = count === 1 ? `From: ${highlightSender}` : 'From: Multiple staff';
+          const summaryMessage = urgentExists
+            ? (highlightNote?.message || `${senderLabel} · Immediate notes: ${count}`)
+            : `${senderLabel} · Immediate notes: ${count}`;
           const tagLabel = undefined;
           const links: Array<{ label: string; url: string }> = [
             { label: 'Open My Notifications', url: '/admin/my-notes' }
           ];
           const shouldPopup = hasNew;
+          const desktopPresent = typeof window !== 'undefined' && Boolean(window.desktopNotifications);
+          latestSummaryRef.current = {
+            type: urgentExists ? 'urgent' : 'note',
+            title: summaryTitle,
+            message: summaryMessage,
+            author: highlightSender,
+            pendingLabel: count === 1 ? `Pending note · ${highlightSender}` : `Notes (${count})`,
+            links,
+            soundType: notificationPrefs.soundType
+          };
 
-          if (shouldShowWebToast) {
+          if (shouldShowWebToast || (desktopPresent && urgentExists)) {
             const summaryId = showNotification({
               keyId: 'staff-note-summary',
               type: urgentExists ? 'urgent' : 'note',
               title: summaryTitle,
-              message: `${senderLabel} · Immediate notes: ${count}`,
-              author: senderSummary,
+              message: summaryMessage,
+              author: highlightSender,
               memberName: '',
               priority: undefined,
               tagLabel,
-              startMinimized: !shouldPopup,
+              startMinimized: !(shouldPopup || urgentExists),
               lockToTray: true,
               duration: 0,
-              minimizeAfter: shouldPopup ? 12000 : 0,
-              pendingLabel: count === 1 ? `Pending note · ${senderSummary}` : `Notes (${count})`,
+              minimizeAfter: (shouldPopup || urgentExists) ? 12000 : 0,
+              pendingLabel: count === 1 ? `Pending note · ${highlightSender}` : `Notes (${count})`,
               sound: hasNew && notificationPrefs.enabled ? notificationPrefs.sound : false,
               soundType: notificationPrefs.soundType,
               animation: 'slide',
@@ -400,7 +495,10 @@ export function RealTimeNotifications() {
           if (hasNew && window.desktopNotifications?.notify) {
             window.desktopNotifications.notify({
               title: summaryTitle,
-              body: `${senderLabel} · Immediate notes: ${count}`
+              body: urgentExists
+                ? `From: ${highlightSender} · ${summaryMessage}`
+                : `${senderLabel} · Immediate notes: ${count}`,
+              openOnNotify: urgentExists
             }).catch(() => undefined);
           }
         }, 400);

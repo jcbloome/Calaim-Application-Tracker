@@ -1,9 +1,21 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
@@ -21,10 +33,13 @@ import {
   FileText,
   Loader2,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  Trash2
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
+import { useAdmin } from '@/hooks/use-admin';
+import { ToastAction } from '@/components/ui/toast';
 
 interface MemberNote {
   id: string;
@@ -52,6 +67,7 @@ interface MemberNote {
   message?: string;
   type?: string;
   isRead?: boolean;
+  status?: 'Open' | 'Closed';
   applicationId?: string;
 }
 
@@ -72,8 +88,12 @@ export default function MemberNotesView({ memberId, memberName, onClose }: Membe
   const [memberInfo, setMemberInfo] = useState<MemberInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<MemberNote | null>(null);
+  const deleteTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const deletedNotesRef = useRef<Map<string, MemberNote>>(new Map());
   
   const { toast } = useToast();
+  const { user } = useAdmin();
 
   useEffect(() => {
     if (memberId || memberName) {
@@ -153,6 +173,105 @@ export default function MemberNotesView({ memberId, memberName, onClose }: Membe
 
   const getNoteSender = (note: MemberNote) => {
     return note.Staff_Name || note.Staff_Member || note.senderName || 'System';
+  };
+
+  const toggleStatus = async (note: MemberNote) => {
+    const nextStatus = note.status === 'Closed' ? 'Open' : 'Closed';
+    try {
+      const response = await fetch('/api/member-notes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: note.id,
+          clientId2: memberInfo?.memberId || memberId,
+          status: nextStatus,
+          resolvedAt: nextStatus === 'Closed' ? new Date().toISOString() : null,
+          actorName: user?.displayName || user?.email || 'Admin',
+          actorEmail: user?.email || ''
+        })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to update note status');
+      }
+      setNotes(prev => prev.map(item =>
+        item.id === note.id ? { ...item, status: nextStatus } : item
+      ));
+      toast({
+        title: `Note ${nextStatus === 'Closed' ? 'Closed' : 'Reopened'}`,
+        description: `Status set to ${nextStatus}.`
+      });
+    } catch (error: any) {
+      console.error('Error updating note status:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message || 'Failed to update note status'
+      });
+    }
+  };
+
+  const commitDeleteNote = async (note: MemberNote) => {
+    try {
+      const response = await fetch('/api/member-notes', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: note.id,
+          clientId2: memberInfo?.memberId || memberId,
+          actorName: user?.displayName || user?.email || 'Admin',
+          actorEmail: user?.email || ''
+        })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to delete note');
+      }
+      deletedNotesRef.current.delete(note.id);
+    } catch (error: any) {
+      console.error('Error deleting note:', error);
+      deletedNotesRef.current.delete(note.id);
+      setNotes(prev => [note, ...prev]);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message || 'Failed to delete note'
+      });
+    }
+  };
+
+  const requestDeleteNote = (note: MemberNote) => {
+    deletedNotesRef.current.set(note.id, note);
+    setNotes(prev => prev.filter(item => item.id !== note.id));
+    const timer = setTimeout(() => {
+      deleteTimersRef.current.delete(note.id);
+      commitDeleteNote(note);
+    }, 5000);
+    deleteTimersRef.current.set(note.id, timer);
+
+    toast({
+      title: 'Note Deleted',
+      description: 'You can undo this action for a few seconds.',
+      action: (
+        <ToastAction
+          altText="Undo delete"
+          onClick={() => {
+            const existingTimer = deleteTimersRef.current.get(note.id);
+            if (existingTimer) {
+              clearTimeout(existingTimer);
+              deleteTimersRef.current.delete(note.id);
+            }
+            const cached = deletedNotesRef.current.get(note.id);
+            if (cached) {
+              deletedNotesRef.current.delete(note.id);
+              setNotes(prev => [cached, ...prev]);
+            }
+          }}
+        >
+          Undo
+        </ToastAction>
+      )
+    });
   };
 
   if (loading) {
@@ -239,6 +358,9 @@ export default function MemberNotesView({ memberId, memberName, onClose }: Membe
                           <Badge variant="outline" className="text-xs">
                             {getSourceLabel(note)}
                           </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {note.status || 'Open'}
+                          </Badge>
                           {note.priority && (
                             <Badge variant="outline" className={getPriorityColor(note.priority)}>
                               {note.priority}
@@ -282,6 +404,55 @@ export default function MemberNotesView({ memberId, memberName, onClose }: Membe
                             Category: {note.Note_Category}
                           </div>
                         )}
+
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-muted-foreground">
+                              {note.status === 'Closed' ? 'Closed' : 'Open'}
+                            </span>
+                            <Switch
+                              checked={note.status !== 'Closed'}
+                              onCheckedChange={() => toggleStatus(note)}
+                            />
+                          </div>
+                          <AlertDialog open={deleteTarget?.id === note.id} onOpenChange={(open) => {
+                            if (!open) setDeleteTarget(null);
+                          }}>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs text-red-600 hover:text-red-700"
+                                onClick={() => setDeleteTarget(note)}
+                              >
+                                <Trash2 className="h-3 w-3 mr-1" />
+                                Delete
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete this note?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This removes the note from Caspio and Firestore. You will have a brief chance to undo.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => {
+                                    if (deleteTarget) {
+                                      requestDeleteNote(deleteTarget);
+                                    }
+                                    setDeleteTarget(null);
+                                  }}
+                                  className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>

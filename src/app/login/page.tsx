@@ -25,6 +25,7 @@ import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import { AccessibleButton } from '@/components/ui/accessible-button';
 import { Eye, EyeOff, Loader2, LogIn, Mail } from 'lucide-react';
 import { Header } from '@/components/Header';
+import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
@@ -225,6 +226,9 @@ export default function LoginPage() {
   return (
     <>
       <Header />
+      <div className="mx-auto w-full max-w-4xl px-4 pt-6">
+        <PWAInstallPrompt />
+      </div>
       <main className="flex-grow flex items-center justify-center bg-slate-50 p-4 min-h-screen">
         <Card className="w-full max-w-md shadow-2xl">
           <CardHeader className="items-center text-center p-6">

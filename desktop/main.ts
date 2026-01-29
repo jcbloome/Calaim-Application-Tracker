@@ -363,6 +363,7 @@ const createOverlayWindow = () => {
           });
 
           pill.addEventListener('click', () => {
+            ipcRenderer.send('desktop-notifications:expand');
             ipcRenderer.send('desktop-notifications:open-notifications');
           });
         </script>
@@ -434,7 +435,7 @@ ipcMain.handle('desktop-notifications:setPaused', (_event: IpcMainInvokeEvent, n
   setPausedByUser(Boolean(nextPaused));
   return getState();
 });
-ipcMain.handle('desktop-notifications:notify', (_event: IpcMainInvokeEvent, payload: { title: string; body: string }) => {
+ipcMain.handle('desktop-notifications:notify', (_event: IpcMainInvokeEvent, payload: { title: string; body: string; openOnNotify?: boolean }) => {
   const state = getState();
   if (state.effectivePaused) return false;
   if (!payload?.title || !payload?.body) return false;
@@ -442,7 +443,21 @@ ipcMain.handle('desktop-notifications:notify', (_event: IpcMainInvokeEvent, payl
     title: payload.title,
     body: payload.body
   });
+  notification.on('click', () => {
+    if (!notificationWindow) {
+      createNotificationWindow();
+    }
+    notificationWindow?.show();
+    notificationWindow?.focus();
+  });
   notification.show();
+  if (payload.openOnNotify) {
+    if (!notificationWindow) {
+      createNotificationWindow();
+    }
+    notificationWindow?.show();
+    notificationWindow?.focus();
+  }
   return true;
 });
 ipcMain.on('desktop-notifications:pending-count', (_event, count: number) => {
@@ -455,4 +470,10 @@ ipcMain.on('desktop-notifications:open-notifications', () => {
   }
   notificationWindow?.show();
   notificationWindow?.focus();
+});
+ipcMain.on('desktop-notifications:expand', () => {
+  if (!notificationWindow) {
+    createNotificationWindow();
+  }
+  notificationWindow?.webContents.send('desktop-notifications:expand');
 });

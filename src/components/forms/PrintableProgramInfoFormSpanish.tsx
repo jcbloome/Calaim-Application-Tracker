@@ -30,6 +30,18 @@ export function PrintableProgramInfoFormSpanish({
           </p>
         </div>
 
+        <div className="p-4 print:p-6 border print:border-black">
+          <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
+            Importancia del Contacto del ISP
+          </h3>
+          <p className="text-sm print:text-xs text-gray-700 print:text-black">
+            El Plan de Servicio Individual (ISP) es una evaluación clínica requerida para determinar el
+            nivel de atención del miembro y obtener la autorización del Plan de Atención Administrada (MCP).
+            Connections necesita saber a quién contactar para revisar notas clínicas y coordinar el ISP
+            (a menudo un trabajador social de SNF o coordinador de cuidados, no el médico de atención primaria).
+          </p>
+        </div>
+
         {/* Managed Care Plans We Work With */}
         <div className="p-4 print:p-6 border print:border-black">
           <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">

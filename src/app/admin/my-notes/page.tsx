@@ -5,18 +5,32 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw, CheckCircle2, Trash2, Zap } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
-import { addDoc, collection, query, where, onSnapshot, doc, updateDoc, writeBatch, serverTimestamp, getDocs, documentId } from 'firebase/firestore';
+import { addDoc, collection, query, where, onSnapshot, doc, updateDoc, writeBatch, serverTimestamp, getDocs, documentId, deleteDoc } from 'firebase/firestore';
+import { logSystemNoteAction } from '@/lib/system-note-log';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog';
+import { ToastAction } from '@/components/ui/toast';
 
 interface StaffNotification {
   id: string;
@@ -36,6 +50,8 @@ interface StaffNotification {
   actionUrl?: string;
   status?: 'Open' | 'Closed';
   isGeneral?: boolean;
+  followUpRequired?: boolean;
+  followUpDate?: string;
 }
 
 function MyNotesContent() {
@@ -49,6 +65,8 @@ function MyNotesContent() {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyOpen, setReplyOpen] = useState<Record<string, boolean>>({});
   const [isSendingReply, setIsSendingReply] = useState<Record<string, boolean>>({});
+  const [replyPriority, setReplyPriority] = useState<Record<string, 'Regular' | 'Immediate'>>({});
+  const [isResendingPriority, setIsResendingPriority] = useState<Record<string, boolean>>({});
   const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [generalNote, setGeneralNote] = useState<{
@@ -56,15 +74,27 @@ function MyNotesContent() {
     title: string;
     message: string;
     priority: 'Regular' | 'Immediate';
+    followUpRequired: boolean;
+    followUpDate: string;
   }>({
     recipientIds: [],
     title: '',
     message: '',
-    priority: 'Regular'
+    priority: 'Regular',
+    followUpRequired: false,
+    followUpDate: ''
   });
   const [isSendingGeneral, setIsSendingGeneral] = useState(false);
   const [showAllNotes, setShowAllNotes] = useState(false);
   const [highlightNoteId, setHighlightNoteId] = useState<string | null>(null);
+  const [quickStatusFilter, setQuickStatusFilter] = useState<'all' | 'unread' | 'open' | 'closed'>('all');
+  const [followUpFilter, setFollowUpFilter] = useState<'all' | 'required'>('all');
+  const [desktopActive, setDesktopActive] = useState(false);
+  const [suppressWebWhenDesktopActive, setSuppressWebWhenDesktopActive] = useState(false);
+  const [webAppNotificationsEnabled, setWebAppNotificationsEnabled] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<StaffNotification | null>(null);
+  const deleteTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const deletedNotesRef = useRef<Map<string, StaffNotification>>(new Map());
 
   // Load notifications from Firestore
   useEffect(() => {
@@ -104,7 +134,9 @@ function MyNotesContent() {
             applicationId: data.applicationId || undefined,
             actionUrl: data.actionUrl || undefined,
             status: data.status === 'Closed' ? 'Closed' : 'Open',
-            isGeneral: Boolean(data.isGeneral)
+            isGeneral: Boolean(data.isGeneral),
+            followUpRequired: Boolean(data.followUpRequired),
+            followUpDate: data.followUpDate?.toDate?.()?.toISOString?.() || data.followUpDate || ''
           });
         });
 
@@ -140,6 +172,115 @@ function MyNotesContent() {
       });
     }
   }, [firestore, user?.uid, toast]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const readSettings = () => {
+      try {
+        const raw = localStorage.getItem('notificationSettings');
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as any;
+        const nextValue = parsed?.userControls?.suppressWebWhenDesktopActive;
+        const nextWebEnabled = parsed?.userControls?.webAppNotificationsEnabled;
+        setSuppressWebWhenDesktopActive(nextValue === undefined ? true : Boolean(nextValue));
+        setWebAppNotificationsEnabled(nextWebEnabled === undefined ? true : Boolean(nextWebEnabled));
+      } catch {
+        setSuppressWebWhenDesktopActive(true);
+        setWebAppNotificationsEnabled(true);
+      }
+    };
+    readSettings();
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'notificationSettings') {
+        readSettings();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!window.desktopNotifications) {
+      setDesktopActive(false);
+      return;
+    }
+    setDesktopActive(true);
+    let unsubscribe: (() => void) | undefined;
+    window.desktopNotifications.getState()
+      .then(() => setDesktopActive(true))
+      .catch(() => setDesktopActive(true));
+    unsubscribe = window.desktopNotifications.onChange(() => {
+      setDesktopActive(true);
+    });
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!desktopActive) return;
+    if (suppressWebWhenDesktopActive) return;
+    updateSuppressSetting(true);
+  }, [desktopActive, suppressWebWhenDesktopActive]);
+
+  const updateSuppressSetting = (nextValue: boolean) => {
+    setSuppressWebWhenDesktopActive(nextValue);
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem('notificationSettings');
+      const parsed = raw ? JSON.parse(raw) as any : {};
+      const updated = {
+        ...parsed,
+        userControls: {
+          ...(parsed?.userControls || {}),
+          suppressWebWhenDesktopActive: nextValue
+        }
+      };
+      localStorage.setItem('notificationSettings', JSON.stringify(updated));
+    } catch (error) {
+      console.warn('Failed to update notification settings:', error);
+    }
+  };
+
+  const updateWebAppSetting = (nextValue: boolean) => {
+    setWebAppNotificationsEnabled(nextValue);
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem('notificationSettings');
+      const parsed = raw ? JSON.parse(raw) as any : {};
+      const updated = {
+        ...parsed,
+        userControls: {
+          ...(parsed?.userControls || {}),
+          webAppNotificationsEnabled: nextValue
+        }
+      };
+      localStorage.setItem('notificationSettings', JSON.stringify(updated));
+    } catch (error) {
+      console.warn('Failed to update notification settings:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem('notificationSettings');
+      const parsed = raw ? JSON.parse(raw) as any : {};
+      if (parsed?.userControls?.webAppNotificationsEnabled !== undefined) return;
+      const defaultValue = !(desktopActive || suppressWebWhenDesktopActive);
+      localStorage.setItem('notificationSettings', JSON.stringify({
+        ...parsed,
+        userControls: {
+          ...(parsed?.userControls || {}),
+          webAppNotificationsEnabled: defaultValue
+        }
+      }));
+      setWebAppNotificationsEnabled(defaultValue);
+    } catch (error) {
+      console.warn('Failed to default web app setting:', error);
+    }
+  }, [desktopActive, suppressWebWhenDesktopActive]);
 
   useEffect(() => {
     const replyTo = searchParams.get('replyTo');
@@ -241,6 +382,120 @@ function MyNotesContent() {
     }
   };
 
+  const toggleStatus = async (notification: StaffNotification) => {
+    if (!firestore) return;
+    const nextStatus = notification.status === 'Closed' ? 'Open' : 'Closed';
+    try {
+      await updateDoc(doc(firestore, 'staff_notifications', notification.id), {
+        status: nextStatus,
+        resolvedAt: nextStatus === 'Closed' ? serverTimestamp() : null
+      });
+      await logSystemNoteAction({
+        action: 'Staff notification status updated',
+        noteId: notification.id,
+        memberName: notification.memberName,
+        status: nextStatus,
+        actorName: user?.displayName || user?.email || 'Staff',
+        actorEmail: user?.email || ''
+      });
+      toast({
+        title: `Note ${nextStatus === 'Closed' ? 'Closed' : 'Reopened'}`,
+        description: `Status set to ${nextStatus}.`
+      });
+    } catch (error) {
+      console.error('❌ Failed to update status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update status",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const toggleFollowUpRequired = async (notification: StaffNotification) => {
+    if (!firestore) return;
+    const isCurrentlyRequired = Boolean(notification.followUpRequired) || Boolean(notification.followUpDate);
+    const nextRequired = !isCurrentlyRequired;
+    try {
+      await updateDoc(doc(firestore, 'staff_notifications', notification.id), {
+        followUpRequired: nextRequired,
+        followUpDate: nextRequired ? (notification.followUpDate || null) : null
+      });
+      toast({
+        title: nextRequired ? 'Follow-up required' : 'Follow-up cleared',
+        description: nextRequired
+          ? 'This note will show in your follow-up list.'
+          : 'This note was removed from follow-up.'
+      });
+    } catch (error) {
+      console.error('❌ Failed to update follow-up status:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update follow-up status.',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const commitDeleteNotification = async (notification: StaffNotification) => {
+    if (!firestore) return;
+    try {
+      await deleteDoc(doc(firestore, 'staff_notifications', notification.id));
+      await logSystemNoteAction({
+        action: 'Staff notification deleted',
+        noteId: notification.id,
+        memberName: notification.memberName,
+        status: notification.status || 'Open',
+        actorName: user?.displayName || user?.email || 'Staff',
+        actorEmail: user?.email || ''
+      });
+      deletedNotesRef.current.delete(notification.id);
+    } catch (error) {
+      console.error('❌ Failed to delete notification:', error);
+      deletedNotesRef.current.delete(notification.id);
+      setNotifications(prev => [notification, ...prev]);
+      toast({
+        title: "Error",
+        description: "Failed to delete note",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const requestDeleteNotification = (notification: StaffNotification) => {
+    deletedNotesRef.current.set(notification.id, notification);
+    setNotifications(prev => prev.filter(item => item.id !== notification.id));
+    const timer = setTimeout(() => {
+      deleteTimersRef.current.delete(notification.id);
+      commitDeleteNotification(notification);
+    }, 5000);
+    deleteTimersRef.current.set(notification.id, timer);
+
+    toast({
+      title: "Note Deleted",
+      description: "You can undo this action for a few seconds.",
+      action: (
+        <ToastAction
+          altText="Undo delete"
+          onClick={() => {
+            const existingTimer = deleteTimersRef.current.get(notification.id);
+            if (existingTimer) {
+              clearTimeout(existingTimer);
+              deleteTimersRef.current.delete(notification.id);
+            }
+            const cached = deletedNotesRef.current.get(notification.id);
+            if (cached) {
+              deletedNotesRef.current.delete(notification.id);
+              setNotifications(prev => [cached, ...prev]);
+            }
+          }}
+        >
+          Undo
+        </ToastAction>
+      )
+    });
+  };
+
   // Mark all notifications as read
   const markAllAsRead = async () => {
     if (!firestore) return;
@@ -288,6 +543,7 @@ function MyNotesContent() {
       return;
     }
     const message = replyDrafts[notification.id]?.trim();
+    const priority = replyPriority[notification.id] || 'Regular';
     if (!message) {
       toast({
         title: "Missing Reply",
@@ -307,7 +563,7 @@ function MyNotesContent() {
         clientId2: notification.memberId,
         applicationId: notification.applicationId,
         type: 'interoffice_reply',
-        priority: 'Medium',
+        priority: priority === 'Immediate' ? 'Urgent' : 'Medium',
         status: 'Open',
         isRead: false,
         createdBy: user.uid,
@@ -324,6 +580,7 @@ function MyNotesContent() {
         description: "Your reply was sent to the original sender.",
       });
       setReplyDrafts((prev) => ({ ...prev, [notification.id]: '' }));
+      setReplyPriority((prev) => ({ ...prev, [notification.id]: 'Regular' }));
       setReplyOpen((prev) => ({ ...prev, [notification.id]: false }));
     } catch (error) {
       console.error('❌ Failed to send reply:', error);
@@ -334,6 +591,49 @@ function MyNotesContent() {
       });
     } finally {
       setIsSendingReply((prev) => ({ ...prev, [notification.id]: false }));
+    }
+  };
+
+  const resendAsPriority = async (notification: StaffNotification) => {
+    if (!firestore || !user?.uid) return;
+    try {
+      setIsResendingPriority((prev) => ({ ...prev, [notification.id]: true }));
+      await addDoc(collection(firestore, 'staff_notifications'), {
+        userId: notification.recipientId,
+        title: `Priority: ${notification.title || 'General Note'}`,
+        message: notification.content || '',
+        type: 'interoffice_note',
+        priority: 'Urgent',
+        status: 'Open',
+        isRead: false,
+        createdBy: user.uid,
+        createdByName: user.displayName || user.email || 'Staff',
+        senderName: user.displayName || user.email || 'Staff',
+        timestamp: serverTimestamp(),
+        isGeneral: false,
+        actionUrl: '/admin/my-notes'
+      });
+      await logSystemNoteAction({
+        action: 'General note resent as priority',
+        noteId: notification.id,
+        memberName: notification.memberName,
+        status: 'Open',
+        actorName: user?.displayName || user?.email || 'Staff',
+        actorEmail: user?.email || ''
+      });
+      toast({
+        title: "Priority Note Sent",
+        description: "This note was resent as a priority popup."
+      });
+    } catch (error) {
+      console.error('Failed to resend priority note:', error);
+      toast({
+        title: "Error",
+        description: "Failed to resend as priority.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsResendingPriority((prev) => ({ ...prev, [notification.id]: false }));
     }
   };
 
@@ -375,6 +675,8 @@ function MyNotesContent() {
             senderName: user.displayName || user.email || 'Staff',
             timestamp: serverTimestamp(),
             isGeneral: true,
+            followUpRequired: generalNote.followUpRequired || Boolean(generalNote.followUpDate),
+            followUpDate: generalNote.followUpDate || null,
             actionUrl: '/admin/my-notes'
           })
         )
@@ -389,7 +691,9 @@ function MyNotesContent() {
         recipientIds: [],
         title: '',
         message: '',
-        priority: 'Regular'
+        priority: 'Regular',
+        followUpRequired: false,
+        followUpDate: ''
       });
     } catch (error) {
       console.error('Failed to send general note:', error);
@@ -444,15 +748,32 @@ function MyNotesContent() {
     return Boolean(notification.isGeneral) || originType.includes('interoffice');
   };
 
+  const hasFollowUpRequired = (notification: StaffNotification) => {
+    return Boolean(notification.followUpRequired) || Boolean(notification.followUpDate);
+  };
+
+  const statusFilteredNotifications = filteredNotifications.filter((notification) => {
+    if (quickStatusFilter === 'all') return true;
+    if (quickStatusFilter === 'unread') return !notification.isRead;
+    if (quickStatusFilter === 'open') return notification.status !== 'Closed';
+    if (quickStatusFilter === 'closed') return notification.status === 'Closed';
+    return true;
+  });
+
+  const followUpFilteredNotifications = followUpFilter === 'required'
+    ? statusFilteredNotifications.filter((notification) => hasFollowUpRequired(notification))
+    : statusFilteredNotifications;
+
   const tagFilteredNotifications = activeTags.length === 0
-    ? filteredNotifications
-    : filteredNotifications.filter((notification) => {
+    ? followUpFilteredNotifications
+    : followUpFilteredNotifications.filter((notification) => {
         const matchesPriority = activeTags.includes('priority') && hasPriority(notification);
         const matchesGeneral = activeTags.includes('general') && hasGeneral(notification);
         return matchesPriority || matchesGeneral;
       });
 
   const recentNotifications = showAllNotes ? tagFilteredNotifications : tagFilteredNotifications.slice(0, 5);
+  const desktopActiveDisplay = desktopActive || suppressWebWhenDesktopActive;
 
   const getMemberLink = (notification: StaffNotification) => {
     if (notification.applicationId) {
@@ -542,6 +863,29 @@ function MyNotesContent() {
         </div>
       </div>
 
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Web Notifications</CardTitle>
+          <CardDescription>
+            Toggle on to suppress web alerts and the header bell.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            {webAppNotificationsEnabled ? 'Web alerts are enabled' : 'Web alerts are suppressed'}
+          </div>
+          <Switch
+            checked={!webAppNotificationsEnabled}
+            onCheckedChange={(nextValue) => {
+              updateWebAppSetting(!nextValue);
+              if (nextValue) {
+                updateSuppressSetting(true);
+              }
+            }}
+          />
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
           <Card>
@@ -579,6 +923,43 @@ function MyNotesContent() {
                   className="pl-10"
                 />
               </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={quickStatusFilter === 'all' ? 'default' : 'outline'}
+                  onClick={() => setQuickStatusFilter('all')}
+                >
+                  All
+                </Button>
+                <Button
+                  size="sm"
+                  variant={quickStatusFilter === 'unread' ? 'default' : 'outline'}
+                  onClick={() => setQuickStatusFilter('unread')}
+                >
+                  Unread
+                </Button>
+                <Button
+                  size="sm"
+                  variant={quickStatusFilter === 'open' ? 'default' : 'outline'}
+                  onClick={() => setQuickStatusFilter('open')}
+                >
+                  Open
+                </Button>
+                <Button
+                  size="sm"
+                  variant={quickStatusFilter === 'closed' ? 'default' : 'outline'}
+                  onClick={() => setQuickStatusFilter('closed')}
+                >
+                  Closed
+                </Button>
+                <Button
+                  size="sm"
+                  variant={followUpFilter === 'required' ? 'default' : 'outline'}
+                  onClick={() => setFollowUpFilter((prev) => (prev === 'required' ? 'all' : 'required'))}
+                >
+                  Follow-up Required
+                </Button>
+              </div>
               {!isLoadingNotes && recentNotifications.length === 0 && (
                 <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
                   {searchTerm ? 'No notifications match your search.' : 'No notifications found.'}
@@ -609,18 +990,26 @@ function MyNotesContent() {
                                 Priority
                               </Badge>
                             )}
+                          {hasFollowUpRequired(notification) && (
+                            <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-200">
+                              Follow-up
+                            </Badge>
+                          )}
                             {isGeneralNote && (
                               <Badge variant="secondary">
                                 General
                               </Badge>
                             )}
+                            <Badge variant="outline">
+                              {notification.status || 'Open'}
+                            </Badge>
                             {!notification.isRead && (
                               <Badge variant="default" className="bg-blue-600">
                                 New
                               </Badge>
                             )}
                           </div>
-                          <p className="text-sm text-muted-foreground">
+                          <p className="text-sm text-muted-foreground line-clamp-2">
                             {notification.content}
                           </p>
                           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -636,6 +1025,12 @@ function MyNotesContent() {
                               <div className="flex items-center space-x-1">
                                 <MessageSquare className="h-3 w-3" />
                                 <span>Member: {notification.memberName}</span>
+                              </div>
+                            )}
+                            {notification.followUpDate && (
+                              <div className="flex items-center space-x-1">
+                                <Calendar className="h-3 w-3" />
+                                <span>Follow-up: {formatTimestamp(notification.followUpDate)}</span>
                               </div>
                             )}
                           </div>
@@ -656,6 +1051,60 @@ function MyNotesContent() {
                               Mark Viewed
                             </Button>
                           )}
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-muted-foreground">
+                              {notification.status === 'Closed' ? 'Closed' : 'Open'}
+                            </span>
+                            <Switch
+                              checked={notification.status !== 'Closed'}
+                              onCheckedChange={() => toggleStatus(notification)}
+                            />
+                          </div>
+                          <Button
+                            onClick={() => toggleFollowUpRequired(notification)}
+                            variant="ghost"
+                            size="sm"
+                            className={hasFollowUpRequired(notification) ? 'text-yellow-700' : 'text-muted-foreground'}
+                          >
+                            {hasFollowUpRequired(notification) ? 'Follow-up set' : 'Mark follow-up'}
+                          </Button>
+                          <AlertDialog open={deleteTarget?.id === notification.id} onOpenChange={(open) => {
+                            if (!open) setDeleteTarget(null);
+                          }}>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                onClick={() => setDeleteTarget(notification)}
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                Delete
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete this note?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This removes the note from your notifications. You will have a brief chance to undo.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => {
+                                    if (deleteTarget) {
+                                      requestDeleteNotification(deleteTarget);
+                                    }
+                                    setDeleteTarget(null);
+                                  }}
+                                  className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                           {memberLink && (
                             <Button
                               variant="secondary"
@@ -668,6 +1117,26 @@ function MyNotesContent() {
                               }}
                             >
                               View Member
+                            </Button>
+                          )}
+                          {isGeneralNote && isAdmin && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => resendAsPriority(notification)}
+                              disabled={isResendingPriority[notification.id]}
+                            >
+                              {isResendingPriority[notification.id] ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                  Sending
+                                </>
+                              ) : (
+                                <>
+                                  <Zap className="h-4 w-4 mr-1" />
+                                  Resend as Priority
+                                </>
+                              )}
                             </Button>
                           )}
                           <Button
@@ -694,6 +1163,26 @@ function MyNotesContent() {
                             }
                             placeholder="Write a reply to the sender..."
                           />
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs">Priority</Label>
+                            <Select
+                              value={replyPriority[notification.id] || 'Regular'}
+                              onValueChange={(value) =>
+                                setReplyPriority((prev) => ({
+                                  ...prev,
+                                  [notification.id]: value as 'Regular' | 'Immediate'
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="h-8 w-40">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Regular">Regular (no popup)</SelectItem>
+                                <SelectItem value="Immediate">Immediate (popup)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                           <Button
                             onClick={() => handleReplySend(notification)}
                             size="sm"
@@ -809,6 +1298,33 @@ function MyNotesContent() {
                     <SelectItem value="Immediate">Immediate (popup)</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="general-followup">Follow-up required</Label>
+                  <Switch
+                    id="general-followup"
+                    checked={generalNote.followUpRequired}
+                    onCheckedChange={(checked) =>
+                      setGeneralNote((prev) => ({
+                        ...prev,
+                        followUpRequired: checked
+                      }))
+                    }
+                  />
+                </div>
+                <Input
+                  type="date"
+                  value={generalNote.followUpDate}
+                  onChange={(e) =>
+                    setGeneralNote((prev) => ({
+                      ...prev,
+                      followUpDate: e.target.value,
+                      followUpRequired: prev.followUpRequired || Boolean(e.target.value)
+                    }))
+                  }
+                />
               </div>
 
               <Button onClick={handleSendGeneralNote} disabled={isSendingGeneral} className="w-full">

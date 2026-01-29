@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminDb } from '@/firebase-admin';
 
 export async function GET(request: NextRequest) {
   try {
@@ -78,10 +79,137 @@ export async function GET(request: NextRequest) {
         };
       });
 
+      const normalizePriority = (value: any) => {
+        const normalized = String(value || '').toLowerCase();
+        if (normalized.includes('urgent')) return 'Urgent';
+        if (normalized.includes('high')) return 'High';
+        if (normalized.includes('low')) return 'Low';
+        return 'Medium';
+      };
+
+      const followUpTasks: any[] = [];
+      const now = new Date();
+
+      try {
+        const staffSnap = await adminDb
+          .collection('staff_notifications')
+          .where('userId', '==', userId)
+          .limit(200)
+          .get();
+        staffSnap.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          const followUpRequired = Boolean(data.followUpRequired) || Boolean(data.followUpDate);
+          if (!followUpRequired) return;
+          if (String(data.status || '').toLowerCase() === 'closed') return;
+          const followUpDate = data.followUpDate?.toDate?.()?.toISOString?.()
+            || data.followUpDate
+            || data.timestamp?.toDate?.()?.toISOString?.()
+            || new Date().toISOString();
+          const isOverdue = followUpDate ? new Date(followUpDate) < now : false;
+          followUpTasks.push({
+            id: `staff-followup-${docSnap.id}`,
+            title: data.title ? `Follow-up: ${data.title}` : 'Follow-up required',
+            description: data.message || data.content || '',
+            memberName: data.memberName,
+            memberClientId: data.clientId2,
+            healthPlan: data.healthPlan,
+            taskType: 'follow_up',
+            priority: normalizePriority(data.priority),
+            status: isOverdue ? 'overdue' : 'pending',
+            dueDate: followUpDate,
+            assignedBy: data.createdBy || 'system',
+            assignedByName: data.senderName || data.createdByName || 'Staff',
+            assignedTo: userId,
+            assignedToName: staffName,
+            createdAt: data.timestamp?.toDate?.()?.toISOString?.() || data.createdAt || new Date().toISOString(),
+            updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() || data.timestamp?.toDate?.()?.toISOString?.() || new Date().toISOString(),
+            notes: data.message || data.content || '',
+            source: 'notes'
+          });
+        });
+      } catch (followupError) {
+        console.warn('Failed to load staff follow-up notes:', followupError);
+      }
+
+      try {
+        const clientSnap = await adminDb
+          .collection('client_notes')
+          .where('followUpAssignment', '==', userId)
+          .limit(200)
+          .get();
+        clientSnap.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (String(data.followUpStatus || '').toLowerCase() === 'closed') return;
+          const followUpDate = data.followUpDate || data.timeStamp || data.createdAt;
+          if (!followUpDate) return;
+          const dueDate = followUpDate?.toDate?.()?.toISOString?.() || followUpDate;
+          const isOverdue = dueDate ? new Date(dueDate) < now : false;
+          followUpTasks.push({
+            id: `client-followup-${docSnap.id}`,
+            title: `Client follow-up: ${data.clientId2 || 'Client'}`,
+            description: data.comments || '',
+            memberName: data.memberName || `Client ${data.clientId2 || ''}`.trim(),
+            memberClientId: data.clientId2,
+            healthPlan: data.healthPlan,
+            taskType: 'follow_up',
+            priority: normalizePriority(data.priority),
+            status: isOverdue ? 'overdue' : 'pending',
+            dueDate: dueDate,
+            assignedBy: data.createdBy || 'system',
+            assignedByName: data.createdByName || 'Staff',
+            assignedTo: userId,
+            assignedToName: staffName,
+            createdAt: data.timeStamp || data.createdAt || new Date().toISOString(),
+            updatedAt: data.syncedAt?.toDate?.()?.toISOString?.() || data.timeStamp || new Date().toISOString(),
+            notes: data.comments || '',
+            source: 'notes'
+          });
+        });
+      } catch (clientError) {
+        console.warn('Failed to load client follow-up notes:', clientError);
+      }
+
+      try {
+        const memberSnap = await adminDb
+          .collection('member-notes')
+          .where('assignedTo', '==', userId)
+          .limit(200)
+          .get();
+        memberSnap.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          const followUpDate = data.followUpDate;
+          if (!followUpDate) return;
+          const dueDate = followUpDate?.toDate?.()?.toISOString?.() || followUpDate;
+          const isOverdue = dueDate ? new Date(dueDate) < now : false;
+          followUpTasks.push({
+            id: `member-followup-${docSnap.id}`,
+            title: `Member follow-up: ${data.memberName || data.clientId2 || 'Member'}`,
+            description: data.noteText || '',
+            memberName: data.memberName,
+            memberClientId: data.clientId2,
+            healthPlan: data.healthPlan,
+            taskType: 'follow_up',
+            priority: normalizePriority(data.priority),
+            status: isOverdue ? 'overdue' : 'pending',
+            dueDate: dueDate,
+            assignedBy: data.createdBy || 'system',
+            assignedByName: data.createdByName || 'Staff',
+            assignedTo: userId,
+            assignedToName: staffName,
+            createdAt: data.createdAt || new Date().toISOString(),
+            updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
+            notes: data.noteText || '',
+            source: 'notes'
+          });
+        });
+      } catch (memberError) {
+        console.warn('Failed to load member follow-up notes:', memberError);
+      }
+
       return NextResponse.json({
         success: true,
-        tasks: tasks,
-        message: `Found ${tasks.length} tasks for ${staffName}`
+        tasks: [...followUpTasks, ...tasks],
+        message: `Found ${tasks.length + followUpTasks.length} tasks for ${staffName}`
       });
 
     } catch (fetchError) {

@@ -64,3 +64,72 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const {
+      action,
+      noteId,
+      noteType = 'system',
+      priority = 'low',
+      memberName,
+      applicationId,
+      actorName,
+      actorEmail,
+      recipientName,
+      recipientEmail,
+      source,
+      status
+    } = body || {};
+
+    if (!action) {
+      return NextResponse.json(
+        { success: false, error: 'Action is required' },
+        { status: 400 }
+      );
+    }
+
+    const db = admin.firestore();
+    const noteContentParts = [
+      action,
+      noteId ? `Note ID: ${noteId}` : null,
+      memberName ? `Member: ${memberName}` : null,
+      status ? `Status: ${status}` : null,
+      source ? `Source: ${source}` : null
+    ].filter(Boolean);
+
+    const noteRecord = {
+      senderName: actorName || 'System',
+      senderEmail: actorEmail || '',
+      recipientName: recipientName || 'System Log',
+      recipientEmail: recipientEmail || '',
+      memberName: memberName || '',
+      applicationId: applicationId || '',
+      noteContent: noteContentParts.join(' • '),
+      noteType,
+      priority,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      wasNotificationSent: false,
+      notificationMethod: undefined
+    };
+
+    const noteRef = db.collection('systemNotes').doc();
+    await noteRef.set({
+      ...noteRecord,
+      id: noteRef.id
+    });
+
+    return NextResponse.json({
+      success: true,
+      id: noteRef.id,
+      message: 'System note logged'
+    });
+  } catch (error: any) {
+    console.error('❌ Error logging system note:', error);
+    return NextResponse.json(
+      { success: false, error: 'Internal server error', message: error.message },
+      { status: 500 }
+    );
+  }
+}

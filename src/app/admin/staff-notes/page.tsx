@@ -1,10 +1,24 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
@@ -20,11 +34,14 @@ import {
   Eye,
   EyeOff,
   Search,
-  FileText
+  FileText,
+  Trash2
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { format } from 'date-fns';
+import { logSystemNoteAction } from '@/lib/system-note-log';
+import { ToastAction } from '@/components/ui/toast';
 
 interface StaffNote {
   id: string;
@@ -41,6 +58,7 @@ interface StaffNote {
   source: 'Caspio' | 'App' | 'Admin';
   isRead: boolean;
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  status?: 'Open' | 'Closed';
   followUpDate?: string;
   tags?: string[];
 }
@@ -55,6 +73,17 @@ export default function StaffNotesPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('assigned');
+  const [isSavingNote, setIsSavingNote] = useState(false);
+  const [newNote, setNewNote] = useState({
+    clientId2: '',
+    comments: '',
+    followUpStatus: 'Open',
+    followUpDate: ''
+  });
+  const [createStatus, setCreateStatus] = useState<{ caspio: boolean; firestore: boolean } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<StaffNote | null>(null);
+  const deleteTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const deletedNotesRef = useRef<Map<string, StaffNote>>(new Map());
   const [filters, setFilters] = useState({
     priority: 'all',
     type: 'all',
@@ -90,7 +119,8 @@ export default function StaffNotesPage() {
           source: 'App',
           isRead: false,
           priority: 'High',
-          followUpDate: '2026-01-20'
+          followUpDate: '2026-01-20',
+          status: 'Open'
         },
         {
           id: '2',
@@ -107,7 +137,8 @@ export default function StaffNotesPage() {
           source: 'Caspio',
           isRead: true,
           priority: 'Medium',
-          followUpDate: '2026-01-22'
+          followUpDate: '2026-01-22',
+          status: 'Closed'
         },
         {
           id: '3',
@@ -123,7 +154,8 @@ export default function StaffNotesPage() {
           updatedAt: '2026-01-17T16:45:00Z',
           source: 'Admin',
           isRead: false,
-          priority: 'Urgent'
+          priority: 'Urgent',
+          status: 'Open'
         }
       ];
 
@@ -143,7 +175,8 @@ export default function StaffNotesPage() {
           updatedAt: '2026-01-15T09:00:00Z',
           source: 'App',
           isRead: true,
-          priority: 'Low'
+          priority: 'Low',
+          status: 'Closed'
         },
         {
           id: '5',
@@ -159,7 +192,8 @@ export default function StaffNotesPage() {
           updatedAt: '2026-01-14T13:20:00Z',
           source: 'App',
           isRead: true,
-          priority: 'Medium'
+          priority: 'Medium',
+          status: 'Open'
         }
       ];
 
@@ -224,6 +258,132 @@ export default function StaffNotesPage() {
 
     } catch (error) {
       console.error('Error marking note as unread:', error);
+    }
+  };
+
+  const toggleStatus = async (note: StaffNote) => {
+    const nextStatus = (note.status || 'Open') === 'Closed' ? 'Open' : 'Closed';
+    setAssignedNotes(prev =>
+      prev.map(item => item.id === note.id ? { ...item, status: nextStatus } : item)
+    );
+    setAllNotes(prev =>
+      prev.map(item => item.id === note.id ? { ...item, status: nextStatus } : item)
+    );
+    await logSystemNoteAction({
+      action: 'Staff note status updated',
+      noteId: note.id,
+      memberName: note.memberName,
+      status: nextStatus,
+      actorName: user?.displayName || user?.email || 'Staff',
+      actorEmail: user?.email || ''
+    });
+    toast({
+      title: `Note ${nextStatus === 'Closed' ? 'Closed' : 'Reopened'}`,
+      description: `Status set to ${nextStatus}.`
+    });
+  };
+
+  const commitDeleteNote = async (note: StaffNote) => {
+    await logSystemNoteAction({
+      action: 'Staff note deleted',
+      noteId: note.id,
+      memberName: note.memberName,
+      status: note.status || 'Open',
+      actorName: user?.displayName || user?.email || 'Staff',
+      actorEmail: user?.email || ''
+    });
+    deletedNotesRef.current.delete(note.id);
+  };
+
+  const requestDeleteNote = (note: StaffNote) => {
+    deletedNotesRef.current.set(note.id, note);
+    setAssignedNotes(prev => prev.filter(item => item.id !== note.id));
+    setAllNotes(prev => prev.filter(item => item.id !== note.id));
+    const timer = setTimeout(() => {
+      deleteTimersRef.current.delete(note.id);
+      commitDeleteNote(note).catch(() => undefined);
+    }, 5000);
+    deleteTimersRef.current.set(note.id, timer);
+
+    toast({
+      title: 'Note Deleted',
+      description: 'You can undo this action for a few seconds.',
+      action: (
+        <ToastAction
+          altText="Undo delete"
+          onClick={() => {
+            const existingTimer = deleteTimersRef.current.get(note.id);
+            if (existingTimer) {
+              clearTimeout(existingTimer);
+              deleteTimersRef.current.delete(note.id);
+            }
+            const cached = deletedNotesRef.current.get(note.id);
+            if (cached) {
+              deletedNotesRef.current.delete(note.id);
+              setAssignedNotes(prev => (cached.assignedTo === user?.uid ? [cached, ...prev] : prev));
+              setAllNotes(prev => [cached, ...prev]);
+            }
+          }}
+        >
+          Undo
+        </ToastAction>
+      )
+    });
+  };
+
+  const handleAddClientNote = async () => {
+    if (!newNote.clientId2.trim()) {
+      toast({
+        title: "Client ID Required",
+        description: "Enter a valid Client_ID2 to create a note.",
+        variant: "destructive"
+      });
+      return;
+    }
+    if (!newNote.comments.trim()) {
+      toast({
+        title: "Note Required",
+        description: "Enter note details before saving.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setIsSavingNote(true);
+      setCreateStatus(null);
+      const response = await fetch('/api/client-notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId2: newNote.clientId2.trim(),
+          comments: newNote.comments.trim(),
+          followUpStatus: newNote.followUpStatus,
+          followUpDate: newNote.followUpDate || null,
+          actorName: user?.displayName || user?.email || 'Staff',
+          actorEmail: user?.email || ''
+        })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.message || data.error || 'Failed to create note');
+      }
+      const sync = data.sync || { caspio: true, firestore: Boolean(data.data?.firestoreSaved) };
+      setCreateStatus(sync);
+      setNewNote({ clientId2: '', comments: '', followUpStatus: 'Open', followUpDate: '' });
+      toast({
+        title: "Note Added",
+        description: "Client note saved successfully."
+      });
+    } catch (error: any) {
+      console.error('Error creating client note:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create note",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSavingNote(false);
     }
   };
 
@@ -388,6 +548,110 @@ export default function StaffNotesPage() {
               </SelectContent>
             </Select>
           </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant={filters.status === 'all' ? 'default' : 'outline'}
+              onClick={() => setFilters(prev => ({ ...prev, status: 'all' }))}
+            >
+              All
+            </Button>
+            <Button
+              size="sm"
+              variant={filters.status === 'unread' ? 'default' : 'outline'}
+              onClick={() => setFilters(prev => ({ ...prev, status: 'unread' }))}
+            >
+              Unread
+            </Button>
+            <Button
+              size="sm"
+              variant={filters.status === 'read' ? 'default' : 'outline'}
+              onClick={() => setFilters(prev => ({ ...prev, status: 'read' }))}
+            >
+              Read
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Add Client Note */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Add Client Note
+          </CardTitle>
+          <CardDescription>
+            Create a note for an existing Client_ID2 in Caspio. The note syncs to Caspio and Firestore.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="staff-client-id">Client_ID2</Label>
+              <Input
+                id="staff-client-id"
+                placeholder="Enter Client_ID2"
+                value={newNote.clientId2}
+                onChange={(e) => setNewNote(prev => ({ ...prev, clientId2: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select
+                value={newNote.followUpStatus}
+                onValueChange={(value) => setNewNote(prev => ({ ...prev, followUpStatus: value }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Open">Open</SelectItem>
+                  <SelectItem value="Pending">Pending</SelectItem>
+                  <SelectItem value="Closed">Closed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Follow-up Date</Label>
+              <Input
+                type="date"
+                value={newNote.followUpDate}
+                onChange={(e) => setNewNote(prev => ({ ...prev, followUpDate: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Note</Label>
+            <Textarea
+              rows={3}
+              value={newNote.comments}
+              onChange={(e) => setNewNote(prev => ({ ...prev, comments: e.target.value }))}
+              placeholder="Write the note details..."
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Button onClick={handleAddClientNote} disabled={isSavingNote}>
+              {isSavingNote ? 'Saving...' : 'Save Note'}
+            </Button>
+            {createStatus && (
+              <div className="flex items-center gap-3 text-sm">
+                {createStatus.caspio && (
+                  <span className="flex items-center gap-1 text-green-600">
+                    <CheckCircle className="h-4 w-4" />
+                    Caspio synced
+                  </span>
+                )}
+                {createStatus.firestore && (
+                  <span className="flex items-center gap-1 text-green-600">
+                    <CheckCircle className="h-4 w-4" />
+                    Firestore synced
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -449,6 +713,9 @@ export default function StaffNotesPage() {
                               New
                             </Badge>
                           )}
+                          <Badge variant="outline">
+                            {note.status || 'Open'}
+                          </Badge>
                         </div>
                         <div className="flex items-center gap-2">
                           <Button
@@ -458,6 +725,51 @@ export default function StaffNotesPage() {
                           >
                             {note.isRead ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                           </Button>
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-muted-foreground">
+                              {(note.status || 'Open') === 'Closed' ? 'Closed' : 'Open'}
+                            </span>
+                            <Switch
+                              checked={(note.status || 'Open') !== 'Closed'}
+                              onCheckedChange={() => toggleStatus(note)}
+                            />
+                          </div>
+                          <AlertDialog open={deleteTarget?.id === note.id} onOpenChange={(open) => {
+                            if (!open) setDeleteTarget(null);
+                          }}>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs text-red-600 hover:text-red-700"
+                                onClick={() => setDeleteTarget(note)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete this note?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  You will have a brief chance to undo this deletion.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => {
+                                    if (deleteTarget) {
+                                      requestDeleteNote(deleteTarget);
+                                    }
+                                    setDeleteTarget(null);
+                                  }}
+                                  className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                           <div className="text-sm text-muted-foreground">
                             {format(new Date(note.createdAt), 'MMM d, yyyy h:mm a')}
                           </div>
@@ -468,7 +780,7 @@ export default function StaffNotesPage() {
                         <p className="font-medium text-sm mb-1">
                           {note.memberName} ({note.clientId2})
                         </p>
-                        <p className="text-sm">{note.noteText}</p>
+                        <p className="text-sm line-clamp-2">{note.noteText}</p>
                       </div>
                       
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -535,6 +847,9 @@ export default function StaffNotesPage() {
                               Assigned to You
                             </Badge>
                           )}
+                          <Badge variant="outline">
+                            {note.status || 'Open'}
+                          </Badge>
                         </div>
                         <div className="flex items-center gap-2">
                           {note.assignedTo === user.uid && (
@@ -546,6 +861,51 @@ export default function StaffNotesPage() {
                               {note.isRead ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                             </Button>
                           )}
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-muted-foreground">
+                              {(note.status || 'Open') === 'Closed' ? 'Closed' : 'Open'}
+                            </span>
+                            <Switch
+                              checked={(note.status || 'Open') !== 'Closed'}
+                              onCheckedChange={() => toggleStatus(note)}
+                            />
+                          </div>
+                          <AlertDialog open={deleteTarget?.id === note.id} onOpenChange={(open) => {
+                            if (!open) setDeleteTarget(null);
+                          }}>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs text-red-600 hover:text-red-700"
+                                onClick={() => setDeleteTarget(note)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete this note?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  You will have a brief chance to undo this deletion.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => {
+                                    if (deleteTarget) {
+                                      requestDeleteNote(deleteTarget);
+                                    }
+                                    setDeleteTarget(null);
+                                  }}
+                                  className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                           <div className="text-sm text-muted-foreground">
                             {format(new Date(note.createdAt), 'MMM d, yyyy h:mm a')}
                           </div>
@@ -556,7 +916,7 @@ export default function StaffNotesPage() {
                         <p className="font-medium text-sm mb-1">
                           {note.memberName} ({note.clientId2})
                         </p>
-                        <p className="text-sm">{note.noteText}</p>
+                        <p className="text-sm line-clamp-2">{note.noteText}</p>
                       </div>
                       
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
