@@ -20,6 +20,7 @@ import { useFirestore } from '@/firebase';
 import { addDoc, collection, query, where, onSnapshot, doc, updateDoc, writeBatch, serverTimestamp, getDocs, documentId, deleteDoc } from 'firebase/firestore';
 import { logSystemNoteAction } from '@/lib/system-note-log';
 import { getPriorityRank, isPriorityOrUrgent, normalizePriorityLabel, notifyNotificationSettingsChanged } from '@/lib/notification-utils';
+import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -851,6 +852,7 @@ function MyNotesContent() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
+      {isAdmin && <PWAInstallPrompt />}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

@@ -70,6 +70,9 @@ export function RealTimeNotifications() {
     pendingLabel: string;
     links: Array<{ label: string; url: string }>;
     soundType: string;
+    memberName?: string;
+    timestamp?: string;
+    tagLabel?: string;
   } | null>(null);
   const [desktopState, setDesktopState] = useState<DesktopNotificationState | null>(null);
   const [notificationPrefs, setNotificationPrefs] = useState({
@@ -202,9 +205,10 @@ export function RealTimeNotifications() {
         title: summary.title,
         message: summary.message,
         author: summary.author,
-        memberName: '',
+        memberName: summary.memberName || '',
+        timestamp: summary.timestamp,
         priority: undefined,
-        tagLabel: undefined,
+        tagLabel: summary.tagLabel,
         startMinimized: false,
         lockToTray: true,
         duration: 0,
@@ -424,6 +428,14 @@ export function RealTimeNotifications() {
             sortedPending[0];
           const highlightSender = highlightNote?.senderName || senderSummary;
           const highlightSubject = highlightNote?.memberName || subjectLabel;
+          const highlightTimestamp = highlightNote?.timestamp
+            ? highlightNote.timestamp.toLocaleString()
+            : '';
+          const recentLines = sortedPending.slice(0, 3).map((note) => {
+            const label = note.memberName || 'General Note';
+            const timeLabel = note.timestamp ? note.timestamp.toLocaleTimeString() : '';
+            return `• ${label}${timeLabel ? ` (${timeLabel})` : ''}`;
+          });
           const summaryTitle = count === 1
             ? `From ${highlightSender} · Re: ${highlightSubject}`
             : `Re: ${highlightSubject}`;
@@ -431,7 +443,13 @@ export function RealTimeNotifications() {
           const summaryMessage = urgentExists
             ? (highlightNote?.message || `${senderLabel} · Immediate notes: ${count}`)
             : `${senderLabel} · Immediate notes: ${count}`;
+          const detailMessage = [
+            summaryMessage,
+            highlightTimestamp ? `Created: ${highlightTimestamp}` : '',
+            recentLines.length > 0 ? `Recent notes:\n${recentLines.join('\n')}` : ''
+          ].filter(Boolean).join('\n');
           const tagLabel = undefined;
+          const priorityTag = urgentExists ? 'Urgent' : priorityExists ? 'Priority' : undefined;
           const links: Array<{ label: string; url: string }> = [
             { label: 'Open My Notifications', url: '/admin/my-notes' }
           ];
@@ -440,11 +458,14 @@ export function RealTimeNotifications() {
           latestSummaryRef.current = {
             type: priorityExists ? 'urgent' : 'note',
             title: summaryTitle,
-            message: summaryMessage,
+            message: detailMessage,
             author: highlightSender,
             pendingLabel: count === 1 ? `Pending note · ${highlightSender}` : `Notes (${count})`,
             links,
-            soundType: notificationPrefs.soundType
+            soundType: notificationPrefs.soundType,
+            memberName: highlightSubject || '',
+            timestamp: highlightTimestamp || undefined,
+            tagLabel: priorityTag
           };
 
           if (shouldShowWebToast) {
@@ -452,11 +473,12 @@ export function RealTimeNotifications() {
               keyId: 'staff-note-summary',
               type: urgentExists ? 'urgent' : 'note',
               title: summaryTitle,
-              message: summaryMessage,
+              message: detailMessage,
               author: highlightSender,
-              memberName: '',
+              memberName: highlightSubject || '',
+              timestamp: highlightTimestamp || undefined,
               priority: undefined,
-              tagLabel,
+              tagLabel: priorityTag,
               startMinimized: !shouldPopup,
               lockToTray: true,
               duration: 0,

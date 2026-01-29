@@ -54,7 +54,6 @@ export const sendMorningNoteDigest = onSchedule(
         notification: {
           title: 'Morning Notes Summary',
           body: digestBody,
-          icon: '/calaimlogopdf.png',
         },
         data: {
           actionUrl: '/admin/my-notes',

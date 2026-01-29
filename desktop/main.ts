@@ -35,6 +35,7 @@ let isWithinBusinessHours = true;
 let scheduleTimeout: NodeJS.Timeout | null = null;
 let isQuitting = false;
 let overlayMoveTimeout: NodeJS.Timeout | null = null;
+let overlayDragOffset: { x: number; y: number } | null = null;
 
 const resolveTrayIconPath = () => {
   const candidatePaths = [
@@ -180,6 +181,12 @@ const resetOverlayPosition = () => {
   const height = overlayWindow.getBounds().height;
   const { x, y } = getDefaultOverlayPosition(width, height);
   overlayWindow.setPosition(x, y);
+};
+
+const persistOverlayPosition = () => {
+  if (!overlayWindow) return;
+  const [nextX, nextY] = overlayWindow.getPosition();
+  store.set('overlayPosition', { x: nextX, y: nextY });
 };
 
 const updateTrayMenu = () => {
@@ -330,11 +337,13 @@ const createOverlayWindow = () => {
 
   overlayWindow.setAlwaysOnTop(true, 'pop-up-menu');
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  overlayWindow.setMovable(true);
   overlayWindow.on('closed', () => {
     if (overlayMoveTimeout) {
       clearTimeout(overlayMoveTimeout);
       overlayMoveTimeout = null;
     }
+    overlayDragOffset = null;
     overlayWindow = null;
   });
   overlayWindow.on('move', () => {
@@ -343,9 +352,7 @@ const createOverlayWindow = () => {
       clearTimeout(overlayMoveTimeout);
     }
     overlayMoveTimeout = setTimeout(() => {
-      if (!overlayWindow) return;
-      const [nextX, nextY] = overlayWindow.getPosition();
-      store.set('overlayPosition', { x: nextX, y: nextY });
+      persistOverlayPosition();
     }, 300);
   });
 
@@ -368,18 +375,23 @@ const createOverlayWindow = () => {
             align-items: center;
             gap: 10px;
             box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
-            cursor: pointer;
+            cursor: grab;
             user-select: none;
             -webkit-app-region: no-drag;
           }
           #drag {
-            width: 12px;
-            height: 12px;
+            width: 16px;
+            height: 16px;
             border-radius: 999px;
             background: #e2e8f0;
             border: 1px solid #cbd5e1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: #64748b;
             cursor: move;
-            -webkit-app-region: drag;
+            -webkit-app-region: no-drag;
           }
           #dot {
             width: 10px;
@@ -409,11 +421,12 @@ const createOverlayWindow = () => {
             <div id="label">Connections Note</div>
             <div id="text">Notes: 0</div>
           </div>
-          <div id="drag" title="Drag to move"></div>
+          <div id="drag" title="Drag to move">⋮⋮</div>
         </div>
         <script>
           const { ipcRenderer } = require('electron');
           const pill = document.getElementById('pill');
+          const dragHandle = document.getElementById('drag');
           const text = document.getElementById('text');
           const dot = document.getElementById('dot');
 
@@ -431,10 +444,49 @@ const createOverlayWindow = () => {
             dot.style.opacity = paused ? '0.4' : '1';
           });
 
+          let dragging = false;
+          let dragMoved = false;
+          let lastDragEnd = 0;
+
+          const startDrag = (event) => {
+            if (!event || event.button !== 0) return;
+            dragging = true;
+            dragMoved = false;
+            ipcRenderer.send('desktop-notifications:drag-start', {
+              offsetX: event.offsetX,
+              offsetY: event.offsetY
+            });
+            event.preventDefault();
+          };
+
+          const moveDrag = (event) => {
+            if (!dragging) return;
+            dragMoved = true;
+            ipcRenderer.send('desktop-notifications:drag-move', {
+              x: event.screenX,
+              y: event.screenY
+            });
+            event.preventDefault();
+          };
+
+          const endDrag = () => {
+            if (!dragging) return;
+            dragging = false;
+            if (dragMoved) {
+              lastDragEnd = Date.now();
+            }
+            ipcRenderer.send('desktop-notifications:drag-end');
+          };
+
           pill.addEventListener('click', () => {
+            if (Date.now() - lastDragEnd < 300) return;
             ipcRenderer.send('desktop-notifications:expand');
             ipcRenderer.send('desktop-notifications:open-notifications');
           });
+
+          pill.addEventListener('mousedown', startDrag);
+          window.addEventListener('mousemove', moveDrag);
+          window.addEventListener('mouseup', endDrag);
         </script>
       </body>
     </html>
@@ -545,4 +597,24 @@ ipcMain.on('desktop-notifications:expand', () => {
     createNotificationWindow();
   }
   notificationWindow?.webContents.send('desktop-notifications:expand');
+});
+
+ipcMain.on('desktop-notifications:drag-start', (_event, payload: { offsetX?: number; offsetY?: number }) => {
+  const offsetX = Number(payload?.offsetX ?? 0);
+  const offsetY = Number(payload?.offsetY ?? 0);
+  if (!Number.isFinite(offsetX) || !Number.isFinite(offsetY)) return;
+  overlayDragOffset = { x: offsetX, y: offsetY };
+});
+
+ipcMain.on('desktop-notifications:drag-move', (_event, payload: { x?: number; y?: number }) => {
+  if (!overlayWindow || !overlayDragOffset) return;
+  const nextX = Number(payload?.x ?? 0) - overlayDragOffset.x;
+  const nextY = Number(payload?.y ?? 0) - overlayDragOffset.y;
+  if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) return;
+  overlayWindow.setPosition(nextX, nextY);
+});
+
+ipcMain.on('desktop-notifications:drag-end', () => {
+  overlayDragOffset = null;
+  persistOverlayPosition();
 });

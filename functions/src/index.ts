@@ -197,7 +197,9 @@ export {
   triggerDocumentReminders
 } from './document-reminders';
 
-admin.initializeApp();
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
 
 // Define secrets for Caspio API
 const caspioBaseUrl = defineSecret("CASPIO_BASE_URL");

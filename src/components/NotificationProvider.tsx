@@ -10,6 +10,7 @@ interface WindowsNotificationProps {
   message: string;
   author?: string;
   memberName?: string;
+  timestamp?: string;
   priority?: 'General' | 'Priority' | 'Urgent' | string;
   tagLabel?: string;
   startMinimized?: boolean;

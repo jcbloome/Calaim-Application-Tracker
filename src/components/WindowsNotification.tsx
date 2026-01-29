@@ -27,6 +27,7 @@ interface WindowsNotificationProps {
   message: string;
   author?: string;
   memberName?: string;
+  timestamp?: string;
   priority?: 'General' | 'Priority' | 'Urgent' | string;
   tagLabel?: string;
   startMinimized?: boolean;
@@ -90,6 +91,7 @@ export default function WindowsNotification({
   message,
   author,
   memberName,
+  timestamp,
   priority,
   tagLabel,
   startMinimized = false,
@@ -349,9 +351,9 @@ export default function WindowsNotification({
             </div>
           )}
           
-          {/* Author and Member info */}
-          {(author || memberName) && (
-            <div className="flex items-center gap-4 text-xs text-slate-500">
+          {/* Author, Member, and timestamp info */}
+          {(author || memberName || timestamp) && (
+            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
               {author && (
                 <div className="flex items-center gap-1">
                   <User className="h-3 w-3" />
@@ -362,6 +364,12 @@ export default function WindowsNotification({
                 <div className="flex items-center gap-1">
                   <Target className="h-3 w-3" />
                   <span>Re: {memberName}</span>
+                </div>
+              )}
+              {timestamp && (
+                <div className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  <span>{timestamp}</span>
                 </div>
               )}
             </div>
