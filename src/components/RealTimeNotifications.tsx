@@ -12,6 +12,7 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { useGlobalNotifications } from './NotificationProvider';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 interface StaffNotification {
   id: string;
@@ -69,7 +70,11 @@ export function RealTimeNotifications() {
       enabled: false,
       startTime: '18:00',
       endTime: '08:00'
-    }
+    },
+    forceSuppressWebWhenDesktopActive: false
+  });
+  const [globalPolicy, setGlobalPolicy] = useState<{ forceSuppressWebWhenDesktopActive: boolean }>({
+    forceSuppressWebWhenDesktopActive: false
   });
 
   useEffect(() => {
@@ -98,7 +103,9 @@ export function RealTimeNotifications() {
             quietHours: {
               ...prev.quietHours,
               ...globals.quietHours
-            }
+            },
+            forceSuppressWebWhenDesktopActive:
+              globals.forceSuppressWebWhenDesktopActive ?? prev.forceSuppressWebWhenDesktopActive
           }));
         }
       } catch (error) {
@@ -114,6 +121,33 @@ export function RealTimeNotifications() {
     };
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const loadGlobalSettings = async () => {
+      try {
+        const functions = getFunctions();
+        const getSettings = httpsCallable(functions, 'getNotificationSettings');
+        const result = await getSettings({});
+        const data = result.data as any;
+        const nextGlobalControls = data?.settings?.globalControls || {};
+        const nextPolicy = {
+          forceSuppressWebWhenDesktopActive: Boolean(nextGlobalControls.forceSuppressWebWhenDesktopActive)
+        };
+        setGlobalPolicy(nextPolicy);
+        try {
+          localStorage.setItem('notificationSettingsGlobal', JSON.stringify({
+            globalControls: nextGlobalControls
+          }));
+        } catch (error) {
+          console.warn('Failed to cache global notification settings:', error);
+        }
+      } catch (error) {
+        console.warn('Failed to load global notification settings:', error);
+      }
+    };
+    loadGlobalSettings();
   }, []);
 
   useEffect(() => {
@@ -272,6 +306,38 @@ export function RealTimeNotifications() {
             return;
           }
 
+          const shouldSuppressWeb = typeof window === 'undefined'
+            ? false
+            : (() => {
+                if (!window.desktopNotifications) return false;
+                let userSuppress = false;
+                let globalForce = globalPolicy.forceSuppressWebWhenDesktopActive;
+                try {
+                  const raw = localStorage.getItem('notificationSettings');
+                  if (raw) {
+                    const parsed = JSON.parse(raw) as any;
+                    userSuppress = Boolean(parsed?.userControls?.suppressWebWhenDesktopActive);
+                  }
+                } catch {
+                  userSuppress = false;
+                }
+                if (!globalForce) {
+                  try {
+                    const rawGlobal = localStorage.getItem('notificationSettingsGlobal');
+                    if (rawGlobal) {
+                      const parsedGlobal = JSON.parse(rawGlobal) as any;
+                      globalForce = Boolean(parsedGlobal?.globalControls?.forceSuppressWebWhenDesktopActive);
+                    }
+                  } catch {
+                    globalForce = globalPolicy.forceSuppressWebWhenDesktopActive;
+                  }
+                }
+                return globalForce || userSuppress;
+              })();
+          const shouldShowWebToast = typeof window === 'undefined'
+            ? false
+            : (!window.desktopNotifications || !shouldSuppressWeb);
+
           if (!canShowNotifications()) {
             if (summaryNotificationIdRef.current) {
               removeNotification(summaryNotificationIdRef.current);
@@ -304,28 +370,33 @@ export function RealTimeNotifications() {
           ];
           const shouldPopup = hasNew;
 
-          const summaryId = showNotification({
-            keyId: 'staff-note-summary',
-            type: urgentExists ? 'urgent' : 'note',
-            title: summaryTitle,
-            message: `${senderLabel} · Immediate notes: ${count}`,
-            author: senderSummary,
-            memberName: '',
-            priority: undefined,
-            tagLabel,
-            startMinimized: !shouldPopup,
-            lockToTray: true,
-            duration: 0,
-            minimizeAfter: shouldPopup ? 12000 : 0,
-            pendingLabel: count === 1 ? `Pending note · ${senderSummary}` : `Notes (${count})`,
-            sound: hasNew && notificationPrefs.enabled ? notificationPrefs.sound : false,
-            soundType: notificationPrefs.soundType,
-            animation: 'slide',
-            links,
-            onClick: undefined
-          });
+          if (shouldShowWebToast) {
+            const summaryId = showNotification({
+              keyId: 'staff-note-summary',
+              type: urgentExists ? 'urgent' : 'note',
+              title: summaryTitle,
+              message: `${senderLabel} · Immediate notes: ${count}`,
+              author: senderSummary,
+              memberName: '',
+              priority: undefined,
+              tagLabel,
+              startMinimized: !shouldPopup,
+              lockToTray: true,
+              duration: 0,
+              minimizeAfter: shouldPopup ? 12000 : 0,
+              pendingLabel: count === 1 ? `Pending note · ${senderSummary}` : `Notes (${count})`,
+              sound: hasNew && notificationPrefs.enabled ? notificationPrefs.sound : false,
+              soundType: notificationPrefs.soundType,
+              animation: 'slide',
+              links,
+              onClick: undefined
+            });
 
-          summaryNotificationIdRef.current = summaryId;
+            summaryNotificationIdRef.current = summaryId;
+          } else if (summaryNotificationIdRef.current) {
+            removeNotification(summaryNotificationIdRef.current);
+            summaryNotificationIdRef.current = null;
+          }
           if (hasNew && window.desktopNotifications?.notify) {
             window.desktopNotifications.notify({
               title: summaryTitle,

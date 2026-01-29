@@ -31,8 +31,34 @@ interface NotificationBellProps {
   className?: string;
 }
 
+const shouldSuppressBrowserNotifications = () => {
+  if (typeof window === 'undefined') return false;
+  if (!window.desktopNotifications) return false;
+  try {
+    const raw = localStorage.getItem('notificationSettings');
+    const parsed = raw ? JSON.parse(raw) as any : {};
+    const userSuppress = Boolean(parsed?.userControls?.suppressWebWhenDesktopActive);
+    let globalForce = false;
+    try {
+      const rawGlobal = localStorage.getItem('notificationSettingsGlobal');
+      if (rawGlobal) {
+        const parsedGlobal = JSON.parse(rawGlobal) as any;
+        globalForce = Boolean(parsedGlobal?.globalControls?.forceSuppressWebWhenDesktopActive);
+      }
+    } catch {
+      globalForce = false;
+    }
+    return globalForce || userSuppress;
+  } catch {
+    return false;
+  }
+};
+
 // Browser notification function
 const showBrowserNotifications = (priorityNotifications: NotificationPreview[]) => {
+  if (shouldSuppressBrowserNotifications()) {
+    return;
+  }
   // Request permission if not already granted
   if (Notification.permission === 'default') {
     Notification.requestPermission().then(permission => {

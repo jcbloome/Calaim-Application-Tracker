@@ -33,6 +33,7 @@ interface NotificationSettings {
   soundType: string;
   displayStyle: 'standard' | 'compact';
   urgentOnly: boolean;
+  suppressWebWhenDesktopActive: boolean;
   quietHours: {
     enabled: boolean;
     start: string;
@@ -49,6 +50,7 @@ export default function NotificationSettingsPage() {
     soundType: 'mellow-note',
     displayStyle: 'standard',
     urgentOnly: false,
+    suppressWebWhenDesktopActive: false,
     quietHours: {
       enabled: false,
       start: '22:00',
@@ -117,6 +119,19 @@ export default function NotificationSettingsPage() {
       // Save to backend (this would be a real API call)
       if (typeof window !== 'undefined') {
         localStorage.setItem(`notification-settings-${user.uid}`, JSON.stringify(settings));
+        let existingGlobalControls: Record<string, any> | undefined;
+        let existingUserControls: Record<string, any> | undefined;
+        try {
+          const raw = localStorage.getItem('notificationSettings');
+          if (raw) {
+            const parsed = JSON.parse(raw) as any;
+            existingGlobalControls = parsed?.globalControls;
+            existingUserControls = parsed?.userControls;
+          }
+        } catch {
+          existingGlobalControls = undefined;
+          existingUserControls = undefined;
+        }
         localStorage.setItem('notificationSettings', JSON.stringify({
           browserNotifications: {
             enabled: settings.enableSystemTray,
@@ -125,6 +140,11 @@ export default function NotificationSettingsPage() {
             urgentPriority: !settings.urgentOnly,
             sound: settings.notificationSound,
             soundType: settings.soundType
+          },
+          globalControls: existingGlobalControls,
+          userControls: {
+            ...existingUserControls,
+            suppressWebWhenDesktopActive: settings.suppressWebWhenDesktopActive
           }
         }));
       }
@@ -354,6 +374,22 @@ export default function NotificationSettingsPage() {
               checked={settings.enableSystemTray}
               onCheckedChange={(checked) => 
                 setSettings(prev => ({ ...prev, enableSystemTray: checked }))
+              }
+            />
+          </div>
+
+          {/* Suppress Web When Desktop Active */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label className="text-base font-medium">Suppress Web Alerts When Desktop Is Active</Label>
+              <p className="text-sm text-muted-foreground">
+                Hide browser notifications while the desktop app is running
+              </p>
+            </div>
+            <Switch
+              checked={settings.suppressWebWhenDesktopActive}
+              onCheckedChange={(checked) =>
+                setSettings(prev => ({ ...prev, suppressWebWhenDesktopActive: checked }))
               }
             />
           </div>

@@ -400,8 +400,8 @@ function AdminHeader() {
 
   return (
     <div className="bg-card border-b sticky top-0 z-40">
-      <div className="container mx-auto flex flex-wrap items-center justify-between min-h-16 gap-3 px-4 py-2 sm:px-6">
-        <div className="flex flex-wrap items-center gap-4">
+      <div className="container mx-auto flex items-center justify-between min-h-16 gap-3 px-4 py-2 sm:px-6">
+        <div className="flex items-center gap-4 min-w-0">
           <Link href="/admin" className="shrink-0">
             <Image
               src="/calaimlogopdf.png"

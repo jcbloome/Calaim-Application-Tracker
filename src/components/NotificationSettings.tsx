@@ -57,6 +57,7 @@ interface NotificationSettings {
       startTime: string;
       endTime: string;
     };
+    forceSuppressWebWhenDesktopActive: boolean;
   };
 }
 
@@ -88,7 +89,8 @@ const DEFAULT_SETTINGS: NotificationSettings = {
       enabled: false,
       startTime: '18:00',
       endTime: '08:00'
-    }
+    },
+    forceSuppressWebWhenDesktopActive: false
   }
 };
 
@@ -124,6 +126,8 @@ export default function NotificationSettings() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [testingSound, setTestingSound] = useState(false);
+  const [desktopState, setDesktopState] = useState<DesktopNotificationState | null>(null);
+  const [desktopAvailable, setDesktopAvailable] = useState(false);
   const { toast } = useToast();
 
   const persistSettings = (nextSettings: NotificationSettings) => {
@@ -620,8 +624,70 @@ export default function NotificationSettings() {
     loadSettings();
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!window.desktopNotifications) return;
+    setDesktopAvailable(true);
+    let unsubscribe: (() => void) | undefined;
+    window.desktopNotifications.getState()
+      .then((state) => setDesktopState(state))
+      .catch((error) => console.warn('Failed to read desktop notification state:', error));
+    unsubscribe = window.desktopNotifications.onChange((state) => {
+      setDesktopState(state);
+    });
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  const toggleDesktopPause = async () => {
+    if (!window.desktopNotifications || !desktopState) return;
+    try {
+      const nextState = await window.desktopNotifications.setPaused(!desktopState.pausedByUser);
+      setDesktopState(nextState);
+    } catch (error) {
+      console.warn('Failed to toggle desktop notifications:', error);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {desktopAvailable && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="h-5 w-5" />
+              Desktop App Status
+            </CardTitle>
+            <CardDescription>
+              Controls for the desktop tray notifications.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label className="text-base font-medium">System Notifications</Label>
+                <p className="text-sm text-muted-foreground">
+                  {desktopState?.effectivePaused
+                    ? 'Paused (silent outside business hours or by staff)'
+                    : 'Active during business hours'}
+                </p>
+              </div>
+              <Button onClick={toggleDesktopPause} variant="outline" disabled={!desktopState}>
+                {desktopState?.pausedByUser ? 'Resume' : 'Pause'}
+              </Button>
+            </div>
+            {desktopState && (
+              <div className="flex items-center gap-2">
+                <Badge variant={desktopState.isWithinBusinessHours ? 'default' : 'secondary'}>
+                  {desktopState.isWithinBusinessHours ? 'Business Hours' : 'Silent Hours'}
+                </Badge>
+                {desktopState.pausedByUser && <Badge variant="secondary">Paused by Staff</Badge>}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -705,6 +771,23 @@ export default function NotificationSettings() {
                 </div>
               </div>
             )}
+          </div>
+
+          <Separator />
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <Label className="text-base font-medium">Force Web Alerts Off When Desktop Is Active</Label>
+              <p className="text-xs text-muted-foreground">
+                Global switch to suppress browser notifications when the desktop app is running
+              </p>
+            </div>
+            <Switch
+              checked={settings.globalControls.forceSuppressWebWhenDesktopActive}
+              onCheckedChange={(checked) =>
+                updateSettings(['globalControls', 'forceSuppressWebWhenDesktopActive'], checked)
+              }
+            />
           </div>
         </CardContent>
       </Card>

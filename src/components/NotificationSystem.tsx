@@ -31,6 +31,29 @@ interface NotificationSystemProps {
   className?: string;
 }
 
+const shouldSuppressBrowserNotifications = () => {
+  if (typeof window === 'undefined') return false;
+  if (!window.desktopNotifications) return false;
+  try {
+    const raw = localStorage.getItem('notificationSettings');
+    const parsed = raw ? JSON.parse(raw) as any : {};
+    const userSuppress = Boolean(parsed?.userControls?.suppressWebWhenDesktopActive);
+    let globalForce = false;
+    try {
+      const rawGlobal = localStorage.getItem('notificationSettingsGlobal');
+      if (rawGlobal) {
+        const parsedGlobal = JSON.parse(rawGlobal) as any;
+        globalForce = Boolean(parsedGlobal?.globalControls?.forceSuppressWebWhenDesktopActive);
+      }
+    } catch {
+      globalForce = false;
+    }
+    return globalForce || userSuppress;
+  } catch {
+    return false;
+  }
+};
+
 export default function NotificationSystem({ userId, className = '' }: NotificationSystemProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -143,6 +166,9 @@ export default function NotificationSystem({ userId, className = '' }: Notificat
 
   // Show system tray notification (browser notification)
   const showSystemTrayNotification = (notification: Notification) => {
+    if (shouldSuppressBrowserNotifications()) {
+      return;
+    }
     if ('Notification' in window && Notification.permission === 'granted') {
       const systemNotification = new Notification(notification.title, {
         body: notification.message,
@@ -168,6 +194,9 @@ export default function NotificationSystem({ userId, className = '' }: Notificat
 
   // Request notification permission
   const requestNotificationPermission = async () => {
+    if (shouldSuppressBrowserNotifications()) {
+      return;
+    }
     if ('Notification' in window && Notification.permission === 'default') {
       const permission = await Notification.requestPermission();
       if (permission === 'granted') {

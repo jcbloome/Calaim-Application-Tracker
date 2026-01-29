@@ -9,6 +9,29 @@ interface PushNotificationManagerProps {
   onTokenReceived?: (token: string) => void;
 }
 
+const shouldSuppressBrowserNotifications = () => {
+  if (typeof window === 'undefined') return false;
+  if (!window.desktopNotifications) return false;
+  try {
+    const raw = localStorage.getItem('notificationSettings');
+    const parsed = raw ? JSON.parse(raw) as any : {};
+    const userSuppress = Boolean(parsed?.userControls?.suppressWebWhenDesktopActive);
+    let globalForce = false;
+    try {
+      const rawGlobal = localStorage.getItem('notificationSettingsGlobal');
+      if (rawGlobal) {
+        const parsedGlobal = JSON.parse(rawGlobal) as any;
+        globalForce = Boolean(parsedGlobal?.globalControls?.forceSuppressWebWhenDesktopActive);
+      }
+    } catch {
+      globalForce = false;
+    }
+    return globalForce || userSuppress;
+  } catch {
+    return false;
+  }
+};
+
 export default function PushNotificationManager({ onTokenReceived }: PushNotificationManagerProps) {
   const [isSupported, setIsSupported] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>('default');
@@ -88,7 +111,12 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
           });
 
           // Also show browser notification if permission is granted
-          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          if (
+            typeof window !== 'undefined' &&
+            'Notification' in window &&
+            Notification.permission === 'granted' &&
+            !shouldSuppressBrowserNotifications()
+          ) {
             const notification = new Notification(
               payload.notification?.title || '📝 CalAIM Note Assignment',
               {
