@@ -116,8 +116,8 @@ export function PrintableFormLayout({
                 <Image
                   src="/calaimlogopdf.png"
                   alt="Connect CalAIM Logo"
-                  width={180}
-                  height={52}
+                  width={210}
+                  height={60}
                   className="object-contain"
                 />
               </div>
