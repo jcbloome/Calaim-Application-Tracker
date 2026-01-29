@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       Note_Content: noteContent || 'This is a test note assigned from Caspio to verify system tray notifications are working.',
       Staff_Name: 'Caspio System',
       Note_Type: 'General',
-      Priority: priority || 'medium',
+      Priority: priority || 'General',
       Created_By: 'caspio_system',
       Assigned_To: staffMember || 'nick', // Default to nick for testing
       Record_ID: `test_${Date.now()}`
@@ -59,13 +59,13 @@ export async function GET() {
       staffMember: 'nick | john | jessie | jason | monica | leidy',
       memberName: 'string (optional)',
       noteContent: 'string (optional)',
-      priority: 'low | medium | high (optional)'
+      priority: 'General | Priority | Urgent (optional)'
     },
     example: {
       staffMember: 'staff_member_name',
       memberName: 'Member Name',
       noteContent: 'Follow up needed for discharge planning',
-      priority: 'high'
+      priority: 'Urgent'
     }
   });
 }

@@ -97,8 +97,8 @@ export class CaspioDataValidator {
     }
 
     // Validate priority
-    if (note.priority && !['Low', 'Medium', 'High', 'Urgent'].includes(note.priority)) {
-      errors.push('Priority must be Low, Medium, High, or Urgent');
+    if (note.priority && !['General', 'Priority', 'Urgent'].includes(note.priority)) {
+      errors.push('Priority must be General, Priority, or Urgent');
     }
 
     // Validate category

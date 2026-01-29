@@ -22,6 +22,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { normalizePriorityLabel } from '@/lib/notification-utils';
 
 export interface Notification {
   id: string;
@@ -32,7 +33,7 @@ export interface Notification {
   read: boolean;
   actionUrl?: string;
   actionText?: string;
-  priority: 'low' | 'medium' | 'high';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
   category: 'application' | 'system' | 'reminder' | 'user';
 }
 
@@ -79,11 +80,10 @@ export function NotificationCenter({
   };
 
   const getPriorityColor = (priority: Notification['priority']) => {
-    switch (priority) {
-      case 'high': return 'border-l-red-500';
-      case 'medium': return 'border-l-yellow-500';
-      default: return 'border-l-blue-500';
-    }
+    const label = normalizePriorityLabel(priority);
+    if (label === 'Urgent') return 'border-l-red-500';
+    if (label === 'Priority') return 'border-l-orange-500';
+    return 'border-l-blue-500';
   };
 
   return (

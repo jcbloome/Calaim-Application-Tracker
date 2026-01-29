@@ -269,7 +269,7 @@ export class CaspioNotesService {
       memberName: caspioData.Member_Name || `${caspioData.Member_First || ''} ${caspioData.Member_Last || ''}`.trim(),
       noteText: caspioData.Note_Text || '',
       staffMember: caspioData.Staff_Member || caspioData.Created_By || 'Unknown',
-      priority: caspioData.Priority || 'Medium',
+      priority: caspioData.Priority || 'General',
       category: caspioData.Category || (isILS ? 'ILS' : 'General'),
       isILSOnly: isILS,
       createdAt: caspioData.Created_Date || new Date().toISOString(),

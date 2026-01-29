@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { playNotificationSound, type NotificationSoundType } from '@/lib/notification-sounds';
+import { normalizePriorityLabel, isUrgentPriority } from '@/lib/notification-utils';
 
 interface WindowsNotificationProps {
   id: string;
@@ -26,7 +27,7 @@ interface WindowsNotificationProps {
   message: string;
   author?: string;
   memberName?: string;
-  priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
+  priority?: 'General' | 'Priority' | 'Urgent' | string;
   tagLabel?: string;
   startMinimized?: boolean;
   lockToTray?: boolean;
@@ -76,11 +77,11 @@ const TYPE_CONFIGS = {
 };
 
 const PRIORITY_COLORS = {
-  'Low': 'bg-gray-100 text-gray-800',
-  'Medium': 'bg-blue-100 text-blue-800',
-  'High': 'bg-orange-100 text-orange-800',
-  'Urgent': 'bg-red-100 text-red-800'
+  General: 'bg-gray-100 text-gray-800',
+  Priority: 'bg-orange-100 text-orange-800',
+  Urgent: 'bg-red-100 text-red-800'
 };
+
 
 export default function WindowsNotification({
   id,
@@ -107,7 +108,8 @@ export default function WindowsNotification({
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [isMinimized, setIsMinimized] = useState(startMinimized);
-  const isUrgent = priority === 'Urgent' || type === 'urgent';
+  const displayPriorityLabel = tagLabel || (priority ? normalizePriorityLabel(priority) : undefined);
+  const isUrgent = isUrgentPriority(priority) || type === 'urgent';
   const urgentAccentClass = 'bg-orange-500';
 
   const config = TYPE_CONFIGS[type];
@@ -238,16 +240,16 @@ export default function WindowsNotification({
             </span>
             <span className="text-xs text-slate-700">{pendingLabel}</span>
           </div>
-          {(tagLabel || priority) && (
+          {displayPriorityLabel && (
             <Badge
               className={cn(
                 'ml-auto text-[10px] text-white',
-                tagLabel === 'Priority' || isUrgent
+                displayPriorityLabel === 'Priority' || displayPriorityLabel === 'Urgent' || isUrgent
                   ? 'bg-orange-500 border-orange-400 animate-pulse'
                   : 'bg-blue-500 border-blue-400'
               )}
             >
-              {tagLabel || priority}
+              {displayPriorityLabel}
             </Badge>
           )}
           <Button
@@ -292,14 +294,14 @@ export default function WindowsNotification({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              {(tagLabel || priority) && (
+              {displayPriorityLabel && (
                 <Badge className={cn(
                   'text-xs text-white',
-                  tagLabel === 'Priority' || isUrgent
+                  displayPriorityLabel === 'Priority' || displayPriorityLabel === 'Urgent' || isUrgent
                     ? 'bg-orange-500 border-orange-400 animate-pulse'
                     : 'bg-blue-500 border-blue-400'
                 )}>
-                  {tagLabel || priority}
+                  {displayPriorityLabel}
                 </Badge>
               )}
             </div>

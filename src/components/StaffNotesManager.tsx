@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/firebase';
+import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
 import { 
   Loader2, 
   RefreshCw, 
@@ -36,7 +37,7 @@ interface StaffNote {
   senderName: string;
   memberName: string;
   type: string;
-  priority: 'low' | 'medium' | 'high';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
   timestamp: any;
   isRead: boolean;
   applicationId?: string;
@@ -61,6 +62,7 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
   
   const { user } = useAuth();
   const { toast } = useToast();
+
 
   useEffect(() => {
     loadNotes();
@@ -141,7 +143,7 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
       }
 
       // Priority filter
-      if (priorityFilter !== 'all' && note.priority !== priorityFilter) {
+      if (priorityFilter !== 'all' && normalizePriorityLabel(note.priority) !== priorityFilter) {
         return false;
       }
 
@@ -178,11 +180,11 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
       let aVal, bVal;
       
       switch (sortBy) {
-        case 'priority':
-          const priorityOrder = { high: 3, medium: 2, low: 1 };
-          aVal = priorityOrder[a.priority] || 0;
-          bVal = priorityOrder[b.priority] || 0;
+        case 'priority': {
+          aVal = getPriorityRank(a.priority);
+          bVal = getPriorityRank(b.priority);
           break;
+        }
         case 'sender':
           aVal = a.senderName || '';
           bVal = b.senderName || '';
@@ -211,18 +213,18 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
       const noteDate = n.timestamp?.toDate ? n.timestamp.toDate() : new Date(n.timestamp);
       return isToday(noteDate);
     }).length;
-    const highPriority = notes.filter(n => n.priority === 'high').length;
+    const priorityCount = notes.filter(
+      (n) => normalizePriorityLabel(n.priority) === 'Priority' || normalizePriorityLabel(n.priority) === 'Urgent'
+    ).length;
 
-    return { total, unread, today, highPriority };
+    return { total, unread, today, priorityCount };
   }, [notes]);
 
   const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high': return 'bg-red-100 text-red-800 border-red-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'low': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
+    const label = normalizePriorityLabel(priority);
+    if (label === 'Urgent') return 'bg-red-100 text-red-800 border-red-200';
+    if (label === 'Priority') return 'bg-orange-100 text-orange-800 border-orange-200';
+    return 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   const getTypeColor = (type: string) => {
@@ -286,8 +288,8 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
             <div className="flex items-center">
               <AlertTriangle className="h-4 w-4 text-red-600" />
               <div className="ml-2">
-                <p className="text-sm font-medium text-muted-foreground">High Priority</p>
-                <p className="text-2xl font-bold text-red-600">{stats.highPriority}</p>
+                <p className="text-sm font-medium text-muted-foreground">Priority / Urgent</p>
+                <p className="text-2xl font-bold text-red-600">{stats.priorityCount}</p>
               </div>
             </div>
           </CardContent>
@@ -338,9 +340,9 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Priorities</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="Urgent">Urgent</SelectItem>
+                  <SelectItem value="Priority">Priority</SelectItem>
+                  <SelectItem value="General">General</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -462,7 +464,7 @@ export default function StaffNotesManager({ viewMode = 'personal' }: StaffNotesM
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={getPriorityColor(note.priority)}>
-                            {note.priority}
+                            {normalizePriorityLabel(note.priority)}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">

@@ -55,7 +55,7 @@ const NOTIFICATION_TYPES = [
   { value: 'task', label: 'Task', icon: Clock, color: 'text-orange-600' }
 ];
 
-const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
+const PRIORITIES = ['General', 'Priority', 'Urgent'];
 const POSITIONS = [
   { value: 'top-right', label: 'Top Right' },
   { value: 'top-center', label: 'Top Center' },
@@ -74,7 +74,7 @@ export default function NotificationDemoPage() {
     title: 'Demo Notification',
     message: 'This is a sample notification to test the system!',
     type: 'success' as any,
-    priority: 'Medium' as any,
+    priority: 'General' as any,
     soundType: 'mellow-note' as any,
     position: 'top-right' as any,
     duration: 5000,

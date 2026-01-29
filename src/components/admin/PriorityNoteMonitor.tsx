@@ -28,7 +28,7 @@ interface PriorityNote {
   clientId2: string;
   memberName: string;
   noteContent: string;
-  priority: 'low' | 'medium' | 'high';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
   staffAssigned?: string;
   dateCreated: string;
   createdBy: string;
@@ -169,11 +169,10 @@ export function PriorityNoteMonitor() {
    * Get priority color for badge
    */
   const getPriorityColor = (priority: string) => {
-    switch (priority.toLowerCase()) {
-      case 'high': return 'bg-red-100 text-red-800 border-red-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      default: return 'bg-blue-100 text-blue-800 border-blue-200';
-    }
+    const normalized = String(priority || '').toLowerCase();
+    if (normalized.includes('urgent')) return 'bg-red-100 text-red-800 border-red-200';
+    if (normalized.includes('priority') || normalized.includes('high')) return 'bg-orange-100 text-orange-800 border-orange-200';
+    return 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   /**
@@ -340,7 +339,11 @@ export function PriorityNoteMonitor() {
                             {note.memberName || 'Unknown Member'}
                           </span>
                           <Badge className={cn("text-xs", getPriorityColor(note.priority))}>
-                            {note.priority.toUpperCase()}
+                            {String(note.priority || '').toLowerCase().includes('urgent')
+                              ? 'Urgent'
+                              : String(note.priority || '').toLowerCase().includes('priority') || String(note.priority || '').toLowerCase().includes('high')
+                                ? 'Priority'
+                                : 'General'}
                           </Badge>
                         </div>
                         

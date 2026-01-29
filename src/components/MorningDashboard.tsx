@@ -113,7 +113,7 @@ export default function MorningDashboard() {
       // Calculate stats
       const newStats: MorningStats = {
         totalUnread: morningNotifications.length,
-        priorityAlerts: morningNotifications.filter(n => n.priority === 'High' || n.priority === 'Urgent').length,
+        priorityAlerts: morningNotifications.filter(n => n.priority === 'Priority' || n.priority === 'Urgent').length,
         memberNotes: morningNotifications.filter(n => n.type === 'member_note').length,
         systemUpdates: morningNotifications.filter(n => n.type === 'system').length,
         overdueItems: morningNotifications.filter(n => n.requiresStaffAction).length

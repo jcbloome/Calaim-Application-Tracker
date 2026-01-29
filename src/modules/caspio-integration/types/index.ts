@@ -28,7 +28,7 @@ export interface CaspioNote {
   memberName: string;
   noteText: string;
   staffMember: string;
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  priority: 'General' | 'Priority' | 'Urgent';
   category: 'General' | 'Medical' | 'Behavioral' | 'Administrative' | 'ILS';
   isILSOnly: boolean;
   createdAt: string;

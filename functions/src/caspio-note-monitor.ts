@@ -14,7 +14,7 @@ interface CaspioNote {
   clientId2: string;
   memberName: string;
   noteContent: string;
-  priority: 'low' | 'medium' | 'high';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
   staffAssigned?: string;
   dateCreated: string;
   createdBy: string;
@@ -84,8 +84,9 @@ async function fetchNewPriorityNotes(sinceTimestamp?: string): Promise<CaspioNot
       queryUrl += `&q.where=DateCreated>'${sinceTimestamp}'`;
     }
     
-    // Add priority filter (assuming you have a Priority field)
-    queryUrl += sinceTimestamp ? ' AND Priority=\'high\'' : '?q.where=Priority=\'high\'';
+    // Add priority filter (priority or urgent)
+    const priorityClause = "(Priority='high' OR Priority='urgent' OR Priority='priority')";
+    queryUrl += sinceTimestamp ? ` AND ${priorityClause}` : `?q.where=${priorityClause}`;
     
     console.log('📥 Fetching priority notes from Caspio:', queryUrl);
     
@@ -107,17 +108,24 @@ async function fetchNewPriorityNotes(sinceTimestamp?: string): Promise<CaspioNot
     
     console.log(`📋 Found ${notes.length} priority notes`);
     
+    const normalizePriority = (value: string) => {
+      const normalized = String(value || '').toLowerCase();
+      if (normalized.includes('urgent')) return 'Urgent';
+      if (normalized.includes('priority') || normalized.includes('high')) return 'Priority';
+      return 'General';
+    };
+
     // Transform Caspio data to our format
     return notes.map((note: any): CaspioNote => ({
       noteId: note.NoteID || note.noteId || note.id,
       clientId2: note.client_ID2 || note.ClientID2 || note.clientId2,
       memberName: `${note.MemberFirstName || ''} ${note.MemberLastName || ''}`.trim(),
       noteContent: note.NoteContent || note.noteContent || note.content,
-      priority: (note.Priority || 'medium').toLowerCase() as 'low' | 'medium' | 'high',
+      priority: normalizePriority(note.Priority || 'General'),
       staffAssigned: note.StaffAssigned || note.staffAssigned,
       dateCreated: note.DateCreated || note.dateCreated || note.timestamp,
       createdBy: note.CreatedBy || note.createdBy || note.author,
-      isPriority: (note.Priority || '').toLowerCase() === 'high'
+      isPriority: ['Priority', 'Urgent'].includes(normalizePriority(note.Priority || ''))
     }));
     
   } catch (error: any) {
@@ -135,8 +143,9 @@ async function sendPriorityNoteNotification(note: CaspioNote, staffTokens: strin
     return;
   }
   
+  const alertPrefix = note.priority === 'Urgent' ? '🚨 Urgent Note' : '⚠️ Priority Note';
   const payload: NotificationPayload = {
-    title: `🚨 Priority Note: ${note.memberName}`,
+    title: `${alertPrefix}: ${note.memberName}`,
     body: note.noteContent.substring(0, 100) + (note.noteContent.length > 100 ? '...' : ''),
     data: {
       type: 'priority_note',

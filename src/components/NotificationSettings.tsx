@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
+import { notifyNotificationSettingsChanged } from '@/lib/notification-utils';
 import { 
   Bell, 
   Mail, 
@@ -134,6 +135,7 @@ export default function NotificationSettings() {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem('notificationSettings', JSON.stringify(nextSettings));
+      notifyNotificationSettingsChanged();
     } catch (error) {
       console.warn('Failed to cache notification settings:', error);
     }

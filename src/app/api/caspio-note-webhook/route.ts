@@ -9,7 +9,7 @@ interface CaspioNoteWebhookData {
   Note_Content?: string;
   Staff_Name?: string;
   Note_Type?: string;
-  Priority?: 'low' | 'medium' | 'high';
+  Priority?: 'General' | 'Priority' | 'Urgent' | string;
   Created_By?: string;
   Assigned_To?: string; // Staff ID or email
   Record_ID?: string;
@@ -94,6 +94,14 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
       }
     }
 
+    const normalizePriority = (value?: string) => {
+      const normalized = String(value || '').toLowerCase();
+      if (normalized.includes('urgent')) return 'Urgent';
+      if (normalized.includes('priority') || normalized.includes('immediate') || normalized.includes('high')) return 'Priority';
+      return 'General';
+    };
+    const normalizedPriority = normalizePriority(Priority);
+
     // If note is assigned to a staff member, create a notification
     if (assignedStaff) {
       console.log(`🔔 Creating notification for ${assignedStaff.name} (${assignedStaff.email})`);
@@ -102,11 +110,11 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
         userId: assignedStaff.id,
         noteId: Record_ID || `caspio_${Date.now()}`,
         title: 'New Note from Caspio',
-        message: `A new ${Priority || 'medium'} priority note has been assigned to you for ${Member_Name || 'Unknown Member'}`,
+        message: `A new ${normalizedPriority} note has been assigned to you for ${Member_Name || 'Unknown Member'}`,
         senderName: Created_By || Staff_Name || 'Caspio System',
         memberName: Member_Name || 'Unknown Member',
         type: 'note_assignment',
-        priority: (Priority || 'medium') as 'low' | 'medium' | 'high',
+        priority: normalizedPriority,
         timestamp: getFirestore().Timestamp.now(),
         isRead: false,
         applicationId: Client_ID2,
@@ -127,7 +135,7 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
           staffName: assignedStaff.name,
           memberName: Member_Name || 'Unknown Member',
           noteContent: Note_Content,
-          priority: (Priority || 'medium') as 'low' | 'medium' | 'high',
+          priority: normalizedPriority,
           assignedBy: Created_By || Staff_Name || 'Caspio System',
           noteType: Note_Type || 'General',
           source: 'caspio',

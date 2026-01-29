@@ -280,7 +280,7 @@ export class FirebaseService {
     title: string;
     message: string;
     recipientIds: string[];
-    priority: 'low' | 'medium' | 'high' | 'urgent';
+    priority: 'General' | 'Priority' | 'Urgent';
     type: 'system' | 'member_note' | 'staff_note' | 'reminder';
     actionUrl?: string;
     createdBy: string;

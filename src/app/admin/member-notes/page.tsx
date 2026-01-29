@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
+import { getPriorityRank, isPriorityOrUrgent, normalizePriorityLabel } from '@/lib/notification-utils';
 import { format } from 'date-fns';
 import { useSearchParams } from 'next/navigation';
 import { ToastAction } from '@/components/ui/toast';
@@ -74,7 +75,7 @@ interface MemberNote {
   updatedAt: string;
   source: 'Caspio' | 'App' | 'Admin';
   isRead: boolean;
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
   status?: 'Open' | 'Closed';
   followUpDate?: string;
   tags?: string[];
@@ -122,7 +123,7 @@ function MemberNotesPageContent() {
     noteText: '',
     assignedTo: '',
     assignedToName: '',
-    priority: 'Medium' as MemberNote['priority'],
+    priority: 'General' as MemberNote['priority'],
     status: 'Open' as MemberNote['status'],
     followUpDate: '',
     tags: [] as string[]
@@ -398,7 +399,9 @@ function MemberNotesPageContent() {
         createdBy: user?.uid || 'current-user',
         createdByName: user?.displayName || user?.email || 'Current User',
         tags: newNote.tags,
-        sendNotification: Boolean(newNote.assignedTo && ['High', 'Urgent'].includes(newNote.priority)),
+        sendNotification: Boolean(
+          newNote.assignedTo && isPriorityOrUrgent(newNote.priority)
+        ),
         recipientIds: newNote.assignedTo ? [newNote.assignedTo] : []
       };
 
@@ -419,7 +422,7 @@ function MemberNotesPageContent() {
           noteText: '',
           assignedTo: '',
           assignedToName: '',
-          priority: 'Medium',
+          priority: 'General',
           status: 'Open',
           followUpDate: '',
           tags: []
@@ -451,9 +454,10 @@ function MemberNotesPageContent() {
     }
   };
 
+
   const filteredNotes = memberNotes.filter(note => {
     if (noteFilter.type !== 'all' && note.noteType !== noteFilter.type) return false;
-    if (noteFilter.priority !== 'all' && note.priority !== noteFilter.priority) return false;
+    if (noteFilter.priority !== 'all' && normalizePriorityLabel(note.priority) !== noteFilter.priority) return false;
     if (noteFilter.assignedTo !== 'all' && note.assignedTo !== noteFilter.assignedTo) return false;
     if (noteFilter.source !== 'all' && note.source !== noteFilter.source) return false;
     if (noteFilter.status !== 'all') {
@@ -463,24 +467,31 @@ function MemberNotesPageContent() {
     return true;
   });
 
+  const sortedNotes = [...filteredNotes].sort((a, b) => {
+    const aPriority = normalizePriorityLabel(a.priority);
+    const bPriority = normalizePriorityLabel(b.priority);
+    const rankDiff = getPriorityRank(bPriority) - getPriorityRank(aPriority);
+    if (rankDiff !== 0) return rankDiff;
+    const aTime = new Date(a.createdAt || 0).getTime();
+    const bTime = new Date(b.createdAt || 0).getTime();
+    return bTime - aTime;
+  });
+
   useEffect(() => {
-    if (filteredNotes.length === 0) {
+    if (sortedNotes.length === 0) {
       setSelectedNoteId(null);
       return;
     }
-    if (!selectedNoteId || !filteredNotes.some((note) => note.id === selectedNoteId)) {
-      setSelectedNoteId(filteredNotes[0].id);
+    if (!selectedNoteId || !sortedNotes.some((note) => note.id === selectedNoteId)) {
+      setSelectedNoteId(sortedNotes[0].id);
     }
-  }, [filteredNotes, selectedNoteId]);
+  }, [sortedNotes, selectedNoteId]);
 
   const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'Urgent': return 'bg-red-100 text-red-800 border-red-200';
-      case 'High': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'Medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'Low': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
+    const label = normalizePriorityLabel(priority);
+    if (label === 'Urgent') return 'bg-red-100 text-red-800 border-red-200';
+    if (label === 'Priority') return 'bg-orange-100 text-orange-800 border-orange-200';
+    return 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   const getSourceColor = (source: string) => {
@@ -818,12 +829,11 @@ function MemberNotesPageContent() {
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Low">Low</SelectItem>
-                            <SelectItem value="Medium">Medium</SelectItem>
-                            <SelectItem value="High">High</SelectItem>
-                            <SelectItem value="Urgent">Urgent</SelectItem>
-                          </SelectContent>
+                        <SelectContent>
+                          <SelectItem value="General">General</SelectItem>
+                          <SelectItem value="Priority">Priority</SelectItem>
+                          <SelectItem value="Urgent">Urgent</SelectItem>
+                        </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-2">
@@ -1001,9 +1011,8 @@ function MemberNotesPageContent() {
                     <SelectContent>
                       <SelectItem value="all">All Priority</SelectItem>
                       <SelectItem value="Urgent">Urgent</SelectItem>
-                      <SelectItem value="High">High</SelectItem>
-                      <SelectItem value="Medium">Medium</SelectItem>
-                      <SelectItem value="Low">Low</SelectItem>
+                      <SelectItem value="Priority">Priority</SelectItem>
+                      <SelectItem value="General">General</SelectItem>
                     </SelectContent>
                   </Select>
 
@@ -1059,7 +1068,7 @@ function MemberNotesPageContent() {
                 {/* Notes List + Detail */}
                 <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-4">
                   <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                    {filteredNotes.map((note) => (
+                    {sortedNotes.map((note) => (
                       <div
                         key={note.id}
                         onClick={() => setSelectedNoteId(note.id)}
@@ -1070,7 +1079,7 @@ function MemberNotesPageContent() {
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex gap-2 flex-wrap">
                             <Badge variant="outline" className={getPriorityColor(note.priority)}>
-                              {note.priority}
+                              {normalizePriorityLabel(note.priority)}
                             </Badge>
                             <Badge variant="outline">{note.noteType}</Badge>
                             <Badge variant="outline" className={getSourceColor(note.source)}>
@@ -1102,7 +1111,7 @@ function MemberNotesPageContent() {
                       </div>
                     ))}
                     
-                    {filteredNotes.length === 0 && (
+                    {sortedNotes.length === 0 && (
                       <div className="text-center py-8">
                         <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                         <h3 className="text-lg font-medium mb-2">No Notes Found</h3>
@@ -1120,17 +1129,17 @@ function MemberNotesPageContent() {
                         <CardDescription>Selected note information</CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-3">
-                        {filteredNotes.length === 0 || !selectedNoteId ? (
+                        {sortedNotes.length === 0 || !selectedNoteId ? (
                           <div className="text-sm text-muted-foreground">Select a note to view details.</div>
                         ) : (
                           (() => {
-                            const note = filteredNotes.find((n) => n.id === selectedNoteId);
+                            const note = sortedNotes.find((n) => n.id === selectedNoteId);
                             if (!note) return <div className="text-sm text-muted-foreground">Select a note to view details.</div>;
                             return (
                               <div className="space-y-3 text-sm">
                                 <div className="flex flex-wrap gap-2">
                                   <Badge variant="outline" className={getPriorityColor(note.priority)}>
-                                    {note.priority}
+                                    {normalizePriorityLabel(note.priority)}
                                   </Badge>
                                   <Badge variant="outline">{note.noteType}</Badge>
                                   <Badge variant="outline">{note.status || 'Open'}</Badge>

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { X, MessageSquare, User, Clock, ExternalLink, MessageSquareText } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { normalizePriorityLabel } from '@/lib/notification-utils';
 import Link from 'next/link';
 
 interface NotificationData {
@@ -17,7 +18,7 @@ interface NotificationData {
   applicationId?: string;
   timestamp: Date;
   type: 'note' | 'task' | 'alert';
-  priority: 'low' | 'medium' | 'high' | 'urgent';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
   autoClose?: boolean;
   duration?: number;
   requiresResolve?: boolean;
@@ -79,12 +80,10 @@ export function CursorStyleNotification({
   };
 
   const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'urgent': return 'border-red-300 bg-red-50';
-      case 'high': return 'border-red-200 bg-red-50';
-      case 'medium': return 'border-orange-200 bg-orange-50';
-      default: return 'border-blue-200 bg-blue-50';
-    }
+    const label = normalizePriorityLabel(priority);
+    if (label === 'Urgent') return 'border-red-300 bg-red-50';
+    if (label === 'Priority') return 'border-orange-200 bg-orange-50';
+    return 'border-blue-200 bg-blue-50';
   };
 
   const getTypeIcon = (type: string) => {
@@ -115,7 +114,7 @@ export function CursorStyleNotification({
               {getTypeIcon(notification.type)}
               <span className={cn("font-semibold", isCompact ? "text-xs" : "text-sm")}>New Note</span>
               <Badge variant="outline" className={cn(isCompact ? "text-[10px]" : "text-xs")}>
-                {notification.priority}
+              {normalizePriorityLabel(notification.priority)}
               </Badge>
             </div>
             {!notification.requiresResolve && (

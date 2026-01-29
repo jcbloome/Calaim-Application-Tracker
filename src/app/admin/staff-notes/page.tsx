@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
+import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
 import { format } from 'date-fns';
 import { logSystemNoteAction } from '@/lib/system-note-log';
 import { ToastAction } from '@/components/ui/toast';
@@ -57,7 +58,7 @@ interface StaffNote {
   updatedAt: string;
   source: 'Caspio' | 'App' | 'Admin';
   isRead: boolean;
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
   status?: 'Open' | 'Closed';
   followUpDate?: string;
   tags?: string[];
@@ -118,7 +119,7 @@ export default function StaffNotesPage() {
           updatedAt: '2026-01-17T14:15:00Z',
           source: 'App',
           isRead: false,
-          priority: 'High',
+          priority: 'Priority',
           followUpDate: '2026-01-20',
           status: 'Open'
         },
@@ -136,7 +137,7 @@ export default function StaffNotesPage() {
           updatedAt: '2026-01-16T10:30:00Z',
           source: 'Caspio',
           isRead: true,
-          priority: 'Medium',
+          priority: 'General',
           followUpDate: '2026-01-22',
           status: 'Closed'
         },
@@ -175,7 +176,7 @@ export default function StaffNotesPage() {
           updatedAt: '2026-01-15T09:00:00Z',
           source: 'App',
           isRead: true,
-          priority: 'Low',
+          priority: 'General',
           status: 'Closed'
         },
         {
@@ -192,7 +193,7 @@ export default function StaffNotesPage() {
           updatedAt: '2026-01-14T13:20:00Z',
           source: 'App',
           isRead: true,
-          priority: 'Medium',
+          priority: 'General',
           status: 'Open'
         }
       ];
@@ -387,8 +388,9 @@ export default function StaffNotesPage() {
     }
   };
 
+
   const getFilteredNotes = (notes: StaffNote[]) => {
-    return notes.filter(note => {
+    const filtered = notes.filter(note => {
       // Search filter
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
@@ -402,7 +404,7 @@ export default function StaffNotesPage() {
       }
 
       // Priority filter
-      if (filters.priority !== 'all' && note.priority !== filters.priority) return false;
+      if (filters.priority !== 'all' && normalizePriorityLabel(note.priority) !== filters.priority) return false;
 
       // Type filter
       if (filters.type !== 'all' && note.noteType !== filters.type) return false;
@@ -416,16 +418,23 @@ export default function StaffNotesPage() {
 
       return true;
     });
+
+    return filtered.sort((a, b) => {
+      const aPriority = normalizePriorityLabel(a.priority);
+      const bPriority = normalizePriorityLabel(b.priority);
+      const rankDiff = getPriorityRank(bPriority) - getPriorityRank(aPriority);
+      if (rankDiff !== 0) return rankDiff;
+      const aTime = new Date(a.createdAt || 0).getTime();
+      const bTime = new Date(b.createdAt || 0).getTime();
+      return bTime - aTime;
+    });
   };
 
   const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'Urgent': return 'bg-red-100 text-red-800 border-red-200';
-      case 'High': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'Medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'Low': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
+    const label = normalizePriorityLabel(priority);
+    if (label === 'Urgent') return 'bg-red-100 text-red-800 border-red-200';
+    if (label === 'Priority') return 'bg-orange-100 text-orange-800 border-orange-200';
+    return 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   const getSourceColor = (source: string) => {
@@ -503,10 +512,8 @@ export default function StaffNotesPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Priority</SelectItem>
-                <SelectItem value="Urgent">Urgent</SelectItem>
-                <SelectItem value="High">High</SelectItem>
-                <SelectItem value="Medium">Medium</SelectItem>
-                <SelectItem value="Low">Low</SelectItem>
+                <SelectItem value="Priority">Priority</SelectItem>
+                <SelectItem value="General">General</SelectItem>
               </SelectContent>
             </Select>
 
@@ -699,7 +706,7 @@ export default function StaffNotesPage() {
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex gap-2">
                           <Badge variant="outline" className={getPriorityColor(note.priority)}>
-                            {note.priority}
+                            {normalizePriorityLabel(note.priority)}
                           </Badge>
                           <Badge variant="outline">
                             {note.noteType}
@@ -833,7 +840,7 @@ export default function StaffNotesPage() {
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex gap-2">
                           <Badge variant="outline" className={getPriorityColor(note.priority)}>
-                            {note.priority}
+                            {normalizePriorityLabel(note.priority)}
                           </Badge>
                           <Badge variant="outline">
                             {note.noteType}

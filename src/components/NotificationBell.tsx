@@ -15,13 +15,21 @@ import {
 import { useFirestore, useUser } from '@/firebase';
 import { collection, query, where, onSnapshot, Timestamp } from 'firebase/firestore';
 import Link from 'next/link';
+import {
+  NOTIFICATION_SETTINGS_EVENT,
+  isPriorityOrUrgent,
+  isUrgentPriority,
+  isWebAlertsEnabled,
+  normalizePriorityLabel,
+  shouldSuppressWebAlerts
+} from '@/lib/notification-utils';
 
 interface NotificationPreview {
   id: string;
   title: string;
   content: string;
   memberName?: string;
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
   isRead: boolean;
   createdAt: Timestamp;
   requiresStaffAction: boolean;
@@ -31,47 +39,9 @@ interface NotificationBellProps {
   className?: string;
 }
 
-const shouldSuppressBrowserNotifications = () => {
-  if (typeof window === 'undefined') return false;
-  try {
-    const raw = localStorage.getItem('notificationSettings');
-    const parsed = raw ? JSON.parse(raw) as any : {};
-    const userSuppress = parsed?.userControls?.suppressWebWhenDesktopActive;
-    const webAppEnabled = parsed?.userControls?.webAppNotificationsEnabled;
-    let globalForce = false;
-    try {
-      const rawGlobal = localStorage.getItem('notificationSettingsGlobal');
-      if (rawGlobal) {
-        const parsedGlobal = JSON.parse(rawGlobal) as any;
-        globalForce = Boolean(parsedGlobal?.globalControls?.forceSuppressWebWhenDesktopActive);
-      }
-    } catch {
-      globalForce = false;
-    }
-    if (webAppEnabled === true) return globalForce;
-    if (webAppEnabled === false) return true;
-    const defaultSuppress = userSuppress === undefined;
-    return globalForce || userSuppress === true || defaultSuppress;
-  } catch {
-    return false;
-  }
-};
-
-const isWebAppNotificationsEnabled = () => {
-  if (typeof window === 'undefined') return true;
-  try {
-    const raw = localStorage.getItem('notificationSettings');
-    const parsed = raw ? JSON.parse(raw) as any : {};
-    const value = parsed?.userControls?.webAppNotificationsEnabled;
-    return value === undefined ? true : Boolean(value);
-  } catch {
-    return true;
-  }
-};
-
 // Browser notification function
 const showBrowserNotifications = (priorityNotifications: NotificationPreview[]) => {
-  if (shouldSuppressBrowserNotifications()) {
+  if (shouldSuppressWebAlerts()) {
     return;
   }
   // Request permission if not already granted
@@ -91,7 +61,9 @@ const showBrowserNotifications = (priorityNotifications: NotificationPreview[]) 
 
   // Show notifications for each priority alert
   priorityNotifications.forEach(notification => {
-    const browserNotification = new Notification(`🚨 Priority Alert: ${notification.memberName}`, {
+    const priorityLabel = normalizePriorityLabel(notification.priority);
+    const iconPrefix = priorityLabel === 'Urgent' ? '🚨' : '⚠️';
+    const browserNotification = new Notification(`${iconPrefix} ${priorityLabel} Alert: ${notification.memberName}`, {
       body: notification.content,
       icon: '/favicon.ico',
       badge: '/favicon.ico',
@@ -114,7 +86,7 @@ const showBrowserNotifications = (priorityNotifications: NotificationPreview[]) 
     };
 
     // Auto-close after 10 seconds for non-urgent notifications
-    if (notification.priority !== 'Urgent') {
+    if (!isUrgentPriority(notification.priority)) {
       setTimeout(() => {
         browserNotification.close();
       }, 10000);
@@ -127,10 +99,25 @@ const showBrowserNotifications = (priorityNotifications: NotificationPreview[]) 
 export default function NotificationBell({ className = '' }: NotificationBellProps) {
   const [notifications, setNotifications] = useState<NotificationPreview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [suppressWeb, setSuppressWeb] = useState(() => shouldSuppressWebAlerts());
+  const [webAppEnabled, setWebAppEnabled] = useState(() => isWebAlertsEnabled());
   const { user } = useUser();
   const firestore = useFirestore();
-  const suppressWeb = shouldSuppressBrowserNotifications();
-  const webAppEnabled = isWebAppNotificationsEnabled();
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncSettings = () => {
+      setSuppressWeb(shouldSuppressWebAlerts());
+      setWebAppEnabled(isWebAlertsEnabled());
+    };
+    syncSettings();
+    const handler = () => syncSettings();
+    window.addEventListener('storage', handler);
+    window.addEventListener(NOTIFICATION_SETTINGS_EVENT, handler);
+    return () => {
+      window.removeEventListener('storage', handler);
+      window.removeEventListener(NOTIFICATION_SETTINGS_EVENT, handler);
+    };
+  }, []);
 
   if (!webAppEnabled || suppressWeb) {
     return null;
@@ -160,15 +147,24 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
             title: data.title || 'Notification',
             content: data.content || '',
             memberName: data.memberName,
-            priority: data.priority || 'Medium',
+            priority: data.priority || 'General',
             isRead: data.isRead || false,
             createdAt: data.createdAt,
             requiresStaffAction: data.requiresStaffAction || false
           });
         });
         
-        // Sort by creation date (newest first) and limit to 10
+        // Sort by priority (urgent first), then newest first
+        const priorityRank: Record<'General' | 'Priority' | 'Urgent', number> = {
+          Urgent: 3,
+          Priority: 2,
+          General: 1
+        };
         recentNotifications.sort((a, b) => {
+          const aPriority = normalizePriorityLabel(a.priority);
+          const bPriority = normalizePriorityLabel(b.priority);
+          const rankDiff = priorityRank[bPriority] - priorityRank[aPriority];
+          if (rankDiff !== 0) return rankDiff;
           const aTime = a.createdAt?.toDate?.()?.getTime() || 0;
           const bTime = b.createdAt?.toDate?.()?.getTime() || 0;
           return bTime - aTime;
@@ -176,7 +172,7 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
         
         // Check for new priority notifications for browser alerts
         const newPriorityNotifications = recentNotifications.filter(n => 
-          (n.priority === 'High' || n.priority === 'Urgent') &&
+          isPriorityOrUrgent(n.priority) &&
           n.requiresStaffAction
         );
 
@@ -216,15 +212,10 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
   };
 
   const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'High':
-      case 'Urgent':
-        return 'text-red-600';
-      case 'Medium':
-        return 'text-orange-600';
-      default:
-        return 'text-blue-600';
-    }
+    const label = normalizePriorityLabel(priority);
+    if (label === 'Urgent') return 'text-red-600';
+    if (label === 'Priority') return 'text-orange-600';
+    return 'text-blue-600';
   };
 
   return (

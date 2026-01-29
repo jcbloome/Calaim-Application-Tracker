@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       action,
       noteId,
       noteType = 'system',
-      priority = 'low',
+      priority = 'General',
       memberName,
       applicationId,
       actorName,
@@ -99,6 +99,13 @@ export async function POST(request: NextRequest) {
       source ? `Source: ${source}` : null
     ].filter(Boolean);
 
+    const normalizePriority = (value: string) => {
+      const normalized = String(value || '').toLowerCase();
+      if (normalized.includes('urgent')) return 'Urgent';
+      if (normalized.includes('priority') || normalized.includes('immediate') || normalized.includes('high')) return 'Priority';
+      return 'General';
+    };
+
     const noteRecord = {
       senderName: actorName || 'System',
       senderEmail: actorEmail || '',
@@ -108,7 +115,7 @@ export async function POST(request: NextRequest) {
       applicationId: applicationId || '',
       noteContent: noteContentParts.join(' • '),
       noteType,
-      priority,
+      priority: normalizePriority(priority),
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
       wasNotificationSent: false,
       notificationMethod: undefined

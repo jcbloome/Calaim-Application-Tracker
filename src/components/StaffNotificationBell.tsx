@@ -10,6 +10,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
 import { collection, doc, limit, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
+import { getPriorityRank, isPriorityOrUrgent, normalizePriorityLabel } from '@/lib/notification-utils';
 
 interface StaffNotification {
   id: string;
@@ -19,7 +20,7 @@ interface StaffNotification {
   noteId?: string;
   clientId2?: string;
   memberName?: string;
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
   createdAt: string;
   isRead: boolean;
   createdBy: string;
@@ -63,8 +64,7 @@ export function StaffNotificationBell({ userId, className = '' }: StaffNotificat
         };
 
         const isImmediateNote = (data: any) => {
-          const normalized = String(data?.priority || '').toLowerCase();
-          return normalized.includes('urgent') || normalized.includes('high');
+          return isPriorityOrUrgent(data?.priority);
         };
 
         const nextNotifications: StaffNotification[] = snapshot.docs.map((docSnap) => {
@@ -79,7 +79,7 @@ export function StaffNotificationBell({ userId, className = '' }: StaffNotificat
             noteId: data.noteId,
             clientId2: data.clientId2,
             memberName: data.memberName,
-            priority: normalizePriority(data.priority),
+            priority: normalizePriorityLabel(data.priority),
             createdAt: new Date(timestamp).toISOString(),
             isRead: Boolean(data.isRead),
             createdBy: data.createdBy || 'system',
@@ -91,7 +91,11 @@ export function StaffNotificationBell({ userId, className = '' }: StaffNotificat
           };
         })
           .filter((notification) => isInterofficeNotification(notification) && isImmediateNote(notification))
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          .sort((a, b) => {
+            const rankDiff = getPriorityRank(b.priority) - getPriorityRank(a.priority);
+            if (rankDiff !== 0) return rankDiff;
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          });
 
         setNotifications(nextNotifications);
         setUnreadCount(nextNotifications.filter(n => !n.isRead && n.status !== 'Closed').length);
@@ -103,14 +107,6 @@ export function StaffNotificationBell({ userId, className = '' }: StaffNotificat
 
     return () => unsubscribe();
   }, [effectiveUserId, firestore]);
-
-  const normalizePriority = (priority: string | undefined): StaffNotification['priority'] => {
-    const normalized = String(priority || '').toLowerCase();
-    if (normalized.includes('urgent') || normalized.includes('🔴')) return 'Urgent';
-    if (normalized.includes('high')) return 'High';
-    if (normalized.includes('low')) return 'Low';
-    return 'Medium';
-  };
 
   const markViewed = async (notificationId: string) => {
     if (!firestore) return;

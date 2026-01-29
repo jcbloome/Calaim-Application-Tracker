@@ -28,6 +28,14 @@ export const createMemberTask = onCall(async (request) => {
     const db = admin.firestore();
     const taskRef = db.collection('memberTasks').doc();
     
+    const normalizePriority = (value: string) => {
+      const normalized = String(value || '').toLowerCase();
+      if (normalized.includes('urgent')) return 'Urgent';
+      if (normalized.includes('priority') || normalized.includes('immediate') || normalized.includes('high')) return 'Priority';
+      return 'General';
+    };
+    const normalizedPriority = normalizePriority(priority || '');
+
     const taskData = {
       id: taskRef.id,
       memberId,
@@ -36,7 +44,7 @@ export const createMemberTask = onCall(async (request) => {
       nextStep,
       followUpDate: admin.firestore.Timestamp.fromDate(new Date(followUpDate)),
       assignedTo,
-      priority: priority || 'Medium',
+      priority: normalizedPriority,
       status: 'Pending',
       notes: notes || '',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -56,7 +64,7 @@ export const createMemberTask = onCall(async (request) => {
         currentStep,
         nextStep,
         followUpDate: new Date(followUpDate),
-        priority
+        priority: normalizedPriority
       });
     } catch (notificationError) {
       console.warn('⚠️ Failed to send task notification:', notificationError);
@@ -262,13 +270,21 @@ export const createMemberNote = onCall(async (request) => {
     const authorDoc = await db.collection('staff').where('id', '==', authorId).get();
     const authorRole = authorDoc.docs[0]?.data()?.role || 'Staff';
 
+    const normalizePriority = (value: string) => {
+      const normalized = String(value || '').toLowerCase();
+      if (normalized.includes('urgent')) return 'Urgent';
+      if (normalized.includes('priority') || normalized.includes('immediate') || normalized.includes('high')) return 'Priority';
+      return 'General';
+    };
+    const normalizedPriority = normalizePriority(priority || '');
+
     const noteData = {
       id: noteRef.id,
       memberId,
       memberName,
       content,
       category: category || 'General',
-      priority: priority || 'Medium',
+      priority: normalizedPriority,
       isPrivate: isPrivate || false,
       isPinned: false,
       isArchived: false,
@@ -294,7 +310,7 @@ export const createMemberNote = onCall(async (request) => {
           memberName,
           authorName,
           category,
-          priority,
+          priority: normalizedPriority,
           content: content.substring(0, 100) + (content.length > 100 ? '...' : '')
         });
       } catch (notificationError) {

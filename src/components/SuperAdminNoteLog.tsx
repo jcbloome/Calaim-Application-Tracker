@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
 import { 
   Loader2, 
   RefreshCw, 
@@ -37,7 +38,7 @@ interface Note {
   memberId?: string;
   staffName?: string;
   staffId?: string;
-  priority?: 'low' | 'medium' | 'high';
+  priority?: 'General' | 'Priority' | 'Urgent' | string;
   
   // Note content
   noteContent?: string;
@@ -79,6 +80,7 @@ export default function SuperAdminNoteLog() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   
   const { toast } = useToast();
+
 
   useEffect(() => {
     loadNotes();
@@ -162,11 +164,11 @@ export default function SuperAdminNoteLog() {
       let aVal, bVal;
       
       switch (sortBy) {
-        case 'priority':
-          const priorityOrder = { high: 3, medium: 2, low: 1 };
-          aVal = priorityOrder[a.priority as keyof typeof priorityOrder] || 0;
-          bVal = priorityOrder[b.priority as keyof typeof priorityOrder] || 0;
+        case 'priority': {
+          aVal = getPriorityRank(a.priority);
+          bVal = getPriorityRank(b.priority);
           break;
+        }
         case 'staff':
           aVal = a.staffName || a.senderName || '';
           bVal = b.staffName || b.senderName || '';
@@ -191,20 +193,20 @@ export default function SuperAdminNoteLog() {
   const stats = useMemo(() => {
     const total = notes.length;
     const today = notes.filter(n => isToday(new Date(n.timestamp))).length;
-    const highPriority = notes.filter(n => n.priority === 'high').length;
+    const priorityCount = notes.filter(
+      (n) => normalizePriorityLabel(n.priority) === 'Priority' || normalizePriorityLabel(n.priority) === 'Urgent'
+    ).length;
     const staffNotes = notes.filter(n => n.tableType === 'staff_note' || n.source !== 'notification').length;
     const notifications = notes.filter(n => n.source === 'notification').length;
 
-    return { total, today, highPriority, staffNotes, notifications };
+    return { total, today, priorityCount, staffNotes, notifications };
   }, [notes]);
 
   const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high': return 'bg-red-100 text-red-800 border-red-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'low': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
+    const label = normalizePriorityLabel(priority);
+    if (label === 'Urgent') return 'bg-red-100 text-red-800 border-red-200';
+    if (label === 'Priority') return 'bg-orange-100 text-orange-800 border-orange-200';
+    return 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   const getSourceIcon = (note: Note) => {
@@ -253,7 +255,7 @@ export default function SuperAdminNoteLog() {
         `"${note.staffName || note.senderName || 'System'}"`,
         `"${note.memberName || 'N/A'}"`,
         `"${getSourceLabel(note)}"`,
-        note.priority || 'medium',
+        normalizePriorityLabel(note.priority),
         `"${getNoteContent(note).replace(/"/g, '""')}"`
       ].join(','))
     ].join('\n');
@@ -403,9 +405,9 @@ export default function SuperAdminNoteLog() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Priorities</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="Urgent">Urgent</SelectItem>
+                  <SelectItem value="Priority">Priority</SelectItem>
+                  <SelectItem value="General">General</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -501,7 +503,7 @@ export default function SuperAdminNoteLog() {
                       <TableCell>
                         {note.priority && (
                           <Badge variant="outline" className={getPriorityColor(note.priority)}>
-                            {note.priority}
+                            {normalizePriorityLabel(note.priority)}
                           </Badge>
                         )}
                       </TableCell>

@@ -97,7 +97,7 @@ export const FIREBASE_CONFIG = {
 
   // Notification Settings
   NOTIFICATIONS: {
-    PRIORITIES: ['low', 'medium', 'high', 'urgent'] as const,
+    PRIORITIES: ['General', 'Priority', 'Urgent'] as const,
     TYPES: ['system', 'member_note', 'staff_note', 'reminder'] as const,
     AUTO_MARK_READ_DELAY: 30000, // 30 seconds
     MAX_RECIPIENTS: 50

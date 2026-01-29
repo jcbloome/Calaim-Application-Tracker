@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { normalizePriorityLabel } from '@/lib/notification-utils';
 
 interface DailyTask {
   id?: string;
@@ -9,7 +10,7 @@ interface DailyTask {
   healthPlan?: string;
   assignedTo: string;
   assignedToName?: string;
-  priority: 'high' | 'medium' | 'low';
+  priority: 'General' | 'Priority' | 'Urgent';
   status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
   dueDate: string;
   createdAt: string;
@@ -31,7 +32,7 @@ let tasks: DailyTask[] = [
     healthPlan: 'Kaiser',
     assignedTo: 'user1',
     assignedToName: 'Sarah Johnson',
-    priority: 'high',
+    priority: 'Priority',
     status: 'pending',
     dueDate: new Date().toISOString().split('T')[0], // Today
     createdAt: new Date().toISOString(),
@@ -48,7 +49,7 @@ let tasks: DailyTask[] = [
     healthPlan: 'Health Net',
     assignedTo: 'user2',
     assignedToName: 'Mike Wilson',
-    priority: 'medium',
+    priority: 'General',
     status: 'in_progress',
     dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Tomorrow
     createdAt: new Date(Date.now() - 86400000).toISOString(),
@@ -62,7 +63,7 @@ let tasks: DailyTask[] = [
     description: 'Compile statistics and member progress for monthly reporting',
     assignedTo: 'user1',
     assignedToName: 'Sarah Johnson',
-    priority: 'low',
+    priority: 'General',
     status: 'pending',
     dueDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0], // Next week
     createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
@@ -100,11 +101,17 @@ export async function GET(request: NextRequest) {
     
     // Calculate summary statistics
     const today = new Date().toISOString().split('T')[0];
+    const urgentCount = filteredTasks.filter(t => t.priority === 'Urgent').length;
+    const priorityCount = filteredTasks.filter(t => t.priority === 'Priority').length;
+    const generalCount = filteredTasks.filter(t => t.priority === 'General').length;
     const summary = {
       total: filteredTasks.length,
-      high: filteredTasks.filter(t => t.priority === 'high').length,
-      medium: filteredTasks.filter(t => t.priority === 'medium').length,
-      low: filteredTasks.filter(t => t.priority === 'low').length,
+      urgent: urgentCount,
+      priority: priorityCount,
+      general: generalCount,
+      high: urgentCount + priorityCount,
+      medium: generalCount,
+      low: 0,
       pending: filteredTasks.filter(t => t.status === 'pending').length,
       inProgress: filteredTasks.filter(t => t.status === 'in_progress').length,
       completed: filteredTasks.filter(t => t.status === 'completed').length,
@@ -145,7 +152,7 @@ export async function POST(request: NextRequest) {
       healthPlan: body.healthPlan || '',
       assignedTo: body.assignedTo,
       assignedToName: body.assignedToName || '',
-      priority: body.priority || 'medium',
+      priority: normalizePriorityLabel(body.priority),
       status: 'pending',
       dueDate: body.dueDate,
       createdAt: now,
@@ -200,6 +207,7 @@ export async function PUT(request: NextRequest) {
     const now = new Date().toISOString();
     const updateData = {
       ...updates,
+      ...(updates?.priority ? { priority: normalizePriorityLabel(updates.priority) } : {}),
       updatedAt: now
     };
     

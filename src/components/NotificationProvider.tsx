@@ -10,7 +10,7 @@ interface WindowsNotificationProps {
   message: string;
   author?: string;
   memberName?: string;
-  priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
+  priority?: 'General' | 'Priority' | 'Urgent' | string;
   tagLabel?: string;
   startMinimized?: boolean;
   lockToTray?: boolean;

@@ -31,7 +31,7 @@ interface SystemNote {
   applicationId?: string;
   noteContent: string;
   noteType: 'internal' | 'task' | 'alert' | 'system';
-  priority: 'low' | 'medium' | 'high';
+  priority: 'General' | 'Priority' | 'Urgent';
   timestamp: Date;
   wasNotificationSent: boolean;
   notificationMethod?: 'popup' | 'email' | 'both';
@@ -140,7 +140,7 @@ export const sendTestStaffNotification = onCall(async (request) => {
       memberName: 'Test Member',
       noteContent: 'This is a test notification to verify your notification settings are working correctly.',
       noteType: 'system',
-      priority: 'medium',
+      priority: 'General',
       timestamp: new Date(),
       wasNotificationSent: true,
       notificationMethod: 'popup'
@@ -181,7 +181,7 @@ export const logStaffNote = onCall(async (request) => {
       applicationId, 
       noteContent, 
       noteType = 'internal', 
-      priority = 'medium',
+      priority = 'General',
       sendNotification = true 
     } = request.data;
 
@@ -190,6 +190,13 @@ export const logStaffNote = onCall(async (request) => {
     }
 
     const db = getDb();
+    const normalizePriority = (value: string) => {
+      const normalized = String(value || '').toLowerCase();
+      if (normalized.includes('urgent')) return 'Urgent';
+      if (normalized.includes('priority') || normalized.includes('immediate') || normalized.includes('high')) return 'Priority';
+      return 'General';
+    };
+    const normalizedPriority = normalizePriority(priority);
     
     // Get sender info
     const senderRecord = await admin.auth().getUser(uid);
@@ -227,7 +234,7 @@ export const logStaffNote = onCall(async (request) => {
       applicationId,
       noteContent,
       noteType,
-      priority,
+      priority: normalizedPriority,
       timestamp: new Date(),
       wasNotificationSent: shouldSendNotification,
       notificationMethod: shouldSendNotification ? 'popup' : undefined

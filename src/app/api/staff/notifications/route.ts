@@ -24,6 +24,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const normalizePriority = (value: any) => {
+      const raw = String(value || '').toLowerCase();
+      if (raw.includes('urgent')) return 'Urgent';
+      if (raw.includes('priority') || raw.includes('immediate') || raw.includes('high')) return 'Priority';
+      return 'General';
+    };
+
+    const normalizedPriority = normalizePriority(priority);
+
     // In production, this would:
     // 1. Store the notification in Firestore
     // 2. Send push notification to the assigned staff member
@@ -38,7 +47,7 @@ export async function POST(request: NextRequest) {
       createdBy,
       createdByName,
       memberName,
-      priority,
+      priority: normalizedPriority,
       timestamp: new Date().toISOString()
     });
 
@@ -74,7 +83,7 @@ export async function POST(request: NextRequest) {
         noteId,
         clientId2,
         memberName,
-        priority,
+        priority: normalizedPriority,
         assignedTo,
         createdBy,
         createdByName,

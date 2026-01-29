@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/firebase-admin';
+import { normalizePriorityLabel } from '@/lib/notification-utils';
 
 export async function GET(request: NextRequest) {
   try {
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
           memberClientId: member.client_ID2,
           healthPlan: 'Kaiser',
           taskType: 'kaiser_status',
-          priority: isOverdue ? 'Urgent' : isUrgent ? 'High' : 'Medium',
+          priority: isOverdue ? 'Urgent' : isUrgent ? 'Priority' : 'General',
           status: isOverdue ? 'overdue' : 'pending',
           dueDate: member.Next_Step_Due_Date || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
           assignedBy: 'system',
@@ -79,13 +80,7 @@ export async function GET(request: NextRequest) {
         };
       });
 
-      const normalizePriority = (value: any) => {
-        const normalized = String(value || '').toLowerCase();
-        if (normalized.includes('urgent')) return 'Urgent';
-        if (normalized.includes('high')) return 'High';
-        if (normalized.includes('low')) return 'Low';
-        return 'Medium';
-      };
+      const normalizePriority = (value: any) => normalizePriorityLabel(value);
 
       const followUpTasks: any[] = [];
       const now = new Date();

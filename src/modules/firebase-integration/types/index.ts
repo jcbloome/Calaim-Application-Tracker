@@ -151,7 +151,7 @@ export interface NotificationDocument {
   createdBy: string;
   createdAt: Timestamp;
   read: boolean;
-  priority: 'low' | 'medium' | 'high' | 'urgent';
+  priority: 'General' | 'Priority' | 'Urgent';
   type: 'system' | 'member_note' | 'staff_note' | 'reminder';
   actionUrl?: string;
   metadata?: Record<string, any>;
@@ -184,7 +184,7 @@ export interface MemberNoteDocument {
   memberName: string;
   noteText: string;
   staffMember: string;
-  priority: 'low' | 'medium' | 'high' | 'urgent';
+  priority: 'General' | 'Priority' | 'Urgent';
   category: 'general' | 'medical' | 'behavioral' | 'administrative' | 'ils';
   isILSOnly: boolean;
   isRead: boolean;

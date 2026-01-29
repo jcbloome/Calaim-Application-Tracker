@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { format } from 'date-fns';
+import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
 
 interface SystemNote {
   id: string;
@@ -50,7 +51,7 @@ interface SystemNote {
   applicationId?: string;
   noteContent: string;
   noteType: 'internal' | 'task' | 'alert' | 'system';
-  priority: 'low' | 'medium' | 'high';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
   timestamp: Date;
   wasNotificationSent: boolean;
   notificationMethod?: 'popup' | 'email' | 'both';
@@ -71,6 +72,7 @@ export function SystemNoteLog() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'all'>('week');
   const { toast } = useToast();
+
 
   // Get unique staff members for filter
   const staffMembers = useMemo(() => {
@@ -153,11 +155,11 @@ export function SystemNoteLog() {
           aValue = (a.memberName || '').toLowerCase();
           bValue = (b.memberName || '').toLowerCase();
           break;
-        case 'priority':
-          const priorityOrder = { high: 3, medium: 2, low: 1 };
-          aValue = priorityOrder[a.priority];
-          bValue = priorityOrder[b.priority];
+        case 'priority': {
+          aValue = getPriorityRank(a.priority);
+          bValue = getPriorityRank(b.priority);
           break;
+        }
         default:
           return 0;
       }
@@ -227,12 +229,10 @@ export function SystemNoteLog() {
   };
 
   const getPriorityBadge = (priority: string) => {
-    const colors = {
-      high: 'bg-red-100 text-red-800 border-red-200',
-      medium: 'bg-orange-100 text-orange-800 border-orange-200',
-      low: 'bg-blue-100 text-blue-800 border-blue-200'
-    };
-    return colors[priority as keyof typeof colors] || colors.low;
+    const label = normalizePriorityLabel(priority);
+    if (label === 'Urgent') return 'bg-red-100 text-red-800 border-red-200';
+    if (label === 'Priority') return 'bg-orange-100 text-orange-800 border-orange-200';
+    return 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   const exportToCSV = () => {
@@ -244,7 +244,7 @@ export function SystemNoteLog() {
         `"${note.recipientName}"`,
         `"${note.memberName || ''}"`,
         `"${note.noteType}"`,
-        `"${note.priority}"`,
+        `"${normalizePriorityLabel(note.priority)}"`,
         `"${note.noteContent.replace(/"/g, '""')}"`,
         note.wasNotificationSent ? 'Yes' : 'No',
         note.readAt ? `"${format(note.readAt, 'yyyy-MM-dd HH:mm:ss')}"` : ''
@@ -513,7 +513,7 @@ export function SystemNoteLog() {
                   
                   <TableCell>
                     <Badge variant="outline" className={getPriorityBadge(note.priority)}>
-                      {note.priority}
+                      {normalizePriorityLabel(note.priority)}
                     </Badge>
                   </TableCell>
                   

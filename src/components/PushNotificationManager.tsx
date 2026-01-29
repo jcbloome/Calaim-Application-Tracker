@@ -4,36 +4,13 @@ import { useEffect, useState } from 'react';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { useAuth } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { shouldSuppressWebAlerts } from '@/lib/notification-utils';
 
 interface PushNotificationManagerProps {
   onTokenReceived?: (token: string) => void;
 }
 
-const shouldSuppressBrowserNotifications = () => {
-  if (typeof window === 'undefined') return false;
-  try {
-    const raw = localStorage.getItem('notificationSettings');
-    const parsed = raw ? JSON.parse(raw) as any : {};
-    const userSuppress = parsed?.userControls?.suppressWebWhenDesktopActive;
-    const webAppEnabled = parsed?.userControls?.webAppNotificationsEnabled;
-    let globalForce = false;
-    try {
-      const rawGlobal = localStorage.getItem('notificationSettingsGlobal');
-      if (rawGlobal) {
-        const parsedGlobal = JSON.parse(rawGlobal) as any;
-        globalForce = Boolean(parsedGlobal?.globalControls?.forceSuppressWebWhenDesktopActive);
-      }
-    } catch {
-      globalForce = false;
-    }
-    if (webAppEnabled === true) return globalForce;
-    if (webAppEnabled === false) return true;
-    const defaultSuppress = userSuppress === undefined;
-    return globalForce || userSuppress === true || defaultSuppress;
-  } catch {
-    return false;
-  }
-};
+const shouldSuppressBrowserNotifications = () => shouldSuppressWebAlerts();
 
 export default function PushNotificationManager({ onTokenReceived }: PushNotificationManagerProps) {
   const [isSupported, setIsSupported] = useState(false);
@@ -126,7 +103,7 @@ export default function PushNotificationManager({ onTokenReceived }: PushNotific
                 body: payload.notification?.body || 'You have a new note assignment',
                 icon: '/calaimlogopdf.png',
                 tag: payload.data?.notificationId || 'calaim-note',
-                requireInteraction: payload.data?.priority === 'urgent',
+                requireInteraction: String(payload.data?.priority || '').toLowerCase().includes('urgent'),
                 data: payload.data
               }
             );

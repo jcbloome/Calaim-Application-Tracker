@@ -15,7 +15,7 @@ export default function PriorityNoteMonitorPage() {
         <div>
           <h1 className="text-3xl font-bold">Priority Note Monitor</h1>
           <p className="text-muted-foreground">
-            Real-time monitoring of high-priority notes from Caspio with safe, read-only operation
+            Real-time monitoring of priority and urgent notes from Caspio with safe, read-only operation
           </p>
         </div>
       </div>
@@ -25,7 +25,7 @@ export default function PriorityNoteMonitorPage() {
         <Shield className="h-4 w-4 text-green-600" />
         <AlertDescription className="text-green-800">
           <strong>Safe Operation Mode:</strong> This system operates in READ-ONLY mode and will not interfere 
-          with RCFE or Social Worker access to Caspio. It only monitors for new priority notes and sends 
+          with RCFE or Social Worker access to Caspio. It monitors for new priority and urgent notes and sends 
           notifications to staff via Firebase Cloud Messaging.
         </AlertDescription>
       </Alert>
@@ -45,7 +45,7 @@ export default function PriorityNoteMonitorPage() {
               <ul className="space-y-2 text-sm">
                 <li className="flex items-start gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0" />
-                  <span>Checks Caspio every 15 minutes for new high-priority notes</span>
+                  <span>Checks Caspio every 15 minutes for new priority and urgent notes</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0" />
@@ -53,7 +53,7 @@ export default function PriorityNoteMonitorPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0" />
-                  <span>Filters for notes marked as "high" priority only</span>
+                  <span>Filters for notes marked as "priority" or "urgent" only</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0" />

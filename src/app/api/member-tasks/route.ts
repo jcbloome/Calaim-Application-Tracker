@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { normalizePriorityLabel } from '@/lib/notification-utils';
 
 // In-memory storage for tasks (replace with database in production)
 const memberTasks: Record<string, any[]> = {};
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
       nextStep,
       followUpDate,
       assignedTo,
-      priority: priority || 'Medium',
+      priority: normalizePriorityLabel(priority),
       status: 'Pending',
       notes: notes || '',
       createdAt: new Date().toISOString(),
@@ -118,6 +119,7 @@ export async function PUT(request: NextRequest) {
         memberTasks[memberId][taskIndex] = {
           ...memberTasks[memberId][taskIndex],
           ...updates,
+          ...(updates?.priority ? { priority: normalizePriorityLabel(updates.priority) } : {}),
           updatedAt: new Date().toISOString()
         };
         taskFound = true;

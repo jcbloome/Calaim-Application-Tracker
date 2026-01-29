@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { normalizePriorityLabel, shouldSuppressWebAlerts } from '@/lib/notification-utils';
 
 // Types
 interface Notification {
@@ -22,7 +23,7 @@ interface Notification {
   createdAt: string;
   read: boolean;
   dismissed: boolean;
-  priority: 'normal' | 'high' | 'urgent';
+  priority: 'general' | 'priority' | 'urgent' | 'normal' | 'high' | string;
   expiresAt?: string;
 }
 
@@ -31,31 +32,9 @@ interface NotificationSystemProps {
   className?: string;
 }
 
-const shouldSuppressBrowserNotifications = () => {
-  if (typeof window === 'undefined') return false;
-  try {
-    const raw = localStorage.getItem('notificationSettings');
-    const parsed = raw ? JSON.parse(raw) as any : {};
-    const userSuppress = parsed?.userControls?.suppressWebWhenDesktopActive;
-    const webAppEnabled = parsed?.userControls?.webAppNotificationsEnabled;
-    const webAppEnabled = parsed?.userControls?.webAppNotificationsEnabled;
-    let globalForce = false;
-    try {
-      const rawGlobal = localStorage.getItem('notificationSettingsGlobal');
-      if (rawGlobal) {
-        const parsedGlobal = JSON.parse(rawGlobal) as any;
-        globalForce = Boolean(parsedGlobal?.globalControls?.forceSuppressWebWhenDesktopActive);
-      }
-    } catch {
-      globalForce = false;
-    }
-    if (webAppEnabled === true) return globalForce;
-    if (webAppEnabled === false) return true;
-    const defaultSuppress = userSuppress === undefined;
-    return globalForce || userSuppress === true || defaultSuppress;
-  } catch {
-    return false;
-  }
+const normalizePriorityLevel = (value: string) => {
+  const normalized = normalizePriorityLabel(value).toLowerCase();
+  return normalized === 'urgent' ? 'urgent' : normalized === 'priority' ? 'priority' : 'general';
 };
 
 export default function NotificationSystem({ userId, className = '' }: NotificationSystemProps) {
@@ -170,7 +149,7 @@ export default function NotificationSystem({ userId, className = '' }: Notificat
 
   // Show system tray notification (browser notification)
   const showSystemTrayNotification = (notification: Notification) => {
-    if (shouldSuppressBrowserNotifications()) {
+    if (shouldSuppressWebAlerts()) {
       return;
     }
     if ('Notification' in window && Notification.permission === 'granted') {
@@ -179,8 +158,8 @@ export default function NotificationSystem({ userId, className = '' }: Notificat
         icon: '/calaimlogopdf.png',
         badge: '/calaimlogopdf.png',
         tag: notification.id,
-        requireInteraction: notification.priority === 'urgent',
-        silent: notification.priority === 'normal'
+        requireInteraction: normalizePriorityLevel(notification.priority) === 'urgent',
+        silent: normalizePriorityLevel(notification.priority) === 'general'
       });
 
       systemNotification.onclick = () => {
@@ -189,8 +168,8 @@ export default function NotificationSystem({ userId, className = '' }: Notificat
         systemNotification.close();
       };
 
-      // Auto-close after 5 seconds for normal priority
-      if (notification.priority === 'normal') {
+      // Auto-close after 5 seconds for general priority
+      if (normalizePriorityLevel(notification.priority) === 'general') {
         setTimeout(() => systemNotification.close(), 5000);
       }
     }
@@ -198,7 +177,7 @@ export default function NotificationSystem({ userId, className = '' }: Notificat
 
   // Request notification permission
   const requestNotificationPermission = async () => {
-    if (shouldSuppressBrowserNotifications()) {
+    if (shouldSuppressWebAlerts()) {
       return;
     }
     if ('Notification' in window && Notification.permission === 'default') {
@@ -259,14 +238,10 @@ export default function NotificationSystem({ userId, className = '' }: Notificat
   };
 
   const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'urgent':
-        return 'text-red-600 bg-red-50 border-red-200';
-      case 'high':
-        return 'text-orange-600 bg-orange-50 border-orange-200';
-      default:
-        return 'text-blue-600 bg-blue-50 border-blue-200';
-    }
+    const level = normalizePriorityLevel(priority);
+    if (level === 'urgent') return 'text-red-600 bg-red-50 border-red-200';
+    if (level === 'priority') return 'text-orange-600 bg-orange-50 border-orange-200';
+    return 'text-blue-600 bg-blue-50 border-blue-200';
   };
 
   return (
@@ -352,16 +327,16 @@ export default function NotificationSystem({ userId, className = '' }: Notificat
                               {format(new Date(notification.createdAt), 'MMM dd, HH:mm')}
                             </span>
                             
-                            {notification.priority !== 'normal' && (
+                            {normalizePriorityLevel(notification.priority) !== 'general' && (
                               <Badge 
                                 variant="outline" 
                                 className={`text-xs ${
-                                  notification.priority === 'urgent' ? 'border-red-300 text-red-600' :
-                                  notification.priority === 'high' ? 'border-orange-300 text-orange-600' :
+                                  normalizePriorityLevel(notification.priority) === 'urgent' ? 'border-red-300 text-red-600' :
+                                  normalizePriorityLevel(notification.priority) === 'priority' ? 'border-orange-300 text-orange-600' :
                                   'border-blue-300 text-blue-600'
                                 }`}
                               >
-                                {notification.priority}
+                                {normalizePriorityLevel(notification.priority)}
                               </Badge>
                             )}
                           </div>

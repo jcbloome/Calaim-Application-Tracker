@@ -40,6 +40,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { ToastAction } from '@/components/ui/toast';
+import { normalizePriorityLabel } from '@/lib/notification-utils';
 
 interface MemberNote {
   id: string;
@@ -50,7 +51,7 @@ interface MemberNote {
   memberName?: string;
   senderName?: string;
   staffName?: string;
-  priority?: 'low' | 'medium' | 'high';
+  priority?: 'General' | 'Priority' | 'Urgent' | string;
   
   // Caspio note fields
   Note_Content?: string;
@@ -137,12 +138,10 @@ export default function MemberNotesView({ memberId, memberName, onClose }: Membe
   };
 
   const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high': return 'bg-red-100 text-red-800 border-red-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'low': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
+    const label = normalizePriorityLabel(priority);
+    if (label === 'Urgent') return 'bg-red-100 text-red-800 border-red-200';
+    if (label === 'Priority') return 'bg-orange-100 text-orange-800 border-orange-200';
+    return 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   const getSourceIcon = (note: MemberNote) => {
@@ -363,7 +362,7 @@ export default function MemberNotesView({ memberId, memberName, onClose }: Membe
                           </Badge>
                           {note.priority && (
                             <Badge variant="outline" className={getPriorityColor(note.priority)}>
-                              {note.priority}
+                              {normalizePriorityLabel(note.priority)}
                             </Badge>
                           )}
                           {note.source === 'notification' && !note.isRead && (

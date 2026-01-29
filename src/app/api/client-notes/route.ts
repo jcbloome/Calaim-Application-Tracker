@@ -115,7 +115,7 @@ async function logSystemNoteAction(payload: {
         payload.status ? `Status: ${payload.status}` : null
       ].filter(Boolean).join(' • '),
       noteType: 'system',
-      priority: 'low',
+      priority: 'General',
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
       wasNotificationSent: false
     });

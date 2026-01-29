@@ -84,7 +84,7 @@ export const sendNoteNotification = onCall(
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         read: false,
         dismissed: false,
-        priority: notificationType === 'followup' ? 'high' : 'normal',
+        priority: notificationType === 'followup' ? 'Priority' : 'General',
         expiresAt: admin.firestore.FieldValue.serverTimestamp() // Add 7 days
       };
 
@@ -119,7 +119,7 @@ export const sendNoteNotification = onCall(
                   clientId2: noteData.clientId2,
                   clientName: noteData.clientName,
                   notificationId: notificationRef.id,
-                  priority: notificationType === 'followup' ? 'high' : 'normal',
+                  priority: notificationType === 'followup' ? 'Priority' : 'General',
                   message: notification.message,
                   actionUrl: `/admin/client-notes?client=${noteData.clientId2}`,
                   url: `/admin/client-notes?client=${noteData.clientId2}`,

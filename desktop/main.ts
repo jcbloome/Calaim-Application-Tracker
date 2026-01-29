@@ -10,13 +10,19 @@ type DesktopNotificationState = {
   effectivePaused: boolean;
 };
 
+type DesktopStore = {
+  pausedByUser: boolean;
+  allowAfterHours: boolean;
+  overlayPosition?: { x: number; y: number };
+};
+
 const ADMIN_SETTINGS_URL = process.env.CALAIM_DESKTOP_URL || 'https://connectcalaim.com/admin/notification-settings';
 const NOTIFICATION_URL = process.env.CALAIM_TRAY_NOTIFICATION_URL || 'https://connectcalaim.com/admin/login?redirect=/admin/my-notes';
 const SHOW_ADMIN_LINK = process.env.CALAIM_TRAY_ADMIN_LINK === 'true';
 const BUSINESS_START_MINUTES = 12 * 60; // 12:00 ET
 const BUSINESS_END_MINUTES = 20 * 60; // 20:00 ET
 
-const store = new Store<{ pausedByUser: boolean; allowAfterHours: boolean }>();
+const store = new Store<DesktopStore>();
 
 let mainWindow: BrowserWindow | null = null;
 let notificationWindow: BrowserWindow | null = null;
@@ -28,6 +34,7 @@ let allowAfterHours = store.get('allowAfterHours', false);
 let isWithinBusinessHours = true;
 let scheduleTimeout: NodeJS.Timeout | null = null;
 let isQuitting = false;
+let overlayMoveTimeout: NodeJS.Timeout | null = null;
 
 const resolveTrayIconPath = () => {
   const candidatePaths = [
@@ -57,6 +64,28 @@ const resolveTrayIcon = () => {
   return nativeImage.createFromDataURL(
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wwAAgMBAp5L5gAAAABJRU5ErkJggg=='
   );
+};
+
+const getDefaultOverlayPosition = (width: number, height: number) => {
+  const { workArea } = screen.getPrimaryDisplay();
+  return {
+    x: Math.max(workArea.x, workArea.x + workArea.width - width - 16),
+    y: Math.max(workArea.y, workArea.y + workArea.height - height - 16)
+  };
+};
+
+const resolveOverlayPosition = (width: number, height: number) => {
+  const { workArea } = screen.getPrimaryDisplay();
+  const saved = store.get('overlayPosition');
+  if (!saved || !Number.isFinite(saved.x) || !Number.isFinite(saved.y)) {
+    return getDefaultOverlayPosition(width, height);
+  }
+  const maxX = workArea.x + workArea.width - width;
+  const maxY = workArea.y + workArea.height - height;
+  return {
+    x: Math.min(Math.max(saved.x, workArea.x), maxX),
+    y: Math.min(Math.max(saved.y, workArea.y), maxY)
+  };
 };
 
 const getEtNow = () => {
@@ -144,6 +173,15 @@ const createTrayIcon = () => {
   updateTrayMenu();
 };
 
+const resetOverlayPosition = () => {
+  store.delete('overlayPosition');
+  if (!overlayWindow) return;
+  const width = overlayWindow.getBounds().width;
+  const height = overlayWindow.getBounds().height;
+  const { x, y } = getDefaultOverlayPosition(width, height);
+  overlayWindow.setPosition(x, y);
+};
+
 const updateTrayMenu = () => {
   if (!tray) return;
   const state = getState();
@@ -157,6 +195,10 @@ const updateTrayMenu = () => {
         notificationWindow?.show();
         notificationWindow?.focus();
       }
+    },
+    {
+      label: 'Reset Notification Pill Position',
+      click: () => resetOverlayPosition()
     },
     { type: 'separator' },
     {
@@ -264,9 +306,7 @@ const createOverlayWindow = () => {
   if (overlayWindow) return;
   const width = 190;
   const height = 52;
-  const { workArea } = screen.getPrimaryDisplay();
-  const x = Math.max(workArea.x, workArea.x + workArea.width - width - 16);
-  const y = Math.max(workArea.y, workArea.y + workArea.height - height - 16);
+  const { x, y } = resolveOverlayPosition(width, height);
 
   overlayWindow = new BrowserWindow({
     width,
@@ -275,8 +315,8 @@ const createOverlayWindow = () => {
     y,
     frame: false,
     resizable: false,
-    movable: false,
-    focusable: false,
+    movable: true,
+    focusable: true,
     alwaysOnTop: true,
     skipTaskbar: true,
     show: false,
@@ -290,6 +330,24 @@ const createOverlayWindow = () => {
 
   overlayWindow.setAlwaysOnTop(true, 'pop-up-menu');
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  overlayWindow.on('closed', () => {
+    if (overlayMoveTimeout) {
+      clearTimeout(overlayMoveTimeout);
+      overlayMoveTimeout = null;
+    }
+    overlayWindow = null;
+  });
+  overlayWindow.on('move', () => {
+    if (!overlayWindow) return;
+    if (overlayMoveTimeout) {
+      clearTimeout(overlayMoveTimeout);
+    }
+    overlayMoveTimeout = setTimeout(() => {
+      if (!overlayWindow) return;
+      const [nextX, nextY] = overlayWindow.getPosition();
+      store.set('overlayPosition', { x: nextX, y: nextY });
+    }, 300);
+  });
 
   const html = `
     <!doctype html>
@@ -312,6 +370,16 @@ const createOverlayWindow = () => {
             box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
             cursor: pointer;
             user-select: none;
+            -webkit-app-region: no-drag;
+          }
+          #drag {
+            width: 12px;
+            height: 12px;
+            border-radius: 999px;
+            background: #e2e8f0;
+            border: 1px solid #cbd5e1;
+            cursor: move;
+            -webkit-app-region: drag;
           }
           #dot {
             width: 10px;
@@ -341,6 +409,7 @@ const createOverlayWindow = () => {
             <div id="label">Connections Note</div>
             <div id="text">Notes: 0</div>
           </div>
+          <div id="drag" title="Drag to move"></div>
         </div>
         <script>
           const { ipcRenderer } = require('electron');

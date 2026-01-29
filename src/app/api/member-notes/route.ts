@@ -64,7 +64,7 @@ interface MemberNote {
   updatedAt: string;
   source: 'Caspio' | 'ILS' | 'App' | 'Admin';
   isRead: boolean;
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  priority: 'General' | 'Priority' | 'Urgent';
   status?: 'Open' | 'Closed';
   resolvedAt?: string;
   followUpDate?: string;
@@ -619,20 +619,26 @@ function validateSource(source: any): MemberNote['source'] {
 }
 
 function validatePriority(priority: any): MemberNote['priority'] {
-  const validPriorities: MemberNote['priority'][] = ['Low', 'Medium', 'High', 'Urgent'];
-  
+  const validPriorities: MemberNote['priority'][] = ['General', 'Priority', 'Urgent'];
+
   if (validPriorities.includes(priority)) return priority;
-  
-  // Handle Caspio priority formats
+
   if (typeof priority === 'string') {
     const priorityLower = priority.toLowerCase();
     if (priorityLower.includes('urgent') || priorityLower.includes('🔴')) return 'Urgent';
-    if (priorityLower.includes('high')) return 'High';
-    if (priorityLower.includes('medium') || priorityLower.includes('🟡')) return 'Medium';
-    if (priorityLower.includes('low') || priorityLower.includes('🟢')) return 'Low';
+    if (
+      priorityLower.includes('priority') ||
+      priorityLower.includes('immediate') ||
+      priorityLower.includes('high')
+    ) {
+      return 'Priority';
+    }
+    if (priorityLower.includes('medium') || priorityLower.includes('low') || priorityLower.includes('🟢') || priorityLower.includes('🟡')) {
+      return 'General';
+    }
   }
-  
-  return 'Medium'; // Default
+
+  return 'General';
 }
 
 function normalizeNoteStatus(status: any): MemberNote['status'] {
@@ -728,7 +734,7 @@ export async function POST(request: NextRequest) {
       memberName: memberName || 'Unknown Member',
       noteText,
       staffMember: createdByName || authorName || 'Unknown Staff',
-      priority: priority || 'Medium',
+      priority: priority || 'General',
       category: category || 'General',
       isILSOnly: noteType === 'ILS',
       isRead: false,
@@ -738,7 +744,7 @@ export async function POST(request: NextRequest) {
     const createdNote = await caspioService.createNote(noteData);
     
     const shouldNotify = Boolean(
-      assignedTo && ['High', 'Urgent'].includes(priority || '')
+      assignedTo && ['Priority', 'Urgent'].includes(priority || '')
         ? true
         : sendNotification && assignedTo
     );
@@ -758,7 +764,7 @@ export async function POST(request: NextRequest) {
         updatedAt: new Date().toISOString(),
         source: 'Admin',
         isRead: false,
-        priority: (priority || 'Medium') as MemberNote['priority'],
+        priority: (priority || 'General') as MemberNote['priority'],
         status: 'Open'
       });
     }
@@ -850,7 +856,7 @@ async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
         noteType: 'Administrative', // ILS notes are administrative
         source: 'ILS',
         isRead: true, // Legacy notes are considered read
-        priority: 'Medium',
+        priority: 'General',
         tags: ['ILS', 'JHernandez@ilshealth.com'],
         isLegacy: true,
         syncedAt: syncTime,
@@ -964,7 +970,7 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
       updatedAt: caspioNote.Time_Stamp || syncTime,
       source: 'Caspio',
       isRead: false, // New notes are unread
-      priority: caspioNote.Follow_Up_Status?.includes('🟢') ? 'Medium' : 'Low',
+      priority: caspioNote.Follow_Up_Status?.includes('🔴') ? 'Urgent' : 'General',
       followUpDate: caspioNote.Follow_Up_Date,
       tags: [],
       isLegacy: false, // These are new notes, not legacy
@@ -987,7 +993,7 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
       updatedAt: ilsNote.Timestamp || syncTime,
       source: 'ILS',
       isRead: false, // New notes are unread
-      priority: 'Medium',
+      priority: 'General',
       followUpDate: undefined,
       tags: ['ILS', 'JHernandez@ilshealth.com'],
       isLegacy: false, // These are new notes, not legacy
@@ -1042,7 +1048,7 @@ async function syncNoteToCaspio(note: MemberNote): Promise<void> {
       Time_Stamp: note.createdAt,
       Follow_Up_Date: note.followUpDate || null,
       Note_Status: note.status || 'Open',
-      Follow_Up_Status: note.priority === 'High' ? '🔴 Urgent' : '🟢 Open',
+      Follow_Up_Status: note.priority === 'Urgent' ? '🔴 Urgent' : note.priority === 'Priority' ? '🟡 Priority' : '🟢 Open',
       User_Full_Name: note.createdByName,
       Follow_Up_Assignment: note.assignedTo || null,
       Assigned_First: note.assignedToName || null
@@ -1101,7 +1107,7 @@ async function sendNoteNotification(note: MemberNote): Promise<void> {
       type: 'note_assignment',
       isRead: false,
       status: note.status || 'Open',
-      requiresStaffAction: note.priority === 'High' || note.priority === 'Urgent',
+      requiresStaffAction: note.priority === 'Priority' || note.priority === 'Urgent',
       timestamp: Timestamp.now(),
       noteId: note.id,
       clientId2: note.clientId2,
@@ -1197,7 +1203,7 @@ async function logSystemNoteAction(payload: {
         payload.source ? `Source: ${payload.source}` : null
       ].filter(Boolean).join(' • '),
       noteType: 'system',
-      priority: 'low',
+      priority: 'General',
       timestamp: FieldValue ? FieldValue.serverTimestamp() : new Date(),
       wasNotificationSent: false
     });

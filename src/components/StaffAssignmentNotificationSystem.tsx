@@ -105,7 +105,7 @@ export default function StaffAssignmentNotificationSystem() {
           message: 'Test Member (Kaiser - SNF Transition) has been assigned to you.',
           author: 'CalAIM System',
           memberName: 'Test Member',
-          priority: 'High',
+          priority: 'Priority',
           duration: 0, // Stay until manually dismissed
           sound: settings.soundEnabled,
           soundType: 'mellow-note',
@@ -145,7 +145,7 @@ export default function StaffAssignmentNotificationSystem() {
           staffMember: 'nick', // Test with Nick
           memberName: 'Test Member (Caspio)',
           noteContent: 'This is a test note assigned from Caspio to verify system tray notifications work for Caspio-originated notes.',
-          priority: 'high'
+          priority: 'Priority'
         })
       });
 

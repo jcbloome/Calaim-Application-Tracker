@@ -35,7 +35,7 @@ interface MemberNoteCreatorProps {
 interface NoteFormData {
   noteText: string;
   noteType: 'General' | 'Medical' | 'Social' | 'Administrative' | 'Follow-up' | 'Emergency';
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  priority: 'General' | 'Priority' | 'Urgent';
   assignedTo: string;
   assignedToName: string;
   followUpDate: string;
@@ -58,7 +58,7 @@ export function MemberNoteCreator({
   const [noteForm, setNoteForm] = useState<NoteFormData>({
     noteText: '',
     noteType: context === 'application' ? 'Administrative' : 'General',
-    priority: 'Medium',
+    priority: 'General',
     assignedTo: '',
     assignedToName: '',
     followUpDate: '',
@@ -121,7 +121,7 @@ export function MemberNoteCreator({
         setNoteForm({
           noteText: '',
           noteType: context === 'application' ? 'Administrative' : 'General',
-          priority: 'Medium',
+          priority: 'General',
           assignedTo: '',
           assignedToName: '',
           followUpDate: '',
@@ -177,13 +177,9 @@ export function MemberNoteCreator({
   };
 
   const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'Urgent': return 'bg-red-100 text-red-800 border-red-200';
-      case 'High': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'Medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'Low': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
+    if (priority === 'Urgent') return 'bg-red-100 text-red-800 border-red-200';
+    if (priority === 'Priority') return 'bg-orange-100 text-orange-800 border-orange-200';
+    return 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   return (
@@ -264,9 +260,8 @@ export function MemberNoteCreator({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Low">Low</SelectItem>
-                      <SelectItem value="Medium">Medium</SelectItem>
-                      <SelectItem value="High">High</SelectItem>
+                      <SelectItem value="General">General</SelectItem>
+                      <SelectItem value="Priority">Priority</SelectItem>
                       <SelectItem value="Urgent">Urgent</SelectItem>
                     </SelectContent>
                   </Select>

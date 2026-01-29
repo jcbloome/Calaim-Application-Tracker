@@ -38,14 +38,12 @@ export async function GET(request: NextRequest) {
           const data = doc.data();
           const rawPriority = String(data.priority || '').toLowerCase();
           const normalizedPriority = rawPriority.includes('urgent')
-            ? 'high'
-            : rawPriority.includes('high')
-              ? 'high'
-              : rawPriority.includes('medium')
-                ? 'medium'
-                : rawPriority.includes('low')
-                  ? 'low'
-                  : undefined;
+            ? 'Urgent'
+            : rawPriority.includes('priority') || rawPriority.includes('high')
+              ? 'Priority'
+              : rawPriority.includes('medium') || rawPriority.includes('low')
+                ? 'General'
+                : undefined;
           const staffName = data.staffName || data.senderName || data.createdByName;
           
           // Apply filters

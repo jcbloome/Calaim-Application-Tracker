@@ -17,6 +17,13 @@ export async function POST(request: NextRequest) {
       ? `https://us-central1-${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.cloudfunctions.net`
       : 'http://localhost:5001/studio-2881432245-f1d94/us-central1';
 
+    const normalizePriority = (value: string) => {
+      const normalized = String(value || '').toLowerCase();
+      if (normalized.includes('urgent')) return 'Urgent';
+      if (normalized.includes('priority') || normalized.includes('immediate') || normalized.includes('high')) return 'Priority';
+      return 'General';
+    };
+
     const response = await fetch(`${baseUrl}/addStaffNote`, {
       method: 'POST',
       headers: {
@@ -27,7 +34,7 @@ export async function POST(request: NextRequest) {
         memberName,
         noteContent,
         noteType,
-        priority,
+        priority: normalizePriority(priority),
         staffId,
         staffName,
       }),

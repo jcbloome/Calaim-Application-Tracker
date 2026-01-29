@@ -19,6 +19,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
 import { addDoc, collection, query, where, onSnapshot, doc, updateDoc, writeBatch, serverTimestamp, getDocs, documentId, deleteDoc } from 'firebase/firestore';
 import { logSystemNoteAction } from '@/lib/system-note-log';
+import { getPriorityRank, isPriorityOrUrgent, normalizePriorityLabel, notifyNotificationSettingsChanged } from '@/lib/notification-utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,7 +41,7 @@ interface StaffNotification {
   memberName?: string;
   memberId?: string;
   healthPlan?: string;
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
   isRead: boolean;
   createdAt: any;
   authorName: string;
@@ -65,7 +66,7 @@ function MyNotesContent() {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyOpen, setReplyOpen] = useState<Record<string, boolean>>({});
   const [isSendingReply, setIsSendingReply] = useState<Record<string, boolean>>({});
-  const [replyPriority, setReplyPriority] = useState<Record<string, 'Regular' | 'Immediate'>>({});
+  const [replyPriority, setReplyPriority] = useState<Record<string, 'General' | 'Priority' | 'Urgent'>>({});
   const [isResendingPriority, setIsResendingPriority] = useState<Record<string, boolean>>({});
   const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
@@ -73,14 +74,14 @@ function MyNotesContent() {
     recipientIds: string[];
     title: string;
     message: string;
-    priority: 'Regular' | 'Immediate';
+    priority: 'General' | 'Priority' | 'Urgent';
     followUpRequired: boolean;
     followUpDate: string;
   }>({
     recipientIds: [],
     title: '',
     message: '',
-    priority: 'Regular',
+    priority: 'General',
     followUpRequired: false,
     followUpDate: ''
   });
@@ -125,7 +126,7 @@ function MyNotesContent() {
             memberName: data.memberName || undefined,
             memberId: data.clientId2 || data.memberId || undefined,
             healthPlan: data.healthPlan || undefined,
-            priority: data.priority || 'Medium',
+            priority: data.priority || 'General',
             isRead: Boolean(data.isRead),
             createdAt: data.timestamp || data.createdAt,
             authorName: data.createdByName || data.senderName || 'System',
@@ -140,8 +141,13 @@ function MyNotesContent() {
           });
         });
 
-        // Sort by creation date (newest first)
+        // Sort by priority (urgent first), then newest first
+        const normalizePriority = (value: string) => normalizePriorityLabel(value);
         userNotifications.sort((a, b) => {
+          const aPriority = normalizePriority(a.priority);
+          const bPriority = normalizePriority(b.priority);
+          const rankDiff = getPriorityRank(bPriority) - getPriorityRank(aPriority);
+          if (rankDiff !== 0) return rankDiff;
           const aTime = a.createdAt?.toDate?.() || new Date(0);
           const bTime = b.createdAt?.toDate?.() || new Date(0);
           return bTime.getTime() - aTime.getTime();
@@ -238,6 +244,7 @@ function MyNotesContent() {
         }
       };
       localStorage.setItem('notificationSettings', JSON.stringify(updated));
+      notifyNotificationSettingsChanged();
     } catch (error) {
       console.warn('Failed to update notification settings:', error);
     }
@@ -257,6 +264,7 @@ function MyNotesContent() {
         }
       };
       localStorage.setItem('notificationSettings', JSON.stringify(updated));
+      notifyNotificationSettingsChanged();
     } catch (error) {
       console.warn('Failed to update notification settings:', error);
     }
@@ -276,6 +284,7 @@ function MyNotesContent() {
           webAppNotificationsEnabled: defaultValue
         }
       }));
+      notifyNotificationSettingsChanged();
       setWebAppNotificationsEnabled(defaultValue);
     } catch (error) {
       console.warn('Failed to default web app setting:', error);
@@ -543,7 +552,7 @@ function MyNotesContent() {
       return;
     }
     const message = replyDrafts[notification.id]?.trim();
-    const priority = replyPriority[notification.id] || 'Regular';
+    const priority = replyPriority[notification.id] || 'General';
     if (!message) {
       toast({
         title: "Missing Reply",
@@ -563,7 +572,11 @@ function MyNotesContent() {
         clientId2: notification.memberId,
         applicationId: notification.applicationId,
         type: 'interoffice_reply',
-        priority: priority === 'Immediate' ? 'Urgent' : 'Medium',
+        priority: priority === 'Urgent'
+          ? 'Urgent'
+          : priority === 'Priority'
+            ? 'Priority'
+            : 'General',
         status: 'Open',
         isRead: false,
         createdBy: user.uid,
@@ -580,7 +593,7 @@ function MyNotesContent() {
         description: "Your reply was sent to the original sender.",
       });
       setReplyDrafts((prev) => ({ ...prev, [notification.id]: '' }));
-      setReplyPriority((prev) => ({ ...prev, [notification.id]: 'Regular' }));
+      setReplyPriority((prev) => ({ ...prev, [notification.id]: 'General' }));
       setReplyOpen((prev) => ({ ...prev, [notification.id]: false }));
     } catch (error) {
       console.error('❌ Failed to send reply:', error);
@@ -600,7 +613,7 @@ function MyNotesContent() {
       setIsResendingPriority((prev) => ({ ...prev, [notification.id]: true }));
       await addDoc(collection(firestore, 'staff_notifications'), {
         userId: notification.recipientId,
-        title: `Priority: ${notification.title || 'General Note'}`,
+        title: `Urgent: ${notification.title || 'General Note'}`,
         message: notification.content || '',
         type: 'interoffice_note',
         priority: 'Urgent',
@@ -614,7 +627,7 @@ function MyNotesContent() {
         actionUrl: '/admin/my-notes'
       });
       await logSystemNoteAction({
-        action: 'General note resent as priority',
+        action: 'General note resent as urgent',
         noteId: notification.id,
         memberName: notification.memberName,
         status: 'Open',
@@ -622,14 +635,14 @@ function MyNotesContent() {
         actorEmail: user?.email || ''
       });
       toast({
-        title: "Priority Note Sent",
-        description: "This note was resent as a priority popup."
+        title: "Urgent Note Sent",
+        description: "This note was resent as an urgent popup."
       });
     } catch (error) {
       console.error('Failed to resend priority note:', error);
       toast({
         title: "Error",
-        description: "Failed to resend as priority.",
+        description: "Failed to resend as urgent.",
         variant: "destructive"
       });
     } finally {
@@ -667,7 +680,7 @@ function MyNotesContent() {
             title: generalNote.title?.trim() || 'General Note',
             message: generalNote.message.trim(),
             type: 'interoffice_note',
-            priority: generalNote.priority === 'Immediate' ? 'Urgent' : 'Low',
+            priority: generalNote.priority,
             status: 'Open',
             isRead: false,
             createdBy: user.uid,
@@ -691,7 +704,7 @@ function MyNotesContent() {
         recipientIds: [],
         title: '',
         message: '',
-        priority: 'Regular',
+        priority: 'General',
         followUpRequired: false,
         followUpDate: ''
       });
@@ -739,8 +752,7 @@ function MyNotesContent() {
   });
 
   const hasPriority = (notification: StaffNotification) => {
-    const value = String(notification.priority || '').toLowerCase();
-    return value === 'urgent' || value === 'high';
+    return isPriorityOrUrgent(notification.priority);
   };
 
   const hasGeneral = (notification: StaffNotification) => {
@@ -790,13 +802,10 @@ function MyNotesContent() {
 
   // Get priority color
   const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'Urgent': return 'bg-red-100 text-red-800 border-red-200';
-      case 'High': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'Medium': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'Low': return 'bg-gray-100 text-gray-800 border-gray-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
+    const label = normalizePriorityLabel(priority);
+    if (label === 'Urgent') return 'bg-red-100 text-red-800 border-red-200';
+    if (label === 'Priority') return 'bg-orange-100 text-orange-800 border-orange-200';
+    return 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   // Format timestamp
@@ -969,6 +978,7 @@ function MyNotesContent() {
                 const memberLink = getMemberLink(notification);
                 const isGeneralNote = hasGeneral(notification);
                 const isPriorityNote = hasPriority(notification);
+                const priorityLabel = normalizePriorityLabel(notification.priority);
                 const displayTitle = `Re: ${notification.memberName || 'General Note'}`;
                 return (
                   <Card
@@ -987,7 +997,7 @@ function MyNotesContent() {
                             </h3>
                             {isPriorityNote && (
                               <Badge variant="outline" className={getPriorityColor(notification.priority)}>
-                                Priority
+                                {priorityLabel}
                               </Badge>
                             )}
                           {hasFollowUpRequired(notification) && (
@@ -1134,7 +1144,7 @@ function MyNotesContent() {
                               ) : (
                                 <>
                                   <Zap className="h-4 w-4 mr-1" />
-                                  Resend as Priority
+                                  Resend as Urgent
                                 </>
                               )}
                             </Button>
@@ -1166,11 +1176,11 @@ function MyNotesContent() {
                           <div className="flex items-center gap-2">
                             <Label className="text-xs">Priority</Label>
                             <Select
-                              value={replyPriority[notification.id] || 'Regular'}
+                              value={replyPriority[notification.id] || 'General'}
                               onValueChange={(value) =>
                                 setReplyPriority((prev) => ({
                                   ...prev,
-                                  [notification.id]: value as 'Regular' | 'Immediate'
+                                  [notification.id]: value as 'General' | 'Priority' | 'Urgent'
                                 }))
                               }
                             >
@@ -1178,8 +1188,9 @@ function MyNotesContent() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="Regular">Regular (no popup)</SelectItem>
-                                <SelectItem value="Immediate">Immediate (popup)</SelectItem>
+                                <SelectItem value="General">General (no popup)</SelectItem>
+                                <SelectItem value="Priority">Priority (popup)</SelectItem>
+                                <SelectItem value="Urgent">Urgent (popup + top)</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -1286,7 +1297,7 @@ function MyNotesContent() {
                 <Label htmlFor="general-priority">Priority</Label>
                 <Select
                   value={generalNote.priority}
-                  onValueChange={(value: 'Regular' | 'Immediate') =>
+                  onValueChange={(value: 'General' | 'Priority' | 'Urgent') =>
                     setGeneralNote((prev) => ({ ...prev, priority: value }))
                   }
                 >
@@ -1294,8 +1305,9 @@ function MyNotesContent() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Regular">Regular (no popup)</SelectItem>
-                    <SelectItem value="Immediate">Immediate (popup)</SelectItem>
+                    <SelectItem value="General">General (no popup)</SelectItem>
+                    <SelectItem value="Priority">Priority (popup)</SelectItem>
+                    <SelectItem value="Urgent">Urgent (popup + top)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

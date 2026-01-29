@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/firebase';
+import { notifyNotificationSettingsChanged } from '@/lib/notification-utils';
 import { 
   Bell, 
   Smartphone, 
@@ -147,6 +148,7 @@ export default function NotificationSettingsPage() {
             suppressWebWhenDesktopActive: settings.suppressWebWhenDesktopActive
           }
         }));
+        notifyNotificationSettingsChanged();
       }
       
       // If push notifications are enabled, ensure we have permission

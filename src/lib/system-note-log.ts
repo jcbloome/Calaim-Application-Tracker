@@ -2,7 +2,7 @@ export interface SystemNoteActionPayload {
   action: string;
   noteId?: string;
   noteType?: 'internal' | 'task' | 'alert' | 'system';
-  priority?: 'low' | 'medium' | 'high';
+  priority?: 'General' | 'Priority' | 'Urgent';
   memberName?: string;
   applicationId?: string;
   actorName?: string;

@@ -32,6 +32,7 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import { useUser } from '@/firebase';
 import { useGlobalNotifications } from '@/components/NotificationProvider';
+import { normalizePriorityLabel } from '@/lib/notification-utils';
 
 interface Note {
   id: string;
@@ -39,7 +40,7 @@ interface Note {
   memberName: string;
   content: string;
   // category field removed
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
   isPrivate: boolean;
   isPinned: boolean;
   isArchived: boolean;
@@ -72,12 +73,12 @@ interface NoteTrackerProps {
 
 // Categories removed - simplified notes system
 
-const PRIORITY_COLORS = {
-  'Low': 'bg-gray-100 text-gray-800 border-gray-200',
-  'Medium': 'bg-blue-100 text-blue-800 border-blue-200',
-  'High': 'bg-orange-100 text-orange-800 border-orange-200',
-  'Urgent': 'bg-red-100 text-red-800 border-red-200'
+const PRIORITY_COLORS: Record<'General' | 'Priority' | 'Urgent', string> = {
+  General: 'bg-gray-100 text-gray-800 border-gray-200',
+  Priority: 'bg-orange-100 text-orange-800 border-orange-200',
+  Urgent: 'bg-red-100 text-red-800 border-red-200'
 };
+
 
 // Category colors removed - no longer needed
 
@@ -101,7 +102,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
   // New note form state
   const [newNote, setNewNote] = useState({
     content: '',
-    priority: 'Medium' as Note['priority'],
+    priority: 'General' as Note['priority'],
     isPrivate: false,
     recipientIds: [] as string[],
     sendNotification: true
@@ -268,7 +269,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
         setShowNewNoteForm(false);
         setNewNote({
           content: '',
-          priority: 'Medium',
+          priority: 'General',
           isPrivate: false,
           recipientIds: [],
           sendNotification: true
@@ -399,7 +400,7 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
 
     // Priority filter
     if (filterPriority !== 'all') {
-      filtered = filtered.filter(note => note.priority === filterPriority);
+      filtered = filtered.filter(note => normalizePriorityLabel(note.priority) === filterPriority);
     }
 
     // Archive filter
@@ -488,10 +489,9 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Priorities</SelectItem>
-                <SelectItem value="Low">Low</SelectItem>
-                <SelectItem value="Medium">Medium</SelectItem>
-                <SelectItem value="High">High</SelectItem>
-                <SelectItem value="Urgent">Urgent</SelectItem>
+              <SelectItem value="General">General</SelectItem>
+              <SelectItem value="Priority">Priority</SelectItem>
+              <SelectItem value="Urgent">Urgent</SelectItem>
               </SelectContent>
             </Select>
             
@@ -544,9 +544,8 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Low">Low</SelectItem>
-                    <SelectItem value="Medium">Medium</SelectItem>
-                    <SelectItem value="High">High</SelectItem>
+                    <SelectItem value="General">General</SelectItem>
+                    <SelectItem value="Priority">Priority</SelectItem>
                     <SelectItem value="Urgent">Urgent</SelectItem>
                   </SelectContent>
                 </Select>
@@ -721,8 +720,8 @@ function NoteCard({
             {note.isPinned && <Pin className="h-4 w-4 text-yellow-600" />}
             {isUnread && <Badge className="bg-blue-100 text-blue-800 text-xs">New</Badge>}
             {/* Category badge removed */}
-            <Badge className={PRIORITY_COLORS[note.priority]}>
-              {note.priority}
+            <Badge className={PRIORITY_COLORS[normalizePriorityLabel(note.priority)]}>
+              {normalizePriorityLabel(note.priority)}
             </Badge>
             {note.isPrivate && (
               <Badge variant="outline" className="text-xs">

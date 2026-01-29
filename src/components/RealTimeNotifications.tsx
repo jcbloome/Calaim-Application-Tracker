@@ -13,6 +13,13 @@ import {
 } from 'firebase/firestore';
 import { useGlobalNotifications } from './NotificationProvider';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import {
+  getPriorityRank,
+  isPriorityOrUrgent,
+  isUrgentPriority,
+  normalizePriorityLabel,
+  shouldSuppressWebAlerts
+} from '@/lib/notification-utils';
 
 interface StaffNotification {
   id: string;
@@ -23,7 +30,7 @@ interface StaffNotification {
   senderName: string;
   memberName: string;
   type: string;
-  priority: 'low' | 'medium' | 'high';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
   timestamp: Timestamp;
   isRead: boolean;
   applicationId?: string;
@@ -39,7 +46,7 @@ interface NotificationData {
   senderName: string;
   memberName: string;
   type: string;
-  priority: 'low' | 'medium' | 'high' | 'urgent';
+  priority: 'General' | 'Priority' | 'Urgent';
   timestamp: Date;
   applicationId?: string;
   actionUrl?: string;
@@ -312,6 +319,8 @@ export function RealTimeNotifications() {
 
         const pending: NotificationData[] = [];
         let hasNew = false;
+        let hasNewPriority = false;
+        let hasNewUrgent = false;
         let total = 0;
 
         snapshot.forEach((docSnap) => {
@@ -321,18 +330,10 @@ export function RealTimeNotifications() {
           if (data.status === 'Closed') return;
           if (data.isRead === true) return;
 
-          const normalizedPriority = String(data.priority || '').toLowerCase();
-          const priority: NotificationData['priority'] =
-            normalizedPriority.includes('urgent')
-              ? 'urgent'
-              : normalizedPriority.includes('high')
-                ? 'high'
-                : normalizedPriority.includes('medium')
-                  ? 'medium'
-                  : 'low';
-
-          const isImportant = priority === 'urgent' || priority === 'high';
-          if (!isImportant) return;
+          const priority = normalizePriorityLabel(data.priority);
+          const isUrgent = priority === 'Urgent';
+          const isPriority = priority === 'Priority';
+          if (!isUrgent && !isPriority) return;
 
           const notification: NotificationData = {
             id: docSnap.id,
@@ -348,9 +349,16 @@ export function RealTimeNotifications() {
             isGeneral: Boolean((data as any).isGeneral)
           };
 
-          if (!seenNotificationsRef.current.has(notification.id)) {
+          const isNew = !seenNotificationsRef.current.has(notification.id);
+          if (isNew) {
             seenNotificationsRef.current.add(notification.id);
             hasNew = true;
+            if (isPriority) {
+              hasNewPriority = true;
+            }
+            if (isUrgent) {
+              hasNewUrgent = true;
+            }
           }
 
           pending.push(notification);
@@ -364,9 +372,11 @@ export function RealTimeNotifications() {
         }
 
         flushTimeoutRef.current = setTimeout(() => {
-          const sortedPending = Array.from(pendingNotesRef.current.values()).sort(
-            (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
-          );
+          const sortedPending = Array.from(pendingNotesRef.current.values()).sort((a, b) => {
+            const rankDiff = getPriorityRank(b.priority) - getPriorityRank(a.priority);
+            if (rankDiff !== 0) return rankDiff;
+            return b.timestamp.getTime() - a.timestamp.getTime();
+          });
 
           if (window.desktopNotifications?.setPendingCount) {
             window.desktopNotifications.setPendingCount(sortedPending.length);
@@ -380,39 +390,7 @@ export function RealTimeNotifications() {
             return;
           }
 
-          const shouldSuppressWeb = typeof window === 'undefined'
-            ? false
-            : (() => {
-                let userSuppress: boolean | undefined;
-                let webAppEnabled: boolean | undefined;
-                let globalForce = globalPolicy.forceSuppressWebWhenDesktopActive;
-                try {
-                  const raw = localStorage.getItem('notificationSettings');
-                  if (raw) {
-                    const parsed = JSON.parse(raw) as any;
-                    userSuppress = parsed?.userControls?.suppressWebWhenDesktopActive;
-                    webAppEnabled = parsed?.userControls?.webAppNotificationsEnabled;
-                  }
-                } catch {
-                  userSuppress = undefined;
-                  webAppEnabled = undefined;
-                }
-                if (!globalForce) {
-                  try {
-                    const rawGlobal = localStorage.getItem('notificationSettingsGlobal');
-                    if (rawGlobal) {
-                      const parsedGlobal = JSON.parse(rawGlobal) as any;
-                      globalForce = Boolean(parsedGlobal?.globalControls?.forceSuppressWebWhenDesktopActive);
-                    }
-                  } catch {
-                    globalForce = globalPolicy.forceSuppressWebWhenDesktopActive;
-                  }
-                }
-                if (webAppEnabled === true) return globalForce;
-                if (webAppEnabled === false) return true;
-                const defaultSuppress = userSuppress === undefined;
-                return globalForce || userSuppress === true || defaultSuppress;
-              })();
+          const shouldSuppressWeb = shouldSuppressWebAlerts();
           const shouldShowWebToast = typeof window === 'undefined'
             ? false
             : !shouldSuppressWeb;
@@ -425,7 +403,8 @@ export function RealTimeNotifications() {
             return;
           }
 
-          const urgentExists = sortedPending.some((note) => note.priority === 'urgent');
+          const urgentExists = sortedPending.some((note) => isUrgentPriority(note.priority));
+          const priorityExists = sortedPending.some((note) => isPriorityOrUrgent(note.priority) && !isUrgentPriority(note.priority));
           const count = sortedPending.length;
           const uniqueSenders = Array.from(
             new Set(sortedPending.map((note) => note.senderName).filter(Boolean))
@@ -439,7 +418,10 @@ export function RealTimeNotifications() {
           const subjectLabel = count === 1
             ? (sortedPending[0]?.memberName || 'Note')
             : (uniqueMembers.length === 1 ? uniqueMembers[0] : 'Multiple notes');
-          const highlightNote = sortedPending.find((note) => note.priority === 'urgent') || sortedPending[0];
+          const highlightNote =
+            sortedPending.find((note) => isUrgentPriority(note.priority)) ||
+            sortedPending.find((note) => isPriorityOrUrgent(note.priority)) ||
+            sortedPending[0];
           const highlightSender = highlightNote?.senderName || senderSummary;
           const highlightSubject = highlightNote?.memberName || subjectLabel;
           const summaryTitle = count === 1
@@ -453,10 +435,10 @@ export function RealTimeNotifications() {
           const links: Array<{ label: string; url: string }> = [
             { label: 'Open My Notifications', url: '/admin/my-notes' }
           ];
-          const shouldPopup = hasNew;
+          const shouldPopup = shouldShowWebToast && (hasNewUrgent || hasNewPriority);
           const desktopPresent = typeof window !== 'undefined' && Boolean(window.desktopNotifications);
           latestSummaryRef.current = {
-            type: urgentExists ? 'urgent' : 'note',
+            type: priorityExists ? 'urgent' : 'note',
             title: summaryTitle,
             message: summaryMessage,
             author: highlightSender,
@@ -465,7 +447,7 @@ export function RealTimeNotifications() {
             soundType: notificationPrefs.soundType
           };
 
-          if (shouldShowWebToast || (desktopPresent && urgentExists)) {
+          if (shouldShowWebToast) {
             const summaryId = showNotification({
               keyId: 'staff-note-summary',
               type: urgentExists ? 'urgent' : 'note',
@@ -475,10 +457,10 @@ export function RealTimeNotifications() {
               memberName: '',
               priority: undefined,
               tagLabel,
-              startMinimized: !(shouldPopup || urgentExists),
+              startMinimized: !shouldPopup,
               lockToTray: true,
               duration: 0,
-              minimizeAfter: (shouldPopup || urgentExists) ? 12000 : 0,
+              minimizeAfter: shouldPopup ? 12000 : 0,
               pendingLabel: count === 1 ? `Pending note · ${highlightSender}` : `Notes (${count})`,
               sound: hasNew && notificationPrefs.enabled ? notificationPrefs.sound : false,
               soundType: notificationPrefs.soundType,
@@ -498,7 +480,7 @@ export function RealTimeNotifications() {
               body: urgentExists
                 ? `From: ${highlightSender} · ${summaryMessage}`
                 : `${senderLabel} · Immediate notes: ${count}`,
-              openOnNotify: urgentExists
+              openOnNotify: shouldPopup
             }).catch(() => undefined);
           }
         }, 400);
