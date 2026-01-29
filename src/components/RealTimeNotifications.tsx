@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useFirestore, useUser } from '@/firebase';
-import { usePathname } from 'next/navigation';
 import {
   collection,
   query,
@@ -48,12 +47,12 @@ interface NotificationData {
 export function RealTimeNotifications() {
   const { user } = useUser();
   const firestore = useFirestore();
-  const pathname = usePathname();
   const { showNotification, removeNotification } = useGlobalNotifications();
   const seenNotificationsRef = useRef<Set<string>>(new Set());
   const pendingNotesRef = useRef<Map<string, NotificationData>>(new Map());
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const summaryNotificationIdRef = useRef<string | null>(null);
+  const [desktopState, setDesktopState] = useState<DesktopNotificationState | null>(null);
   const [notificationPrefs, setNotificationPrefs] = useState({
     enabled: true,
     newNotes: true,
@@ -61,6 +60,14 @@ export function RealTimeNotifications() {
     urgentPriority: true,
     sound: true,
     soundType: 'mellow-note'
+  });
+  const [globalControls, setGlobalControls] = useState({
+    masterSwitch: true,
+    quietHours: {
+      enabled: false,
+      startTime: '18:00',
+      endTime: '08:00'
+    }
   });
 
   useEffect(() => {
@@ -71,6 +78,7 @@ export function RealTimeNotifications() {
         if (!raw) return;
         const parsed = JSON.parse(raw) as any;
         const browser = parsed?.browserNotifications;
+        const globals = parsed?.globalControls;
         if (!browser) return;
         setNotificationPrefs((prev) => ({
           ...prev,
@@ -81,6 +89,16 @@ export function RealTimeNotifications() {
           sound: browser.sound ?? prev.sound,
           soundType: browser.soundType || prev.soundType
         }));
+        if (globals) {
+          setGlobalControls((prev) => ({
+            ...prev,
+            masterSwitch: globals.masterSwitch ?? prev.masterSwitch,
+            quietHours: {
+              ...prev.quietHours,
+              ...globals.quietHours
+            }
+          }));
+        }
       } catch (error) {
         console.warn('Failed to read notification prefs:', error);
       }
@@ -95,6 +113,47 @@ export function RealTimeNotifications() {
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!window.desktopNotifications) return;
+    let unsubscribe: (() => void) | undefined;
+    window.desktopNotifications.getState()
+      .then((state) => setDesktopState(state))
+      .catch((error) => console.warn('Failed to read desktop notification state:', error));
+    unsubscribe = window.desktopNotifications.onChange((state) => {
+      setDesktopState(state);
+    });
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  const isWithinQuietHours = () => {
+    if (!globalControls.quietHours.enabled) return false;
+    const now = new Date();
+    const [startH, startM] = globalControls.quietHours.startTime.split(':').map(Number);
+    const [endH, endM] = globalControls.quietHours.endTime.split(':').map(Number);
+    if (Number.isNaN(startH) || Number.isNaN(startM) || Number.isNaN(endH) || Number.isNaN(endM)) {
+      return false;
+    }
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    if (startMinutes === endMinutes) return false;
+    if (startMinutes < endMinutes) {
+      return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+    }
+    return nowMinutes >= startMinutes || nowMinutes < endMinutes;
+  };
+
+  const canShowNotifications = () => {
+    if (!notificationPrefs.enabled) return false;
+    if (!globalControls.masterSwitch) return false;
+    if (isWithinQuietHours()) return false;
+    if (desktopState?.effectivePaused) return false;
+    return true;
+  };
 
   const resolveActionUrl = (data: StaffNotification) => {
     const originType = String(data.type || '').toLowerCase();
@@ -124,7 +183,6 @@ export function RealTimeNotifications() {
 
   useEffect(() => {
     if (!user || !user.uid) return;
-    if (!pathname?.startsWith('/admin')) return;
     if (!firestore) return;
 
     console.log('🔔 Setting up real-time notifications for user:', user.uid);
@@ -139,7 +197,7 @@ export function RealTimeNotifications() {
       (snapshot) => {
         const isInterofficeNotification = (data: StaffNotification) => {
           const originType = String(data.type || '').toLowerCase();
-          return Boolean((data as any).isGeneral) || originType.includes('interoffice');
+          return originType.includes('interoffice') && !(data as any).isGeneral;
         };
 
         const pending: NotificationData[] = [];
@@ -200,7 +258,19 @@ export function RealTimeNotifications() {
             (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
           );
 
+          if (window.desktopNotifications?.setPendingCount) {
+            window.desktopNotifications.setPendingCount(sortedPending.length);
+          }
+
           if (sortedPending.length === 0) {
+            if (summaryNotificationIdRef.current) {
+              removeNotification(summaryNotificationIdRef.current);
+              summaryNotificationIdRef.current = null;
+            }
+            return;
+          }
+
+          if (!canShowNotifications()) {
             if (summaryNotificationIdRef.current) {
               removeNotification(summaryNotificationIdRef.current);
               summaryNotificationIdRef.current = null;
@@ -254,6 +324,12 @@ export function RealTimeNotifications() {
           });
 
           summaryNotificationIdRef.current = summaryId;
+          if (hasNew && window.desktopNotifications?.notify) {
+            window.desktopNotifications.notify({
+              title: summaryTitle,
+              body: `${senderLabel} · Immediate notes: ${count}`
+            }).catch(() => undefined);
+          }
         }, 400);
       },
       (error) => {
@@ -264,7 +340,7 @@ export function RealTimeNotifications() {
     return () => {
       unsubscribe();
     };
-  }, [user, pathname, firestore]);
+  }, [user, firestore]);
 
   return null;
 }
