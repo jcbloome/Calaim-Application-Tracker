@@ -3,11 +3,10 @@
 
 import React from 'react';
 
-const Field = ({ label, className = '', description }: { label: string; className?: string; description?: string }) => (
+const Field = ({ label, className = '' }: { label: string; className?: string; description?: string }) => (
     <div className={`pt-2 ${className}`}>
       <label className="block text-xs font-medium text-gray-700">{label}</label>
-      <div className="mt-1 h-5 border-b border-gray-400"></div>
-      {description && <p className="text-xs text-gray-500 pt-1">{description}</p>}
+      <div className="mt-1 h-6 border-b border-gray-400 w-full min-w-[12rem]"></div>
     </div>
   );
   
@@ -38,6 +37,14 @@ export function PrintableCsSummaryFormContent() {
                 <h1 className="text-2xl font-bold text-gray-800 tracking-tight">CS Member Summary</h1>
                 <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This form gathers essential information about the member to determine eligibility for the CalAIM Community Supports program.</p>
             </div>
+            <div className="mb-4 p-4 border border-blue-200 bg-blue-50 text-sm text-blue-900">
+                <p className="font-semibold">Important Note on Online Applications</p>
+                <p>
+                  For the fastest and most secure experience, we strongly recommend completing the application through our
+                  online portal. Even if the CS Summary Form is uploaded, the information must be inputted online for quicker
+                  processing and application tracking.
+                </p>
+            </div>
             <div className="space-y-4">
                 <div>
                 <SectionTitle>Member Information</SectionTitle>
@@ -51,10 +58,8 @@ export function PrintableCsSummaryFormContent() {
                     description="This is a 9 character number starting with '9' and ending with a letter."
                     />
                     <Field label="Confirm Medi-Cal Number" />
-                    <Field 
-                    label="Medical Record Number (MRN)"
-                    description="For Health Net use the same Medi-Cal number. For Kaiser this is not the Medi-Cal number but a distinct number oftentimes starting with some zeros."
-                    />
+                    <Field label="Medical Record Number (MRN)" />
+                    <p className="text-xs text-gray-500 pt-1">Health Net uses the Medi-Cal number; Kaiser uses a different MRN (often starts with 0000).</p>
                     <Field label="Confirm Medical Record Number (MRN)" />
                     <Field label="Preferred Language" description="e.g., English, Spanish"/>
                     <Field label="Sex" />
@@ -137,8 +142,10 @@ export function PrintableCsSummaryFormContent() {
                 </div>
                 <h3 className="text-sm font-medium text-gray-800 mt-4">Current Address</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
-                    <Field label="Location Type" description='e.g., Home, Hospital, SNF' />
+                    <Field label="Location Type" />
+                    <p className="text-xs text-gray-500 pt-1">Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.</p>
                     <Field label="Street Address" />
+                    <p className="text-xs text-gray-500 pt-1">Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.</p>
                     <Field label="City" />
                     <Field label="State" />
                     <Field label="ZIP Code" />
@@ -147,7 +154,7 @@ export function PrintableCsSummaryFormContent() {
                 <h3 className="text-sm font-medium text-gray-800 mt-4">Customary Residence (where is the member's normal long term address)</h3>
                     <CheckboxField label="Same as current location" />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
-                    <Field label="Location Type" description='e.g., Home, Hospital, SNF' />
+                    <Field label="Location Type" />
                     <Field label="Street Address" />
                     <Field label="City" />
                     <Field label="State" />
@@ -165,12 +172,23 @@ export function PrintableCsSummaryFormContent() {
                         <CheckboxField label="Health Net" />
                         <CheckboxField label="Other" />
                     </div>
-                    <Field label="If Other, what is existing health plan?" />
+                    <Field label="If other, name of existing health plan" />
                     <p className="text-xs font-medium text-gray-700 mt-2">Will member be switching Health Plan by end of month?</p>
                         <div className="flex gap-6">
                         <CheckboxField label="Yes" />
                         <CheckboxField label="No" />
                         <CheckboxField label="N/A" />
+                    </div>
+                    <div className="mt-3 p-3 border border-gray-300 text-xs text-gray-700 space-y-2">
+                      <p className="font-semibold">Important</p>
+                      <p>To enroll in the CalAIM program through Connections, you must be a member of Health Net or Kaiser. If you are currently in another Medi-Cal managed care plan, you will need to switch.</p>
+                      <p>In California, members enrolled in Medi-Cal MCPs can switch providers at any time. The change is effective at the beginning of the next month. For example, if a member wants to switch from one MCP on January 15th, they will be enrolled in the new MCP on February 1st.</p>
+                      <p>You can change your health plan by contacting California Health Care Options at 1-800-430-4263 or visiting their website.</p>
+                    </div>
+                    <p className="text-xs font-medium text-gray-700 mt-2">If switching, which plan?</p>
+                    <div className="flex gap-6">
+                        <CheckboxField label="Kaiser Permanente" />
+                        <CheckboxField label="Health Net" />
                     </div>
                     </div>
                 <div className="mt-4 space-y-4 text-xs">
@@ -215,9 +233,11 @@ export function PrintableCsSummaryFormContent() {
                 <div>
                 <SectionTitle>ISP & Facility Information</SectionTitle>
                     <h3 className="text-sm font-medium text-gray-800 mt-4">Individual Service Plan (ISP) Contact</h3>
-                    <p className="text-xs text-gray-600 my-2">An ISP is a comprehensive assessment by the Managed Care Plan's (MCP) clinical team to determine care needs and approve the member for the program. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN. For Health Net, the care level is determined by Connections; for Kaiser, it's determined by Kaiser.
-                    <br/><br/>
-                    Our MSW/RN needs to know who to contact to discuss the member's care needs, review the Physician's report (602), and other clinical notes. Who is the best person to contact for the ISP? This is not the primary care doctor but could be a SNF social worker, etc.
+                    <p className="text-xs text-gray-600 my-2">
+                      An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP) clinical team to determine the member's care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the "assisted living" portion). For Health Net, the tiered level is determined by Connections. For Kaiser, the tiered level is determined by Kaiser.
+                    </p>
+                    <p className="text-xs text-gray-600 my-2">
+                      Our MSW/RN needs to know who to contact to discuss the care needs of the member, review the Physician's report (602), and other clinical notes. Who is the best person to contact for the ISP? Please note this is not the primary care doctor but could be a SNF social worker, etc.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="First Name" />

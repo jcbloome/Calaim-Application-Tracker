@@ -24,6 +24,14 @@ export function PrintableCsSummaryForm({
       applicationData={{ id: applicationId }}
       showPrintButton={showPrintButton}
     >
+      <div className="mb-6 p-4 border border-blue-200 bg-blue-50 text-sm text-blue-900 print:text-black print:border-black">
+        <p className="font-semibold">Important Note on Online Applications</p>
+        <p>
+          For the fastest and most secure experience, we strongly recommend completing the application through our
+          online portal. Even if the CS Summary Form is uploaded, the information must be inputted online for quicker
+          processing and application tracking.
+        </p>
+      </div>
       {/* Step 1: Member & Contact Information */}
       <PrintableFormSection title="Section 1: Member Information">
         <PrintableField
@@ -67,33 +75,40 @@ export function PrintableCsSummaryForm({
           width="half"
         />
         
-        <PrintableField
-          label="Medi-Cal Number"
-          value={data.memberMediCalNum}
-          placeholder="9XXXXXXXA"
-          required
-          width="half"
-        />
-        <PrintableField
-          label="Confirm Medi-Cal Number"
-          value={data.confirmMemberMediCalNum}
-          placeholder="9XXXXXXXA"
-          required
-          width="half"
-        />
+        <PrintableFormRow>
+          <PrintableField
+            label="Medi-Cal Number"
+            value={data.memberMediCalNum}
+            placeholder="9XXXXXXXA"
+            required
+            width="half"
+          />
+          <PrintableField
+            label="Confirm Medi-Cal Number"
+            value={data.confirmMemberMediCalNum}
+            placeholder="9XXXXXXXA"
+            required
+            width="half"
+          />
+        </PrintableFormRow>
         
-        <PrintableField
-          label="MRN"
-          value={data.memberMrn}
-          required
-          width="half"
-        />
-        <PrintableField
-          label="Confirm MRN"
-          value={data.confirmMemberMrn}
-          required
-          width="half"
-        />
+        <PrintableFormRow>
+          <PrintableField
+            label="MRN"
+            value={data.memberMrn}
+            required
+            width="half"
+          />
+          <PrintableField
+            label="Confirm MRN"
+            value={data.confirmMemberMrn}
+            required
+            width="half"
+          />
+        </PrintableFormRow>
+        <div className="col-span-full text-xs text-gray-500 print:text-black">
+          Health Net uses the Medi-Cal number; Kaiser uses a different MRN (often starts with 0000).
+        </div>
       </PrintableFormSection>
 
       {/* Referrer Information */}
@@ -220,6 +235,7 @@ export function PrintableCsSummaryForm({
             'Member has no legal representative'
           ]}
           width="full"
+          className="col-span-full"
         />
         
         <PrintableField
@@ -267,6 +283,9 @@ export function PrintableCsSummaryForm({
           required
           width="full"
         />
+        <div className="col-span-full text-xs text-gray-500 print:text-black">
+          Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.
+        </div>
         
         <PrintableField
           label="Current Address"
@@ -274,6 +293,9 @@ export function PrintableCsSummaryForm({
           required
           width="full"
         />
+        <div className="col-span-full text-xs text-gray-500 print:text-black">
+          Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.
+        </div>
         
         <PrintableFormRow>
           <PrintableField
@@ -286,22 +308,81 @@ export function PrintableCsSummaryForm({
             label="State"
             value={data.currentState}
             required
-            width="quarter"
+            width="half"
           />
+        </PrintableFormRow>
+        <PrintableFormRow>
           <PrintableField
             label="ZIP Code"
             value={data.currentZip}
             required
-            width="quarter"
+            width="half"
+          />
+          <PrintableField
+            label="County"
+            value={data.currentCounty}
+            required
+            width="half"
           />
         </PrintableFormRow>
-        
+      </PrintableFormSection>
+
+      {/* Customary Residence */}
+      <PrintableFormSection title="Section 6A: Customary Residence (Normal Long-Term Address)">
         <PrintableField
-          label="County"
-          value={data.currentCounty}
+          label="Customary Location Type"
+          value={data.customaryLocationType}
+          type="select"
+          options={[
+            'Home',
+            'Hospital',
+            'Skilled Nursing Facility (SNF)',
+            'Assisted Living',
+            'Other'
+          ]}
           required
-          width="half"
+          width="full"
         />
+        <div className="col-span-full text-sm">
+          <span className="inline-flex items-center gap-2">
+            <span className="w-4 h-4 border border-gray-400 print:border-black rounded-sm" />
+            Same as current location
+          </span>
+        </div>
+        <PrintableField
+          label="Customary Address"
+          value={data.customaryAddress}
+          required
+          width="full"
+        />
+        <PrintableFormRow>
+          <PrintableField
+            label="City"
+            value={data.customaryCity}
+            required
+            width="half"
+          />
+          <PrintableField
+            label="State"
+            value={data.customaryState}
+            required
+            width="half"
+          />
+        </PrintableFormRow>
+        <PrintableFormRow>
+          <PrintableField
+            label="ZIP Code"
+            value={data.customaryZip}
+            required
+            width="half"
+          />
+          <PrintableField
+            label="County"
+            value={data.customaryCounty}
+            required
+            width="half"
+          />
+        </PrintableFormRow>
       </PrintableFormSection>
 
       {/* Health Plan & Pathway */}
@@ -314,6 +395,34 @@ export function PrintableCsSummaryForm({
           required
           width="full"
         />
+        <PrintableField
+          label="If other, name of existing health plan"
+          value={data.existingHealthPlan}
+          width="full"
+        />
+        <PrintableField
+          label="Will member be switching Health Plan by end of month?"
+          value={data.switchingHealthPlan}
+          type="radio"
+          options={['Yes', 'No', 'N/A']}
+          width="full"
+        />
+        <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
+          <p className="font-semibold">Important</p>
+          <p>
+            To enroll in the CalAIM program through Connections, you must be a member of Health Net or Kaiser.
+            If you are currently in another Medi-Cal managed care plan, you will need to switch.
+          </p>
+          <p>
+            In California, members enrolled in Medi-Cal MCPs can switch providers at any time. The change is
+            effective at the beginning of the next month. For example, if a member wants to switch from one
+            MCP on January 15th, they will be enrolled in the new MCP on February 1st.
+          </p>
+          <p>
+            You can change your health plan by contacting California Health Care Options at 1-800-430-4263
+            or visiting their website.
+          </p>
+        </div>
         
         <PrintableField
           label="CalAIM Pathway"
@@ -323,6 +432,31 @@ export function PrintableCsSummaryForm({
           required
           width="full"
         />
+        <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-3">
+          <div>
+            <p className="font-semibold">SNF Transition Eligibility Requirements</p>
+            <p>Enables a current SNF resident to transfer to a RCFE or ARF.</p>
+            <ul className="list-disc pl-5 mt-2 space-y-1">
+              <li>Has resided in a SNF for at least 60 consecutive days (which can include a combination of Medicare and Medi-Cal days and back and forth from SNF-hospital-SNF); and</li>
+              <li>Is willing to live in RCFE as an alternative to a SNF; and</li>
+              <li>Is able to safely reside in RCFE with appropriate and cost-effective supports and services.</li>
+              <li>Members recently discharged from SNFs, with the 60-day consecutive stay requirement, should also be considered as SNF transition.</li>
+            </ul>
+          </div>
+          <div>
+            <p className="font-semibold">SNF Diversion Eligibility Requirements</p>
+            <p>Transition a member who, without this support, would need to reside in a SNF and instead transitions him/her to RCFE or ARF in the community (e.g., from home or from the hospital).</p>
+            <ul className="list-disc pl-5 mt-2 space-y-1">
+              <li>Interested in remaining in the community; and</li>
+              <li>Is able to safely reside in RCFE with appropriate and cost-effective supports and services; and</li>
+              <li>Must be currently at medically necessary SNF level of care: e.g., require substantial help with activities of daily living (help with dressing, bathing, incontinence, etc.) or at risk of premature institutionalization; and meet the criteria to receive those services in RCFE or ARF.</li>
+            </ul>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="w-4 h-4 border border-gray-400 print:border-black rounded-sm mt-0.5" />
+            <span>I confirm that all criteria for the selected pathway have been met.</span>
+          </div>
+        </div>
         
         <PrintableField
           label="Member meets pathway criteria"
@@ -346,6 +480,21 @@ export function PrintableCsSummaryForm({
 
       {/* ISP & Facility Information */}
       <PrintableFormSection title="Section 8: Independent Support Person (ISP) & Facility Information">
+        <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
+          <p>
+            An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's
+            (MCP) clinical team to determine the member’s care needs and to approve them for the program. The ISP
+            assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually
+            (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care
+            (the amount the MCP will pay for the "assisted living" portion). For Health Net, the tiered level is
+            determined by Connections. For Kaiser, the tiered level is determined by Kaiser.
+          </p>
+          <p>
+            Our MSW/RN needs to know who to contact to discuss the care needs of the member, review the Physician's
+            report (602), and other clinical notes. Who is the best person to contact for the ISP? Please note this
+            is not the primary care doctor but could be a SNF social worker, etc.
+          </p>
+        </div>
         <PrintableField
           label="ISP First Name"
           value={data.ispFirstName}
@@ -390,7 +539,37 @@ export function PrintableCsSummaryForm({
           options={['Yes', 'No', 'Unknown']}
           width="full"
         />
-        
+      </PrintableFormSection>
+
+      {/* Room & Board Payments */}
+      <PrintableFormSection title="Section 8A: Room & Board Payments">
+        <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
+          <p>
+            The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible
+            for paying the RCFE the "assisted living" portion.
+          </p>
+          <p>
+            For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is
+            bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives
+            the $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at
+            least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for "room and board"
+            for a private room or to open up RCFEs in more expensive areas.
+          </p>
+          <p>
+            Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be
+            flexible depending on the RCFE and the assessed tiered level.
+          </p>
+          <p>
+            Members who cannot pay any room and board portion usually are not eligible for the CS since program
+            requirements mandate a "room and board" payment from the member (or their family).
+          </p>
+          <p>
+            Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not
+            participate in CalAIM. Families looking to place members in expensive real estate areas should have the
+            realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting
+            CalAIM members, RCFEs will need to know the "room and board" payment.
+          </p>
+        </div>
         <PrintableField
           label="Monthly Income"
           value={data.monthlyIncome}
@@ -398,7 +577,6 @@ export function PrintableCsSummaryForm({
           required
           width="half"
         />
-
         <PrintableField
           label="Acknowledges Room & Board Responsibility"
           value={data.ackRoomAndBoard ? 'Yes' : 'No'}
@@ -461,26 +639,6 @@ export function PrintableCsSummaryForm({
         />
       </PrintableFormSection>
 
-      {/* Form Footer */}
-      <div className="mt-12 print:mt-16 p-4 print:p-6 bg-gray-50 print:bg-white border print:border-black text-center">
-        <p className="text-sm print:text-xs text-gray-600 print:text-black mb-2">
-          <strong>For Office Use Only</strong>
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 print:gap-6 text-left">
-          <div>
-            <label className="block text-sm font-medium mb-2">Date Received:</label>
-            <div className="h-10 border-b-2 border-gray-300 print:border-black"></div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">Processed By:</label>
-            <div className="h-10 border-b-2 border-gray-300 print:border-black"></div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">Application ID:</label>
-            <div className="h-10 border-b-2 border-gray-300 print:border-black"></div>
-          </div>
-        </div>
-      </div>
     </PrintableFormLayout>
   );
 }
