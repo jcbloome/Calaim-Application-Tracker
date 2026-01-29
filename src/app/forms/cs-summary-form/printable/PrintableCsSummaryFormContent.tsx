@@ -30,6 +30,7 @@ const PageFooter = ({ pageNumber, totalPages }: { pageNumber: number, totalPages
 
 export function PrintableCsSummaryFormContent() {
   return (
+    <div className="printable-monochrome">
     <form>
         {/* Page 1 */}
         <div className="page-break-after">
@@ -341,7 +342,7 @@ export function PrintableCsSummaryFormContent() {
                         <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the "room and board" payment.</p>
                     </div>
                     <div className="p-3 border border-gray-300 text-xs text-gray-700 mb-2">
-                        Proof of income (Social Security annual award letter or 3 months of bank statements showing Social Security income) will need to be submitted as part of this application.
+                        Proof of income (annual award letter or 3 months of bank statements showing Social Security income) will need to be submitted as part of this application.
                     </div>
                     <Field label="Total Monthly Income" />
                     <Field label="Expected \"Room and Board\" Portion (This amount will vary if the member receives the NMOHC payment, see above.)" />
@@ -351,6 +352,20 @@ export function PrintableCsSummaryFormContent() {
              <PageFooter pageNumber={3} totalPages={3} />
        </div>
     </form>
+    <style jsx global>{`
+      .printable-monochrome,
+      .printable-monochrome * {
+        color: #000 !important;
+        border-color: #000 !important;
+        box-shadow: none !important;
+        background: transparent !important;
+      }
+
+      .printable-monochrome {
+        background: #fff !important;
+      }
+    `}</style>
+    </div>
   )
 }
 

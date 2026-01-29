@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { useFirestore, useUser } from '@/firebase';
 import {
   collection,
@@ -47,6 +48,7 @@ interface NotificationData {
 export function RealTimeNotifications() {
   const { user } = useUser();
   const firestore = useFirestore();
+  const pathname = usePathname();
   const { showNotification, removeNotification } = useGlobalNotifications();
   const seenNotificationsRef = useRef<Set<string>>(new Set());
   const pendingNotesRef = useRef<Map<string, NotificationData>>(new Map());
@@ -340,7 +342,7 @@ export function RealTimeNotifications() {
     return () => {
       unsubscribe();
     };
-  }, [user, firestore]);
+  }, [user, pathname, firestore]);
 
   return null;
 }

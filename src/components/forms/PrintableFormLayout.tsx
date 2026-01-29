@@ -107,7 +107,7 @@ export function PrintableFormLayout({
       )}
 
       {/* Printable Form */}
-      <div ref={printableRef} className="bg-white shadow-lg print:shadow-none print:bg-white">
+      <div ref={printableRef} className="bg-white shadow-lg print:shadow-none print:bg-white printable-monochrome">
         {/* Header - Optimized for print */}
         <div className="p-8 print:p-6 border-b print:border-b-2 print:border-black">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 print:flex-row print:items-center">
@@ -179,6 +179,20 @@ export function PrintableFormLayout({
           </div>
         </div>
       </div>
+
+      <style jsx global>{`
+        .printable-monochrome,
+        .printable-monochrome * {
+          color: #000 !important;
+          border-color: #000 !important;
+          box-shadow: none !important;
+          background: transparent !important;
+        }
+
+        .printable-monochrome {
+          background: #fff !important;
+        }
+      `}</style>
     </div>
   );
 }

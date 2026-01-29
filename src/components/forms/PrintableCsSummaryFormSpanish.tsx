@@ -319,7 +319,7 @@ export function PrintableCsSummaryFormSpanish({
       React.createElement('div', {
         key: 'income-proof-note',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black'
-      }, 'Se deberá presentar comprobante de ingresos (carta anual de adjudicación del Seguro Social o 3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social) como parte de esta solicitud.'),
+      }, 'Se deberá presentar comprobante de ingresos (carta anual de adjudicación o 3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social) como parte de esta solicitud.'),
       buildField({ label: 'Ingresos Mensuales', value: data.monthlyIncome, placeholder: '$0.00', required: true, width: 'half' }),
       buildField({
         label: 'Reconoce Responsabilidad de Alojamiento y Comida',

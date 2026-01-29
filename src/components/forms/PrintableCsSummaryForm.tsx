@@ -632,8 +632,8 @@ export function PrintableCsSummaryForm({
           </p>
         </div>
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black">
-          Proof of income (Social Security annual award letter or 3 months of bank statements showing Social Security
-          income) will need to be submitted as part of this application.
+          Proof of income (annual award letter or 3 months of bank statements showing Social Security income) will need
+          to be submitted as part of this application.
         </div>
         <PrintableField
           label="Monthly Income"

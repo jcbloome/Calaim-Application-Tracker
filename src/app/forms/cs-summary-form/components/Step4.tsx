@@ -190,8 +190,8 @@ export default function Step4() {
 
           <div className="rounded-md border border-gray-300 p-4 text-foreground">
             <p className="text-sm">
-              Proof of income (Social Security annual award letter or 3 months of bank statements showing Social
-              Security income) will need to be submitted as part of this application.
+              Proof of income (annual award letter or 3 months of bank statements showing Social Security income)
+              will need to be submitted as part of this application.
             </p>
           </div>
 

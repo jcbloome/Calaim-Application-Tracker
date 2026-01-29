@@ -19,44 +19,59 @@ const LongField = ({ className = '' }: { className?: string }) => (
 
 export function PrintableDeclarationOfEligibilityContent() {
     return (
-        <form>
-            <div className="text-center mb-6">
-                <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Declaration of Eligibility</h1>
-                <p className="text-sm text-gray-500 font-semibold">(Required for SNF Diversion)</p>
-                <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This form is for a Physician/AP to establish presumptive eligibility and must be signed by the member's Primary Care Provider (PCP). This form is not required for any Kaiser members.</p>
-            </div>
-            <div className="space-y-6 text-sm">
-                <div>
-                    <h3 className="text-base font-semibold">To be completed by the Primary Care Provider (PCP).</h3>
-                    <div className="prose prose-sm max-w-none text-gray-700 space-y-3 mt-3">
-                        <p>
-                            I, <span className="inline-block border-b border-gray-400 w-56"></span>, in the professional capacity as a <span className="inline-block border-b border-gray-400 w-56"></span>, affirm that Member <span className="inline-block border-b border-gray-400 w-56"></span> is currently receiving a medically necessary Skilled Nursing Facility Level of Care (SNF LOC) or meets the minimum criteria for receiving SNF LOC services and, in lieu of entering a facility, is choosing to remain in the community and continue receiving medically necessary SNF LOC services in an assisted living facility for the following reason(s):
-                        </p>
-                    </div>
-                    <Field 
-                        label="Medical Record Number (MRN)" 
-                        description="For Health Net use the Medi-Cal number (starts with 9). For Kaiser use their specific MRN."
-                    />
-
-                    <div className="mt-4">
-                        <label className="block text-xs font-medium text-gray-700">1. Please provide a short narrative on why you believe the member is at risk for premature institutionalization and his/her need for the CS:</label>
-                        <LongField />
-                        <LongField />
-                        <LongField />
-                        <LongField />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-4">
-                        <Field label="Provider's Title" />
-                        <Field label="Provider's NPI #" />
-                        <Field label="Provider's Phone" />
-                        <Field label="Provider's Email" />
-                    </div>
-                     <Field label="Provider's Organization" />
-                     <Field label="Provider's Signature (Full Name)" />
-                     <Field label="Signature Date" />
+        <div className="printable-monochrome">
+            <form>
+                <div className="text-center mb-6">
+                    <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Declaration of Eligibility</h1>
+                    <p className="text-sm text-gray-500 font-semibold">(Required for SNF Diversion)</p>
+                    <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This form is for a Physician/AP to establish presumptive eligibility and must be signed by the member's Primary Care Provider (PCP). This form is not required for any Kaiser members.</p>
                 </div>
-            </div>
-          </form>
+                <div className="space-y-6 text-sm">
+                    <div>
+                        <h3 className="text-base font-semibold">To be completed by the Primary Care Provider (PCP).</h3>
+                        <div className="prose prose-sm max-w-none text-gray-700 space-y-3 mt-3">
+                            <p>
+                                I, <span className="inline-block border-b border-gray-400 w-56"></span>, in the professional capacity as a <span className="inline-block border-b border-gray-400 w-56"></span>, affirm that Member <span className="inline-block border-b border-gray-400 w-56"></span> is currently receiving a medically necessary Skilled Nursing Facility Level of Care (SNF LOC) or meets the minimum criteria for receiving SNF LOC services and, in lieu of entering a facility, is choosing to remain in the community and continue receiving medically necessary SNF LOC services in an assisted living facility for the following reason(s):
+                            </p>
+                        </div>
+                        <Field 
+                            label="Medical Record Number (MRN)" 
+                            description="For Health Net use the Medi-Cal number (starts with 9). For Kaiser use their specific MRN."
+                        />
+
+                        <div className="mt-4">
+                            <label className="block text-xs font-medium text-gray-700">1. Please provide a short narrative on why you believe the member is at risk for premature institutionalization and his/her need for the CS:</label>
+                            <LongField />
+                            <LongField />
+                            <LongField />
+                            <LongField />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-4">
+                            <Field label="Provider's Title" />
+                            <Field label="Provider's NPI #" />
+                            <Field label="Provider's Phone" />
+                            <Field label="Provider's Email" />
+                        </div>
+                         <Field label="Provider's Organization" />
+                         <Field label="Provider's Signature (Full Name)" />
+                         <Field label="Signature Date" />
+                    </div>
+                </div>
+              </form>
+            <style jsx global>{`
+              .printable-monochrome,
+              .printable-monochrome * {
+                color: #000 !important;
+                border-color: #000 !important;
+                box-shadow: none !important;
+                background: transparent !important;
+              }
+
+              .printable-monochrome {
+                background: #fff !important;
+              }
+            `}</style>
+        </div>
     )
 }
