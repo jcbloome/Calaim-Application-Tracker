@@ -292,13 +292,13 @@ export function RealTimeNotifications() {
             new Set(sortedPending.map((note) => note.memberName).filter(Boolean))
           );
           const subjectLabel = count === 1
-            ? (sortedPending[0]?.memberName || 'Priority Note')
+            ? (sortedPending[0]?.memberName || 'Note')
             : (uniqueMembers.length === 1 ? uniqueMembers[0] : 'Multiple notes');
           const summaryTitle = count === 1
             ? `From ${senderSummary} · Re: ${subjectLabel}`
             : `Re: ${subjectLabel}`;
           const senderLabel = count === 1 ? `From: ${senderSummary}` : 'From: Multiple staff';
-          const tagLabel = 'Priority';
+          const tagLabel = undefined;
           const links: Array<{ label: string; url: string }> = [
             { label: 'Open My Notifications', url: '/admin/my-notes' }
           ];
@@ -311,13 +311,13 @@ export function RealTimeNotifications() {
             message: `${senderLabel} · Immediate notes: ${count}`,
             author: senderSummary,
             memberName: '',
-            priority: urgentExists ? 'High' : 'Low',
+            priority: undefined,
             tagLabel,
             startMinimized: !shouldPopup,
             lockToTray: true,
             duration: 0,
             minimizeAfter: shouldPopup ? 12000 : 0,
-            pendingLabel: count === 1 ? `Pending priority · ${senderSummary}` : `Priority notes (${count})`,
+            pendingLabel: count === 1 ? `Pending note · ${senderSummary}` : `Notes (${count})`,
             sound: hasNew && notificationPrefs.enabled ? notificationPrefs.sound : false,
             soundType: notificationPrefs.soundType,
             animation: 'slide',

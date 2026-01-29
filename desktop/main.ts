@@ -301,24 +301,33 @@ const createOverlayWindow = () => {
           #pill {
             font-family: "Segoe UI", Arial, sans-serif;
             font-size: 12px;
-            color: #f8fafc;
-            background: #0f172a;
-            border: 1px solid #1e293b;
+            color: #0f172a;
+            background: #ffffff;
+            border: 1px solid #bfdbfe;
             border-radius: 999px;
             padding: 8px 12px;
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
+            gap: 10px;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
             cursor: pointer;
             user-select: none;
           }
           #dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
             background: #f97316;
-            box-shadow: 0 0 8px rgba(249, 115, 22, 0.8);
+            box-shadow: 0 0 10px rgba(249, 115, 22, 0.6);
+          }
+          #label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #2563eb;
+          }
+          #text {
+            color: #334155;
           }
           #muted {
             color: #94a3b8;
@@ -328,7 +337,10 @@ const createOverlayWindow = () => {
       <body>
         <div id="pill">
           <div id="dot"></div>
-          <div id="text">Priority notes: 0</div>
+          <div>
+            <div id="label">Connections Note</div>
+            <div id="text">Notes: 0</div>
+          </div>
         </div>
         <script>
           const { ipcRenderer } = require('electron');
@@ -345,8 +357,8 @@ const createOverlayWindow = () => {
             const paused = Boolean(payload?.paused);
             setVisible(count > 0);
             text.textContent = paused
-              ? \`Priority notes: \${count} (paused)\`
-              : \`Priority notes: \${count}\`;
+              ? \`Notes: \${count} (paused)\`
+              : \`Notes: \${count}\`;
             dot.style.opacity = paused ? '0.4' : '1';
           });
 

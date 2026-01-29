@@ -11,6 +11,7 @@
     "desktop:build": "npm --prefix desktop run build",
     "desktop:start": "npm --prefix desktop run start",
     "desktop:dist:win": "npm --prefix desktop run dist:win",
+    "desktop:installer:prepare": "node scripts/update-desktop-installer.mjs",
     "fix-git": "git config --local --unset-all credential.helper"
   },
   "dependencies": {

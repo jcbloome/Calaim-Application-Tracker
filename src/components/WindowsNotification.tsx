@@ -107,7 +107,7 @@ export default function WindowsNotification({
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [isMinimized, setIsMinimized] = useState(startMinimized);
-  const isUrgent = priority === 'Urgent';
+  const isUrgent = priority === 'Urgent' || type === 'urgent';
   const urgentAccentClass = 'bg-orange-500';
 
   const config = TYPE_CONFIGS[type];
@@ -216,7 +216,7 @@ export default function WindowsNotification({
     return (
       <Card
         className={cn(
-          'fixed bottom-4 right-4 z-50 cursor-pointer shadow-lg border bg-white text-slate-800',
+          'fixed bottom-4 right-4 z-50 cursor-pointer shadow-lg border bg-white text-slate-900',
           isUrgent ? 'border-orange-300' : 'border-blue-200',
           getAnimationClasses()
         )}
@@ -232,11 +232,28 @@ export default function WindowsNotification({
           <div className={cn('p-1 rounded-full', isUrgent ? 'bg-orange-500 animate-pulse' : 'bg-blue-500')}>
             <Bell className="h-3 w-3 text-white" />
           </div>
-          <span className="text-xs text-slate-600">{pendingLabel}</span>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] uppercase tracking-wide text-blue-600">
+              Connections Note
+            </span>
+            <span className="text-xs text-slate-700">{pendingLabel}</span>
+          </div>
+          {(tagLabel || priority) && (
+            <Badge
+              className={cn(
+                'ml-auto text-[10px] text-white',
+                tagLabel === 'Priority' || isUrgent
+                  ? 'bg-orange-500 border-orange-400 animate-pulse'
+                  : 'bg-blue-500 border-blue-400'
+              )}
+            >
+              {tagLabel || priority}
+            </Badge>
+          )}
           <Button
             variant="ghost"
             size="sm"
-            className="ml-auto h-6 w-6 p-0 hover:bg-slate-100 text-slate-500 hover:text-slate-800"
+            className="h-6 w-6 p-0 hover:bg-slate-100 text-slate-500 hover:text-slate-800"
             onClick={(e) => {
               e.stopPropagation();
               if (lockToTray) return;
