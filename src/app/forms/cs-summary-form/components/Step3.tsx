@@ -7,7 +7,6 @@ import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessa
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import type { FormValues } from '../schema';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -120,21 +119,6 @@ export default function Step3() {
                     </ul>
                 </div>
 
-                <FormField
-                    control={control}
-                    name="meetsPathwayCriteria"
-                    render={({ field }) => (
-                        <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 bg-yellow-50 border-yellow-200">
-                            <FormControl>
-                                <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                            </FormControl>
-                            <div className="space-y-1 leading-none">
-                                <FormLabel>I confirm that all criteria for the selected pathway have been met. <span className="text-destructive">*</span></FormLabel>
-                                <FormMessage />
-                            </div>
-                        </FormItem>
-                    )}
-                />
             </div>
 
           <FormField
@@ -160,21 +144,27 @@ export default function Step3() {
             )}
           />
           
+          {pathway === 'SNF Diversion' && (
             <div className="space-y-4 p-4 border rounded-md">
-                <FormField
-                    control={control}
-                    name="snfDiversionReason"
-                    render={({ field }) => (
-                        <FormItem>
-                        <FormLabel>Reason for SNF Diversion</FormLabel>
-                        <FormControl>
-                            <Textarea {...field} value={field.value ?? ''} placeholder="Provide a brief explanation for why the member is at risk for institutionalization..." />
-                        </FormControl>
-                        <FormMessage />
-                        </FormItem>
-                    )}
-                    />
+              <FormField
+                control={control}
+                name="snfDiversionReason"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Reason for SNF Diversion</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        {...field}
+                        value={field.value ?? ''}
+                        placeholder="Provide a brief explanation for why the member is at risk for institutionalization..."
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
+          )}
         </CardContent>
       </Card>
     </div>

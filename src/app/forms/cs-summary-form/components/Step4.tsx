@@ -57,27 +57,27 @@ export default function Step4() {
             </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={control} name="ispFirstName" render={({ field }) => (
-                    <FormItem><FormLabel>First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>ISP Contact First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                 )} />
                  <FormField control={control} name="ispLastName" render={({ field }) => (
-                    <FormItem><FormLabel>Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>ISP Contact Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={control} name="ispRelationship" render={({ field }) => (
                     <FormItem>
-                        <FormLabel>Relationship to Member <span className="text-destructive">*</span></FormLabel>
+                        <FormLabel>ISP Contact Relationship to Member <span className="text-destructive">*</span></FormLabel>
                         <FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl>
                         <FormMessage />
                     </FormItem>
                 )} />
                  <FormField control={control} name="ispPhone" render={({ field }) => (
-                    <FormItem><FormLabel>Phone <span className="text-destructive">*</span></FormLabel><FormControl><PhoneInput placeholder="(xxx) xxx-xxxx" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>ISP Contact Phone <span className="text-destructive">*</span></FormLabel><FormControl><PhoneInput placeholder="(xxx) xxx-xxxx" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
               <FormField control={control} name="ispEmail" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
+              <FormLabel>ISP Contact Email <span className="text-destructive">*</span></FormLabel>
                   <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
                   <FormDescription>If no email, enter "N/A".</FormDescription>
                   <FormMessage />
@@ -188,6 +188,13 @@ export default function Step4() {
             <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the "room and board" payment.</p>
           </div>
 
+          <div className="rounded-md border border-gray-300 p-4 text-foreground">
+            <p className="text-sm">
+              Proof of income (Social Security annual award letter or 3 months of bank statements showing Social
+              Security income) will need to be submitted as part of this application.
+            </p>
+          </div>
+
            <FormField
               control={control}
               name="monthlyIncome"
@@ -205,7 +212,6 @@ export default function Step4() {
                       />
                     </div>
                   </FormControl>
-                  <FormDescription>Please note that proof of income (e.g., Social Security award letter) will need to be submitted later.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

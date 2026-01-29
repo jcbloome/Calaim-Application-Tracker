@@ -138,6 +138,10 @@ export function PrintableCsSummaryFormSpanish({
         width: 'full'
       }),
       React.createElement('div', {
+        key: 'customary-location-examples',
+        className: 'col-span-full text-xs text-gray-500 print:text-black'
+      }, 'Ejemplos: RCFE, SNF, Hogar, Sin vivienda, Hospital, Vida Asistida, Otro.'),
+      React.createElement('div', {
         key: 'customary-same-as-current',
         className: 'col-span-full text-sm'
       }, React.createElement('span', { className: 'inline-flex items-center gap-2' }, [
@@ -155,6 +159,15 @@ export function PrintableCsSummaryFormSpanish({
       ]),
     ]),
     buildSection('Sección 7: Información del Plan de Salud y Vía', [
+      React.createElement('div', {
+        key: 'health-plan-important',
+        className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
+      }, [
+        React.createElement('p', { key: 'important-title', className: 'font-semibold' }, 'Importante'),
+        React.createElement('p', { key: 'important-1' }, 'Para inscribirse en el programa CalAIM a través de Connections, debe ser miembro de Health Net o Kaiser. Si actualmente está en otro plan de atención administrada de Medi-Cal, deberá cambiar.'),
+        React.createElement('p', { key: 'important-2' }, 'En California, los miembros inscritos en MCPs de Medi-Cal pueden cambiar de proveedor en cualquier momento. El cambio es efectivo al comienzo del próximo mes. Por ejemplo, si un miembro quiere cambiar de un MCP el 15 de enero, será inscrito en el nuevo MCP el 1 de febrero.'),
+        React.createElement('p', { key: 'important-3' }, 'Puede cambiar su plan de salud contactando a California Health Care Options al 1-800-430-4263 o visitando su sitio web.')
+      ]),
       buildField({
         label: 'Plan de Salud Actual',
         value: data.healthPlan,
@@ -173,23 +186,6 @@ export function PrintableCsSummaryFormSpanish({
         value: data.switchingHealthPlan,
         type: 'radio',
         options: ['Sí', 'No', 'N/A'],
-        width: 'full'
-      }),
-      React.createElement('div', {
-        key: 'health-plan-important',
-        className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
-      }, [
-        React.createElement('p', { key: 'important-title', className: 'font-semibold' }, 'Importante'),
-        React.createElement('p', { key: 'important-1' }, 'Para inscribirse en el programa CalAIM a través de Connections, debe ser miembro de Health Net o Kaiser. Si actualmente está en otro plan de atención administrada de Medi-Cal, deberá cambiar.'),
-        React.createElement('p', { key: 'important-2' }, 'En California, los miembros inscritos en MCPs de Medi-Cal pueden cambiar de proveedor en cualquier momento. El cambio es efectivo al comienzo del próximo mes. Por ejemplo, si un miembro quiere cambiar de un MCP el 15 de enero, será inscrito en el nuevo MCP el 1 de febrero.'),
-        React.createElement('p', { key: 'important-3' }, 'Puede cambiar su plan de salud contactando a California Health Care Options al 1-800-430-4263 o visitando su sitio web.')
-      ]),
-      buildField({
-        label: 'Vía CalAIM',
-        value: data.pathway,
-        type: 'radio',
-        options: ['Transición de SNF', 'Desviación de SNF'],
-        required: true,
         width: 'full'
       }),
       React.createElement('div', {
@@ -221,10 +217,10 @@ export function PrintableCsSummaryFormSpanish({
         ])
       ]),
       buildField({
-        label: 'El miembro cumple con los criterios de la vía',
-        value: data.meetsPathwayCriteria ? 'Sí' : 'No',
+        label: 'Vía CalAIM',
+        value: data.pathway,
         type: 'radio',
-        options: ['Sí', 'No'],
+        options: ['Transición de SNF', 'Desviación de SNF'],
         required: true,
         width: 'full'
       }),
@@ -238,7 +234,7 @@ export function PrintableCsSummaryFormSpanish({
           })
         : null,
     ].filter(Boolean)),
-    buildSection('Sección 8: Persona de Apoyo Independiente (ISP) e Información de Instalación', [
+    buildSection('Sección 8: Plan de Servicio Individual (ISP)', [
       React.createElement('div', {
         key: 'isp-info',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
@@ -246,21 +242,70 @@ export function PrintableCsSummaryFormSpanish({
         React.createElement('p', { key: 'isp-1' }, 'Un Plan de Servicio Individual (ISP) es una evaluación integral realizada por el equipo clínico del Plan de Atención Administrada (MCP) para determinar las necesidades de atención del miembro y aprobarlos para el programa. La evaluación ISP es un paso crítico para obtener la autorización del MCP. El ISP se realiza virtualmente (Health Net) o en persona (Kaiser) por un MSW/RN de Connections para administrar una herramienta para determinar el nivel de atención (la cantidad que el MCP pagará por la porción de “vida asistida”). Para Health Net, el nivel escalonado es determinado por Connections. Para Kaiser, el nivel escalonado es determinado por Kaiser.'),
         React.createElement('p', { key: 'isp-2' }, 'Nuestro MSW/RN necesita saber a quién contactar para discutir las necesidades de atención del miembro, revisar el reporte del médico (602) y otras notas clínicas. ¿Quién es la mejor persona para contactar para el ISP? Tenga en cuenta que no es el médico de atención primaria, sino que podría ser un trabajador social de SNF, etc.')
       ]),
-      buildField({ label: 'Nombre del ISP', value: data.ispFirstName, required: true, width: 'half' }),
-      buildField({ label: 'Apellido del ISP', value: data.ispLastName, required: true, width: 'half' }),
-      buildField({ label: 'Relación del ISP con el Miembro', value: data.ispRelationship, required: true, width: 'half' }),
-      buildField({ label: 'Número de Teléfono del ISP', value: data.ispPhone, required: true, width: 'half' }),
-      buildField({ label: 'Correo Electrónico del ISP', value: data.ispEmail, width: 'half' }),
-      buildField({ label: 'Nombre de la Instalación del ISP', value: data.ispFacilityName, width: 'half' }),
+      buildField({ label: 'Nombre del Contacto del ISP', value: data.ispFirstName, required: true, width: 'half' }),
+      buildField({ label: 'Apellido del Contacto del ISP', value: data.ispLastName, required: true, width: 'half' }),
+      buildField({ label: 'Relación del Contacto del ISP con el Miembro', value: data.ispRelationship, required: true, width: 'half' }),
+      buildField({ label: 'Teléfono del Contacto del ISP', value: data.ispPhone, required: true, width: 'half' }),
+      buildField({ label: 'Correo Electrónico del Contacto del ISP', value: data.ispEmail, width: 'half' }),
+      React.createElement('div', {
+        key: 'isp-assessment-note',
+        className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
+      }, [
+        React.createElement('p', { key: 'isp-assess-title', className: 'font-semibold' }, 'Ubicación de la Evaluación del ISP'),
+        React.createElement('p', { key: 'isp-assess-body' }, 'La dirección para la evaluación del ISP solo se requiere para miembros de Kaiser (requiere visita en persona). Para miembros de Health Net, ponga N/A en los campos de abajo.')
+      ]),
       buildField({
-        label: 'CalAIM vs. Assisted Living Waiver (ALW): En lista de espera de ALW',
+        label: 'Tipo de Ubicación de la Evaluación del ISP',
+        value: data.ispLocationType,
+        type: 'select',
+        options: ['Hogar', 'Hospital', 'Centro de Enfermería Especializada (SNF)', 'Vida Asistida', 'Otro'],
+        required: true,
+        width: 'half'
+      }),
+      buildField({ label: 'Nombre de la Instalación de la Evaluación del ISP', value: data.ispFacilityName, width: 'half' }),
+      buildField({ label: 'Dirección de la Evaluación del ISP', value: data.ispAddress, required: true, width: 'full' }),
+    ]),
+    buildSection('Sección 9: CalAIM vs. Assisted Living Waiver (ALW)', [
+      React.createElement('div', {
+        key: 'alw-dup-note',
+        className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black'
+      }, 'CalAIM y ALW son servicios duplicativos; un miembro inscrito en uno no será financiado por el otro.'),
+      buildField({
+        label: 'En lista de espera de ALW',
         value: data.onALWWaitlist,
         type: 'radio',
         options: ['Sí', 'No', 'Desconocido'],
         width: 'full'
       }),
     ]),
-    buildSection('Sección 8A: Pagos de Alojamiento y Comida', [
+    buildSection('Sección 10A: Pago de Cuidado Fuera del Hogar No Médico (NMOHC)', [
+      React.createElement('div', {
+        key: 'nmohc-info',
+        className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
+      }, [
+        React.createElement('p', { key: 'nmohc-1' }, 'Non-Medical Out of Home Care (NMOHC) es un suplemento de pago que aumenta el cheque mensual de SSI porque la persona vive en un hogar de vida asistida con licencia en lugar de un apartamento o casa.'),
+        React.createElement('p', { key: 'nmohc-2' }, 'En California, si una persona vive en un Residential Care Facility for the Elderly (RCFE), el estado reconoce que los costos son mucho más altos que vivir de forma independiente. Para ayudar a cubrir esto, la persona pasa de la tarifa de "Vida Independiente" a la tarifa "NMOHC".'),
+        React.createElement('div', { key: 'nmohc-3' }, [
+          React.createElement('p', { className: 'font-semibold' }, '1. Confirmar Elegibilidad Financiera (La prueba de "papel")'),
+          React.createElement('p', null, 'Como NMOHC es parte del programa SSI, puede verificar los requisitos financieros ahora.'),
+          React.createElement('ul', { className: 'list-disc pl-5 mt-2 space-y-1' }, [
+            React.createElement('li', { key: 'nmohc-3a' }, 'Ingresos: Para 2026, el ingreso mensual "contable" total debe ser menor de $1,626.07.'),
+            React.createElement('li', { key: 'nmohc-3b' }, 'Activos: Desde el 1 de enero de 2026, los límites de activos se restablecen. Un individuo debe tener menos de $2,000 en recursos contables ($3,000 para una pareja).'),
+            React.createElement('li', { key: 'nmohc-3c' }, 'Nota: Un auto y la vivienda principal generalmente están excluidos de este límite.')
+          ])
+        ]),
+        React.createElement('div', { key: 'nmohc-4' }, [
+          React.createElement('p', { className: 'font-semibold' }, '2. Verificación con Seguro Social (La llamada "pre-mudanza")'),
+          React.createElement('p', null, 'Contacte a SSA al 1-800-772-1213 o visite una oficina local para una entrevista de arreglo de vivienda.'),
+          React.createElement('ul', { className: 'list-disc pl-5 mt-2 space-y-1' }, [
+            React.createElement('li', { key: 'nmohc-4a' }, 'Indique que la persona planea mudarse a un RCFE con licencia.'),
+            React.createElement('li', { key: 'nmohc-4b' }, 'Solicite el nuevo cálculo de pago SSI basado en la tarifa NMOHC 2026.'),
+            React.createElement('li', { key: 'nmohc-4c' }, 'Consejo: Pida al RCFE su número de licencia y un borrador del acuerdo de admisión. SSA necesitará una versión firmada para actualizar el cheque.')
+          ])
+        ])
+      ]),
+    ]),
+    buildSection('Sección 10B: Pagos de Alojamiento y Comida', [
       React.createElement('div', {
         key: 'room-board-info',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
@@ -271,6 +316,10 @@ export function PrintableCsSummaryFormSpanish({
         React.createElement('p', { key: 'rb-4' }, 'Los miembros que no pueden pagar ninguna porción de alojamiento y comida generalmente no son elegibles para el CS, ya que los requisitos del programa exigen un pago de "alojamiento y comida" del miembro (o su familia).'),
         React.createElement('p', { key: 'rb-5' }, 'Trabajar con CalAIM es a discreción de los RCFEs. Los RCFEs, especialmente en áreas más costosas, podrían no participar en CalAIM. Las familias que buscan colocar a miembros en áreas de bienes raíces costosos deben tener la expectativa realista de que los RCFEs de CalAIM podrían estar ubicados en áreas más asequibles. Antes de aceptar miembros de CalAIM, los RCFEs necesitarán conocer el pago de "alojamiento y comida".')
       ]),
+      React.createElement('div', {
+        key: 'income-proof-note',
+        className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black'
+      }, 'Se deberá presentar comprobante de ingresos (carta anual de adjudicación del Seguro Social o 3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social) como parte de esta solicitud.'),
       buildField({ label: 'Ingresos Mensuales', value: data.monthlyIncome, placeholder: '$0.00', required: true, width: 'half' }),
       buildField({
         label: 'Reconoce Responsabilidad de Alojamiento y Comida',
@@ -281,7 +330,7 @@ export function PrintableCsSummaryFormSpanish({
         width: 'full'
       }),
     ]),
-    buildSection('Sección 9: Centro de Cuidado Residencial Preferido (RCFE)', [
+    buildSection('Sección 11: Centro de Cuidado Residencial Preferido (RCFE)', [
       buildField({
         label: 'Tiene RCFE Preferido',
         value: data.hasPrefRCFE ? 'Sí' : 'No',

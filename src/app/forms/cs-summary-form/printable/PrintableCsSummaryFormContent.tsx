@@ -155,6 +155,7 @@ export function PrintableCsSummaryFormContent() {
                     <CheckboxField label="Same as current location" />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Location Type" />
+                    <p className="text-xs text-gray-500 pt-1">Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.</p>
                     <Field label="Street Address" />
                     <Field label="City" />
                     <Field label="State" />
@@ -166,6 +167,12 @@ export function PrintableCsSummaryFormContent() {
                 <div>
                 <SectionTitle>Health Plan & Pathway</SectionTitle>
                     <div className="space-y-2 mt-3">
+                    <div className="mt-3 p-3 border border-gray-300 text-xs text-gray-700 space-y-2">
+                      <p className="font-semibold">Important</p>
+                      <p>To enroll in the CalAIM program through Connections, you must be a member of Health Net or Kaiser. If you are currently in another Medi-Cal managed care plan, you will need to switch.</p>
+                      <p>In California, members enrolled in Medi-Cal MCPs can switch providers at any time. The change is effective at the beginning of the next month. For example, if a member wants to switch from one MCP on January 15th, they will be enrolled in the new MCP on February 1st.</p>
+                      <p>You can change your health plan by contacting California Health Care Options at 1-800-430-4263 or visiting their website.</p>
+                    </div>
                     <p className="text-xs font-medium text-gray-700">Health Plan (Managed Care Plan)</p>
                     <div className="flex gap-6">
                         <CheckboxField label="Kaiser Permanente" />
@@ -178,12 +185,6 @@ export function PrintableCsSummaryFormContent() {
                         <CheckboxField label="Yes" />
                         <CheckboxField label="No" />
                         <CheckboxField label="N/A" />
-                    </div>
-                    <div className="mt-3 p-3 border border-gray-300 text-xs text-gray-700 space-y-2">
-                      <p className="font-semibold">Important</p>
-                      <p>To enroll in the CalAIM program through Connections, you must be a member of Health Net or Kaiser. If you are currently in another Medi-Cal managed care plan, you will need to switch.</p>
-                      <p>In California, members enrolled in Medi-Cal MCPs can switch providers at any time. The change is effective at the beginning of the next month. For example, if a member wants to switch from one MCP on January 15th, they will be enrolled in the new MCP on February 1st.</p>
-                      <p>You can change your health plan by contacting California Health Care Options at 1-800-430-4263 or visiting their website.</p>
                     </div>
                     <p className="text-xs font-medium text-gray-700 mt-2">If switching, which plan?</p>
                     <div className="flex gap-6">
@@ -231,7 +232,7 @@ export function PrintableCsSummaryFormContent() {
             </div>
              <div className="space-y-4">
                 <div>
-                <SectionTitle>ISP & Facility Information</SectionTitle>
+                <SectionTitle>Individual Service Plan (ISP)</SectionTitle>
                     <h3 className="text-sm font-medium text-gray-800 mt-4">Individual Service Plan (ISP) Contact</h3>
                     <p className="text-xs text-gray-600 my-2">
                       An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP) clinical team to determine the member's care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the "assisted living" portion). For Health Net, the tiered level is determined by Connections. For Kaiser, the tiered level is determined by Kaiser.
@@ -240,11 +241,11 @@ export function PrintableCsSummaryFormContent() {
                       Our MSW/RN needs to know who to contact to discuss the care needs of the member, review the Physician's report (602), and other clinical notes. Who is the best person to contact for the ISP? Please note this is not the primary care doctor but could be a SNF social worker, etc.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
-                    <Field label="First Name" />
-                    <Field label="Last Name" />
-                    <Field label="Relationship to Member" />
-                    <Field label="Phone" description="(xxx) xxx-xxxx"/>
-                    <Field label="Email" className="sm:col-span-2" description='If no email, enter "N/A".'/>
+                    <Field label="ISP Contact First Name" />
+                    <Field label="ISP Contact Last Name" />
+                    <Field label="ISP Contact Relationship to Member" />
+                    <Field label="ISP Contact Phone" description="(xxx) xxx-xxxx"/>
+                    <Field label="ISP Contact Email" className="sm:col-span-2" description='If no email, enter "N/A".'/>
                     </div>
                     
                     <h3 className="text-sm font-medium text-gray-800 mt-4">ISP Assessment Location</h3>
@@ -255,7 +256,10 @@ export function PrintableCsSummaryFormContent() {
                     </div>
                     <Field label="Street Address" description="Street Address, City, State, ZIP." />
                     
-                <h3 className="text-sm font-medium text-gray-800 mt-4">CalAIM vs. Assisted Living Waiver (ALW)</h3>
+                <h3 className="text-sm font-medium text-gray-800 mt-4">Section 9: CalAIM vs. Assisted Living Waiver (ALW)</h3>
+                <div className="mt-2 p-3 border border-gray-300 text-xs text-gray-700">
+                  CalAIM and ALW are duplicative services, a member enrolled in one will not be funded by the other.
+                </div>
                 <p className="text-xs text-gray-700 mt-1">Is the member currently on the ALW waitlist?</p>
                 <div className="flex gap-6">
                     <CheckboxField label="Yes" />
@@ -263,7 +267,27 @@ export function PrintableCsSummaryFormContent() {
                     <CheckboxField label="Unknown" />
                 </div>
 
-                <h3 className="text-sm font-medium text-gray-800 mt-4">RCFE Selection</h3>
+                <h3 className="text-sm font-medium text-gray-800 mt-6">Section 10A: Non-Medical Out-of-Home Care (NMOHC) Payment</h3>
+                <p className="text-xs text-gray-600 mt-1">NMOHC is a supplement to SSI for RCFE residents.</p>
+                <div className="prose prose-sm max-w-none text-gray-700 space-y-2 p-4 border rounded-lg bg-gray-50 text-xs mt-2">
+                    <p>Non-Medical Out-of-Home Care (NMOHC) is a payment supplement that boosts a person’s monthly SSI check because they live in a licensed assisted living home rather than an apartment or house.</p>
+                    <p>In California, if a person lives in a Residential Care Facility for the Elderly (RCFE), the state recognizes that costs are much higher than someone living independently. To help cover this, the person moves from the "Independent Living" rate to the "NMOHC" rate.</p>
+                    <p><strong>1. Confirm Financial Eligibility (The "Paper" Test)</strong></p>
+                    <ul className="list-disc pl-5 space-y-1">
+                        <li>Income: For 2026, total "countable" monthly income must be less than $1,626.07.</li>
+                        <li>Assets: As of January 1, 2026, asset limits are reinstated. An individual must have less than $2,000 in countable resources ($3,000 for a couple).</li>
+                        <li>Note: One car and the primary home are usually excluded from this limit.</li>
+                    </ul>
+                    <p><strong>2. Verification with Social Security (The "Pre-Move" Call)</strong></p>
+                    <ul className="list-disc pl-5 space-y-1">
+                        <li>Contact SSA at 1-800-772-1213 or visit a local office for a living arrangement interview.</li>
+                        <li>Tell them the person plans to move into a licensed RCFE.</li>
+                        <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
+                        <li>Pro tip: Ask the RCFE for their License Number and a draft Admission Agreement. SSA will need a signed version to update the check.</li>
+                    </ul>
+                </div>
+
+                <h3 className="text-sm font-medium text-gray-800 mt-4">Section 11: RCFE Selection</h3>
                 <div className="space-y-2 mt-3">
                     <p className="text-xs font-medium text-gray-700">Has a preferred assisted living facility (RCFE) been chosen?</p>
                     <div className="flex gap-6">
@@ -285,7 +309,7 @@ export function PrintableCsSummaryFormContent() {
                 </div>
 
                 <div>
-                    <SectionTitle>Room & Board Payments</SectionTitle>
+                    <SectionTitle>Section 10B: Room & Board Payments</SectionTitle>
                     <div className="prose prose-sm max-w-none text-gray-700 space-y-2 p-4 border rounded-lg bg-gray-50 text-xs mb-4">
                         <p><strong>Non-Medical Out-of-Home Care (NMOHC)</strong> is a payment supplement that boosts a person’s monthly SSI because they live in a licensed assisted living home (RCFE).</p>
                         <p>In California, if a person lives in an RCFE, the state recognizes higher costs and moves the person from the "Independent Living" rate to the "NMOHC" rate.</p>
@@ -316,9 +340,11 @@ export function PrintableCsSummaryFormContent() {
                         <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a "room and board" payment from the member (or their family).</p>
                         <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the "room and board" payment.</p>
                     </div>
+                    <div className="p-3 border border-gray-300 text-xs text-gray-700 mb-2">
+                        Proof of income (Social Security annual award letter or 3 months of bank statements showing Social Security income) will need to be submitted as part of this application.
+                    </div>
                     <Field label="Total Monthly Income" />
                     <Field label="Expected \"Room and Board\" Portion (This amount will vary if the member receives the NMOHC payment, see above.)" />
-                    <p className="text-xs text-gray-500 pt-1">Please note that proof of income (e.g., Social Security award letter) will need to be submitted later.</p>
                     <CheckboxField label="I have read and understood the financial obligation for Room and Board." />
                 </div>
             </div>

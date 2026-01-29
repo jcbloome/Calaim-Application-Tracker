@@ -210,7 +210,6 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
                     <Section title="Health Plan & Pathway">
                         <QuickViewField label="Health Plan" value={application.healthPlan} />
                         <QuickViewField label="Pathway" value={application.pathway} />
-                        <QuickViewField label="Meets Criteria" value={application.meetsPathwayCriteria ? 'Yes' : 'No'} fullWidth />
                         {application.pathway === 'SNF Diversion' && <QuickViewField label="Reason for Diversion" value={application.snfDiversionReason} fullWidth />}
                     </Section>
 

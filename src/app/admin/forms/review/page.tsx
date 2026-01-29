@@ -196,7 +196,6 @@ function ReviewPageComponent() {
                                 </>
                             )}
                             <Field label="Pathway" value={application.pathway} />
-                            <Field label="Meets Criteria" value={application.meetsPathwayCriteria ? 'Yes' : 'No'} fullWidth />
                             {application.pathway === 'SNF Diversion' && <Field label="Reason for Diversion" value={application.snfDiversionReason} fullWidth />}
                         </Section>
                         

@@ -32,7 +32,7 @@ const steps = [
       'hasLegalRep', 'repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail'
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty', 'customaryLocationType', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty'] },
-  { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'meetsPathwayCriteria', 'switchingHealthPlan', 'existingHealthPlan', 'snfDiversionReason'] },
+  { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'switchingHealthPlan', 'existingHealthPlan', 'snfDiversionReason'] },
   { id: 4, name: 'ISP & Facility Selection', fields: [
       'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail', 
       'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty', 
@@ -63,9 +63,6 @@ function CsSummaryFormComponent() {
 
   const methods = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      meetsPathwayCriteria: false,
-    },
   });
 
   const { formState: { errors, isValid }, trigger, getValues, handleSubmit, reset } = methods;
@@ -126,7 +123,6 @@ function CsSummaryFormComponent() {
                     referrerFirstName: firstName,
                     referrerLastName: lastName,
                     referrerEmail: user.email || '',
-                    meetsPathwayCriteria: false,
                 });
             }
         }
@@ -139,7 +135,6 @@ function CsSummaryFormComponent() {
               referrerFirstName: firstName,
               referrerLastName: lastName,
               referrerEmail: user.email || '',
-              meetsPathwayCriteria: false,
           });
       }
     };
