@@ -11,18 +11,17 @@ interface WindowsNotificationProps {
   author?: string;
   memberName?: string;
   timestamp?: string;
-  priority?: 'General' | 'Priority' | 'Urgent' | string;
-  tagLabel?: string;
-  startMinimized?: boolean;
-  lockToTray?: boolean;
+  priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
   duration?: number;
   minimizeAfter?: number;
   pendingLabel?: string;
   sound?: boolean;
   soundType?: 'mellow-note' | 'arrow-target' | 'bell' | 'chime' | 'pop' | 'windows-default' | 'success-ding' | 'message-swoosh' | 'alert-beep' | 'coin-drop' | 'bubble-pop' | 'typewriter-ding' | 'glass-ping' | 'wooden-knock' | 'digital-blip' | 'water-drop' | 'silent';
   animation?: 'bounce' | 'slide' | 'fade' | 'pulse';
-  keyId?: string;
-  links?: Array<{ label: string; url: string }>;
+  followUpDate?: string;
+  replyUrl?: string;
+  requiresSecondClick?: boolean;
+  onFollowUpSave?: (date: string) => void;
   onClose?: () => void;
   onClick?: () => void;
 }

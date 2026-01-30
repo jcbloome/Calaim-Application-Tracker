@@ -652,6 +652,32 @@ export default function NotificationSettings() {
     }
   };
 
+  const handleCheckForUpdates = async () => {
+    if (typeof window === 'undefined') return;
+    if (window.desktopNotifications?.checkForUpdates) {
+      try {
+        await window.desktopNotifications.checkForUpdates();
+        toast({
+          title: 'Checking for updates',
+          description: 'The desktop app is checking for updates in the background.'
+        });
+      } catch (error) {
+        toast({
+          title: 'Update check failed',
+          description: 'Unable to check for updates right now.',
+          variant: 'destructive'
+        });
+      }
+      return;
+    }
+
+    window.open('/admin/desktop-download', '_blank', 'noopener,noreferrer');
+    toast({
+      title: 'Download page opened',
+      description: 'Use the latest installer to update the desktop app.'
+    });
+  };
+
   return (
     <div className="space-y-6">
       {desktopAvailable && (
@@ -687,6 +713,11 @@ export default function NotificationSettings() {
                 {desktopState.pausedByUser && <Badge variant="secondary">Paused by Staff</Badge>}
               </div>
             )}
+            <div>
+              <Button variant="outline" onClick={handleCheckForUpdates}>
+                Check for Updates
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

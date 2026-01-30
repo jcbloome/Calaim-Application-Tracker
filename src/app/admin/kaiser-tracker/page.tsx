@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -823,6 +824,7 @@ function StaffMemberManagementModal({
 export default function KaiserTrackerPage() {
   const { isAdmin, isLoading: isAdminLoading, user } = useAdmin();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
 
   // State declarations
   const [isLoading, setIsLoading] = useState(false);
@@ -843,6 +845,7 @@ export default function KaiserTrackerPage() {
     staffName: string;
     members: KaiserMember[];
   }>({ isOpen: false, staffName: '', members: [] });
+  const deepLinkHandledRef = useRef(false);
 
   // Member notes modal state
   const [memberNotesModal, setMemberNotesModal] = useState<{
@@ -1053,6 +1056,17 @@ export default function KaiserTrackerPage() {
       }));
     }
   };
+
+  useEffect(() => {
+    if (deepLinkHandledRef.current) return;
+    if (!members.length) return;
+    const clientId2 = searchParams.get('clientId2');
+    if (!clientId2) return;
+    const target = members.find((member) => member.client_ID2 === clientId2);
+    if (!target) return;
+    deepLinkHandledRef.current = true;
+    handleMemberClick(target);
+  }, [members, searchParams]);
 
   // Helper function to create a new note
   const handleCreateNote = async () => {

@@ -96,8 +96,7 @@ const adminNavLinks = [
     isSubmenu: true,
     submenuItems: [
       { href: '/admin/my-notes', label: 'My Notifications', icon: Bell },
-      { href: '/admin/tasks', label: 'My Tasks', icon: ClipboardList },
-      { href: '/admin/morning-dashboard', label: 'Morning Dashboard', icon: LayoutDashboard }
+      { href: '/admin/tasks', label: 'Daily Task Tracker', icon: ClipboardList }
     ]
   },
   { 
@@ -485,8 +484,22 @@ function AdminHeader() {
         </div>
 
         <div className="flex items-center gap-3 relative z-50">
-          {/* Staff Notification Bell */}
-          <StaffNotificationBell userId={user?.uid} />
+          <StaffNotificationBell
+            userId={user?.uid}
+            icon={MessageSquareText}
+            className="text-blue-600 hover:text-blue-700"
+          />
+          <Link href="/admin/tasks?range=daily" className="hidden sm:flex">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex items-center gap-2 text-red-600 hover:text-red-700"
+              title="Daily Tasks Due"
+            >
+              <CalendarCheck className="h-4 w-4" />
+            </Button>
+          </Link>
+          {/* Staff Notification Bell removed in favor of quick icons */}
           
           {/* User Menu */}
           <DropdownMenu>

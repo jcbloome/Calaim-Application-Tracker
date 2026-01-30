@@ -14,6 +14,7 @@ declare global {
       setPaused: (paused: boolean) => Promise<DesktopNotificationState>;
       notify: (payload: { title: string; body: string; openOnNotify?: boolean }) => Promise<boolean>;
       setPendingCount: (count: number) => void;
+      checkForUpdates?: () => Promise<void>;
       onChange: (callback: (state: DesktopNotificationState) => void) => () => void;
       onExpand: (callback: () => void) => () => void;
     };

@@ -34,9 +34,10 @@ interface StaffNotification {
 interface StaffNotificationBellProps {
   userId?: string;
   className?: string;
+  icon?: React.ComponentType<{ className?: string }>;
 }
 
-export function StaffNotificationBell({ userId, className = '' }: StaffNotificationBellProps) {
+export function StaffNotificationBell({ userId, className = '', icon: Icon = Bell }: StaffNotificationBellProps) {
   const { user } = useAdmin();
   const firestore = useFirestore();
   const router = useRouter();
@@ -150,7 +151,7 @@ export function StaffNotificationBell({ userId, className = '' }: StaffNotificat
           className={`relative ${className}`}
           title="My Notifications"
         >
-          <Bell className="h-5 w-5" />
+          <Icon className="h-5 w-5" />
           {unreadCount > 0 && (
             <Badge
               variant="destructive"

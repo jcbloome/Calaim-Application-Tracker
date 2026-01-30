@@ -9,7 +9,9 @@ import {
   where,
   onSnapshot,
   limit,
-  Timestamp
+  Timestamp,
+  doc,
+  updateDoc
 } from 'firebase/firestore';
 import { useGlobalNotifications } from './NotificationProvider';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -32,6 +34,7 @@ interface StaffNotification {
   type: string;
   priority: 'General' | 'Priority' | 'Urgent' | string;
   timestamp: Timestamp;
+  followUpDate?: any;
   isRead: boolean;
   applicationId?: string;
   actionUrl?: string;
@@ -48,6 +51,7 @@ interface NotificationData {
   type: string;
   priority: 'General' | 'Priority' | 'Urgent';
   timestamp: Date;
+  followUpDate?: string;
   applicationId?: string;
   actionUrl?: string;
   isGeneral?: boolean;
@@ -56,6 +60,7 @@ interface NotificationData {
 export function RealTimeNotifications() {
   const { user } = useUser();
   const firestore = useFirestore();
+  const firestoreRef = useRef(firestore);
   const pathname = usePathname();
   const { showNotification, removeNotification } = useGlobalNotifications();
   const seenNotificationsRef = useRef<Set<string>>(new Set());
@@ -73,6 +78,9 @@ export function RealTimeNotifications() {
     memberName?: string;
     timestamp?: string;
     tagLabel?: string;
+    replyUrl?: string;
+    followUpDate?: string;
+    followUpNoteId?: string;
   } | null>(null);
   const [desktopState, setDesktopState] = useState<DesktopNotificationState | null>(null);
   const [notificationPrefs, setNotificationPrefs] = useState({
@@ -96,6 +104,10 @@ export function RealTimeNotifications() {
   const [globalPolicy, setGlobalPolicy] = useState<{ forceSuppressWebWhenDesktopActive: boolean }>({
     forceSuppressWebWhenDesktopActive: false
   });
+
+  useEffect(() => {
+    firestoreRef.current = firestore;
+  }, [firestore]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -218,9 +230,29 @@ export function RealTimeNotifications() {
         soundType: summary.soundType as any,
         animation: 'slide',
         links: summary.links,
-        onClick: undefined
+        replyUrl: summary.replyUrl,
+        followUpDate: summary.followUpDate,
+        onFollowUpSave: summary.followUpNoteId
+          ? (date) => {
+              const db = firestoreRef.current;
+              if (!db) return;
+              updateDoc(doc(db, 'staff_notifications', summary.followUpNoteId), {
+                followUpDate: new Date(date),
+                followUpRequired: true,
+                updatedAt: new Date()
+              }).catch((error) => {
+                console.warn('Failed to save follow-up date:', error);
+              });
+            }
+          : undefined,
+        requiresSecondClick: true,
+        onClick: () => {
+          if (typeof window === 'undefined') return;
+          window.location.href = '/admin/my-notes';
+        }
       });
       summaryNotificationIdRef.current = summaryId;
+
     });
     return () => {
       if (unsubscribe) unsubscribe();
@@ -316,6 +348,13 @@ export function RealTimeNotifications() {
     return withoutPrefix.includes('[@field:') ? '' : withoutPrefix;
   };
 
+  const formatFollowUpDate = (value?: any) => {
+    if (!value) return '';
+    const date = value?.toDate?.() || new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toISOString();
+  };
+
   useEffect(() => {
     if (!user || !user.uid) return;
     if (!firestore) return;
@@ -356,6 +395,7 @@ export function RealTimeNotifications() {
             type: data.type || 'note',
             priority,
             timestamp: data.timestamp?.toDate() || new Date(),
+            followUpDate: formatFollowUpDate(data.followUpDate),
             applicationId: data.applicationId,
             actionUrl: resolveActionUrl(data),
             isGeneral: Boolean((data as any).isGeneral)
@@ -453,23 +493,18 @@ export function RealTimeNotifications() {
               : '';
             return `• ${label}${timeLabel ? ` (${timeLabel})` : ''}`;
           });
-          const summaryTitle = count === 1
-            ? `From ${highlightSender} · Re: ${highlightSubject}`
-            : `Re: ${highlightSubject}`;
-          const senderLabel = count === 1 ? `From: ${highlightSender}` : 'From: Multiple staff';
-          const summaryMessage = highlightMessage || `${senderLabel} · Immediate notes: ${count}`;
-          const detailMessage = [
-            `From: ${highlightSender}`,
-            highlightSubject ? `Member: ${highlightSubject}` : '',
-            summaryMessage ? `Note: ${summaryMessage}` : '',
-            highlightTimestamp || '',
-            recentLines.length > 0 ? `Recent notes:\n${recentLines.join('\n')}` : ''
-          ].filter(Boolean).join('\n');
+          const summaryTitle = 'Connections Note';
+          const summaryMessage = highlightMessage || `Immediate notes: ${count}`;
+          const detailMessage = highlightMessage
+            || (recentLines.length > 0 ? `Recent notes:\n${recentLines.join('\n')}` : summaryMessage);
           const tagLabel = undefined;
           const priorityTag = urgentExists ? 'Urgent' : priorityExists ? 'Priority' : undefined;
           const links: Array<{ label: string; url: string }> = [
             { label: 'Open My Notifications', url: '/admin/my-notes' }
           ];
+          const replyUrl = highlightNote?.id
+            ? `/admin/my-notes?replyTo=${encodeURIComponent(highlightNote.id)}`
+            : undefined;
           const shouldPopup = shouldShowWebToast && (hasNewUrgent || hasNewPriority);
           const desktopPresent = typeof window !== 'undefined' && Boolean(window.desktopNotifications);
           latestSummaryRef.current = {
@@ -482,7 +517,10 @@ export function RealTimeNotifications() {
             soundType: notificationPrefs.soundType,
             memberName: highlightSubject || '',
             timestamp: highlightTimestamp || undefined,
-            tagLabel: priorityTag
+            tagLabel: priorityTag,
+            replyUrl,
+            followUpDate: formatFollowUpDate(highlightNote?.followUpDate),
+            followUpNoteId: highlightNote?.id
           };
 
           if (shouldShowWebToast) {
@@ -505,7 +543,26 @@ export function RealTimeNotifications() {
               soundType: notificationPrefs.soundType,
               animation: 'slide',
               links,
-              onClick: undefined
+              replyUrl,
+              followUpDate: formatFollowUpDate(highlightNote?.followUpDate),
+              onFollowUpSave: highlightNote?.id
+                ? (date) => {
+                    const db = firestoreRef.current;
+                    if (!db) return;
+                    updateDoc(doc(db, 'staff_notifications', highlightNote.id), {
+                      followUpDate: new Date(date),
+                      followUpRequired: true,
+                      updatedAt: new Date()
+                    }).catch((error) => {
+                      console.warn('Failed to save follow-up date:', error);
+                    });
+                  }
+                : undefined,
+              requiresSecondClick: true,
+              onClick: () => {
+                if (typeof window === 'undefined') return;
+                window.location.href = '/admin/my-notes';
+              }
             });
 
             summaryNotificationIdRef.current = summaryId;
@@ -516,10 +573,8 @@ export function RealTimeNotifications() {
           if (hasNew && window.desktopNotifications?.notify) {
             window.desktopNotifications.notify({
               title: summaryTitle,
-              body: urgentExists
-                ? `From: ${highlightSender} · ${summaryMessage}`
-                : `${senderLabel} · Immediate notes: ${count}`,
-              openOnNotify: shouldPopup
+              body: summaryMessage,
+              openOnNotify: hasNew
             }).catch(() => undefined);
           }
         }, 400);

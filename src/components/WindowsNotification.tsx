@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { 
   Bell, 
   X, 
@@ -17,8 +18,6 @@ import {
   Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { playNotificationSound, type NotificationSoundType } from '@/lib/notification-sounds';
-import { normalizePriorityLabel, isUrgentPriority } from '@/lib/notification-utils';
 
 interface WindowsNotificationProps {
   id: string;
@@ -28,18 +27,17 @@ interface WindowsNotificationProps {
   author?: string;
   memberName?: string;
   timestamp?: string;
-  priority?: 'General' | 'Priority' | 'Urgent' | string;
-  tagLabel?: string;
-  startMinimized?: boolean;
-  lockToTray?: boolean;
+  priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
   duration?: number;
   minimizeAfter?: number;
   pendingLabel?: string;
   sound?: boolean;
-  soundType?: NotificationSoundType;
+  soundType?: 'mellow-note' | 'arrow-target' | 'bell' | 'chime' | 'pop' | 'windows-default' | 'success-ding' | 'message-swoosh' | 'alert-beep' | 'coin-drop' | 'bubble-pop' | 'typewriter-ding' | 'glass-ping' | 'wooden-knock' | 'digital-blip' | 'water-drop' | 'silent';
   animation?: 'bounce' | 'slide' | 'fade' | 'pulse';
-  keyId?: string;
-  links?: Array<{ label: string; url: string }>;
+  followUpDate?: string;
+  replyUrl?: string;
+  requiresSecondClick?: boolean;
+  onFollowUpSave?: (date: string) => void;
   onClose?: () => void;
   onClick?: () => void;
 }
@@ -78,11 +76,11 @@ const TYPE_CONFIGS = {
 };
 
 const PRIORITY_COLORS = {
-  General: 'bg-gray-100 text-gray-800',
-  Priority: 'bg-orange-100 text-orange-800',
-  Urgent: 'bg-red-100 text-red-800'
+  'Low': 'bg-gray-100 text-gray-800',
+  'Medium': 'bg-blue-100 text-blue-800',
+  'High': 'bg-orange-100 text-orange-800',
+  'Urgent': 'bg-red-100 text-red-800'
 };
-
 
 export default function WindowsNotification({
   id,
@@ -93,26 +91,34 @@ export default function WindowsNotification({
   memberName,
   timestamp,
   priority,
-  tagLabel,
-  startMinimized = false,
-  lockToTray = false,
   duration = 5000,
   minimizeAfter = 7000,
   pendingLabel = 'Pending note',
   sound = true,
   soundType = 'mellow-note',
   animation = 'slide',
-  links = [],
+  followUpDate,
+  replyUrl,
+  requiresSecondClick = false,
+  onFollowUpSave,
   onClose,
   onClick
 }: WindowsNotificationProps) {
-  const router = useRouter();
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(startMinimized);
-  const displayPriorityLabel = tagLabel || (priority ? normalizePriorityLabel(priority) : undefined);
-  const isUrgent = isUrgentPriority(priority) || type === 'urgent';
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [hasClickedOnce, setHasClickedOnce] = useState(false);
+  const [isFollowUpOpen, setIsFollowUpOpen] = useState(false);
+  const [followUpDraft, setFollowUpDraft] = useState('');
+  const [followUpSaved, setFollowUpSaved] = useState(false);
+  const isUrgent = priority === 'Urgent';
   const urgentAccentClass = 'bg-orange-500';
+  const formattedFollowUpDate = followUpDate
+    ? new Date(followUpDate).toLocaleDateString()
+    : '';
+  const formattedTimestamp = timestamp
+    ? new Date(timestamp).toLocaleString()
+    : '';
 
   const config = TYPE_CONFIGS[type];
   const IconComponent = config.icon;
@@ -120,11 +126,334 @@ export default function WindowsNotification({
   // Play notification sound
   const playSound = async () => {
     if (!sound) return;
-    await playNotificationSound(soundType ?? 'mellow-note');
+
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      let audioBuffer: AudioBuffer;
+
+      switch (soundType) {
+        case 'mellow-note':
+          audioBuffer = generateMellowNoteSound(audioContext);
+          break;
+        case 'arrow-target':
+          audioBuffer = generateArrowTargetSound(audioContext);
+          break;
+        case 'bell':
+          audioBuffer = generateBellSound(audioContext);
+          break;
+        case 'chime':
+          audioBuffer = generateChimeSound(audioContext);
+          break;
+        case 'pop':
+          audioBuffer = generatePopSound(audioContext);
+          break;
+        case 'windows-default':
+          audioBuffer = generateWindowsDefaultSound(audioContext);
+          break;
+        case 'success-ding':
+          audioBuffer = generateSuccessDingSound(audioContext);
+          break;
+        case 'message-swoosh':
+          audioBuffer = generateMessageSwooshSound(audioContext);
+          break;
+        case 'alert-beep':
+          audioBuffer = generateAlertBeepSound(audioContext);
+          break;
+        case 'coin-drop':
+          audioBuffer = generateCoinDropSound(audioContext);
+          break;
+        case 'bubble-pop':
+          audioBuffer = generateBubblePopSound(audioContext);
+          break;
+        case 'typewriter-ding':
+          audioBuffer = generateTypewriterDingSound(audioContext);
+          break;
+        case 'glass-ping':
+          audioBuffer = generateGlassPingSound(audioContext);
+          break;
+        case 'wooden-knock':
+          audioBuffer = generateWoodenKnockSound(audioContext);
+          break;
+        case 'digital-blip':
+          audioBuffer = generateDigitalBlipSound(audioContext);
+          break;
+        case 'water-drop':
+          audioBuffer = generateWaterDropSound(audioContext);
+          break;
+        case 'silent':
+          return; // No sound for silent mode
+        default:
+          audioBuffer = generateMellowNoteSound(audioContext);
+      }
+
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      source.start();
+    } catch (error) {
+      console.error('Error playing notification sound:', error);
+    }
   };
 
   // Generate arrow hit target sound (satisfying thunk)
-  
+  const generateArrowTargetSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.4;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 6);
+      const frequency = 180 * (1 + envelope * 3);
+      // Add some noise for the "thunk" effect
+      const noise = (Math.random() - 0.5) * 0.1 * envelope;
+      data[i] = envelope * (Math.sin(2 * Math.PI * frequency * t) * 0.4 + noise);
+    }
+
+    return buffer;
+  };
+
+  // Generate other sounds (simplified versions)
+  const generateMellowNoteSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.7;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    const base = 440;
+    const harmonic = 660;
+
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 2.8);
+      data[i] = envelope * (
+        Math.sin(2 * Math.PI * base * t) * 0.18 +
+        Math.sin(2 * Math.PI * harmonic * t) * 0.12
+      );
+    }
+
+    return buffer;
+  };
+  const generateBellSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.6;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 2.5);
+      data[i] = envelope * (
+        Math.sin(2 * Math.PI * 800 * t) * 0.3 +
+        Math.sin(2 * Math.PI * 1200 * t) * 0.2 +
+        Math.sin(2 * Math.PI * 1600 * t) * 0.1
+      );
+    }
+
+    return buffer;
+  };
+
+  const generateChimeSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.5;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 3);
+      data[i] = envelope * Math.sin(2 * Math.PI * 600 * t) * 0.3;
+    }
+
+    return buffer;
+  };
+
+  const generatePopSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.15;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 15);
+      data[i] = envelope * Math.sin(2 * Math.PI * 1200 * t) * 0.5;
+    }
+
+    return buffer;
+  };
+
+  // Additional sound generation functions
+  const generateWindowsDefaultSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.5;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 2);
+      data[i] = envelope * (
+        Math.sin(2 * Math.PI * 800 * t) * 0.3 +
+        Math.sin(2 * Math.PI * 1000 * t) * 0.2 +
+        Math.sin(2 * Math.PI * 1200 * t) * 0.1
+      );
+    }
+    return buffer;
+  };
+
+  const generateSuccessDingSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.6;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 1.5);
+      const frequency = 600 + (t * 400);
+      data[i] = envelope * Math.sin(2 * Math.PI * frequency * t) * 0.3;
+    }
+    return buffer;
+  };
+
+  const generateMessageSwooshSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.4;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 5);
+      const frequency = 1200 - (t * 800);
+      const noise = (Math.random() - 0.5) * 0.1 * envelope;
+      data[i] = envelope * Math.sin(2 * Math.PI * frequency * t) * 0.2 + noise;
+    }
+    return buffer;
+  };
+
+  const generateAlertBeepSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.3;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = t < 0.05 ? t / 0.05 : Math.exp(-(t - 0.05) * 8);
+      data[i] = envelope * Math.sin(2 * Math.PI * 1500 * t) * 0.4;
+    }
+    return buffer;
+  };
+
+  const generateCoinDropSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.8;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 3);
+      data[i] = envelope * (
+        Math.sin(2 * Math.PI * 1000 * t) * 0.4 +
+        Math.sin(2 * Math.PI * 2000 * t) * 0.2 +
+        Math.sin(2 * Math.PI * 3000 * t) * 0.1
+      );
+    }
+    return buffer;
+  };
+
+  const generateBubblePopSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.2;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 15);
+      data[i] = envelope * Math.sin(2 * Math.PI * 2000 * t) * 0.3;
+    }
+    return buffer;
+  };
+
+  const generateTypewriterDingSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.7;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 2);
+      data[i] = envelope * (
+        Math.sin(2 * Math.PI * 1200 * t) * 0.4 +
+        Math.sin(2 * Math.PI * 2400 * t) * 0.2
+      );
+    }
+    return buffer;
+  };
+
+  const generateGlassPingSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.5;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 4);
+      data[i] = envelope * Math.sin(2 * Math.PI * 2500 * t) * 0.25;
+    }
+    return buffer;
+  };
+
+  const generateWoodenKnockSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.3;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 10);
+      const noise = (Math.random() - 0.5) * 0.2 * envelope;
+      data[i] = envelope * Math.sin(2 * Math.PI * 300 * t) * 0.4 + noise;
+    }
+    return buffer;
+  };
+
+  const generateDigitalBlipSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.15;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 12);
+      const square = Math.sign(Math.sin(2 * Math.PI * 1000 * t));
+      data[i] = envelope * square * 0.3;
+    }
+    return buffer;
+  };
+
+  const generateWaterDropSound = (audioContext: AudioContext): AudioBuffer => {
+    const duration = 0.6;
+    const sampleRate = audioContext.sampleRate;
+    const buffer = audioContext.createBuffer(1, duration * sampleRate, sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < buffer.length; i++) {
+      const t = i / sampleRate;
+      const envelope = Math.exp(-t * 3);
+      const frequency = 800 - (t * 200);
+      data[i] = envelope * Math.sin(2 * Math.PI * frequency * t) * 0.2;
+    }
+    return buffer;
+  };
 
   // Handle close
   const handleClose = () => {
@@ -137,6 +466,10 @@ export default function WindowsNotification({
 
   // Handle click
   const handleClick = () => {
+    if (requiresSecondClick && !hasClickedOnce) {
+      setHasClickedOnce(true);
+      return;
+    }
     onClick?.();
     handleClose();
   };
@@ -221,46 +554,27 @@ export default function WindowsNotification({
       <Card
         className={cn(
           'fixed bottom-4 right-4 z-50 cursor-pointer shadow-lg border bg-white text-slate-900',
-          isUrgent ? 'border-orange-300' : 'border-blue-200',
+          isUrgent ? 'border-orange-500' : 'border-slate-200',
           getAnimationClasses()
         )}
         onClick={() => {
-          if (onClick) {
-            handleClick();
-          } else {
-            setIsMinimized(false);
+          setIsMinimized(false);
+          if (requiresSecondClick) {
+            setHasClickedOnce(true);
           }
         }}
       >
         <div className="flex items-center gap-2 px-3 py-2">
-          <div className={cn('p-1 rounded-full', isUrgent ? 'bg-orange-500 animate-pulse' : 'bg-blue-500')}>
+          <div className={cn('p-1 rounded-full', isUrgent ? `${urgentAccentClass} animate-pulse` : 'bg-blue-500')}>
             <Bell className="h-3 w-3 text-white" />
           </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] uppercase tracking-wide text-blue-600">
-              Connections Note
-            </span>
-            <span className="text-xs text-slate-700">{pendingLabel}</span>
-          </div>
-          {displayPriorityLabel && (
-            <Badge
-              className={cn(
-                'ml-auto text-[10px] text-white',
-                displayPriorityLabel === 'Priority' || displayPriorityLabel === 'Urgent' || isUrgent
-                  ? 'bg-orange-500 border-orange-400 animate-pulse'
-                  : 'bg-blue-500 border-blue-400'
-              )}
-            >
-              {displayPriorityLabel}
-            </Badge>
-          )}
+          <span className="text-xs text-slate-700">{pendingLabel}</span>
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 w-6 p-0 hover:bg-slate-100 text-slate-500 hover:text-slate-800"
+            className="ml-auto h-6 w-6 p-0 hover:bg-slate-100 text-slate-400 hover:text-slate-700"
             onClick={(e) => {
               e.stopPropagation();
-              if (lockToTray) return;
               handleClose();
             }}
           >
@@ -275,7 +589,7 @@ export default function WindowsNotification({
     <Card 
       className={cn(
         'fixed bottom-4 right-4 z-50 w-80 cursor-pointer shadow-lg border bg-white text-slate-900',
-        isUrgent ? 'border-orange-300' : 'border-blue-200',
+        isUrgent ? 'border-orange-500' : 'border-slate-200',
         getAnimationClasses()
       )}
       onClick={handleClick}
@@ -288,22 +602,17 @@ export default function WindowsNotification({
               <IconComponent className="h-4 w-4 text-white" />
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] uppercase tracking-wide text-blue-600">
+              <span className="text-[10px] uppercase tracking-wide text-slate-500">
                 Connections Note
-              </span>
-              <span className="font-semibold text-sm text-slate-900">
-                {title}
               </span>
             </div>
             <div className="flex items-center gap-2">
-              {displayPriorityLabel && (
+              {priority && (
                 <Badge className={cn(
                   'text-xs text-white',
-                  displayPriorityLabel === 'Priority' || displayPriorityLabel === 'Urgent' || isUrgent
-                    ? 'bg-orange-500 border-orange-400 animate-pulse'
-                    : 'bg-blue-500 border-blue-400'
+                  isUrgent ? 'bg-orange-500 border-orange-400 animate-pulse' : 'bg-orange-500 border-orange-400'
                 )}>
-                  {displayPriorityLabel}
+                  {priority}
                 </Badge>
               )}
             </div>
@@ -311,13 +620,9 @@ export default function WindowsNotification({
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 w-6 p-0 hover:bg-slate-100 text-slate-500 hover:text-slate-800"
+            className="h-6 w-6 p-0 hover:bg-slate-100 text-slate-400 hover:text-slate-700"
             onClick={(e) => {
               e.stopPropagation();
-              if (lockToTray) {
-                setIsMinimized(true);
-                return;
-              }
               handleClose();
             }}
           >
@@ -327,54 +632,135 @@ export default function WindowsNotification({
 
         {/* Content */}
         <div className="space-y-2">
-          {message?.trim() && (
-            <p className="text-sm font-semibold text-slate-800 leading-snug">
-              {message.trim()}
-            </p>
-          )}
-          {links.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {links.map((link) => (
-                <Button
-                  key={link.url}
-                  size="sm"
-                  variant="outline"
-                  className="border-blue-200 text-blue-700 hover:bg-blue-50"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    router.push(link.url);
-                  }}
-                >
-                  {link.label}
-                </Button>
-              ))}
+          <p className="text-sm font-semibold text-slate-900 leading-snug">
+            {message}
+          </p>
+          
+          {/* Author and Member info */}
+          <div className="flex items-center gap-4 text-xs text-slate-500">
+            {author && (
+              <div className="flex items-center gap-1">
+                <User className="h-3 w-3" />
+                <span>{author}</span>
+              </div>
+            )}
+            {memberName && (
+              <div className="flex items-center gap-1">
+                <Target className="h-3 w-3" />
+                <span>{memberName}</span>
+              </div>
+            )}
+            {formattedTimestamp && (
+              <div className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                <span>Sent: {formattedTimestamp}</span>
+              </div>
+            )}
+            {formattedFollowUpDate && (
+              <div className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                <span>Follow-up: {formattedFollowUpDate}</span>
+              </div>
+            )}
+          </div>
+
+          {formattedFollowUpDate && (
+            <div className="pt-1">
+              <Badge variant="outline" className="text-xs">
+                Follow-up scheduled
+              </Badge>
             </div>
           )}
-          
-          {/* Author, Member, and timestamp info */}
-          {(author || memberName || timestamp) && (
-            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
-              {author && (
-                <div className="flex items-center gap-1">
-                  <User className="h-3 w-3" />
-                  <span>From: {author}</span>
-                </div>
+
+          {(replyUrl || onClick || onFollowUpSave) && (
+            <div className="pt-1 flex flex-wrap gap-2">
+              {replyUrl && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (typeof window !== 'undefined') {
+                      window.location.href = replyUrl;
+                    }
+                    handleClose();
+                  }}
+                >
+                  Reply
+                </Button>
               )}
-              {memberName && (
-                <div className="flex items-center gap-1">
-                  <Target className="h-3 w-3" />
-                  <span>Re: {memberName}</span>
-                </div>
+              {onFollowUpSave && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setFollowUpDraft(followUpDate ? followUpDate.split('T')[0] : '');
+                    setIsFollowUpOpen(true);
+                  }}
+                >
+                  Set Follow-up
+                </Button>
               )}
-              {timestamp && (
-                <div className="flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  <span>{timestamp}</span>
-                </div>
+              {onClick && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onClick();
+                    handleClose();
+                  }}
+                >
+                  Go to Notes
+                </Button>
               )}
             </div>
           )}
         </div>
+
+        <Dialog open={isFollowUpOpen} onOpenChange={setIsFollowUpOpen}>
+          <DialogContent className="max-w-sm" onClick={(event) => event.stopPropagation()}>
+            <DialogHeader>
+              <DialogTitle>Follow-up Date</DialogTitle>
+              <DialogDescription>Pick a follow-up date to add this task.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Input
+                type="date"
+                value={followUpDraft}
+                onChange={(event) => setFollowUpDraft(event.target.value)}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsFollowUpOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!followUpDraft) return;
+                  onFollowUpSave?.(followUpDraft);
+                  setIsFollowUpOpen(false);
+                  setFollowUpSaved(true);
+                  setTimeout(() => setFollowUpSaved(false), 3000);
+                }}
+              >
+                Save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {followUpSaved && (
+          <div className="pt-2">
+            <Badge variant="outline" className="text-xs text-green-700 border-green-200 bg-green-50">
+              Follow-up saved
+            </Badge>
+          </div>
+        )}
 
         {/* Visual effect for arrow hitting target */}
         {soundType === 'arrow-target' && isVisible && (
@@ -404,12 +790,7 @@ export function useWindowsNotifications() {
       onClose: () => removeNotification(id)
     };
 
-    setNotifications(prev => {
-      if (notification.keyId) {
-        return [...prev.filter(n => n.keyId !== notification.keyId), newNotification];
-      }
-      return [...prev, newNotification];
-    });
+    setNotifications(prev => [...prev, newNotification]);
 
     // Auto-remove after duration
     if (notification.duration && notification.duration > 0) {

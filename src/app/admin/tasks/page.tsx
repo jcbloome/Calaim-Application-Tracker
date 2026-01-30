@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
+import { useSearchParams } from 'next/navigation';
+import { useFirestore } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,13 +13,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Bell, Target, CalendarDays, ListTodo, MessageSquare, FileText, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { format, isToday, isTomorrow, isYesterday, addDays, startOfDay, endOfDay } from 'date-fns';
+import { format, isToday, isTomorrow, isYesterday, addDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import Link from 'next/link';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { addDoc, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { getKaiserStatusByName, getNextKaiserStatus } from '@/lib/kaiser-status-progression';
 
 interface MyTask {
   id: string;
@@ -72,15 +76,31 @@ interface MemberCardData {
 
 export default function MyTasksPage() {
   const { user, isAdmin } = useAdmin();
+  const searchParams = useSearchParams();
+  const firestore = useFirestore();
   const { toast } = useToast();
   
   const [tasks, setTasks] = useState<MyTask[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCompletingTask, setIsCompletingTask] = useState<Record<string, boolean>>({});
   const [selectedTab, setSelectedTab] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const [timeRange, setTimeRange] = useState<'all' | 'daily' | 'weekly' | 'monthly'>('all');
   const [desktopActive, setDesktopActive] = useState(false);
   const [suppressWebWhenDesktopActive, setSuppressWebWhenDesktopActive] = useState(false);
+  const [isCreateFollowUpOpen, setIsCreateFollowUpOpen] = useState(false);
+  const [isCreatingFollowUp, setIsCreatingFollowUp] = useState(false);
+  const [followUpForm, setFollowUpForm] = useState({
+    title: '',
+    message: '',
+    memberName: '',
+    memberClientId: '',
+    healthPlan: '',
+    priority: 'Priority' as 'General' | 'Priority' | 'Urgent',
+    followUpDate: ''
+  });
   
   // Member card modal state
   const [selectedMember, setSelectedMember] = useState<MemberCardData | null>(null);
@@ -100,6 +120,13 @@ export default function MyTasksPage() {
       fetchMyTasks();
     }
   }, [user?.uid]);
+
+  useEffect(() => {
+    const range = searchParams.get('range');
+    if (range === 'daily' || range === 'weekly' || range === 'monthly') {
+      setTimeRange(range);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -215,6 +242,20 @@ export default function MyTasksPage() {
   };
 
   const filteredTasks = useMemo(() => {
+    const now = new Date();
+    const range = (() => {
+      if (timeRange === 'daily') {
+        return { start: startOfDay(now), end: endOfDay(now) };
+      }
+      if (timeRange === 'weekly') {
+        return { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }) };
+      }
+      if (timeRange === 'monthly') {
+        return { start: startOfMonth(now), end: endOfMonth(now) };
+      }
+      return null;
+    })();
+
     return tasks.filter(task => {
       // Tab filter
       if (selectedTab === 'overdue' && task.status !== 'overdue') return false;
@@ -236,19 +277,61 @@ export default function MyTasksPage() {
       // Status filter
       if (statusFilter !== 'all' && task.status !== statusFilter) return false;
 
+      // Source filter
+      if (sourceFilter !== 'all' && task.source !== sourceFilter) return false;
+
+      // Time range filter
+      if (range) {
+        const taskDate = new Date(task.dueDate);
+        if (Number.isNaN(taskDate.getTime())) return false;
+        if (taskDate < range.start || taskDate > range.end) return false;
+      }
+
       return true;
     });
-  }, [tasks, selectedTab, priorityFilter, statusFilter]);
+  }, [tasks, selectedTab, priorityFilter, statusFilter, sourceFilter, timeRange]);
+
+  const calendarGroups = useMemo(() => {
+    const grouped = new Map<string, MyTask[]>();
+    filteredTasks.forEach((task) => {
+      const date = new Date(task.dueDate);
+      if (Number.isNaN(date.getTime())) return;
+      const key = format(date, 'yyyy-MM-dd');
+      const current = grouped.get(key) || [];
+      current.push(task);
+      grouped.set(key, current);
+    });
+    return Array.from(grouped.entries())
+      .sort(([a], [b]) => new Date(a).getTime() - new Date(b).getTime())
+      .map(([date, items]) => ({
+        date,
+        label: format(new Date(date), 'EEEE, MMM d'),
+        tasks: items
+      }));
+  }, [filteredTasks]);
 
   const taskCounts = useMemo(() => {
     const now = new Date();
+    const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+    const monthStart = startOfMonth(now);
+    const monthEnd = endOfMonth(now);
     return {
       all: tasks.length,
       overdue: tasks.filter(t => t.status === 'overdue').length,
       today: tasks.filter(t => isToday(new Date(t.dueDate)) && t.status !== 'completed').length,
       upcoming: tasks.filter(t => new Date(t.dueDate) > addDays(now, 1) && t.status !== 'completed').length,
       completed: tasks.filter(t => t.status === 'completed').length,
-      followup: tasks.filter(t => t.taskType === 'follow_up' && t.status !== 'completed').length
+      followup: tasks.filter(t => t.taskType === 'follow_up' && t.status !== 'completed').length,
+      notes: tasks.filter(t => t.source === 'notes' && t.status !== 'completed').length,
+      dueThisWeek: tasks.filter(t => {
+        const date = new Date(t.dueDate);
+        return date >= weekStart && date <= weekEnd && t.status !== 'completed';
+      }).length,
+      dueThisMonth: tasks.filter(t => {
+        const date = new Date(t.dueDate);
+        return date >= monthStart && date <= monthEnd && t.status !== 'completed';
+      }).length
     };
   }, [tasks]);
 
@@ -271,6 +354,89 @@ export default function MyTasksPage() {
       case 'administrative': return <ListTodo className="h-4 w-4" />;
       case 'kaiser_status': return <Target className="h-4 w-4" />;
       default: return <Target className="h-4 w-4" />;
+    }
+  };
+
+  const getSourceBadge = (source: MyTask['source']) => {
+    switch (source) {
+      case 'notes':
+        return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'applications':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'manual':
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const resetFollowUpForm = () => {
+    setFollowUpForm({
+      title: '',
+      message: '',
+      memberName: '',
+      memberClientId: '',
+      healthPlan: '',
+      priority: 'Priority',
+      followUpDate: ''
+    });
+  };
+
+  const handleCreateFollowUpTask = async () => {
+    if (!firestore || !user?.uid) return;
+    if (!followUpForm.title.trim() || !followUpForm.message.trim() || !followUpForm.followUpDate) {
+      toast({
+        title: 'Missing details',
+        description: 'Title, message, and follow-up date are required.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsCreatingFollowUp(true);
+    try {
+      const actionUrl = followUpForm.memberClientId
+        ? `/admin/member-notes?clientId2=${encodeURIComponent(followUpForm.memberClientId)}`
+        : '/admin/my-notes';
+
+      await addDoc(collection(firestore, 'staff_notifications'), {
+        userId: user.uid,
+        title: followUpForm.title.trim(),
+        message: followUpForm.message.trim(),
+        memberName: followUpForm.memberName.trim() || undefined,
+        clientId2: followUpForm.memberClientId.trim() || undefined,
+        healthPlan: followUpForm.healthPlan.trim() || undefined,
+        priority: followUpForm.priority,
+        status: 'Open',
+        isRead: false,
+        followUpRequired: true,
+        followUpDate: new Date(followUpForm.followUpDate),
+        type: 'follow_up_task',
+        createdBy: user.uid,
+        createdByName: user.displayName || user.email || 'Staff',
+        senderName: user.displayName || user.email || 'Staff',
+        timestamp: serverTimestamp(),
+        actionUrl
+      });
+
+      toast({
+        title: 'Follow-up created',
+        description: 'Task created and tied to the note system.',
+        className: 'bg-green-100 text-green-900 border-green-200'
+      });
+
+      resetFollowUpForm();
+      setIsCreateFollowUpOpen(false);
+      fetchMyTasks();
+    } catch (error: any) {
+      console.error('Failed to create follow-up task:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Unable to create task',
+        description: error.message || 'Failed to create follow-up task.'
+      });
+    } finally {
+      setIsCreatingFollowUp(false);
     }
   };
 
@@ -313,6 +479,106 @@ export default function MyTasksPage() {
         title: 'Error',
         description: 'Failed to update Kaiser status',
       });
+    }
+  };
+
+  const completeNoteTask = async (task: MyTask) => {
+    const actorName = user?.displayName || user?.email || 'Staff';
+    const actorEmail = user?.email || '';
+
+    if (task.id.startsWith('client-followup-')) {
+      if (!task.memberClientId) {
+        throw new Error('Client ID missing for follow-up task');
+      }
+      const noteId = task.id.replace('client-followup-', '');
+      const response = await fetch('/api/client-notes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          noteId,
+          clientId2: task.memberClientId,
+          followUpStatus: 'Closed',
+          actorName,
+          actorEmail
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to close client note follow-up');
+      }
+      return;
+    }
+
+    if (task.id.startsWith('member-followup-')) {
+      if (!task.memberClientId) {
+        throw new Error('Client ID missing for follow-up task');
+      }
+      const noteId = task.id.replace('member-followup-', '');
+      const response = await fetch('/api/member-notes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: noteId,
+          clientId2: task.memberClientId,
+          status: 'Closed',
+          actorName,
+          actorEmail
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to close member note follow-up');
+      }
+      return;
+    }
+
+    if (task.id.startsWith('staff-followup-')) {
+      if (!firestore) {
+        throw new Error('Firestore not available');
+      }
+      const noteId = task.id.replace('staff-followup-', '');
+      await updateDoc(doc(firestore, 'staff_notifications', noteId), {
+        status: 'Closed',
+        isRead: true,
+        followUpRequired: false,
+        resolvedAt: serverTimestamp()
+      });
+    }
+  };
+
+  const handleCompleteTask = async (task: MyTask) => {
+    if (task.status === 'completed') return;
+    setIsCompletingTask((prev) => ({ ...prev, [task.id]: true }));
+
+    try {
+      if (task.source === 'notes') {
+        await completeNoteTask(task);
+      }
+
+      setTasks((prev) =>
+        prev.map((item) =>
+          item.id === task.id
+            ? { ...item, status: 'completed', updatedAt: new Date().toISOString() }
+            : item
+        )
+      );
+
+      toast({
+        title: 'Task Completed',
+        description: task.source === 'notes'
+          ? 'Follow-up status updated in the note system.'
+          : 'Task marked as completed.',
+        className: 'bg-green-100 text-green-900 border-green-200'
+      });
+    } catch (error: any) {
+      console.error('Failed to complete task:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Unable to complete task',
+        description: error.message || 'Failed to update task status.'
+      });
+    } finally {
+      setIsCompletingTask((prev) => ({ ...prev, [task.id]: false }));
     }
   };
 
@@ -491,16 +757,130 @@ export default function MyTasksPage() {
         <div className="flex items-center gap-3">
           <ListTodo className="h-8 w-8 text-primary" />
           <div>
-            <h1 className="text-3xl font-bold">My Tasks</h1>
+            <h1 className="text-3xl font-bold">Daily Task Tracker</h1>
             <p className="text-muted-foreground">
-              Tasks and assignments assigned to you
+              Daily tasks, follow-ups, and note assignments tied to your workflow
             </p>
           </div>
         </div>
-        <Button onClick={fetchMyTasks} disabled={isLoading}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Dialog open={isCreateFollowUpOpen} onOpenChange={setIsCreateFollowUpOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={resetFollowUpForm}>
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Create Follow-up Task
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Create Follow-up Task</DialogTitle>
+                <DialogDescription>
+                  This creates a follow-up note and appears in the daily task tracker.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="followup-title">Title *</Label>
+                    <Input
+                      id="followup-title"
+                      value={followUpForm.title}
+                      onChange={(event) => setFollowUpForm((prev) => ({ ...prev, title: event.target.value }))}
+                      placeholder="Follow-up task title"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="followup-date">Follow-up Date *</Label>
+                    <Input
+                      id="followup-date"
+                      type="date"
+                      value={followUpForm.followUpDate}
+                      onChange={(event) => setFollowUpForm((prev) => ({ ...prev, followUpDate: event.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="followup-message">Message *</Label>
+                  <Textarea
+                    id="followup-message"
+                    value={followUpForm.message}
+                    onChange={(event) => setFollowUpForm((prev) => ({ ...prev, message: event.target.value }))}
+                    placeholder="Describe the follow-up details"
+                    rows={3}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="followup-member">Member Name</Label>
+                    <Input
+                      id="followup-member"
+                      value={followUpForm.memberName}
+                      onChange={(event) => setFollowUpForm((prev) => ({ ...prev, memberName: event.target.value }))}
+                      placeholder="Member name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="followup-client">Client ID</Label>
+                    <Input
+                      id="followup-client"
+                      value={followUpForm.memberClientId}
+                      onChange={(event) => setFollowUpForm((prev) => ({ ...prev, memberClientId: event.target.value }))}
+                      placeholder="Client ID (clientId2)"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="followup-health">Health Plan</Label>
+                    <Select
+                      value={followUpForm.healthPlan}
+                      onValueChange={(value) => setFollowUpForm((prev) => ({ ...prev, healthPlan: value }))}
+                    >
+                      <SelectTrigger id="followup-health">
+                        <SelectValue placeholder="Select health plan" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Kaiser">Kaiser</SelectItem>
+                        <SelectItem value="Health Net">Health Net</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="followup-priority">Priority</Label>
+                    <Select
+                      value={followUpForm.priority}
+                      onValueChange={(value: 'General' | 'Priority' | 'Urgent') =>
+                        setFollowUpForm((prev) => ({ ...prev, priority: value }))
+                      }
+                    >
+                      <SelectTrigger id="followup-priority">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="General">General</SelectItem>
+                        <SelectItem value="Priority">Priority</SelectItem>
+                        <SelectItem value="Urgent">Urgent</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCreateFollowUpOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleCreateFollowUpTask} disabled={isCreatingFollowUp}>
+                  {isCreatingFollowUp ? 'Creating...' : 'Create Task'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Button onClick={fetchMyTasks} disabled={isLoading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -524,7 +904,7 @@ export default function MyTasksPage() {
       </Card>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
@@ -584,7 +964,128 @@ export default function MyTasksPage() {
             </div>
           </CardContent>
         </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Note Follow-ups</p>
+                <p className="text-2xl font-bold text-purple-600">{taskCounts.notes}</p>
+              </div>
+              <MessageSquare className="h-8 w-8 text-purple-500" />
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Schedule Snapshot</CardTitle>
+          <CardDescription>Quick daily, weekly, and monthly lookup</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Button
+              variant={timeRange === 'daily' ? 'default' : 'outline'}
+              className="h-auto justify-start p-4"
+              onClick={() => setTimeRange(timeRange === 'daily' ? 'all' : 'daily')}
+            >
+              <div className="text-left">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4" />
+                  <span className="font-medium">Today</span>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {taskCounts.today} due today
+                </div>
+              </div>
+            </Button>
+            <Button
+              variant={timeRange === 'weekly' ? 'default' : 'outline'}
+              className="h-auto justify-start p-4"
+              onClick={() => setTimeRange(timeRange === 'weekly' ? 'all' : 'weekly')}
+            >
+              <div className="text-left">
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4" />
+                  <span className="font-medium">This Week</span>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {taskCounts.dueThisWeek} due this week
+                </div>
+              </div>
+            </Button>
+            <Button
+              variant={timeRange === 'monthly' ? 'default' : 'outline'}
+              className="h-auto justify-start p-4"
+              onClick={() => setTimeRange(timeRange === 'monthly' ? 'all' : 'monthly')}
+            >
+              <div className="text-left">
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4" />
+                  <span className="font-medium">This Month</span>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {taskCounts.dueThisMonth} due this month
+                </div>
+              </div>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {timeRange !== 'all' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Calendar View</CardTitle>
+            <CardDescription>
+              {timeRange === 'daily' ? 'Today' : timeRange === 'weekly' ? 'This week' : 'This month'} grouped by date
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {calendarGroups.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No tasks in this range.</div>
+            ) : (
+              <div className="space-y-4">
+                {calendarGroups.map((group) => (
+                  <div key={group.date} className="border rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="font-medium">{group.label}</div>
+                      <Badge variant="outline">{group.tasks.length} task{group.tasks.length !== 1 ? 's' : ''}</Badge>
+                    </div>
+                    <div className="space-y-2">
+                      {group.tasks.map((task) => (
+                        <div key={task.id} className="flex items-start justify-between gap-4 rounded-md border px-3 py-2">
+                          <div>
+                            <div className="font-medium text-sm">{task.title}</div>
+                            {task.memberName && (
+                              <div className="text-xs text-muted-foreground">
+                                {task.memberName} {task.memberClientId ? `• ${task.memberClientId}` : ''}
+                              </div>
+                            )}
+                            {task.taskType === 'follow_up' && (
+                              <div className="text-xs text-muted-foreground">
+                                Follow-up: {format(new Date(task.dueDate), 'MMM d, yyyy')}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className={getSourceBadge(task.source)}>
+                              {task.source === 'applications' ? 'Applications' : task.source === 'notes' ? 'Notes' : 'Manual'}
+                            </Badge>
+                            <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                              {task.priority}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card>
@@ -592,7 +1093,7 @@ export default function MyTasksPage() {
           <CardTitle>Filters</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-4">
+          <div className="flex gap-4 flex-wrap">
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
               <SelectTrigger className="w-40">
                 <SelectValue />
@@ -616,6 +1117,30 @@ export default function MyTasksPage() {
                 <SelectItem value="in_progress">In Progress</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
                 <SelectItem value="overdue">Overdue</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={sourceFilter} onValueChange={setSourceFilter}>
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="Source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sources</SelectItem>
+                <SelectItem value="notes">Notes</SelectItem>
+                <SelectItem value="applications">Applications</SelectItem>
+                <SelectItem value="manual">Manual</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={timeRange} onValueChange={(value: 'all' | 'daily' | 'weekly' | 'monthly') => setTimeRange(value)}>
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="Time Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Dates</SelectItem>
+                <SelectItem value="daily">Today</SelectItem>
+                <SelectItem value="weekly">This Week</SelectItem>
+                <SelectItem value="monthly">This Month</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -672,6 +1197,7 @@ export default function MyTasksPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Task</TableHead>
+                      <TableHead>Source</TableHead>
                       <TableHead>Member</TableHead>
                       <TableHead>Assigned To</TableHead>
                       <TableHead>Priority</TableHead>
@@ -694,8 +1220,29 @@ export default function MyTasksPage() {
                               {task.description && (
                                 <p className="text-sm text-muted-foreground">{task.description}</p>
                               )}
+                              {task.taskType === 'follow_up' && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Follow-up: {format(new Date(task.dueDate), 'MMM d, yyyy')}
+                                </p>
+                              )}
+                              {task.taskType === 'kaiser_status' && (task.currentKaiserStatus || task.kaiserStatus) && (
+                                (() => {
+                                  const current = getKaiserStatusByName(task.currentKaiserStatus || task.kaiserStatus || '');
+                                  const next = current ? getNextKaiserStatus(current.id) : undefined;
+                                  return next ? (
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      Next step: {next.status}
+                                    </p>
+                                  ) : null;
+                                })()
+                              )}
                             </div>
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={getSourceBadge(task.source)}>
+                            {task.source === 'applications' ? 'Applications' : task.source === 'notes' ? 'Notes' : 'Manual'}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           {task.memberName && task.memberClientId ? (
@@ -753,29 +1300,49 @@ export default function MyTasksPage() {
                         <TableCell>
                           <div className="flex gap-2">
                             {task.taskType === 'kaiser_status' && task.healthPlan === 'Kaiser' && task.status !== 'completed' ? (
-                              <Select 
-                                value={task.kaiserStatus || task.currentKaiserStatus || ''} 
-                                onValueChange={(value) => handleKaiserStatusChange(task.id, value)}
-                              >
-                                <SelectTrigger className="w-48">
-                                  <SelectValue placeholder="Update Kaiser Status..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {kaiserStatusOptions.map((status) => (
-                                    <SelectItem key={status} value={status}>
-                                      {status}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <div className="flex flex-col gap-2">
+                                <Select 
+                                  value={task.kaiserStatus || task.currentKaiserStatus || ''} 
+                                  onValueChange={(value) => handleKaiserStatusChange(task.id, value)}
+                                >
+                                  <SelectTrigger className="w-48">
+                                    <SelectValue placeholder="Update Kaiser Status..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {kaiserStatusOptions.map((status) => (
+                                      <SelectItem key={status} value={status}>
+                                        {status}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <Button variant="outline" size="sm" asChild>
+                                  <Link href={task.memberClientId ? `/admin/kaiser-tracker?clientId2=${encodeURIComponent(task.memberClientId)}` : '/admin/kaiser-tracker'}>
+                                    <Target className="h-4 w-4 mr-1" />
+                                    Open Kaiser Tracker
+                                  </Link>
+                                </Button>
+                              </div>
                             ) : (
                               <>
+                                {task.id.startsWith('staff-followup-') && (
+                                  <Button variant="outline" size="sm" asChild>
+                                    <Link href={`/admin/my-notes?replyTo=${task.id.replace('staff-followup-', '')}`}>
+                                      <MessageSquare className="h-4 w-4" />
+                                    </Link>
+                                  </Button>
+                                )}
                                 <Button variant="outline" size="sm">
                                   <Edit className="h-4 w-4" />
                                 </Button>
                                 {task.status !== 'completed' && (
-                                  <Button variant="outline" size="sm">
-                                    <CheckCircle className="h-4 w-4" />
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleCompleteTask(task)}
+                                    disabled={isCompletingTask[task.id]}
+                                  >
+                                    <CheckCircle className={`h-4 w-4 ${isCompletingTask[task.id] ? 'animate-spin' : ''}`} />
                                   </Button>
                                 )}
                               </>
