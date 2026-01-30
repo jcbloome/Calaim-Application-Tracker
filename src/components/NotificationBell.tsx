@@ -33,6 +33,7 @@ interface NotificationPreview {
   isRead: boolean;
   createdAt: Timestamp;
   requiresStaffAction: boolean;
+  actionUrl?: string;
 }
 
 interface NotificationBellProps {
@@ -132,8 +133,8 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
     try {
       // Query recent unread notifications for the current user
       const notificationsQuery = query(
-        collection(firestore, 'staff-notifications'),
-        where('recipientId', '==', user.uid),
+        collection(firestore, 'staff_notifications'),
+        where('userId', '==', user.uid),
         where('isRead', '==', false)
       );
 
@@ -145,12 +146,13 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
           recentNotifications.push({
             id: doc.id,
             title: data.title || 'Notification',
-            content: data.content || '',
+            content: data.message || data.content || '',
             memberName: data.memberName,
             priority: data.priority || 'General',
             isRead: data.isRead || false,
-            createdAt: data.createdAt,
-            requiresStaffAction: data.requiresStaffAction || false
+            createdAt: data.timestamp || data.createdAt,
+            requiresStaffAction: isPriorityOrUrgent(data.priority),
+            actionUrl: data.actionUrl
           });
         });
         

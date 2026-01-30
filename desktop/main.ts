@@ -434,9 +434,16 @@ const createOverlayWindow = () => {
             pill.style.display = visible ? 'inline-flex' : 'none';
           };
 
+          let expandedOnce = false;
+          let lastCount = 0;
+
           ipcRenderer.on('desktop-notifications:overlay', (_event, payload) => {
             const count = Number(payload?.count || 0);
             const paused = Boolean(payload?.paused);
+            if (count !== lastCount) {
+              expandedOnce = false;
+              lastCount = count;
+            }
             setVisible(count > 0);
             text.textContent = paused
               ? \`Notes: \${count} (paused)\`
@@ -480,7 +487,11 @@ const createOverlayWindow = () => {
 
           pill.addEventListener('click', () => {
             if (Date.now() - lastDragEnd < 300) return;
-            ipcRenderer.send('desktop-notifications:expand');
+            if (!expandedOnce) {
+              expandedOnce = true;
+              ipcRenderer.send('desktop-notifications:expand');
+              return;
+            }
             ipcRenderer.send('desktop-notifications:open-notifications');
           });
 
@@ -596,7 +607,16 @@ ipcMain.on('desktop-notifications:expand', () => {
   if (!notificationWindow) {
     createNotificationWindow();
   }
-  notificationWindow?.webContents.send('desktop-notifications:expand');
+  if (!notificationWindow) return;
+  notificationWindow.show();
+  notificationWindow.focus();
+  if (notificationWindow.webContents.isLoading()) {
+    notificationWindow.webContents.once('did-finish-load', () => {
+      notificationWindow?.webContents.send('desktop-notifications:expand');
+    });
+  } else {
+    notificationWindow.webContents.send('desktop-notifications:expand');
+  }
 });
 
 ipcMain.on('desktop-notifications:drag-start', (_event, payload: { offsetX?: number; offsetY?: number }) => {

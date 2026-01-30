@@ -28,8 +28,8 @@ interface MorningNotification {
   title: string;
   content: string;
   memberName?: string;
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
-  type: 'member_note' | 'system' | 'reminder' | 'assignment';
+  priority: 'General' | 'Priority' | 'Urgent' | string;
+  type: 'member_note' | 'system' | 'reminder' | 'assignment' | 'note' | string;
   createdAt: any; // Firestore Timestamp
   isRead: boolean;
   requiresStaffAction: boolean;
@@ -84,10 +84,10 @@ export default function MorningDashboard() {
     yesterday.setDate(yesterday.getDate() - 1);
 
     const notificationsQuery = query(
-      collection(firestore, 'staff-notifications'),
-      where('recipientId', '==', user.uid),
+      collection(firestore, 'staff_notifications'),
+      where('userId', '==', user.uid),
       where('isRead', '==', false),
-      orderBy('createdAt', 'desc'),
+      orderBy('timestamp', 'desc'),
       limit(50)
     );
 
@@ -99,13 +99,13 @@ export default function MorningDashboard() {
         morningNotifications.push({
           id: doc.id,
           title: data.title || 'Notification',
-          content: data.content || '',
+          content: data.message || data.content || '',
           memberName: data.memberName,
-          priority: data.priority || 'Medium',
-          type: data.type || 'system',
-          createdAt: data.createdAt,
+          priority: data.priority || 'General',
+          type: data.type || 'note',
+          createdAt: data.timestamp || data.createdAt,
           isRead: data.isRead || false,
-          requiresStaffAction: data.requiresStaffAction || false,
+          requiresStaffAction: data.priority === 'Priority' || data.priority === 'Urgent',
           actionUrl: data.actionUrl
         });
       });
@@ -137,7 +137,7 @@ export default function MorningDashboard() {
     if (!firestore) return;
     
     try {
-      await updateDoc(doc(firestore, 'staff-notifications', notificationId), {
+      await updateDoc(doc(firestore, 'staff_notifications', notificationId), {
         isRead: true
       });
       console.log(`✅ Marked notification as read: ${notificationId}`);
@@ -154,7 +154,7 @@ export default function MorningDashboard() {
       const batch = firestore.batch();
       const unreadNotifications = notifications.filter(n => !n.isRead);
       unreadNotifications.forEach(n => {
-        const docRef = doc(firestore, 'staff-notifications', n.id);
+        const docRef = doc(firestore, 'staff_notifications', n.id);
         batch.update(docRef, { isRead: true });
       });
       await batch.commit();

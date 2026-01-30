@@ -58,11 +58,6 @@ export function StaffNotificationBell({ userId, className = '' }: StaffNotificat
     const unsubscribe = onSnapshot(
       notificationsQuery,
       (snapshot) => {
-        const isInterofficeNotification = (data: any) => {
-          const originType = String(data?.type || '').toLowerCase();
-          return originType.includes('interoffice') && !data?.isGeneral;
-        };
-
         const isImmediateNote = (data: any) => {
           return isPriorityOrUrgent(data?.priority);
         };
@@ -90,7 +85,7 @@ export function StaffNotificationBell({ userId, className = '' }: StaffNotificat
             isGeneral
           };
         })
-          .filter((notification) => isInterofficeNotification(notification) && isImmediateNote(notification))
+          .filter((notification) => isImmediateNote(notification))
           .sort((a, b) => {
             const rankDiff = getPriorityRank(b.priority) - getPriorityRank(a.priority);
             if (rankDiff !== 0) return rankDiff;

@@ -62,19 +62,28 @@ For each table, you need to set up a webhook that triggers when new records are 
 4. Set trigger to **On Insert**
 5. Set the webhook URL to: `https://your-project.web.app/caspioClientNotesWebhook`
 6. Set method to **POST**
-7. Configure the payload to include these fields:
+7. Configure the payload to include these fields (use Caspio's **Insert Field** button so tokens resolve):
    ```json
    {
-     "Client_ID": "[@field:Client_ID]",
-     "Client_Name": "[@field:Client_Name]",
-     "Note_Date": "[@field:Note_Date]",
-     "Note_Text": "[@field:Note_Text]",
-     "Staff_Member": "[@field:Staff_Member]",
-     "Note_Category": "[@field:Note_Category]",
-     "Priority": "[@field:Priority]",
-     "Created_By": "[@field:Created_By]"
+     "secret": "[@out-hook:secret]",
+      "Note_ID": "[@field:Note_ID]",
+      "Client_ID": "[@field:Client_ID]",
+      "Client_ID2": "[@field:Client_ID2]",
+      "Client_Name": "[@field:Client_Name]",
+      "Note_Date": "[@field:Note_Date]",
+      "Note_Text": "[@field:Note_Text]",
+      "Staff_Member": "[@field:Staff_Member]",
+      "Note_Category": "[@field:Note_Category]",
+      "Priority": "[@field:Priority]",
+      "Follow_Up_Assignment": "[@field:Follow_Up_Assignment]",
+      "Immediate": "[@field:Immediate]",
+      "Immediate_Check": "[@field:Immediate_Check]",
+      "Confirmed_Immediate_Sent": "[@field:Confirmed_Immediate_Sent]",
+      "Created_By": "[@field:Created_By]"
    }
    ```
+
+> If you see literal values like `[@field:Client_Name]` in Firebase logs, the tokens are not resolving. Re-open the webhook payload and re-insert each field using Caspio's **Insert Field** picker (do not hand-type). Also verify the field names exactly match your table column names.
 
 ### 2. Staff Email Mapping
 

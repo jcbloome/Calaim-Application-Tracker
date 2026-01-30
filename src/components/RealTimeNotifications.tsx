@@ -302,6 +302,20 @@ export function RealTimeNotifications() {
     return '/admin/my-notes';
   };
 
+  const sanitizeFieldLabel = (value?: string) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (raw.includes('[@field:')) return '';
+    return raw;
+  };
+
+  const sanitizeNoteMessage = (value?: string) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const withoutPrefix = raw.replace(/^See Caspio record for member\.\s*/i, '');
+    return withoutPrefix.includes('[@field:') ? '' : withoutPrefix;
+  };
+
   useEffect(() => {
     if (!user || !user.uid) return;
     if (!firestore) return;
@@ -316,11 +330,6 @@ export function RealTimeNotifications() {
     const unsubscribe = onSnapshot(
       notificationsQuery,
       (snapshot) => {
-        const isInterofficeNotification = (data: StaffNotification) => {
-          const originType = String(data.type || '').toLowerCase();
-          return originType.includes('interoffice') && !(data as any).isGeneral;
-        };
-
         const pending: NotificationData[] = [];
         let hasNew = false;
         let hasNewPriority = false;
@@ -330,7 +339,6 @@ export function RealTimeNotifications() {
         snapshot.forEach((docSnap) => {
           total += 1;
           const data = docSnap.data() as StaffNotification;
-          if (!isInterofficeNotification(data)) return;
           if (data.status === 'Closed') return;
           if (data.isRead === true) return;
 
@@ -417,7 +425,7 @@ export function RealTimeNotifications() {
             ? uniqueSenders[0]
             : 'Multiple staff';
           const uniqueMembers = Array.from(
-            new Set(sortedPending.map((note) => note.memberName).filter(Boolean))
+            new Set(sortedPending.map((note) => sanitizeFieldLabel(note.memberName)).filter(Boolean))
           );
           const subjectLabel = count === 1
             ? (sortedPending[0]?.memberName || 'Note')
@@ -426,26 +434,35 @@ export function RealTimeNotifications() {
             sortedPending.find((note) => isUrgentPriority(note.priority)) ||
             sortedPending.find((note) => isPriorityOrUrgent(note.priority)) ||
             sortedPending[0];
-          const highlightSender = highlightNote?.senderName || senderSummary;
-          const highlightSubject = highlightNote?.memberName || subjectLabel;
+          const highlightSender = sanitizeFieldLabel(highlightNote?.senderName) || senderSummary;
+          const highlightSubject = sanitizeFieldLabel(highlightNote?.memberName) || subjectLabel;
           const highlightTimestamp = highlightNote?.timestamp
-            ? highlightNote.timestamp.toLocaleString()
+            ? highlightNote.timestamp.toLocaleString(undefined, {
+                year: 'numeric',
+                month: 'numeric',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit'
+              })
             : '';
+          const highlightMessage = sanitizeNoteMessage(highlightNote?.message);
           const recentLines = sortedPending.slice(0, 3).map((note) => {
-            const label = note.memberName || 'General Note';
-            const timeLabel = note.timestamp ? note.timestamp.toLocaleTimeString() : '';
+            const label = sanitizeFieldLabel(note.memberName) || 'General Note';
+            const timeLabel = note.timestamp
+              ? note.timestamp.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+              : '';
             return `• ${label}${timeLabel ? ` (${timeLabel})` : ''}`;
           });
           const summaryTitle = count === 1
             ? `From ${highlightSender} · Re: ${highlightSubject}`
             : `Re: ${highlightSubject}`;
           const senderLabel = count === 1 ? `From: ${highlightSender}` : 'From: Multiple staff';
-          const summaryMessage = urgentExists
-            ? (highlightNote?.message || `${senderLabel} · Immediate notes: ${count}`)
-            : `${senderLabel} · Immediate notes: ${count}`;
+          const summaryMessage = highlightMessage || `${senderLabel} · Immediate notes: ${count}`;
           const detailMessage = [
-            summaryMessage,
-            highlightTimestamp ? `Created: ${highlightTimestamp}` : '',
+            `From: ${highlightSender}`,
+            highlightSubject ? `Member: ${highlightSubject}` : '',
+            summaryMessage ? `Note: ${summaryMessage}` : '',
+            highlightTimestamp || '',
             recentLines.length > 0 ? `Recent notes:\n${recentLines.join('\n')}` : ''
           ].filter(Boolean).join('\n');
           const tagLabel = undefined;

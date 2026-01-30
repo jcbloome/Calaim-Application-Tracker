@@ -1,4 +1,5 @@
 import { onRequest } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
 import { getFirestore } from 'firebase-admin/firestore';
 
@@ -16,6 +17,7 @@ const getDb = () => {
 
 // Interface for CalAIM_Members_Notes_ILS table
 interface CalAIMNoteData {
+  Note_ID?: string | number;
   Client_ID2?: string;
   Member_Name?: string;
   Note_Date?: string;
@@ -31,7 +33,9 @@ interface CalAIMNoteData {
 
 // Interface for connect_tbl_client_notes table
 interface ClientNoteData {
+  Note_ID?: string | number;
   Client_ID?: string;
+  Client_ID2?: string;
   Client_Name?: string;
   Note_Date?: string;
   Note_Text?: string;
@@ -43,12 +47,19 @@ interface ClientNoteData {
   Assigned_First?: string;
   Immediate?: string | boolean;
   Immediate_Check?: string | boolean;
+  Confirmed_Immediate_Sent?: string | boolean;
 }
+
+const caspioBaseUrl = defineSecret("CASPIO_BASE_URL");
+const caspioClientId = defineSecret("CASPIO_CLIENT_ID");
+const caspioClientSecret = defineSecret("CASPIO_CLIENT_SECRET");
+const caspioWebhookSecret = defineSecret("CASPIO_WEBHOOK_SECRET");
 
 // Staff email mapping
 const STAFF_EMAIL_MAPPING: { [key: string]: string[] } = {
   'JHernandez': ['JHernandez@ilshealth.com'],
   'Jason': ['jason@carehomefinders.com'],
+  'Jason Bloome': ['jason@carehomefinders.com'],
   'Tang': ['tang@carehomefinders.com'],
   'Monica': ['monica@carehomefinders.com'],
   'All': [
@@ -63,20 +74,105 @@ const STAFF_EMAIL_MAPPING: { [key: string]: string[] } = {
 async function getStaffUserIdFromEmail(email: string): Promise<string | null> {
   try {
     const db = getDb();
+    const trimmedEmail = String(email || '').trim();
+    if (!trimmedEmail) {
+      return null;
+    }
+
     const usersSnapshot = await db.collection('users')
-      .where('email', '==', email)
+      .where('email', '==', trimmedEmail)
       .limit(1)
       .get();
-    
+
     if (!usersSnapshot.empty) {
       return usersSnapshot.docs[0].id;
     }
-    return null;
+
+    // Fallback: case-insensitive lookup across admin users (roles collections)
+    let candidateDocs = await getAdminUserDocs();
+    if (candidateDocs.length === 0) {
+      try {
+        const allUsersSnap = await db.collection('users').limit(500).get();
+        candidateDocs = allUsersSnap.docs;
+      } catch (error) {
+        console.warn('⚠️ Failed to scan users for email match:', error);
+      }
+    }
+
+    const normalizedTarget = trimmedEmail.toLowerCase();
+    const matchedDoc = candidateDocs.find((doc) => {
+      const data = doc.data();
+      const candidateEmail = String(data.email || '').trim().toLowerCase();
+      return candidateEmail === normalizedTarget;
+    });
+
+    return matchedDoc ? matchedDoc.id : null;
   } catch (error) {
     console.error('Error finding user by email:', error);
     return null;
   }
 }
+
+const getAdminUserDocs = async (): Promise<admin.firestore.QueryDocumentSnapshot[]> => {
+  const db = getDb();
+  try {
+    const [adminRolesSnap, superAdminRolesSnap] = await Promise.all([
+      db.collection('roles_admin').get(),
+      db.collection('roles_super_admin').get(),
+    ]);
+
+    const adminIds = new Set<string>([
+      ...adminRolesSnap.docs.map((doc) => doc.id),
+      ...superAdminRolesSnap.docs.map((doc) => doc.id),
+    ]);
+
+    if (adminIds.size === 0) {
+      // Fallback to users collection flag if roles collections are empty
+      try {
+        const isAdminSnap = await db.collection('users')
+          .where('isAdmin', '==', true)
+          .get();
+        if (!isAdminSnap.empty) {
+          return isAdminSnap.docs;
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to query users by isAdmin:', error);
+      }
+
+      try {
+        const roleSnap = await db.collection('users')
+          .where('role', 'in', ['admin', 'super_admin'])
+          .get();
+        if (!roleSnap.empty) {
+          return roleSnap.docs;
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to query users by role:', error);
+      }
+
+      return [];
+    }
+
+    const chunks: string[][] = [];
+    const ids = Array.from(adminIds);
+    for (let i = 0; i < ids.length; i += 10) {
+      chunks.push(ids.slice(i, i + 10));
+    }
+
+    const snapshots = await Promise.all(
+      chunks.map((chunk) =>
+        db.collection('users')
+          .where(admin.firestore.FieldPath.documentId(), 'in', chunk)
+          .get()
+      )
+    );
+
+    return snapshots.flatMap((snap) => snap.docs);
+  } catch (error) {
+    console.warn('⚠️ Failed to fetch admin users from roles collections:', error);
+    return [];
+  }
+};
 
 // Function to store note in Firestore
 async function storeNoteInFirestore(noteData: any, tableType: 'calaim_members' | 'client_notes') {
@@ -98,21 +194,7 @@ async function sendStaffNotifications(noteData: any, noteId: string, tableType: 
   const db = getDb();
   
   // Determine which staff to notify based on table type and note content
-  const priorityValue = String(noteData.Priority || '').toLowerCase();
-  const immediateValue = String(
-    noteData.Immediate_Check ?? noteData.Immediate ?? ''
-  ).toLowerCase();
-  const isImmediate =
-    immediateValue === 'yes' ||
-    immediateValue === 'true' ||
-    immediateValue === '1' ||
-    immediateValue.includes('immediate') ||
-    immediateValue.includes('urgent');
-  const isPriorityNote =
-    priorityValue.includes('high') ||
-    priorityValue.includes('urgent') ||
-    priorityValue.includes('🔴') ||
-    priorityValue.includes('immediate');
+  const { isImmediate, isPriorityNote, normalizedPriority } = getImmediateFlags(noteData);
   if (!isPriorityNote && !isImmediate) {
     return [];
   }
@@ -123,7 +205,8 @@ async function sendStaffNotifications(noteData: any, noteId: string, tableType: 
     || noteData.Staff_Member
     || noteData.Staff_Name;
 
-  const staffToNotify = getStaffEmailsForAssignment(assignmentKey);
+  const staffToNotify = await resolveStaffEmailsForAssignment(assignmentKey);
+  console.log('📬 Resolved staff emails:', { assignmentKey, staffToNotify });
   if (staffToNotify.length === 0) {
     return [];
   }
@@ -131,14 +214,6 @@ async function sendStaffNotifications(noteData: any, noteId: string, tableType: 
   const notifications = [];
   const clientId2 = String(noteData.Client_ID2 || noteData.Client_ID || '').trim();
   const memberName = noteData.Member_Name || noteData.Client_Name || 'Unknown';
-
-  const normalizedPriority = isImmediate || priorityValue.includes('urgent') || priorityValue.includes('immediate')
-    ? 'Urgent'
-    : priorityValue.includes('high')
-      ? 'High'
-      : priorityValue.includes('medium')
-        ? 'Medium'
-        : 'Low';
 
   const resolveApplicationContext = async (id?: string) => {
     if (!id) return { applicationId: null as string | null, actionUrl: null as string | null };
@@ -169,9 +244,7 @@ async function sendStaffNotifications(noteData: any, noteId: string, tableType: 
 
   const appContext = await resolveApplicationContext(clientId2);
   const noteMessageBase = noteData.Note_Content || noteData.Note_Text || 'New note added';
-  const noteMessage = appContext.applicationId
-    ? noteMessageBase
-    : `See Caspio record for member. ${noteMessageBase}`;
+  const noteMessage = noteMessageBase;
   
   for (const email of staffToNotify) {
     const userId = await getStaffUserIdFromEmail(email);
@@ -190,21 +263,177 @@ async function sendStaffNotifications(noteData: any, noteId: string, tableType: 
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         isRead: false,
         status: 'Open',
-        applicationId: appContext.applicationId || undefined,
-        clientId2: clientId2 || undefined,
-        actionUrl: appContext.actionUrl || undefined
+        applicationId: appContext.applicationId ?? null,
+        clientId2: clientId2 || null,
+        actionUrl: appContext.actionUrl ?? null
       };
 
       const notificationRef = await db.collection('staff_notifications').add(notificationData);
       notifications.push(notificationRef.id);
 
+    } else {
+      console.warn(`⚠️ No user found for email "${email}" - notification skipped`);
     }
   }
 
   return notifications;
 }
 
-function getStaffEmailsForAssignment(assignment?: string): string[] {
+const normalizeYesValue = (value: string) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'y' || normalized === 'yes' || normalized === 'true' || normalized === '1';
+};
+
+const getImmediateFlags = (noteData: any) => {
+  const priorityValue = String(noteData.Priority || '').toLowerCase();
+  const immediateValue = String(noteData.Immediate_Check ?? noteData.Immediate ?? '').toLowerCase();
+  const isImmediate =
+    normalizeYesValue(immediateValue) ||
+    immediateValue.includes('immediate') ||
+    immediateValue.includes('urgent');
+  const isPriorityNote =
+    priorityValue.includes('priority') ||
+    priorityValue.includes('high') ||
+    priorityValue.includes('urgent') ||
+    priorityValue.includes('🔴') ||
+    priorityValue.includes('immediate');
+  const normalizedPriority = isImmediate || priorityValue.includes('urgent') || priorityValue.includes('immediate')
+    ? 'Urgent'
+    : isPriorityNote
+      ? 'Priority'
+      : 'General';
+  return { priorityValue, immediateValue, isImmediate, isPriorityNote, normalizedPriority };
+};
+
+const resolveCaspioConfig = () => {
+  let baseUrl = '';
+  let clientId = '';
+  let clientSecret = '';
+
+  try {
+    baseUrl = caspioBaseUrl.value() || process.env.CASPIO_BASE_URL || '';
+    clientId = caspioClientId.value() || process.env.CASPIO_CLIENT_ID || '';
+    clientSecret = caspioClientSecret.value() || process.env.CASPIO_CLIENT_SECRET || '';
+  } catch {
+    baseUrl = process.env.CASPIO_BASE_URL || '';
+    clientId = process.env.CASPIO_CLIENT_ID || '';
+    clientSecret = process.env.CASPIO_CLIENT_SECRET || '';
+  }
+
+  const normalizedBaseUrl = baseUrl
+    ? baseUrl.replace(/\/$/, '').endsWith('/rest/v2')
+      ? baseUrl.replace(/\/$/, '')
+      : `${baseUrl.replace(/\/$/, '')}/rest/v2`
+    : 'https://c7ebl500.caspio.com/rest/v2';
+
+  return { baseUrl: normalizedBaseUrl, clientId, clientSecret };
+};
+
+const getCaspioAccessToken = async () => {
+  const { baseUrl, clientId, clientSecret } = resolveCaspioConfig();
+  if (!clientId || !clientSecret) {
+    throw new Error('Caspio credentials not configured');
+  }
+
+  const tokenBaseUrl = baseUrl.replace(/\/rest\/v2$/, '');
+  const tokenUrl = `${tokenBaseUrl}/oauth/token`;
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+  const tokenResponse = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+    },
+    body: 'grant_type=client_credentials',
+  });
+
+  if (!tokenResponse.ok) {
+    const errorText = await tokenResponse.text();
+    throw new Error(`Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
+  }
+
+  const tokenData = await tokenResponse.json();
+  return { accessToken: tokenData.access_token as string, dataBaseUrl: baseUrl };
+};
+
+const updateConfirmedImmediateSent = async (noteData: ClientNoteData, tableType: 'calaim_members' | 'client_notes') => {
+  if (tableType !== 'client_notes') return;
+  const rawNoteId =
+    noteData.Note_ID ??
+    (noteData as any).NoteID ??
+    (noteData as any).noteId ??
+    (noteData as any).id;
+  const noteId = String(rawNoteId || '').trim();
+  if (!noteId) {
+    console.warn('⚠️ Confirmed_Immediate_Sent update skipped: missing Note_ID');
+    return;
+  }
+
+  try {
+    const { accessToken, dataBaseUrl } = await getCaspioAccessToken();
+    const updateUrl = `${dataBaseUrl}/tables/connect_tbl_clientnotes/records?q.where=Note_ID='${encodeURIComponent(noteId)}'`;
+    const updateResponse = await fetch(updateUrl, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        Confirmed_Immediate_Sent: 'Y',
+      }),
+    });
+
+    if (!updateResponse.ok) {
+      const errorText = await updateResponse.text();
+      console.warn(`⚠️ Failed to update Confirmed_Immediate_Sent for Note_ID=${noteId}: ${updateResponse.status} ${errorText}`);
+      return;
+    }
+
+    console.log(`✅ Confirmed_Immediate_Sent updated for Note_ID=${noteId}`);
+  } catch (error) {
+    console.warn('⚠️ Confirmed_Immediate_Sent update failed:', error);
+  }
+};
+
+const verifyWebhookSecret = (payload: any) => {
+  let expectedSecret = '';
+  try {
+    expectedSecret = caspioWebhookSecret.value();
+  } catch {
+    expectedSecret = process.env.CASPIO_WEBHOOK_SECRET || '';
+  }
+
+  if (!expectedSecret) {
+    return { ok: true, reason: 'secret_not_configured' };
+  }
+
+  const receivedSecret = String(payload?.secret || payload?.Secret || '').trim();
+  if (!receivedSecret) {
+    return { ok: false, reason: 'missing_secret' };
+  }
+
+  if (receivedSecret !== expectedSecret) {
+    return { ok: false, reason: 'invalid_secret' };
+  }
+
+  return { ok: true, reason: 'secret_valid' };
+};
+
+
+const normalizeAssignmentValue = (value: string) => {
+  return String(value || '').trim().toLowerCase();
+};
+
+const splitAssignmentTokens = (assignment: string) => {
+  return assignment
+    .split(/[,;/]+/g)
+    .map((token) => token.trim())
+    .filter(Boolean);
+};
+
+const findMappedEmails = (assignment: string) => {
   if (!assignment) return [];
   const trimmed = String(assignment).trim();
   if (!trimmed) return [];
@@ -219,13 +448,59 @@ function getStaffEmailsForAssignment(assignment?: string): string[] {
   }
 
   return [];
+};
+
+async function resolveStaffEmailsForAssignment(assignment?: string): Promise<string[]> {
+  if (!assignment) return [];
+  const trimmed = String(assignment).trim();
+  if (!trimmed) return [];
+
+  const directMatches = splitAssignmentTokens(trimmed)
+    .flatMap((token) => findMappedEmails(token));
+  if (directMatches.length > 0) {
+    return Array.from(new Set(directMatches));
+  }
+
+  try {
+    const normalizedAssignment = normalizeAssignmentValue(trimmed);
+    const adminDocs = await getAdminUserDocs();
+    const candidates = adminDocs.map((doc) => {
+      const data = doc.data();
+      const email = String(data.email || '').trim();
+      const displayName = String(data.displayName || '').trim();
+      return {
+        email,
+        normalizedEmail: normalizeAssignmentValue(email),
+        normalizedName: normalizeAssignmentValue(displayName),
+        emailLocal: normalizeAssignmentValue(email.split('@')[0] || '')
+      };
+    });
+
+    const matched = candidates.filter((candidate) => {
+      if (!candidate.email) return false;
+      return (
+        candidate.normalizedEmail === normalizedAssignment ||
+        candidate.normalizedName === normalizedAssignment ||
+        candidate.emailLocal === normalizedAssignment
+      );
+    }).map((candidate) => candidate.email);
+
+    if (matched.length > 0) {
+      return Array.from(new Set(matched));
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to resolve staff emails from users collection:', error);
+  }
+
+  console.warn(`⚠️ Unknown staff assignment "${assignment}" - no email mapping found`);
+  return [];
 }
 
 // Webhook endpoint for CalAIM_Members_Notes_ILS table
 export const caspioCalAIMNotesWebhook = onRequest(
   { 
     cors: true,
-    secrets: []
+    secrets: [caspioWebhookSecret]
   },
   async (request, response) => {
     try {
@@ -236,7 +511,13 @@ export const caspioCalAIMNotesWebhook = onRequest(
         return;
       }
 
-      const noteData: CalAIMNoteData = request.body;
+      const noteData: CalAIMNoteData & { secret?: string } = request.body;
+      const secretCheck = verifyWebhookSecret(noteData);
+      if (!secretCheck.ok) {
+        console.warn(`❌ CalAIM webhook secret check failed: ${secretCheck.reason}`);
+        response.status(401).json({ error: 'Unauthorized webhook' });
+        return;
+      }
 
       // Validate required fields
       if (!noteData.Note_Content && !noteData.Member_Name) {
@@ -273,7 +554,7 @@ export const caspioCalAIMNotesWebhook = onRequest(
 export const caspioClientNotesWebhook = onRequest(
   { 
     cors: true,
-    secrets: []
+    secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret, caspioWebhookSecret]
   },
   async (request, response) => {
     try {
@@ -284,7 +565,13 @@ export const caspioClientNotesWebhook = onRequest(
         return;
       }
 
-      const noteData: ClientNoteData = request.body;
+      const noteData: ClientNoteData & { secret?: string } = request.body;
+      const secretCheck = verifyWebhookSecret(noteData);
+      if (!secretCheck.ok) {
+        console.warn(`❌ Client webhook secret check failed: ${secretCheck.reason}`);
+        response.status(401).json({ error: 'Unauthorized webhook' });
+        return;
+      }
 
       // Validate required fields
       if (!noteData.Note_Text && !noteData.Client_Name) {
@@ -295,8 +582,14 @@ export const caspioClientNotesWebhook = onRequest(
       // Store note in Firestore
       const noteId = await storeNoteInFirestore(noteData, 'client_notes');
 
+      const { isImmediate, normalizedPriority } = getImmediateFlags(noteData);
+
       // Send notifications to staff
       const notifications = await sendStaffNotifications(noteData, noteId, 'client_notes');
+
+      if (isImmediate && notifications.length > 0) {
+        await updateConfirmedImmediateSent(noteData, 'client_notes');
+      }
 
       console.log(`✅ Client note processed: ${noteId}, notifications sent: ${notifications.length}`);
 
@@ -304,6 +597,8 @@ export const caspioClientNotesWebhook = onRequest(
         success: true,
         noteId,
         notificationsSent: notifications.length,
+        immediateDetected: isImmediate,
+        normalizedPriority,
         message: 'Client note processed and notifications sent'
       });
 
