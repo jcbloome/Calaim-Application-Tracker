@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { Suspense, useState, useEffect, useMemo } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useSearchParams } from 'next/navigation';
 import { useFirestore } from '@/firebase';
@@ -74,7 +74,7 @@ interface MemberCardData {
   lastSyncTime?: string;
 }
 
-export default function MyTasksPage() {
+function MyTasksPageContent() {
   const { user, isAdmin } = useAdmin();
   const searchParams = useSearchParams();
   const firestore = useFirestore();
@@ -1566,5 +1566,13 @@ export default function MyTasksPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function MyTasksPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading tasks...</div>}>
+      <MyTasksPageContent />
+    </Suspense>
   );
 }
