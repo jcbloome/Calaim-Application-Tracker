@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
@@ -821,7 +821,7 @@ function StaffMemberManagementModal({
   );
 }
 
-export default function KaiserTrackerPage() {
+function KaiserTrackerPageContent() {
   const { isAdmin, isLoading: isAdminLoading, user } = useAdmin();
   const { toast } = useToast();
   const searchParams = useSearchParams();
@@ -1963,6 +1963,14 @@ export default function KaiserTrackerPage() {
         staffMembers={staffMembers}
       />
             </div>
+  );
+}
+
+export default function KaiserTrackerPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading Kaiser tracker...</div>}>
+      <KaiserTrackerPageContent />
+    </Suspense>
   );
 }
 
