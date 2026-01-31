@@ -27,12 +27,22 @@ function RoomBoardObligationContent() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [monthlyIncome, setMonthlyIncome] = useState('');
+  const [expectedRoomBoardPayment, setExpectedRoomBoardPayment] = useState('');
   const [ackRoomAndBoard, setAckRoomAndBoard] = useState(false);
   const [ackNmoHC, setAckNmoHC] = useState(false);
   const [signerType, setSignerType] = useState<'member' | 'representative' | null>(null);
   const [signerName, setSignerName] = useState('');
   const [signerRelationship, setSignerRelationship] = useState('');
   const [signatureDate, setSignatureDate] = useState('');
+
+  const formatCurrencyInput = (value: string) => {
+    const normalized = value.replace(/[^0-9.]/g, '');
+    if (!normalized) return '';
+    const [whole, decimal] = normalized.split('.');
+    const formattedWhole = whole.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    const formattedDecimal = decimal ? `.${decimal.slice(0, 2)}` : '';
+    return `$${formattedWhole || '0'}${formattedDecimal}`;
+  };
 
   const applicationDocRef = useMemoFirebase(() => {
     if (isUserLoading || !user || !firestore || !applicationId) return null;
@@ -61,6 +71,7 @@ function RoomBoardObligationContent() {
       }
 
       setMonthlyIncome(application.monthlyIncome || '');
+      setExpectedRoomBoardPayment(application.expectedRoomBoardPayment || '');
     } else {
       setSignatureDate(new Date().toLocaleDateString());
     }
@@ -68,18 +79,19 @@ function RoomBoardObligationContent() {
 
   const isFormComplete = useMemo(() => {
     if (!monthlyIncome.trim()) return false;
+    if (!expectedRoomBoardPayment.trim()) return false;
     if (!ackRoomAndBoard) return false;
     if (!ackNmoHC) return false;
     if (!signerType || !signerName.trim() || !signerRelationship.trim()) return false;
     return true;
-  }, [monthlyIncome, ackRoomAndBoard, ackNmoHC, signerType, signerName, signerRelationship]);
+  }, [monthlyIncome, expectedRoomBoardPayment, ackRoomAndBoard, ackNmoHC, signerType, signerName, signerRelationship]);
 
   const handleSubmit = async () => {
     if (!isFormComplete) {
       toast({
         variant: 'destructive',
         title: 'Incomplete Form',
-        description: 'Please complete the monthly income, acknowledgment, and signature fields.',
+        description: 'Please complete the income, room and board amount, acknowledgment, and signature fields.',
       });
       return;
     }
@@ -125,6 +137,7 @@ function RoomBoardObligationContent() {
         {
           forms: updatedForms,
           monthlyIncome,
+          expectedRoomBoardPayment,
           lastUpdated: Timestamp.now(),
         },
         { merge: true }
@@ -200,7 +213,7 @@ function RoomBoardObligationContent() {
 
               <div className="prose prose-sm max-w-none text-gray-700 space-y-3 p-4 border rounded-lg bg-muted/30">
                 <p>The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible for paying the RCFE the "assisted living" portion.</p>
-                <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for "room and board" for a private room or to open up RCFEs in more expensive areas.</p>
+                <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Any income above $1,444.07 is not paid as "room and board" unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees to a higher amount for a private room (since the program does not mandate private rooms).</p>
                 <p>Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>
                 <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a "room and board" payment from the member (or their family).</p>
                 <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the "room and board" payment.</p>
@@ -208,22 +221,37 @@ function RoomBoardObligationContent() {
 
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="monthly-income">Member's current monthly Social Security income is <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="monthly-income">Member's current monthly income <span className="text-destructive">*</span></Label>
+                  <Input
+                    id="monthly-income"
+                    type="text"
+                    inputMode="numeric"
+                    className="pl-3"
+                    value={monthlyIncome}
+                    onChange={(e) => setMonthlyIncome(formatCurrencyInput(e.target.value))}
+                    disabled={isReadOnly}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Please note that proof of income (e.g., Social Security award letter or 3 month's of bank statements showing Social Security income) will need to be submitted as part of this application package. Any income above $1,444.07 is not paid as "room and board" unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees to a higher amount for a private room (since the program does not mandate private rooms). If income is above approximately $1,800, this might trigger Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See{' '}
+                    <a href="/info" className="text-primary hover:underline">
+                      Program Information
+                    </a>{' '}
+                    pages for more information about this.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="expected-room-board">Expected payment to RCFE/ARF as "room and board" <span className="text-destructive">*</span></Label>
                   <div className="relative">
-                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">$</span>
                     <Input
-                      id="monthly-income"
-                      type="number"
-                      inputMode="decimal"
-                      className="pl-7"
-                      value={monthlyIncome}
-                      onChange={(e) => setMonthlyIncome(e.target.value)}
+                      id="expected-room-board"
+                      type="text"
+                      inputMode="numeric"
+                      className="pl-3"
+                      value={expectedRoomBoardPayment}
+                      onChange={(e) => setExpectedRoomBoardPayment(formatCurrencyInput(e.target.value))}
                       disabled={isReadOnly}
                     />
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Please note that proof of income (e.g., Social Security award letter or 3 month's of bank statements showing Social Security income) will need to be submitted as part of this application package.
-                  </p>
                 </div>
 
                 <div className="flex items-start space-x-3 rounded-md border p-4">

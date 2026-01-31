@@ -274,8 +274,8 @@ function WaiversFormComponent() {
                             </Section>
 
                             <Section title="Freedom of Choice Waiver" icon={HeartHandshake}>
-                                <p>I (or my POA) understand I have a choice to receive services in the community. Community Supports for Community Transition are available to help me. I (or my POA) can choose to accept or decline these services.</p>
-                                <p>If I accept these services, I will receive assistance from Connections Care Home Consultants to move into a community-based setting like an assisted living facility. They will help me find a place, coordinate paperwork, and ensure I am settled in. This will be authorized and paid for by my Managed Care Plan.</p>
+                                <p>I (or my POA) understand I have a choice to receive services in the community. Community Support for Assisted Living Transition is available to help me. I (or my POA) can choose to accept or decline these services.</p>
+                                <p>If I accept these services, I will receive assistance from Connections Care Home Consultants to move into a community-based RCFE/ARF. They will help me find a place, coordinate paperwork, and ensure I am settled in. The CS will be authorized and the "assisted living" portion will be paid for by my Managed Care Plan.</p>
                                 <p>If I decline these services, I am choosing to remain where I am, and I will not receive the transition support services offered by this program at this time.</p>
                                 <div className="p-4 border rounded-md space-y-3 mt-4 bg-background">
                                     <h3 className="font-medium text-base text-amber-700">My Choice <span className="text-destructive">*</span></h3>

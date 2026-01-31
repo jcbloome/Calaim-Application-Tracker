@@ -63,9 +63,14 @@ function CsSummaryFormComponent() {
 
   const methods = useForm<FormValues>({
     resolver: zodResolver(formSchema),
+    defaultValues: {
+      isPrimaryContactSameAsReferrer: false,
+      copyAddress: false,
+      ackRoomAndBoard: false
+    }
   });
 
-  const { formState: { errors, isValid }, trigger, getValues, handleSubmit, reset } = methods;
+  const { formState: { errors, isValid }, trigger, getValues, handleSubmit, reset, setFocus } = methods;
 
   const targetUserId = appUserId || user?.uid;
   const isAdminView = !!appUserId;
@@ -237,6 +242,10 @@ function CsSummaryFormComponent() {
     
     if (!isValid) {
       setValidationError("Please correct the errors on this page. Required fields are marked with a red asterisk (*).");
+      const firstErrorField = fields.find((field) => errors[field]);
+      if (firstErrorField) {
+        setTimeout(() => setFocus(firstErrorField), 0);
+      }
       return;
     }
 
@@ -277,21 +286,49 @@ function CsSummaryFormComponent() {
     return null;
   };
 
+  const formatFieldLabel = (fieldName: string) => {
+    return fieldName
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, (str) => str.toUpperCase())
+      .trim();
+  };
+
   const onInvalid = (errors: FieldErrors<FormValues>) => {
     console.log("Form Validation Failed:", errors);
     
+    const errorFields = Object.keys(errors || {});
+    const firstErrorField = errorFields[0];
     const firstErrorStep = findFirstErrorStep(errors);
+    
     if (firstErrorStep && firstErrorStep !== currentStep) {
         setCurrentStep(firstErrorStep);
         setValidationError(`Please correct errors on this page before proceeding. Required fields are marked with a red asterisk (*).`);
-        return;
+        if (firstErrorField) {
+          setTimeout(() => setFocus(firstErrorField as FieldPath<FormValues>), 0);
+        }
+        window.scrollTo(0, 0);
+    } else {
+        setValidationError(`Please check the form for errors. Required fields are marked with a red asterisk (*).`);
+        if (firstErrorField) {
+          setTimeout(() => setFocus(firstErrorField as FieldPath<FormValues>), 0);
+        }
+        if (!firstErrorStep && currentStep !== 1) {
+          setCurrentStep(1);
+          window.scrollTo(0, 0);
+        }
     }
-
-    setValidationError(`Please check the form for errors. Required fields are marked with a red asterisk (*).`);
+    
+    if (firstErrorField) {
+      toast({
+        variant: "destructive",
+        title: "Missing required field",
+        description: formatFieldLabel(firstErrorField)
+      });
+    }
   };
 
   const checkForDuplicates = async (data: FormValues): Promise<boolean> => {
-    if (!targetUserId || !firestore) return false;
+    if (!targetUserId || !firestore || isAdminCreatedApp) return false;
 
     const appsRef = collection(firestore, `users/${targetUserId}/applications`);
     
@@ -313,7 +350,13 @@ function CsSummaryFormComponent() {
   const onSubmit = async (data: FormValues) => {
     setIsProcessing(true);
 
-    if (!targetUserId || !firestore) {
+    if (!firestore) {
+      toast({ variant: "destructive", title: "Error", description: "Firestore not available." });
+      setIsProcessing(false);
+      return;
+    }
+    
+    if (!targetUserId && !isAdminCreatedApp) {
       toast({ variant: "destructive", title: "Error", description: "User session not found." });
       setIsProcessing(false);
       return;
@@ -333,8 +376,8 @@ function CsSummaryFormComponent() {
              return;
         }
         
-        const reviewUrl = appUserId
-          ? `/admin/forms/review?applicationId=${finalAppId}&userId=${appUserId}`
+        const reviewUrl = appUserId || isAdminCreatedApp
+          ? `/admin/forms/review?applicationId=${finalAppId}${appUserId ? `&userId=${appUserId}` : ''}`
           : `/forms/cs-summary-form/review?applicationId=${finalAppId}`;
         router.push(reviewUrl);
         

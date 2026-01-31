@@ -100,7 +100,8 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
 
     const applicationId = searchParams.get('applicationId');
     const appUserId = searchParams.get('userId'); // For admins viewing a user's app
-    const targetUserId = isAdminView ? appUserId : user?.uid;
+    const isAdminCreatedApp = applicationId?.startsWith('admin_app_');
+    const targetUserId = isAdminCreatedApp ? null : (isAdminView ? appUserId : user?.uid);
 
     const applicationDocRef = useMemoFirebase(() => {
         if (isUserLoading || !firestore || !applicationId) {
@@ -108,7 +109,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
         }
         
         // Handle admin-created applications (stored in root applications collection)
-        if (!targetUserId && applicationId?.startsWith('admin_app_')) {
+        if (isAdminCreatedApp) {
             return doc(firestore, 'applications', applicationId);
         }
         

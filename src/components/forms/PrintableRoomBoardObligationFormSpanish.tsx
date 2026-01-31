@@ -48,9 +48,9 @@ export function PrintableRoomBoardObligationFormSpanish({
             <p>
               Para miembros elegibles para SSI/SSP y el pago 2026 de Non-Medical Out of Home Care (NMOHC), el SSI/SSP sube
               a $1,626.07. El miembro normalmente conserva $182 para gastos personales y el RCFE recibe el saldo de
-              $1,444.07 como pago por "alojamiento y comida". Además, los miembros elegibles para NMOHC pagarán al menos
-              $1,447.00 al RCFE. Los miembros que reciben más pueden pagar más por "alojamiento y comida" para un cuarto
-              privado o para abrir opciones en áreas más costosas.
+              $1,444.07 como pago por "alojamiento y comida". Cualquier ingreso por encima de $1,444.07 no se paga como
+              "alojamiento y comida" a menos que el miembro quiera pagar más para acceder a áreas geográficas más costosas
+              o que el RCFE/ARF acepte una cantidad mayor por un cuarto privado (ya que el programa no exige cuartos privados).
             </p>
             <p>
               Los miembros no elegibles para NMOHC aún tendrán una obligación de "alojamiento y comida", pero el monto
@@ -70,11 +70,21 @@ export function PrintableRoomBoardObligationFormSpanish({
         </div>
 
         {/* Income Information */}
-        <PrintableFormSection title="Ingresos Mensuales">
+        <PrintableFormSection title="Ingresos y Alojamiento y Comida">
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-                Los ingresos mensuales actuales del Seguro Social del miembro son: *
+                Ingreso mensual actual del miembro: *
+              </label>
+              <div className="flex items-center space-x-2">
+                <span className="text-lg font-semibold">$</span>
+                <div className="flex-1 h-12 border-b-2 border-gray-400 print:border-black"></div>
+                <span className="text-sm text-gray-600 print:text-black">por mes</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
+                Pago esperado al RCFE/ARF como "alojamiento y comida": *
               </label>
               <div className="flex items-center space-x-2">
                 <span className="text-lg font-semibold">$</span>
@@ -85,7 +95,7 @@ export function PrintableRoomBoardObligationFormSpanish({
 
             <div className="mt-3 p-3 print:p-4 border print:border-black bg-gray-50 print:bg-white">
               <p className="text-sm print:text-xs text-gray-700 print:text-black">
-                <strong>Nota:</strong> Tenga en cuenta que se deberá presentar comprobante de ingresos (por ejemplo, carta de adjudicación del Seguro Social o 3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social) como parte de este paquete de solicitud.
+                <strong>Nota:</strong> Tenga en cuenta que se deberá presentar comprobante de ingresos (por ejemplo, carta de adjudicación del Seguro Social o 3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social) como parte de este paquete de solicitud. Si los ingresos son superiores a aproximadamente $1,800, esto podría activar el Share of Cost de Medi-Cal que debe resolverse antes de solicitar CalAIM. Consulte las páginas de información del programa para más detalles.
               </p>
             </div>
           </div>

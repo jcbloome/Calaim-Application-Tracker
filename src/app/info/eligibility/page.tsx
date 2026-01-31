@@ -16,6 +16,31 @@ import { GlossaryDialog } from '@/components/GlossaryDialog';
 
 const infoSections = [
    {
+    title: 'Non-Medical Out-of-Home Care (NMOHC) Payment',
+    content: [
+        "NMOHC is a payment supplement that boosts a person's monthly SSI check because they live in a licensed assisted living home rather than an apartment or house.",
+        "In California, if a person lives in a Residential Care Facility for the Elderly (RCFE), the state recognizes that costs are much higher than someone living independently. To help cover this, the person moves from the \"Independent Living\" rate to the \"NMOHC\" rate.",
+        <div>
+          <strong>1. Confirm Financial Eligibility (The "Paper" Test)</strong>
+          <p>Since NMOHC is part of the SSI program, you can verify the financial requirements now.</p>
+          <ul className="list-disc pl-5 mt-2 space-y-1">
+            <li>Income: For 2026, total "countable" monthly income must be less than $1,626.07.</li>
+            <li>Assets: As of January 1, 2026, asset limits are reinstated. An individual must have less than $2,000 in countable resources ($3,000 for a couple).</li>
+            <li>Note: One car and the primary home are usually excluded from this limit.</li>
+          </ul>
+        </div>,
+        <div className="mt-4">
+          <strong>2. Verification with Social Security (The "Pre-Move" Call)</strong>
+          <p>Contact SSA at 1-800-772-1213 or visit a local office for a living arrangement interview.</p>
+          <ul className="list-disc pl-5 mt-2 space-y-1">
+            <li>Tell them the person plans to move into a licensed RCFE.</li>
+            <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
+            <li>Pro tip: Ask the RCFE for their License Number and a draft Admission Agreement. SSA will need a signed version to update the check.</li>
+          </ul>
+        </div>
+    ],
+  },
+   {
     title: '"Room and Board" and "Assisted Living" Payments',
     content: [
         "The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is responsible for paying the RCFE the 'assisted living' portion.",

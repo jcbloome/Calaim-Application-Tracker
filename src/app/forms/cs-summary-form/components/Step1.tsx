@@ -11,7 +11,6 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { PhoneInput } from '@/components/ui/phone-input';
 import { FormSection } from '@/components/FormSection';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
-import { User, Phone, Mail, Shield } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 
 export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
@@ -130,7 +129,6 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
 
       <FormSection 
         title="Member Information" 
-        icon={User} 
         required={true}
         description="Basic information about the CalAIM member"
       >
@@ -294,7 +292,6 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
       
       <FormSection 
         title="Your Information (Person Filling Form)" 
-        icon={Mail} 
         required={true}
         description="This is the person that will receive email updates as to the application status, including any missing documents, etc."
       >
@@ -386,7 +383,6 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
       
       <FormSection 
         title="Primary Contact Person" 
-        icon={User} 
         required={true}
         description="Provide contact details for the member's main point of contact. If member is primary contact reinput member name and put N/A in relationship field."
       >
@@ -400,7 +396,7 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     <FormControl>
                       <Checkbox
                         checked={field.value}
-                        onCheckedChange={field.onChange}
+                        onCheckedChange={(checked) => field.onChange(checked === true)}
                       />
                     </FormControl>
                     <div className="space-y-1 leading-none">
@@ -453,7 +449,6 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
 
       <FormSection 
         title="Secondary Contact Person" 
-        icon={Phone} 
         badge="Optional"
         badgeVariant="secondary"
         description="Provide details for a secondary point of contact if available."
@@ -497,7 +492,6 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
       
       <FormSection 
         title="Legal Representative" 
-        icon={Shield} 
         description="A legal representative (e.g., with Power of Attorney) might be distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role."
       >
             <FormField

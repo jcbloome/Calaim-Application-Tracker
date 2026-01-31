@@ -19,15 +19,24 @@ export const sendDocumentReminders = onSchedule({
     const db = admin.firestore();
     const resend = new Resend(resendApiKey.value());
     
-    // Get all applications that need document reminders
-    const applicationsQuery = await db.collectionGroup('applications').get();
+    // Get all applications (user + admin)
+    const [userAppsSnapshot, adminAppsSnapshot] = await Promise.all([
+      db.collectionGroup('applications').get(),
+      db.collection('applications').get()
+    ]);
     const now = new Date();
     const twoDaysAgo = new Date(now.getTime() - (2 * 24 * 60 * 60 * 1000));
     
     let remindersSent = 0;
     const remindersToSend = [];
     
-    for (const doc of applicationsQuery.docs) {
+    const allDocs = [...userAppsSnapshot.docs, ...adminAppsSnapshot.docs];
+    const seenDocPaths = new Set<string>();
+    
+    for (const doc of allDocs) {
+      if (seenDocPaths.has(doc.ref.path)) continue;
+      seenDocPaths.add(doc.ref.path);
+      
       const application = doc.data();
       
       // Check if application has missing required documents and reminders are enabled
@@ -49,6 +58,7 @@ export const sendDocumentReminders = onSchedule({
         if (shouldSendReminder && application.referrerEmail) {
           remindersToSend.push({
             applicationId: doc.id,
+            docRef: doc.ref,
             application,
             missingDocs
           });
@@ -62,7 +72,7 @@ export const sendDocumentReminders = onSchedule({
         await sendDocumentReminderEmail(resend, reminder);
         
         // Update the application with last reminder timestamp
-        await db.doc(`applications/${reminder.applicationId}`).update({
+        await reminder.docRef.update({
           lastDocumentReminder: admin.firestore.FieldValue.serverTimestamp(),
           documentReminderCount: admin.firestore.FieldValue.increment(1)
         });
@@ -98,15 +108,27 @@ export const triggerDocumentReminders = onCall({
     const resend = new Resend(resendApiKey.value());
     
     // Get applications that need reminders (for testing, check all recent ones)
-    const applicationsQuery = await db.collectionGroup('applications')
-      .orderBy('createdAt', 'desc')
-      .limit(50)
-      .get();
+    const [userAppsSnapshot, adminAppsSnapshot] = await Promise.all([
+      db.collectionGroup('applications')
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get(),
+      db.collection('applications')
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get()
+    ]);
     
     let remindersSent = 0;
     const remindersToSend = [];
     
-    for (const doc of applicationsQuery.docs) {
+    const allDocs = [...userAppsSnapshot.docs, ...adminAppsSnapshot.docs];
+    const seenDocPaths = new Set<string>();
+    
+    for (const doc of allDocs) {
+      if (seenDocPaths.has(doc.ref.path)) continue;
+      seenDocPaths.add(doc.ref.path);
+      
       const application = doc.data();
       const missingDocs = getMissingRequiredDocuments(application);
       const emailRemindersEnabled = application.emailRemindersEnabled !== false; // Default to true if not set
@@ -114,6 +136,7 @@ export const triggerDocumentReminders = onCall({
       if (missingDocs.length > 0 && application.referrerEmail && emailRemindersEnabled) {
         remindersToSend.push({
           applicationId: doc.id,
+          docRef: doc.ref,
           application,
           missingDocs
         });
@@ -136,7 +159,7 @@ export const triggerDocumentReminders = onCall({
     return {
       success: true,
       remindersSent,
-      totalChecked: applicationsQuery.docs.length,
+      totalChecked: allDocs.length,
       message: `Sent ${remindersSent} test document reminders`
     };
     
@@ -150,55 +173,53 @@ export const triggerDocumentReminders = onCall({
 });
 
 // Helper function to determine missing required documents
-function getMissingRequiredDocuments(application: any): string[] {
-  const missingDocs: string[] = [];
-  
-  // Check required documents based on application type and health plan
-  const requiredDocs = [
-    'memberIdCard',
-    'proofOfIncome',
-    'medicalRecords'
+function getDefaultRequiredFormNames(pathway?: string, healthPlan?: string): string[] {
+  const baseRequirements = [
+    'CS Member Summary',
+    'Waivers & Authorizations',
+    'Room and Board Commitment',
+    'Proof of Income',
+    "LIC 602A - Physician's Report",
+    'Medicine List',
+    'Eligibility Screenshot'
   ];
   
-  // Add health plan specific requirements
-  if (application.healthPlan === 'Kaiser') {
-    requiredDocs.push('kaiserAuthForm');
-  } else if (application.healthPlan === 'Health Net') {
-    requiredDocs.push('healthNetAuthForm');
+  if (String(pathway || '').toLowerCase().includes('diversion')) {
+    return [...baseRequirements, 'Declaration of Eligibility'];
   }
   
-  // Add pathway specific requirements
-  if (application.pathway === 'SNF Transition') {
-    requiredDocs.push('snfDischargeDocuments');
-  }
+  return [...baseRequirements, 'SNF Facesheet'];
+}
+
+function getMissingRequiredDocuments(application: any): string[] {
+  const forms = Array.isArray(application?.forms) ? application.forms : [];
+  const formNames = forms.map((form: any) => form?.name).filter(Boolean);
+  const fallbackRequired = getDefaultRequiredFormNames(application?.pathway, application?.healthPlan);
+  const requiredFormNames = formNames.length > 0 ? formNames : fallbackRequired;
   
-  // Check which documents are missing
-  for (const docType of requiredDocs) {
-    if (!application.documents || !application.documents[docType] || 
-        !application.documents[docType].uploaded) {
-      missingDocs.push(docType);
-    }
-  }
+  const formStatusMap = new Map(
+    forms.map((form: any) => [String(form?.name || '').trim(), form])
+  );
   
-  return missingDocs;
+  return requiredFormNames.filter((formName) => {
+    const normalizedName = String(formName || '').trim();
+    if (!normalizedName) return false;
+    if (normalizedName === 'CS Member Summary' || normalizedName === 'CS Summary') return false;
+    
+    const form = formStatusMap.get(normalizedName);
+    if (!form) return true;
+    if (form.type === 'Info') return false;
+    return form.status !== 'Completed';
+  });
 }
 
 // Helper function to send document reminder email
 async function sendDocumentReminderEmail(resend: Resend, reminder: any) {
   const { application, missingDocs } = reminder;
   
-  const missingDocsList = missingDocs.map((doc: string) => {
-    const docNames: { [key: string]: string } = {
-      'memberIdCard': 'Member ID Card',
-      'proofOfIncome': 'Proof of Income',
-      'medicalRecords': 'Medical Records',
-      'kaiserAuthForm': 'Kaiser Authorization Form',
-      'healthNetAuthForm': 'Health Net Authorization Form',
-      'snfDischargeDocuments': 'SNF Discharge Documents'
-    };
-    return docNames[doc] || doc;
-  }).join(', ');
+  const missingDocsList = missingDocs.map((doc: string) => String(doc)).join(', ');
   
+  const appLink = `${process.env.FUNCTIONS_EMULATOR ? 'http://localhost:3000' : 'https://connectcalaim.com'}/pathway?applicationId=${reminder.applicationId}`;
   const emailHtml = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #2563eb;">Document Reminder - CalAIM Application</h2>
@@ -215,7 +236,7 @@ async function sendDocumentReminderEmail(resend: Resend, reminder: any) {
       <p>To complete the application process, please upload the missing documents as soon as possible.</p>
       
       <div style="margin: 30px 0;">
-        <a href="${process.env.FUNCTIONS_EMULATOR ? 'http://localhost:3000' : 'https://your-domain.com'}/applications/${reminder.applicationId}" 
+        <a href="${appLink}" 
            style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
           Complete Application
         </a>

@@ -197,6 +197,12 @@ export {
   triggerDocumentReminders
 } from './document-reminders';
 
+// Export CS Summary Reminder functions
+export {
+  sendCsSummaryReminders,
+  triggerCsSummaryReminders
+} from './cs-summary-reminders';
+
 if (!admin.apps.length) {
   admin.initializeApp();
 }

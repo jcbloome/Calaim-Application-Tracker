@@ -11,11 +11,8 @@ interface PrintableCsSummaryFormProps {
   showPrintButton?: boolean;
 }
 
-export function PrintableCsSummaryForm({ 
-  data = {}, 
-  applicationId,
-  showPrintButton = true 
-}: PrintableCsSummaryFormProps) {
+export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
+  const { data = {}, applicationId, showPrintButton = true } = props;
   return (
     <PrintableFormLayout
       title="CalAIM Community Support Member Summary Form"
@@ -612,9 +609,9 @@ export function PrintableCsSummaryForm({
           <p>
             For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is
             bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives
-            the $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at
-            least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for "room and board"
-            for a private room or to open up RCFEs in more expensive areas.
+            the $1,444.07 balance as payment for "room and board". Any income above $1,444.07 is not paid as "room and
+            board" unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees
+            to a higher amount for a private room (since the program does not mandate private rooms).
           </p>
           <p>
             Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be
@@ -633,11 +630,20 @@ export function PrintableCsSummaryForm({
         </div>
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black">
           Proof of income (annual award letter or 3 months of bank statements showing Social Security income) will need
-          to be submitted as part of this application.
+          to be submitted as part of this application. If income is above approximately $1,800, this might trigger
+          Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See Program Information pages for
+          more information about this.
         </div>
         <PrintableField
-          label="Monthly Income"
+          label="Member's current monthly income"
           value={data.monthlyIncome}
+          placeholder="$0.00"
+          required
+          width="half"
+        />
+        <PrintableField
+          label={'Expected payment to RCFE/ARF as "room and board"'}
+          value={data.expectedRoomBoardPayment}
           placeholder="$0.00"
           required
           width="half"

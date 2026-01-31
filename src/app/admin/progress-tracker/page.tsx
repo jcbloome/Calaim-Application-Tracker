@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore } from '@/firebase';
 import { collection, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
@@ -25,6 +26,10 @@ const trackedComponents = [
   { key: 'Declaration of Eligibility', abbreviation: 'DE' },
   { key: 'SNF Facesheet', abbreviation: 'SNF' },
 ];
+
+const missingDocsComponents = trackedComponents.filter(
+  (component) => component.key !== 'CS Member Summary' && component.key !== 'CS Summary'
+);
 
 const StatusIndicator = ({ status, formName }: { status: 'Completed' | 'Pending' | 'Not Applicable', formName: string }) => {
     const statusConfig = {
@@ -67,10 +72,12 @@ const getComponentStatus = (app: Application, componentKey: string): 'Completed'
 };
 
 
-export default function ProgressTrackerPage() {
+function ProgressTrackerPageClient() {
   const firestore = useFirestore();
+  const searchParams = useSearchParams();
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const [filters, setFilters] = useState<string[]>([]);
+  const [showMissingOnly, setShowMissingOnly] = useState(false);
 
   const [applications, setApplications] = useState<Application[]>([]);
   const [trackers, setTrackers] = useState<Map<string, StaffTracker>>(new Map());
@@ -144,6 +151,13 @@ export default function ProgressTrackerPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    const missingDocsParam = searchParams.get('missingDocs');
+    if (missingDocsParam === '1') {
+      setShowMissingOnly(true);
+    }
+  }, [searchParams]);
   
   const handleFilterChange = (componentKey: string, checked: boolean) => {
     setFilters(prev => 
@@ -160,15 +174,21 @@ export default function ProgressTrackerPage() {
         return timeB - timeA;
     });
 
+    const missingOnlyFiltered = showMissingOnly
+      ? sorted.filter(app =>
+          missingDocsComponents.some(component => getComponentStatus(app, component.key) === 'Pending')
+        )
+      : sorted;
+
     if (filters.length === 0) {
-        return sorted;
+        return missingOnlyFiltered;
     }
 
-    return sorted.filter(app => {
+    return missingOnlyFiltered.filter(app => {
         return filters.every(filterKey => getComponentStatus(app, filterKey) === 'Pending');
     });
 
-  }, [applications, filters])
+  }, [applications, filters, showMissingOnly])
 
   return (
     <div className="space-y-6">
@@ -189,6 +209,16 @@ export default function ProgressTrackerPage() {
                     <CardDescription>Select one or more components to find applications that are missing all of the selected documents.</CardDescription>
                 </CardHeader>
                 <CardContent>
+                    <div className="flex items-center gap-2 mb-4">
+                      <Checkbox
+                        id="missing-docs-only"
+                        checked={showMissingOnly}
+                        onCheckedChange={(checked) => setShowMissingOnly(Boolean(checked))}
+                      />
+                      <Label htmlFor="missing-docs-only" className="text-sm font-normal cursor-pointer">
+                        Only show applications with missing documents
+                      </Label>
+                    </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                         {trackedComponents.map(c => (
                             <div key={c.key} className="flex items-center space-x-2">
@@ -300,5 +330,20 @@ export default function ProgressTrackerPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function ProgressTrackerPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-48">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="ml-4">Loading application data...</p>
+        </div>
+      }
+    >
+      <ProgressTrackerPageClient />
+    </Suspense>
   );
 }

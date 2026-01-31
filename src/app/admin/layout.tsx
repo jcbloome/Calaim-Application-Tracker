@@ -85,6 +85,7 @@ const adminNavLinks = [
       { href: '/admin', label: 'Activity Dashboard', icon: Activity },
       { href: '/admin/activity-log', label: 'Activity Log', icon: Activity },
       { href: '/admin/applications', label: 'All Applications', icon: FolderKanban },
+      { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
       { href: '/admin/eligibility-checks', label: 'Eligibility Checks', icon: Shield }

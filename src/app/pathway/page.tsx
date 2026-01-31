@@ -25,6 +25,7 @@ import {
   FileText,
   Package,
   ArrowLeft,
+  AlertTriangle,
 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -482,6 +483,14 @@ function PathwayPageContent() {
 
   const handleSubmitApplication = async () => {
     if (!docRef) return;
+    if (waiverFormStatus?.choice === 'decline') {
+      toast({
+        variant: 'destructive',
+        title: 'Community Support Services Declined',
+        description: 'This application cannot be submitted because Community Support services were declined in the Freedom of Choice waiver.'
+      });
+      return;
+    }
     setIsSubmitting(true);
     try {
         await setDoc(docRef, {
@@ -578,6 +587,7 @@ function PathwayPageContent() {
   const allRequiredFormsComplete = completedCount === totalCount;
 
   const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
+  const servicesDeclined = waiverFormStatus?.choice === 'decline';
 
   const waiverSubTasks = [
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
@@ -732,6 +742,15 @@ function PathwayPageContent() {
                 </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                {servicesDeclined && (
+                    <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Community Support Services Declined</AlertTitle>
+                        <AlertDescription>
+                            This application cannot be submitted because Community Support services were declined in the Freedom of Choice waiver.
+                        </AlertDescription>
+                    </Alert>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
                     <div className="truncate col-span-2 sm:col-span-1"><strong>Application ID:</strong> <span className="font-mono text-xs">{application.id}</span></div>
                     <div><strong>Status:</strong> <span className="font-semibold">{application.status}</span></div>
@@ -761,7 +780,7 @@ function PathwayPageContent() {
                     <CardFooter>
                         <Button 
                             className="w-full bg-emerald-600 text-white hover:bg-emerald-700" 
-                            disabled={!allRequiredFormsComplete || isSubmitting}
+                            disabled={!allRequiredFormsComplete || isSubmitting || servicesDeclined}
                             onClick={handleSubmitApplication}
                         >
                             {isSubmitting ? (

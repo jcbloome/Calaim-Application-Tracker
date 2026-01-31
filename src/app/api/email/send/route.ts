@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendApplicationStatusEmail, sendCsSummaryReminderEmail } from '@/app/actions/send-email';
+import { sendApplicationStatusEmail, sendCsSummaryReminderEmail, sendReminderEmail } from '@/app/actions/send-email';
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,6 +15,8 @@ export async function POST(request: NextRequest) {
     // Route to appropriate email sender based on type
     if (emailData.type === 'cs_summary_reminder') {
       await sendCsSummaryReminderEmail(emailData.data);
+    } else if (emailData.type === 'missing_docs') {
+      await sendReminderEmail(emailData.data);
     } else {
       // Default to application status email for backward compatibility
       await sendApplicationStatusEmail(emailData);

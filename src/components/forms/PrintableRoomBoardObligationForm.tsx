@@ -48,9 +48,9 @@ export function PrintableRoomBoardObligationForm({
             <p>
               For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped
               up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the
-              $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at least
-              $1,447.00 to the RCFE. Members who receive more than this amount can pay more for "room and board" for a
-              private room or to open up RCFEs in more expensive areas.
+              $1,444.07 balance as payment for "room and board". Any income above $1,444.07 is not paid as "room and board"
+              unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees to a
+              higher amount for a private room (since the program does not mandate private rooms).
             </p>
             <p>
               Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be
@@ -70,11 +70,21 @@ export function PrintableRoomBoardObligationForm({
         </div>
 
         {/* Income Information */}
-        <PrintableFormSection title="Monthly Income">
+        <PrintableFormSection title="Income & Room and Board">
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-                Member's current monthly Social Security income is: *
+                Member's current monthly income: *
+              </label>
+              <div className="flex items-center space-x-2">
+                <span className="text-lg font-semibold">$</span>
+                <div className="flex-1 h-12 border-b-2 border-gray-400 print:border-black"></div>
+                <span className="text-sm text-gray-600 print:text-black">per month</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
+                Expected payment to RCFE/ARF as "room and board": *
               </label>
               <div className="flex items-center space-x-2">
                 <span className="text-lg font-semibold">$</span>
@@ -85,7 +95,7 @@ export function PrintableRoomBoardObligationForm({
 
             <div className="mt-3 p-3 print:p-4 border print:border-black bg-gray-50 print:bg-white">
               <p className="text-sm print:text-xs text-gray-700 print:text-black">
-                <strong>Note:</strong> Please note that proof of income (e.g, Social Security award letter or 3 month's of bank statements showing Social Security income) will need to be submitted as part of this application package.
+                <strong>Note:</strong> Please note that proof of income (e.g, Social Security award letter or 3 month's of bank statements showing Social Security income) will need to be submitted as part of this application package. If income is above approximately $1,800, this might trigger Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See Program Information pages for more information about this.
               </p>
             </div>
           </div>

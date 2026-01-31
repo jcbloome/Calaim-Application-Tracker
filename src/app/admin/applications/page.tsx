@@ -45,7 +45,6 @@ function AdminApplicationsPageContent() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [memberFilter, setMemberFilter] = useState('');
   const [reviewFilter, setReviewFilter] = useState<'all' | 'cs' | 'docs'>('all');
-  const [isPushingToCaspio, setIsPushingToCaspio] = useState(false);
   const searchParams = useSearchParams();
 
   const fetchAllApplications = useCallback(async () => {
@@ -194,18 +193,25 @@ function AdminApplicationsPageContent() {
     
     selected.forEach(id => {
       const appToDelete = allApplications?.find(app => app.id === id);
-      if (appToDelete) {
-        if (appToDelete.userId) {
-          // User application
-          const docRef = doc(firestore, `users/${appToDelete.userId}/applications`, id);
-          batch.delete(docRef);
-          deletedCount++;
-        } else if (appToDelete.source === 'admin') {
-          // Admin application
-          const docRef = doc(firestore, `applications`, id);
-          batch.delete(docRef);
-          deletedCount++;
-        }
+      if (!appToDelete) return;
+
+      let didQueueDelete = false;
+      const isAdminSource = appToDelete.source === 'admin' || appToDelete.id.startsWith('admin_app_');
+
+      if (appToDelete.userId) {
+        const docRef = doc(firestore, `users/${appToDelete.userId}/applications`, id);
+        batch.delete(docRef);
+        didQueueDelete = true;
+      }
+
+      if (isAdminSource) {
+        const docRef = doc(firestore, `applications`, id);
+        batch.delete(docRef);
+        didQueueDelete = true;
+      }
+
+      if (didQueueDelete) {
+        deletedCount++;
       }
     });
 
@@ -236,71 +242,6 @@ function AdminApplicationsPageContent() {
     }
   };
 
-  const handlePushToCaspio = async () => {
-    if (selected.length === 0) return;
-    
-    setIsPushingToCaspio(true);
-    
-    try {
-      const response = await fetch('/api/caspio-push-applications', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          applicationIds: selected
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to push to Caspio');
-      }
-
-      const { results } = data;
-      
-      // Show detailed results
-      if (results.duplicates.length > 0) {
-        toast({
-          variant: 'destructive',
-          title: 'MRN Duplicates Found',
-          description: `${results.duplicates.length} application(s) have duplicate MRNs and were skipped.`,
-        });
-      }
-      
-      if (results.success.length > 0) {
-        toast({
-          title: 'Successfully Pushed to Caspio',
-          description: `${results.success.length} application(s) have been pushed to CalAIM Members table.`,
-          className: 'bg-green-100 text-green-900 border-green-200',
-        });
-      }
-      
-      if (results.errors.length > 0) {
-        toast({
-          variant: 'destructive',
-          title: 'Some Errors Occurred',
-          description: `${results.errors.length} application(s) failed to push due to errors.`,
-        });
-      }
-
-      // Clear selection after successful push
-      if (results.success.length > 0) {
-        setSelected([]);
-      }
-
-    } catch (error) {
-      console.error('Error pushing to Caspio:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Push Failed',
-        description: 'Failed to push applications to Caspio. Please try again.',
-      });
-    } finally {
-      setIsPushingToCaspio(false);
-    }
-  };
 
   const clearFilters = () => {
     setHealthPlanFilter('all');
@@ -412,15 +353,6 @@ function AdminApplicationsPageContent() {
             </Button>
            {selected.length > 0 && isSuperAdmin && (
               <div className="flex gap-2">
-                <Button 
-                  onClick={handlePushToCaspio}
-                  disabled={isPushingToCaspio}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  <Database className="mr-2 h-4 w-4" />
-                  {isPushingToCaspio ? 'Pushing...' : `Push to Caspio (${selected.length})`}
-                </Button>
-                
                 <Button 
                   onClick={handleRemoveDuplicates}
                   variant="outline"

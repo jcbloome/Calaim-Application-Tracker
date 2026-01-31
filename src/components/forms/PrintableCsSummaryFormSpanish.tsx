@@ -311,7 +311,7 @@ export function PrintableCsSummaryFormSpanish({
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
       }, [
         React.createElement('p', { key: 'rb-1' }, 'El miembro del MCP es responsable de pagar al RCFE la porción de "alojamiento y comida" y el MCP es responsable de pagar al RCFE la porción de "vida asistida".'),
-        React.createElement('p', { key: 'rb-2' }, 'Para miembros elegibles para SSI/SSP y el pago 2026 de Non-Medical Out of Home Care (NMOHC), el SSI/SSP sube a $1,626.07. El miembro normalmente conserva $182 para gastos personales y el RCFE recibe el saldo de $1,444.07 como pago por "alojamiento y comida". Además, los miembros elegibles para NMOHC pagarán al menos $1,447.00 al RCFE. Los miembros que reciben más pueden pagar más por "alojamiento y comida" para un cuarto privado o para abrir opciones en áreas más costosas.'),
+        React.createElement('p', { key: 'rb-2' }, 'Para miembros elegibles para SSI/SSP y el pago 2026 de Non-Medical Out of Home Care (NMOHC), el SSI/SSP sube a $1,626.07. El miembro normalmente conserva $182 para gastos personales y el RCFE recibe el saldo de $1,444.07 como pago por "alojamiento y comida". Cualquier ingreso por encima de $1,444.07 no se paga como "alojamiento y comida" a menos que el miembro quiera pagar más para acceder a áreas geográficas más costosas o que el RCFE/ARF acepte una cantidad mayor por un cuarto privado (ya que el programa no exige cuartos privados).'),
         React.createElement('p', { key: 'rb-3' }, 'Los miembros no elegibles para NMOHC aún tendrán una obligación de "alojamiento y comida", pero el monto podría ser flexible según el RCFE y el nivel escalonado evaluado.'),
         React.createElement('p', { key: 'rb-4' }, 'Los miembros que no pueden pagar ninguna porción de alojamiento y comida generalmente no son elegibles para el CS, ya que los requisitos del programa exigen un pago de "alojamiento y comida" del miembro (o su familia).'),
         React.createElement('p', { key: 'rb-5' }, 'Trabajar con CalAIM es a discreción de los RCFEs. Los RCFEs, especialmente en áreas más costosas, podrían no participar en CalAIM. Las familias que buscan colocar a miembros en áreas de bienes raíces costosos deben tener la expectativa realista de que los RCFEs de CalAIM podrían estar ubicados en áreas más asequibles. Antes de aceptar miembros de CalAIM, los RCFEs necesitarán conocer el pago de "alojamiento y comida".')
@@ -319,8 +319,9 @@ export function PrintableCsSummaryFormSpanish({
       React.createElement('div', {
         key: 'income-proof-note',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black'
-      }, 'Se deberá presentar comprobante de ingresos (carta anual de adjudicación o 3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social) como parte de esta solicitud.'),
-      buildField({ label: 'Ingresos Mensuales', value: data.monthlyIncome, placeholder: '$0.00', required: true, width: 'half' }),
+      }, 'Se deberá presentar comprobante de ingresos (carta anual de adjudicación o 3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social) como parte de esta solicitud. Si los ingresos son superiores a aproximadamente $1,800, esto podría activar el Share of Cost de Medi-Cal que debe resolverse antes de solicitar CalAIM. Consulte las páginas de información del programa para más detalles.'),
+      buildField({ label: 'Ingreso mensual actual del miembro', value: data.monthlyIncome, placeholder: '$0.00', required: true, width: 'half' }),
+      buildField({ label: 'Pago esperado al RCFE/ARF como "alojamiento y comida"', value: data.expectedRoomBoardPayment, placeholder: '$0.00', required: true, width: 'half' }),
       buildField({
         label: 'Reconoce Responsabilidad de Alojamiento y Comida',
         value: data.ackRoomAndBoard ? 'Sí' : 'No',

@@ -698,7 +698,12 @@ function AdminActions({ application }: { application: Application }) {
                 await deleteDoc(userDocRef);
             }
 
-            if (!application.userId || application.id.startsWith('admin_app_')) {
+            const isAdminSource =
+                (application as any)?.source === 'admin' ||
+                application.id.startsWith('admin_app_') ||
+                !application.userId;
+
+            if (isAdminSource) {
                 const adminDocRef = doc(firestore, 'applications', application.id);
                 await deleteDoc(adminDocRef);
             }

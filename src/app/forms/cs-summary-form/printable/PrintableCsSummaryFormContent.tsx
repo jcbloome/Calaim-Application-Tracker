@@ -335,17 +335,17 @@ export function PrintableCsSummaryFormContent() {
                     </div>
                     <div className="prose prose-sm max-w-none text-gray-700 space-y-3 p-4 border rounded-lg bg-gray-50 text-xs">
                         <p>The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible for paying the RCFE the "assisted living" portion.</p>
-                        <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for "room and board" for a private room or to open up RCFEs in more expensive areas.</p>
+                        <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Any income above $1,444.07 is not paid as "room and board" unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees to a higher amount for a private room (since the program does not mandate private rooms).</p>
                         <p>For example, Mr. Johnson is eligible for NMOHC and receives $500/month. The NMOHC will bump up the payment to the RCFE to $1,444.07 for "room and board" and he will retain $182 for personal needs expenses.</p>
                         <p>Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>
                         <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a "room and board" payment from the member (or their family).</p>
                         <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the "room and board" payment.</p>
                     </div>
                     <div className="p-3 border border-gray-300 text-xs text-gray-700 mb-2">
-                        Proof of income (annual award letter or 3 months of bank statements showing Social Security income) will need to be submitted as part of this application.
+                        Proof of income (annual award letter or 3 months of bank statements showing Social Security income) will need to be submitted as part of this application. If income is above approximately $1,800, this might trigger Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See Program Information pages for more information about this.
                     </div>
-                    <Field label="Total Monthly Income" />
-                    <Field label="Expected \"Room and Board\" Portion (This amount will vary if the member receives the NMOHC payment, see above.)" />
+                    <Field label="Member's current monthly income" />
+                    <Field label="Expected payment to RCFE/ARF as \"room and board\"" />
                     <CheckboxField label="I have read and understood the financial obligation for Room and Board." />
                 </div>
             </div>

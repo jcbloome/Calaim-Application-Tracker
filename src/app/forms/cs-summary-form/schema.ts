@@ -54,7 +54,7 @@ export const formSchema = z.object({
     agency: optionalString,
 
     // Step 1 - Primary Contact Person
-    isPrimaryContactSameAsReferrer: z.boolean().optional(),
+    isPrimaryContactSameAsReferrer: z.boolean().optional().nullable().transform(val => val === true),
     bestContactFirstName: requiredString,
     bestContactLastName: requiredString,
     bestContactRelationship: requiredString,
@@ -111,6 +111,7 @@ export const formSchema = z.object({
     ispFacilityName: requiredString,
     onALWWaitlist: z.enum(['Yes', 'No', 'Unknown'], { errorMap: () => ({ message: ' ' }) }),
     monthlyIncome: requiredString,
+    expectedRoomBoardPayment: requiredString,
     ackRoomAndBoard: z.boolean().refine(val => val === true, {
       message: " ",
     }),

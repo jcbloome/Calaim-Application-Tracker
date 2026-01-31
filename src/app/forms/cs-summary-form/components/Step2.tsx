@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { useEffect } from 'react';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
+import { californiaCounties } from '@/lib/california-counties';
 
 const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub-Acute", "Assisted Living", "Other"];
 
@@ -128,7 +129,24 @@ export default function Step2() {
                 <FormItem><FormLabel>ZIP Code <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
               )} />
                <FormField control={control} name="currentCounty" render={({ field }) => (
-                <FormItem><FormLabel>County <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                <FormItem>
+                  <FormLabel>County <span className="text-destructive">*</span></FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value ?? ''}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a county" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {californiaCounties.map((county) => (
+                        <SelectItem key={county} value={county}>
+                          {county}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
               )} />
             </div>
           </div>
@@ -142,7 +160,7 @@ export default function Step2() {
                     render={({ field }) => (
                         <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                         <FormControl>
-                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                            <Checkbox checked={field.value} onCheckedChange={(checked) => field.onChange(checked === true)} />
                         </FormControl>
                         <div className="space-y-1 leading-none">
                             <FormLabel>Same as current location</FormLabel>
@@ -205,7 +223,24 @@ export default function Step2() {
                             <FormItem><FormLabel>ZIP Code <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} /></FormControl><FormMessage /></FormItem>
                         )} />
                          <FormField control={control} name="customaryCounty" render={({ field }) => (
-                            <FormItem><FormLabel>County <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                            <FormItem>
+                              <FormLabel>County <span className="text-destructive">*</span></FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={copyAddress}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select a county" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {californiaCounties.map((county) => (
+                                    <SelectItem key={county} value={county}>
+                                      {county}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
                         )} />
                     </div>
                 </div>

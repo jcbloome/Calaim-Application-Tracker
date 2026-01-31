@@ -66,15 +66,19 @@ function ReviewPageComponent() {
     const searchParams = useSearchParams();
     const applicationId = searchParams.get('applicationId');
     const appUserId = searchParams.get('userId');
+    const isAdminCreatedApp = applicationId?.startsWith('admin_app_');
     const { isUserLoading } = useUser();
     const firestore = useFirestore();
 
     const applicationDocRef = useMemoFirebase(() => {
-        if (isUserLoading || !appUserId || !firestore || !applicationId) {
+        if (isUserLoading || !firestore || !applicationId) {
             return null;
         }
+        if (isAdminCreatedApp || !appUserId) {
+            return doc(firestore, 'applications', applicationId);
+        }
         return doc(firestore, `users/${appUserId}/applications`, applicationId);
-    }, [appUserId, firestore, applicationId, isUserLoading]);
+    }, [appUserId, firestore, applicationId, isUserLoading, isAdminCreatedApp]);
 
     const { data: application, isLoading } = useDoc<Application & FormValues>(applicationDocRef);
     
@@ -92,9 +96,12 @@ function ReviewPageComponent() {
     }
 
     const isReadOnly = application.status === 'Completed & Submitted' || application.status === 'Approved';
-    const getEditLink = (step: number) => `/admin/forms/edit?applicationId=${applicationId}&step=${step}&userId=${appUserId}`;
+    const getEditLink = (step: number) =>
+        `/admin/forms/edit?applicationId=${applicationId}&step=${step}${appUserId ? `&userId=${appUserId}` : ''}`;
     const dobFormatted = formatDate(application.memberDob);
-    const backLink = `/admin/applications/${applicationId}?userId=${appUserId}`;
+    const backLink = appUserId
+        ? `/admin/applications/${applicationId}?userId=${appUserId}`
+        : `/admin/applications/${applicationId}`;
     
     const getCapacityStatus = (hasLegalRepValue: Application['hasLegalRep']) => {
         switch(hasLegalRepValue) {
