@@ -1,6 +1,6 @@
 {
   "name": "calaim-desktop",
-  "version": "0.1.1",
+  "version": "3.0.0",
   "private": true,
   "main": "dist/main.js",
   "scripts": {
@@ -35,7 +35,8 @@
     }
   },
   "dependencies": {
-    "electron-store": "^8.2.0"
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.7.3"
   },
   "devDependencies": {
     "@types/node": "^20",
