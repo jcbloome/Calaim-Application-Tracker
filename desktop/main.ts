@@ -9,7 +9,8 @@ let isQuitting = false;
 const isDev = !app.isPackaged;
 const appUrl = process.env.DESKTOP_APP_URL
   || (isDev ? 'http://localhost:3000/admin/my-notes' : 'https://connectcalaim.com/admin/my-notes');
-const updateUrl = process.env.DESKTOP_UPDATE_URL || 'https://connectcalaim.com/desktop/updates';
+const updateUrl = process.env.DESKTOP_UPDATE_URL
+  || 'https://storage.googleapis.com/studio-2881432245-f1d94.firebasestorage.app/Connect_CalAIM/desktop/updates';
 
 const notificationState = {
   pausedByUser: false,
