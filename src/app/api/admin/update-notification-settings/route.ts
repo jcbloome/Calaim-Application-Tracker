@@ -14,7 +14,13 @@ if (!getApps().length) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { applicationId, emailRemindersEnabled, reviewNotificationSent } = await request.json();
+    const {
+      applicationId,
+      userId,
+      emailRemindersEnabled,
+      reviewNotificationSent,
+      documentReminderFrequencyDays
+    } = await request.json();
 
     if (!applicationId) {
       return NextResponse.json(
@@ -24,7 +30,11 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getFirestore();
-    const applicationRef = doc(db, 'applications', applicationId);
+    const applicationRef = applicationId?.startsWith('admin_app_')
+      ? doc(db, 'applications', applicationId)
+      : userId
+        ? doc(db, 'users', userId, 'applications', applicationId)
+        : doc(db, 'applications', applicationId);
 
     const updateData: any = {};
 
@@ -40,6 +50,10 @@ export async function POST(request: NextRequest) {
       if (reviewNotificationSent) {
         updateData.reviewNotificationSentAt = serverTimestamp();
       }
+    }
+
+    if (typeof documentReminderFrequencyDays === 'number' && !Number.isNaN(documentReminderFrequencyDays)) {
+      updateData.documentReminderFrequencyDays = Math.max(1, Math.min(30, Math.round(documentReminderFrequencyDays)));
     }
 
     if (Object.keys(updateData).length === 0) {

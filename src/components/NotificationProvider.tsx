@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState } from 'react';
 import WindowsNotification, { useWindowsNotifications } from '@/components/WindowsNotification';
 
 interface WindowsNotificationProps {
+  keyId?: string;
   id: string;
   type: 'note' | 'task' | 'urgent' | 'success' | 'warning';
   title: string;
@@ -21,6 +22,11 @@ interface WindowsNotificationProps {
   followUpDate?: string;
   replyUrl?: string;
   requiresSecondClick?: boolean;
+  disableCardClick?: boolean;
+  startMinimized?: boolean;
+  lockToTray?: boolean;
+  tagLabel?: string;
+  links?: Array<{ label: string; url: string }>;
   onFollowUpSave?: (date: string) => void;
   onClose?: () => void;
   onClick?: () => void;

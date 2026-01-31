@@ -280,6 +280,11 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           required
           width="full"
         />
+        <PrintableField
+          label="Current Location Name (if applicable)"
+          value={data.currentLocationName}
+          width="full"
+        />
         <div className="col-span-full text-xs text-gray-500 print:text-black">
           Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.
         </div>
@@ -338,6 +343,11 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
             'Other'
           ]}
           required
+          width="full"
+        />
+        <PrintableField
+          label="Customary Location Name (if applicable)"
+          value={data.customaryLocationName}
           width="full"
         />
         <div className="col-span-full text-xs text-gray-500 print:text-black">

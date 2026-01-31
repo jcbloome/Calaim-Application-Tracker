@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { usePathname } from 'next/navigation';
 import { useFirestore, useUser } from '@/firebase';
 import {
   collection,
@@ -61,7 +60,6 @@ export function RealTimeNotifications() {
   const { user } = useUser();
   const firestore = useFirestore();
   const firestoreRef = useRef(firestore);
-  const pathname = usePathname();
   const { showNotification, removeNotification } = useGlobalNotifications();
   const seenNotificationsRef = useRef<Set<string>>(new Set());
   const pendingNotesRef = useRef<Map<string, NotificationData>>(new Map());
@@ -223,7 +221,7 @@ export function RealTimeNotifications() {
         tagLabel: summary.tagLabel,
         startMinimized: false,
         lockToTray: true,
-        duration: 0,
+        duration: 45000,
         minimizeAfter: 12000,
         pendingLabel: summary.pendingLabel,
         sound: false,
@@ -232,6 +230,7 @@ export function RealTimeNotifications() {
         links: summary.links,
         replyUrl: summary.replyUrl,
         followUpDate: summary.followUpDate,
+        disableCardClick: true,
         onFollowUpSave: summary.followUpNoteId
           ? (date) => {
               const db = firestoreRef.current;
@@ -245,7 +244,7 @@ export function RealTimeNotifications() {
               });
             }
           : undefined,
-        requiresSecondClick: true,
+        requiresSecondClick: false,
         onClick: () => {
           if (typeof window === 'undefined') return;
           window.location.href = '/admin/my-notes';
@@ -524,6 +523,12 @@ export function RealTimeNotifications() {
           };
 
           if (shouldShowWebToast) {
+            if (!hasNew && summaryNotificationIdRef.current) {
+              return;
+            }
+            if (!hasNew) {
+              return;
+            }
             const summaryId = showNotification({
               keyId: 'staff-note-summary',
               type: urgentExists ? 'urgent' : 'note',
@@ -536,8 +541,8 @@ export function RealTimeNotifications() {
               tagLabel: priorityTag,
               startMinimized: !shouldPopup,
               lockToTray: true,
-              duration: 0,
-              minimizeAfter: shouldPopup ? 12000 : 0,
+              duration: 45000,
+              minimizeAfter: 12000,
               pendingLabel: count === 1 ? `Pending note · ${highlightSender}` : `Notes (${count})`,
               sound: hasNew && notificationPrefs.enabled ? notificationPrefs.sound : false,
               soundType: notificationPrefs.soundType,
@@ -545,6 +550,7 @@ export function RealTimeNotifications() {
               links,
               replyUrl,
               followUpDate: formatFollowUpDate(highlightNote?.followUpDate),
+              disableCardClick: true,
               onFollowUpSave: highlightNote?.id
                 ? (date) => {
                     const db = firestoreRef.current;
@@ -558,7 +564,7 @@ export function RealTimeNotifications() {
                     });
                   }
                 : undefined,
-              requiresSecondClick: true,
+              requiresSecondClick: false,
               onClick: () => {
                 if (typeof window === 'undefined') return;
                 window.location.href = '/admin/my-notes';
@@ -587,7 +593,7 @@ export function RealTimeNotifications() {
     return () => {
       unsubscribe();
     };
-  }, [user, pathname, firestore]);
+  }, [user, firestore]);
 
   return null;
 }

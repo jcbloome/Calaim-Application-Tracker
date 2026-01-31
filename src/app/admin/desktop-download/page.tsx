@@ -2,8 +2,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
-const fallbackInstallerUrl =
-  'https://storage.googleapis.com/studio-2881432245-f1d94.firebasestorage.app/Connect_CalAIM/desktop/updates/Connect%20CalAIM%20Desktop%20Setup%203.0.0.exe';
+const fallbackInstallerUrl = '/downloads/Connect-CalAIM-Desktop-Setup.exe';
 const installerUrl = process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_URL || fallbackInstallerUrl;
 
 export default function DesktopDownloadPage() {

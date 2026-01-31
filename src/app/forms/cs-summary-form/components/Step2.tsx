@@ -20,6 +20,7 @@ export default function Step2() {
   const copyAddress = watch('copyAddress');
   const currentAddressFields = watch([
     'currentLocation',
+    'currentLocationName',
     'currentAddress',
     'currentCity',
     'currentState',
@@ -30,14 +31,16 @@ export default function Step2() {
   useEffect(() => {
     if (copyAddress) {
       setValue('customaryLocationType', getValues('currentLocation'));
+      setValue('customaryLocationName', getValues('currentLocationName'));
       setValue('customaryAddress', getValues('currentAddress'));
       setValue('customaryCity', getValues('currentCity'));
       setValue('customaryState', getValues('currentState'));
       setValue('customaryZip', getValues('currentZip'));
       setValue('customaryCounty', getValues('currentCounty'));
-      clearErrors(['customaryLocationType', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty']);
+      clearErrors(['customaryLocationType', 'customaryLocationName', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty']);
     } else {
         setValue('customaryLocationType', '');
+        setValue('customaryLocationName', '');
         setValue('customaryAddress', '');
         setValue('customaryCity', '');
         setValue('customaryState', '');
@@ -76,7 +79,7 @@ export default function Step2() {
         <CardContent className="space-y-6">
           <div className="space-y-4 p-4 border rounded-md">
             <h3 className="font-medium">Current Address</h3>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={control}
                   name="currentLocation"
@@ -100,10 +103,25 @@ export default function Step2() {
                     </FormItem>
                   )}
                 />
-                <FormField control={control} name="currentAddress" render={({ field }) => (
-                  <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                )} />
+                <FormField
+                  control={control}
+                  name="currentLocationName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Current Location Name (if applicable)</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField control={control} name="currentAddress" render={({ field }) => (
+                <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              )} />
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField control={control} name="currentCity" render={({ field }) => (
                 <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
@@ -193,9 +211,29 @@ export default function Step2() {
                             </FormItem>
                           )}
                         />
-                        <FormField control={control} name="customaryAddress" render={({ field }) => (
-                            <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} onChange={e => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                        )} />
+                        <FormField
+                          control={control}
+                          name="customaryLocationName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Customary Location Name (if applicable)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  value={field.value ?? ''}
+                                  disabled={copyAddress}
+                                  onChange={e => field.onChange(formatName(e.target.value))}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField control={control} name="customaryAddress" render={({ field }) => (
+                          <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} onChange={e => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                      )} />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormField control={control} name="customaryCity" render={({ field }) => (

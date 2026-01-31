@@ -178,12 +178,28 @@ function StaffAssignmentDropdown({
 const kaiserSteps = getKaiserStatusesInOrder().map(status => status.status);
 
 const healthNetSteps = [
-  "Application Being Reviewed",
-  "Scheduling ISP",
-  "ISP Completed",
-  "Locating RCFEs",
-  "Submitted to Health Net",
-  "Authorization Status"
+  'Application Received',
+  'in Review',
+  'Needs Additional Documents',
+  'Requested Additional Documents',
+  'Needs RN Virtual Visit',
+  'RN Virtual Visit Complete',
+  'ISP Reviewed',
+  'Need RCFE',
+  'RCFEs Sent to Family',
+  'RCFE Selected',
+  'Needs ISP Sent for Signature',
+  'ISP Signed',
+  'Needs Auth Request',
+  'Auth Request Sent',
+  'Auth Received',
+  'RCFE/Family Informed Auth Status',
+  'Member Placed'
+];
+
+const calaimTrackingOptions = [
+  'CalAIM Eligible',
+  'Not CalAIM Eligible'
 ];
 
 const getAuthorizationTypes = (healthPlan?: string) => {
@@ -516,6 +532,7 @@ function AdminActions({ application }: { application: Application }) {
                 },
                 body: JSON.stringify({
                     applicationId: application.id,
+                    userId: application.userId,
                     ...(type === 'emailReminders' && { emailRemindersEnabled: enabled }),
                     ...(type === 'statusReminders' && { statusRemindersEnabled: enabled }),
                     ...(type === 'reviewNotification' && { reviewNotificationSent: enabled }),
@@ -864,7 +881,10 @@ function AdminActions({ application }: { application: Application }) {
                                         Email Reminders for Missing Documents
                                     </Label>
                                     <p className="text-xs text-muted-foreground">
-                                        Send document reminders to user
+                                        Current cadence: every 2 days.
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                        Recipient: {(application as any)?.referrerEmail || 'Email not available'}
                                     </p>
                                 </div>
                             </div>
@@ -1071,6 +1091,7 @@ function ApplicationDetailPageContent() {
   });
 
   const [isUpdatingProgression, setIsUpdatingProgression] = useState(false);
+  const [isUpdatingTracking, setIsUpdatingTracking] = useState(false);
 
   const docRef = useMemoFirebase(() => {
     if (isUserLoading || !firestore || !applicationId || !appUserId) return null;
@@ -2160,6 +2181,104 @@ function ApplicationDetailPageContent() {
     }
   };
 
+  const updateTrackingStatus = async (status: string) => {
+    if (!docRef || !application) return;
+
+    setIsUpdatingTracking(true);
+    try {
+      const updateData = {
+        calaimTrackingStatus: status,
+        calaimTrackingReason:
+          status === 'Not CalAIM Eligible'
+            ? (application as any)?.calaimTrackingReason || ''
+            : '',
+        calaimNotEligibleSwitchingProviders:
+          status === 'Not CalAIM Eligible'
+            ? Boolean((application as any)?.calaimNotEligibleSwitchingProviders)
+            : false,
+        calaimNotEligibleHasSoc:
+          status === 'Not CalAIM Eligible'
+            ? Boolean((application as any)?.calaimNotEligibleHasSoc)
+            : false,
+        calaimNotEligibleOutOfCounty:
+          status === 'Not CalAIM Eligible'
+            ? Boolean((application as any)?.calaimNotEligibleOutOfCounty)
+            : false,
+        calaimNotEligibleOther:
+          status === 'Not CalAIM Eligible'
+            ? Boolean((application as any)?.calaimNotEligibleOther)
+            : false,
+        calaimNotEligibleOtherReason:
+          status === 'Not CalAIM Eligible'
+            ? (application as any)?.calaimNotEligibleOtherReason || ''
+            : ''
+      };
+
+      await setDoc(docRef, updateData, { merge: true });
+      setApplication(prev => prev ? { ...prev, ...updateData } : null);
+
+      toast({
+        title: 'Tracking Updated',
+        description: `Application tracking set to: ${status}`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error) {
+      console.error('Error updating tracking status:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: 'Could not update application tracking. Please try again.',
+      });
+    } finally {
+      setIsUpdatingTracking(false);
+    }
+  };
+
+  const updateTrackingReason = async (reason: string) => {
+    if (!docRef || !application) return;
+
+    setIsUpdatingTracking(true);
+    try {
+      const updateData = { calaimTrackingReason: reason };
+      await setDoc(docRef, updateData, { merge: true });
+      setApplication(prev => prev ? { ...prev, ...updateData } : null);
+    } catch (error) {
+      console.error('Error updating tracking reason:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: 'Could not update eligibility reason. Please try again.',
+      });
+    } finally {
+      setIsUpdatingTracking(false);
+    }
+  };
+
+  const updateNotEligibleFlags = async (updates: {
+    calaimNotEligibleSwitchingProviders?: boolean;
+    calaimNotEligibleHasSoc?: boolean;
+    calaimNotEligibleOutOfCounty?: boolean;
+    calaimNotEligibleOther?: boolean;
+    calaimNotEligibleOtherReason?: string;
+  }) => {
+    if (!docRef || !application) return;
+    setIsUpdatingTracking(true);
+    try {
+      const updateData = { ...updates };
+      await setDoc(docRef, updateData, { merge: true });
+      setApplication(prev => prev ? { ...prev, ...updateData } : null);
+    } catch (error) {
+      console.error('Error updating not-eligible flags:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: 'Could not update eligibility flags. Please try again.',
+      });
+    } finally {
+      setIsUpdatingTracking(false);
+    }
+  };
+
   // Handle staff assignment - TEMPORARILY DISABLED
   const handleStaffAssignment = async () => {
     console.log('🚫 Staff assignment is temporarily disabled to prevent looping');
@@ -2360,8 +2479,16 @@ function ApplicationDetailPageContent() {
         )}
         <Card className="shadow-sm">
             <CardHeader>
-            <CardTitle className="text-2xl sm:text-3xl font-bold text-primary">
+            <CardTitle className="text-2xl sm:text-3xl font-bold text-primary flex items-center gap-2">
                 Application for {application.memberFirstName} {application.memberLastName}
+                {(application as any)?.calaimTrackingStatus === 'CalAIM Eligible' && (
+                    <CheckCircle2 className="h-6 w-6 text-green-600" />
+                )}
+                {(application as any)?.calaimTrackingStatus === 'Not CalAIM Eligible' && (
+                    <span title="Not CalAIM Eligible">
+                        <CheckCircle2 className="h-6 w-6 text-red-600" />
+                    </span>
+                )}
             </CardTitle>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <CardDescription>
@@ -2395,7 +2522,188 @@ function ApplicationDetailPageContent() {
                     </div>
                 </div>
             </div>
-            
+
+            {/* CalAIM Status */}
+            <div className="border-t pt-4">
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">CalAIM Status</label>
+                        {isUpdatingTracking && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    </div>
+                    <Select
+                        value={(application as any)?.calaimTrackingStatus || ''}
+                        onValueChange={updateTrackingStatus}
+                        disabled={isUpdatingTracking}
+                    >
+                        <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select CalAIM status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {calaimTrackingOptions.map((option) => (
+                                <SelectItem key={option} value={option}>
+                                    {option}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    {(application as any)?.calaimTrackingStatus === 'Not CalAIM Eligible' && (
+                        <div className="space-y-2">
+                            <Label className="text-sm font-medium">
+                                Reason (select all that apply)
+                            </Label>
+                            <div className="space-y-2">
+                                <div className="flex items-center space-x-2">
+                                    <Checkbox
+                                        id="not-eligible-switching"
+                                        checked={Boolean((application as any)?.calaimNotEligibleSwitchingProviders)}
+                                        onCheckedChange={(checked) =>
+                                            updateNotEligibleFlags({ calaimNotEligibleSwitchingProviders: Boolean(checked) })
+                                        }
+                                        disabled={isUpdatingTracking}
+                                    />
+                                    <Label htmlFor="not-eligible-switching" className="text-sm font-medium">
+                                        Switching Providers by end of Month
+                                    </Label>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <Checkbox
+                                        id="not-eligible-soc"
+                                        checked={Boolean((application as any)?.calaimNotEligibleHasSoc)}
+                                        onCheckedChange={(checked) =>
+                                            updateNotEligibleFlags({ calaimNotEligibleHasSoc: Boolean(checked) })
+                                        }
+                                        disabled={isUpdatingTracking}
+                                    />
+                                    <Label htmlFor="not-eligible-soc" className="text-sm font-medium">
+                                        Has SOC
+                                    </Label>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <Checkbox
+                                        id="not-eligible-county"
+                                        checked={Boolean((application as any)?.calaimNotEligibleOutOfCounty)}
+                                        onCheckedChange={(checked) =>
+                                            updateNotEligibleFlags({ calaimNotEligibleOutOfCounty: Boolean(checked) })
+                                        }
+                                        disabled={isUpdatingTracking}
+                                    />
+                                    <Label htmlFor="not-eligible-county" className="text-sm font-medium">
+                                        Not in our contracted CalAIM County
+                                    </Label>
+                                </div>
+                                <div className="flex items-start space-x-2">
+                                    <Checkbox
+                                        id="not-eligible-other"
+                                        checked={Boolean((application as any)?.calaimNotEligibleOther)}
+                                        onCheckedChange={(checked) =>
+                                            updateNotEligibleFlags({
+                                                calaimNotEligibleOther: Boolean(checked),
+                                                calaimNotEligibleOtherReason: Boolean(checked)
+                                                    ? (application as any)?.calaimNotEligibleOtherReason || ''
+                                                    : ''
+                                            })
+                                        }
+                                        disabled={isUpdatingTracking}
+                                    />
+                                    <div className="flex-1 space-y-2">
+                                        <Label htmlFor="not-eligible-other" className="text-sm font-medium">
+                                            Other
+                                        </Label>
+                                        {(application as any)?.calaimNotEligibleOther && (
+                                            <Textarea
+                                                id="not-eligible-other-reason"
+                                                rows={2}
+                                                placeholder="Describe the reason..."
+                                                value={(application as any)?.calaimNotEligibleOtherReason || ''}
+                                                onChange={(event) => {
+                                                    const nextValue = event.target.value;
+                                                    setApplication(prev => prev ? { ...prev, calaimNotEligibleOtherReason: nextValue } : null);
+                                                }}
+                                                onBlur={(event) =>
+                                                    updateNotEligibleFlags({ calaimNotEligibleOtherReason: event.target.value })
+                                                }
+                                                disabled={isUpdatingTracking}
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Application Progression Field */}
+            <div className="border-t pt-4">
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">Application Progression</label>
+                        <span className="text-xs text-muted-foreground">
+                            {application.healthPlan} Workflow Status
+                        </span>
+                    </div>
+                    
+                    {application.healthPlan?.toLowerCase().includes('kaiser') ? (
+                        <Select 
+                            value={(application as any)?.kaiserStatus || kaiserSteps[0]} 
+                            onValueChange={(value) => updateProgressionStatus(value, 'kaiser')}
+                            disabled={isUpdatingProgression}
+                        >
+                            <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select Kaiser status" />
+                                {isUpdatingProgression && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
+                            </SelectTrigger>
+                            <SelectContent>
+                                {getKaiserStatusesInOrder().map((status) => (
+                                    <SelectItem key={status.id} value={status.status}>
+                                        <div className="flex items-center justify-between w-full">
+                                            <span>{status.status}</span>
+                                            <div className="flex items-center gap-2 ml-2">
+                                                <span className="text-xs text-muted-foreground">#{status.sortOrder}</span>
+                                                <span className={cn(
+                                                    "text-xs px-2 py-0.5 rounded-full",
+                                                    status.category === 'initial' && "bg-blue-100 text-blue-700",
+                                                    status.category === 'assessment' && "bg-purple-100 text-purple-700",
+                                                    status.category === 'authorization' && "bg-orange-100 text-orange-700",
+                                                    status.category === 'placement' && "bg-green-100 text-green-700",
+                                                    status.category === 'completion' && "bg-gray-100 text-gray-700",
+                                                    status.category === 'inactive' && "bg-red-100 text-red-700"
+                                                )}>
+                                                    {status.category}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    ) : application.healthPlan?.toLowerCase().includes('health net') ? (
+                        <Select 
+                            value={(application as any)?.healthNetStatus || healthNetSteps[0]} 
+                            onValueChange={(value) => updateProgressionStatus(value, 'healthNet')}
+                            disabled={isUpdatingProgression}
+                        >
+                            <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select Health Net status" />
+                                {isUpdatingProgression && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
+                            </SelectTrigger>
+                            <SelectContent>
+                                {healthNetSteps.map((step) => (
+                                    <SelectItem key={step} value={step}>
+                                        {step}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    ) : (
+                        <div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-md">
+                            Application progression tracking is available for Kaiser and Health Net members only.
+                        </div>
+                    )}
+                </div>
+            </div>
+
             {/* Staff Assignment Display */}
             <div className="border-t pt-4 space-y-4">
                 {/* Assigned Staff Section */}
@@ -2488,76 +2796,6 @@ function ApplicationDetailPageContent() {
                 </div>
             </div>
 
-            {/* Application Progression Field */}
-            <div className="border-t pt-4">
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium">Application Progression</label>
-                        <span className="text-xs text-muted-foreground">
-                            {application.healthPlan} Workflow Status
-                        </span>
-                    </div>
-                    
-                    {application.healthPlan?.toLowerCase().includes('kaiser') ? (
-                        <Select 
-                            value={(application as any)?.kaiserStatus || kaiserSteps[0]} 
-                            onValueChange={(value) => updateProgressionStatus(value, 'kaiser')}
-                            disabled={isUpdatingProgression}
-                        >
-                            <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select Kaiser status" />
-                                {isUpdatingProgression && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-                            </SelectTrigger>
-                            <SelectContent>
-                                {getKaiserStatusesInOrder().map((status) => (
-                                    <SelectItem key={status.id} value={status.status}>
-                                        <div className="flex items-center justify-between w-full">
-                                            <span>{status.status}</span>
-                                            <div className="flex items-center gap-2 ml-2">
-                                                <span className="text-xs text-muted-foreground">#{status.sortOrder}</span>
-                                                <span className={cn(
-                                                    "text-xs px-2 py-0.5 rounded-full",
-                                                    status.category === 'initial' && "bg-blue-100 text-blue-700",
-                                                    status.category === 'assessment' && "bg-purple-100 text-purple-700",
-                                                    status.category === 'authorization' && "bg-orange-100 text-orange-700",
-                                                    status.category === 'placement' && "bg-green-100 text-green-700",
-                                                    status.category === 'completion' && "bg-gray-100 text-gray-700",
-                                                    status.category === 'inactive' && "bg-red-100 text-red-700"
-                                                )}>
-                                                    {status.category}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    ) : application.healthPlan?.toLowerCase().includes('health net') ? (
-                        <Select 
-                            value={(application as any)?.healthNetStatus || healthNetSteps[0]} 
-                            onValueChange={(value) => updateProgressionStatus(value, 'healthNet')}
-                            disabled={isUpdatingProgression}
-                        >
-                            <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select Health Net status" />
-                                {isUpdatingProgression && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-                            </SelectTrigger>
-                            <SelectContent>
-                                {healthNetSteps.map((step) => (
-                                    <SelectItem key={step} value={step}>
-                                        {step}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    ) : (
-                        <div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-md">
-                            Application progression tracking is available for Kaiser and Health Net members only.
-                        </div>
-                    )}
-                </div>
-            </div>
-            
             <div>
                 <div className="flex justify-between text-sm text-muted-foreground mb-1">
                     <span className="font-medium">User-Submitted Documents</span>

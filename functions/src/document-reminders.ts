@@ -25,7 +25,7 @@ export const sendDocumentReminders = onSchedule({
       db.collection('applications').get()
     ]);
     const now = new Date();
-    const twoDaysAgo = new Date(now.getTime() - (2 * 24 * 60 * 60 * 1000));
+    const defaultFrequencyDays = 2;
     
     let remindersSent = 0;
     const remindersToSend = [];
@@ -44,6 +44,8 @@ export const sendDocumentReminders = onSchedule({
       const emailRemindersEnabled = application.emailRemindersEnabled !== false; // Default to true if not set
       
       if (missingDocs.length > 0 && emailRemindersEnabled) {
+        const frequencyDays = Math.max(1, Number(application.documentReminderFrequencyDays) || defaultFrequencyDays);
+        const frequencyAgo = new Date(now.getTime() - (frequencyDays * 24 * 60 * 60 * 1000));
         const lastSubmitted = application.lastUpdated?.toDate() || application.createdAt?.toDate();
         const lastReminder = application.lastDocumentReminder?.toDate();
         
@@ -52,15 +54,16 @@ export const sendDocumentReminders = onSchedule({
         // 2. No reminder sent yet, OR last reminder was 2+ days ago
         // 3. Email reminders are enabled for this application
         const shouldSendReminder = lastSubmitted && 
-          lastSubmitted <= twoDaysAgo && 
-          (!lastReminder || lastReminder <= twoDaysAgo);
+          lastSubmitted <= frequencyAgo && 
+          (!lastReminder || lastReminder <= frequencyAgo);
         
         if (shouldSendReminder && application.referrerEmail) {
           remindersToSend.push({
             applicationId: doc.id,
             docRef: doc.ref,
             application,
-            missingDocs
+            missingDocs,
+            frequencyDays
           });
         }
       }
@@ -215,7 +218,7 @@ function getMissingRequiredDocuments(application: any): string[] {
 
 // Helper function to send document reminder email
 async function sendDocumentReminderEmail(resend: Resend, reminder: any) {
-  const { application, missingDocs } = reminder;
+  const { application, missingDocs, frequencyDays = 2 } = reminder;
   
   const missingDocsList = missingDocs.map((doc: string) => String(doc)).join(', ');
   
@@ -248,7 +251,7 @@ async function sendDocumentReminderEmail(resend: Resend, reminder: any) {
       
       <hr style="margin: 30px 0; border: none; border-top: 1px solid #e5e7eb;">
       <p style="color: #6b7280; font-size: 14px;">
-        This is an automated reminder. You will receive these reminders every 2 days until all required documents are uploaded.
+        This is an automated reminder. You will receive these reminders every ${frequencyDays} day${frequencyDays === 1 ? '' : 's'} until all required documents are uploaded.
       </p>
     </div>
   `;

@@ -13,8 +13,14 @@ import { FormSection } from '@/components/FormSection';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { Checkbox } from '@/components/ui/checkbox';
 
-export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
-  const { control, watch, setValue, getValues, clearErrors } = useFormContext<FormValues>();
+export default function Step1({
+  isAdminView,
+  onCheckMrnUnique,
+}: {
+  isAdminView?: boolean;
+  onCheckMrnUnique?: (mrn: string) => void;
+}) {
+  const { control, watch, setValue, getValues, clearErrors, trigger } = useFormContext<FormValues>();
   
   const memberDob = watch('memberDob');
   const hasLegalRep = watch('hasLegalRep');
@@ -219,8 +225,20 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     render={({ field }) => (
                         <FormItem>
                         <FormLabel>Medi-Cal Number <span className="text-destructive">*</span></FormLabel>
-                        <FormControl>
-                            <Input {...field} type="text" value={field.value ?? ''} maxLength={9} />
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="text"
+                      value={field.value ?? ''}
+                      maxLength={9}
+                      onChange={(event) => {
+                        field.onChange(event.target.value.toUpperCase());
+                      }}
+                      onBlur={() => {
+                        trigger('memberMediCalNum');
+                        trigger('confirmMemberMediCalNum');
+                      }}
+                    />
                         </FormControl>
                         <FormDescription>This is a 9 character number starting with a '9' and ending with a letter.</FormDescription>
                         <FormMessage />
@@ -233,8 +251,20 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                     render={({ field }) => (
                         <FormItem>
                         <FormLabel>Confirm Medi-Cal Number <span className="text-destructive">*</span></FormLabel>
-                        <FormControl>
-                            <Input {...field} type="text" value={field.value ?? ''} maxLength={9} />
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="text"
+                      value={field.value ?? ''}
+                      maxLength={9}
+                      onChange={(event) => {
+                        field.onChange(event.target.value.toUpperCase());
+                      }}
+                      onBlur={() => {
+                        trigger('confirmMemberMediCalNum');
+                        trigger('memberMediCalNum');
+                      }}
+                    />
                         </FormControl>
                         <FormMessage />
                         </FormItem>
@@ -249,7 +279,19 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 <FormItem>
                   <FormLabel>Medical Record Number (MRN) <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
+                    <Input
+                      {...field}
+                      value={field.value ?? ''}
+                      onChange={(event) => {
+                        clearErrors('memberMrn');
+                        field.onChange(event.target.value);
+                      }}
+                      onBlur={() => {
+                        trigger('memberMrn');
+                        trigger('confirmMemberMrn');
+                        onCheckMrnUnique?.(field.value ?? '');
+                      }}
+                    />
                   </FormControl>
                   <FormDescription>
                     Health Net uses the Medi-Cal number; Kaiser uses a different MRN (often starts with 0000).
@@ -265,7 +307,17 @@ export default function Step1({ isAdminView }: { isAdminView?: boolean }) {
                 <FormItem>
                   <FormLabel>Confirm Medical Record Number (MRN) <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
+                    <Input
+                      {...field}
+                      value={field.value ?? ''}
+                      onChange={(event) => {
+                        field.onChange(event.target.value);
+                      }}
+                      onBlur={() => {
+                        trigger('confirmMemberMrn');
+                        trigger('memberMrn');
+                      }}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

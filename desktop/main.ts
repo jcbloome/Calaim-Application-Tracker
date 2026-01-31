@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, Notification, ipcMain } from 'electron';
+import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, dialog } from 'electron';
 import path from 'path';
 import { autoUpdater } from 'electron-updater';
 
@@ -68,6 +68,23 @@ const createTray = () => {
       }
     },
     {
+      label: 'About Connect CalAIM',
+      click: async () => {
+        const result = await dialog.showMessageBox({
+          type: 'info',
+          title: 'About Connect CalAIM',
+          message: 'Connect CalAIM Desktop',
+          detail: `Version: ${app.getVersion()}\nUpdate feed: ${updateUrl}`,
+          buttons: ['Check for Updates', 'Close'],
+          defaultId: 0,
+          cancelId: 1
+        });
+        if (result.response === 0) {
+          autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
+        }
+      }
+    },
+    {
       label: 'Check for Updates',
       click: () => {
         autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
@@ -90,6 +107,38 @@ const createTray = () => {
     mainWindow.focus();
     mainWindow.webContents.send('desktop:expand');
   });
+};
+
+const showAboutDialog = async () => {
+  await dialog.showMessageBox({
+    type: 'info',
+    title: 'About Connect CalAIM',
+    message: 'Connect CalAIM Desktop',
+    detail: `Version: ${app.getVersion()}\nUpdate feed: ${updateUrl}`,
+    buttons: ['Check for Updates', 'Close'],
+    defaultId: 0,
+    cancelId: 1
+  }).then((result) => {
+    if (result.response === 0) {
+      autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
+    }
+  });
+};
+
+const createAppMenu = () => {
+  const template = [
+    {
+      label: 'Connect CalAIM',
+      submenu: [
+        { label: 'About Connect CalAIM', click: showAboutDialog },
+        { label: 'Check for Updates', click: () => autoUpdater.checkForUpdatesAndNotify().catch(() => undefined) },
+        { type: 'separator' as const },
+        { label: 'Quit', click: () => { isQuitting = true; app.quit(); } }
+      ]
+    }
+  ];
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
 };
 
 const configureAutoUpdater = () => {
@@ -141,6 +190,7 @@ ipcMain.handle('desktop:checkForUpdates', async () => {
 
 app.whenReady().then(() => {
   computeEffectivePaused();
+  createAppMenu();
   createWindow();
   createTray();
   configureAutoUpdater();

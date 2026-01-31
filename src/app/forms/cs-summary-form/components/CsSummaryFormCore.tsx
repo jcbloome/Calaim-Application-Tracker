@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useUser, useFirestore, errorEmitter, FirestorePermissionError, useMemoFirebase } from '@/firebase';
-import { doc, setDoc, getDoc, serverTimestamp, collection, Timestamp, query, where, getDocs, FieldValue } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, collection, collectionGroup, Timestamp, query, where, getDocs, FieldValue } from 'firebase/firestore';
 import Link from 'next/link';
 
 import Step1 from './Step1';
@@ -31,7 +31,7 @@ const steps = [
       'secondaryContactFirstName', 'secondaryContactLastName', 'secondaryContactRelationship', 'secondaryContactPhone', 'secondaryContactEmail', 'secondaryContactLanguage',
       'hasLegalRep', 'repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail'
   ]},
-  { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty', 'customaryLocationType', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty'] },
+  { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentLocationName', 'currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty', 'customaryLocationType', 'customaryLocationName', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty'] },
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'switchingHealthPlan', 'existingHealthPlan', 'snfDiversionReason'] },
   { id: 4, name: 'ISP & Facility Selection', fields: [
       'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail', 
@@ -70,7 +70,7 @@ function CsSummaryFormComponent() {
     }
   });
 
-  const { formState: { errors, isValid }, trigger, getValues, handleSubmit, reset, setFocus } = methods;
+  const { formState: { errors, isValid }, trigger, getValues, handleSubmit, reset, setFocus, setError, clearErrors } = methods;
 
   const targetUserId = appUserId || user?.uid;
   const isAdminView = !!appUserId;
@@ -156,6 +156,41 @@ function CsSummaryFormComponent() {
         setValidationError(null);
     }
   }, [errors, currentStep]);
+
+  const checkMrnUniqueness = async (mrn: string) => {
+    if (!firestore) return;
+    const normalizedMrn = mrn.trim();
+    if (!normalizedMrn) {
+      clearErrors('memberMrn');
+      return;
+    }
+
+    try {
+      const [userAppsSnap, adminAppsSnap] = await Promise.all([
+        getDocs(query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))),
+        getDocs(query(collection(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))),
+      ]);
+
+      const currentPath = docRef?.path;
+      const allDocs = [...userAppsSnap.docs, ...adminAppsSnap.docs];
+      const seenPaths = new Set<string>();
+      const duplicates = allDocs.filter((docSnapshot) => {
+        const path = docSnapshot.ref.path;
+        if (seenPaths.has(path)) return false;
+        seenPaths.add(path);
+        if (currentPath && path === currentPath) return false;
+        return true;
+      });
+
+      if (duplicates.length > 0) {
+        setError('memberMrn', { type: 'manual', message: 'MRN already used in another application.' });
+      } else {
+        clearErrors('memberMrn');
+      }
+    } catch (error) {
+      console.error('Error checking MRN uniqueness:', error);
+    }
+  };
 
 
   const saveProgress = (isNavigating: boolean = false): Promise<string | null> => {
@@ -328,14 +363,28 @@ function CsSummaryFormComponent() {
   };
 
   const checkForDuplicates = async (data: FormValues): Promise<boolean> => {
-    if (!targetUserId || !firestore || isAdminCreatedApp) return false;
+    if (!firestore) return false;
 
-    const appsRef = collection(firestore, `users/${targetUserId}/applications`);
-    
-    const mrnQuery = query(appsRef, where("memberMrn", "==", data.memberMrn));
-    const mrnSnap = await getDocs(mrnQuery);
+    const normalizedMrn = data.memberMrn?.trim();
+    if (!normalizedMrn) return false;
 
-    if (!mrnSnap.empty && mrnSnap.docs.some(doc => doc.id !== internalApplicationId)) {
+    const [userAppsSnap, adminAppsSnap] = await Promise.all([
+      getDocs(query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))),
+      getDocs(query(collection(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))),
+    ]);
+
+    const currentPath = docRef?.path;
+    const allDocs = [...userAppsSnap.docs, ...adminAppsSnap.docs];
+    const seenPaths = new Set<string>();
+    const duplicates = allDocs.filter((docSnapshot) => {
+      const path = docSnapshot.ref.path;
+      if (seenPaths.has(path)) return false;
+      seenPaths.add(path);
+      if (currentPath && path === currentPath) return false;
+      return true;
+    });
+
+    if (duplicates.length > 0) {
       toast({
         variant: 'destructive',
         title: 'Duplicate Application Found',
@@ -488,7 +537,7 @@ function CsSummaryFormComponent() {
             )}
 
             <div className="min-h-[450px]">
-              {currentStep === 1 && <Step1 isAdminView={isAdminView} />}
+              {currentStep === 1 && <Step1 isAdminView={isAdminView} onCheckMrnUnique={checkMrnUniqueness} />}
               {currentStep === 2 && <Step2 />}
               {currentStep === 3 && <Step3 />}
               {currentStep === 4 && <Step4 />}

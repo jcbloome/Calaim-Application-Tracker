@@ -5,7 +5,7 @@ import { useAuth, useFirestore } from '@/firebase';
 import {
   signInWithEmailAndPassword,
   setPersistence,
-  browserLocalPersistence,
+  browserSessionPersistence,
   type User
 } from 'firebase/auth';
 import type { AuthError } from 'firebase/auth';
@@ -74,7 +74,7 @@ export default function AdminLoginClient() {
         await auth.signOut();
       }
 
-      await setPersistence(auth, browserLocalPersistence);
+      await setPersistence(auth, browserSessionPersistence);
 
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
 

@@ -20,6 +20,7 @@ import {
 import { cn } from '@/lib/utils';
 
 interface WindowsNotificationProps {
+  keyId?: string;
   id: string;
   type: 'note' | 'task' | 'urgent' | 'success' | 'warning';
   title: string;
@@ -37,6 +38,11 @@ interface WindowsNotificationProps {
   followUpDate?: string;
   replyUrl?: string;
   requiresSecondClick?: boolean;
+  disableCardClick?: boolean;
+  startMinimized?: boolean;
+  lockToTray?: boolean;
+  tagLabel?: string;
+  links?: Array<{ label: string; url: string }>;
   onFollowUpSave?: (date: string) => void;
   onClose?: () => void;
   onClick?: () => void;
@@ -100,13 +106,15 @@ export default function WindowsNotification({
   followUpDate,
   replyUrl,
   requiresSecondClick = false,
+  disableCardClick = false,
+  startMinimized = false,
   onFollowUpSave,
   onClose,
   onClick
 }: WindowsNotificationProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(startMinimized);
   const [hasClickedOnce, setHasClickedOnce] = useState(false);
   const [isFollowUpOpen, setIsFollowUpOpen] = useState(false);
   const [followUpDraft, setFollowUpDraft] = useState('');
@@ -592,7 +600,7 @@ export default function WindowsNotification({
         isUrgent ? 'border-orange-500' : 'border-slate-200',
         getAnimationClasses()
       )}
-      onClick={handleClick}
+      onClick={disableCardClick ? undefined : handleClick}
     >
       <div className="p-4">
         {/* Header */}
@@ -790,7 +798,13 @@ export function useWindowsNotifications() {
       onClose: () => removeNotification(id)
     };
 
-    setNotifications(prev => [...prev, newNotification]);
+    setNotifications((prev) => {
+      if (!notification.keyId) {
+        return [...prev, newNotification];
+      }
+      const withoutKey = prev.filter((item) => item.keyId !== notification.keyId);
+      return [...withoutKey, newNotification];
+    });
 
     // Auto-remove after duration
     if (notification.duration && notification.duration > 0) {

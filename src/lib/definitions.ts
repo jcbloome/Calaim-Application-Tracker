@@ -71,6 +71,7 @@ export type Application = {
   repPhone?: string | null;
   repEmail?: string | null;
   currentLocation?: string;
+  currentLocationName?: string;
   currentAddress?: string;
   currentCity?: string;
   currentState?: string;
@@ -78,6 +79,7 @@ export type Application = {
   currentCounty?: string;
   copyAddress?: boolean;
   customaryLocationType?: string;
+  customaryLocationName?: string;
   customaryAddress?: string;
   customaryCity?: string;
   customaryState?: string;
@@ -97,6 +99,7 @@ export type Application = {
   ispFacilityName?: string;
   onALWWaitlist?: 'Yes' | 'No' | 'Unknown';
   monthlyIncome?: string;
+  expectedRoomBoardPayment?: string;
   ackRoomAndBoard?: boolean;
   hasPrefRCFE?: 'Yes' | 'No';
   rcfeName?: string | null;
@@ -111,6 +114,14 @@ export type Application = {
   reviewNotificationSent?: boolean;
   emailRemindersEnabledAt?: Timestamp | FieldValue;
   reviewNotificationSentAt?: Timestamp | FieldValue;
+  documentReminderFrequencyDays?: number;
+  calaimTrackingStatus?: string;
+  calaimTrackingReason?: string;
+  calaimNotEligibleSwitchingProviders?: boolean;
+  calaimNotEligibleHasSoc?: boolean;
+  calaimNotEligibleOutOfCounty?: boolean;
+  calaimNotEligibleOther?: boolean;
+  calaimNotEligibleOtherReason?: string;
 };
 
 export type FormStatus = {

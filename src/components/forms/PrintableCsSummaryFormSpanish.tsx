@@ -110,6 +110,11 @@ export function PrintableCsSummaryFormSpanish({
         required: true,
         width: 'full'
       }),
+      buildField({
+        label: 'Nombre de la ubicación actual (si aplica)',
+        value: data.currentLocationName,
+        width: 'full'
+      }),
       React.createElement('div', {
         key: 'current-location-examples',
         className: 'col-span-full text-xs text-gray-500 print:text-black'
@@ -135,6 +140,11 @@ export function PrintableCsSummaryFormSpanish({
         type: 'select',
         options: ['Hogar', 'Hospital', 'Centro de Enfermería Especializada (SNF)', 'Vida Asistida', 'Otro'],
         required: true,
+        width: 'full'
+      }),
+      buildField({
+        label: 'Nombre de la ubicación habitual (si aplica)',
+        value: data.customaryLocationName,
         width: 'full'
       }),
       React.createElement('div', {

@@ -39,7 +39,7 @@ export const formSchema = z.object({
     memberDob: dateSchema,
     sex: z.enum(['Male', 'Female'], { errorMap: () => ({ message: ' ' }) }),
     memberAge: z.number({ required_error: ' '}).min(0).optional(),
-    memberMediCalNum: z.string().regex(/^[9][0-9]{7}[A-Za-z]$/, { message: " " }),
+    memberMediCalNum: z.string().regex(/^[9][0-9]{7}[A-Za-z]$/, { message: "Must start with 9 and end with a letter." }),
     confirmMemberMediCalNum: requiredString,
     memberMrn: requiredString,
     confirmMemberMrn: requiredString,
@@ -80,6 +80,7 @@ export const formSchema = z.object({
 
     // Step 2 - Location
     currentLocation: requiredString,
+    currentLocationName: optionalString,
     currentAddress: requiredString,
     currentCity: requiredString,
     currentState: requiredString,
@@ -87,6 +88,7 @@ export const formSchema = z.object({
     currentCounty: requiredString,
     copyAddress: z.boolean().optional(),
     customaryLocationType: requiredString,
+    customaryLocationName: optionalString,
     customaryAddress: requiredString,
     customaryCity: requiredString,
     customaryState: requiredString,

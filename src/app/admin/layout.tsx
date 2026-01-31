@@ -1,6 +1,7 @@
 'use client';
 
 import React, { ReactNode, useEffect, useRef, useState } from 'react';
+import appPackage from '../../../package.json';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -85,6 +86,7 @@ const adminNavLinks = [
       { href: '/admin', label: 'Activity Dashboard', icon: Activity },
       { href: '/admin/activity-log', label: 'Activity Log', icon: Activity },
       { href: '/admin/applications', label: 'All Applications', icon: FolderKanban },
+      { href: '/admin/incomplete-cs-summary', label: 'Incomplete CS Summary', icon: FileText },
       { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
@@ -485,21 +487,6 @@ function AdminHeader() {
         </div>
 
         <div className="flex items-center gap-3 relative z-50">
-          <StaffNotificationBell
-            userId={user?.uid}
-            icon={MessageSquareText}
-            className="text-blue-600 hover:text-blue-700"
-          />
-          <Link href="/admin/tasks?range=daily" className="hidden sm:flex">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex items-center gap-2 text-red-600 hover:text-red-700"
-              title="Daily Tasks Due"
-            >
-              <CalendarCheck className="h-4 w-4" />
-            </Button>
-          </Link>
           {/* Staff Notification Bell removed in favor of quick icons */}
           
           {/* User Menu */}
@@ -627,16 +614,33 @@ function AdminHeader() {
           </Sheet>
         </div>
       </div>
-      {renderPlanBadges() && (
-        <div className="border-t border-border bg-muted/30">
-          <div className="container mx-auto px-4 sm:px-6 py-2 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-muted-foreground w-full sm:w-auto">
+      <div className="border-t border-border bg-muted/30">
+        <div className="container mx-auto px-4 sm:px-6 py-2 flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">
               Action items:
             </span>
-            {renderPlanBadges()}
+            <div className="flex items-center gap-2">
+              <StaffNotificationBell
+                userId={user?.uid}
+                icon={MessageSquareText}
+                className="text-blue-600 hover:text-blue-700"
+              />
+              <Link href="/admin/tasks?range=daily">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex items-center gap-2 text-red-600 hover:text-red-700"
+                  title="Daily Tasks Due"
+                >
+                  <CalendarCheck className="h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
           </div>
+          {renderPlanBadges()}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -648,6 +652,17 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [authGraceExpired, setAuthGraceExpired] = useState(false);
   const [hasAdminSessionCookie, setHasAdminSessionCookie] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; open: boolean }>({
+    x: 0,
+    y: 0,
+    open: false
+  });
+
+  const appVersion = appPackage?.version || 'unknown';
+  const buildTimeRaw = process.env.NEXT_PUBLIC_BUILD_TIME;
+  const buildTimeLabel = buildTimeRaw && !Number.isNaN(Date.parse(buildTimeRaw))
+    ? new Date(buildTimeRaw).toLocaleString()
+    : 'Unknown';
 
   // Allow access to login page without authentication
   const isLoginPage = pathname === '/admin/login';
@@ -674,6 +689,23 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     if (typeof document === 'undefined') return;
     setHasAdminSessionCookie(document.cookie.includes('calaim_admin_session='));
   }, [pathname]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      setContextMenu({ x: event.clientX, y: event.clientY, open: true });
+    };
+    const handleClose = () => setContextMenu((prev) => ({ ...prev, open: false }));
+    window.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('click', handleClose);
+    window.addEventListener('scroll', handleClose, true);
+    return () => {
+      window.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('click', handleClose);
+      window.removeEventListener('scroll', handleClose, true);
+    };
+  }, []);
 
   useEffect(() => {
     if (!loading && !isUserLoading) {
@@ -752,6 +784,31 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
+      {contextMenu.open && (
+        <div
+          className="fixed z-[999] min-w-[240px] rounded-md border bg-white shadow-lg text-sm"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="px-3 py-2 font-medium">About Connect CalAIM</div>
+          <div className="px-3 pb-2 text-xs text-muted-foreground">
+            Version: {appVersion}
+            <br />
+            Last update: {buildTimeLabel}
+          </div>
+          <div className="border-t" />
+          <button
+            className="w-full px-3 py-2 text-left hover:bg-muted"
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                window.location.reload();
+              }
+            }}
+          >
+            Check for updates
+          </button>
+        </div>
+      )}
     </>
   );
 }

@@ -69,8 +69,10 @@ export const sendCsSummaryReminders = onSchedule({
       
       const lastUpdated = application.lastUpdated?.toDate?.() || application.createdAt?.toDate?.();
       const lastReminder = application.lastCsSummaryReminder?.toDate?.();
+      const reminderCount = Number(application.csSummaryReminderCount || 0);
       
-      const shouldSendReminder = lastUpdated &&
+      const shouldSendReminder = reminderCount < 2 &&
+        lastUpdated &&
         lastUpdated <= twoDaysAgo &&
         (!lastReminder || lastReminder <= twoDaysAgo);
       
@@ -149,8 +151,9 @@ export const triggerCsSummaryReminders = onCall({
       const application = doc.data();
       const remindersEnabled = application.emailRemindersEnabled !== false;
       const completedSummary = hasCompletedCsSummary(application);
+      const reminderCount = Number(application.csSummaryReminderCount || 0);
       
-      if (!remindersEnabled || completedSummary || !application.referrerEmail) {
+      if (!remindersEnabled || completedSummary || reminderCount >= 2 || !application.referrerEmail) {
         continue;
       }
       

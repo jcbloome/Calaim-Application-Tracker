@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
@@ -76,6 +77,48 @@ export default function MissingDocumentsPage() {
   const [healthPlanFilter, setHealthPlanFilter] = useState('all');
   const [pathwayFilter, setPathwayFilter] = useState('all');
   const [sendingReminders, setSendingReminders] = useState<Set<string>>(new Set());
+  const [updatingSettings, setUpdatingSettings] = useState<Set<string>>(new Set());
+  const updateReminderSettings = async (
+    app: AppRecord,
+    updates: { emailRemindersEnabled?: boolean; documentReminderFrequencyDays?: number }
+  ) => {
+    if (updatingSettings.has(app.id)) return;
+    setUpdatingSettings((prev) => new Set(prev).add(app.id));
+    try {
+      const response = await fetch('/api/admin/update-notification-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationId: app.id,
+          userId: app.userId,
+          ...updates
+        })
+      });
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update reminder settings');
+      }
+      setApplications((prev) =>
+        prev.map((item) =>
+          item.id === app.id
+            ? { ...item, ...updates }
+            : item
+        )
+      );
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message || 'Failed to update reminder settings.'
+      });
+    } finally {
+      setUpdatingSettings((prev) => {
+        const next = new Set(prev);
+        next.delete(app.id);
+        return next;
+      });
+    }
+  };
   
   const fetchApplications = useCallback(async () => {
     if (!firestore || !isAdmin) return;
@@ -256,13 +299,14 @@ export default function MissingDocumentsPage() {
                   <TableHead>Missing Items</TableHead>
                   <TableHead>Last Updated</TableHead>
                   <TableHead>Last Reminder</TableHead>
+                  <TableHead>Reminders</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
+                    <TableCell colSpan={7} className="h-24 text-center">
                       Loading applications...
                     </TableCell>
                   </TableRow>
@@ -272,6 +316,7 @@ export default function MissingDocumentsPage() {
                     const lastReminderDate = (app as any)?.lastDocumentReminder?.toDate?.();
                     const memberName = `${app.memberFirstName || ''} ${app.memberLastName || ''}`.trim();
                     const detailUrl = `/admin/applications/${app.id}${app.userId ? `?userId=${app.userId}` : ''}`;
+                    const frequencyDays = Math.max(1, Number((app as any)?.documentReminderFrequencyDays) || 2);
                     
                     return (
                       <TableRow key={`${app.id}-${app.userId || 'admin'}`}>
@@ -294,6 +339,48 @@ export default function MissingDocumentsPage() {
                         </TableCell>
                         <TableCell>
                           {lastReminderDate ? format(lastReminderDate, 'MM/dd/yyyy') : 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={(app as any)?.emailRemindersEnabled !== false}
+                                onCheckedChange={(checked) =>
+                                  updateReminderSettings(app, { emailRemindersEnabled: checked })
+                                }
+                                disabled={updatingSettings.has(app.id)}
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                {((app as any)?.emailRemindersEnabled !== false) ? 'On' : 'Off'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">Every</span>
+                              <Input
+                                type="number"
+                                min={1}
+                                max={30}
+                                className="h-7 w-16 text-xs"
+                                value={frequencyDays}
+                                onChange={(event) => {
+                                  const nextValue = Number(event.target.value || 1);
+                                  setApplications((prev) =>
+                                    prev.map((item) =>
+                                      item.id === app.id
+                                        ? { ...item, documentReminderFrequencyDays: nextValue }
+                                        : item
+                                    )
+                                  );
+                                }}
+                                onBlur={(event) => {
+                                  const nextValue = Number(event.target.value || 2);
+                                  updateReminderSettings(app, { documentReminderFrequencyDays: nextValue });
+                                }}
+                                disabled={updatingSettings.has(app.id)}
+                              />
+                              <span className="text-xs text-muted-foreground">days</span>
+                            </div>
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex items-center gap-2">
@@ -319,7 +406,7 @@ export default function MissingDocumentsPage() {
                   })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                       No applications with missing documents found.
                     </TableCell>
                   </TableRow>

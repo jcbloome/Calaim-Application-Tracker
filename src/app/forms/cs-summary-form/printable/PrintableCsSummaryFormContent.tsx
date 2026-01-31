@@ -145,6 +145,7 @@ export function PrintableCsSummaryFormContent() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Location Type" />
                     <p className="text-xs text-gray-500 pt-1">Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.</p>
+                    <Field label="Current Location Name (if applicable)" />
                     <Field label="Street Address" />
                     <p className="text-xs text-gray-500 pt-1">Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.</p>
                     <Field label="City" />
@@ -157,6 +158,7 @@ export function PrintableCsSummaryFormContent() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Location Type" />
                     <p className="text-xs text-gray-500 pt-1">Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.</p>
+                    <Field label="Customary Location Name (if applicable)" />
                     <Field label="Street Address" />
                     <Field label="City" />
                     <Field label="State" />
