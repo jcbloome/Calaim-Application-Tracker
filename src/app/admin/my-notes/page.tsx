@@ -13,7 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw, CheckCircle2, Trash2, Zap } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useState, useEffect, Suspense, useRef } from 'react';
+import { useCallback, useState, useEffect, Suspense, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
@@ -56,6 +56,10 @@ interface StaffNotification {
   followUpDate?: string;
 }
 
+const fallbackInstallerUrl =
+  'https://storage.googleapis.com/studio-2881432245-f1d94.firebasestorage.app/Connect_CalAIM/desktop/updates/Connect%20CalAIM%20Desktop%20Setup%203.0.0.exe';
+const installerUrl = process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_URL || fallbackInstallerUrl;
+
 function MyNotesContent() {
   const { user, isAdmin, loading, isUserLoading } = useAdmin();
   const firestore = useFirestore();
@@ -87,6 +91,23 @@ function MyNotesContent() {
     followUpDate: ''
   });
   const [isSendingGeneral, setIsSendingGeneral] = useState(false);
+
+  const handleCopyInstallerLink = useCallback(async () => {
+    if (!installerUrl) return;
+    try {
+      await navigator.clipboard.writeText(installerUrl);
+      toast({
+        title: 'Link copied',
+        description: 'Installer link copied to clipboard.'
+      });
+    } catch (error) {
+      toast({
+        title: 'Copy failed',
+        description: 'Unable to copy the installer link.',
+        variant: 'destructive'
+      });
+    }
+  }, [toast]);
   const [showAllNotes, setShowAllNotes] = useState(false);
   const [highlightNoteId, setHighlightNoteId] = useState<string | null>(null);
   const [quickStatusFilter, setQuickStatusFilter] = useState<'all' | 'unread' | 'open' | 'closed'>('all');
@@ -862,6 +883,9 @@ function MyNotesContent() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button onClick={handleCopyInstallerLink} variant="outline" size="sm">
+            Copy Desktop Installer Link
+          </Button>
           <Button onClick={refresh} variant="outline" size="sm">
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh

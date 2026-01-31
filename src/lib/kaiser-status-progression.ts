@@ -44,6 +44,14 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
     isActive: true
   },
   {
+    id: 52,
+    status: 'T2038 received, Unreachable',
+    sortOrder: 4.5,
+    description: 'T2038 received; member unreachable',
+    category: 'initial',
+    isActive: true
+  },
+  {
     id: 20,
     status: 'T2038 received, doc collection',
     sortOrder: 5,
