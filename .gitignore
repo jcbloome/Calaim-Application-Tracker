@@ -49,3 +49,7 @@ service-account_key.json
 
 # temporary development files
 .tmp-reset-tokens.json
+
+# desktop installer artifacts
+public/downloads/
+public/downloads/*.exe

@@ -56,7 +56,8 @@ interface StaffNotification {
   followUpDate?: string;
 }
 
-const fallbackInstallerUrl = '/downloads/Connect-CalAIM-Desktop-Setup.exe';
+const fallbackInstallerUrl =
+  'https://storage.googleapis.com/studio-2881432245-f1d94.firebasestorage.app/Connect_CalAIM/desktop/updates/Connect%20CalAIM%20Desktop%20Setup%203.0.1.exe';
 const installerUrl = process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_URL || fallbackInstallerUrl;
 
 function MyNotesContent() {

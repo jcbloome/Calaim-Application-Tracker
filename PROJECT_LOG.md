@@ -16,6 +16,18 @@
 
 ## 🗓️ **Development History**
 
+### **January 30, 2026 - Updates**
+- ✅ **Build**: Verified production build after recent changes
+- ✅ **Forms**: Added Current/Customary Location Name fields to CS Summary (online + printables)
+- ✅ **Validation**: Medi-Cal and MRN validations run on blur; MRN uniqueness checked across apps
+- ✅ **Eligibility**: Updated CalAIM Status options, reasons, and status UI indicators
+- ✅ **Reminders**: Incomplete CS Summary page added with reminders; Missing Docs reminders now toggleable with custom cadence
+- ✅ **Notifications**: De-duplicated and stabilized pill notifications with auto-minimize/close
+- ✅ **Admin UX**: Action items bar keeps note/task icons on same line; added right-click About menu
+- ✅ **Auth**: Admin session persistence switched to session-only
+- ✅ **Desktop**: Added About menu, bumped version, and updated installer fallback link
+- ✅ **Repo Hygiene**: Removed installer binary from git and ignored downloads folder; links now point to GCS
+
 ### **January 28, 2026 - Updates**
 - ✅ **Bug Fixed**: Restricted staff notifications to immediate interoffice notes, purged system CS/doc alerts, and stabilized admin auth builds
 
