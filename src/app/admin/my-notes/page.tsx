@@ -13,7 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw, CheckCircle2, Trash2, Zap } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useCallback, useState, useEffect, Suspense, useRef } from 'react';
+import { useState, useEffect, Suspense, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
@@ -56,11 +56,35 @@ interface StaffNotification {
   followUpDate?: string;
 }
 
-const fallbackInstallerUrl =
-  'https://storage.googleapis.com/studio-2881432245-f1d94.firebasestorage.app/Connect_CalAIM/desktop/updates/Connect%20CalAIM%20Desktop%20Setup%203.0.1.exe';
-const installerUrl = process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_URL || fallbackInstallerUrl;
-
 function MyNotesContent() {
+  const fallbackInstallerUrl =
+    'https://github.com/jcbloome/Calaim-Application-Tracker/releases/download/v3.0.1/Connect.CalAIM.Desktop.Setup.3.0.1.exe';
+  const installerUrl = process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_URL || fallbackInstallerUrl;
+  const installerVersion = (() => {
+    if (!installerUrl) return null;
+    try {
+      const decoded = decodeURIComponent(installerUrl);
+      const match = decoded.match(/setup\s*([0-9]+(?:\.[0-9]+)+)/i) || decoded.match(/([0-9]+(?:\.[0-9]+)+)/);
+      return match?.[1] || process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_VERSION || null;
+    } catch {
+      return process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_VERSION || null;
+    }
+  })();
+  const installerDownloadUrl = (() => {
+    if (!installerUrl) return null;
+    try {
+      const url = new URL(installerUrl);
+      const version = installerVersion;
+      const filename = version
+        ? `Connect-CalAIM-Desktop-Setup-${version}.exe`
+        : 'Connect-CalAIM-Desktop-Setup.exe';
+      url.searchParams.set('response-content-disposition', `attachment; filename="${filename}"`);
+      url.searchParams.set('response-content-type', 'application/octet-stream');
+      return url.toString();
+    } catch {
+      return installerUrl;
+    }
+  })();
   const { user, isAdmin, loading, isUserLoading } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -92,22 +116,6 @@ function MyNotesContent() {
   });
   const [isSendingGeneral, setIsSendingGeneral] = useState(false);
 
-  const handleCopyInstallerLink = useCallback(async () => {
-    if (!installerUrl) return;
-    try {
-      await navigator.clipboard.writeText(installerUrl);
-      toast({
-        title: 'Link copied',
-        description: 'Installer link copied to clipboard.'
-      });
-    } catch (error) {
-      toast({
-        title: 'Copy failed',
-        description: 'Unable to copy the installer link.',
-        variant: 'destructive'
-      });
-    }
-  }, [toast]);
   const [showAllNotes, setShowAllNotes] = useState(false);
   const [highlightNoteId, setHighlightNoteId] = useState<string | null>(null);
   const [quickStatusFilter, setQuickStatusFilter] = useState<'all' | 'unread' | 'open' | 'closed'>('all');
@@ -883,9 +891,17 @@ function MyNotesContent() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={handleCopyInstallerLink} variant="outline" size="sm">
-            Copy Desktop Installer Link
-          </Button>
+          {installerDownloadUrl && (
+            <Button asChild variant="outline" size="sm">
+              <a
+                href={installerDownloadUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Download Desktop Installer{installerVersion ? ` (${installerVersion})` : ''}
+              </a>
+            </Button>
+          )}
           <Button onClick={refresh} variant="outline" size="sm">
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh

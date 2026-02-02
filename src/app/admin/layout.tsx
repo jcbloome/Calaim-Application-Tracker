@@ -39,7 +39,6 @@ import {
   TestTube2,
   Map as MapIcon,
   Calendar,
-  Download,
   DollarSign,
   Navigation,
   Wrench,
@@ -108,7 +107,6 @@ const adminNavLinks = [
     isSubmenu: true,
     submenuItems: [
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
-      { href: '/admin/desktop-download', label: 'Desktop App Download', icon: Download },
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
       { href: '/admin/social-worker-assignments', label: 'Social Worker Assignments', icon: UserPlus },
       { href: '/admin/sw-visit-tracking', label: 'SW Visit Tracking System', icon: FileBarChart },

@@ -25,7 +25,87 @@ const broadcastState = () => {
 };
 
 const computeEffectivePaused = () => {
-  notificationState.effectivePaused = notificationState.pausedByUser;
+  const pausedForHours = !notificationState.allowAfterHours && !notificationState.isWithinBusinessHours;
+  notificationState.effectivePaused = notificationState.pausedByUser || pausedForHours;
+};
+
+const buildTrayMenu = () => {
+  const statusLabel = notificationState.effectivePaused ? 'Silent' : 'Active';
+  return Menu.buildFromTemplate([
+    {
+      label: 'Open Notifications',
+      click: () => {
+        if (!mainWindow) return;
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.webContents.send('desktop:expand');
+      }
+    },
+    { type: 'separator' },
+    {
+      label: `Business hours: ${notificationState.isWithinBusinessHours ? 'Active' : 'Silent'}`,
+      enabled: false
+    },
+    {
+      label: notificationState.allowAfterHours ? 'Disable After-Hours Alerts' : 'Enable After-Hours Alerts',
+      click: () => {
+        notificationState.allowAfterHours = !notificationState.allowAfterHours;
+        computeEffectivePaused();
+        broadcastState();
+        updateTrayMenu();
+      }
+    },
+    {
+      label: notificationState.pausedByUser ? 'Resume Notifications' : 'Pause Notifications',
+      click: () => {
+        notificationState.pausedByUser = !notificationState.pausedByUser;
+        computeEffectivePaused();
+        broadcastState();
+        updateTrayMenu();
+      }
+    },
+    {
+      label: `Status: ${statusLabel}`,
+      enabled: false
+    },
+    { type: 'separator' },
+    {
+      label: `About Connect CalAIM (v${app.getVersion()})`,
+      click: async () => {
+        const result = await dialog.showMessageBox({
+          type: 'info',
+          title: 'About Connect CalAIM',
+          message: 'Connect CalAIM Desktop',
+          detail: `Version: ${app.getVersion()}\nUpdate feed: ${updateUrl}`,
+          buttons: ['Check for Updates', 'Close'],
+          defaultId: 0,
+          cancelId: 1
+        });
+        if (result.response === 0) {
+          autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
+        }
+      }
+    },
+    {
+      label: 'Check for Updates',
+      click: () => {
+        autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+};
+
+const updateTrayMenu = () => {
+  if (!tray) return;
+  tray.setContextMenu(buildTrayMenu());
 };
 
 const createWindow = () => {
@@ -57,50 +137,7 @@ const createTray = () => {
   tray = new Tray(iconPath);
   tray.setToolTip('Connect CalAIM Desktop');
 
-  const menu = Menu.buildFromTemplate([
-    {
-      label: 'Open',
-      click: () => {
-        if (!mainWindow) return;
-        mainWindow.show();
-        mainWindow.focus();
-        mainWindow.webContents.send('desktop:expand');
-      }
-    },
-    {
-      label: 'About Connect CalAIM',
-      click: async () => {
-        const result = await dialog.showMessageBox({
-          type: 'info',
-          title: 'About Connect CalAIM',
-          message: 'Connect CalAIM Desktop',
-          detail: `Version: ${app.getVersion()}\nUpdate feed: ${updateUrl}`,
-          buttons: ['Check for Updates', 'Close'],
-          defaultId: 0,
-          cancelId: 1
-        });
-        if (result.response === 0) {
-          autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
-        }
-      }
-    },
-    {
-      label: 'Check for Updates',
-      click: () => {
-        autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
-      }
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => {
-        isQuitting = true;
-        app.quit();
-      }
-    }
-  ]);
-
-  tray.setContextMenu(menu);
+  updateTrayMenu();
   tray.on('click', () => {
     if (!mainWindow) return;
     mainWindow.show();
@@ -157,6 +194,7 @@ ipcMain.handle('desktop:setPaused', (_event, paused: boolean) => {
   notificationState.pausedByUser = Boolean(paused);
   computeEffectivePaused();
   broadcastState();
+  updateTrayMenu();
   return { ...notificationState };
 });
 

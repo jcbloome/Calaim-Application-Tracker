@@ -129,6 +129,7 @@ export default function NotificationSettings() {
   const [testingSound, setTestingSound] = useState(false);
   const [desktopState, setDesktopState] = useState<DesktopNotificationState | null>(null);
   const [desktopAvailable, setDesktopAvailable] = useState(false);
+  const [showInstallerInfo, setShowInstallerInfo] = useState(false);
   const { toast } = useToast();
 
   const persistSettings = (nextSettings: NotificationSettings) => {
@@ -671,10 +672,10 @@ export default function NotificationSettings() {
       return;
     }
 
-    window.open('/admin/desktop-download', '_blank', 'noopener,noreferrer');
+    setShowInstallerInfo(true);
     toast({
-      title: 'Download page opened',
-      description: 'Use the latest installer to update the desktop app.'
+      title: 'Installer link available',
+      description: 'Open My Notifications to access the desktop installer.'
     });
   };
 
@@ -718,6 +719,14 @@ export default function NotificationSettings() {
                 Check for Updates
               </Button>
             </div>
+            {showInstallerInfo && (
+              <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                Desktop installer downloads are available in My Notifications.
+                <Button asChild variant="link" className="ml-2 p-0 h-auto">
+                  <a href="/admin/my-notes">Open My Notifications</a>
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
