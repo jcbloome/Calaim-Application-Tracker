@@ -6,6 +6,11 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 
+const singleInstanceLock = app.requestSingleInstanceLock();
+if (!singleInstanceLock) {
+  app.quit();
+}
+
 const isDev = !app.isPackaged;
 const appUrl = process.env.DESKTOP_APP_URL
   || (isDev ? 'http://localhost:3000/admin/my-notes' : 'https://connectcalaim.com/admin/my-notes');
@@ -227,6 +232,16 @@ ipcMain.handle('desktop:checkForUpdates', async () => {
 });
 
 app.whenReady().then(() => {
+  app.on('second-instance', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send('desktop:expand');
+  });
+
   computeEffectivePaused();
   createAppMenu();
   createWindow();
