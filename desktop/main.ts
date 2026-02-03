@@ -5,6 +5,8 @@ import { autoUpdater } from 'electron-updater';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let notificationWindow: BrowserWindow | null = null;
+let notificationTimer: NodeJS.Timeout | null = null;
 let isQuitting = false;
 
 const singleInstanceLock = app.requestSingleInstanceLock();
@@ -136,6 +138,130 @@ const createWindow = () => {
   });
 };
 
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+const closeNotificationWindow = () => {
+  if (notificationTimer) {
+    clearTimeout(notificationTimer);
+    notificationTimer = null;
+  }
+  if (notificationWindow) {
+    notificationWindow.close();
+    notificationWindow = null;
+  }
+};
+
+const showNotificationPill = (payload: { title: string; body: string }) => {
+  const safeTitle = escapeHtml(payload.title || 'Notification');
+  const safeBody = escapeHtml(payload.body || '');
+
+  if (!notificationWindow) {
+    notificationWindow = new BrowserWindow({
+      width: 360,
+      height: 120,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      hasShadow: true,
+      webPreferences: {
+        preload: path.join(__dirname, 'notification-preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    });
+
+    notificationWindow.setAlwaysOnTop(true, 'screen-saver');
+    notificationWindow.setVisibleOnAllWorkspaces(true);
+    notificationWindow.on('closed', () => {
+      notificationWindow = null;
+    });
+  }
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, sans-serif;
+            background: transparent;
+          }
+          .pill {
+            margin: 12px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.98);
+            border: 1px solid rgba(209, 213, 219, 0.9);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+            cursor: pointer;
+          }
+          .title {
+            font-weight: 600;
+            font-size: 13px;
+            color: #111827;
+            margin-bottom: 4px;
+          }
+          .body {
+            font-size: 12px;
+            color: #374151;
+            line-height: 1.3;
+          }
+          .actions {
+            margin-top: 6px;
+            font-size: 11px;
+            color: #2563eb;
+          }
+          .close {
+            position: absolute;
+            right: 18px;
+            top: 14px;
+            font-size: 12px;
+            color: #6b7280;
+            cursor: pointer;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="pill" id="pill">
+          <div class="title">${safeTitle}</div>
+          <div class="body">${safeBody}</div>
+          <div class="actions">Open My Notifications</div>
+        </div>
+        <div class="close" id="close">✕</div>
+        <script>
+          const pill = document.getElementById('pill');
+          const closeBtn = document.getElementById('close');
+          pill.addEventListener('click', () => {
+            window.desktopNotificationPill?.open?.();
+          });
+          closeBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            window.desktopNotificationPill?.dismiss?.();
+          });
+        </script>
+      </body>
+    </html>
+  `;
+
+  notificationWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => undefined);
+  notificationWindow.showInactive();
+
+  if (notificationTimer) clearTimeout(notificationTimer);
+  notificationTimer = setTimeout(() => {
+    closeNotificationWindow();
+  }, 12000);
+};
+
 const createTray = () => {
   const packagedIcon = path.join(app.getAppPath(), 'assets', 'tray.ico');
   const resourcesIcon = path.join(process.resourcesPath, 'assets', 'tray.ico');
@@ -219,12 +345,26 @@ ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string
   });
   notice.show();
 
+  showNotificationPill({ title: payload.title, body: payload.body });
+
   if (payload.openOnNotify && mainWindow) {
     mainWindow.show();
     mainWindow.focus();
     mainWindow.webContents.send('desktop:expand');
   }
   return true;
+});
+
+ipcMain.on('desktop:openNotifications', () => {
+  if (!mainWindow) return;
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send('desktop:expand');
+  closeNotificationWindow();
+});
+
+ipcMain.on('desktop:dismissPill', () => {
+  closeNotificationWindow();
 });
 
 ipcMain.on('desktop:setPendingCount', (_event, count: number) => {
