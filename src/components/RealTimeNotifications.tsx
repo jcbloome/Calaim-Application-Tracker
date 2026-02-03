@@ -504,7 +504,8 @@ export function RealTimeNotifications() {
           const replyUrl = highlightNote?.id
             ? `/admin/my-notes?replyTo=${encodeURIComponent(highlightNote.id)}`
             : undefined;
-          const shouldPopup = shouldShowWebToast && (hasNewUrgent || hasNewPriority);
+          const forceExpanded = hasNewUrgent || hasNewPriority;
+          const shouldPopup = shouldShowWebToast && forceExpanded;
           const desktopPresent = typeof window !== 'undefined' && Boolean(window.desktopNotifications);
           latestSummaryRef.current = {
             type: priorityExists ? 'urgent' : 'note',
@@ -521,6 +522,19 @@ export function RealTimeNotifications() {
             followUpDate: formatFollowUpDate(highlightNote?.followUpDate),
             followUpNoteId: highlightNote?.id
           };
+
+          if (window.desktopNotifications?.setPillSummary) {
+            window.desktopNotifications.setPillSummary({
+              count,
+              title: summaryTitle,
+              message: detailMessage,
+              author: highlightSender,
+              memberName: highlightSubject,
+              timestamp: highlightTimestamp || undefined,
+              replyUrl,
+              actionUrl: '/admin/my-notes'
+            });
+          }
 
           if (shouldShowWebToast) {
             if (!hasNew && summaryNotificationIdRef.current) {
@@ -539,7 +553,7 @@ export function RealTimeNotifications() {
               timestamp: highlightTimestamp || undefined,
               priority: undefined,
               tagLabel: priorityTag,
-              startMinimized: !shouldPopup,
+              startMinimized: !shouldPopup && !forceExpanded,
               lockToTray: true,
               duration: 45000,
               minimizeAfter: 12000,

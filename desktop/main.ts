@@ -13,6 +13,9 @@ let pillSummary = {
   count: 0,
   title: 'Connections Note',
   message: '',
+  author: '',
+  memberName: '',
+  timestamp: '',
   replyUrl: undefined as string | undefined,
   actionUrl: '/admin/my-notes'
 };
@@ -174,6 +177,10 @@ const renderNotificationPill = () => {
   const countLabel = pillSummary.count === 1
     ? '1 priority note'
     : `${pillSummary.count} priority notes`;
+  const metaParts = [pillSummary.author, pillSummary.memberName, pillSummary.timestamp]
+    .map((part) => escapeHtml(part || ''))
+    .filter(Boolean);
+  const metaLabel = metaParts.join(' · ');
 
   if (!notificationWindow) {
     notificationWindow = new BrowserWindow({
@@ -284,6 +291,7 @@ const renderNotificationPill = () => {
             pillMode === 'expanded'
               ? `<div class="title">${safeTitle}</div>
                  <div class="body">${safeBody}</div>
+                 ${metaLabel ? `<div class="meta">${metaLabel}</div>` : ''}
                  <div class="meta">${countLabel}</div>
                  <div class="actions">
                    ${safeReply ? `<button class="btn" id="reply">Reply</button>` : ''}
@@ -442,12 +450,6 @@ ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string
   computeEffectivePaused();
   if (notificationState.effectivePaused) return false;
 
-  const notice = new Notification({
-    title: payload.title,
-    body: payload.body
-  });
-  notice.show();
-
   pillSummary = {
     ...pillSummary,
     title: payload.title,
@@ -482,11 +484,14 @@ ipcMain.on('desktop:expandPill', () => {
   showExpandedPill();
 });
 
-ipcMain.on('desktop:setPillSummary', (_event, payload: { count: number; title: string; message: string; replyUrl?: string; actionUrl?: string }) => {
+ipcMain.on('desktop:setPillSummary', (_event, payload: { count: number; title: string; message: string; author?: string; memberName?: string; timestamp?: string; replyUrl?: string; actionUrl?: string }) => {
   pillSummary = {
     count: payload.count,
     title: payload.title || pillSummary.title,
     message: payload.message || pillSummary.message,
+    author: payload.author || '',
+    memberName: payload.memberName || '',
+    timestamp: payload.timestamp || '',
     replyUrl: payload.replyUrl,
     actionUrl: payload.actionUrl || '/admin/my-notes'
   };

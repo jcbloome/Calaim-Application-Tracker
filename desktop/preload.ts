@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('desktopNotifications', {
   notify: (payload: { title: string; body: string; openOnNotify?: boolean }) =>
     ipcRenderer.invoke('desktop:notify', payload),
   setPendingCount: (count: number) => ipcRenderer.send('desktop:setPendingCount', count),
+  setPillSummary: (payload: { count: number; title: string; message: string; author?: string; memberName?: string; timestamp?: string; replyUrl?: string; actionUrl?: string }) =>
+    ipcRenderer.send('desktop:setPillSummary', payload),
   checkForUpdates: () => ipcRenderer.invoke('desktop:checkForUpdates'),
   onChange: (callback: (state: any) => void) => {
     const handler = (_event: any, state: any) => callback(state);
