@@ -20,7 +20,6 @@ let pillSummary = {
   actionUrl: '/admin/my-notes'
 };
 let pillMode: 'minimized' | 'expanded' = 'minimized';
-let pillHiddenUntil = 0;
 let pillPosition: { x: number; y: number } | null = null;
 
 const singleInstanceLock = app.requestSingleInstanceLock();
@@ -181,12 +180,21 @@ const closeNotificationWindow = () => {
 const positionNotificationWindow = () => {
   if (!notificationWindow) return;
   const windowBounds = notificationWindow.getBounds();
-  if (pillPosition) {
-    notificationWindow.setPosition(Math.round(pillPosition.x), Math.round(pillPosition.y), false);
-    return;
-  }
   const display = screen.getPrimaryDisplay();
   const workArea = display.workArea;
+  if (pillPosition) {
+    const clampedX = Math.min(
+      Math.max(pillPosition.x, workArea.x + 8),
+      workArea.x + workArea.width - windowBounds.width - 8
+    );
+    const clampedY = Math.min(
+      Math.max(pillPosition.y, workArea.y + 8),
+      workArea.y + workArea.height - windowBounds.height - 8
+    );
+    pillPosition = { x: clampedX, y: clampedY };
+    notificationWindow.setPosition(Math.round(clampedX), Math.round(clampedY), false);
+    return;
+  }
   const trayBounds = tray?.getBounds?.();
   const margin = 16;
   let x = workArea.x + workArea.width - windowBounds.width - margin;
@@ -207,10 +215,6 @@ const positionNotificationWindow = () => {
 };
 
 const renderNotificationPill = () => {
-  if (Date.now() < pillHiddenUntil) {
-    closeNotificationWindow();
-    return;
-  }
   const safeTitle = escapeHtml(pillSummary.title || 'Connections Note');
   const safeBody = escapeHtml(pillSummary.message || '');
   const safeReply = pillSummary.replyUrl ? escapeHtml(pillSummary.replyUrl) : '';
@@ -225,8 +229,8 @@ const renderNotificationPill = () => {
 
   if (!notificationWindow) {
     notificationWindow = new BrowserWindow({
-      width: 380,
-      height: pillMode === 'expanded' ? 210 : 72,
+      width: pillMode === 'expanded' ? 360 : 300,
+      height: pillMode === 'expanded' ? 190 : 56,
       frame: false,
       transparent: true,
       resizable: false,
@@ -262,9 +266,9 @@ const renderNotificationPill = () => {
             user-select: none;
           }
           .pill {
-            margin: 10px;
-            padding: 12px 14px;
-            border-radius: 16px;
+            margin: 8px;
+            padding: 10px 12px;
+            border-radius: 14px;
             background: #ffffff;
             border: 1px solid #e5e7eb;
             box-shadow: 0 16px 30px rgba(0, 0, 0, 0.18);
@@ -276,39 +280,39 @@ const renderNotificationPill = () => {
             cursor: pointer;
           }
           .minimized .label {
-            font-size: 12px;
+            font-size: 11px;
             color: #1f2937;
             font-weight: 600;
           }
           .minimized .count {
-            font-size: 12px;
+            font-size: 11px;
             color: #2563eb;
             font-weight: 600;
           }
           .title {
             font-weight: 700;
-            font-size: 14px;
+            font-size: 13px;
             color: #0f172a;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
           }
           .body {
-            font-size: 12px;
+            font-size: 11px;
             color: #334155;
             line-height: 1.4;
           }
           .meta {
-            margin-top: 6px;
-            font-size: 11px;
+            margin-top: 4px;
+            font-size: 10px;
             color: #64748b;
           }
           .actions {
             display: flex;
             gap: 8px;
-            margin-top: 10px;
+            margin-top: 8px;
           }
           .btn {
-            font-size: 11px;
-            padding: 6px 10px;
+            font-size: 10px;
+            padding: 5px 8px;
             border-radius: 10px;
             border: 1px solid #e2e8f0;
             background: #f8fafc;
@@ -321,16 +325,11 @@ const renderNotificationPill = () => {
           }
           .close {
             position: absolute;
-            right: 16px;
-            top: 12px;
+            right: 14px;
+            top: 10px;
             font-size: 12px;
             color: #6b7280;
             cursor: pointer;
-          }
-          .close.min {
-            position: static;
-            font-size: 12px;
-            color: #6b7280;
           }
         </style>
       </head>
@@ -346,11 +345,9 @@ const renderNotificationPill = () => {
                    ${safeReply ? `<button class="btn" id="reply">Reply</button>` : ''}
                    <button class="btn primary" id="open">Go to Notes</button>
                    <button class="btn" id="closeBtn">Minimize</button>
-                   <button class="btn" id="hideBtn">Hide</button>
                  </div>`
               : `<div class="label">Priority notes pending</div>
-                 <div class="count">${countLabel}</div>
-                 <div class="close min" id="hideBtn">✕</div>`
+                 <div class="count">${countLabel}</div>`
           }
         </div>
         ${pillMode === 'expanded' ? `<div class="close" id="close">✕</div>` : ''}
@@ -408,13 +405,6 @@ const renderNotificationPill = () => {
               window.desktopNotificationPill?.dismiss?.();
             });
           }
-          const hideBtn = document.getElementById('hideBtn');
-          if (hideBtn) {
-            hideBtn.addEventListener('click', (event) => {
-              event.stopPropagation();
-              window.desktopNotificationPill?.hide?.();
-            });
-          }
           const open = document.getElementById('open');
           if (open) {
             open.addEventListener('click', (event) => {
@@ -434,7 +424,7 @@ const renderNotificationPill = () => {
     </html>
   `;
 
-  notificationWindow.setSize(380, pillMode === 'expanded' ? 210 : 72, false);
+  notificationWindow.setSize(pillMode === 'expanded' ? 360 : 300, pillMode === 'expanded' ? 190 : 56, false);
   positionNotificationWindow();
   notificationWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => undefined);
   notificationWindow.showInactive();
@@ -579,11 +569,6 @@ ipcMain.on('desktop:expandPill', () => {
   showExpandedPill();
 });
 
-ipcMain.on('desktop:hidePill', () => {
-  pillHiddenUntil = Date.now() + 30 * 60 * 1000;
-  closeNotificationWindow();
-});
-
 ipcMain.on('desktop:movePill', (_event, payload: { x: number; y: number }) => {
   pillPosition = { x: payload.x, y: payload.y };
   if (notificationWindow) {
@@ -596,9 +581,6 @@ ipcMain.handle('desktop:getPillPosition', () => {
 });
 
 ipcMain.on('desktop:setPillSummary', (_event, payload: { count: number; title: string; message: string; author?: string; memberName?: string; timestamp?: string; replyUrl?: string; actionUrl?: string }) => {
-  if (Date.now() < pillHiddenUntil) {
-    return;
-  }
   pillSummary = {
     count: payload.count,
     title: payload.title || pillSummary.title,
@@ -619,9 +601,6 @@ ipcMain.on('desktop:setPillSummary', (_event, payload: { count: number; title: s
 ipcMain.on('desktop:setPendingCount', (_event, count: number) => {
   if (tray) {
     tray.setToolTip(`Connect CalAIM Desktop (${count} pending)`);
-  }
-  if (Date.now() < pillHiddenUntil) {
-    return;
   }
   pillSummary.count = count;
   if (count > 0) {
