@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, dialog } from 'electron';
+import fs from 'fs';
 import path from 'path';
 import { autoUpdater } from 'electron-updater';
 
@@ -136,9 +137,14 @@ const createWindow = () => {
 };
 
 const createTray = () => {
-  const iconPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'assets', 'tray.ico')
-    : path.join(__dirname, 'assets', 'tray.ico');
+  const packagedIcon = path.join(app.getAppPath(), 'assets', 'tray.ico');
+  const resourcesIcon = path.join(process.resourcesPath, 'assets', 'tray.ico');
+  const devIcon = path.join(__dirname, 'assets', 'tray.ico');
+  const iconPath = fs.existsSync(packagedIcon)
+    ? packagedIcon
+    : fs.existsSync(resourcesIcon)
+      ? resourcesIcon
+      : devIcon;
   tray = new Tray(iconPath);
   tray.setToolTip('Connect CalAIM Desktop');
 
