@@ -33,7 +33,14 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Connect CalAIM Desktop"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "jcbloome",
+        "repo": "Calaim-Application-Tracker"
+      }
+    ]
   },
   "dependencies": {
     "electron-store": "^8.2.0",
