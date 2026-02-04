@@ -19,6 +19,16 @@ let pillSummary = {
   replyUrl: undefined as string | undefined,
   actionUrl: '/admin/my-notes'
 };
+let pillNotes: Array<{
+  title: string;
+  message: string;
+  author?: string;
+  memberName?: string;
+  timestamp?: string;
+  replyUrl?: string;
+  actionUrl?: string;
+}> = [];
+let pillIndex = 0;
 let pillMode: 'minimized' | 'expanded' = 'minimized';
 let pillPosition: { x: number; y: number } | null = null;
 
@@ -195,42 +205,33 @@ const positionNotificationWindow = () => {
     notificationWindow.setPosition(Math.round(clampedX), Math.round(clampedY), false);
     return;
   }
-  const trayBounds = tray?.getBounds?.();
   const margin = 16;
-  let x = workArea.x + workArea.width - windowBounds.width - margin;
-  let y = workArea.y + workArea.height - windowBounds.height - margin;
-
-  if (trayBounds && trayBounds.x && trayBounds.y) {
-    x = Math.min(
-      Math.max(trayBounds.x - windowBounds.width + trayBounds.width, workArea.x + margin),
-      workArea.x + workArea.width - windowBounds.width - margin
-    );
-    y = Math.min(
-      Math.max(trayBounds.y - windowBounds.height - margin, workArea.y + margin),
-      workArea.y + workArea.height - windowBounds.height - margin
-    );
-  }
-
+  const x = workArea.x + workArea.width - windowBounds.width - margin;
+  const y = workArea.y + workArea.height - windowBounds.height - margin;
   notificationWindow.setPosition(Math.round(x), Math.round(y), false);
 };
 
 const renderNotificationPill = () => {
-  const safeTitle = escapeHtml(pillSummary.title || 'Connections Note');
-  const safeBody = escapeHtml(pillSummary.message || '');
-  const safeReply = pillSummary.replyUrl ? escapeHtml(pillSummary.replyUrl) : '';
-  const safeAction = escapeHtml(pillSummary.actionUrl || '/admin/my-notes');
+  const activeNote = pillNotes.length > 0 ? pillNotes[pillIndex] : pillSummary;
+  const safeTitle = escapeHtml(activeNote.title || 'Connections Note');
+  const safeBody = escapeHtml(activeNote.message || '');
+  const safeReply = activeNote.replyUrl ? escapeHtml(activeNote.replyUrl) : '';
+  const safeAction = escapeHtml(activeNote.actionUrl || '/admin/my-notes');
   const countLabel = pillSummary.count === 1
     ? '1 priority note'
     : `${pillSummary.count} priority notes`;
-  const metaParts = [pillSummary.author, pillSummary.memberName, pillSummary.timestamp]
+  const metaParts = [activeNote.author, activeNote.memberName, activeNote.timestamp]
     .map((part) => escapeHtml(part || ''))
     .filter(Boolean);
   const metaLabel = metaParts.join(' · ');
+  const indexLabel = pillNotes.length > 1
+    ? `Note ${pillIndex + 1} of ${pillNotes.length}`
+    : '';
 
   if (!notificationWindow) {
     notificationWindow = new BrowserWindow({
-      width: pillMode === 'expanded' ? 360 : 300,
-      height: pillMode === 'expanded' ? 190 : 56,
+      width: pillMode === 'expanded' ? 320 : 260,
+      height: pillMode === 'expanded' ? 180 : 48,
       frame: false,
       transparent: true,
       resizable: false,
@@ -250,6 +251,7 @@ const renderNotificationPill = () => {
       notificationWindow = null;
     });
     notificationWindow.on('show', () => positionNotificationWindow());
+    notificationWindow.webContents.once('did-finish-load', () => positionNotificationWindow());
   }
 
   const html = `
@@ -266,9 +268,9 @@ const renderNotificationPill = () => {
             user-select: none;
           }
           .pill {
-            margin: 8px;
-            padding: 10px 12px;
-            border-radius: 14px;
+            margin: 6px;
+            padding: 8px 10px;
+            border-radius: 12px;
             background: #ffffff;
             border: 1px solid #e5e7eb;
             box-shadow: 0 16px 30px rgba(0, 0, 0, 0.18);
@@ -280,40 +282,40 @@ const renderNotificationPill = () => {
             cursor: pointer;
           }
           .minimized .label {
-            font-size: 11px;
+            font-size: 10px;
             color: #1f2937;
             font-weight: 600;
           }
           .minimized .count {
-            font-size: 11px;
+            font-size: 10px;
             color: #2563eb;
             font-weight: 600;
           }
           .title {
             font-weight: 700;
-            font-size: 13px;
+            font-size: 12px;
             color: #0f172a;
             margin-bottom: 4px;
           }
           .body {
-            font-size: 11px;
+            font-size: 10px;
             color: #334155;
-            line-height: 1.4;
+            line-height: 1.35;
           }
           .meta {
             margin-top: 4px;
-            font-size: 10px;
+            font-size: 9px;
             color: #64748b;
           }
           .actions {
             display: flex;
-            gap: 8px;
-            margin-top: 8px;
+            gap: 6px;
+            margin-top: 6px;
           }
           .btn {
-            font-size: 10px;
-            padding: 5px 8px;
-            border-radius: 10px;
+            font-size: 9px;
+            padding: 4px 6px;
+            border-radius: 8px;
             border: 1px solid #e2e8f0;
             background: #f8fafc;
             cursor: pointer;
@@ -338,11 +340,14 @@ const renderNotificationPill = () => {
           ${
             pillMode === 'expanded'
               ? `<div class="title">${safeTitle}</div>
-                 <div class="body">${safeBody}</div>
+                 <div class="body">${safeBody.replace(/\\n/g, '<br />')}</div>
                  ${metaLabel ? `<div class="meta">${metaLabel}</div>` : ''}
+                 ${indexLabel ? `<div class="meta">${indexLabel}</div>` : ''}
                  <div class="meta">${countLabel}</div>
                  <div class="actions">
                    ${safeReply ? `<button class="btn" id="reply">Reply</button>` : ''}
+                   ${pillNotes.length > 1 ? `<button class="btn" id="prev">Prev</button>` : ''}
+                   ${pillNotes.length > 1 ? `<button class="btn" id="next">Next</button>` : ''}
                    <button class="btn primary" id="open">Go to Notes</button>
                    <button class="btn" id="closeBtn">Minimize</button>
                  </div>`
@@ -355,33 +360,46 @@ const renderNotificationPill = () => {
           const pill = document.getElementById('pill');
           const mode = pill?.dataset?.mode;
           let dragging = false;
+          let dragged = false;
           let startX = 0;
           let startY = 0;
           let originX = 0;
           let originY = 0;
-          window.desktopNotificationPill?.getPosition?.().then((pos) => {
+
+          const refreshOrigin = async () => {
+            const pos = await window.desktopNotificationPill?.getPosition?.();
             if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
               originX = pos.x;
               originY = pos.y;
             }
-          });
+          };
 
           document.addEventListener('mousedown', (event) => {
+            if (event.target.closest('button')) return;
             dragging = true;
+            dragged = false;
             startX = event.screenX;
             startY = event.screenY;
+            refreshOrigin();
           });
           document.addEventListener('mousemove', (event) => {
             if (!dragging) return;
-            const nextX = originX + (event.screenX - startX);
-            const nextY = originY + (event.screenY - startY);
+            const dx = event.screenX - startX;
+            const dy = event.screenY - startY;
+            if (Math.abs(dx) + Math.abs(dy) < 4) return;
+            dragged = true;
+            const nextX = originX + dx;
+            const nextY = originY + dy;
             window.desktopNotificationPill?.move?.(nextX, nextY);
           });
           document.addEventListener('mouseup', (event) => {
             if (!dragging) return;
             dragging = false;
-            originX = originX + (event.screenX - startX);
-            originY = originY + (event.screenY - startY);
+            if (!dragged) return;
+            const dx = event.screenX - startX;
+            const dy = event.screenY - startY;
+            originX = originX + dx;
+            originY = originY + dy;
             window.desktopNotificationPill?.move?.(originX, originY);
           });
           pill.addEventListener('click', () => {
@@ -419,12 +437,26 @@ const renderNotificationPill = () => {
               window.desktopNotificationPill?.open?.("${safeReply}");
             });
           }
+          const prev = document.getElementById('prev');
+          if (prev) {
+            prev.addEventListener('click', (event) => {
+              event.stopPropagation();
+              window.desktopNotificationPill?.navigate?.(-1);
+            });
+          }
+          const next = document.getElementById('next');
+          if (next) {
+            next.addEventListener('click', (event) => {
+              event.stopPropagation();
+              window.desktopNotificationPill?.navigate?.(1);
+            });
+          }
         </script>
       </body>
     </html>
   `;
 
-  notificationWindow.setSize(pillMode === 'expanded' ? 360 : 300, pillMode === 'expanded' ? 190 : 56, false);
+  notificationWindow.setSize(pillMode === 'expanded' ? 320 : 260, pillMode === 'expanded' ? 180 : 48, false);
   positionNotificationWindow();
   notificationWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => undefined);
   notificationWindow.showInactive();
@@ -569,6 +601,14 @@ ipcMain.on('desktop:expandPill', () => {
   showExpandedPill();
 });
 
+ipcMain.on('desktop:navigatePill', (_event, payload: { delta: number }) => {
+  if (pillNotes.length === 0) return;
+  const nextIndex = pillIndex + payload.delta;
+  if (nextIndex < 0 || nextIndex >= pillNotes.length) return;
+  pillIndex = nextIndex;
+  showExpandedPill();
+});
+
 ipcMain.on('desktop:movePill', (_event, payload: { x: number; y: number }) => {
   pillPosition = { x: payload.x, y: payload.y };
   if (notificationWindow) {
@@ -580,7 +620,29 @@ ipcMain.handle('desktop:getPillPosition', () => {
   return pillPosition;
 });
 
-ipcMain.on('desktop:setPillSummary', (_event, payload: { count: number; title: string; message: string; author?: string; memberName?: string; timestamp?: string; replyUrl?: string; actionUrl?: string }) => {
+ipcMain.on('desktop:setPillSummary', (_event, payload: {
+  count: number;
+  notes?: Array<{
+    title: string;
+    message: string;
+    author?: string;
+    memberName?: string;
+    timestamp?: string;
+    replyUrl?: string;
+    actionUrl?: string;
+  }>;
+  title?: string;
+  message?: string;
+  author?: string;
+  memberName?: string;
+  timestamp?: string;
+  replyUrl?: string;
+  actionUrl?: string;
+}) => {
+  pillNotes = payload.notes || [];
+  if (pillIndex >= pillNotes.length) {
+    pillIndex = 0;
+  }
   pillSummary = {
     count: payload.count,
     title: payload.title || pillSummary.title,

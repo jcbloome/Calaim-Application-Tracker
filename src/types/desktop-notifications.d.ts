@@ -16,8 +16,17 @@ declare global {
       setPendingCount: (count: number) => void;
       setPillSummary?: (payload: {
         count: number;
-        title: string;
-        message: string;
+        notes?: Array<{
+          title: string;
+          message: string;
+          author?: string;
+          memberName?: string;
+          timestamp?: string;
+          replyUrl?: string;
+          actionUrl?: string;
+        }>;
+        title?: string;
+        message?: string;
         author?: string;
         memberName?: string;
         timestamp?: string;

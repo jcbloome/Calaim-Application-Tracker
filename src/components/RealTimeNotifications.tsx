@@ -526,6 +526,17 @@ export function RealTimeNotifications() {
           if (window.desktopNotifications?.setPillSummary) {
             window.desktopNotifications.setPillSummary({
               count,
+              notes: sortedPending.map((note) => ({
+                title: summaryTitle,
+                message: sanitizeNoteMessage(note.message),
+                author: sanitizeFieldLabel(note.senderName) || undefined,
+                memberName: sanitizeFieldLabel(note.memberName) || undefined,
+                timestamp: note.timestamp?.toLocaleString?.() || undefined,
+                replyUrl: note.id
+                  ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}`
+                  : undefined,
+                actionUrl: '/admin/my-notes'
+              })),
               title: summaryTitle,
               message: detailMessage,
               author: highlightSender,
