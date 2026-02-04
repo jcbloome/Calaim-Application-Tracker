@@ -133,7 +133,7 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
   },
   {
     id: 41,
-    status: 'RCFE_Located',
+    status: 'RCFE Located',
     sortOrder: 14,
     description: 'Appropriate RCFE facility has been located',
     category: 'placement',
@@ -196,9 +196,49 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
     isActive: true
   },
   {
+    id: 53,
+    status: 'ILS Contracted, Needs Reauth',
+    sortOrder: 21,
+    description: 'ILS contracted; reauthorization needed',
+    category: 'completion',
+    isActive: true
+  },
+  {
+    id: 54,
+    status: 'ILS Contracted, Reauth Scheduled',
+    sortOrder: 21.5,
+    description: 'Reauthorization scheduled with ILS',
+    category: 'completion',
+    isActive: true
+  },
+  {
+    id: 55,
+    status: 'ILS Contracted, Reauth Complete',
+    sortOrder: 21.6,
+    description: 'Reauthorization completed',
+    category: 'completion',
+    isActive: true
+  },
+  {
+    id: 56,
+    status: 'ILS Contracted, Reauth Sent to ILS',
+    sortOrder: 21.7,
+    description: 'Reauthorization sent to ILS',
+    category: 'completion',
+    isActive: true
+  },
+  {
+    id: 57,
+    status: 'ILS Contracted, Reauth Received',
+    sortOrder: 21.8,
+    description: 'Reauthorization received from ILS',
+    category: 'completion',
+    isActive: true
+  },
+  {
     id: 22,
     status: 'Non-active',
-    sortOrder: 22,
+    sortOrder: 25,
     description: 'Case is currently non-active',
     category: 'inactive',
     isActive: false
@@ -206,7 +246,7 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
   {
     id: 25,
     status: 'On-Hold',
-    sortOrder: 23,
+    sortOrder: 26,
     description: 'Case is temporarily on hold',
     category: 'inactive',
     isActive: false

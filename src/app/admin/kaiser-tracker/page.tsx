@@ -167,8 +167,8 @@ const kaiserWorkflow = {
   'Tier Level Request Needed': { next: 'Tier Level Requested', recommendedDays: 7 },
   'Tier Level Requested': { next: 'Tier Level Received', recommendedDays: 21 },
   'Tier Level Received': { next: 'RCFE Needed', recommendedDays: 3 },
-  'RCFE Needed': { next: 'RCFE_Located', recommendedDays: 14 },
-  'RCFE_Located': { next: 'R&B Requested', recommendedDays: 7 },
+  'RCFE Needed': { next: 'RCFE Located', recommendedDays: 14 },
+  'RCFE Located': { next: 'R&B Requested', recommendedDays: 7 },
   'R&B Requested': { next: 'R&B Signed', recommendedDays: 14 },
   'R&B Signed': { next: 'ILS Sent for Contract', recommendedDays: 7 },
   'ILS Sent for Contract': { next: 'ILS Contract Email Needed', recommendedDays: 14 },
@@ -176,34 +176,8 @@ const kaiserWorkflow = {
 };
 
 // Predefined Kaiser statuses to show immediately
-const KAISER_STATUSES = [
-  // Updated Kaiser Status List from Caspio (sorted by Sort_Order)
-  'T2038, Not Requested, Doc Collection',           // Sort: 0
-  'T2038 Request Ready',                            // Sort: 1
-  'T2038 Requested',                                // Sort: 2
-  'T2038 received, Need First Contact',             // Sort: 4
-  'T2038 received, doc collection',                 // Sort: 5
-  'T2038 Auth Only Email',                          // Sort: 5.4
-  'RN Visit Needed',                                // Sort: 6.5
-  'RN/MSW Scheduled',                               // Sort: 7
-  'RN Visit Complete',                              // Sort: 8
-  'Tier Level Request Needed',                      // Sort: 9
-  'Tier Level Requested',                           // Sort: 10
-  'Tier Level Received',                            // Sort: 11
-  'Tier Level Appeal',                              // Sort: 11.2
-  'RCFE Needed',                                    // Sort: 12
-  'R&B Needed',                                     // Sort: 14.1
-  'R&B Requested',                                  // Sort: 14.2
-  'R&B Signed',                                     // Sort: 14.3
-  'RCFE_Located',                                   // Sort: 14
-  'ILS/RCFE Contract Email Needed',                 // Sort: 15.5
-  'ILS/RCFE Contract Email Sent',                   // Sort: 15.7
-  'ILS/RCFE Connection Confirmed',                  // Sort: 15.9
-  'ILS Contracted and Member Moved In',             // Sort: 20
-  'Non-active',                                     // Sort: 22
-  'On-Hold',                                        // Sort: 23
-  
-  // Legacy statuses (keeping for backward compatibility)
+const KAISER_STATUS_ORDER = getKaiserStatusesInOrder().map((status) => status.status);
+const LEGACY_KAISER_STATUSES = [
   'Pending',
   'Denied',
   'Expired',
@@ -214,6 +188,25 @@ const KAISER_STATUSES = [
   'Pending to Switch',
   'Authorized on hold'
 ];
+
+const buildKaiserStatusList = (statuses: string[]) => {
+  const ordered = new Set<string>();
+  const addStatus = (value?: string) => {
+    if (!value) return;
+    if (!ordered.has(value)) ordered.add(value);
+  };
+
+  KAISER_STATUS_ORDER.forEach(addStatus);
+
+  const extras = statuses
+    .filter((status) => status && !ordered.has(status) && !LEGACY_KAISER_STATUSES.includes(status))
+    .sort((a, b) => a.localeCompare(b));
+  extras.forEach(addStatus);
+
+  LEGACY_KAISER_STATUSES.forEach(addStatus);
+
+  return Array.from(ordered);
+};
 
 const CALAIM_STATUSES = [
   'Authorized',
@@ -1382,7 +1375,9 @@ function KaiserTrackerPageContent() {
   };
 
   // Get unique values for filter dropdowns
-  const allKaiserStatuses = [...new Set(members.map(m => m.Kaiser_Status).filter(Boolean))];
+  const allKaiserStatuses = buildKaiserStatusList(
+    members.map((member) => member.Kaiser_Status).filter(Boolean)
+  );
   const availableCounties = [...new Set(members.map(m => m.memberCounty).filter(Boolean))];
   const availableCalAIMStatuses = [...new Set(members.map(m => m.CalAIM_Status).filter(Boolean))];
   const staffMembers = [...new Set(members.map(m => m.Staff_Assigned).filter(Boolean))];
@@ -1452,7 +1447,7 @@ function KaiserTrackerPageContent() {
         </CardHeader>
           <CardContent className="pt-0">
             <div className="space-y-1 max-h-48 overflow-y-auto">
-              {KAISER_STATUSES.map((status, index) => {
+              {allKaiserStatuses.map((status, index) => {
                 const count = members.filter(m => m.Kaiser_Status === status).length;
                 const percentage = members.length > 0 ? ((count / members.length) * 100).toFixed(1) : '0';
                 return (
