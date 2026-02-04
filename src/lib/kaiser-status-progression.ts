@@ -16,8 +16,8 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
     status: 'T2038, Not Requested, Doc Collection',
     sortOrder: 0,
     description: 'T2038 not requested; documentation collection underway',
-    category: 'completion',
-    isActive: false
+    category: 'initial',
+    isActive: true
   },
   {
     id: 35,
@@ -177,30 +177,6 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
     sortOrder: 15.7,
     description: 'ILS/RCFE contract email sent',
     category: 'authorization',
-    isActive: true
-  },
-  {
-    id: 50,
-    status: 'ILS/RCFE Connection Confirmed',
-    sortOrder: 15.9,
-    description: 'ILS/RCFE connection confirmed',
-    category: 'authorization',
-    isActive: true
-  },
-  {
-    id: 51,
-    status: 'ILS Contracted and Member Moved In',
-    sortOrder: 20,
-    description: 'ILS contracted and member has moved in',
-    category: 'completion',
-    isActive: true
-  },
-  {
-    id: 53,
-    status: 'ILS Contracted, Set for Reauth Visits',
-    sortOrder: 21,
-    description: 'ILS contracted; set for reauthorization visits',
-    category: 'completion',
     isActive: true
   },
   {

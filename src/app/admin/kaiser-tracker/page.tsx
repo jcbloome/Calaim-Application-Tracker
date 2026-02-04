@@ -170,9 +170,8 @@ const kaiserWorkflow = {
   'RCFE Needed': { next: 'RCFE_Located', recommendedDays: 14 },
   'RCFE_Located': { next: 'R&B Requested', recommendedDays: 7 },
   'R&B Requested': { next: 'R&B Signed', recommendedDays: 14 },
-  'R&B Signed': { next: 'ILS Sent for Contract', recommendedDays: 7 },
-  'ILS Sent for Contract': { next: 'ILS Contract Email Needed', recommendedDays: 14 },
-  'ILS Contract Email Needed': { next: 'Complete', recommendedDays: 7 }
+  'R&B Signed': { next: 'ILS/RCFE Contract Email Needed', recommendedDays: 7 },
+  'ILS/RCFE Contract Email Needed': { next: 'ILS/RCFE Contract Email Sent', recommendedDays: 7 }
 };
 
 // Predefined Kaiser statuses to show immediately
