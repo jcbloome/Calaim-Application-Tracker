@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useFirestore, useUser } from '@/firebase';
 import {
+  addDoc,
   collection,
   query,
   where,
@@ -10,7 +11,8 @@ import {
   limit,
   Timestamp,
   doc,
-  updateDoc
+  updateDoc,
+  serverTimestamp
 } from 'firebase/firestore';
 import { useGlobalNotifications } from './NotificationProvider';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -29,6 +31,7 @@ interface StaffNotification {
   title: string;
   message: string;
   senderName: string;
+  senderId?: string;
   memberName: string;
   type: string;
   priority: 'General' | 'Priority' | 'Urgent' | string;
@@ -46,6 +49,7 @@ interface NotificationData {
   title: string;
   message: string;
   senderName: string;
+  senderId?: string;
   memberName: string;
   type: string;
   priority: 'General' | 'Priority' | 'Urgent';
@@ -70,6 +74,14 @@ export function RealTimeNotifications() {
     title: string;
     message: string;
     author: string;
+    recipientName?: string;
+    notes?: Array<{
+      message: string;
+      author?: string;
+      memberName?: string;
+      timestamp?: string;
+      replyUrl?: string;
+    }>;
     pendingLabel: string;
     links: Array<{ label: string; url: string }>;
     soundType: string;
@@ -215,13 +227,15 @@ export function RealTimeNotifications() {
         title: summary.title,
         message: summary.message,
         author: summary.author,
+        recipientName: summary.recipientName,
         memberName: summary.memberName || '',
         timestamp: summary.timestamp,
+        notes: summary.notes,
         priority: undefined,
         tagLabel: summary.tagLabel,
         startMinimized: false,
         lockToTray: true,
-        duration: 45000,
+        duration: 0,
         minimizeAfter: 12000,
         pendingLabel: summary.pendingLabel,
         sound: false,
@@ -257,6 +271,39 @@ export function RealTimeNotifications() {
       if (unsubscribe) unsubscribe();
     };
   }, [removeNotification, showNotification]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!window.desktopNotifications?.onQuickReply) return;
+    const unsubscribe = window.desktopNotifications.onQuickReply(async (payload) => {
+      if (!firestoreRef.current || !user?.uid || !payload?.senderId || !payload?.message) {
+        return;
+      }
+      try {
+        await addDoc(collection(firestoreRef.current, 'staff_notifications'), {
+          userId: payload.senderId,
+          title: 'Reply from Desktop',
+          message: payload.message.trim(),
+          type: 'interoffice_reply',
+          priority: 'General',
+          status: 'Open',
+          isRead: false,
+          createdBy: user.uid,
+          createdByName: user.displayName || user.email || 'Staff',
+          senderName: user.displayName || user.email || 'Staff',
+          timestamp: serverTimestamp(),
+          replyToId: payload.noteId || null,
+          threadId: payload.noteId || null,
+          actionUrl: payload.noteId ? `/admin/my-notes?replyTo=${encodeURIComponent(payload.noteId)}` : '/admin/my-notes'
+        });
+      } catch (error) {
+        console.warn('Failed to send quick reply:', error);
+      }
+    });
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [user?.uid]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -390,6 +437,7 @@ export function RealTimeNotifications() {
             title: data.title || 'Note',
             message: data.message || (data as any).content || '',
             senderName: data.senderName || (data as any).createdByName || 'Staff',
+            senderId: (data as any).senderId || (data as any).createdBy,
             memberName: data.memberName || '',
             type: data.type || 'note',
             priority,
@@ -442,17 +490,9 @@ export function RealTimeNotifications() {
           }
 
           const shouldSuppressWeb = shouldSuppressWebAlerts();
-          const shouldShowWebToast = typeof window === 'undefined'
+          const shouldShowWebToastBase = typeof window === 'undefined'
             ? false
             : !shouldSuppressWeb;
-
-          if (!canShowNotifications()) {
-            if (summaryNotificationIdRef.current) {
-              removeNotification(summaryNotificationIdRef.current);
-              summaryNotificationIdRef.current = null;
-            }
-            return;
-          }
 
           const urgentExists = sortedPending.some((note) => isUrgentPriority(note.priority));
           const priorityExists = sortedPending.some((note) => isPriorityOrUrgent(note.priority) && !isUrgentPriority(note.priority));
@@ -463,6 +503,7 @@ export function RealTimeNotifications() {
           const senderSummary = uniqueSenders.length === 1
             ? uniqueSenders[0]
             : 'Multiple staff';
+          const recipientLabel = user?.displayName || user?.email || 'Assigned staff';
           const uniqueMembers = Array.from(
             new Set(sortedPending.map((note) => sanitizeFieldLabel(note.memberName)).filter(Boolean))
           );
@@ -504,14 +545,38 @@ export function RealTimeNotifications() {
           const replyUrl = highlightNote?.id
             ? `/admin/my-notes?replyTo=${encodeURIComponent(highlightNote.id)}`
             : undefined;
-          const forceExpanded = hasNewUrgent || hasNewPriority;
+          const latestPending = sortedPending[0];
+          const recentThresholdMs = 2 * 60 * 1000;
+          const isRecent =
+            Boolean(latestPending?.timestamp) &&
+            Date.now() - latestPending.timestamp.getTime() <= recentThresholdMs;
+          const forceExpanded = hasNewUrgent || hasNewPriority || isRecent;
+          const shouldShowWebToast = shouldShowWebToastBase || forceExpanded;
           const shouldPopup = shouldShowWebToast && forceExpanded;
+
+          if (!canShowNotifications() && !forceExpanded) {
+            if (summaryNotificationIdRef.current) {
+              removeNotification(summaryNotificationIdRef.current);
+              summaryNotificationIdRef.current = null;
+            }
+            return;
+          }
           const desktopPresent = typeof window !== 'undefined' && Boolean(window.desktopNotifications);
           latestSummaryRef.current = {
             type: priorityExists ? 'urgent' : 'note',
             title: summaryTitle,
             message: detailMessage,
             author: highlightSender,
+            recipientName: recipientLabel,
+            notes: sortedPending.map((note) => ({
+              message: sanitizeNoteMessage(note.message),
+              author: sanitizeFieldLabel(note.senderName) || undefined,
+              memberName: sanitizeFieldLabel(note.memberName) || undefined,
+              timestamp: note.timestamp?.toLocaleString?.() || undefined,
+              replyUrl: note.id
+                ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}`
+                : undefined
+            })),
             pendingLabel: count === 1 ? `Pending note · ${highlightSender}` : `Notes (${count})`,
             links,
             soundType: notificationPrefs.soundType,
@@ -530,6 +595,7 @@ export function RealTimeNotifications() {
                 title: summaryTitle,
                 message: sanitizeNoteMessage(note.message),
                 author: sanitizeFieldLabel(note.senderName) || undefined,
+                recipientName: recipientLabel,
                 memberName: sanitizeFieldLabel(note.memberName) || undefined,
                 timestamp: note.timestamp?.toLocaleString?.() || undefined,
                 replyUrl: note.id
@@ -540,6 +606,7 @@ export function RealTimeNotifications() {
               title: summaryTitle,
               message: detailMessage,
               author: highlightSender,
+              recipientName: recipientLabel,
               memberName: highlightSubject,
               timestamp: highlightTimestamp || undefined,
               replyUrl,
@@ -548,10 +615,10 @@ export function RealTimeNotifications() {
           }
 
           if (shouldShowWebToast) {
-            if (!hasNew && summaryNotificationIdRef.current) {
+            if (!hasNew && !isRecent && summaryNotificationIdRef.current) {
               return;
             }
-            if (!hasNew) {
+            if (!hasNew && !isRecent) {
               return;
             }
             const summaryId = showNotification({
@@ -560,13 +627,23 @@ export function RealTimeNotifications() {
               title: summaryTitle,
               message: detailMessage,
               author: highlightSender,
+              recipientName: recipientLabel,
               memberName: highlightSubject || '',
               timestamp: highlightTimestamp || undefined,
+              notes: sortedPending.map((note) => ({
+                message: sanitizeNoteMessage(note.message),
+                author: sanitizeFieldLabel(note.senderName) || undefined,
+                memberName: sanitizeFieldLabel(note.memberName) || undefined,
+                timestamp: note.timestamp?.toLocaleString?.() || undefined,
+                replyUrl: note.id
+                  ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}`
+                  : undefined
+              })),
               priority: undefined,
               tagLabel: priorityTag,
               startMinimized: !shouldPopup && !forceExpanded,
               lockToTray: true,
-              duration: 45000,
+              duration: 0,
               minimizeAfter: 12000,
               pendingLabel: count === 1 ? `Pending note · ${highlightSender}` : `Notes (${count})`,
               sound: hasNew && notificationPrefs.enabled ? notificationPrefs.sound : false,

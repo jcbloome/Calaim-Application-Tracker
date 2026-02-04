@@ -14,8 +14,11 @@ let pillSummary = {
   title: 'Connections Note',
   message: '',
   author: '',
+  recipientName: '',
   memberName: '',
   timestamp: '',
+  noteId: undefined as string | undefined,
+  senderId: undefined as string | undefined,
   replyUrl: undefined as string | undefined,
   actionUrl: '/admin/my-notes'
 };
@@ -23,8 +26,11 @@ let pillNotes: Array<{
   title: string;
   message: string;
   author?: string;
+  recipientName?: string;
   memberName?: string;
   timestamp?: string;
+  noteId?: string;
+  senderId?: string;
   replyUrl?: string;
   actionUrl?: string;
 }> = [];
@@ -220,10 +226,12 @@ const renderNotificationPill = () => {
   const countLabel = pillSummary.count === 1
     ? '1 priority note'
     : `${pillSummary.count} priority notes`;
-  const metaParts = [activeNote.author, activeNote.memberName, activeNote.timestamp]
-    .map((part) => escapeHtml(part || ''))
-    .filter(Boolean);
-  const metaLabel = metaParts.join(' · ');
+  const metaLabels = 'From: To: About: Sent:';
+  const fromValue = escapeHtml(activeNote.author || '-');
+  const toValue = escapeHtml(activeNote.recipientName || '-');
+  const aboutValue = escapeHtml(activeNote.memberName || '-');
+  const sentValue = escapeHtml(activeNote.timestamp || '-');
+  const metaValues = `${fromValue} · ${toValue} · ${aboutValue} · ${sentValue}`;
   const indexLabel = pillNotes.length > 1
     ? `Note ${pillIndex + 1} of ${pillNotes.length}`
     : '';
@@ -307,6 +315,17 @@ const renderNotificationPill = () => {
             font-size: 9px;
             color: #64748b;
           }
+          .meta.meta-labels {
+            color: #9ca3af;
+            font-size: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+          }
+          .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+          }
           .actions {
             display: flex;
             gap: 6px;
@@ -336,12 +355,23 @@ const renderNotificationPill = () => {
         </style>
       </head>
       <body>
-        <div class="pill ${pillMode === 'expanded' ? '' : 'minimized'}" id="pill" data-mode="${pillMode}">
+        <div class="pill ${pillMode === 'expanded' ? '' : 'minimized'}" id="pill" data-mode="${pillMode}" data-note-id="${escapeHtml(activeNote.noteId || '')}" data-sender-id="${escapeHtml(activeNote.senderId || '')}">
           ${
             pillMode === 'expanded'
               ? `<div class="title">${safeTitle}</div>
+                 <div class="meta meta-labels meta-grid">
+                   <span>From:</span>
+                   <span>To:</span>
+                   <span>About:</span>
+                   <span>Sent:</span>
+                 </div>
+                 <div class="meta meta-values meta-grid">
+                   <span>${fromValue}</span>
+                   <span>${toValue}</span>
+                   <span>${aboutValue}</span>
+                   <span>${sentValue}</span>
+                 </div>
                  <div class="body">${safeBody.replace(/\\n/g, '<br />')}</div>
-                 ${metaLabel ? `<div class="meta">${metaLabel}</div>` : ''}
                  ${indexLabel ? `<div class="meta">${indexLabel}</div>` : ''}
                  <div class="meta">${countLabel}</div>
                  <div class="actions">
@@ -350,7 +380,11 @@ const renderNotificationPill = () => {
                    ${pillNotes.length > 1 ? `<button class="btn" id="next">Next</button>` : ''}
                    <button class="btn primary" id="open">Go to Notes</button>
                    <button class="btn" id="closeBtn">Minimize</button>
-                 </div>`
+                 </div>
+                 ${safeReply ? `<div class="actions" style="margin-top:6px;">
+                    <input id="replyInput" placeholder="Quick reply..." style="flex:1;font-size:10px;padding:4px 6px;border-radius:8px;border:1px solid #e2e8f0;" />
+                    <button class="btn primary" id="sendReply">Send</button>
+                  </div>` : ''}`
               : `<div class="label">Priority notes pending</div>
                  <div class="count">${countLabel}</div>`
           }
@@ -359,6 +393,8 @@ const renderNotificationPill = () => {
         <script>
           const pill = document.getElementById('pill');
           const mode = pill?.dataset?.mode;
+          const noteId = pill?.dataset?.noteId || '';
+          const senderId = pill?.dataset?.senderId || '';
           let dragging = false;
           let dragged = false;
           let startX = 0;
@@ -435,6 +471,17 @@ const renderNotificationPill = () => {
             reply.addEventListener('click', (event) => {
               event.stopPropagation();
               window.desktopNotificationPill?.open?.("${safeReply}");
+            });
+          }
+          const replyInput = document.getElementById('replyInput');
+          const sendReply = document.getElementById('sendReply');
+          if (sendReply && replyInput) {
+            sendReply.addEventListener('click', (event) => {
+              event.stopPropagation();
+              const message = replyInput.value.trim();
+              if (!message) return;
+              window.desktopNotificationPill?.sendReply?.({ noteId, senderId, message });
+              replyInput.value = '';
             });
           }
           const prev = document.getElementById('prev');
@@ -609,6 +656,11 @@ ipcMain.on('desktop:navigatePill', (_event, payload: { delta: number }) => {
   showExpandedPill();
 });
 
+ipcMain.on('desktop:quickReply', (_event, payload: { noteId?: string; senderId?: string; message: string }) => {
+  if (!mainWindow) return;
+  mainWindow.webContents.send('desktop:quickReply', payload);
+});
+
 ipcMain.on('desktop:movePill', (_event, payload: { x: number; y: number }) => {
   pillPosition = { x: payload.x, y: payload.y };
   if (notificationWindow) {
@@ -626,14 +678,18 @@ ipcMain.on('desktop:setPillSummary', (_event, payload: {
     title: string;
     message: string;
     author?: string;
+    recipientName?: string;
     memberName?: string;
     timestamp?: string;
+    noteId?: string;
+    senderId?: string;
     replyUrl?: string;
     actionUrl?: string;
   }>;
   title?: string;
   message?: string;
   author?: string;
+  recipientName?: string;
   memberName?: string;
   timestamp?: string;
   replyUrl?: string;
@@ -648,8 +704,11 @@ ipcMain.on('desktop:setPillSummary', (_event, payload: {
     title: payload.title || pillSummary.title,
     message: payload.message || pillSummary.message,
     author: payload.author || '',
+    recipientName: payload.recipientName || '',
     memberName: payload.memberName || '',
     timestamp: payload.timestamp || '',
+    noteId: pillSummary.noteId,
+    senderId: pillSummary.senderId,
     replyUrl: payload.replyUrl,
     actionUrl: payload.actionUrl || '/admin/my-notes'
   };

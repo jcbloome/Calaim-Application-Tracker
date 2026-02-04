@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw, CheckCircle2, Trash2, Zap } from 'lucide-react';
+import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw, CheckCircle2, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useEffect, Suspense, useRef } from 'react';
@@ -18,8 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
 import { addDoc, collection, query, where, onSnapshot, doc, updateDoc, writeBatch, serverTimestamp, getDocs, documentId, deleteDoc } from 'firebase/firestore';
-import { logSystemNoteAction } from '@/lib/system-note-log';
-import { getPriorityRank, isPriorityOrUrgent, normalizePriorityLabel, notifyNotificationSettingsChanged } from '@/lib/notification-utils';
+import { isPriorityOrUrgent, normalizePriorityLabel, notifyNotificationSettingsChanged } from '@/lib/notification-utils';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import {
   AlertDialog,
@@ -46,6 +45,7 @@ interface StaffNotification {
   isRead: boolean;
   createdAt: any;
   authorName: string;
+  recipientName?: string;
   recipientId: string;
   senderId?: string;
   applicationId?: string;
@@ -95,8 +95,7 @@ function MyNotesContent() {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyOpen, setReplyOpen] = useState<Record<string, boolean>>({});
   const [isSendingReply, setIsSendingReply] = useState<Record<string, boolean>>({});
-  const [replyPriority, setReplyPriority] = useState<Record<string, 'General' | 'Priority' | 'Urgent'>>({});
-  const [isResendingPriority, setIsResendingPriority] = useState<Record<string, boolean>>({});
+  const [replyPriority, setReplyPriority] = useState<Record<string, 'General' | 'Priority'>>({});
   const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [generalNote, setGeneralNote] = useState<{
@@ -120,6 +119,7 @@ function MyNotesContent() {
   const [highlightNoteId, setHighlightNoteId] = useState<string | null>(null);
   const [quickStatusFilter, setQuickStatusFilter] = useState<'all' | 'unread' | 'open' | 'closed'>('all');
   const [followUpFilter, setFollowUpFilter] = useState<'all' | 'required'>('all');
+  const [sortBy, setSortBy] = useState<'newest' | 'sender' | 'priority'>('newest');
   const [desktopActive, setDesktopActive] = useState(false);
   const [suppressWebWhenDesktopActive, setSuppressWebWhenDesktopActive] = useState(false);
   const [webAppNotificationsEnabled, setWebAppNotificationsEnabled] = useState(true);
@@ -160,6 +160,7 @@ function MyNotesContent() {
             isRead: Boolean(data.isRead),
             createdAt: data.timestamp || data.createdAt,
             authorName: data.createdByName || data.senderName || 'System',
+            recipientName: data.recipientName || data.recipient || data.recipientDisplayName || undefined,
             recipientId: data.userId || user.uid,
             senderId: data.createdBy || data.senderId,
             applicationId: data.applicationId || undefined,
@@ -171,13 +172,7 @@ function MyNotesContent() {
           });
         });
 
-        // Sort by priority (urgent first), then newest first
-        const normalizePriority = (value: string) => normalizePriorityLabel(value);
         userNotifications.sort((a, b) => {
-          const aPriority = normalizePriority(a.priority);
-          const bPriority = normalizePriority(b.priority);
-          const rankDiff = getPriorityRank(bPriority) - getPriorityRank(aPriority);
-          if (rankDiff !== 0) return rankDiff;
           const aTime = a.createdAt?.toDate?.() || new Date(0);
           const bTime = b.createdAt?.toDate?.() || new Date(0);
           return bTime.getTime() - aTime.getTime();
@@ -253,12 +248,6 @@ function MyNotesContent() {
       if (unsubscribe) unsubscribe();
     };
   }, []);
-
-  useEffect(() => {
-    if (!desktopActive) return;
-    if (suppressWebWhenDesktopActive) return;
-    updateSuppressSetting(true);
-  }, [desktopActive, suppressWebWhenDesktopActive]);
 
   const updateSuppressSetting = (nextValue: boolean) => {
     setSuppressWebWhenDesktopActive(nextValue);
@@ -573,7 +562,8 @@ function MyNotesContent() {
 
   const handleReplySend = async (notification: StaffNotification) => {
     if (!firestore || !user?.uid) return;
-    if (!notification.senderId) {
+    const replyTargetId = notification.senderId || notification.recipientId || user.uid;
+    if (!replyTargetId) {
       toast({
         title: "Missing Sender",
         description: "This note does not have a sender to reply to.",
@@ -594,29 +584,34 @@ function MyNotesContent() {
 
     try {
       setIsSendingReply((prev) => ({ ...prev, [notification.id]: true }));
-      await addDoc(collection(firestore, 'staff_notifications'), {
-        userId: notification.senderId,
+      const payload: Record<string, any> = {
+        userId: replyTargetId,
         title: `Reply: ${notification.title}`,
         message,
-        memberName: notification.memberName,
-        clientId2: notification.memberId,
-        applicationId: notification.applicationId,
         type: 'interoffice_reply',
-        priority: priority === 'Urgent'
-          ? 'Urgent'
-          : priority === 'Priority'
-            ? 'Priority'
-            : 'General',
+        priority: priority === 'Priority' ? 'Priority' : 'General',
         status: 'Open',
         isRead: false,
         createdBy: user.uid,
         createdByName: user.displayName || user.email || 'Staff',
         senderName: user.displayName || user.email || 'Staff',
+        senderId: user.uid,
+        recipientName: notification.authorName || user.displayName || user.email || 'Staff',
         timestamp: serverTimestamp(),
         replyToId: notification.id,
         threadId: notification.id,
         actionUrl: notification.actionUrl || (notification.applicationId ? `/admin/applications/${notification.applicationId}` : '/admin/my-notes')
-      });
+      };
+      if (notification.memberName) {
+        payload.memberName = notification.memberName;
+      }
+      if (notification.memberId) {
+        payload.clientId2 = notification.memberId;
+      }
+      if (notification.applicationId) {
+        payload.applicationId = notification.applicationId;
+      }
+      await addDoc(collection(firestore, 'staff_notifications'), payload);
 
       toast({
         title: "Reply Sent",
@@ -634,49 +629,6 @@ function MyNotesContent() {
       });
     } finally {
       setIsSendingReply((prev) => ({ ...prev, [notification.id]: false }));
-    }
-  };
-
-  const resendAsPriority = async (notification: StaffNotification) => {
-    if (!firestore || !user?.uid) return;
-    try {
-      setIsResendingPriority((prev) => ({ ...prev, [notification.id]: true }));
-      await addDoc(collection(firestore, 'staff_notifications'), {
-        userId: notification.recipientId,
-        title: `Urgent: ${notification.title || 'General Note'}`,
-        message: notification.content || '',
-        type: 'interoffice_note',
-        priority: 'Urgent',
-        status: 'Open',
-        isRead: false,
-        createdBy: user.uid,
-        createdByName: user.displayName || user.email || 'Staff',
-        senderName: user.displayName || user.email || 'Staff',
-        timestamp: serverTimestamp(),
-        isGeneral: false,
-        actionUrl: '/admin/my-notes'
-      });
-      await logSystemNoteAction({
-        action: 'General note resent as urgent',
-        noteId: notification.id,
-        memberName: notification.memberName,
-        status: 'Open',
-        actorName: user?.displayName || user?.email || 'Staff',
-        actorEmail: user?.email || ''
-      });
-      toast({
-        title: "Urgent Note Sent",
-        description: "This note was resent as an urgent popup."
-      });
-    } catch (error) {
-      console.error('Failed to resend priority note:', error);
-      toast({
-        title: "Error",
-        description: "Failed to resend as urgent.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsResendingPriority((prev) => ({ ...prev, [notification.id]: false }));
     }
   };
 
@@ -716,6 +668,7 @@ function MyNotesContent() {
             createdBy: user.uid,
             createdByName: user.displayName || user.email || 'Staff',
             senderName: user.displayName || user.email || 'Staff',
+            recipientName: recipient.name,
             timestamp: serverTimestamp(),
             isGeneral: true,
             followUpRequired: generalNote.followUpRequired || Boolean(generalNote.followUpDate),
@@ -769,7 +722,6 @@ function MyNotesContent() {
 
   // Filter notifications based on search term
   const filteredNotifications = notifications.filter(notification => {
-    if (!isInterofficeNotification(notification)) return false;
     if (!searchTerm) return true;
 
     const searchLower = searchTerm.toLowerCase();
@@ -814,7 +766,27 @@ function MyNotesContent() {
         return matchesPriority || matchesGeneral;
       });
 
-  const recentNotifications = showAllNotes ? tagFilteredNotifications : tagFilteredNotifications.slice(0, 5);
+  const sortedNotifications = [...tagFilteredNotifications].sort((a, b) => {
+    const aTime = a.createdAt?.toDate?.() || new Date(0);
+    const bTime = b.createdAt?.toDate?.() || new Date(0);
+    if (sortBy === 'sender') {
+      const aSender = (a.authorName || '').toLowerCase();
+      const bSender = (b.authorName || '').toLowerCase();
+      if (aSender !== bSender) return aSender.localeCompare(bSender);
+      return bTime.getTime() - aTime.getTime();
+    }
+    if (sortBy === 'priority') {
+      const aPriority = normalizePriorityLabel(a.priority);
+      const bPriority = normalizePriorityLabel(b.priority);
+      const aRank = aPriority === 'Priority' || aPriority === 'Urgent' ? 1 : 0;
+      const bRank = bPriority === 'Priority' || bPriority === 'Urgent' ? 1 : 0;
+      if (aRank !== bRank) return bRank - aRank;
+      return bTime.getTime() - aTime.getTime();
+    }
+    return bTime.getTime() - aTime.getTime();
+  });
+
+  const recentNotifications = showAllNotes ? sortedNotifications : sortedNotifications.slice(0, 5);
   const desktopActiveDisplay = desktopActive || suppressWebWhenDesktopActive;
 
   const getMemberLink = (notification: StaffNotification) => {
@@ -1010,6 +982,19 @@ function MyNotesContent() {
                 >
                   Follow-up Required
                 </Button>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Sort</Label>
+                  <Select value={sortBy} onValueChange={(value) => setSortBy(value as 'newest' | 'sender' | 'priority')}>
+                    <SelectTrigger className="h-8 w-44">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="newest">Most recent</SelectItem>
+                      <SelectItem value="sender">Sender (A–Z)</SelectItem>
+                      <SelectItem value="priority">Priority first</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               {!isLoadingNotes && recentNotifications.length === 0 && (
                 <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
@@ -1061,31 +1046,26 @@ function MyNotesContent() {
                               </Badge>
                             )}
                           </div>
-                          <p className="text-sm text-muted-foreground line-clamp-2">
-                            {notification.content}
-                          </p>
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                            <div className="flex items-center space-x-1">
-                              <User className="h-3 w-3" />
-                          <span>From: {notification.authorName}</span>
+                          <div className="space-y-1 text-xs text-muted-foreground">
+                            <div className="grid grid-cols-4 gap-x-3 uppercase tracking-wide text-[10px] text-muted-foreground/70">
+                              <span>From</span>
+                              <span>To</span>
+                              <span>Re</span>
+                              <span>Sent</span>
                             </div>
-                            <div className="flex items-center space-x-1">
-                              <Calendar className="h-3 w-3" />
+                            <div className="grid grid-cols-4 gap-x-3">
+                              <span>{notification.authorName || '-'}</span>
+                              <span>{notification.recipientName || '-'}</span>
+                              <span>{notification.memberName || notification.title || 'General Note'}</span>
                               <span>{formatTimestamp(notification.createdAt)}</span>
                             </div>
-                            {notification.memberName && (
-                              <div className="flex items-center space-x-1">
-                                <MessageSquare className="h-3 w-3" />
-                                <span>Member: {notification.memberName}</span>
-                              </div>
-                            )}
                             {notification.followUpDate && (
-                              <div className="flex items-center space-x-1">
-                                <Calendar className="h-3 w-3" />
-                                <span>Follow-up: {formatTimestamp(notification.followUpDate)}</span>
-                              </div>
+                              <div>Follow-up: {formatTimestamp(notification.followUpDate)}</div>
                             )}
                           </div>
+                          <p className="text-sm text-slate-900 line-clamp-2">
+                            {notification.content}
+                          </p>
                         </div>
                         <div className="flex flex-col gap-2">
                           {notification.isRead && (
@@ -1093,15 +1073,6 @@ function MyNotesContent() {
                               <CheckCircle2 className="h-4 w-4" />
                               <span>Viewed</span>
                             </div>
-                          )}
-                          {!notification.isRead && (
-                            <Button
-                              onClick={() => markAsRead(notification.id)}
-                              variant="outline"
-                              size="sm"
-                            >
-                              Mark Viewed
-                            </Button>
                           )}
                           <div className="flex items-center gap-2 text-xs">
                             <span className="text-muted-foreground">
@@ -1171,26 +1142,6 @@ function MyNotesContent() {
                               View Member
                             </Button>
                           )}
-                          {isGeneralNote && isAdmin && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => resendAsPriority(notification)}
-                              disabled={isResendingPriority[notification.id]}
-                            >
-                              {isResendingPriority[notification.id] ? (
-                                <>
-                                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                                  Sending
-                                </>
-                              ) : (
-                                <>
-                                  <Zap className="h-4 w-4 mr-1" />
-                                  Resend as Urgent
-                                </>
-                              )}
-                            </Button>
-                          )}
                           <Button
                             onClick={() =>
                               setReplyOpen((prev) => ({
@@ -1222,7 +1173,7 @@ function MyNotesContent() {
                               onValueChange={(value) =>
                                 setReplyPriority((prev) => ({
                                   ...prev,
-                                  [notification.id]: value as 'General' | 'Priority' | 'Urgent'
+                                  [notification.id]: value as 'General' | 'Priority'
                                 }))
                               }
                             >
@@ -1232,7 +1183,6 @@ function MyNotesContent() {
                               <SelectContent>
                                 <SelectItem value="General">General (no popup)</SelectItem>
                                 <SelectItem value="Priority">Priority (popup)</SelectItem>
-                                <SelectItem value="Urgent">Urgent (popup + top)</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>

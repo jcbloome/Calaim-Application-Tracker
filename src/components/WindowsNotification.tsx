@@ -14,7 +14,6 @@ import {
   CheckCircle2, 
   AlertTriangle,
   Clock,
-  User,
   Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -26,6 +25,14 @@ interface WindowsNotificationProps {
   title: string;
   message: string;
   author?: string;
+  notes?: Array<{
+    message: string;
+    author?: string;
+    memberName?: string;
+    timestamp?: string;
+    replyUrl?: string;
+  }>;
+  recipientName?: string;
   memberName?: string;
   timestamp?: string;
   priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
@@ -94,6 +101,8 @@ export default function WindowsNotification({
   title,
   message,
   author,
+  notes,
+  recipientName,
   memberName,
   timestamp,
   priority,
@@ -112,6 +121,18 @@ export default function WindowsNotification({
   onClose,
   onClick
 }: WindowsNotificationProps) {
+  const [noteIndex, setNoteIndex] = useState(0);
+  const activeNote = notes && notes.length > 0
+    ? notes[Math.min(noteIndex, notes.length - 1)]
+    : undefined;
+  const displayMessage = activeNote?.message ?? message;
+  const displayAuthor = activeNote?.author ?? author;
+  const displayMember = activeNote?.memberName ?? memberName;
+  const displayTimestamp = activeNote?.timestamp ?? timestamp;
+  const displayReplyUrl = activeNote?.replyUrl ?? replyUrl;
+  const noteIndexLabel = notes && notes.length > 1
+    ? `Note ${noteIndex + 1} of ${notes.length}`
+    : '';
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [isMinimized, setIsMinimized] = useState(startMinimized);
@@ -124,8 +145,8 @@ export default function WindowsNotification({
   const formattedFollowUpDate = followUpDate
     ? new Date(followUpDate).toLocaleDateString()
     : '';
-  const formattedTimestamp = timestamp
-    ? new Date(timestamp).toLocaleString()
+  const formattedTimestamp = displayTimestamp
+    ? new Date(displayTimestamp).toLocaleString()
     : '';
 
   const config = TYPE_CONFIGS[type];
@@ -639,38 +660,27 @@ export default function WindowsNotification({
         </div>
 
         {/* Content */}
-        <div className="space-y-2">
-          <p className="text-sm font-semibold text-slate-900 leading-snug">
-            {message}
-          </p>
-          
-          {/* Author and Member info */}
-          <div className="flex items-center gap-4 text-xs text-slate-500">
-            {author && (
-              <div className="flex items-center gap-1">
-                <User className="h-3 w-3" />
-                <span>{author}</span>
-              </div>
-            )}
-            {memberName && (
-              <div className="flex items-center gap-1">
-                <Target className="h-3 w-3" />
-                <span>{memberName}</span>
-              </div>
-            )}
-            {formattedTimestamp && (
-              <div className="flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                <span>Sent: {formattedTimestamp}</span>
-              </div>
-            )}
-            {formattedFollowUpDate && (
-              <div className="flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                <span>Follow-up: {formattedFollowUpDate}</span>
-              </div>
-            )}
+        <div className="space-y-1.5">
+          <div className="grid grid-cols-4 gap-x-3 text-[11px] text-slate-400 uppercase tracking-wide">
+            <span>From:</span>
+            <span>To:</span>
+            <span>About:</span>
+            <span>Sent:</span>
           </div>
+          <div className="grid grid-cols-4 gap-x-3 text-xs text-slate-600">
+            <span>{displayAuthor || '-'}</span>
+            <span>{recipientName || '-'}</span>
+            <span>{displayMember || '-'}</span>
+            <span>{formattedTimestamp || '-'}</span>
+          </div>
+          {formattedFollowUpDate && (
+            <div className="text-xs text-slate-500">
+              Follow-up: {formattedFollowUpDate}
+            </div>
+          )}
+          <p className="text-sm font-semibold text-slate-900 leading-snug">
+            {displayMessage}
+          </p>
 
           {formattedFollowUpDate && (
             <div className="pt-1">
@@ -679,10 +689,17 @@ export default function WindowsNotification({
               </Badge>
             </div>
           )}
+          {noteIndexLabel && (
+            <div className="pt-1">
+              <Badge variant="outline" className="text-xs">
+                {noteIndexLabel}
+              </Badge>
+            </div>
+          )}
 
-          {(replyUrl || onClick || onFollowUpSave) && (
+          {(displayReplyUrl || onClick || onFollowUpSave || (notes && notes.length > 1)) && (
             <div className="pt-1 flex flex-wrap gap-2">
-              {replyUrl && (
+              {displayReplyUrl && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -690,12 +707,38 @@ export default function WindowsNotification({
                   onClick={(event) => {
                     event.stopPropagation();
                     if (typeof window !== 'undefined') {
-                      window.location.href = replyUrl;
+                      window.location.href = displayReplyUrl;
                     }
                     handleClose();
                   }}
                 >
                   Reply
+                </Button>
+              )}
+              {notes && notes.length > 1 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setNoteIndex((prev) => Math.max(0, prev - 1));
+                  }}
+                >
+                  Prev
+                </Button>
+              )}
+              {notes && notes.length > 1 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setNoteIndex((prev) => Math.min(notes.length - 1, prev + 1));
+                  }}
+                >
+                  Next
                 </Button>
               )}
               {onFollowUpSave && (
