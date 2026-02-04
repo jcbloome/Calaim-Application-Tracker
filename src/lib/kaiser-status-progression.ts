@@ -197,9 +197,9 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
   },
   {
     id: 53,
-    status: 'ILS Contracted, RN Reauth Visit Needed',
+    status: 'ILS Contracted, Set for Reauth Visits',
     sortOrder: 21,
-    description: 'ILS contracted; RN reauthorization visit needed',
+    description: 'ILS contracted; set for reauthorization visits',
     category: 'completion',
     isActive: true
   },
