@@ -133,7 +133,7 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
   },
   {
     id: 41,
-    status: 'RCFE Located',
+    status: 'RCFE_Located',
     sortOrder: 14,
     description: 'Appropriate RCFE facility has been located',
     category: 'placement',
@@ -197,41 +197,9 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
   },
   {
     id: 53,
-    status: 'ILS Contracted, Needs Reauth',
+    status: 'ILS Contracted, RN Reauth Visit Needed',
     sortOrder: 21,
-    description: 'ILS contracted; reauthorization needed',
-    category: 'completion',
-    isActive: true
-  },
-  {
-    id: 54,
-    status: 'ILS Contracted, Reauth Scheduled',
-    sortOrder: 21.5,
-    description: 'Reauthorization scheduled with ILS',
-    category: 'completion',
-    isActive: true
-  },
-  {
-    id: 55,
-    status: 'ILS Contracted, Reauth Complete',
-    sortOrder: 21.6,
-    description: 'Reauthorization completed',
-    category: 'completion',
-    isActive: true
-  },
-  {
-    id: 56,
-    status: 'ILS Contracted, Reauth Sent to ILS',
-    sortOrder: 21.7,
-    description: 'Reauthorization sent to ILS',
-    category: 'completion',
-    isActive: true
-  },
-  {
-    id: 57,
-    status: 'ILS Contracted, Reauth Received',
-    sortOrder: 21.8,
-    description: 'Reauthorization received from ILS',
+    description: 'ILS contracted; RN reauthorization visit needed',
     category: 'completion',
     isActive: true
   },
