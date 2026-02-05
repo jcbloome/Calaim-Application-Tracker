@@ -1,11 +1,16 @@
 import fs from 'fs/promises';
 import path from 'path';
+import crypto from 'crypto';
 
 const projectRoot = process.cwd();
 const releaseDir = path.join(projectRoot, 'desktop', 'release');
 const targetDir = path.join(projectRoot, 'public', 'downloads');
 const targetName = 'Connect-CalAIM-Desktop-Setup.exe';
 const targetPath = path.join(targetDir, targetName);
+const targetBlockmap = path.join(targetDir, `${targetName}.blockmap`);
+const targetLatest = path.join(targetDir, 'latest.yml');
+const targetSha256 = path.join(targetDir, `${targetName}.sha256`);
+const targetMeta = path.join(targetDir, 'installer.json');
 
 const versionRegex = /Connect CalAIM Desktop Setup ([\d.]+)\.exe$/i;
 
@@ -64,8 +69,30 @@ const run = async () => {
   }
 
   const sourcePath = path.join(releaseDir, latest);
+  const versionMatch = latest.match(versionRegex);
+  const version = versionMatch?.[1] || null;
+  const sourceBlockmap = `${sourcePath}.blockmap`;
+  const sourceLatest = path.join(releaseDir, 'latest.yml');
   await fs.mkdir(targetDir, { recursive: true });
   await fs.copyFile(sourcePath, targetPath);
+  await fs.copyFile(sourceBlockmap, targetBlockmap).catch(() => null);
+  await fs.copyFile(sourceLatest, targetLatest).catch(() => null);
+
+  const installerBuffer = await fs.readFile(targetPath);
+  const hash = crypto.createHash('sha256').update(installerBuffer).digest('hex');
+  await fs.writeFile(targetSha256, `${hash}  ${targetName}\n`, 'utf8');
+
+  const releaseFilename = latest;
+  const releaseUrl = version
+    ? `https://github.com/jcbloome/Calaim-Application-Tracker/releases/download/v${version}/${encodeURIComponent(releaseFilename)}`
+    : null;
+  const meta = {
+    version,
+    filename: releaseFilename,
+    releaseUrl,
+    sha256: hash
+  };
+  await fs.writeFile(targetMeta, JSON.stringify(meta, null, 2), 'utf8');
 
   console.log(`Copied ${latest} -> ${path.relative(projectRoot, targetPath)}`);
 };

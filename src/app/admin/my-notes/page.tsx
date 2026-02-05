@@ -59,7 +59,10 @@ interface StaffNotification {
 
 function MyNotesContent() {
   const installerDownloadUrl = '/admin/desktop-installer';
-  const installerVersion = process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_VERSION || null;
+  const [installerMeta, setInstallerMeta] = useState<{
+    version: string | null;
+    sha256: string | null;
+  }>({ version: null, sha256: null });
   const { user, isAdmin, loading, isUserLoading } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -101,6 +104,23 @@ function MyNotesContent() {
   const [deleteTarget, setDeleteTarget] = useState<StaffNotification | null>(null);
   const deleteTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const deletedNotesRef = useRef<Map<string, StaffNotification>>(new Map());
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/admin/desktop-installer/meta')
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!isMounted || !data) return;
+        setInstallerMeta({
+          version: data.version || null,
+          sha256: data.sha256 || null
+        });
+      })
+      .catch(() => null);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Load notifications from Firestore
   useEffect(() => {
@@ -838,15 +858,20 @@ function MyNotesContent() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex flex-col items-end gap-1">
+          <div className="flex flex-col items-end gap-1 text-right">
             <Button asChild variant="outline" size="sm">
               <a href={installerDownloadUrl} download>
-                Download Desktop Installer{installerVersion ? ` (${installerVersion})` : ''}
+                Download Desktop Installer{installerMeta.version ? ` (${installerMeta.version})` : ''}
               </a>
             </Button>
             <span className="text-xs text-muted-foreground">
-              Open from Downloads after it finishes.
+              Open from Downloads after it finishes. If blocked: More info → Run anyway.
             </span>
+            {installerMeta.sha256 && (
+              <span className="text-[10px] text-muted-foreground">
+                SHA256: {installerMeta.sha256.slice(0, 10)}…
+              </span>
+            )}
           </div>
           <Button onClick={refresh} variant="outline" size="sm">
             <RefreshCw className="h-4 w-4 mr-2" />
