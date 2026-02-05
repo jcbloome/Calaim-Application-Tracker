@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
 import admin from '@/firebase-admin';
+import { sendPasswordResetEmail } from '@/lib/password-reset';
 
 export async function POST(request: NextRequest) {
   try {
@@ -69,23 +70,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // For production, fall back to the original custom email service
-    console.log('🔧 Production mode: Redirecting to custom password reset');
-    
-    // Make internal request to the custom password reset API
-    const customResetResponse = await fetch(`${request.nextUrl.origin}/api/auth/password-reset`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email: normalizedEmail }),
-    });
+    console.log('🔧 Production mode: Using custom password reset email');
 
-    const customResetData = await customResetResponse.json();
-    
-    return NextResponse.json(customResetData, { 
-      status: customResetResponse.status 
-    });
+    const result = await sendPasswordResetEmail(request, normalizedEmail);
+    return NextResponse.json(result.body, { status: result.status });
 
   } catch (error: any) {
     console.error('Simple password reset failed:', error);
