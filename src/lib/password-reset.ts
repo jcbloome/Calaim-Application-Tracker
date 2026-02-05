@@ -1,9 +1,7 @@
 import { NextRequest } from 'next/server';
 import { Resend } from 'resend';
 import { renderAsync } from '@react-email/render';
-import crypto from 'crypto';
 import PasswordResetEmail from '@/components/emails/PasswordResetEmail';
-import { resetTokenStore } from '@/lib/reset-tokens';
 import admin, { adminDb } from '@/firebase-admin';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -53,64 +51,39 @@ const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user'
     process.env.NEXT_PUBLIC_FIREBASE_API_KEY ||
     process.env.FIREBASE_API_KEY;
 
-  if (firebaseApiKey) {
-    const oobResponse = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${firebaseApiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requestType: 'PASSWORD_RESET',
-          email,
-          returnOobLink: true
-        })
-      }
-    );
-
-    const oobData = await oobResponse.json();
-    if (!oobResponse.ok) {
-      throw new Error(oobData?.error?.message || 'Failed to request Firebase reset code');
-    }
-
-    const oobLink = oobData?.oobLink as string | undefined;
-    const oobCode =
-      oobData?.oobCode ||
-      (oobLink ? new URL(oobLink).searchParams.get('oobCode') : null);
-
-    if (!oobCode) {
-      throw new Error('Missing oobCode in Firebase response');
-    }
-
-    const resetPath = role === 'sw' ? '/sw-reset-password' : '/reset-password';
-    return `${baseUrl}${resetPath}?oobCode=${encodeURIComponent(oobCode)}`;
+  if (!firebaseApiKey) {
+    throw new Error('Missing Firebase API key for password reset.');
   }
 
-  // Fallback to custom token flow if Firebase API key is missing
-  const resetToken = crypto.randomBytes(32).toString('hex');
-  const expires = Date.now() + (60 * 60 * 1000);
-
-  let firestoreSuccess = false;
-  if (process.env.NODE_ENV !== 'development') {
-    try {
-      await adminDb.collection('passwordResetTokens').doc(resetToken).set({
+  const oobResponse = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${firebaseApiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestType: 'PASSWORD_RESET',
         email,
-        expires,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      firestoreSuccess = true;
-    } catch (storeError) {
-      console.error('❌ Failed to store reset token in Firestore:', storeError);
+        returnOobLink: true
+      })
     }
+  );
+
+  const oobData = await oobResponse.json();
+  if (!oobResponse.ok) {
+    throw new Error(oobData?.error?.message || 'Failed to request Firebase reset code');
   }
 
-  resetTokenStore.set(resetToken, { email, expires });
+  const oobLink = oobData?.oobLink as string | undefined;
+  const oobCode =
+    oobData?.oobCode ||
+    (oobLink ? new URL(oobLink).searchParams.get('oobCode') : null);
 
-  if (process.env.NODE_ENV !== 'development' && !firestoreSuccess) {
-    throw new Error('Unable to store reset token');
+  if (!oobCode) {
+    throw new Error('Missing oobCode in Firebase response');
   }
 
   const resetPath = role === 'sw' ? '/sw-reset-password' : '/reset-password';
-  return `${baseUrl}${resetPath}?token=${resetToken}`;
+  return `${baseUrl}${resetPath}?oobCode=${encodeURIComponent(oobCode)}`;
 };
 
 export const sendPasswordResetEmail = async (request: NextRequest, email: string, role?: string) => {
