@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('desktopNotificationPill', {
   dismiss: () => ipcRenderer.send('desktop:dismissPill'),
   expand: () => ipcRenderer.send('desktop:expandPill'),
   navigate: (delta: number) => ipcRenderer.send('desktop:navigatePill', { delta }),
+  sendReply: (payload: { noteId?: string; senderId?: string; message: string }) =>
+    ipcRenderer.send('desktop:quickReply', payload),
   move: (x: number, y: number) => ipcRenderer.send('desktop:movePill', { x, y }),
   getPosition: () => ipcRenderer.invoke('desktop:getPillPosition')
 });

@@ -4,6 +4,18 @@ import { useEffect } from 'react';
 
 export default function PWAServiceWorker() {
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (process.env.NODE_ENV !== 'production' || isLocalhost) {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then((registrations) => {
+            registrations.forEach((registration) => registration.unregister());
+          });
+        }
+        return;
+      }
+    }
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker
         .register('/sw.js')

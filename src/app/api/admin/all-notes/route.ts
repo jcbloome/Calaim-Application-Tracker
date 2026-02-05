@@ -4,7 +4,7 @@ import admin, { adminDb } from '@/firebase-admin';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get('limit') || '100');
+    const limit = parseInt(searchParams.get('limit') || '5000');
     const staff = searchParams.get('staff');
     const type = searchParams.get('type');
     const priority = searchParams.get('priority');

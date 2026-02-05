@@ -6,7 +6,29 @@ contextBridge.exposeInMainWorld('desktopNotifications', {
   notify: (payload: { title: string; body: string; openOnNotify?: boolean }) =>
     ipcRenderer.invoke('desktop:notify', payload),
   setPendingCount: (count: number) => ipcRenderer.send('desktop:setPendingCount', count),
-  setPillSummary: (payload: { count: number; title: string; message: string; author?: string; memberName?: string; timestamp?: string; replyUrl?: string; actionUrl?: string }) =>
+  setPillSummary: (payload: {
+    count: number;
+    notes?: Array<{
+      title: string;
+      message: string;
+      author?: string;
+      recipientName?: string;
+      memberName?: string;
+      timestamp?: string;
+      noteId?: string;
+      senderId?: string;
+      replyUrl?: string;
+      actionUrl?: string;
+    }>;
+    title?: string;
+    message?: string;
+    author?: string;
+    recipientName?: string;
+    memberName?: string;
+    timestamp?: string;
+    replyUrl?: string;
+    actionUrl?: string;
+  }) =>
     ipcRenderer.send('desktop:setPillSummary', payload),
   checkForUpdates: () => ipcRenderer.invoke('desktop:checkForUpdates'),
   onChange: (callback: (state: any) => void) => {
@@ -18,5 +40,10 @@ contextBridge.exposeInMainWorld('desktopNotifications', {
     const handler = () => callback();
     ipcRenderer.on('desktop:expand', handler);
     return () => ipcRenderer.removeListener('desktop:expand', handler);
+  },
+  onQuickReply: (callback: (payload: { noteId?: string; senderId?: string; message: string }) => void) => {
+    const handler = (_event: any, payload: { noteId?: string; senderId?: string; message: string }) => callback(payload);
+    ipcRenderer.on('desktop:quickReply', handler);
+    return () => ipcRenderer.removeListener('desktop:quickReply', handler);
   }
 });

@@ -10,6 +10,14 @@ interface WindowsNotificationProps {
   title: string;
   message: string;
   author?: string;
+  notes?: Array<{
+    message: string;
+    author?: string;
+    memberName?: string;
+    timestamp?: string;
+    replyUrl?: string;
+  }>;
+  recipientName?: string;
   memberName?: string;
   timestamp?: string;
   priority?: 'Low' | 'Medium' | 'High' | 'Urgent';

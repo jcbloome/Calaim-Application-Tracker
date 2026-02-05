@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -27,7 +27,6 @@ import {
   LogIn,
   Monitor,
   Smartphone,
-  Activity,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
@@ -46,8 +45,27 @@ interface VisitRecord {
   flagReasons: string[];
   signedOff: boolean;
   rcfeStaffName?: string;
+  rcfeStaffTitle?: string;
+  signOffDate?: string;
   geolocationVerified: boolean;
+  geolocationLabel?: string;
+  geolocationAddress?: string;
+  geolocationLat?: number;
+  geolocationLng?: number;
+  questionnaireAnswers: Array<{ question: string; answer: string }>;
   status: 'completed' | 'pending_signoff' | 'signed_off' | 'flagged';
+  claimSubmitted: boolean;
+  claimMonth?: string;
+  claimPaid?: boolean;
+  claimSubmittedAt?: string;
+  claimPaidAt?: string;
+  visitLocationDetails?: string;
+  starRatings?: {
+    care: number;
+    safety: number;
+    communication: number;
+    overall: number;
+  };
 }
 
 interface SignOffRecord {
@@ -83,11 +101,10 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
-  const [showMockFlow, setShowMockFlow] = useState(false);
-  const [mockSocialWorker, setMockSocialWorker] = useState('');
-  const [mockStepIndex, setMockStepIndex] = useState(0);
   const [expandedVisitId, setExpandedVisitId] = useState<string | null>(null);
   const [expandedSignoffId, setExpandedSignoffId] = useState<string | null>(null);
+  const [claimDatesByVisit, setClaimDatesByVisit] = useState<Record<string, { submittedAt?: string; paidAt?: string }>>({});
+  const [geoResolvedByVisit, setGeoResolvedByVisit] = useState<Record<string, { address?: string; status: 'idle' | 'loading' | 'error' }>>({});
 
   useEffect(() => {
     loadTrackingData();
@@ -123,8 +140,30 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
           flagReasons: [],
           signedOff: true,
           rcfeStaffName: 'Jennifer Martinez',
+          rcfeStaffTitle: 'Administrator',
+          signOffDate: '2025-01-22T15:10:00Z',
           geolocationVerified: true,
-          status: 'signed_off'
+          geolocationLabel: 'GPS verified at Highland Manor',
+          geolocationLat: 34.0599,
+          geolocationLng: -118.2468,
+          visitLocationDetails: 'Room 12B (member present in room)',
+          questionnaireAnswers: [
+            { question: 'Was the member present?', answer: 'Yes' },
+            { question: 'Is the care plan being followed?', answer: 'Mostly' },
+            { question: 'Any safety concerns?', answer: 'No' }
+          ],
+          status: 'signed_off',
+          claimSubmitted: true,
+          claimMonth: '2025-01',
+          claimPaid: true,
+          claimSubmittedAt: '2025-01-23',
+          claimPaidAt: '2025-02-05',
+          starRatings: {
+            care: 4,
+            safety: 5,
+            communication: 4,
+            overall: 4
+          }
         },
         {
           id: '2',
@@ -140,7 +179,23 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
           flagReasons: ['Low care satisfaction', 'Member has urgent concerns'],
           signedOff: false,
           geolocationVerified: true,
-          status: 'flagged'
+          geolocationLabel: 'GPS verified at Highland Manor',
+          geolocationLat: 34.0599,
+          geolocationLng: -118.2468,
+          visitLocationDetails: 'Dining hall (group activity)',
+          questionnaireAnswers: [
+            { question: 'Was the member present?', answer: 'Yes' },
+            { question: 'Is the care plan being followed?', answer: 'No' },
+            { question: 'Any safety concerns?', answer: 'Yes - needs follow-up' }
+          ],
+          status: 'flagged',
+          claimSubmitted: false,
+          starRatings: {
+            care: 2,
+            safety: 2,
+            communication: 3,
+            overall: 2
+          }
         },
         {
           id: '3',
@@ -156,7 +211,26 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
           flagReasons: [],
           signedOff: false,
           geolocationVerified: true,
-          status: 'pending_signoff'
+          geolocationLabel: 'GPS verified at Savant of Santa Monica',
+          geolocationLat: 34.0104,
+          geolocationLng: -118.4963,
+          visitLocationDetails: 'Common lounge (member present with staff)',
+          questionnaireAnswers: [
+            { question: 'Was the member present?', answer: 'Yes' },
+            { question: 'Is the care plan being followed?', answer: 'Yes' },
+            { question: 'Any safety concerns?', answer: 'No' }
+          ],
+          status: 'pending_signoff',
+          claimSubmitted: true,
+          claimMonth: '2025-01',
+          claimPaid: false,
+          claimSubmittedAt: '2025-01-24',
+          starRatings: {
+            care: 5,
+            safety: 4,
+            communication: 5,
+            overall: 5
+          }
         }
       ];
 
@@ -199,6 +273,7 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
     return matchesSearch && matchesStatus && matchesDate;
   });
 
+
   const getStatusBadge = (status: string, flagged: boolean) => {
     if (flagged) {
       return <Badge variant="destructive" className="gap-1"><Flag className="h-3 w-3" />Flagged</Badge>;
@@ -223,52 +298,54 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
     return <Badge variant="destructive">Needs Attention ({score})</Badge>;
   };
 
-  const mockFlowSteps = [
-    {
-      title: 'Login',
-      portalTitle: 'SW Login',
-      description: 'Log in to the portal with SW credentials.',
-      nextAction: 'Continue to assignments'
-    },
-    {
-      title: 'Assignments',
-      portalTitle: 'My Visit Assignments',
-      description: 'See assigned members, RCFE details, and visit schedules.',
-      nextAction: 'Select a member visit'
-    },
-    {
-      title: 'Visit Verification',
-      portalTitle: 'Verify Visit',
-      description: 'Confirm location and start the visit verification workflow.',
-      nextAction: 'Begin questionnaire'
-    },
-    {
-      title: 'Questionnaire',
-      portalTitle: 'Visit Questionnaire',
-      description: 'Complete the visit questions and submit responses.',
-      nextAction: 'Capture RCFE sign-off'
-    },
-    {
-      title: 'RCFE Sign-Off',
-      portalTitle: 'RCFE Sign-Off',
-      description: 'Collect RCFE staff sign-off and finalize the visit.',
-      nextAction: 'Submit visit'
-    },
-    {
-      title: 'Submission',
-      portalTitle: 'Visit Submitted',
-      description: 'Visit is submitted for admin review and reporting.',
-      nextAction: 'Return to assignments'
-    }
-  ];
+  const getResolvedGeoAddress = (visit: VisitRecord) => {
+    return geoResolvedByVisit[visit.id]?.address || visit.geolocationAddress || '';
+  };
 
-  const availableSocialWorkers = Array.from(new Set([
-    ...loginEvents.map(event => event.socialWorkerName),
-    ...visitRecords.map(record => record.socialWorkerName)
-  ])).filter(Boolean);
+  const getGeoMatchStatus = (visit: VisitRecord) => {
+    const resolved = getResolvedGeoAddress(visit);
+    if (!resolved) return 'Unknown';
+    const rcfe = visit.rcfeAddress.toLowerCase();
+    const geo = resolved.toLowerCase();
+    if (rcfe && geo && (geo.includes(rcfe) || rcfe.includes(geo))) return 'Match';
+    return 'Mismatch';
+  };
 
-  const activeMockStep = mockFlowSteps[mockStepIndex];
-  const mockWorkerLabel = mockSocialWorker.trim() || 'Selected Social Worker';
+  useEffect(() => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return;
+    const visitsToResolve = visitRecords.filter((visit) =>
+      typeof visit.geolocationLat === 'number'
+      && typeof visit.geolocationLng === 'number'
+      && !visit.geolocationAddress
+      && !geoResolvedByVisit[visit.id]
+    );
+
+    if (visitsToResolve.length === 0) return;
+
+    visitsToResolve.forEach(async (visit) => {
+      setGeoResolvedByVisit((prev) => ({
+        ...prev,
+        [visit.id]: { status: 'loading' }
+      }));
+      try {
+        const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${visit.geolocationLat},${visit.geolocationLng}&key=${apiKey}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        const address = data?.results?.[0]?.formatted_address || '';
+        setGeoResolvedByVisit((prev) => ({
+          ...prev,
+          [visit.id]: { status: 'idle', address }
+        }));
+      } catch {
+        setGeoResolvedByVisit((prev) => ({
+          ...prev,
+          [visit.id]: { status: 'error' }
+        }));
+      }
+    });
+  }, [visitRecords, geoResolvedByVisit]);
+
 
   if (loading) {
     return (
@@ -297,185 +374,12 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant={showMockFlow ? 'default' : 'outline'}
-            className="gap-2"
-            onClick={() => setShowMockFlow((prev) => !prev)}
-          >
-            <Activity className="h-4 w-4" />
-            {showMockFlow ? 'Hide Mock Flow' : 'Mock SW Visit Flow'}
-          </Button>
           <Button className="gap-2">
             <Download className="h-4 w-4" />
             Export Report
           </Button>
         </div>
       </div>
-
-      {showMockFlow && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5 text-blue-600" />
-              Mock SW Visit Tracking Flow (Start → Finish)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="mock-sw-name">Social Worker</Label>
-                  <Input
-                    id="mock-sw-name"
-                    value={mockSocialWorker}
-                    onChange={(event) => setMockSocialWorker(event.target.value)}
-                    placeholder="Type SW name..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="mock-sw-select">Quick Select</Label>
-                  <Select value={mockSocialWorker} onValueChange={(value) => setMockSocialWorker(value)}>
-                    <SelectTrigger id="mock-sw-select">
-                      <SelectValue placeholder="Select recent SW" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableSocialWorkers.length === 0 && (
-                        <SelectItem value="none" disabled>
-                          No recent social workers
-                        </SelectItem>
-                      )}
-                      {availableSocialWorkers.map((name) => (
-                        <SelectItem key={name} value={name}>
-                          {name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Advance Portal Step</Label>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => setMockStepIndex((prev) => Math.max(0, prev - 1))}
-                      disabled={mockStepIndex === 0}
-                    >
-                      Back
-                    </Button>
-                    <Button
-                      onClick={() => setMockStepIndex((prev) => Math.min(mockFlowSteps.length - 1, prev + 1))}
-                      disabled={mockStepIndex === mockFlowSteps.length - 1}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              <Card className="border-dashed">
-                <CardHeader>
-                  <CardTitle className="text-lg">
-                    {activeMockStep.title} • {mockWorkerLabel}
-                  </CardTitle>
-                  <CardDescription>
-                    Step {mockStepIndex + 1} of {mockFlowSteps.length}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm text-muted-foreground">
-                  <div className="flex items-center gap-2 text-base text-foreground">
-                    <Monitor className="h-4 w-4 text-blue-600" />
-                    Portal View: {activeMockStep.portalTitle}
-                  </div>
-                  <p>{activeMockStep.description}</p>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    Next action: {activeMockStep.nextAction}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  <div className="border rounded-lg p-3">
-                    <p className="font-semibold flex items-center gap-2">
-                      <LogIn className="h-4 w-4 text-blue-600" />
-                      1) Social Worker Login
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      SW logs in and opens the visit assignments list.
-                    </p>
-                  </div>
-                  <div className="border rounded-lg p-3">
-                    <p className="font-semibold flex items-center gap-2">
-                      <Users className="h-4 w-4 text-blue-600" />
-                      2) Select Member + RCFE
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Assignments show the member, RCFE, and visit date.
-                    </p>
-                  </div>
-                  <div className="border rounded-lg p-3">
-                    <p className="font-semibold flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-green-600" />
-                      3) Geolocation Verified
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Location check confirms the SW is on-site.
-                    </p>
-                  </div>
-                  <div className="border rounded-lg p-3">
-                    <p className="font-semibold flex items-center gap-2">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                      4) Visit Completed
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Questionnaire is completed and saved with a score.
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div className="border rounded-lg p-3">
-                    <p className="font-semibold flex items-center gap-2">
-                      <Flag className="h-4 w-4 text-red-600" />
-                      5) Flagged Issues (if any)
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Low scores or urgent concerns trigger review flags.
-                    </p>
-                  </div>
-                  <div className="border rounded-lg p-3">
-                    <p className="font-semibold flex items-center gap-2">
-                      <Building className="h-4 w-4 text-blue-600" />
-                      6) RCFE Staff Sign-Off
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      RCFE staff signs to confirm the visit occurred.
-                    </p>
-                  </div>
-                  <div className="border rounded-lg p-3">
-                    <p className="font-semibold flex items-center gap-2">
-                      <FileBarChart className="h-4 w-4 text-blue-600" />
-                      7) Admin Review + Reporting
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Admin monitors visits, flags, and compliance metrics.
-                    </p>
-                  </div>
-                  <div className="border rounded-lg p-3">
-                    <p className="font-semibold flex items-center gap-2">
-                      <Download className="h-4 w-4 text-blue-600" />
-                      8) Export + Audit Trail
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Reports are exported for audit and compliance reviews.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -667,47 +571,181 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                   )}
 
                   {expandedVisitId === visit.id && (
-                    <div className="border rounded-lg p-3 bg-muted/40">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Visit ID:</span>
-                          <span className="ml-2 font-medium">{visit.visitId}</span>
+                    <div className="space-y-4">
+                      <div className="border rounded-lg p-3 bg-muted/40">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Visit ID:</span>
+                            <span className="ml-2 font-medium">{visit.visitId}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">RCFE Address:</span>
+                            <span className="ml-2 font-medium">{visit.rcfeAddress}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Status:</span>
+                            <span className="ml-2 font-medium">{visit.status}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Geolocation:</span>
+                            <span className="ml-2 font-medium">
+                              {visit.geolocationVerified ? 'Verified' : 'Not Verified'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Sign-Off:</span>
+                            <span className="ml-2 font-medium">
+                              {visit.signedOff ? `Signed by ${visit.rcfeStaffName}` : 'Pending'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Score:</span>
+                            <span className="ml-2 font-medium">{visit.totalScore}</span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-muted-foreground">RCFE Address:</span>
-                          <span className="ml-2 font-medium">{visit.rcfeAddress}</span>
+                        {visit.flagReasons.length > 0 && (
+                          <div className="mt-3 text-sm">
+                            <p className="text-muted-foreground mb-1">Flag Reasons:</p>
+                            <ul className="list-disc pl-5 space-y-1">
+                              {visit.flagReasons.map((reason, index) => (
+                                <li key={`${visit.id}-reason-${index}`}>{reason}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                      <div className="border rounded-lg bg-white">
+                        <div className="border-b px-4 py-2 text-sm font-semibold">
+                          Visit Summary (Full Report)
                         </div>
-                        <div>
-                          <span className="text-muted-foreground">Status:</span>
-                          <span className="ml-2 font-medium">{visit.status}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Geolocation:</span>
-                          <span className="ml-2 font-medium">
-                            {visit.geolocationVerified ? 'Verified' : 'Not Verified'}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Sign-Off:</span>
-                          <span className="ml-2 font-medium">
-                            {visit.signedOff ? `Signed by ${visit.rcfeStaffName}` : 'Pending'}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Score:</span>
-                          <span className="ml-2 font-medium">{visit.totalScore}</span>
+                        <div className="space-y-5 p-4 text-sm">
+                          <div>
+                            <div className="text-xs uppercase text-muted-foreground mb-2">Visit Details</div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <span className="text-muted-foreground">Visited Member:</span>
+                                <span className="ml-2 font-medium">{visit.memberName}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Visited Location:</span>
+                                <span className="ml-2 font-medium">{visit.rcfeName}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Address:</span>
+                                <span className="ml-2 font-medium">{visit.rcfeAddress}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Where in facility:</span>
+                                <span className="ml-2 font-medium">{visit.visitLocationDetails || 'Not specified'}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Geolocation:</span>
+                                <span className="ml-2 font-medium">
+                                  {visit.geolocationVerified ? 'Verified' : 'Not Verified'}
+                                  {visit.geolocationLabel ? ` • ${visit.geolocationLabel}` : ''}
+                                </span>
+                              </div>
+                            <div>
+                              <span className="text-muted-foreground">Geolocation Address:</span>
+                              <span className="ml-2 font-medium">
+                                {getResolvedGeoAddress(visit) || (geoResolvedByVisit[visit.id]?.status === 'loading' ? 'Resolving...' : 'Not available')}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Address Match:</span>
+                              <span className="ml-2 font-medium">
+                                {getGeoMatchStatus(visit)}
+                              </span>
+                            </div>
+                              <div>
+                                <span className="text-muted-foreground">Sign-Off Person:</span>
+                                <span className="ml-2 font-medium">
+                                  {visit.signedOff ? `${visit.rcfeStaffName || 'Staff'}${visit.rcfeStaffTitle ? ` (${visit.rcfeStaffTitle})` : ''}` : 'Pending'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Sign-Off Date:</span>
+                                <span className="ml-2 font-medium">
+                                  {visit.signOffDate ? new Date(visit.signOffDate).toLocaleString() : 'Pending'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="text-xs uppercase text-muted-foreground mb-2">Star Ratings</div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                              {[
+                                { label: 'Care', value: visit.starRatings?.care },
+                                { label: 'Safety', value: visit.starRatings?.safety },
+                                { label: 'Communication', value: visit.starRatings?.communication },
+                                { label: 'Overall', value: visit.starRatings?.overall }
+                              ].map((rating) => (
+                                <div key={rating.label} className="rounded border p-2">
+                                  <div className="text-muted-foreground">{rating.label}</div>
+                                  <div className="font-semibold">{rating.value ?? '—'} / 5</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="text-xs uppercase text-muted-foreground mb-2">Questionnaire Answers</div>
+                            <div className="space-y-2">
+                              {visit.questionnaireAnswers.map((qa, index) => (
+                                <div key={`${visit.id}-qa-${index}`} className="rounded border p-2">
+                                  <div className="text-muted-foreground">{qa.question}</div>
+                                  <div className="font-medium">{qa.answer}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="text-xs uppercase text-muted-foreground mb-2">Claims & Payment</div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <span className="text-muted-foreground">Claim Submitted:</span>
+                                <span className="ml-2 font-medium">{visit.claimSubmitted ? 'Yes' : 'No'}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Claim Status:</span>
+                                <span className="ml-2 font-medium">
+                                  {visit.claimSubmitted ? (visit.claimPaid ? 'Paid' : 'Unpaid') : 'N/A'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">Claim Submitted Date:</span>
+                                <Input
+                                  type="date"
+                                  value={claimDatesByVisit[visit.id]?.submittedAt ?? visit.claimSubmittedAt ?? ''}
+                                  onChange={(event) =>
+                                    setClaimDatesByVisit((prev) => ({
+                                      ...prev,
+                                      [visit.id]: { ...prev[visit.id], submittedAt: event.target.value }
+                                    }))
+                                  }
+                                  className="h-8 w-40"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">Claim Paid Date:</span>
+                                <Input
+                                  type="date"
+                                  value={claimDatesByVisit[visit.id]?.paidAt ?? visit.claimPaidAt ?? ''}
+                                  onChange={(event) =>
+                                    setClaimDatesByVisit((prev) => ({
+                                      ...prev,
+                                      [visit.id]: { ...prev[visit.id], paidAt: event.target.value }
+                                    }))
+                                  }
+                                  className="h-8 w-40"
+                                />
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      {visit.flagReasons.length > 0 && (
-                        <div className="mt-3 text-sm">
-                          <p className="text-muted-foreground mb-1">Flag Reasons:</p>
-                          <ul className="list-disc pl-5 space-y-1">
-                            {visit.flagReasons.map((reason, index) => (
-                              <li key={`${visit.id}-reason-${index}`}>{reason}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
                     </div>
                   )}
                   
@@ -742,6 +780,7 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
           </CardContent>
         </Card>
       )}
+
 
       {activeTab === 'signoffs' && (
         <Card>

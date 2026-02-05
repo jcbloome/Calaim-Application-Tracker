@@ -9,6 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
+import { useFirestore } from '@/firebase';
+import { collection, getDocs, limit as limitDocs, orderBy, query } from 'firebase/firestore';
 import { 
   Loader2, 
   RefreshCw, 
@@ -19,11 +21,11 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
-  ExternalLink,
   Download,
   Filter,
   FileText,
-  Bell
+  Bell,
+  Trash2
 } from 'lucide-react';
 import { format, isToday, isThisWeek, isThisMonth } from 'date-fns';
 import Link from 'next/link';
@@ -56,8 +58,15 @@ interface Note {
   isRead?: boolean;
   applicationId?: string;
   senderName?: string;
+  recipientName?: string;
+  recipientEmail?: string;
+  userId?: string;
   actionUrl?: string;
   clientId2?: string;
+  replyToId?: string;
+  threadId?: string;
+  status?: string;
+  resolvedAt?: string;
 }
 
 interface StaffMember {
@@ -67,8 +76,10 @@ interface StaffMember {
 }
 
 export default function SuperAdminNoteLog() {
+  const firestore = useFirestore();
   const [notes, setNotes] = useState<Note[]>([]);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [userDirectory, setUserDirectory] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -86,39 +97,157 @@ export default function SuperAdminNoteLog() {
     loadNotes();
   }, []);
 
+  useEffect(() => {
+    if (!firestore) return;
+    const loadUsers = async () => {
+      try {
+        const snapshot = await getDocs(collection(firestore, 'users'));
+        const nextDirectory: Record<string, string> = {};
+        snapshot.forEach((docSnap) => {
+          const data: any = docSnap.data();
+          const label = data?.displayName || data?.name || data?.email || docSnap.id;
+          nextDirectory[docSnap.id] = label;
+        });
+        setUserDirectory(nextDirectory);
+      } catch (error) {
+        console.warn('Failed to load user directory:', error);
+      }
+    };
+    loadUsers();
+  }, [firestore]);
+
   const loadNotes = async (isRefresh = false) => {
     if (isRefresh) {
       setRefreshing(true);
     } else {
       setLoading(true);
     }
+    const finish = () => {
+      setLoading(false);
+      setRefreshing(false);
+    };
     
     try {
       const params = new URLSearchParams();
-      params.append('limit', '200');
+      params.append('limit', '5000');
       if (staffFilter !== 'all') params.append('staff', staffFilter);
       if (typeFilter !== 'all') params.append('type', typeFilter);
       if (priorityFilter !== 'all') params.append('priority', priorityFilter);
 
-      const response = await fetch(`/api/admin/all-notes?${params.toString()}`);
+      const response = await fetch(`/api/admin/all-notes?${params.toString()}`, {
+        cache: 'no-store'
+      });
       const data = await response.json();
 
-      if (data.success) {
+      if (data.success && Array.isArray(data.notes) && data.notes.length > 0) {
         setNotes(data.notes || []);
         setStaffList(data.staffList || []);
-      } else {
+        finish();
+        return;
+      }
+      if (!data.success) {
         throw new Error(data.message || 'Failed to load notes');
       }
     } catch (error: any) {
       console.error('Error loading notes:', error);
+    }
+
+    if (!firestore) {
       toast({
         variant: 'destructive',
         title: 'Error Loading Notes',
-        description: error.message || 'Failed to load notes',
+        description: 'Failed to load notes. Firestore is not available.',
       });
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      finish();
+      return;
+    } else {
+      try {
+        const collections = [
+          { name: 'staff_notifications', tableType: 'notification', source: 'notification' as const },
+          { name: 'client_notes', tableType: 'client_notes', source: 'caspio' as const },
+          { name: 'calaim_members', tableType: 'calaim_members', source: 'caspio' as const },
+          { name: 'staff_notes', tableType: 'staff_note', source: 'staff' as const },
+          { name: 'systemNotes', tableType: 'system_note', source: 'system' as const }
+        ];
+        const nextNotes: any[] = [];
+        const staffSet = new Set<string>();
+        const maxPerCollection = 1000;
+
+        for (const collectionInfo of collections) {
+          let snapshot;
+          try {
+            snapshot = await getDocs(
+              query(
+                collection(firestore, collectionInfo.name),
+                orderBy('timestamp', 'desc'),
+                limitDocs(maxPerCollection)
+              )
+            );
+          } catch {
+            snapshot = await getDocs(
+              query(
+                collection(firestore, collectionInfo.name),
+                limitDocs(maxPerCollection)
+              )
+            );
+          }
+
+          snapshot.forEach((docSnap) => {
+            const data: any = docSnap.data();
+            const rawPriority = String(data.priority || '').toLowerCase();
+            const normalizedPriority = rawPriority.includes('urgent')
+              ? 'Urgent'
+              : rawPriority.includes('priority') || rawPriority.includes('high')
+                ? 'Priority'
+                : rawPriority.includes('medium') || rawPriority.includes('low')
+                  ? 'General'
+                  : undefined;
+            const staffName = data.staffName || data.senderName || data.createdByName;
+            if (staffName) staffSet.add(staffName);
+
+            const timestampValue = data.timestamp?.toDate?.()
+              ?? data.createdAt?.toDate?.()
+              ?? data.createdAt
+              ?? data.created_at
+              ?? new Date();
+            const timestamp = timestampValue instanceof Date
+              ? timestampValue.toISOString()
+              : new Date(timestampValue).toISOString();
+
+            nextNotes.push({
+              id: docSnap.id,
+              ...data,
+              tableType: collectionInfo.tableType,
+              source: collectionInfo.source,
+              staffName,
+              priority: normalizedPriority || data.priority,
+              timestamp
+            });
+          });
+        }
+
+        nextNotes.sort((a, b) => {
+          const aTime = new Date(a.timestamp).getTime();
+          const bTime = new Date(b.timestamp).getTime();
+          return bTime - aTime;
+        });
+
+        setNotes(nextNotes);
+        setStaffList(
+          Array.from(staffSet).map((name) => ({ id: name, name, email: '' }))
+        );
+        finish();
+        return;
+      } catch (fallbackError: any) {
+        console.error('Error loading notes from Firestore:', fallbackError);
+        toast({
+          variant: 'destructive',
+          title: 'Error Loading Notes',
+          description: fallbackError.message || 'Failed to load notes',
+        });
+        finish();
+        return;
+      }
     }
   };
 
@@ -202,6 +331,15 @@ export default function SuperAdminNoteLog() {
     return { total, today, priorityCount, staffNotes, notifications };
   }, [notes]);
 
+  const deletedNotes = useMemo(() => {
+    return notes.filter((note) => {
+      const content = String(
+        note.noteContent || note.Note_Content || note.Note_Text || note.message || note.title || ''
+      ).toLowerCase();
+      return content.includes('deleted');
+    });
+  }, [notes]);
+
   const getPriorityColor = (priority: string) => {
     const label = normalizePriorityLabel(priority);
     if (label === 'Urgent') return 'bg-red-100 text-red-800 border-red-200';
@@ -209,30 +347,43 @@ export default function SuperAdminNoteLog() {
     return 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
-  const getSourceIcon = (note: Note) => {
-    if (note.source === 'notification') {
-      return <Bell className="h-4 w-4 text-blue-600" />;
-    } else if (note.tableType === 'calaim_members') {
-      return <FileText className="h-4 w-4 text-purple-600" />;
-    } else if (note.tableType === 'client_notes') {
-      return <MessageSquareText className="h-4 w-4 text-green-600" />;
-    } else if (note.tableType === 'staff_note') {
-      return <User className="h-4 w-4 text-orange-600" />;
-    }
-    return <MessageSquareText className="h-4 w-4 text-gray-600" />;
-  };
-
   const getSourceLabel = (note: Note) => {
     if (note.source === 'notification') {
+      const noteType = String(note.type || note.noteType || '').toLowerCase();
+      if (noteType.includes('interoffice')) {
+        return 'Interoffice';
+      }
       return 'App Notification';
     } else if (note.tableType === 'calaim_members') {
-      return 'CalAIM Note';
+      return 'Caspio (CalAIM)';
     } else if (note.tableType === 'client_notes') {
-      return 'Client Note';
+      return 'Caspio (Client)';
     } else if (note.tableType === 'staff_note') {
       return 'Staff Note';
     }
     return 'System Note';
+  };
+
+  const getSenderName = (note: Note) => {
+    return note.senderName || note.staffName || 'System';
+  };
+
+  const getRecipientName = (note: Note) => {
+    if (note.recipientName) return note.recipientName;
+    if (note.recipientEmail) return note.recipientEmail;
+    if (note.userId && userDirectory[note.userId]) return userDirectory[note.userId];
+    return note.userId || '—';
+  };
+
+  const getReplyLabel = (note: Note) => {
+    if (note.replyToId) return 'Reply';
+    if (note.threadId) return 'Thread';
+    return '—';
+  };
+
+  const getStatusLabel = (note: Note) => {
+    if (note.status) return note.status;
+    return note.isRead ? 'Read' : 'Open';
   };
 
   const getNoteContent = (note: Note) => {
@@ -460,18 +611,20 @@ export default function SuperAdminNoteLog() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Type</TableHead>
-                  <TableHead>Staff</TableHead>
+                  <TableHead>From</TableHead>
+                  <TableHead>To</TableHead>
                   <TableHead>Member</TableHead>
                   <TableHead>Content</TableHead>
                   <TableHead>Priority</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Reply</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead className="w-20">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredAndSortedNotes.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       No notes found matching your criteria
                     </TableCell>
                   </TableRow>
@@ -479,18 +632,15 @@ export default function SuperAdminNoteLog() {
                   filteredAndSortedNotes.map((note) => (
                     <TableRow key={note.id} className={note.source === 'notification' && !note.isRead ? 'bg-blue-50' : ''}>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          {getSourceIcon(note)}
-                          <Badge variant="outline" className="text-xs">
-                            {getSourceLabel(note)}
-                          </Badge>
-                        </div>
+                        <Badge variant="outline" className="text-xs">
+                          {getSourceLabel(note)}
+                        </Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <User className="h-3 w-3 text-muted-foreground" />
-                          {note.staffName || note.senderName || 'System'}
-                        </div>
+                        {getSenderName(note)}
+                      </TableCell>
+                      <TableCell>
+                        {getRecipientName(note)}
                       </TableCell>
                       <TableCell className="font-medium">
                         {note.memberName || 'N/A'}
@@ -507,23 +657,78 @@ export default function SuperAdminNoteLog() {
                           </Badge>
                         )}
                       </TableCell>
+                      <TableCell>
+                        <div className="text-xs text-muted-foreground">
+                          <div>{getStatusLabel(note)}</div>
+                          {note.resolvedAt && (
+                            <div>Closed {format(new Date(note.resolvedAt), 'MMM dd, yyyy')}</div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {getReplyLabel(note)}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         <div>{format(new Date(note.timestamp), 'MMM dd, yyyy')}</div>
                         <div>{format(new Date(note.timestamp), 'HH:mm')}</div>
                       </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Deleted Notes Log */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Trash2 className="h-5 w-5 text-red-600" />
+            Deleted Notes Log
+          </CardTitle>
+          <CardDescription>
+            Notes that were deleted from the system ({deletedNotes.length})
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Staff</TableHead>
+                  <TableHead>Member</TableHead>
+                  <TableHead>Content</TableHead>
+                  <TableHead>Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {deletedNotes.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
+                      No deleted notes found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  deletedNotes.map((note) => (
+                    <TableRow key={`deleted-${note.id}`}>
                       <TableCell>
-                        {getNoteLink(note) && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            asChild
-                            title="View application"
-                          >
-                            <Link href={getNoteLink(note) as string}>
-                              <ExternalLink className="h-3 w-3" />
-                            </Link>
-                          </Button>
-                        )}
+                        {note.staffName || note.senderName || 'System'}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {note.memberName || 'N/A'}
+                      </TableCell>
+                      <TableCell className="max-w-xs">
+                        <div className="truncate" title={getNoteContent(note)}>
+                          {getNoteContent(note)}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        <div>{format(new Date(note.timestamp), 'MMM dd, yyyy')}</div>
+                        <div>{format(new Date(note.timestamp), 'HH:mm')}</div>
                       </TableCell>
                     </TableRow>
                   ))

@@ -71,8 +71,7 @@ export const shouldSuppressWebAlerts = () => {
 
   if (webAppEnabled === true) return globalForce;
   if (webAppEnabled === false) return true;
-  const defaultSuppress = userSuppress === undefined;
-  return globalForce || userSuppress === true || defaultSuppress;
+  return globalForce || userSuppress === true;
 };
 
 export const NOTIFICATION_SETTINGS_EVENT = 'notification-settings:changed';

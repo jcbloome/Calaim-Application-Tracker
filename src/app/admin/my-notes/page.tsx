@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
 import { addDoc, collection, query, where, onSnapshot, doc, updateDoc, writeBatch, serverTimestamp, getDocs, documentId, deleteDoc } from 'firebase/firestore';
+import { logSystemNoteAction } from '@/lib/system-note-log';
 import { isPriorityOrUrgent, normalizePriorityLabel, notifyNotificationSettingsChanged } from '@/lib/notification-utils';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import {
@@ -57,34 +58,8 @@ interface StaffNotification {
 }
 
 function MyNotesContent() {
-  const fallbackInstallerUrl =
-    'https://github.com/jcbloome/Calaim-Application-Tracker/releases/download/v3.0.1/Connect.CalAIM.Desktop.Setup.3.0.1.exe';
-  const installerUrl = process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_URL || fallbackInstallerUrl;
-  const installerVersion = (() => {
-    if (!installerUrl) return null;
-    try {
-      const decoded = decodeURIComponent(installerUrl);
-      const match = decoded.match(/setup\s*([0-9]+(?:\.[0-9]+)+)/i) || decoded.match(/([0-9]+(?:\.[0-9]+)+)/);
-      return match?.[1] || process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_VERSION || null;
-    } catch {
-      return process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_VERSION || null;
-    }
-  })();
-  const installerDownloadUrl = (() => {
-    if (!installerUrl) return null;
-    try {
-      const url = new URL(installerUrl);
-      const version = installerVersion;
-      const filename = version
-        ? `Connect-CalAIM-Desktop-Setup-${version}.exe`
-        : 'Connect-CalAIM-Desktop-Setup.exe';
-      url.searchParams.set('response-content-disposition', `attachment; filename="${filename}"`);
-      url.searchParams.set('response-content-type', 'application/octet-stream');
-      return url.toString();
-    } catch {
-      return installerUrl;
-    }
-  })();
+  const installerDownloadUrl = '/admin/desktop-installer';
+  const installerVersion = process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_VERSION || null;
   const { user, isAdmin, loading, isUserLoading } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -863,17 +838,16 @@ function MyNotesContent() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {installerDownloadUrl && (
+          <div className="flex flex-col items-end gap-1">
             <Button asChild variant="outline" size="sm">
-              <a
-                href={installerDownloadUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a href={installerDownloadUrl} download>
                 Download Desktop Installer{installerVersion ? ` (${installerVersion})` : ''}
               </a>
             </Button>
-          )}
+            <span className="text-xs text-muted-foreground">
+              Open from Downloads after it finishes.
+            </span>
+          </div>
           <Button onClick={refresh} variant="outline" size="sm">
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
@@ -1016,8 +990,8 @@ function MyNotesContent() {
                     } ${highlightNoteId === notification.id ? 'ring-2 ring-blue-200' : ''}`}
                   >
                     <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 space-y-2">
+                      <div className="space-y-3">
+                        <div className="space-y-2">
                           <div className="flex items-center flex-wrap gap-2">
                             <h3 className={`font-medium ${!notification.isRead ? 'text-blue-900' : ''}`}>
                               {displayTitle}
@@ -1067,22 +1041,14 @@ function MyNotesContent() {
                             {notification.content}
                           </p>
                         </div>
-                        <div className="flex flex-col gap-2">
-                          {notification.isRead && (
-                            <div className="flex items-center gap-2 text-xs text-green-600">
-                              <CheckCircle2 className="h-4 w-4" />
-                              <span>Viewed</span>
-                            </div>
-                          )}
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="text-muted-foreground">
-                              {notification.status === 'Closed' ? 'Closed' : 'Open'}
-                            </span>
-                            <Switch
-                              checked={notification.status !== 'Closed'}
-                              onCheckedChange={() => toggleStatus(notification)}
-                            />
-                          </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span className="text-muted-foreground">
+                            {notification.status === 'Closed' ? 'Closed' : 'Open'}
+                          </span>
+                          <Switch
+                            checked={notification.status !== 'Closed'}
+                            onCheckedChange={() => toggleStatus(notification)}
+                          />
                           <Button
                             onClick={() => toggleFollowUpRequired(notification)}
                             variant="ghost"
@@ -1090,6 +1056,32 @@ function MyNotesContent() {
                             className={hasFollowUpRequired(notification) ? 'text-yellow-700' : 'text-muted-foreground'}
                           >
                             {hasFollowUpRequired(notification) ? 'Follow-up set' : 'Mark follow-up'}
+                          </Button>
+                          {memberLink && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={async () => {
+                                if (!notification.isRead) {
+                                  await markAsRead(notification.id);
+                                }
+                                window.location.href = memberLink;
+                              }}
+                            >
+                              View Member
+                            </Button>
+                          )}
+                          <Button
+                            onClick={() =>
+                              setReplyOpen((prev) => ({
+                                ...prev,
+                                [notification.id]: !prev[notification.id]
+                              }))
+                            }
+                            variant="outline"
+                            size="sm"
+                          >
+                            Reply
                           </Button>
                           <AlertDialog open={deleteTarget?.id === notification.id} onOpenChange={(open) => {
                             if (!open) setDeleteTarget(null);
@@ -1128,32 +1120,6 @@ function MyNotesContent() {
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
-                          {memberLink && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={async () => {
-                                if (!notification.isRead) {
-                                  await markAsRead(notification.id);
-                                }
-                                window.location.href = memberLink;
-                              }}
-                            >
-                              View Member
-                            </Button>
-                          )}
-                          <Button
-                            onClick={() =>
-                              setReplyOpen((prev) => ({
-                                ...prev,
-                                [notification.id]: !prev[notification.id]
-                              }))
-                            }
-                            variant="outline"
-                            size="sm"
-                          >
-                            Reply
-                          </Button>
                         </div>
                       </div>
                       {replyOpen[notification.id] && (

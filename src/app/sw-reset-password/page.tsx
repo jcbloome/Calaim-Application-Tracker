@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { confirmPasswordReset, sendPasswordResetEmail } from 'firebase/auth';
+import { confirmPasswordReset } from 'firebase/auth';
 import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -97,19 +97,18 @@ function SWResetPasswordContent() {
     setError('');
 
     try {
-      if (!auth) {
-        setError('Authentication service not available');
-        return;
+      const normalizedEmail = email.trim().toLowerCase();
+      const response = await fetch('/api/auth/password-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail, role: 'sw' })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send password reset email.');
       }
 
-      const normalizedEmail = email.trim().toLowerCase();
-      const origin = typeof window !== 'undefined' ? window.location.origin : '';
-      const actionCodeSettings = {
-        url: `${origin}/sw-reset-password`,
-        handleCodeInApp: true
-      };
-
-      await sendPasswordResetEmail(auth, normalizedEmail, actionCodeSettings);
       setIsSuccess(true);
       toast({
         title: 'Password Reset Email Sent',
