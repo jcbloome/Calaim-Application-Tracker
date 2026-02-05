@@ -3,10 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
@@ -21,8 +19,6 @@ import {
   serverTimestamp,
   writeBatch
 } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '@/firebase';
 import { 
   Users,
   AlertCircle,
@@ -353,168 +349,6 @@ export default function SWUserManagementPage() {
     }
   };
 
-  const togglePortalAccess = async (staffMember: SyncedSocialWorker) => {
-    if (!firestore || !adminUser) return;
-    
-    setIsCreating(true);
-    try {
-      if (staffMember.hasPortalAccess && staffMember.isPortalActive) {
-        // Disable portal access
-        const existingSW = socialWorkers.find(sw => normalizeEmail(sw.email) === normalizeEmail(staffMember.email));
-        if (existingSW) {
-          await updateDoc(doc(firestore, 'socialWorkers', existingSW.uid), {
-            isActive: false,
-            updatedAt: serverTimestamp(),
-            updatedBy: adminUser.email || adminUser.uid
-          });
-          
-          toast({
-            title: 'Portal Access Disabled',
-            description: `${staffMember.name} can no longer access the SW portal`
-          });
-        }
-      } else {
-        // Enable portal access
-        const normalizedEmail = staffMember.email?.trim().toLowerCase();
-        if (!normalizedEmail || !normalizedEmail.includes('@')) {
-          toast({
-            variant: 'destructive',
-            title: 'No Email Address',
-            description: `Cannot create portal access for ${staffMember.name} - no valid email address found. Please add email to Caspio first.`
-          });
-          return;
-        }
-
-        const existingSW = socialWorkers.find(sw => sw.email?.toLowerCase() === normalizedEmail);
-        if (existingSW) {
-          await updateDoc(doc(firestore, 'socialWorkers', existingSW.uid), {
-            isActive: true,
-            updatedAt: serverTimestamp(),
-            updatedBy: adminUser.email || adminUser.uid
-          });
-          toast({
-            title: 'Portal Access Enabled',
-            description: `${staffMember.name} can now access the SW portal.`
-          });
-        } else {
-          // Generate a temporary password
-          const tempPassword = `SW${Math.random().toString(36).slice(-6)}!`;
-
-          const socialWorkerData: Omit<SocialWorkerUser, 'uid'> = {
-            email: normalizedEmail,
-            displayName: staffMember.name,
-            role: 'social_worker',
-            isActive: true,
-            createdAt: new Date(),
-            createdBy: adminUser.email || adminUser.uid,
-            permissions: {
-              visitVerification: true,
-              memberQuestionnaire: true,
-              claimsSubmission: true
-            },
-            notes: `Synced from Caspio. SW_ID: ${staffMember.sw_id}`,
-            assignedMembers: [],
-            assignedRCFEs: []
-          };
-
-          try {
-            // Create Firebase Auth user
-            const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, tempPassword);
-            await setDoc(doc(firestore, 'socialWorkers', userCredential.user.uid), {
-              ...socialWorkerData,
-              createdAt: serverTimestamp()
-            });
-            toast({
-              title: 'Portal Access Enabled',
-              description: `${staffMember.name} can now access the SW portal. Temporary password: ${tempPassword}`,
-              duration: 10000
-            });
-          } catch (createError: any) {
-            if (createError?.code === 'auth/email-already-in-use') {
-              // Auth user exists; create/enable social worker doc by email
-              await setDoc(doc(firestore, 'socialWorkers', normalizedEmail), {
-                ...socialWorkerData,
-                createdAt: serverTimestamp()
-              }, { merge: true });
-              toast({
-                title: 'Portal Access Enabled',
-                description: `${staffMember.name} can now access the SW portal. Use "Forgot password" to reset the password.`,
-                duration: 10000
-              });
-            } else {
-              throw createError;
-            }
-          }
-        }
-      }
-      
-      // Reload lists
-      loadSocialWorkers();
-      // Update the synced staff status
-      const nextIsActive = !(staffMember.hasPortalAccess && staffMember.isPortalActive);
-      const nextHasPortalAccess = staffMember.hasPortalAccess || nextIsActive;
-      setSyncedStaff(current => 
-        current.map(staff => 
-          staff.sw_id === staffMember.sw_id
-            ? { ...staff, hasPortalAccess: nextHasPortalAccess, isPortalActive: nextIsActive }
-            : staff
-        )
-      );
-      
-    } catch (error: any) {
-      console.error('Error toggling portal access:', error);
-      
-      let errorMessage = 'Failed to toggle portal access';
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'An account with this email already exists';
-      }
-      
-      toast({
-        variant: 'destructive',
-        title: 'Toggle Failed',
-        description: errorMessage
-      });
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  const toggleAllPortalAccess = async (nextActive: boolean) => {
-    if (!firestore || !adminUser) return;
-    if (socialWorkers.length === 0) return;
-
-    setIsCreating(true);
-    try {
-      const batch = writeBatch(firestore);
-      socialWorkers.forEach((sw) => {
-        const swRef = doc(firestore, 'socialWorkers', sw.uid);
-        batch.update(swRef, {
-          isActive: nextActive,
-          updatedAt: serverTimestamp(),
-          updatedBy: adminUser.email || adminUser.uid
-        });
-      });
-      await batch.commit();
-
-      setSocialWorkers(current => current.map(sw => ({ ...sw, isActive: nextActive })));
-
-      toast({
-        title: nextActive ? 'Portal Access Enabled' : 'Portal Access Disabled',
-        description: nextActive
-          ? 'All current portal users can access the SW portal.'
-          : 'All current portal users have been disabled.'
-      });
-    } catch (error) {
-      console.error('Error toggling all portal access:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Bulk Toggle Failed',
-        description: 'Failed to update portal access for all users.'
-      });
-    } finally {
-      setIsCreating(false);
-    }
-  };
 
   const refreshSyncedStaffStatus = () => {
     // Update the hasPortalAccess status for all synced staff
@@ -531,8 +365,6 @@ export default function SWUserManagementPage() {
   useEffect(() => {
     refreshSyncedStaffStatus();
   }, [socialWorkers]);
-
-  const allPortalActive = socialWorkers.length > 0 && socialWorkers.every(sw => sw.isActive);
 
   if (!isSuperAdmin) {
     return (
@@ -562,17 +394,6 @@ export default function SWUserManagementPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-            <Label htmlFor="portal-all" className="text-sm font-normal">
-              Portal Access (All)
-            </Label>
-            <Switch
-              id="portal-all"
-              checked={allPortalActive}
-              onCheckedChange={(checked) => toggleAllPortalAccess(checked)}
-              disabled={isCreating || socialWorkers.length === 0}
-            />
-          </div>
           <Button onClick={loadFromCaspio} disabled={isSyncing}>
             {isSyncing ? (
               <>
@@ -595,7 +416,7 @@ export default function SWUserManagementPage() {
 
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total from Caspio</CardTitle>
@@ -639,23 +460,9 @@ export default function SWUserManagementPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Portal Access</CardTitle>
-            <UserCheck className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">
-              {syncedStaff.filter(staff => staff.hasPortalAccess && staff.isPortalActive).length}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Can access portal
-            </p>
-          </CardContent>
-        </Card>
       </div>
 
-      {/* Synced Social Workers - Toggle Portal Access */}
+      {/* Synced Social Workers */}
         <Card>
           <CardHeader>
             <CardTitle>Social Workers from Caspio ({syncedStaff.length})</CardTitle>
@@ -697,7 +504,6 @@ export default function SWUserManagementPage() {
                   <TableHead>Email</TableHead>
                   <TableHead>Assigned Members</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Portal Access</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -747,7 +553,7 @@ export default function SWUserManagementPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          {!staff.isInFirestore && (
+                          {!staff.isInFirestore ? (
                             <Button
                               size="sm"
                               onClick={() => saveToFirestore(staff)}
@@ -757,22 +563,8 @@ export default function SWUserManagementPage() {
                               <Save className="h-4 w-4 mr-1" />
                               Save to Firestore
                             </Button>
-                          )}
-                          {staff.isInFirestore && (
-                            <>
-                              <div className="flex items-center gap-2">
-                                <Label htmlFor={`portal-${staff.id}`} className="text-sm font-normal cursor-pointer">
-                                  Enable Portal
-                                </Label>
-                                <Switch
-                                  id={`portal-${staff.id}`}
-                                  checked={staff.hasPortalAccess && staff.isPortalActive}
-                                  onCheckedChange={() => togglePortalAccess(staff)}
-                                  disabled={isCreating || !staff.email || !staff.email.includes('@')}
-                                  title={!staff.email || !staff.email.includes('@') ? "Email address required for portal access" : ""}
-                                />
-                              </div>
-                            </>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">Saved</span>
                           )}
                         </div>
                       </TableCell>
