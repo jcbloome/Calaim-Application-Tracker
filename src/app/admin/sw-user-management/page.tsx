@@ -3,13 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
@@ -21,21 +18,13 @@ import {
   doc, 
   setDoc, 
   updateDoc, 
-  deleteDoc,
   serverTimestamp,
   writeBatch
 } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/firebase';
-import { format } from 'date-fns';
 import { 
-  UserPlus, 
-  Users, 
-  Eye, 
-  Edit, 
-  Trash2, 
-  Shield, 
-  ShieldCheck,
+  Users,
   AlertCircle,
   RefreshCw,
   Save,
@@ -98,29 +87,14 @@ export default function SWUserManagementPage() {
   const firestore = useFirestore();
   const { isSuperAdmin, user: adminUser } = useAdmin();
   const { toast } = useToast();
+
+  const normalizeEmail = (email?: string) => (email || '').trim().toLowerCase();
   
   const [socialWorkers, setSocialWorkers] = useState<SocialWorkerUser[]>([]);
   const [syncedStaff, setSyncedStaff] = useState<SyncedSocialWorker[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [selectedSW, setSelectedSW] = useState<SocialWorkerUser | null>(null);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-
-  // New user form state
-  const [newUser, setNewUser] = useState({
-    email: '',
-    displayName: '',
-    password: '',
-    confirmPassword: '',
-    permissions: {
-      visitVerification: true,
-      memberQuestionnaire: true,
-      claimsSubmission: true
-    },
-    notes: ''
-  });
 
   useEffect(() => {
     loadSocialWorkers();
@@ -178,8 +152,8 @@ export default function SWUserManagementPage() {
           id: doc.id,
           ...data,
           syncedAt: data.syncedAt?.toDate() || new Date(),
-          hasPortalAccess: socialWorkers.some(sw => sw.email === data.email),
-          isPortalActive: socialWorkers.find(sw => sw.email === data.email)?.isActive || false,
+          hasPortalAccess: socialWorkers.some(sw => normalizeEmail(sw.email) === normalizeEmail(data.email)),
+          isPortalActive: socialWorkers.find(sw => normalizeEmail(sw.email) === normalizeEmail(data.email))?.isActive || false,
           isInFirestore: true,
           needsSync: false
         };
@@ -191,7 +165,7 @@ export default function SWUserManagementPage() {
           current.map(staff => {
             const inFirestore = firestoreStaff.some(fs => 
               fs.sw_id === staff.sw_id || 
-              (staff.email && fs.email === staff.email)
+              (staff.email && normalizeEmail(fs.email) === normalizeEmail(staff.email))
             );
             return {
               ...staff,
@@ -221,7 +195,7 @@ export default function SWUserManagementPage() {
       const firestoreSnapshot = await getDocs(firestoreQuery);
       const existingFirestoreStaff = firestoreSnapshot.docs.map(doc => ({
         sw_id: String(doc.data().sw_id || ''),
-        email: String(doc.data().email || '')
+        email: normalizeEmail(String(doc.data().email || ''))
       }));
       
       // Fetch staff from Caspio
@@ -246,7 +220,7 @@ export default function SWUserManagementPage() {
       // Check which ones are already in Firestore
       const caspioWithStatus = caspioStaff.map((staff: CaspioStaffMember) => {
         const staffSwId = String(staff.sw_id || staff.id || '');
-        const staffEmail = String(staff.email || '').trim();
+        const staffEmail = normalizeEmail(String(staff.email || ''));
         
         // Check if already in Firestore
         const alreadyInFirestore = existingFirestoreStaff.some(fs => 
@@ -263,8 +237,8 @@ export default function SWUserManagementPage() {
           phone: String(staff.phone || ''),
           department: String(staff.department || ''),
           assignedMemberCount: staff.assignedMemberCount ?? 0,
-          hasPortalAccess: socialWorkers.some(sw => sw.email === staffEmail),
-          isPortalActive: socialWorkers.find(sw => sw.email === staffEmail)?.isActive || false,
+          hasPortalAccess: socialWorkers.some(sw => normalizeEmail(sw.email) === staffEmail),
+          isPortalActive: socialWorkers.find(sw => normalizeEmail(sw.email) === staffEmail)?.isActive || false,
           syncedAt: new Date(),
           isInFirestore: alreadyInFirestore,
           needsSync: !alreadyInFirestore
@@ -384,9 +358,9 @@ export default function SWUserManagementPage() {
     
     setIsCreating(true);
     try {
-      if (staffMember.hasPortalAccess) {
+      if (staffMember.hasPortalAccess && staffMember.isPortalActive) {
         // Disable portal access
-        const existingSW = socialWorkers.find(sw => sw.email === staffMember.email);
+        const existingSW = socialWorkers.find(sw => normalizeEmail(sw.email) === normalizeEmail(staffMember.email));
         if (existingSW) {
           await updateDoc(doc(firestore, 'socialWorkers', existingSW.uid), {
             isActive: false,
@@ -410,50 +384,79 @@ export default function SWUserManagementPage() {
           });
           return;
         }
-        
-        // Generate a temporary password
-        const tempPassword = `SW${Math.random().toString(36).slice(-6)}!`;
-        
-        // Create Firebase Auth user
-        const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, tempPassword);
 
-        // Create social worker document
-        const socialWorkerData: Omit<SocialWorkerUser, 'uid'> = {
-          email: normalizedEmail,
-          displayName: staffMember.name,
-          role: 'social_worker',
-          isActive: true,
-          createdAt: new Date(),
-          createdBy: adminUser.email || adminUser.uid,
-          permissions: {
-            visitVerification: true,
-            memberQuestionnaire: true,
-            claimsSubmission: true
-          },
-          notes: `Synced from Caspio. SW_ID: ${staffMember.sw_id}`,
-          assignedMembers: [],
-          assignedRCFEs: []
-        };
+        const existingSW = socialWorkers.find(sw => sw.email?.toLowerCase() === normalizedEmail);
+        if (existingSW) {
+          await updateDoc(doc(firestore, 'socialWorkers', existingSW.uid), {
+            isActive: true,
+            updatedAt: serverTimestamp(),
+            updatedBy: adminUser.email || adminUser.uid
+          });
+          toast({
+            title: 'Portal Access Enabled',
+            description: `${staffMember.name} can now access the SW portal.`
+          });
+        } else {
+          // Generate a temporary password
+          const tempPassword = `SW${Math.random().toString(36).slice(-6)}!`;
 
-        await setDoc(doc(firestore, 'socialWorkers', userCredential.user.uid), {
-          ...socialWorkerData,
-          createdAt: serverTimestamp()
-        });
+          const socialWorkerData: Omit<SocialWorkerUser, 'uid'> = {
+            email: normalizedEmail,
+            displayName: staffMember.name,
+            role: 'social_worker',
+            isActive: true,
+            createdAt: new Date(),
+            createdBy: adminUser.email || adminUser.uid,
+            permissions: {
+              visitVerification: true,
+              memberQuestionnaire: true,
+              claimsSubmission: true
+            },
+            notes: `Synced from Caspio. SW_ID: ${staffMember.sw_id}`,
+            assignedMembers: [],
+            assignedRCFEs: []
+          };
 
-        toast({
-          title: 'Portal Access Enabled',
-          description: `${staffMember.name} can now access the SW portal. Temporary password: ${tempPassword}`,
-          duration: 10000 // Show longer so you can copy the password
-        });
+          try {
+            // Create Firebase Auth user
+            const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, tempPassword);
+            await setDoc(doc(firestore, 'socialWorkers', userCredential.user.uid), {
+              ...socialWorkerData,
+              createdAt: serverTimestamp()
+            });
+            toast({
+              title: 'Portal Access Enabled',
+              description: `${staffMember.name} can now access the SW portal. Temporary password: ${tempPassword}`,
+              duration: 10000
+            });
+          } catch (createError: any) {
+            if (createError?.code === 'auth/email-already-in-use') {
+              // Auth user exists; create/enable social worker doc by email
+              await setDoc(doc(firestore, 'socialWorkers', normalizedEmail), {
+                ...socialWorkerData,
+                createdAt: serverTimestamp()
+              }, { merge: true });
+              toast({
+                title: 'Portal Access Enabled',
+                description: `${staffMember.name} can now access the SW portal. Use "Forgot password" to reset the password.`,
+                duration: 10000
+              });
+            } else {
+              throw createError;
+            }
+          }
+        }
       }
       
       // Reload lists
       loadSocialWorkers();
       // Update the synced staff status
+      const nextIsActive = !(staffMember.hasPortalAccess && staffMember.isPortalActive);
+      const nextHasPortalAccess = staffMember.hasPortalAccess || nextIsActive;
       setSyncedStaff(current => 
         current.map(staff => 
           staff.sw_id === staffMember.sw_id
-            ? { ...staff, hasPortalAccess: !staffMember.hasPortalAccess, isPortalActive: !staffMember.hasPortalAccess }
+            ? { ...staff, hasPortalAccess: nextHasPortalAccess, isPortalActive: nextIsActive }
             : staff
         )
       );
@@ -476,181 +479,41 @@ export default function SWUserManagementPage() {
     }
   };
 
-  const createSocialWorker = async () => {
+  const toggleAllPortalAccess = async (nextActive: boolean) => {
     if (!firestore || !adminUser) return;
-    
-    // Validation
-    const normalizedEmail = newUser.email?.trim().toLowerCase();
-    if (!normalizedEmail || !newUser.displayName || !newUser.password) {
-      toast({
-        variant: 'destructive',
-        title: 'Missing Information',
-        description: 'Please fill in all required fields'
-      });
-      return;
-    }
-
-    if (newUser.password !== newUser.confirmPassword) {
-      toast({
-        variant: 'destructive',
-        title: 'Password Mismatch',
-        description: 'Passwords do not match'
-      });
-      return;
-    }
-
-    if (newUser.password.length < 6) {
-      toast({
-        variant: 'destructive',
-        title: 'Password Too Short',
-        description: 'Password must be at least 6 characters'
-      });
-      return;
-    }
+    if (socialWorkers.length === 0) return;
 
     setIsCreating(true);
     try {
-      // Create Firebase Auth user
-      const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, newUser.password);
-
-      // Create social worker document
-      const socialWorkerData: Omit<SocialWorkerUser, 'uid'> = {
-        email: normalizedEmail,
-        displayName: newUser.displayName,
-        role: 'social_worker',
-        isActive: true,
-        createdAt: new Date(),
-        createdBy: adminUser.email || adminUser.uid,
-        permissions: newUser.permissions,
-        notes: newUser.notes,
-        assignedMembers: [],
-        assignedRCFEs: []
-      };
-
-      await setDoc(doc(firestore, 'socialWorkers', userCredential.user.uid), {
-        ...socialWorkerData,
-        createdAt: serverTimestamp()
+      const batch = writeBatch(firestore);
+      socialWorkers.forEach((sw) => {
+        const swRef = doc(firestore, 'socialWorkers', sw.uid);
+        batch.update(swRef, {
+          isActive: nextActive,
+          updatedAt: serverTimestamp(),
+          updatedBy: adminUser.email || adminUser.uid
+        });
       });
+      await batch.commit();
+
+      setSocialWorkers(current => current.map(sw => ({ ...sw, isActive: nextActive })));
 
       toast({
-        title: 'Social Worker Created',
-        description: `${newUser.displayName} has been added successfully`
+        title: nextActive ? 'Portal Access Enabled' : 'Portal Access Disabled',
+        description: nextActive
+          ? 'All current portal users can access the SW portal.'
+          : 'All current portal users have been disabled.'
       });
-
-      // Reset form and close dialog
-      setNewUser({
-        email: '',
-        displayName: '',
-        password: '',
-        confirmPassword: '',
-        permissions: {
-          visitVerification: true,
-          memberQuestionnaire: true,
-          claimsSubmission: true
-        },
-        notes: ''
-      });
-      setShowCreateDialog(false);
-      
-      // Reload list
-      loadSocialWorkers();
-      
-    } catch (error: any) {
-      console.error('Error creating social worker:', error);
-      
-      let errorMessage = 'Failed to create social worker';
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'An account with this email already exists';
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = 'Password is too weak';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Invalid email address';
-      }
-      
+    } catch (error) {
+      console.error('Error toggling all portal access:', error);
       toast({
         variant: 'destructive',
-        title: 'Creation Failed',
-        description: errorMessage
+        title: 'Bulk Toggle Failed',
+        description: 'Failed to update portal access for all users.'
       });
     } finally {
       setIsCreating(false);
     }
-  };
-
-  const updateSocialWorker = async (swId: string, updates: Partial<SocialWorkerUser>) => {
-    if (!firestore) return;
-    
-    try {
-      const swRef = doc(firestore, 'socialWorkers', swId);
-      await updateDoc(swRef, {
-        ...updates,
-        updatedAt: serverTimestamp(),
-        updatedBy: adminUser?.email || adminUser?.uid
-      });
-
-      // Update local state
-      setSocialWorkers(socialWorkers.map(sw => 
-        sw.uid === swId ? { ...sw, ...updates } : sw
-      ));
-
-      toast({
-        title: 'Updated',
-        description: 'Social worker information updated successfully'
-      });
-      
-      setShowEditDialog(false);
-      setSelectedSW(null);
-      
-    } catch (error) {
-      console.error('Error updating social worker:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Update Failed',
-        description: 'Failed to update social worker'
-      });
-    }
-  };
-
-  const toggleSWStatus = async (swId: string, currentStatus: boolean) => {
-    await updateSocialWorker(swId, { isActive: !currentStatus });
-  };
-
-  const deleteSocialWorker = async (swId: string, swName: string) => {
-    if (!firestore) return;
-    
-    const confirmed = window.confirm(
-      `Are you sure you want to delete ${swName}? This action cannot be undone.`
-    );
-    
-    if (!confirmed) return;
-    
-    try {
-      await deleteDoc(doc(firestore, 'socialWorkers', swId));
-      
-      // Remove from local state
-      setSocialWorkers(socialWorkers.filter(sw => sw.uid !== swId));
-      
-      toast({
-        title: 'Deleted',
-        description: `${swName} has been removed from the system`
-      });
-      
-    } catch (error) {
-      console.error('Error deleting social worker:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Delete Failed',
-        description: 'Failed to delete social worker'
-      });
-    }
-  };
-
-  const getStatusBadge = (isActive: boolean) => {
-    return (
-      <Badge variant={isActive ? 'default' : 'secondary'} className={isActive ? 'bg-green-600' : 'bg-gray-500'}>
-        {isActive ? 'Active' : 'Inactive'}
-      </Badge>
-    );
   };
 
   const refreshSyncedStaffStatus = () => {
@@ -658,8 +521,8 @@ export default function SWUserManagementPage() {
     setSyncedStaff(current => 
       current.map(staff => ({
         ...staff,
-        hasPortalAccess: socialWorkers.some(sw => sw.email === staff.email),
-        isPortalActive: socialWorkers.find(sw => sw.email === staff.email)?.isActive || false
+        hasPortalAccess: socialWorkers.some(sw => normalizeEmail(sw.email) === normalizeEmail(staff.email)),
+        isPortalActive: socialWorkers.find(sw => normalizeEmail(sw.email) === normalizeEmail(staff.email))?.isActive || false
       }))
     );
   };
@@ -668,6 +531,8 @@ export default function SWUserManagementPage() {
   useEffect(() => {
     refreshSyncedStaffStatus();
   }, [socialWorkers]);
+
+  const allPortalActive = socialWorkers.length > 0 && socialWorkers.every(sw => sw.isActive);
 
   if (!isSuperAdmin) {
     return (
@@ -697,6 +562,17 @@ export default function SWUserManagementPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+            <Label htmlFor="portal-all" className="text-sm font-normal">
+              Portal Access (All)
+            </Label>
+            <Switch
+              id="portal-all"
+              checked={allPortalActive}
+              onCheckedChange={(checked) => toggleAllPortalAccess(checked)}
+              disabled={isCreating || socialWorkers.length === 0}
+            />
+          </div>
           <Button onClick={loadFromCaspio} disabled={isSyncing}>
             {isSyncing ? (
               <>
@@ -714,142 +590,6 @@ export default function SWUserManagementPage() {
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
-          <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <UserPlus className="mr-2 h-4 w-4" />
-                Add Manual SW
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Create Manual Social Worker</DialogTitle>
-                <DialogDescription>
-                  Manually add a social worker not in the Caspio system
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-4">
-                  <div>
-                    <Label htmlFor="email">Email Address *</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={newUser.email}
-                      onChange={(e) => setNewUser({...newUser, email: e.target.value})}
-                      placeholder="socialworker@example.com"
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="displayName">Full Name *</Label>
-                    <Input
-                      id="displayName"
-                      value={newUser.displayName}
-                      onChange={(e) => setNewUser({...newUser, displayName: e.target.value})}
-                      placeholder="John Doe"
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="password">Password *</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={newUser.password}
-                      onChange={(e) => setNewUser({...newUser, password: e.target.value})}
-                      placeholder="Minimum 6 characters"
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="confirmPassword">Confirm Password *</Label>
-                    <Input
-                      id="confirmPassword"
-                      type="password"
-                      value={newUser.confirmPassword}
-                      onChange={(e) => setNewUser({...newUser, confirmPassword: e.target.value})}
-                      placeholder="Re-enter password"
-                    />
-                  </div>
-                </div>
-
-                {/* Permissions */}
-                <div>
-                  <Label className="text-sm font-medium">Permissions</Label>
-                  <div className="space-y-2 mt-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Visit Verification</span>
-                      <Switch
-                        checked={newUser.permissions.visitVerification}
-                        onCheckedChange={(checked) => 
-                          setNewUser({
-                            ...newUser, 
-                            permissions: {...newUser.permissions, visitVerification: checked}
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Member Questionnaire</span>
-                      <Switch
-                        checked={newUser.permissions.memberQuestionnaire}
-                        onCheckedChange={(checked) => 
-                          setNewUser({
-                            ...newUser, 
-                            permissions: {...newUser.permissions, memberQuestionnaire: checked}
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Claims Submission</span>
-                      <Switch
-                        checked={newUser.permissions.claimsSubmission}
-                        onCheckedChange={(checked) => 
-                          setNewUser({
-                            ...newUser, 
-                            permissions: {...newUser.permissions, claimsSubmission: checked}
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="notes">Notes (Optional)</Label>
-                  <Textarea
-                    id="notes"
-                    value={newUser.notes}
-                    onChange={(e) => setNewUser({...newUser, notes: e.target.value})}
-                    placeholder="Any additional notes..."
-                    rows={2}
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-4">
-                  <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={createSocialWorker} disabled={isCreating}>
-                    {isCreating ? (
-                      <>
-                        <Save className="mr-2 h-4 w-4 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      <>
-                        <UserPlus className="mr-2 h-4 w-4" />
-                        Create
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
 
@@ -963,7 +703,6 @@ export default function SWUserManagementPage() {
               </TableHeader>
               <TableBody>
                 {syncedStaff.map((staff) => {
-                  const portalUser = socialWorkers.find(sw => sw.email === staff.email);
                   
                   return (
                     <TableRow key={staff.id}>
@@ -1033,18 +772,6 @@ export default function SWUserManagementPage() {
                                   title={!staff.email || !staff.email.includes('@') ? "Email address required for portal access" : ""}
                                 />
                               </div>
-                              {portalUser && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    setSelectedSW(portalUser);
-                                    setShowEditDialog(true);
-                                  }}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              )}
                             </>
                           )}
                         </div>
@@ -1058,176 +785,7 @@ export default function SWUserManagementPage() {
         </CardContent>
       </Card>
 
-      {/* Existing Portal Users */}
-      {socialWorkers.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Current SW Portal Users ({socialWorkers.length})</CardTitle>
-            <CardDescription>
-              Social workers who currently have access to the portal
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Last Login</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {socialWorkers.map((sw) => (
-                  <TableRow key={sw.uid}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <UserCheck className="h-4 w-4 text-primary" />
-                        <div>
-                          <div className="font-medium">{sw.displayName}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {sw.permissions.visitVerification && '✓ Visits'} 
-                            {sw.permissions.memberQuestionnaire && ' ✓ Questionnaire'} 
-                            {sw.permissions.claimsSubmission && ' ✓ Claims'}
-                          </div>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Mail className="h-3 w-3 text-muted-foreground" />
-                        {sw.email}
-                      </div>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(sw.isActive)}</TableCell>
-                    <TableCell>
-                      {sw.lastLogin ? format(sw.lastLogin, 'MMM d, yyyy HH:mm') : 'Never'}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => toggleSWStatus(sw.uid, sw.isActive)}
-                        >
-                          {sw.isActive ? 'Deactivate' : 'Activate'}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedSW(sw);
-                            setShowEditDialog(true);
-                          }}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => deleteSocialWorker(sw.uid, sw.displayName)}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
 
-      {/* Edit Dialog */}
-      {selectedSW && (
-        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Edit Social Worker</DialogTitle>
-              <DialogDescription>
-                Update {selectedSW.displayName}'s information
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="editDisplayName">Full Name</Label>
-                <Input
-                  id="editDisplayName"
-                  value={selectedSW.displayName}
-                  onChange={(e) => setSelectedSW({...selectedSW, displayName: e.target.value})}
-                />
-              </div>
-
-              {/* Permissions */}
-              <div>
-                <Label className="text-sm font-medium">Permissions</Label>
-                <div className="space-y-2 mt-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Visit Verification</span>
-                    <Switch
-                      checked={selectedSW.permissions.visitVerification}
-                      onCheckedChange={(checked) => 
-                        setSelectedSW({
-                          ...selectedSW, 
-                          permissions: {...selectedSW.permissions, visitVerification: checked}
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Member Questionnaire</span>
-                    <Switch
-                      checked={selectedSW.permissions.memberQuestionnaire}
-                      onCheckedChange={(checked) => 
-                        setSelectedSW({
-                          ...selectedSW, 
-                          permissions: {...selectedSW.permissions, memberQuestionnaire: checked}
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Claims Submission</span>
-                    <Switch
-                      checked={selectedSW.permissions.claimsSubmission}
-                      onCheckedChange={(checked) => 
-                        setSelectedSW({
-                          ...selectedSW, 
-                          permissions: {...selectedSW.permissions, claimsSubmission: checked}
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="editNotes">Notes</Label>
-                <Textarea
-                  id="editNotes"
-                  value={selectedSW.notes || ''}
-                  onChange={(e) => setSelectedSW({...selectedSW, notes: e.target.value})}
-                  rows={2}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4">
-                <Button variant="outline" onClick={() => setShowEditDialog(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={() => updateSocialWorker(selectedSW.uid, selectedSW)}>
-                  <Save className="mr-2 h-4 w-4" />
-                  Save Changes
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 }
