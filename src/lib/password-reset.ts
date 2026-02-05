@@ -46,7 +46,7 @@ const resolveRole = async (email: string, role?: string) => {
   return resolvedRole;
 };
 
-const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user') => {
+const buildResetUrl = async (baseUrl: string, email: string) => {
   const firebaseApiKey =
     process.env.NEXT_PUBLIC_FIREBASE_API_KEY ||
     process.env.FIREBASE_API_KEY;
@@ -82,7 +82,7 @@ const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user'
     throw new Error('Missing oobCode in Firebase response');
   }
 
-  const resetPath = role === 'sw' ? '/sw-reset-password' : '/reset-password';
+  const resetPath = '/reset-password';
   return `${baseUrl}${resetPath}?oobCode=${encodeURIComponent(oobCode)}`;
 };
 
@@ -101,7 +101,7 @@ export const sendPasswordResetEmail = async (request: NextRequest, email: string
 
   const resolvedRole = await resolveRole(normalizedEmail, role);
   const baseUrl = getBaseUrl(request);
-  const resetUrl = await buildResetUrl(baseUrl, normalizedEmail, resolvedRole);
+  const resetUrl = await buildResetUrl(baseUrl, normalizedEmail);
 
   const emailHtml = await renderAsync(PasswordResetEmail({
     resetUrl,

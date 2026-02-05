@@ -3,7 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/firebase';
-import { confirmPasswordReset } from 'firebase/auth';
+import { confirmPasswordReset, verifyPasswordResetCode } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -35,9 +35,20 @@ function ResetPasswordContent() {
   useEffect(() => {
     const validateToken = async () => {
       if (oobCode) {
-        // Firebase reset link with oobCode - this is valid (backward compatibility)
-        setResetValid(true);
-        setIsValidating(false);
+        if (!auth) {
+          setError('Authentication service not available');
+          setIsValidating(false);
+          return;
+        }
+        try {
+          const resetEmail = await verifyPasswordResetCode(auth, oobCode);
+          setEmail(resetEmail || '');
+          setResetValid(true);
+        } catch (verifyError: any) {
+          setError(verifyError?.message || 'Invalid or expired reset link');
+        } finally {
+          setIsValidating(false);
+        }
         return;
       }
       
@@ -90,7 +101,7 @@ function ResetPasswordContent() {
     };
 
     validateToken();
-  }, [token, oobCode]);
+  }, [token, oobCode, auth]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,10 +157,7 @@ function ResetPasswordContent() {
         description: 'Your password has been updated. You can now sign in with your new password.',
       });
 
-      // Redirect to login after 3 seconds
-      setTimeout(() => {
-        router.push('/');
-      }, 3000);
+      // Let the user choose where to sign in next
 
     } catch (error: any) {
       console.error('Password reset error:', error);
@@ -193,7 +201,7 @@ function ResetPasswordContent() {
                 {error || 'The reset link may have expired or already been used.'}
               </p>
               <Button asChild className="w-full">
-                <a href="/">Return to Login</a>
+                <a href="/login">Return to Login</a>
               </Button>
             </CardContent>
           </Card>
@@ -217,11 +225,19 @@ function ResetPasswordContent() {
             </CardHeader>
             <CardContent className="text-center">
               <p className="text-sm text-muted-foreground mb-4">
-                You will be redirected to the login page in a few seconds...
+                Choose where to sign in:
               </p>
-              <Button asChild className="w-full">
-                <a href="/">Sign In Now</a>
-              </Button>
+              <div className="space-y-2">
+                <Button asChild className="w-full">
+                  <a href="/login">Member Login</a>
+                </Button>
+                <Button asChild variant="outline" className="w-full">
+                  <a href="/admin/login">Admin Login</a>
+                </Button>
+                <Button asChild variant="outline" className="w-full">
+                  <a href="/sw-login">Social Worker Login</a>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </main>
