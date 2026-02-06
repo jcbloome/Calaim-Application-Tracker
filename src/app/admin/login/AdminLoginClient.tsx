@@ -146,12 +146,13 @@ export default function AdminLoginClient() {
 
     setIsResettingPassword(true);
     try {
+      const normalizedResetEmail = resetEmail.trim().toLowerCase();
       const response = await fetch('/api/auth/password-reset', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email: resetEmail }),
+        body: JSON.stringify({ email: normalizedResetEmail }),
       });
 
       const data = await response.json();
@@ -165,7 +166,7 @@ export default function AdminLoginClient() {
         setResetEmail('');
         return;
       } else {
-        throw new Error(data.error || 'Failed to send password reset email');
+        throw new Error(data?.error || data?.details || 'Failed to send password reset email');
       }
     } catch (err: any) {
       console.error('Password reset error:', err);

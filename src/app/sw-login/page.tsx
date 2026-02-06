@@ -217,11 +217,11 @@ export default function SWLoginPage() {
             <div className="mt-6 space-y-3">
               <div className="text-center">
                 <Link 
-                  href="/sw-reset-password" 
+                  href="/reset-password" 
                   className="text-sm text-primary hover:underline flex items-center justify-center gap-1"
                 >
                   <Lock className="h-4 w-4" />
-                  Social Worker Forgot Your Password?
+                  Forgot your password?
                 </Link>
               </div>
               <div className="text-center text-sm text-gray-600">

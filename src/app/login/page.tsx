@@ -184,14 +184,10 @@ export default function LoginPage() {
         } else {
           enhancedToast.success('Password Reset Email Sent', 'Check your email (including spam/junk folder) for a password reset link from the Connections CalAIM Application Portal.');
         }
-        if (data.role === 'sw') {
-          router.push(`/sw-reset-password?email=${encodeURIComponent(normalizedResetEmail)}&sent=1`);
-        } else {
-          setResetEmail('');
-        }
+        setResetEmail('');
         return;
       } else {
-        throw new Error(data.error || 'Failed to send password reset email');
+        throw new Error(data?.error || data?.details || 'Failed to send password reset email');
       }
     } catch (error: any) {
       console.error('Password reset error:', error);

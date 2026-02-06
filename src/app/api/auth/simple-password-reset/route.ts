@@ -71,9 +71,15 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('🔧 Production mode: Using custom password reset email');
-
-    const result = await sendPasswordResetEmail(request, normalizedEmail);
-    return NextResponse.json(result.body, { status: result.status });
+    try {
+      const result = await sendPasswordResetEmail(request, normalizedEmail);
+      return NextResponse.json(result.body, { status: result.status });
+    } catch (error: any) {
+      console.error('Simple password reset failed:', error);
+      return NextResponse.json({
+        error: error?.message || 'Failed to process password reset request'
+      }, { status: 500 });
+    }
 
   } catch (error: any) {
     console.error('Simple password reset failed:', error);

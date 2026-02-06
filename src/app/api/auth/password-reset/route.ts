@@ -9,10 +9,10 @@ export async function POST(request: NextRequest) {
     const result = await sendPasswordResetEmail(request, email, role);
     return NextResponse.json(result.body, { status: result.status });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Custom password reset failed:', error);
     return NextResponse.json(
-      { error: 'Failed to send password reset email' },
+      { error: error?.message || 'Failed to send password reset email' },
       { status: 500 }
     );
   }
