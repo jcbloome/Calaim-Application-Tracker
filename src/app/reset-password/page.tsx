@@ -204,7 +204,10 @@ function ResetPasswordContent() {
         description: 'Your password has been updated. You can now sign in with your new password.',
       });
 
-      // Let the user choose where to sign in next
+      // Send user to login after reset
+      setTimeout(() => {
+        window.location.href = '/login';
+      }, 1500);
 
     } catch (error: any) {
       console.error('Password reset error:', error);
@@ -276,17 +279,9 @@ function ResetPasswordContent() {
                   <p className="text-sm text-muted-foreground mb-4">
                     Reset email sent. Please check your inbox.
                   </p>
-                  <div className="space-y-2">
-                    <Button asChild className="w-full">
-                      <a href="/login">Member Login</a>
-                    </Button>
-                    <Button asChild variant="outline" className="w-full">
-                      <a href="/admin/login">Admin Login</a>
-                    </Button>
-                    <Button asChild variant="outline" className="w-full">
-                      <a href="/sw-login">Social Worker Login</a>
-                    </Button>
-                  </div>
+                  <Button asChild className="w-full">
+                    <a href="/login">Return to Login</a>
+                  </Button>
                 </div>
               ) : (
                 <form onSubmit={handleRequestReset} className="space-y-4">
@@ -344,19 +339,11 @@ function ResetPasswordContent() {
             </CardHeader>
             <CardContent className="text-center">
               <p className="text-sm text-muted-foreground mb-4">
-                Choose where to sign in:
+                Redirecting to the login page...
               </p>
-              <div className="space-y-2">
-                <Button asChild className="w-full">
-                  <a href="/login">Member Login</a>
-                </Button>
-                <Button asChild variant="outline" className="w-full">
-                  <a href="/admin/login">Admin Login</a>
-                </Button>
-                <Button asChild variant="outline" className="w-full">
-                  <a href="/sw-login">Social Worker Login</a>
-                </Button>
-              </div>
+              <Button asChild className="w-full">
+                <a href="/login">Return to Login</a>
+              </Button>
             </CardContent>
           </Card>
         </main>
