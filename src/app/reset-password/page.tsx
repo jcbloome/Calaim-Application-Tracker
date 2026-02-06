@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, Suspense } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/firebase';
-import { confirmPasswordReset, verifyPasswordResetCode } from 'firebase/auth';
+import { confirmPasswordReset, verifyPasswordResetCode, sendPasswordResetEmail } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,25 +15,41 @@ import { useToast } from '@/hooks/use-toast';
 
 function ResetPasswordContent() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const auth = useAuth();
   const { toast } = useToast();
   
   const token = searchParams.get('token');
   const oobCode = searchParams.get('oobCode'); // Keep for backward compatibility
+  const emailParam = searchParams.get('email');
+  const hasResetParams = Boolean(token || oobCode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRequesting, setIsRequesting] = useState(false);
   const [isValidating, setIsValidating] = useState(true);
   const [resetValid, setResetValid] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [requestSuccess, setRequestSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!hasResetParams && emailParam && !email) {
+      setEmail(emailParam);
+    }
+  }, [hasResetParams, emailParam, email]);
 
   useEffect(() => {
     const validateToken = async () => {
+      if (!hasResetParams) {
+        setIsValidating(false);
+        setResetValid(false);
+        setError(null);
+        return;
+      }
+
       if (oobCode) {
         if (!auth) {
           setError('Authentication service not available');
@@ -74,10 +90,6 @@ function ResetPasswordContent() {
           console.log('📄 API Response data:', data);
           
           if (response.ok && data.valid) {
-            if (data.role === 'sw') {
-              router.replace(`/sw-reset-password?token=${token}`);
-              return;
-            }
             setEmail(data.email);
             setResetValid(true);
             console.log('✅ Token validation successful');
@@ -93,15 +105,50 @@ function ResetPasswordContent() {
             setError('Failed to validate reset token. Please try again.');
           }
         }
-      } else {
-        setError('Invalid or missing reset parameters');
       }
       
       setIsValidating(false);
     };
 
     validateToken();
-  }, [token, oobCode, auth]);
+  }, [token, oobCode, auth, hasResetParams]);
+
+  const handleRequestReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setRequestSuccess(false);
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setError('Please enter your email address');
+      return;
+    }
+
+    if (!auth) {
+      setError('Authentication service not available');
+      return;
+    }
+
+    setIsRequesting(true);
+    try {
+      const actionCodeSettings = {
+        url: `${window.location.origin}/reset-password`,
+        handleCodeInApp: true,
+      };
+
+      await sendPasswordResetEmail(auth, normalizedEmail, actionCodeSettings);
+      setRequestSuccess(true);
+      toast({
+        title: 'Password Reset Email Sent',
+        description: 'Check your email for a reset link to continue.',
+      });
+    } catch (requestError: any) {
+      console.error('Password reset request error:', requestError);
+      setError(requestError?.message || 'Failed to send password reset email');
+    } finally {
+      setIsRequesting(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,7 +230,7 @@ function ResetPasswordContent() {
     );
   }
 
-  if (!resetValid || error) {
+  if (hasResetParams && (!resetValid || error)) {
     return (
       <>
         <Header />
@@ -203,6 +250,78 @@ function ResetPasswordContent() {
               <Button asChild className="w-full">
                 <a href="/login">Return to Login</a>
               </Button>
+            </CardContent>
+          </Card>
+        </main>
+      </>
+    );
+  }
+
+  if (!hasResetParams) {
+    return (
+      <>
+        <Header />
+        <main className="flex-grow flex items-center justify-center bg-slate-50 p-4">
+          <Card className="w-full max-w-md shadow-2xl">
+            <CardHeader className="text-center">
+              <CardTitle className="text-2xl">Forgot Password</CardTitle>
+              <CardDescription>
+                Enter your email and we will send you a reset link.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {requestSuccess ? (
+                <div className="text-center">
+                  <CheckCircle className="h-12 w-12 text-green-600 mx-auto mb-4" />
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Reset email sent. Please check your inbox.
+                  </p>
+                  <div className="space-y-2">
+                    <Button asChild className="w-full">
+                      <a href="/login">Member Login</a>
+                    </Button>
+                    <Button asChild variant="outline" className="w-full">
+                      <a href="/admin/login">Admin Login</a>
+                    </Button>
+                    <Button asChild variant="outline" className="w-full">
+                      <a href="/sw-login">Social Worker Login</a>
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleRequestReset} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      autoComplete="email"
+                    />
+                  </div>
+
+                  {error && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle>Error</AlertTitle>
+                      <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  <Button type="submit" className="w-full" disabled={isRequesting}>
+                    {isRequesting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Sending Reset Email...
+                      </>
+                    ) : (
+                      'Send Reset Email'
+                    )}
+                  </Button>
+                </form>
+              )}
             </CardContent>
           </Card>
         </main>

@@ -6,7 +6,6 @@ import {
   signInWithEmailAndPassword,
   browserSessionPersistence,
   setPersistence,
-  sendPasswordResetEmail,
 } from 'firebase/auth';
 import type { AuthError, User } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -23,7 +22,7 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import { AccessibleButton } from '@/components/ui/accessible-button';
-import { Eye, EyeOff, Loader2, LogIn, Mail } from 'lucide-react';
+import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
@@ -58,8 +57,6 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isResettingPassword, setIsResettingPassword] = useState(false);
-  const [resetEmail, setResetEmail] = useState('');
 
   useEffect(() => {
     if (isUserLoading) {
@@ -140,74 +137,6 @@ export default function LoginPage() {
     }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!resetEmail.trim()) {
-      enhancedToast.error('Email Required', 'Please enter your email address to reset your password.');
-      return;
-    }
-
-    setIsResettingPassword(true);
-    
-    // For development, try Firebase's built-in password reset first
-    if (process.env.NODE_ENV === 'development' || window.location.hostname === 'localhost') {
-      try {
-        console.log('🔧 Development mode: Using Firebase built-in password reset');
-        const normalizedResetEmail = resetEmail.trim().toLowerCase();
-        await sendPasswordResetEmail(auth!, normalizedResetEmail);
-        enhancedToast.success('Password Reset Email Sent', 'Check your email for a password reset link from Firebase. Note: This is the default Firebase email in development mode.');
-        setResetEmail('');
-        setIsResettingPassword(false);
-        return;
-      } catch (firebaseError: any) {
-        console.log('⚠️ Firebase password reset failed, trying custom API:', firebaseError);
-        // If Firebase fails, fall through to custom API
-      }
-    }
-    
-    try {
-      // Use simple password reset API that works in development
-      const normalizedResetEmail = resetEmail.trim().toLowerCase();
-      const response = await fetch('/api/auth/simple-password-reset', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email: normalizedResetEmail }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        if (data.devMode) {
-          enhancedToast.success('Development Mode', data.message + ' ' + (data.suggestion || ''));
-        } else {
-          enhancedToast.success('Password Reset Email Sent', 'Check your email (including spam/junk folder) for a password reset link from the Connections CalAIM Application Portal.');
-        }
-        setResetEmail('');
-        return;
-      } else {
-        throw new Error(data?.error || data?.details || 'Failed to send password reset email');
-      }
-    } catch (error: any) {
-      console.error('Password reset error:', error);
-      let errorMessage = 'An unexpected error occurred. Please try again.';
-      
-      if (error.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email address. Try creating a new account instead.';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Please enter a valid email address.';
-      } else if (error.code === 'auth/too-many-requests') {
-        errorMessage = 'Too many password reset attempts. Please try again later.';
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      enhancedToast.error('Password Reset Failed', errorMessage);
-    } finally {
-      setIsResettingPassword(false);
-    }
-  };
   
   if (isUserLoading || user) {
       return (
@@ -277,36 +206,10 @@ export default function LoginPage() {
               </AccessibleButton>
             </form>
             
-            {/* Forgot Password Section */}
-            <div className="mt-6 pt-4 border-t border-gray-200">
-              <p className="text-sm text-gray-600 mb-3">Forgot your password?</p>
-              <form onSubmit={handleForgotPassword} className="space-y-3">
-                <Input
-                  type="email"
-                  placeholder="Enter your email address"
-                  value={resetEmail}
-                  onChange={(e) => setResetEmail(e.target.value)}
-                  disabled={isResettingPassword}
-                />
-                <Button 
-                  type="submit" 
-                  variant="outline" 
-                  className="w-full" 
-                  disabled={isResettingPassword}
-                >
-                  {isResettingPassword ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Sending Reset Email...
-                    </>
-                  ) : (
-                    <>
-                      <Mail className="mr-2 h-4 w-4" />
-                      Send Password Reset Email
-                    </>
-                  )}
-                </Button>
-              </form>
+            <div className="mt-6 pt-4 border-t border-gray-200 text-center">
+              <Link href="/reset-password" className="text-sm text-primary hover:underline">
+                Forgot your password?
+              </Link>
             </div>
             
              <div className="mt-4 text-center text-sm">
