@@ -3,7 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/firebase';
-import { confirmPasswordReset, verifyPasswordResetCode, sendPasswordResetEmail } from 'firebase/auth';
+import { confirmPasswordReset, verifyPasswordResetCode } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,7 @@ function ResetPasswordContent() {
   const [isValidating, setIsValidating] = useState(true);
   const [resetValid, setResetValid] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [requestSuccess, setRequestSuccess] = useState(false);
 
@@ -116,6 +117,7 @@ function ResetPasswordContent() {
   const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setDebugInfo(null);
     setRequestSuccess(false);
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -124,19 +126,20 @@ function ResetPasswordContent() {
       return;
     }
 
-    if (!auth) {
-      setError('Authentication service not available');
-      return;
-    }
-
     setIsRequesting(true);
     try {
-      const actionCodeSettings = {
-        url: `${window.location.origin}/reset-password`,
-        handleCodeInApp: true,
-      };
+      const response = await fetch('/api/auth/password-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
 
-      await sendPasswordResetEmail(auth, normalizedEmail, actionCodeSettings);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const details = data?.error || data?.details || JSON.stringify(data);
+        setDebugInfo(`Status ${response.status}: ${details}`);
+        throw new Error(data?.error || 'Failed to send password reset email');
+      }
       setRequestSuccess(true);
       toast({
         title: 'Password Reset Email Sent',
@@ -302,6 +305,14 @@ function ResetPasswordContent() {
                       <AlertCircle className="h-4 w-4" />
                       <AlertTitle>Error</AlertTitle>
                       <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                  )}
+                  {debugInfo && (
+                    <Alert>
+                      <AlertTitle>Debug</AlertTitle>
+                      <AlertDescription>
+                        <span className="block break-words text-xs text-muted-foreground">{debugInfo}</span>
+                      </AlertDescription>
                     </Alert>
                   )}
 
