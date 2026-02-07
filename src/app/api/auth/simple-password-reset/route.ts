@@ -3,6 +3,9 @@ import { getAuth } from 'firebase-admin/auth';
 import admin from '@/firebase-admin';
 import { sendPasswordResetEmail } from '@/lib/password-reset';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     console.log('🔐 Simple password reset request received');
