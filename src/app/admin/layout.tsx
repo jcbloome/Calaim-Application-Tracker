@@ -87,6 +87,7 @@ const adminNavLinks = [
       { href: '/admin/applications', label: 'All Applications', icon: FolderKanban },
       { href: '/admin/incomplete-cs-summary', label: 'Incomplete CS Summary', icon: FileText },
       { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },
+      { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
       { href: '/admin/eligibility-checks', label: 'Eligibility Checks', icon: Shield }
@@ -112,7 +113,6 @@ const adminNavLinks = [
       { href: '/admin/sw-visit-tracking', label: 'SW Visit Tracking System', icon: FileBarChart },
       { href: '/admin/sw-claims-tracking', label: 'SW Claims Tracking', icon: FileBarChart },
       { href: '/admin/member-activity', label: 'Member Activity', icon: Activity },
-      { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/california-map-enhanced', label: 'Map Intelligence', icon: Navigation },

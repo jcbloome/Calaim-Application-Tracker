@@ -25,10 +25,16 @@ const trackedComponents = [
   { key: 'Proof of Income', abbreviation: 'POI' },
   { key: 'Declaration of Eligibility', abbreviation: 'DE' },
   { key: 'SNF Facesheet', abbreviation: 'SNF' },
+  { key: 'Eligibility Check', abbreviation: 'Elig' },
+  { key: 'Sent to Caspio', abbreviation: 'Caspio' },
 ];
 
 const missingDocsComponents = trackedComponents.filter(
-  (component) => component.key !== 'CS Member Summary' && component.key !== 'CS Summary'
+  (component) =>
+    component.key !== 'CS Member Summary' &&
+    component.key !== 'CS Summary' &&
+    component.key !== 'Eligibility Check' &&
+    component.key !== 'Sent to Caspio'
 );
 
 const StatusIndicator = ({ status, formName }: { status: 'Completed' | 'Pending' | 'Not Applicable', formName: string }) => {
@@ -56,7 +62,13 @@ const StatusIndicator = ({ status, formName }: { status: 'Completed' | 'Pending'
 
 const getComponentStatus = (app: Application, componentKey: string): 'Completed' | 'Pending' | 'Not Applicable' => {
     const form = app.forms?.find(f => f.name === componentKey);
-    
+
+    if (componentKey === 'Eligibility Check') {
+        return (app as any)?.calaimTrackingStatus ? 'Completed' : 'Pending';
+    }
+    if (componentKey === 'Sent to Caspio') {
+        return (app as any)?.caspioSent ? 'Completed' : 'Pending';
+    }
     if (componentKey === 'Declaration of Eligibility' && app.pathway !== 'SNF Diversion') {
         return 'Not Applicable';
     }

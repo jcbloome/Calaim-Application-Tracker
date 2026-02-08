@@ -26,6 +26,7 @@ import {
   Package,
   Database,
   X,
+  XCircle,
   FileText,
   Lock,
   Edit,
@@ -74,7 +75,6 @@ import { Calendar } from '@/components/ui/calendar';
 import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
-import { DuplicateClientChecker } from '@/components/DuplicateClientChecker';
 import NoteTracker from '@/components/NoteTracker';
 import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusProgress } from '@/lib/kaiser-status-progression';
 
@@ -268,6 +268,18 @@ function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
       </div>
     );
 }
+
+const quickStatusItems = [
+  { key: 'CS Member Summary', label: 'CS' },
+  { key: 'Waivers & Authorizations', label: 'Waivers' },
+  { key: 'Room and Board Commitment', label: 'R&B' },
+  { key: 'Proof of Income', label: 'POI' },
+  { key: "LIC 602A - Physician's Report", label: '602' },
+  { key: 'Medicine List', label: 'Meds' },
+  { key: 'SNF Facesheet', label: 'SNF' },
+  { key: 'Eligibility Check', label: 'Elig' },
+  { key: 'Sent to Caspio', label: 'Caspio' },
+];
 
 function StaffApplicationTracker({ application }: { application: Application }) {
     const firestore = useFirestore();
@@ -933,15 +945,6 @@ function AdminActions({ application }: { application: Application }) {
                         </div>
                     )}
                     
-                    {/* Duplicate Client Check */}
-                    <DuplicateClientChecker 
-                      memberData={application}
-                      onDuplicateResolved={(clientId) => {
-                        // Refresh the page or update the application data
-                        window.location.reload();
-                      }}
-                    />
-
                     {/* Sync Status */}
                     <SyncStatusIndicator
                       applicationId={application.id}
@@ -1819,6 +1822,74 @@ function ApplicationDetailPageContent() {
       }
   };
 
+  const formatMemberName = () => {
+    const firstName = String(application?.memberFirstName || '').trim();
+    const lastName = String(application?.memberLastName || '').trim();
+    if (lastName && firstName) return `${lastName}, ${firstName}`;
+    if (lastName) return lastName;
+    if (firstName) return firstName;
+    return 'Member';
+  };
+
+  const getDocumentLabel = (formName: string) => {
+    const labels: Record<string, string> = {
+      'CS Member Summary': 'CS Summary Form',
+      'CS Summary': 'CS Summary Form',
+      'Waivers & Authorizations': 'Waivers',
+      'Room and Board Commitment': 'Room and Board Commitment',
+      'Proof of Income': 'Proof of Income',
+      "LIC 602A - Physician's Report": 'LIC 602A',
+      'Medicine List': 'Med List',
+      'SNF Facesheet': 'SNF Facesheet',
+      'Eligibility Screenshot': 'Eligibility Screenshot',
+      'Declaration of Eligibility': 'Declaration of Eligibility',
+      consolidated_medical: 'Medical Documents'
+    };
+    return labels[formName] || formName;
+  };
+
+  const getFileExtension = (fileName: string) => {
+    const idx = fileName.lastIndexOf('.');
+    if (idx <= 0) return '';
+    return fileName.slice(idx).toLowerCase();
+  };
+
+  const sanitizeFileComponent = (value: string) =>
+    value.replace(/[^\w\s.-]/g, '').trim().replace(/\s+/g, ' ');
+
+  const buildStandardFileName = (formName: string, originalFileName: string) => {
+    const memberName = sanitizeFileComponent(formatMemberName());
+    const label = sanitizeFileComponent(getDocumentLabel(formName));
+    const ext = getFileExtension(originalFileName);
+    return `${memberName} - ${label}${ext}`;
+  };
+
+  const buildStorageFileName = (standardFileName: string) =>
+    standardFileName.replace(/[^\w.-]/g, '_');
+
+  const getComponentStatus = (componentKey: string): 'Completed' | 'Pending' | 'Not Applicable' => {
+    const form = application?.forms?.find(f => f.name === componentKey);
+
+    if (componentKey === 'Eligibility Check') {
+      return (application as any)?.calaimTrackingStatus ? 'Completed' : 'Pending';
+    }
+    if (componentKey === 'Sent to Caspio') {
+      return (application as any)?.caspioSent ? 'Completed' : 'Pending';
+    }
+    if (componentKey === 'Declaration of Eligibility' && application?.pathway !== 'SNF Diversion') {
+      return 'Not Applicable';
+    }
+    if (componentKey === 'SNF Facesheet' && application?.pathway !== 'SNF Transition') {
+      return 'Not Applicable';
+    }
+
+    if (form?.status === 'Completed') {
+      return 'Completed';
+    }
+
+    return 'Pending';
+  };
+
   const doUpload = async (files: File[], requirementTitle: string) => {
       if (!storage || !appUserId || !applicationId) {
         console.error('Upload prerequisites missing:', { storage: !!storage, appUserId, applicationId });
@@ -1851,7 +1922,9 @@ function ApplicationDetailPageContent() {
       }
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const storagePath = `user_uploads/${appUserId}/${applicationId}/${requirementTitle}/${timestamp}_${file.name}`;
+      const standardFileName = buildStandardFileName(requirementTitle, file.name);
+      const safeFileName = buildStorageFileName(standardFileName);
+      const storagePath = `user_uploads/${appUserId}/${applicationId}/${requirementTitle}/${timestamp}_${safeFileName}`;
       const storageRef = ref(storage, storagePath);
 
       console.log('🔄 Starting file upload:', {
@@ -1863,7 +1936,7 @@ function ApplicationDetailPageContent() {
         applicationId
       });
 
-      return new Promise<{ downloadURL: string, path: string }>((resolve, reject) => {
+      return new Promise<{ downloadURL: string, path: string, fileName: string }>((resolve, reject) => {
           const uploadTask = uploadBytesResumable(storageRef, file);
 
           // Set timeout for upload
@@ -1904,7 +1977,7 @@ function ApplicationDetailPageContent() {
                       console.log('✅ Upload completed, getting download URL...');
                       const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
                       console.log('✅ Download URL obtained:', downloadURL);
-                      resolve({ downloadURL, path: storagePath });
+                      resolve({ downloadURL, path: storagePath, fileName: standardFileName });
                   } catch (error) {
                       console.error('❌ Error getting download URL:', error);
                       reject(new Error('Upload completed but failed to get download URL'));
@@ -1928,7 +2001,7 @@ function ApplicationDetailPageContent() {
                 name: requirementTitle,
                 status: 'Completed',
                 type: 'Upload',
-                fileName: files.map(f => f.name).join(', '),
+                fileName: uploadResult.fileName,
                 filePath: uploadResult.path,
                 downloadURL: uploadResult.downloadURL,
                 dateCompleted: Timestamp.now(),
@@ -1967,7 +2040,7 @@ function ApplicationDetailPageContent() {
                 name: formName,
                 status: 'Completed',
                 type: 'Upload',
-                fileName: files.map(f => f.name).join(', '),
+                fileName: buildStandardFileName(formName, file.name),
                 filePath: uploadResult.path,
                 downloadURL: uploadResult.downloadURL,
                 dateCompleted: Timestamp.now(),
@@ -2366,6 +2439,8 @@ function ApplicationDetailPageContent() {
     const currentProgress = uploadProgress[req.title];
     const isMultiple = req.title === 'Proof of Income' || req.title === 'Eligibility Screenshot';
 
+    const recommendedFileName = buildStandardFileName(req.title, 'document.pdf');
+
     switch (req.type) {
         case 'online-form':
              if (req.id === 'waivers') {
@@ -2440,6 +2515,9 @@ function ApplicationDetailPageContent() {
                             ))}
                         </div>
                     )}
+                    <p className="text-xs text-muted-foreground">
+                      Recommended filename: <span className="font-medium">{recommendedFileName}</span>
+                    </p>
                     <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isUploading && "opacity-50 pointer-events-none")}>
                         {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                         <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
@@ -2490,6 +2568,22 @@ function ApplicationDetailPageContent() {
                     </span>
                 )}
             </CardTitle>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {quickStatusItems.map((item) => {
+                const status = getComponentStatus(item.key);
+                if (status === 'Not Applicable') return null;
+                return (
+                  <span key={item.key} className="flex items-center gap-1" title={`${item.key}: ${status}`}>
+                    {status === 'Completed' ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-orange-500" />
+                    )}
+                    <span>{item.label}</span>
+                  </span>
+                );
+              })}
+            </div>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <CardDescription>
                 Submitted by {application.referrerName || user?.displayName} | {application.pathway} ({application.healthPlan})
