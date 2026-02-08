@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
@@ -91,6 +92,9 @@ export default function SWUserManagementPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [updatingAccess, setUpdatingAccess] = useState<Record<string, boolean>>({});
+  const [updatingAllAccess, setUpdatingAllAccess] = useState(false);
+  const [isSavingAll, setIsSavingAll] = useState(false);
 
   useEffect(() => {
     loadSocialWorkers();
@@ -349,6 +353,64 @@ export default function SWUserManagementPage() {
     }
   };
 
+  const saveAllNewToFirestore = async () => {
+    if (!firestore || !adminUser) return;
+    const toSave = syncedStaff.filter((staff) => !staff.isInFirestore);
+    if (toSave.length === 0) {
+      toast({
+        title: 'Nothing to Save',
+        description: 'All social workers are already in Firestore.'
+      });
+      return;
+    }
+
+    setIsSavingAll(true);
+    try {
+      const chunks: Array<typeof toSave> = [];
+      for (let i = 0; i < toSave.length; i += 400) {
+        chunks.push(toSave.slice(i, i + 400));
+      }
+
+      for (const chunk of chunks) {
+        const batch = writeBatch(firestore);
+        chunk.forEach((staffMember) => {
+          const staffName = String(staffMember.name || staffMember.sw_id || 'Unknown Staff');
+          const staffEmail = String(staffMember.email || '').trim();
+          if (!staffEmail) return;
+          const staffSwId = String(staffMember.sw_id || staffMember.id || '');
+          const docId = `sw_${staffSwId}`;
+          batch.set(doc(firestore, 'syncedSocialWorkers', docId), {
+            name: staffName,
+            email: staffEmail,
+            role: staffMember.role || 'MSW',
+            sw_id: staffSwId,
+            phone: String(staffMember.phone || ''),
+            department: String(staffMember.department || ''),
+            assignedMemberCount: 0,
+            syncedAt: serverTimestamp(),
+            syncedBy: adminUser.email || adminUser.uid
+          });
+        });
+        await batch.commit();
+      }
+
+      await loadSyncedStaff();
+      toast({
+        title: 'Saved to Firestore',
+        description: `Saved ${toSave.length} social worker(s).`
+      });
+    } catch (error: any) {
+      console.error('Error saving all to Firestore:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Bulk Save Failed',
+        description: error.message || 'Failed to save social workers'
+      });
+    } finally {
+      setIsSavingAll(false);
+    }
+  };
+
 
   const refreshSyncedStaffStatus = () => {
     // Update the hasPortalAccess status for all synced staff
@@ -359,6 +421,126 @@ export default function SWUserManagementPage() {
         isPortalActive: socialWorkers.find(sw => normalizeEmail(sw.email) === normalizeEmail(staff.email))?.isActive || false
       }))
     );
+  };
+
+  const setAllPortalAccess = async (nextActive: boolean) => {
+    if (!firestore || !adminUser) return;
+    const candidates = syncedStaff
+      .map((staff) => ({
+        ...staff,
+        normalizedEmail: normalizeEmail(staff.email)
+      }))
+      .filter((staff) => !!staff.normalizedEmail);
+
+    if (candidates.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No Valid Emails',
+        description: 'No social workers with valid email addresses were found.'
+      });
+      return;
+    }
+
+    setUpdatingAllAccess(true);
+    try {
+      const chunks: Array<typeof candidates> = [];
+      for (let i = 0; i < candidates.length; i += 450) {
+        chunks.push(candidates.slice(i, i + 450));
+      }
+
+      for (const chunk of chunks) {
+        const batch = writeBatch(firestore);
+        chunk.forEach((staff) => {
+          const docId = socialWorkers.find(sw => normalizeEmail(sw.email) === staff.normalizedEmail)?.uid
+            || staff.normalizedEmail;
+          batch.set(doc(firestore, 'socialWorkers', docId), {
+            email: staff.normalizedEmail,
+            displayName: staff.name || staff.normalizedEmail,
+            role: 'social_worker',
+            isActive: nextActive,
+            updatedAt: serverTimestamp(),
+            ...(docId === staff.normalizedEmail ? {
+              createdAt: serverTimestamp(),
+              createdBy: adminUser.email || adminUser.uid,
+              permissions: {
+                visitVerification: true,
+                memberQuestionnaire: true,
+                claimsSubmission: true
+              }
+            } : {})
+          }, { merge: true });
+        });
+        await batch.commit();
+      }
+
+      await loadSocialWorkers();
+      toast({
+        title: nextActive ? 'Portal Access Enabled' : 'Portal Access Disabled',
+        description: `Updated ${candidates.length} social worker account(s).`
+      });
+    } catch (error: any) {
+      console.error('Error updating all portal access:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Bulk Update Failed',
+        description: error.message || 'Failed to update portal access'
+      });
+    } finally {
+      setUpdatingAllAccess(false);
+    }
+  };
+
+  const togglePortalAccess = async (staff: SyncedSocialWorker, nextActive: boolean) => {
+    if (!firestore || !adminUser) return;
+    const staffEmail = normalizeEmail(staff.email);
+    if (!staffEmail) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing Email',
+        description: 'This social worker does not have a valid email address.'
+      });
+      return;
+    }
+
+    const existing = socialWorkers.find(sw => normalizeEmail(sw.email) === staffEmail);
+    const docId = existing?.uid || staffEmail;
+
+    setUpdatingAccess(prev => ({ ...prev, [staffEmail]: true }));
+    try {
+      const payload: Partial<SocialWorkerUser> & { updatedAt?: any; createdAt?: any } = {
+        email: staffEmail,
+        displayName: staff.name || staffEmail,
+        role: 'social_worker',
+        isActive: nextActive,
+        updatedAt: serverTimestamp()
+      };
+
+      if (!existing) {
+        payload.createdAt = serverTimestamp();
+        payload.createdBy = adminUser.email || adminUser.uid;
+        payload.permissions = {
+          visitVerification: true,
+          memberQuestionnaire: true,
+          claimsSubmission: true
+        };
+      }
+
+      await setDoc(doc(firestore, 'socialWorkers', docId), payload, { merge: true });
+      await loadSocialWorkers();
+      toast({
+        title: nextActive ? 'Portal Access Enabled' : 'Portal Access Disabled',
+        description: `${staff.name || staffEmail} is now ${nextActive ? 'active' : 'inactive'}`
+      });
+    } catch (error: any) {
+      console.error('Error updating portal access:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: error.message || 'Failed to update portal access'
+      });
+    } finally {
+      setUpdatingAccess(prev => ({ ...prev, [staffEmail]: false }));
+    }
   };
 
   // Update synced staff status when social workers change
@@ -393,7 +575,7 @@ export default function SWUserManagementPage() {
             Manage social worker accounts and permissions
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={loadFromCaspio} disabled={isSyncing}>
             {isSyncing ? (
               <>
@@ -410,6 +592,23 @@ export default function SWUserManagementPage() {
           <Button onClick={() => { loadSocialWorkers(); loadSyncedStaff(); }} variant="outline">
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
+          </Button>
+          <Button
+            onClick={saveAllNewToFirestore}
+            variant="secondary"
+            disabled={isSavingAll || isSyncing}
+          >
+            {isSavingAll ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              <>
+                <Save className="mr-2 h-4 w-4" />
+                Save all new
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -464,15 +663,30 @@ export default function SWUserManagementPage() {
 
       {/* Synced Social Workers */}
         <Card>
-          <CardHeader>
-            <CardTitle>Social Workers from Caspio ({syncedStaff.length})</CardTitle>
-            <CardDescription>
-              {syncedStaff.length === 0 ? (
-                <>Click "Load from Caspio" to pull all social workers, then save them one by one to Firestore.</>
-              ) : (
-                <>Click "Save to Firestore" for each social worker to add them to the system. Green badge = already in Firestore.</>
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>Social Workers from Caspio ({syncedStaff.length})</CardTitle>
+              <CardDescription>
+                {syncedStaff.length === 0 ? (
+                  <>Click "Load from Caspio" to pull all social workers, then save them one by one to Firestore.</>
+                ) : (
+                  <>Click "Save to Firestore" for each social worker to add them to the system. Green badge = already in Firestore.</>
+                )}
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Portal access (all)</span>
+                <Switch
+                  checked={syncedStaff.length > 0 && syncedStaff.every(staff => staff.isPortalActive)}
+                  onCheckedChange={(checked) => setAllPortalAccess(checked)}
+                  disabled={updatingAllAccess || isCreating || syncedStaff.length === 0}
+                />
+              </div>
+              {updatingAllAccess && (
+                <span className="text-xs text-muted-foreground">Updating…</span>
               )}
-            </CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
             {syncedStaff.length === 0 ? (
@@ -503,15 +717,15 @@ export default function SWUserManagementPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Assigned Members</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>Status / Access</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {syncedStaff.map((staff) => {
-                  
+                  const staffEmail = normalizeEmail(staff.email);
+                  const rowKey = `${staff.sw_id || staff.id || staffEmail || staff.name || 'sw'}-${staff.email || ''}`;
                   return (
-                    <TableRow key={staff.id}>
+                    <TableRow key={rowKey}>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <UserCheck className="h-4 w-4 text-primary" />
@@ -537,7 +751,7 @@ export default function SWUserManagementPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           {staff.isInFirestore ? (
                             <Badge className="bg-green-600">
                               <CheckCircle className="h-3 w-3 mr-1" />
@@ -549,11 +763,7 @@ export default function SWUserManagementPage() {
                               New from Caspio
                             </Badge>
                           )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          {!staff.isInFirestore ? (
+                          {!staff.isInFirestore && (
                             <Button
                               size="sm"
                               onClick={() => saveToFirestore(staff)}
@@ -561,11 +771,19 @@ export default function SWUserManagementPage() {
                               className="bg-green-600 hover:bg-green-700"
                             >
                               <Save className="h-4 w-4 mr-1" />
-                              Save to Firestore
+                              Save
                             </Button>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">Saved</span>
                           )}
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <Switch
+                            checked={staff.isPortalActive}
+                            onCheckedChange={(checked) => togglePortalAccess(staff, checked)}
+                            disabled={!staffEmail || updatingAccess[staffEmail] || isCreating}
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            {staff.isPortalActive ? 'Portal access: On' : 'Portal access: Off'}
+                          </span>
                         </div>
                       </TableCell>
                     </TableRow>

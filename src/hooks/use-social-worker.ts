@@ -43,14 +43,15 @@ export function useSocialWorker() {
       }
 
       try {
-        // Check if user exists in social workers collection
+        // Check if user exists in social workers collection by UID first
         const socialWorkerDoc = await getDoc(doc(firestore, 'socialWorkers', user.uid));
-        
+        const normalizedEmail = user.email?.trim().toLowerCase();
+
         if (socialWorkerDoc.exists()) {
           const data = socialWorkerDoc.data() as SocialWorkerData;
-          
-          // Check if account is active
-          if (data.isActive) {
+          const isActive = !!data.isActive;
+
+          if (isActive) {
             setSocialWorkerData({
               ...data,
               uid: user.uid,
@@ -59,7 +60,7 @@ export function useSocialWorker() {
             });
             setIsSocialWorker(true);
             setStatus('active');
-            
+
             // Update last login timestamp
             try {
               await updateDoc(doc(firestore, 'socialWorkers', user.uid), {
@@ -69,16 +70,42 @@ export function useSocialWorker() {
               console.warn('Failed to update last login:', loginUpdateError);
             }
           } else {
-            // Account exists but is inactive
             setIsSocialWorker(false);
             setSocialWorkerData(null);
             setStatus('inactive');
             console.warn('Social worker account is inactive');
           }
-        } else {
-          // Fallback: look up by email in case legacy docs used email IDs
-          const normalizedEmail = user.email?.trim().toLowerCase();
-          if (normalizedEmail) {
+        } else if (normalizedEmail) {
+          // Fallback 1: some legacy docs used email as the doc ID.
+          const emailIdDoc = await getDoc(doc(firestore, 'socialWorkers', normalizedEmail));
+          if (emailIdDoc.exists()) {
+            const data = emailIdDoc.data() as SocialWorkerData;
+            const isActive = !!data.isActive;
+            setSocialWorkerData({
+              ...data,
+              uid: user.uid,
+              createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
+              lastLogin: data.lastLogin?.toDate ? data.lastLogin.toDate() : undefined
+            });
+            setIsSocialWorker(isActive);
+            setStatus(isActive ? 'active' : 'inactive');
+
+            try {
+              await setDoc(
+                doc(firestore, 'socialWorkers', user.uid),
+                {
+                  ...data,
+                  email: normalizedEmail,
+                  migratedFrom: normalizedEmail,
+                  updatedAt: serverTimestamp()
+                },
+                { merge: true }
+              );
+            } catch (migrationError) {
+              console.warn('Failed to migrate social worker doc to UID:', migrationError);
+            }
+          } else {
+            // Fallback 2: look up by email field
             const emailQuery = query(
               collection(firestore, 'socialWorkers'),
               where('email', '==', normalizedEmail)
@@ -117,11 +144,11 @@ export function useSocialWorker() {
               setSocialWorkerData(null);
               setStatus('not-found');
             }
-          } else {
-            setIsSocialWorker(false);
-            setSocialWorkerData(null);
-            setStatus('not-found');
           }
+        } else {
+          setIsSocialWorker(false);
+          setSocialWorkerData(null);
+          setStatus('not-found');
         }
       } catch (error) {
         console.error('Error checking social worker status:', error);

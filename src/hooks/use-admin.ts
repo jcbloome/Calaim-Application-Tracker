@@ -55,6 +55,7 @@ export function useAdmin(): AdminStatus {
       }
 
       try {
+        const normalizedEmail = (user.email || '').trim().toLowerCase();
         const adminRoleRef = doc(firestore, 'roles_admin', user.uid);
         const superAdminRoleRef = doc(firestore, 'roles_super_admin', user.uid);
 
@@ -63,8 +64,18 @@ export function useAdmin(): AdminStatus {
           getDoc(superAdminRoleRef)
         ]);
 
-        const isAdminUser = isEmailAdmin || adminDoc.exists() || superAdminDoc.exists();
-        const isSuperAdminUser = isEmailAdmin || superAdminDoc.exists();
+        let isAdminUser = isEmailAdmin || adminDoc.exists() || superAdminDoc.exists();
+        let isSuperAdminUser = isEmailAdmin || superAdminDoc.exists();
+
+        // Backward-compat: some roles were stored by email instead of UID.
+        if (!isAdminUser && normalizedEmail) {
+          const [emailAdminDoc, emailSuperAdminDoc] = await Promise.all([
+            getDoc(doc(firestore, 'roles_admin', normalizedEmail)),
+            getDoc(doc(firestore, 'roles_super_admin', normalizedEmail))
+          ]);
+          isAdminUser = emailAdminDoc.exists() || emailSuperAdminDoc.exists();
+          isSuperAdminUser = isSuperAdminUser || emailSuperAdminDoc.exists();
+        }
 
         console.log('🔍 useAdmin: Admin check result:', {
           userEmail: user.email,

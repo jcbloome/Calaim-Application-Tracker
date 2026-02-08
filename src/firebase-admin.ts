@@ -1,4 +1,5 @@
 import * as admin from 'firebase-admin';
+import fs from 'fs';
 
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
@@ -16,6 +17,18 @@ if (!admin.apps.length) {
         console.log('🔧 Using credentials from GOOGLE_APPLICATION_CREDENTIALS_JSON');
       } catch (parseError) {
         console.warn('⚠️ Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON:', parseError);
+      }
+    }
+
+    if (!credential && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      try {
+        const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+        const serviceAccountJson = fs.readFileSync(serviceAccountPath, 'utf8');
+        const serviceAccount = JSON.parse(serviceAccountJson);
+        credential = admin.credential.cert(serviceAccount);
+        console.log('🔧 Using credentials from GOOGLE_APPLICATION_CREDENTIALS file');
+      } catch (fileError) {
+        console.warn('⚠️ Failed to read GOOGLE_APPLICATION_CREDENTIALS file:', fileError);
       }
     }
     

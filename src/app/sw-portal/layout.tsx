@@ -1,6 +1,6 @@
 'use client';
 
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSocialWorker } from '@/hooks/use-social-worker';
@@ -40,6 +40,7 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { isSocialWorker, isLoading } = useSocialWorker();
   const auth = useAuth();
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   const handleSignOut = async () => {
     if (auth) {
@@ -48,8 +49,16 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
     router.push('/sw-login');
   };
 
-  // Show loading while checking social worker status
-  if (isLoading) {
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isSocialWorker && pathname !== '/sw-login' && pathname !== '/sw-reset-password') {
+      setIsRedirecting(true);
+      router.push('/sw-login');
+    }
+  }, [isLoading, isSocialWorker, pathname, router]);
+
+  // Show loading while checking social worker status or redirecting
+  if (isLoading || isRedirecting) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -58,12 +67,6 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
         </div>
       </div>
     );
-  }
-
-  // Redirect to login if not a social worker (except for login page itself)
-  if (!isSocialWorker && pathname !== '/sw-login' && pathname !== '/sw-reset-password') {
-    router.push('/sw-login');
-    return null;
   }
 
   // Don't show layout on login/reset pages

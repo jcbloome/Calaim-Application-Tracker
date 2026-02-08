@@ -31,6 +31,15 @@ export async function POST(request: NextRequest) {
       isAdmin = adminDoc.exists || superAdminDoc.exists;
     }
 
+    // Backward-compat: some roles were stored by email instead of UID.
+    if (!isAdmin && email) {
+      const [emailAdminDoc, emailSuperAdminDoc] = await Promise.all([
+        adminDb.collection('roles_admin').doc(email).get(),
+        adminDb.collection('roles_super_admin').doc(email).get()
+      ]);
+      isAdmin = emailAdminDoc.exists || emailSuperAdminDoc.exists;
+    }
+
     if (!isAdmin) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
