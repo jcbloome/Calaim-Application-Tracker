@@ -29,13 +29,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Validate geolocation for signature verification
-    if (!signOffData.signOffData?.geolocation) {
-      return NextResponse.json({
-        success: false,
-        error: 'Geolocation verification required for electronic signature'
-      }, { status: 400 });
-    }
+    const locationVerified = !!signOffData.signOffData?.geolocation;
 
     // Here you would typically:
     // 1. Save the sign-off record to Firestore
@@ -82,6 +76,7 @@ export async function POST(request: NextRequest) {
       message: `Sign-off completed successfully for ${signOffData.completedVisits.length} visits`,
       signOffId: signOffRecord.id,
       flaggedVisits: flaggedVisits.length,
+      locationVerified,
       data: {
         rcfeName: signOffData.rcfeName,
         totalVisits: signOffData.completedVisits.length,
@@ -90,7 +85,7 @@ export async function POST(request: NextRequest) {
           name: signOffData.signOffData.rcfeStaffName,
           title: signOffData.signOffData.rcfeStaffTitle,
           verifiedAt: signOffData.signOffData.signedAt,
-          locationVerified: true
+          locationVerified
         }
       }
     });

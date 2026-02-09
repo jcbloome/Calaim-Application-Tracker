@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,6 +77,53 @@ export default function SubmitClaimsPage() {
     notes: ''
   });
 
+  const normalizeMemberName = (name: string) => name.trim().toLowerCase();
+  const getMonthKey = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+  const currentMonthKey = useMemo(() => getMonthKey(selectedDate), [selectedDate]);
+
+  const monthlyVisitLog = useMemo(() => {
+    const entries: Array<{
+      memberName: string;
+      rcfeName: string;
+      visitDate: Date;
+      claimId?: string;
+    }> = [];
+    previousClaims.forEach((claim) => {
+      claim.memberVisits.forEach((visit) => {
+        const visitDate = visit.visitDate instanceof Date ? visit.visitDate : new Date(visit.visitDate);
+        if (getMonthKey(visitDate) === currentMonthKey) {
+          entries.push({
+            memberName: visit.memberName,
+            rcfeName: visit.rcfeName,
+            visitDate,
+            claimId: claim.id
+          });
+        }
+      });
+    });
+    return entries.sort((a, b) => b.visitDate.getTime() - a.visitDate.getTime());
+  }, [previousClaims, currentMonthKey]);
+
+  const isMemberAlreadyClaimedThisMonth = (memberName: string) => {
+    const normalizedName = normalizeMemberName(memberName);
+    const inCurrentDraft = memberVisits.some(
+      (visit) => normalizeMemberName(visit.memberName) === normalizedName
+    );
+    if (inCurrentDraft) return true;
+
+    return previousClaims.some((claim) =>
+      claim.memberVisits.some((visit) => {
+        const visitDate = visit.visitDate instanceof Date ? visit.visitDate : new Date(visit.visitDate);
+        return (
+          normalizeMemberName(visit.memberName) === normalizedName &&
+          getMonthKey(visitDate) === currentMonthKey
+        );
+      })
+    );
+  };
+
   useEffect(() => {
     if (user?.email && isSocialWorker) {
       loadPreviousClaims();
@@ -101,7 +148,11 @@ export default function SubmitClaimsPage() {
           id: doc.id,
           ...data,
           claimDate: data.claimDate?.toDate ? data.claimDate.toDate() : new Date(data.claimDate),
-          submittedAt: data.submittedAt?.toDate ? data.submittedAt.toDate() : (data.submittedAt ? new Date(data.submittedAt) : undefined)
+          submittedAt: data.submittedAt?.toDate ? data.submittedAt.toDate() : (data.submittedAt ? new Date(data.submittedAt) : undefined),
+          memberVisits: (data.memberVisits || []).map((visit: any) => ({
+            ...visit,
+            visitDate: visit.visitDate?.toDate ? visit.visitDate.toDate() : new Date(visit.visitDate)
+          }))
         };
       }) as ClaimSubmission[];
       
@@ -124,6 +175,14 @@ export default function SubmitClaimsPage() {
         variant: 'destructive',
         title: 'Missing Information',
         description: 'Please fill in member name, RCFE name, and visit time'
+      });
+      return;
+    }
+    if (isMemberAlreadyClaimedThisMonth(newVisit.memberName)) {
+      toast({
+        variant: 'destructive',
+        title: 'Monthly Limit Reached',
+        description: `Only one monthly invoice is allowed per member. ${newVisit.memberName} already has a visit logged this month.`
       });
       return;
     }
@@ -279,6 +338,37 @@ export default function SubmitClaimsPage() {
           <div className="font-semibold">$20 daily gas allowance</div>
         </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Visits Logged This Month
+          </CardTitle>
+          <CardDescription>
+            One monthly invoice per member is allowed. Month: {format(selectedDate, 'MMMM yyyy')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {monthlyVisitLog.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No visits logged yet for this month.</div>
+          ) : (
+            <div className="space-y-2">
+              {monthlyVisitLog.map((entry, index) => (
+                <div key={`${entry.memberName}-${entry.visitDate.toISOString()}-${index}`} className="flex items-center justify-between border rounded-md p-2">
+                  <div>
+                    <div className="font-medium">{entry.memberName}</div>
+                    <div className="text-xs text-muted-foreground">{entry.rcfeName}</div>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {format(entry.visitDate, 'MMM d, yyyy')}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Claim Submission Form */}

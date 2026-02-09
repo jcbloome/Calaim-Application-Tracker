@@ -30,7 +30,7 @@ export default function SWLoginPage() {
   // Redirect if already logged in as social worker
   useEffect(() => {
     if (!swLoading && isSocialWorker) {
-      router.push('/sw-portal/submit-claims');
+      router.push('/sw-visit-verification');
     }
   }, [isSocialWorker, swLoading, router]);
 

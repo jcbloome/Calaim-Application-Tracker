@@ -178,13 +178,39 @@ export default function SWVisitVerification() {
     rcfeStaffTitle: '',
     signature: '',
     signedAt: '',
-    geolocation: null as any
+    geolocation: null as any,
+    locationVerified: false
   });
   
   // Fetch SW's assigned RCFEs and members
   const [rcfeList, setRcfeList] = useState<RCFE[]>([]);
   const [isLoadingRCFEs, setIsLoadingRCFEs] = useState(false);
   const [membersOnHold, setMembersOnHold] = useState(0);
+  const [draftsByMember, setDraftsByMember] = useState<Record<string, {
+    questionnaire: MemberVisitQuestionnaire;
+    questionStep: number;
+    savedAt: string;
+  }>>({});
+
+  const getDraftKey = (memberId: string, socialWorkerId: string) =>
+    `sw-visit-draft:${socialWorkerId}:${memberId}`;
+
+  const loadDraftForMember = (memberId: string, socialWorkerId: string) => {
+    try {
+      const stored = localStorage.getItem(getDraftKey(memberId, socialWorkerId));
+      if (!stored) return null;
+      const parsed = JSON.parse(stored);
+      if (!parsed?.questionnaire || !parsed?.questionStep) return null;
+      return parsed as {
+        questionnaire: MemberVisitQuestionnaire;
+        questionStep: number;
+        savedAt: string;
+      };
+    } catch (error) {
+      console.warn('Failed to load visit draft:', error);
+      return null;
+    }
+  };
 
   // Update socialWorkerId when user data becomes available
   useEffect(() => {
@@ -250,6 +276,24 @@ export default function SWVisitVerification() {
 
     fetchAssignedRCFEs();
   }, [isSocialWorker, isLoading]);
+
+  useEffect(() => {
+    if (!selectedRCFE) {
+      setDraftsByMember({});
+      return;
+    }
+    const socialWorkerId = user?.displayName || user?.email || user?.uid || 'unknown';
+    const nextDrafts: Record<string, { questionnaire: MemberVisitQuestionnaire; questionStep: number; savedAt: string }> = {};
+    selectedRCFE.members.forEach((member) => {
+      const memberKey = member.id || member.name;
+      if (!memberKey) return;
+      const draft = loadDraftForMember(memberKey, socialWorkerId);
+      if (draft) {
+        nextDrafts[memberKey] = draft;
+      }
+    });
+    setDraftsByMember(nextDrafts);
+  }, [selectedRCFE, user]);
   
   // Initialize questionnaire data
   const [questionnaire, setQuestionnaire] = useState<MemberVisitQuestionnaire>({
@@ -364,11 +408,30 @@ export default function SWVisitVerification() {
     setCurrentStep('select-member');
   };
 
-  const handleMemberSelect = (member: Member) => {
+  const handleMemberSelect = (member: Member, mode: 'auto' | 'resume' | 'new' = 'auto') => {
     setSelectedMember(member);
     const socialWorkerId = user?.displayName || user?.email || user?.uid || 'Billy Buckhalter';
-    const memberId = member.id || `member-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
+    const memberKey = member.id || member.name;
+    const draft = memberKey ? loadDraftForMember(memberKey, socialWorkerId) : null;
+
+    if (draft && mode !== 'new') {
+      console.log('🔄 Resuming saved visit draft:', { memberKey, memberName: member.name });
+      setQuestionnaire({
+        ...draft.questionnaire,
+        visitId: draft.questionnaire.visitId || `visit-${Date.now()}`,
+        memberId: memberKey,
+        memberName: member.name,
+        socialWorkerId,
+        rcfeId: member.rcfeId,
+        rcfeName: member.rcfeName,
+        rcfeAddress: member.rcfeAddress
+      });
+      setQuestionStep(draft.questionStep || 1);
+      setCurrentStep('questionnaire');
+      return;
+    }
+
+    const memberId = memberKey || `member-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     console.log('🔍 Member selected:', { 
       originalId: member.id, 
       generatedId: memberId, 
@@ -385,6 +448,7 @@ export default function SWVisitVerification() {
       rcfeName: member.rcfeName,
       rcfeAddress: member.rcfeAddress
     }));
+    setQuestionStep(1);
     setCurrentStep('questionnaire');
   };
 
@@ -460,8 +524,32 @@ export default function SWVisitVerification() {
   };
 
   const saveProgress = () => {
-    // Save to localStorage for now
-    localStorage.setItem(`visit-${questionnaire.visitId}`, JSON.stringify(questionnaire));
+    const socialWorkerId = questionnaire.socialWorkerId || user?.email || user?.uid || 'unknown';
+    const memberKey = questionnaire.memberId || selectedMember?.id || selectedMember?.name;
+    if (!memberKey) {
+      toast({
+        title: "Unable to Save",
+        description: "Select a member before saving progress.",
+        variant: "destructive"
+      });
+      return;
+    }
+    localStorage.setItem(
+      getDraftKey(memberKey, socialWorkerId),
+      JSON.stringify({
+        questionnaire,
+        questionStep,
+        savedAt: new Date().toISOString()
+      })
+    );
+    setDraftsByMember((prev) => ({
+      ...prev,
+      [memberKey]: {
+        questionnaire,
+        questionStep,
+        savedAt: new Date().toISOString()
+      }
+    }));
     toast({
       title: "Progress Saved",
       description: "Your visit questionnaire has been saved.",
@@ -623,7 +711,16 @@ export default function SWVisitVerification() {
       }]);
 
       // Clear saved progress
-      localStorage.removeItem(`visit-${questionnaire.visitId}`);
+      const draftMemberKey = questionnaire.memberId || selectedMember?.id || selectedMember?.name;
+      const draftSocialWorkerId = questionnaire.socialWorkerId || user?.email || user?.uid || 'unknown';
+      if (draftMemberKey) {
+        localStorage.removeItem(getDraftKey(draftMemberKey, draftSocialWorkerId));
+        setDraftsByMember((prev) => {
+          const next = { ...prev };
+          delete next[draftMemberKey];
+          return next;
+        });
+      }
       
       // Show comprehensive success message
       toast({
@@ -702,12 +799,20 @@ export default function SWVisitVerification() {
               </p>
             </div>
           </div>
-          {currentStep === 'questionnaire' && (
-            <Button variant="outline" size="sm" onClick={saveProgress}>
-              <Save className="h-4 w-4 mr-2" />
-              Save Progress
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/sw-portal">
+                <Home className="h-4 w-4 mr-2" />
+                Main Menu
+              </Link>
             </Button>
-          )}
+            {currentStep === 'questionnaire' && (
+              <Button variant="outline" size="sm" onClick={saveProgress}>
+                <Save className="h-4 w-4 mr-2" />
+                Save Progress
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -797,26 +902,65 @@ export default function SWVisitVerification() {
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {selectedRCFE.members.map((member, memberIndex) => (
-                <div
-                  key={member.id || `member-${memberIndex}-${Date.now()}`}
-                  className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
-                  onClick={() => handleMemberSelect(member)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-semibold">{member.name}</h3>
-                      <p className="text-sm text-muted-foreground">{member.room}</p>
-                      {member.lastVisitDate && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Last visit: {new Date(member.lastVisitDate).toLocaleDateString()}
-                        </p>
-                      )}
+              {selectedRCFE.members.map((member, memberIndex) => {
+                const memberKey = member.id || member.name;
+                const draft = memberKey ? draftsByMember[memberKey] : null;
+                return (
+                  <div
+                    key={memberKey || `member-${memberIndex}-${Date.now()}`}
+                    className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                    onClick={() => handleMemberSelect(member)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold">{member.name}</h3>
+                          {draft && (
+                            <Badge variant="secondary">Saved draft</Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground">{member.room}</p>
+                        {member.lastVisitDate && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Last visit: {new Date(member.lastVisitDate).toLocaleDateString()}
+                          </p>
+                        )}
+                        {draft?.savedAt && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Draft saved: {new Date(draft.savedAt).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {draft && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleMemberSelect(member, 'resume');
+                              }}
+                            >
+                              Resume
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleMemberSelect(member, 'new');
+                              }}
+                            >
+                              Start New
+                            </Button>
+                          </>
+                        )}
+                        <ArrowRight className="h-5 w-5 text-gray-400" />
+                      </div>
                     </div>
-                    <ArrowRight className="h-5 w-5 text-gray-400" />
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </CardContent>
           </Card>
         )}
@@ -1393,10 +1537,19 @@ export default function SWVisitVerification() {
                           <p className="text-sm text-muted-foreground">
                             Signed by: {signOffData.rcfeStaffName}
                           </p>
+                          <p className={`text-xs ${signOffData.locationVerified ? 'text-green-600' : 'text-amber-600'}`}>
+                            {signOffData.locationVerified ? 'Location verified' : 'Location not verified'}
+                          </p>
                           <Button 
                             variant="outline" 
                             size="sm"
-                            onClick={() => setSignOffData(prev => ({...prev, signature: '', signedAt: ''}))}
+                            onClick={() => setSignOffData(prev => ({
+                              ...prev,
+                              signature: '',
+                              signedAt: '',
+                              geolocation: null,
+                              locationVerified: false
+                            }))}
                           >
                             Clear Signature
                           </Button>
@@ -1473,7 +1626,8 @@ export default function SWVisitVerification() {
                                     longitude: position.coords.longitude,
                                     accuracy: position.coords.accuracy,
                                     timestamp: position.timestamp
-                                  }
+                                  },
+                                  locationVerified: true
                                 }));
                                 
                                 toast({
@@ -1489,7 +1643,6 @@ export default function SWVisitVerification() {
                                 });
                                 
                                 let errorMessage = "Please enable location services for signature verification";
-                                let showFallback = false;
                                 
                                 if (error?.code === 1) {
                                   errorMessage = "Location access denied. Please allow location permissions and try again.";
@@ -1497,22 +1650,14 @@ export default function SWVisitVerification() {
                                   errorMessage = "Location unavailable. Please check your GPS/WiFi and try again.";
                                 } else if (error?.code === 3) {
                                   errorMessage = "Location request timed out. Please try again.";
-                                } else {
-                                  errorMessage = "Location services unavailable. You can still sign without location verification.";
-                                  showFallback = true;
                                 }
                                 
                                 toast({
                                   title: "Location Error",
-                                  description: errorMessage + (showFallback ? " Click 'Sign Without Location' below." : ""),
+                                  description: errorMessage,
                                   variant: "destructive",
                                   duration: 7000
                                 });
-                                
-                                // For testing/development - allow signing without location if geolocation completely fails
-                                if (showFallback) {
-                                  console.log('🔧 Offering fallback signature option');
-                                }
                               }
                               }}
                               className="w-full"
@@ -1520,30 +1665,6 @@ export default function SWVisitVerification() {
                             >
                               <MapPin className="h-4 w-4 mr-2" />
                               Sign & Verify Location
-                            </Button>
-                            
-                            {/* Fallback option for development/testing */}
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                console.log('🔧 Using fallback signature (no location)');
-                                setSignOffData(prev => ({
-                                  ...prev,
-                                  signature: `${prev.rcfeStaffName} - ${new Date().toLocaleString()} (No Location)`,
-                                  signedAt: new Date().toISOString(),
-                                  geolocation: null
-                                }));
-                                
-                                toast({
-                                  title: "✅ Signature Captured!",
-                                  description: "Electronic signature recorded (location verification skipped)",
-                                  duration: 5000
-                                });
-                              }}
-                              className="w-full text-sm"
-                              disabled={!signOffData.rcfeStaffName.trim()}
-                            >
-                              Sign Without Location (Testing)
                             </Button>
                           </div>
                         </div>
@@ -1573,10 +1694,14 @@ export default function SWVisitVerification() {
                               body: JSON.stringify(signOffSubmission)
                             });
 
-                            if (response.ok) {
+                            const result = await response.json();
+                            if (response.ok && result?.success) {
+                              const locationMessage = result.locationVerified
+                                ? 'Location verified.'
+                                : 'Location not verified (missing geolocation).';
                               toast({
                                 title: "Sign-Off Complete! 🎉",
-                                description: `All ${completedVisits.length} visits have been officially verified and submitted.`
+                                description: `All ${completedVisits.length} visits have been officially verified and submitted. ${locationMessage}`
                               });
                               
                               // Reset everything
@@ -1586,11 +1711,12 @@ export default function SWVisitVerification() {
                                 rcfeStaffTitle: '',
                                 signature: '',
                                 signedAt: '',
-                                geolocation: null
+                                geolocation: null,
+                                locationVerified: false
                               });
                               setCurrentStep('select-rcfe');
                             } else {
-                              throw new Error('Sign-off submission failed');
+                              throw new Error(result?.error || 'Sign-off submission failed');
                             }
                           } catch (error) {
                             toast({
