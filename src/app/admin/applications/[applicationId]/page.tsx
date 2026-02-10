@@ -48,7 +48,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
-import { addDoc, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId } from 'firebase/firestore';
+import { addDoc, collection, doc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Label } from '@/components/ui/label';
@@ -1114,18 +1114,6 @@ function ApplicationDetailPageContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
-  const [adminDebugInfo, setAdminDebugInfo] = useState<{
-    uid?: string;
-    email?: string | null;
-    appUserId?: string | null;
-    claims?: Record<string, any>;
-    rolesAdmin?: boolean;
-    rolesSuperAdmin?: boolean;
-    adminsDoc?: boolean;
-    projectId?: string;
-    storageBucket?: string;
-  } | null>(null);
-
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -1280,45 +1268,6 @@ function ApplicationDetailPageContent() {
       expiryNotifiedAt?: string;
     }>;
   }, [application]);
-
-  const debugMode = searchParams?.get('debug') === '1';
-  const showAdminDebug = debugMode || isAdmin || isSuperAdmin;
-
-  useEffect(() => {
-    if (!showAdminDebug || !firestore || !user?.uid) {
-      setAdminDebugInfo(null);
-      return;
-    }
-    let isActive = true;
-    const loadDebugInfo = async () => {
-      try {
-        const tokenResult = await user.getIdTokenResult();
-        const [rolesAdminDoc, rolesSuperAdminDoc, adminsDoc] = await Promise.all([
-          getDoc(doc(firestore, 'roles_admin', user.uid)),
-          getDoc(doc(firestore, 'roles_super_admin', user.uid)),
-          getDoc(doc(firestore, 'admins', user.uid))
-        ]);
-        if (!isActive) return;
-        setAdminDebugInfo({
-          uid: user.uid,
-          email: user.email,
-          appUserId,
-          claims: tokenResult?.claims as Record<string, any>,
-          rolesAdmin: rolesAdminDoc.exists(),
-          rolesSuperAdmin: rolesSuperAdminDoc.exists(),
-          adminsDoc: adminsDoc.exists(),
-          projectId: firestore?.app?.options?.projectId,
-          storageBucket: storage?.app?.options?.storageBucket
-        });
-      } catch (error) {
-        console.warn('Failed to load admin debug info:', error);
-      }
-    };
-    loadDebugInfo();
-    return () => {
-      isActive = false;
-    };
-  }, [showAdminDebug, firestore, user?.uid, user?.email, appUserId]);
 
   const ispRecords = useMemo(() => {
     return ((application as any)?.ispRecords || []) as Array<{
@@ -3136,28 +3085,6 @@ function ApplicationDetailPageContent() {
                 className="md:col-span-2"
             />
         </div>
-        {showAdminDebug && adminDebugInfo && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Admin Upload Debug</CardTitle>
-              <CardDescription>Token claims and role docs.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2 text-xs">
-              <div><span className="font-medium">UID:</span> {adminDebugInfo.uid || 'n/a'}</div>
-              <div><span className="font-medium">Email:</span> {adminDebugInfo.email || 'n/a'}</div>
-              <div><span className="font-medium">App User ID:</span> {adminDebugInfo.appUserId || 'n/a'}</div>
-              <div><span className="font-medium">roles_admin:</span> {adminDebugInfo.rolesAdmin ? 'yes' : 'no'}</div>
-              <div><span className="font-medium">roles_super_admin:</span> {adminDebugInfo.rolesSuperAdmin ? 'yes' : 'no'}</div>
-              <div><span className="font-medium">admins doc:</span> {adminDebugInfo.adminsDoc ? 'yes' : 'no'}</div>
-              <div><span className="font-medium">projectId:</span> {adminDebugInfo.projectId || 'n/a'}</div>
-              <div><span className="font-medium">storageBucket:</span> {adminDebugInfo.storageBucket || 'n/a'}</div>
-              <div className="pt-1"><span className="font-medium">claims:</span></div>
-              <pre className="whitespace-pre-wrap rounded border bg-muted p-2 text-[10px]">
-{JSON.stringify(adminDebugInfo.claims || {}, null, 2)}
-              </pre>
-            </CardContent>
-          </Card>
-        )}
       </div>
 
       <aside className="lg:col-span-1 min-w-0 space-y-6">
