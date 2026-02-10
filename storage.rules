@@ -4,7 +4,10 @@ service firebase.storage {
   match /b/{bucket}/o {
     // Allow authenticated users to upload to their own user_uploads folder
     match /user_uploads/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null && (
+        request.auth.uid == userId ||
+        exists(/databases/(default)/documents/admins/$(request.auth.uid))
+      );
     }
     
     // Allow authenticated users to upload to shared folders (admin only)

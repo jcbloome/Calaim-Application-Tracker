@@ -48,7 +48,6 @@ import { useAdmin } from '@/hooks/use-admin';
 import { getPriorityRank, isPriorityOrUrgent, normalizePriorityLabel } from '@/lib/notification-utils';
 import { format } from 'date-fns';
 import { useSearchParams } from 'next/navigation';
-import { ToastAction } from '@/components/ui/toast';
 
 interface Member {
   clientId2: string;
@@ -137,8 +136,6 @@ function MemberNotesPageContent() {
   const [healthStatus, setHealthStatus] = useState<any>(null);
   const [showHealthDetails, setShowHealthDetails] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MemberNote | null>(null);
-  const deleteTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const deletedNotesRef = useRef<Map<string, MemberNote>>(new Map());
 
   // Fetch members from Caspio API with search
   const fetchMembers = useCallback(async (search: string = '') => {
@@ -560,10 +557,8 @@ function MemberNotesPageContent() {
       if (!data.success) {
         throw new Error(data.error || 'Failed to delete note');
       }
-      deletedNotesRef.current.delete(note.id);
     } catch (error: any) {
       console.error('Error deleting note:', error);
-      deletedNotesRef.current.delete(note.id);
       setMemberNotes(prev => [note, ...prev]);
       toast({
         title: 'Error',
@@ -574,37 +569,11 @@ function MemberNotesPageContent() {
   };
 
   const requestDeleteNote = (note: MemberNote) => {
-    deletedNotesRef.current.set(note.id, note);
     setMemberNotes(prev => prev.filter(existing => existing.id !== note.id));
-
-    const timer = setTimeout(() => {
-      deleteTimersRef.current.delete(note.id);
-      commitDeleteNote(note);
-    }, 5000);
-    deleteTimersRef.current.set(note.id, timer);
-
+    commitDeleteNote(note);
     toast({
       title: 'Note Deleted',
-      description: 'You can undo this action for a few seconds.',
-      action: (
-        <ToastAction
-          altText="Undo delete"
-          onClick={() => {
-            const existingTimer = deleteTimersRef.current.get(note.id);
-            if (existingTimer) {
-              clearTimeout(existingTimer);
-              deleteTimersRef.current.delete(note.id);
-            }
-            const cached = deletedNotesRef.current.get(note.id);
-            if (cached) {
-              deletedNotesRef.current.delete(note.id);
-              setMemberNotes(prev => [cached, ...prev]);
-            }
-          }}
-        >
-          Undo
-        </ToastAction>
-      )
+      description: 'The note was removed.'
     });
   };
 
@@ -1185,7 +1154,7 @@ function MemberNotesPageContent() {
                                       <AlertDialogHeader>
                                         <AlertDialogTitle>Delete this note?</AlertDialogTitle>
                                         <AlertDialogDescription>
-                                          This removes the note from Caspio and Firestore. You will have a brief chance to undo.
+                                          This removes the note from Caspio and Firestore.
                                         </AlertDialogDescription>
                                       </AlertDialogHeader>
                                       <AlertDialogFooter>

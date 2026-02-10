@@ -551,8 +551,8 @@ export function RealTimeNotifications() {
             Boolean(latestPending?.timestamp) &&
             Date.now() - latestPending.timestamp.getTime() <= recentThresholdMs;
           const forceExpanded = hasNewUrgent || hasNewPriority || isRecent;
-          const shouldShowWebToast = shouldShowWebToastBase || forceExpanded;
-          const shouldPopup = shouldShowWebToast && forceExpanded;
+          const shouldShowWebToast = shouldShowWebToastBase;
+          const shouldPopup = shouldShowWebToastBase && forceExpanded;
 
           if (!canShowNotifications() && !forceExpanded) {
             if (summaryNotificationIdRef.current) {
@@ -573,6 +573,8 @@ export function RealTimeNotifications() {
               author: sanitizeFieldLabel(note.senderName) || undefined,
               memberName: sanitizeFieldLabel(note.memberName) || undefined,
               timestamp: note.timestamp?.toLocaleString?.() || undefined,
+              noteId: note.id,
+              senderId: note.senderId,
               replyUrl: note.id
                 ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}`
                 : undefined
@@ -598,6 +600,8 @@ export function RealTimeNotifications() {
                 recipientName: recipientLabel,
                 memberName: sanitizeFieldLabel(note.memberName) || undefined,
                 timestamp: note.timestamp?.toLocaleString?.() || undefined,
+                noteId: note.id,
+                senderId: note.senderId,
                 replyUrl: note.id
                   ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}`
                   : undefined,

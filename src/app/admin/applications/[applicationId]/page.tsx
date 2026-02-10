@@ -43,6 +43,7 @@ import {
   BellRing,
   Eye,
   EyeOff,
+  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
@@ -200,6 +201,16 @@ const healthNetSteps = [
 const calaimTrackingOptions = [
   'CalAIM Eligible',
   'Not CalAIM Eligible'
+];
+
+const notEligibleReasonOptions = [
+  'Switching Providers by end of Month',
+  'Has SOC',
+  'Not in our contracted CalAIM County',
+  'Might be eligible',
+  'Not with Health Net',
+  'Not with Kaiser',
+  'Other'
 ];
 
 const getAuthorizationTypes = (healthPlan?: string) => {
@@ -477,6 +488,9 @@ function AdminActions({ application }: { application: Application }) {
     const [isUpdatingNotifications, setIsUpdatingNotifications] = useState(false);
     const [isCaspioDialogOpen, setIsCaspioDialogOpen] = useState(false);
     const [caspioMappingPreview, setCaspioMappingPreview] = useState<Record<string, string> | null>(null);
+    const [isOpen, setIsOpen] = useState(false);
+    const [testReminderEmail, setTestReminderEmail] = useState('jcbloome@gmail.com');
+    const [isSendingTestReminder, setIsSendingTestReminder] = useState(false);
     const { toast } = useToast();
     const router = useRouter();
 
@@ -586,6 +600,49 @@ function AdminActions({ application }: { application: Application }) {
             });
         } finally {
             setIsUpdatingNotifications(false);
+        }
+    };
+
+    const sendTestMissingDocsReminder = async () => {
+        if (!testReminderEmail) {
+            toast({ variant: 'destructive', title: 'Error', description: 'Enter a test email address.' });
+            return;
+        }
+        setIsSendingTestReminder(true);
+        try {
+            const envBaseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+            const origin = typeof window !== 'undefined' ? window.location.origin : undefined;
+            const fallbackBaseUrl = origin?.includes('localhost:3001')
+              ? 'http://localhost:3000'
+              : origin;
+            const baseUrl = envBaseUrl || fallbackBaseUrl;
+            const response = await fetch('/api/admin/send-document-reminder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    applicationId: application.id,
+                    userId: application.userId,
+                    overrideEmail: testReminderEmail,
+                    baseUrl
+                })
+            });
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to send test reminder');
+            }
+            toast({
+                title: 'Test Reminder Sent',
+                description: `Email sent to ${testReminderEmail}.`,
+                className: 'bg-green-100 text-green-900 border-green-200'
+            });
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Send Failed',
+                description: error.message || 'Could not send test reminder.'
+            });
+        } finally {
+            setIsSendingTestReminder(false);
         }
     };
 
@@ -755,10 +812,21 @@ function AdminActions({ application }: { application: Application }) {
     return (
         <Dialog>
             <Card>
-                <CardHeader>
-                    <CardTitle>Admin Actions</CardTitle>
-                    <CardDescription>Update status and notify the referrer.</CardDescription>
+                <CardHeader
+                    className="cursor-pointer select-none"
+                    onClick={() => setIsOpen((prev) => !prev)}
+                    role="button"
+                    aria-expanded={isOpen}
+                >
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <CardTitle>Admin Actions</CardTitle>
+                            <CardDescription>Update status and notify the referrer.</CardDescription>
+                        </div>
+                        <ChevronDown className={cn("h-4 w-4 transition-transform", isOpen && "rotate-180")} />
+                    </div>
                 </CardHeader>
+                {isOpen && (
                 <CardContent className="space-y-3">
                     <DialogTrigger asChild>
                         <Button variant="outline" className="w-full">Update Status</Button>
@@ -910,6 +978,34 @@ function AdminActions({ application }: { application: Application }) {
                                 />
                             </div>
                         </div>
+                        <div className="flex flex-col gap-2">
+                            <Label htmlFor="test-reminder-email" className="text-xs text-muted-foreground">
+                                Test reminder email
+                            </Label>
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    id="test-reminder-email"
+                                    type="email"
+                                    value={testReminderEmail}
+                                    onChange={(event) => setTestReminderEmail(event.target.value)}
+                                    placeholder="name@example.com"
+                                />
+                                <Button
+                                    variant="outline"
+                                    onClick={sendTestMissingDocsReminder}
+                                    disabled={isSendingTestReminder}
+                                >
+                                    {isSendingTestReminder ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            Sending...
+                                        </>
+                                    ) : (
+                                        'Send Test'
+                                    )}
+                                </Button>
+                            </div>
+                        </div>
                         
                         {/* Show missing documents when reminders are enabled */}
                         {emailRemindersEnabled && (() => {
@@ -957,6 +1053,7 @@ function AdminActions({ application }: { application: Application }) {
                     />
                     
                 </CardContent>
+                )}
             </Card>
             <DialogContent>
                 <DialogHeader>
@@ -1007,6 +1104,7 @@ function ApplicationDetailPageContent() {
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
   const storage = useStorage();
+  const currentUserId = user?.uid || '';
   const { toast } = useToast();
   
   const applicationId = params.applicationId as string;
@@ -1095,6 +1193,7 @@ function ApplicationDetailPageContent() {
 
   const [isUpdatingProgression, setIsUpdatingProgression] = useState(false);
   const [isUpdatingTracking, setIsUpdatingTracking] = useState(false);
+  const [isSendingEligibilityNote, setIsSendingEligibilityNote] = useState(false);
 
   const docRef = useMemoFirebase(() => {
     if (isUserLoading || !firestore || !applicationId || !appUserId) return null;
@@ -1891,9 +1990,9 @@ function ApplicationDetailPageContent() {
   };
 
   const doUpload = async (files: File[], requirementTitle: string) => {
-      if (!storage || !appUserId || !applicationId) {
-        console.error('Upload prerequisites missing:', { storage: !!storage, appUserId, applicationId });
-        throw new Error('Upload configuration error: Missing storage, user ID, or application ID');
+      if (!storage || !applicationId || !currentUserId) {
+        console.error('Upload prerequisites missing:', { storage: !!storage, applicationId, currentUserId });
+        throw new Error('Upload configuration error: Missing storage, application ID, or user ID');
       }
 
       const file = files[0];
@@ -1924,7 +2023,10 @@ function ApplicationDetailPageContent() {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const standardFileName = buildStandardFileName(requirementTitle, file.name);
       const safeFileName = buildStorageFileName(standardFileName);
-      const storagePath = `user_uploads/${appUserId}/${applicationId}/${requirementTitle}/${timestamp}_${safeFileName}`;
+      const uploadRoot = appUserId
+        ? `user_uploads/${appUserId}`
+        : `documents/applications/${applicationId}`;
+      const storagePath = `${uploadRoot}/${requirementTitle}/${timestamp}_${safeFileName}`;
       const storageRef = ref(storage, storagePath);
 
       console.log('🔄 Starting file upload:', {
@@ -2071,9 +2173,13 @@ function ApplicationDetailPageContent() {
           toast({ title: 'File Removed', description: `${form.fileName} has been removed.` });
       } catch (error) {
           console.error("Error removing file:", error);
-          toast({ variant: 'destructive', title: 'Error', description: 'Could not remove file. It may have already been deleted.' });
-          // If deletion fails, still update the Firestore record to allow re-upload
+          const errorCode = (error as any)?.code;
           await handleFormStatusUpdate([{ name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null }]);
+          if (errorCode === 'storage/unauthorized') {
+            toast({ title: 'File Reset', description: 'Access denied to delete the original file. The card was reset so you can re-upload.' });
+            return;
+          }
+          toast({ variant: 'destructive', title: 'Error', description: 'Could not remove file. It may have already been deleted.' });
       }
   };
 
@@ -2133,6 +2239,8 @@ function ApplicationDetailPageContent() {
     application.pathway as 'SNF Transition' | 'SNF Diversion',
     application.healthPlan
   );
+  const eligibilityRequirementIds = new Set(['eligibility-screenshot', 'declaration-of-eligibility']);
+  const eligibilityRequirements = pathwayRequirements.filter(req => eligibilityRequirementIds.has(req.id));
   const formStatusMap = new Map(application.forms?.map(f => [f.name, f]));
   
   const completedCount = pathwayRequirements.reduce((acc, req) => {
@@ -2332,6 +2440,7 @@ function ApplicationDetailPageContent() {
     calaimNotEligibleHasSoc?: boolean;
     calaimNotEligibleOutOfCounty?: boolean;
     calaimNotEligibleOther?: boolean;
+    calaimNotEligibleReason?: string;
     calaimNotEligibleOtherReason?: string;
   }) => {
     if (!docRef || !application) return;
@@ -2349,6 +2458,50 @@ function ApplicationDetailPageContent() {
       });
     } finally {
       setIsUpdatingTracking(false);
+    }
+  };
+
+  const sendEligibilityNote = async () => {
+    if (!application?.referrerEmail) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Referrer email is not available for this application.' });
+      return;
+    }
+    const note = String((application as any)?.calaimTrackingReason || '').trim();
+    if (!note) {
+      toast({ variant: 'destructive', title: 'Missing Note', description: 'Add a note before sending.' });
+      return;
+    }
+    setIsSendingEligibilityNote(true);
+    try {
+      const response = await fetch('/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: application.referrerEmail,
+          subject: `CalAIM Eligibility Update for ${application.memberFirstName} ${application.memberLastName}`,
+          memberName: application.referrerName || 'there',
+          staffName: 'The Connections Team',
+          message: note,
+          status: (application.status || 'In Progress') as any
+        })
+      });
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to send note');
+      }
+      toast({
+        title: 'Note Sent',
+        description: 'Your eligibility note was sent to the referrer.',
+        className: 'bg-green-100 text-green-900 border-green-200'
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Send Failed',
+        description: error.message || 'Could not send the eligibility note.'
+      });
+    } finally {
+      setIsSendingEligibilityNote(false);
     }
   };
 
@@ -2515,9 +2668,6 @@ function ApplicationDetailPageContent() {
                             ))}
                         </div>
                     )}
-                    <p className="text-xs text-muted-foreground">
-                      Recommended filename: <span className="font-medium">{recommendedFileName}</span>
-                    </p>
                     <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isUploading && "opacity-50 pointer-events-none")}>
                         {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                         <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
@@ -2614,117 +2764,6 @@ function ApplicationDetailPageContent() {
                             {(application as any)?.statusRemindersEnabled === true ? 'Status Updates Active' : 'Status Updates Off'}
                         </span>
                     </div>
-                </div>
-            </div>
-
-            {/* CalAIM Status */}
-            <div className="border-t pt-4">
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium">CalAIM Status</label>
-                        {isUpdatingTracking && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                    </div>
-                    <Select
-                        value={(application as any)?.calaimTrackingStatus || ''}
-                        onValueChange={updateTrackingStatus}
-                        disabled={isUpdatingTracking}
-                    >
-                        <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select CalAIM status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {calaimTrackingOptions.map((option) => (
-                                <SelectItem key={option} value={option}>
-                                    {option}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    {(application as any)?.calaimTrackingStatus === 'Not CalAIM Eligible' && (
-                        <div className="space-y-2">
-                            <Label className="text-sm font-medium">
-                                Reason (select all that apply)
-                            </Label>
-                            <div className="space-y-2">
-                                <div className="flex items-center space-x-2">
-                                    <Checkbox
-                                        id="not-eligible-switching"
-                                        checked={Boolean((application as any)?.calaimNotEligibleSwitchingProviders)}
-                                        onCheckedChange={(checked) =>
-                                            updateNotEligibleFlags({ calaimNotEligibleSwitchingProviders: Boolean(checked) })
-                                        }
-                                        disabled={isUpdatingTracking}
-                                    />
-                                    <Label htmlFor="not-eligible-switching" className="text-sm font-medium">
-                                        Switching Providers by end of Month
-                                    </Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <Checkbox
-                                        id="not-eligible-soc"
-                                        checked={Boolean((application as any)?.calaimNotEligibleHasSoc)}
-                                        onCheckedChange={(checked) =>
-                                            updateNotEligibleFlags({ calaimNotEligibleHasSoc: Boolean(checked) })
-                                        }
-                                        disabled={isUpdatingTracking}
-                                    />
-                                    <Label htmlFor="not-eligible-soc" className="text-sm font-medium">
-                                        Has SOC
-                                    </Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <Checkbox
-                                        id="not-eligible-county"
-                                        checked={Boolean((application as any)?.calaimNotEligibleOutOfCounty)}
-                                        onCheckedChange={(checked) =>
-                                            updateNotEligibleFlags({ calaimNotEligibleOutOfCounty: Boolean(checked) })
-                                        }
-                                        disabled={isUpdatingTracking}
-                                    />
-                                    <Label htmlFor="not-eligible-county" className="text-sm font-medium">
-                                        Not in our contracted CalAIM County
-                                    </Label>
-                                </div>
-                                <div className="flex items-start space-x-2">
-                                    <Checkbox
-                                        id="not-eligible-other"
-                                        checked={Boolean((application as any)?.calaimNotEligibleOther)}
-                                        onCheckedChange={(checked) =>
-                                            updateNotEligibleFlags({
-                                                calaimNotEligibleOther: Boolean(checked),
-                                                calaimNotEligibleOtherReason: Boolean(checked)
-                                                    ? (application as any)?.calaimNotEligibleOtherReason || ''
-                                                    : ''
-                                            })
-                                        }
-                                        disabled={isUpdatingTracking}
-                                    />
-                                    <div className="flex-1 space-y-2">
-                                        <Label htmlFor="not-eligible-other" className="text-sm font-medium">
-                                            Other
-                                        </Label>
-                                        {(application as any)?.calaimNotEligibleOther && (
-                                            <Textarea
-                                                id="not-eligible-other-reason"
-                                                rows={2}
-                                                placeholder="Describe the reason..."
-                                                value={(application as any)?.calaimNotEligibleOtherReason || ''}
-                                                onChange={(event) => {
-                                                    const nextValue = event.target.value;
-                                                    setApplication(prev => prev ? { ...prev, calaimNotEligibleOtherReason: nextValue } : null);
-                                                }}
-                                                onBlur={(event) =>
-                                                    updateNotEligibleFlags({ calaimNotEligibleOtherReason: event.target.value })
-                                                }
-                                                disabled={isUpdatingTracking}
-                                            />
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
                 </div>
             </div>
 
@@ -2901,7 +2940,7 @@ function ApplicationDetailPageContent() {
         </Card>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {pathwayRequirements.map((req) => {
+            {pathwayRequirements.filter(req => !eligibilityRequirementIds.has(req.id)).map((req) => {
                 const formInfo = formStatusMap.get(req.title);
                 const status = formInfo?.status || 'Pending';
                 const isSummary = req.title === 'CS Member Summary' || req.title === 'CS Summary';
@@ -2915,10 +2954,22 @@ function ApplicationDetailPageContent() {
                         <CardHeader className="pb-4">
                             <div className="flex justify-between items-start gap-4">
                                 <CardTitle className="text-lg">{req.title}</CardTitle>
-                                {needsReview && (
-                                  <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-1">
-                                    <BellRing className="h-3 w-3" />
-                                    Needs review
+                                {status === 'Completed' && (
+                                  <div className="flex items-center">
+                                    <Checkbox
+                                      id={`reviewed-${req.id}`}
+                                      checked={isReviewed}
+                                      onCheckedChange={(checked) => {
+                                        if (isSummary) {
+                                          handleApplicationReviewed(Boolean(checked));
+                                        } else {
+                                          handleFormReviewed(req.title, Boolean(checked));
+                                        }
+                                      }}
+                                    />
+                                    <Label htmlFor={`reviewed-${req.id}`} className="sr-only">
+                                      Reviewed
+                                    </Label>
                                   </div>
                                 )}
                             </div>
@@ -2927,24 +2978,6 @@ function ApplicationDetailPageContent() {
                         <CardContent className="flex flex-col flex-grow justify-end gap-4">
                             <StatusIndicator status={status} />
                             {getFormAction(req)}
-                            {status === 'Completed' && (
-                              <div className="flex items-center gap-2">
-                                <Checkbox
-                                  id={`reviewed-${req.id}`}
-                                  checked={isReviewed}
-                                  onCheckedChange={(checked) => {
-                                    if (isSummary) {
-                                      handleApplicationReviewed(Boolean(checked));
-                                    } else {
-                                      handleFormReviewed(req.title, Boolean(checked));
-                                    }
-                                  }}
-                                />
-                                <Label htmlFor={`reviewed-${req.id}`} className="text-xs text-muted-foreground">
-                                  Reviewed
-                                </Label>
-                              </div>
-                            )}
                             {status === 'Pending' && (
                                 <Button
                                     variant="outline"
@@ -3036,6 +3069,148 @@ function ApplicationDetailPageContent() {
       </div>
 
       <aside className="lg:col-span-1 space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5" />
+              Eligibility Check
+            </CardTitle>
+            <CardDescription>
+              Track CalAIM eligibility status and supporting uploads.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">CalAIM Status</label>
+                {isUpdatingTracking && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              </div>
+              <Select
+                value={(application as any)?.calaimTrackingStatus || ''}
+                onValueChange={updateTrackingStatus}
+                disabled={isUpdatingTracking}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select CalAIM status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {calaimTrackingOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {(application as any)?.calaimTrackingStatus === 'Not CalAIM Eligible' && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    Reason
+                  </Label>
+                  <Select
+                    value={(application as any)?.calaimNotEligibleReason || ''}
+                    onValueChange={(value) => {
+                      const nextReason = value || '';
+                      const nextFlags = {
+                        calaimNotEligibleSwitchingProviders: nextReason === 'Switching Providers by end of Month',
+                        calaimNotEligibleHasSoc: nextReason === 'Has SOC',
+                        calaimNotEligibleOutOfCounty: nextReason === 'Not in our contracted CalAIM County',
+                        calaimNotEligibleOther: nextReason === 'Other',
+                        calaimNotEligibleReason: nextReason,
+                        calaimNotEligibleOtherReason: nextReason === 'Other'
+                          ? (application as any)?.calaimNotEligibleOtherReason || ''
+                          : ''
+                      };
+                      setApplication(prev => prev ? { ...prev, ...nextFlags } : null);
+                      updateNotEligibleFlags(nextFlags);
+                    }}
+                    disabled={isUpdatingTracking}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select a reason" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {notEligibleReasonOptions.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {(application as any)?.calaimNotEligibleReason === 'Other' && (
+                    <Textarea
+                      id="not-eligible-other-reason"
+                      rows={2}
+                      placeholder="Describe the reason..."
+                      value={(application as any)?.calaimNotEligibleOtherReason || ''}
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setApplication(prev => prev ? { ...prev, calaimNotEligibleOtherReason: nextValue } : null);
+                      }}
+                      onBlur={(event) =>
+                        updateNotEligibleFlags({ calaimNotEligibleOtherReason: event.target.value })
+                      }
+                      disabled={isUpdatingTracking}
+                    />
+                  )}
+                  <div className="space-y-2 pt-2">
+                    <Label className="text-sm font-medium">Note to Member (optional)</Label>
+                    <Textarea
+                      rows={3}
+                      placeholder="Add a message that explains the eligibility outcome..."
+                      value={(application as any)?.calaimTrackingReason || ''}
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setApplication(prev => prev ? { ...prev, calaimTrackingReason: nextValue } : null);
+                      }}
+                      onBlur={(event) => updateTrackingReason(event.target.value)}
+                      disabled={isUpdatingTracking}
+                    />
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={sendEligibilityNote}
+                      disabled={isSendingEligibilityNote}
+                    >
+                      {isSendingEligibilityNote ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Sending Note...
+                        </>
+                      ) : (
+                        'Send Note to Referrer'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {eligibilityRequirements.length > 0 && (
+              <div className="space-y-3 border-t pt-4">
+                <Label className="text-sm font-medium">Eligibility Uploads</Label>
+                <div className="space-y-3">
+                  {eligibilityRequirements.map((req) => {
+                    const formInfo = formStatusMap.get(req.title);
+                    const status = formInfo?.status || 'Pending';
+                    return (
+                      <div key={req.id} className="rounded-md border p-3 space-y-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-sm font-medium">{req.title}</div>
+                            <StatusIndicator status={status} />
+                          </div>
+                          <p className="text-xs text-muted-foreground">{req.description}</p>
+                        </div>
+                        {getFormAction(req)}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
         <AdminActions application={application} />
         {(application as any)?.client_ID2 ? (
           <NoteTracker 

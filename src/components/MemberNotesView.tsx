@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,7 +39,6 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
-import { ToastAction } from '@/components/ui/toast';
 import { normalizePriorityLabel } from '@/lib/notification-utils';
 
 interface MemberNote {
@@ -90,8 +89,6 @@ export default function MemberNotesView({ memberId, memberName, onClose }: Membe
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MemberNote | null>(null);
-  const deleteTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const deletedNotesRef = useRef<Map<string, MemberNote>>(new Map());
   
   const { toast } = useToast();
   const { user } = useAdmin();
@@ -226,10 +223,8 @@ export default function MemberNotesView({ memberId, memberName, onClose }: Membe
       if (!data.success) {
         throw new Error(data.error || 'Failed to delete note');
       }
-      deletedNotesRef.current.delete(note.id);
     } catch (error: any) {
       console.error('Error deleting note:', error);
-      deletedNotesRef.current.delete(note.id);
       setNotes(prev => [note, ...prev]);
       toast({
         variant: 'destructive',
@@ -240,36 +235,11 @@ export default function MemberNotesView({ memberId, memberName, onClose }: Membe
   };
 
   const requestDeleteNote = (note: MemberNote) => {
-    deletedNotesRef.current.set(note.id, note);
     setNotes(prev => prev.filter(item => item.id !== note.id));
-    const timer = setTimeout(() => {
-      deleteTimersRef.current.delete(note.id);
-      commitDeleteNote(note);
-    }, 5000);
-    deleteTimersRef.current.set(note.id, timer);
-
+    commitDeleteNote(note);
     toast({
       title: 'Note Deleted',
-      description: 'You can undo this action for a few seconds.',
-      action: (
-        <ToastAction
-          altText="Undo delete"
-          onClick={() => {
-            const existingTimer = deleteTimersRef.current.get(note.id);
-            if (existingTimer) {
-              clearTimeout(existingTimer);
-              deleteTimersRef.current.delete(note.id);
-            }
-            const cached = deletedNotesRef.current.get(note.id);
-            if (cached) {
-              deletedNotesRef.current.delete(note.id);
-              setNotes(prev => [cached, ...prev]);
-            }
-          }}
-        >
-          Undo
-        </ToastAction>
-      )
+      description: 'The note was removed.'
     });
   };
 
@@ -432,7 +402,7 @@ export default function MemberNotesView({ memberId, memberName, onClose }: Membe
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Delete this note?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This removes the note from Caspio and Firestore. You will have a brief chance to undo.
+                                  This removes the note from Caspio and Firestore.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>

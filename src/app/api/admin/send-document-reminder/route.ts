@@ -35,7 +35,7 @@ const getMissingItemsFromForms = (application: any): string[] => {
 
 export async function POST(request: NextRequest) {
   try {
-    const { applicationId, userId } = await request.json();
+    const { applicationId, userId, overrideEmail, overrideReferrerName, baseUrl } = await request.json();
     
     if (!applicationId) {
       return NextResponse.json(
@@ -84,10 +84,12 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    const referrerName = `${appData?.referrerFirstName || ''} ${appData?.referrerLastName || ''}`.trim() || 'there';
+    const fallbackReferrerName = `${appData?.referrerFirstName || ''} ${appData?.referrerLastName || ''}`.trim() || 'there';
     const memberName = `${appData?.memberFirstName || ''} ${appData?.memberLastName || ''}`.trim();
     
-    if (!appData?.referrerEmail) {
+    const recipientEmail = overrideEmail || appData?.referrerEmail;
+    const referrerName = overrideReferrerName || fallbackReferrerName;
+    if (!recipientEmail) {
       return NextResponse.json(
         { success: false, error: 'Referrer email is missing for this application' },
         { status: 400 }
@@ -95,12 +97,13 @@ export async function POST(request: NextRequest) {
     }
     
     await sendReminderEmail({
-      to: appData.referrerEmail,
+      to: recipientEmail,
       subject: `Missing Documents Reminder: ${memberName || 'CalAIM Application'}`,
       referrerName,
       memberName: memberName || 'CalAIM Member',
       applicationId,
-      incompleteItems: missingItems
+      incompleteItems: missingItems,
+      baseUrl: baseUrl || process.env.NEXT_PUBLIC_BASE_URL
     });
     
     await docRef.update({
@@ -112,7 +115,8 @@ export async function POST(request: NextRequest) {
       success: true,
       message: 'Document reminder sent successfully',
       applicationId,
-      missingItems
+      missingItems,
+      testRecipient: overrideEmail || null
     });
     
   } catch (error: any) {

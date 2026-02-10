@@ -38,6 +38,7 @@ interface ReminderPayload {
     memberName: string;
     applicationId: string;
     incompleteItems: string[];
+    baseUrl?: string;
 }
 
 interface StaffAssignmentPayload {
@@ -133,7 +134,7 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
 };
 
 export const sendReminderEmail = async (payload: ReminderPayload) => {
-    const { to, subject, referrerName, memberName, applicationId, incompleteItems } = payload;
+    const { to, subject, referrerName, memberName, applicationId, incompleteItems, baseUrl } = payload;
 
     if (!process.env.RESEND_API_KEY) {
         throw new Error('Resend API key is not configured.');
@@ -145,6 +146,7 @@ export const sendReminderEmail = async (payload: ReminderPayload) => {
             memberName,
             applicationId,
             incompleteItems,
+            baseUrl,
         }));
 
         const { data, error } = await resend.emails.send({

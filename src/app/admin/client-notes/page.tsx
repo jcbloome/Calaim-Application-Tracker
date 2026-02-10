@@ -24,7 +24,6 @@ import { useAdmin } from '@/hooks/use-admin';
 import { Search, MessageSquare, Bell, Calendar, User, Clock, Filter, RefreshCw, Trash2, CheckCircle2, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useSearchParams } from 'next/navigation';
-import { ToastAction } from '@/components/ui/toast';
 
 // Types
 interface ClientNote {
@@ -93,8 +92,6 @@ function ClientNotesContent() {
   });
   const [createStatus, setCreateStatus] = useState<{ caspio: boolean; firestore: boolean } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClientNote | null>(null);
-  const deleteTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const deletedNotesRef = useRef<Map<string, ClientNote>>(new Map());
 
   // Search for clients by last name
   const searchClientsByLastName = async (lastName: string) => {
@@ -258,10 +255,8 @@ function ClientNotesContent() {
       if (!data.success) {
         throw new Error(data.error || 'Failed to delete note');
       }
-      deletedNotesRef.current.delete(note.id);
     } catch (error: any) {
       console.error('Error deleting note:', error);
-      deletedNotesRef.current.delete(note.id);
       setNotesData(prev => {
         if (!prev) return prev;
         const restored = [note, ...prev.notes];
@@ -277,46 +272,14 @@ function ClientNotesContent() {
   };
 
   const requestDeleteNote = (note: ClientNote) => {
-    const pendingId = note.id;
-    deletedNotesRef.current.set(pendingId, note);
     setNotesData(prev => {
       if (!prev) return prev;
       return { ...prev, notes: prev.notes.filter(existing => existing.id !== note.id) };
     });
-
-    const timer = setTimeout(() => {
-      deleteTimersRef.current.delete(pendingId);
-      commitDeleteNote(note);
-    }, 5000);
-    deleteTimersRef.current.set(pendingId, timer);
-
+    commitDeleteNote(note);
     toast({
       title: "Note Deleted",
-      description: "You can undo this action for a few seconds.",
-      action: (
-        <ToastAction
-          altText="Undo delete"
-          onClick={() => {
-            const existingTimer = deleteTimersRef.current.get(pendingId);
-            if (existingTimer) {
-              clearTimeout(existingTimer);
-              deleteTimersRef.current.delete(pendingId);
-            }
-            const cached = deletedNotesRef.current.get(pendingId);
-            if (cached) {
-              deletedNotesRef.current.delete(pendingId);
-              setNotesData(prev => {
-                if (!prev) return prev;
-                const restored = [cached, ...prev.notes];
-                restored.sort((a, b) => new Date(b.timeStamp).getTime() - new Date(a.timeStamp).getTime());
-                return { ...prev, notes: restored };
-              });
-            }
-          }}
-        >
-          Undo
-        </ToastAction>
-      )
+      description: "The note was removed."
     });
   };
 
@@ -912,7 +875,7 @@ function ClientNotesContent() {
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>Delete this note?</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    This removes the note from Caspio and Firestore. You will have a brief chance to undo.
+                                    This removes the note from Caspio and Firestore.
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>

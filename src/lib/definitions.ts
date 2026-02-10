@@ -121,6 +121,7 @@ export type Application = {
   calaimNotEligibleHasSoc?: boolean;
   calaimNotEligibleOutOfCounty?: boolean;
   calaimNotEligibleOther?: boolean;
+  calaimNotEligibleReason?: string;
   calaimNotEligibleOtherReason?: string;
 };
 

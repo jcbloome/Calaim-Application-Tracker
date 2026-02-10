@@ -276,12 +276,12 @@ const renderNotificationPill = () => {
             user-select: none;
           }
           .pill {
-            margin: 6px;
-            padding: 8px 10px;
-            border-radius: 12px;
+            margin: 4px;
+            padding: 6px 8px;
+            border-radius: 10px;
             background: #ffffff;
             border: 1px solid #e5e7eb;
-            box-shadow: 0 16px 30px rgba(0, 0, 0, 0.18);
+            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
           }
           .minimized {
             display: flex;
@@ -290,29 +290,29 @@ const renderNotificationPill = () => {
             cursor: pointer;
           }
           .minimized .label {
-            font-size: 10px;
+            font-size: 9px;
             color: #1f2937;
             font-weight: 600;
           }
           .minimized .count {
-            font-size: 10px;
+            font-size: 9px;
             color: #2563eb;
             font-weight: 600;
           }
           .title {
             font-weight: 700;
-            font-size: 12px;
+            font-size: 11px;
             color: #0f172a;
             margin-bottom: 4px;
           }
           .body {
-            font-size: 10px;
+            font-size: 9px;
             color: #334155;
             line-height: 1.35;
           }
           .meta {
             margin-top: 4px;
-            font-size: 9px;
+            font-size: 8px;
             color: #64748b;
           }
           .meta.meta-labels {
@@ -328,12 +328,12 @@ const renderNotificationPill = () => {
           }
           .actions {
             display: flex;
-            gap: 6px;
+            gap: 4px;
             margin-top: 6px;
           }
           .btn {
-            font-size: 9px;
-            padding: 4px 6px;
+            font-size: 8px;
+            padding: 3px 6px;
             border-radius: 8px;
             border: 1px solid #e2e8f0;
             background: #f8fafc;
@@ -375,14 +375,14 @@ const renderNotificationPill = () => {
                  ${indexLabel ? `<div class="meta">${indexLabel}</div>` : ''}
                  <div class="meta">${countLabel}</div>
                  <div class="actions">
-                   ${safeReply ? `<button class="btn" id="reply">Reply</button>` : ''}
+                   ${safeReply ? `<button class="btn" id="reply">Quick Reply</button>` : ''}
                    ${pillNotes.length > 1 ? `<button class="btn" id="prev">Prev</button>` : ''}
                    ${pillNotes.length > 1 ? `<button class="btn" id="next">Next</button>` : ''}
                    <button class="btn primary" id="open">Go to Notes</button>
                    <button class="btn" id="closeBtn">Minimize</button>
                  </div>
                  ${safeReply ? `<div class="actions" style="margin-top:6px;">
-                    <input id="replyInput" placeholder="Quick reply..." style="flex:1;font-size:10px;padding:4px 6px;border-radius:8px;border:1px solid #e2e8f0;" />
+                    <input id="replyInput" placeholder="Quick reply..." style="flex:1;font-size:9px;padding:3px 6px;border-radius:8px;border:1px solid #e2e8f0;" />
                     <button class="btn primary" id="sendReply">Send</button>
                   </div>` : ''}`
               : `<div class="label">Priority notes pending</div>
@@ -470,12 +470,27 @@ const renderNotificationPill = () => {
           if (reply) {
             reply.addEventListener('click', (event) => {
               event.stopPropagation();
-              window.desktopNotificationPill?.open?.("${safeReply}");
+              const input = document.getElementById('replyInput');
+              if (input) {
+                input.focus();
+                input.select?.();
+              }
             });
           }
           const replyInput = document.getElementById('replyInput');
           const sendReply = document.getElementById('sendReply');
           if (sendReply && replyInput) {
+            replyInput.addEventListener('click', (event) => {
+              event.stopPropagation();
+            });
+            replyInput.addEventListener('keydown', (event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                sendReply.click();
+              } else {
+                event.stopPropagation();
+              }
+            });
             sendReply.addEventListener('click', (event) => {
               event.stopPropagation();
               const message = replyInput.value.trim();
@@ -503,7 +518,7 @@ const renderNotificationPill = () => {
     </html>
   `;
 
-  notificationWindow.setSize(pillMode === 'expanded' ? 320 : 260, pillMode === 'expanded' ? 180 : 48, false);
+  notificationWindow.setSize(pillMode === 'expanded' ? 300 : 220, pillMode === 'expanded' ? 160 : 40, false);
   positionNotificationWindow();
   notificationWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => undefined);
   notificationWindow.showInactive();
@@ -536,12 +551,15 @@ const showMinimizedPill = () => {
 const createTray = () => {
   const packagedIcon = path.join(app.getAppPath(), 'assets', 'tray.ico');
   const resourcesIcon = path.join(process.resourcesPath, 'assets', 'tray.ico');
-  const devIcon = path.join(__dirname, 'assets', 'tray.ico');
+  const distIcon = path.join(__dirname, 'assets', 'tray.ico');
+  const sourceIcon = path.join(__dirname, '..', 'assets', 'tray.ico');
   const iconPath = fs.existsSync(packagedIcon)
     ? packagedIcon
     : fs.existsSync(resourcesIcon)
       ? resourcesIcon
-      : devIcon;
+      : fs.existsSync(distIcon)
+        ? distIcon
+        : sourceIcon;
   tray = new Tray(iconPath);
   tray.setToolTip('Connect CalAIM Desktop');
 

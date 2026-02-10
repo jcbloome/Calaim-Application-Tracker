@@ -13,7 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw, CheckCircle2, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useState, useEffect, Suspense, useRef } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
@@ -32,7 +32,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger
 } from '@/components/ui/alert-dialog';
-import { ToastAction } from '@/components/ui/toast';
 
 interface StaffNotification {
   id: string;
@@ -102,8 +101,6 @@ function MyNotesContent() {
   const [suppressWebWhenDesktopActive, setSuppressWebWhenDesktopActive] = useState(false);
   const [webAppNotificationsEnabled, setWebAppNotificationsEnabled] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<StaffNotification | null>(null);
-  const deleteTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const deletedNotesRef = useRef<Map<string, StaffNotification>>(new Map());
 
   useEffect(() => {
     let isMounted = true;
@@ -472,10 +469,8 @@ function MyNotesContent() {
         actorName: user?.displayName || user?.email || 'Staff',
         actorEmail: user?.email || ''
       });
-      deletedNotesRef.current.delete(notification.id);
     } catch (error) {
       console.error('❌ Failed to delete notification:', error);
-      deletedNotesRef.current.delete(notification.id);
       setNotifications(prev => [notification, ...prev]);
       toast({
         title: "Error",
@@ -486,36 +481,11 @@ function MyNotesContent() {
   };
 
   const requestDeleteNotification = (notification: StaffNotification) => {
-    deletedNotesRef.current.set(notification.id, notification);
     setNotifications(prev => prev.filter(item => item.id !== notification.id));
-    const timer = setTimeout(() => {
-      deleteTimersRef.current.delete(notification.id);
-      commitDeleteNotification(notification);
-    }, 5000);
-    deleteTimersRef.current.set(notification.id, timer);
-
+    commitDeleteNotification(notification);
     toast({
       title: "Note Deleted",
-      description: "You can undo this action for a few seconds.",
-      action: (
-        <ToastAction
-          altText="Undo delete"
-          onClick={() => {
-            const existingTimer = deleteTimersRef.current.get(notification.id);
-            if (existingTimer) {
-              clearTimeout(existingTimer);
-              deleteTimersRef.current.delete(notification.id);
-            }
-            const cached = deletedNotesRef.current.get(notification.id);
-            if (cached) {
-              deletedNotesRef.current.delete(notification.id);
-              setNotifications(prev => [cached, ...prev]);
-            }
-          }}
-        >
-          Undo
-        </ToastAction>
-      )
+      description: "The note was removed from your notifications."
     });
   };
 
@@ -864,9 +834,6 @@ function MyNotesContent() {
                 Download Desktop Installer{installerMeta.version ? ` (${installerMeta.version})` : ''}
               </a>
             </Button>
-            <span className="text-xs text-muted-foreground">
-              Open from Downloads after it finishes. If blocked: More info → Run anyway.
-            </span>
             {installerMeta.sha256 && (
               <span className="text-[10px] text-muted-foreground">
                 SHA256: {installerMeta.sha256.slice(0, 10)}…
@@ -1126,7 +1093,7 @@ function MyNotesContent() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Delete this note?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This removes the note from your notifications. You will have a brief chance to undo.
+                                  This removes the note from your notifications.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>

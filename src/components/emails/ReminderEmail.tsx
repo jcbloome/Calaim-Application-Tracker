@@ -6,6 +6,7 @@ interface ReminderEmailProps {
   memberName: string;
   applicationId: string;
   incompleteItems: string[];
+  baseUrl?: string;
 }
 
 const container = {
@@ -78,7 +79,14 @@ const ReminderEmail: React.FC<Readonly<ReminderEmailProps>> = ({
   memberName,
   applicationId,
   incompleteItems,
-}) => (
+  baseUrl,
+}) => {
+  const fallbackBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://calaim-pathfinder.web.app';
+  const resolvedBaseUrl = baseUrl || fallbackBaseUrl;
+  const returnPath = `/pathway?applicationId=${applicationId}`;
+  const continueUrl = `${resolvedBaseUrl}/login?redirect=${encodeURIComponent(returnPath)}`;
+
+  return (
   <div style={container}>
     <div style={card}>
       <h1 style={heading}>Friendly Reminder for Your CalAIM Application</h1>
@@ -99,7 +107,7 @@ const ReminderEmail: React.FC<Readonly<ReminderEmailProps>> = ({
       <p style={paragraph}>
         Please log in to your dashboard to complete these items and move the application forward.
       </p>
-       <a href={`https://calaim-pathfinder.web.app/pathway?applicationId=${applicationId}`} style={button}>
+       <a href={continueUrl} style={button}>
         Continue Application
       </a>
       <p style={footer}>
@@ -109,6 +117,7 @@ const ReminderEmail: React.FC<Readonly<ReminderEmailProps>> = ({
       </p>
     </div>
   </div>
-);
+  );
+};
 
 export default ReminderEmail;

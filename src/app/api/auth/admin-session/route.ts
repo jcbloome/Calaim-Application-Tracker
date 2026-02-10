@@ -44,6 +44,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
+    try {
+      await adminDb.collection('admins').doc(uid).set({
+        email,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+
+      const userDocRef = adminDb.collection('users').doc(uid);
+      const userSnap = await userDocRef.get();
+      const displayName = decoded.name || email || 'Admin User';
+      const userData: Record<string, any> = {
+        email,
+        displayName,
+        role: isSuperAdmin ? 'Super Admin' : 'Admin',
+        isStaff: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+      if (!userSnap.exists) {
+        userData.createdAt = admin.firestore.FieldValue.serverTimestamp();
+      }
+      await userDocRef.set(userData, { merge: true });
+    } catch (error) {
+      console.error('Failed to sync admin UID:', error);
+    }
+
     const response = NextResponse.json({ success: true });
     response.cookies.set('calaim_admin_session', '1', {
       httpOnly: true,

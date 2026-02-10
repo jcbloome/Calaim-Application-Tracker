@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,7 +42,6 @@ import { useAdmin } from '@/hooks/use-admin';
 import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
 import { format } from 'date-fns';
 import { logSystemNoteAction } from '@/lib/system-note-log';
-import { ToastAction } from '@/components/ui/toast';
 
 interface StaffNote {
   id: string;
@@ -83,8 +82,6 @@ export default function StaffNotesPage() {
   });
   const [createStatus, setCreateStatus] = useState<{ caspio: boolean; firestore: boolean } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StaffNote | null>(null);
-  const deleteTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const deletedNotesRef = useRef<Map<string, StaffNote>>(new Map());
   const [filters, setFilters] = useState({
     priority: 'all',
     type: 'all',
@@ -293,42 +290,15 @@ export default function StaffNotesPage() {
       actorName: user?.displayName || user?.email || 'Staff',
       actorEmail: user?.email || ''
     });
-    deletedNotesRef.current.delete(note.id);
   };
 
   const requestDeleteNote = (note: StaffNote) => {
-    deletedNotesRef.current.set(note.id, note);
     setAssignedNotes(prev => prev.filter(item => item.id !== note.id));
     setAllNotes(prev => prev.filter(item => item.id !== note.id));
-    const timer = setTimeout(() => {
-      deleteTimersRef.current.delete(note.id);
-      commitDeleteNote(note).catch(() => undefined);
-    }, 5000);
-    deleteTimersRef.current.set(note.id, timer);
-
+    commitDeleteNote(note).catch(() => undefined);
     toast({
       title: 'Note Deleted',
-      description: 'You can undo this action for a few seconds.',
-      action: (
-        <ToastAction
-          altText="Undo delete"
-          onClick={() => {
-            const existingTimer = deleteTimersRef.current.get(note.id);
-            if (existingTimer) {
-              clearTimeout(existingTimer);
-              deleteTimersRef.current.delete(note.id);
-            }
-            const cached = deletedNotesRef.current.get(note.id);
-            if (cached) {
-              deletedNotesRef.current.delete(note.id);
-              setAssignedNotes(prev => (cached.assignedTo === user?.uid ? [cached, ...prev] : prev));
-              setAllNotes(prev => [cached, ...prev]);
-            }
-          }}
-        >
-          Undo
-        </ToastAction>
-      )
+      description: 'The note was removed.'
     });
   };
 
@@ -758,7 +728,7 @@ export default function StaffNotesPage() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Delete this note?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  You will have a brief chance to undo this deletion.
+                                  This removes the note from your list.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -894,7 +864,7 @@ export default function StaffNotesPage() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Delete this note?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  You will have a brief chance to undo this deletion.
+                                  This removes the note from your list.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>

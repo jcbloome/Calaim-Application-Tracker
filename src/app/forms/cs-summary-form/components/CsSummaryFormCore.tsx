@@ -368,10 +368,17 @@ function CsSummaryFormComponent() {
     const normalizedMrn = data.memberMrn?.trim();
     if (!normalizedMrn) return false;
 
-    const [userAppsSnap, adminAppsSnap] = await Promise.all([
-      getDocs(query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))),
-      getDocs(query(collection(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))),
-    ]);
+    let userAppsSnap;
+    let adminAppsSnap;
+    try {
+      [userAppsSnap, adminAppsSnap] = await Promise.all([
+        getDocs(query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))),
+        getDocs(query(collection(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))),
+      ]);
+    } catch (error: any) {
+      console.warn('Duplicate check skipped:', error);
+      return false;
+    }
 
     const currentPath = docRef?.path;
     const allDocs = [...userAppsSnap.docs, ...adminAppsSnap.docs];
