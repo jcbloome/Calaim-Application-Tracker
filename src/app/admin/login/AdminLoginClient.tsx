@@ -92,6 +92,9 @@ export default function AdminLoginClient() {
         return;
       }
 
+      // Force refresh to pick up custom claims (admin)
+      await userCredential.user.getIdToken(true);
+
       await trackLogin(firestore, userCredential.user, 'Admin');
 
       toast({

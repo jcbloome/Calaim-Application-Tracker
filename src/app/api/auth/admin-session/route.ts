@@ -22,13 +22,15 @@ export async function POST(request: NextRequest) {
     }
 
     let isAdmin = isHardcodedAdminEmail(email);
+    let isSuperAdmin = false;
 
     if (!isAdmin) {
       const [adminDoc, superAdminDoc] = await Promise.all([
         adminDb.collection('roles_admin').doc(uid).get(),
         adminDb.collection('roles_super_admin').doc(uid).get()
       ]);
-      isAdmin = adminDoc.exists || superAdminDoc.exists;
+      isSuperAdmin = superAdminDoc.exists;
+      isAdmin = adminDoc.exists || isSuperAdmin;
     }
 
     // Backward-compat: some roles were stored by email instead of UID.
@@ -37,7 +39,8 @@ export async function POST(request: NextRequest) {
         adminDb.collection('roles_admin').doc(email).get(),
         adminDb.collection('roles_super_admin').doc(email).get()
       ]);
-      isAdmin = emailAdminDoc.exists || emailSuperAdminDoc.exists;
+      isSuperAdmin = emailSuperAdminDoc.exists;
+      isAdmin = emailAdminDoc.exists || isSuperAdmin;
     }
 
     if (!isAdmin) {
@@ -45,6 +48,10 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+      await admin.auth().setCustomUserClaims(uid, {
+        admin: true,
+        superAdmin: Boolean(isSuperAdmin)
+      });
       await adminDb.collection('admins').doc(uid).set({
         email,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()

@@ -29,7 +29,7 @@ export default function RootLayout({
         <meta name="theme-color" content="#000000" />
         <link rel="icon" href="/favicon.ico?v=2" />
       </head>
-      <body className="min-h-screen bg-background font-sans antialiased">
+      <body className="min-h-screen bg-background font-sans antialiased overflow-x-hidden">
         <FirebaseClientProvider>
           <NotificationProvider>
             <SessionIsolationGate />

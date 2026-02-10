@@ -651,6 +651,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [authGraceExpired, setAuthGraceExpired] = useState(false);
   const [hasAdminSessionCookie, setHasAdminSessionCookie] = useState(false);
+  const claimsSyncRef = useRef(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; open: boolean }>({
     x: 0,
     y: 0,
@@ -688,6 +689,33 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     if (typeof document === 'undefined') return;
     setHasAdminSessionCookie(document.cookie.includes('calaim_admin_session='));
   }, [pathname]);
+
+  useEffect(() => {
+    if (!user || !isAdmin || isLoginPage) return;
+    if (claimsSyncRef.current) return;
+    claimsSyncRef.current = true;
+
+    const syncAdminClaims = async () => {
+      try {
+        const tokenResult = await user.getIdTokenResult();
+        const hasAdminClaim = Boolean((tokenResult?.claims as any)?.admin);
+        if (hasAdminClaim) return;
+
+        const idToken = await user.getIdToken();
+        await fetch('/api/auth/admin-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken })
+        });
+
+        await user.getIdToken(true);
+      } catch (error) {
+        console.warn('Failed to sync admin claims:', error);
+      }
+    };
+
+    syncAdminClaims();
+  }, [user, isAdmin, isLoginPage]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -779,7 +807,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <SocialWorkerRedirect />
       <div className="flex flex-col min-h-screen">
         <AdminHeader />
-        <main className="flex-grow min-w-0 p-4 sm:p-6 md:p-8 bg-slate-50/50">
+        <main className="flex-grow min-w-0 p-4 sm:p-6 md:p-8 bg-slate-50/50 overflow-x-hidden">
           {children}
         </main>
       </div>
