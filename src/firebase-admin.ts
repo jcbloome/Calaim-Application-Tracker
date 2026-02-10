@@ -1,11 +1,19 @@
 import * as admin from 'firebase-admin';
 import fs from 'fs';
 
+const isProduction = process.env.NODE_ENV === 'production';
+const logInfo = (...args: unknown[]) => {
+  if (!isProduction) console.log(...args);
+};
+const logWarn = (...args: unknown[]) => {
+  if (!isProduction) console.warn(...args);
+};
+
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
   try {
-    console.log('🔧 Firebase Admin initialization starting...');
-    console.log('🔧 Environment:', process.env.NODE_ENV);
+    logInfo('🔧 Firebase Admin initialization starting...');
+    logInfo('🔧 Environment:', process.env.NODE_ENV);
     
     let credential;
     
@@ -14,9 +22,9 @@ if (!admin.apps.length) {
       try {
         const serviceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
         credential = admin.credential.cert(serviceAccount);
-        console.log('🔧 Using credentials from GOOGLE_APPLICATION_CREDENTIALS_JSON');
+        logInfo('🔧 Using credentials from GOOGLE_APPLICATION_CREDENTIALS_JSON');
       } catch (parseError) {
-        console.warn('⚠️ Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON:', parseError);
+        logWarn('⚠️ Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON:', parseError);
       }
     }
 
@@ -26,22 +34,22 @@ if (!admin.apps.length) {
         const serviceAccountJson = fs.readFileSync(serviceAccountPath, 'utf8');
         const serviceAccount = JSON.parse(serviceAccountJson);
         credential = admin.credential.cert(serviceAccount);
-        console.log('🔧 Using credentials from GOOGLE_APPLICATION_CREDENTIALS file');
+        logInfo('🔧 Using credentials from GOOGLE_APPLICATION_CREDENTIALS file');
       } catch (fileError) {
-        console.warn('⚠️ Failed to read GOOGLE_APPLICATION_CREDENTIALS file:', fileError);
+        logWarn('⚠️ Failed to read GOOGLE_APPLICATION_CREDENTIALS file:', fileError);
       }
     }
     
     // Fallback to default credentials (works in Firebase hosting)
     if (!credential) {
-      console.log('🔧 Using default application credentials');
+      logInfo('🔧 Using default application credentials');
       credential = admin.credential.applicationDefault();
     }
     
     const firebaseConfig = process.env.FIREBASE_CONFIG ? JSON.parse(process.env.FIREBASE_CONFIG) : {};
     const projectId = firebaseConfig.projectId || process.env.FIREBASE_PROJECT_ID || 'studio-2881432245-f1d94';
     
-    console.log('🔧 Project ID:', projectId);
+    logInfo('🔧 Project ID:', projectId);
     
     admin.initializeApp({
       credential: credential,
@@ -50,20 +58,20 @@ if (!admin.apps.length) {
       storageBucket: firebaseConfig.storageBucket || process.env.FIREBASE_STORAGE_BUCKET || 'studio-2881432245-f1d94.firebasestorage.app',
     });
     
-    console.log('✅ Firebase Admin initialized successfully');
+    logInfo('✅ Firebase Admin initialized successfully');
     
   } catch (error) {
     console.error('❌ Firebase Admin initialization error:', error);
     
     // For development, create a minimal app without credentials for basic functionality
     if (process.env.NODE_ENV === 'development') {
-      console.log('🔧 Development mode: Creating app without credentials for basic functionality');
+      logInfo('🔧 Development mode: Creating app without credentials for basic functionality');
       try {
         admin.initializeApp({
           projectId: 'studio-2881432245-f1d94',
           storageBucket: 'studio-2881432245-f1d94.firebasestorage.app',
         });
-        console.log('✅ Firebase Admin initialized in development mode (limited functionality)');
+        logInfo('✅ Firebase Admin initialized in development mode (limited functionality)');
       } catch (fallbackError) {
         console.error('❌ Firebase Admin fallback initialization failed:', fallbackError);
       }
