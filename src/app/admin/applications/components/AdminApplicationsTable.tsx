@@ -35,6 +35,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
+import { ApplicationTrackerInline } from '@/components/admin/ApplicationTrackerInline';
 
 type ApplicationStatusType = Application['status'];
 
@@ -58,6 +59,30 @@ const getCsSummaryNeedsReview = (app: WithId<Application & FormValues>) => {
     (form.name === 'CS Member Summary' || form.name === 'CS Summary') && form.status === 'Completed'
   );
   return hasCompletedSummary && !app.applicationChecked;
+};
+
+const getCsSummaryCompletedAt = (app: WithId<Application & FormValues>): Date | null => {
+  const forms = app.forms || [];
+  const completedSummary = forms.find(
+    (form: any) =>
+      (form.name === 'CS Member Summary' || form.name === 'CS Summary') &&
+      form.status === 'Completed' &&
+      form.dateCompleted
+  ) as any;
+
+  const raw = completedSummary?.dateCompleted;
+  if (!raw) return null;
+  if (typeof raw?.toDate === 'function') return raw.toDate();
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const isNewCsSummary = (app: WithId<Application & FormValues>) => {
+  const completedAt = getCsSummaryCompletedAt(app);
+  if (!completedAt) return false;
+  if (app.applicationChecked) return false;
+  // "New" window: 24 hours from CS summary completion time
+  return differenceInHours(new Date(), completedAt) < 24;
 };
 
 const getUnacknowledgedDocsCount = (app: WithId<Application & FormValues>) => {
@@ -266,11 +291,13 @@ export const AdminApplicationsTable = ({
   isLoading,
   onSelectionChange,
   selected,
+  showInlineTracker = false,
 }: {
   applications: WithId<Application & FormValues>[];
   isLoading: boolean;
   onSelectionChange?: (id: string, checked: boolean) => void;
   selected?: string[];
+  showInlineTracker?: boolean;
 }) => {
   const { toast } = useToast();
   const { user } = useAdmin();
@@ -424,6 +451,7 @@ export const AdminApplicationsTable = ({
               const unacknowledgedDocsCount = getUnacknowledgedDocsCount(app);
               const planLabel = getPlanBadgeLabel(app);
               const planBadgeClass = getPlanBadgeClass(app);
+              const csSummaryIsNew = isNewCsSummary(app);
 
               return (
               <TableRow key={app.uniqueKey || `app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
@@ -445,6 +473,11 @@ export const AdminApplicationsTable = ({
                       {`${app.memberFirstName} ${app.memberLastName}`}
                       {isNew && <Badge className="bg-blue-100 text-blue-800 border-blue-200"><Sparkles className="h-3 w-3 mr-1" /> New</Badge>}
                       {isRecentlyUpdated && <Badge className="bg-amber-100 text-amber-800 border-amber-200">Updated</Badge>}
+                      {csSummaryIsNew && (
+                        <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200">
+                          New CS
+                        </Badge>
+                      )}
                       {csSummaryNeedsReview && (
                         <TooltipProvider>
                           <Tooltip>
@@ -486,6 +519,11 @@ export const AdminApplicationsTable = ({
                       • By: {referrerName || (app.userId ? `user-ID: ...${app.userId.substring(app.userId.length - 4)}` : 'Unknown')}
                       {(app as any).assignedStaff && ` • Staff: ${(app as any).assignedStaff}`}
                     </div>
+                    {showInlineTracker && (
+                      <div className="mt-2">
+                        <ApplicationTrackerInline application={app} />
+                      </div>
+                    )}
                   </div>
                 </TableCell>
                 <TableCell>
@@ -599,6 +637,7 @@ export const AdminApplicationsTable = ({
             const unacknowledgedDocsCount = getUnacknowledgedDocsCount(app);
             const planLabel = getPlanBadgeLabel(app);
             const planBadgeClass = getPlanBadgeClass(app);
+            const csSummaryIsNew = isNewCsSummary(app);
 
             return (
               <div key={app.uniqueKey || `mobile-app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
@@ -622,6 +661,11 @@ export const AdminApplicationsTable = ({
                       {isNew && <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs"><Sparkles className="h-3 w-3 mr-1" /> New</Badge>}
                       {isRecentlyUpdated && <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs">Updated</Badge>}
                       {(app as any)?.caspioSent && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+                      {csSummaryIsNew && (
+                        <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200 text-xs">
+                          New CS
+                        </Badge>
+                      )}
                       {csSummaryNeedsReview && (
                         <Badge
                           variant="outline"
@@ -645,6 +689,11 @@ export const AdminApplicationsTable = ({
                       • By: {referrerName || (app.userId ? `user-ID: ...${app.userId.substring(app.userId.length - 4)}` : 'Unknown')}
                       {(app as any).assignedStaff && ` • Staff: ${(app as any).assignedStaff}`}
                     </div>
+                    {showInlineTracker && (
+                      <div className="mt-2">
+                        <ApplicationTrackerInline application={app} />
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <Badge variant="outline" className={getBadgeVariant(app.status)}>

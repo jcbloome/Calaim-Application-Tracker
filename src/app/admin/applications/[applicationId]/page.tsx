@@ -2271,6 +2271,25 @@ function ApplicationDetailPageContent() {
   const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
   const servicesDeclined = waiverFormStatus?.choice === 'decline';
 
+  // "New CS Summary" indicator: CS Summary completed in last 24h and not yet reviewed
+  const csSummaryForm = (application.forms || []).find(
+    (form: any) =>
+      (form.name === 'CS Member Summary' || form.name === 'CS Summary') &&
+      form.status === 'Completed' &&
+      form.dateCompleted
+  ) as any;
+  const csSummaryCompletedAt: Date | null = (() => {
+    const raw = csSummaryForm?.dateCompleted;
+    if (!raw) return null;
+    if (typeof raw?.toDate === 'function') return raw.toDate();
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
+  })();
+  const isNewCsSummary =
+    Boolean(csSummaryCompletedAt) &&
+    !application.applicationChecked &&
+    Date.now() - (csSummaryCompletedAt as Date).getTime() < 24 * 60 * 60 * 1000;
+
   const needsUrgentAttention = application.hasLegalRep === 'no_has_rep';
 
   const completedForms = (application.forms || []).filter((form) => form.status === 'Completed');
@@ -2932,7 +2951,14 @@ function ApplicationDetailPageContent() {
 
                 <div className="space-y-2">
                     <div className="flex justify-between text-sm text-muted-foreground">
-                        <span className="font-medium">User-Submitted Documents</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">User-Submitted Documents</span>
+                          {isNewCsSummary && (
+                            <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200">
+                              New CS
+                            </Badge>
+                          )}
+                        </div>
                         <span>{completedCount} of {totalCount} required items completed</span>
                     </div>
                     <Progress value={progress} className="h-2" />
@@ -2973,23 +2999,44 @@ function ApplicationDetailPageContent() {
                     <Card key={req.id} className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
                         <CardHeader className="pb-4">
                             <div className="flex justify-between items-start gap-4">
-                                <CardTitle className="text-lg">{req.title}</CardTitle>
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                  {req.title}
+                                  {isSummary && isNewCsSummary && (
+                                    <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200 text-xs">
+                                      New
+                                    </Badge>
+                                  )}
+                                </CardTitle>
                                 {status === 'Completed' && (
-                                  <div className="flex items-center">
-                                    <Checkbox
-                                      id={`reviewed-${req.id}`}
-                                      checked={isReviewed}
-                                      onCheckedChange={(checked) => {
-                                        if (isSummary) {
-                                          handleApplicationReviewed(Boolean(checked));
-                                        } else {
-                                          handleFormReviewed(req.title, Boolean(checked));
-                                        }
-                                      }}
-                                    />
-                                    <Label htmlFor={`reviewed-${req.id}`} className="sr-only">
-                                      Reviewed
-                                    </Label>
+                                  <div className="flex items-center gap-2">
+                                    {isReviewed ? (
+                                      <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200 text-xs">
+                                        Reviewed
+                                      </Badge>
+                                    ) : needsReview ? (
+                                      <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
+                                        Needs review
+                                      </Badge>
+                                    ) : null}
+                                    <div className="flex items-center gap-2">
+                                      <Checkbox
+                                        id={`reviewed-${req.id}`}
+                                        checked={isReviewed}
+                                        onCheckedChange={(checked) => {
+                                          if (isSummary) {
+                                            handleApplicationReviewed(Boolean(checked));
+                                          } else {
+                                            handleFormReviewed(req.title, Boolean(checked));
+                                          }
+                                        }}
+                                      />
+                                      <Label
+                                        htmlFor={`reviewed-${req.id}`}
+                                        className="text-xs text-muted-foreground cursor-pointer select-none"
+                                      >
+                                        {isReviewed ? 'Reviewed' : 'Mark reviewed'}
+                                      </Label>
+                                    </div>
                                   </div>
                                 )}
                             </div>

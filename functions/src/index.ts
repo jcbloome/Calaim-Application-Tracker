@@ -1211,7 +1211,15 @@ const buildMemberDataFromMapping = (applicationData: any, mapping?: Record<strin
 };
 
 export const publishCsSummaryToCaspio = onCall({
-  secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret]
+  secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret],
+  // Allow callable invocations from local dev + common hosted domains.
+  // Without this, browsers may block the callable request with a CORS preflight error.
+  cors: [
+    /localhost/,
+    /\.vercel\.app$/,
+    /\.netlify\.app$/,
+    /\.firebaseapp\.com$/
+  ],
 }, async (request) => {
   try {
     const payload = request.data as CsSummaryPayload;

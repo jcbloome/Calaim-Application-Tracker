@@ -200,8 +200,8 @@ function getMissingRequiredDocuments(application: any): string[] {
   const fallbackRequired = getDefaultRequiredFormNames(application?.pathway, application?.healthPlan);
   const requiredFormNames = formNames.length > 0 ? formNames : fallbackRequired;
   
-  const formStatusMap = new Map(
-    forms.map((form: any) => [String(form?.name || '').trim(), form])
+  const formStatusMap = new Map<string, any>(
+    forms.map((form: any) => [String(form?.name || '').trim(), form] as [string, any])
   );
   
   return requiredFormNames.filter((formName) => {

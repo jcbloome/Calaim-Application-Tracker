@@ -444,6 +444,7 @@ function AdminApplicationsPageContent() {
                         isLoading={isLoading || isAdminLoading}
                         onSelectionChange={isSuperAdmin ? handleSelectionChange : undefined}
                         selected={isSuperAdmin ? selected : undefined}
+                        showInlineTracker
                       />
                     </CardContent>
                 </Card>

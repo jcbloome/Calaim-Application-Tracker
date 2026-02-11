@@ -221,14 +221,30 @@ export default function AdminDashboardPage() {
             <AlertCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{csSummaryStats.needsReview}</div>
+            <Link
+              href="/admin/applications?review=cs"
+              className="inline-block text-2xl font-bold hover:underline"
+              aria-label="View CS summaries needing review"
+            >
+              {csSummaryStats.needsReview}
+            </Link>
             <div className="flex flex-wrap gap-2 text-xs">
-              <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
-                HN(CS) {csSummaryStats.hnNeedsReview}
-              </Badge>
-              <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">
-                K(CS) {csSummaryStats.kaiserNeedsReview}
-              </Badge>
+              <Link href="/admin/applications?plan=health-net&review=cs" aria-label="View Health Net CS summaries needing review">
+                <Badge
+                  variant="outline"
+                  className="bg-green-100 text-green-800 border-green-200 cursor-pointer hover:opacity-90"
+                >
+                  HN(CS) {csSummaryStats.hnNeedsReview}
+                </Badge>
+              </Link>
+              <Link href="/admin/applications?plan=kaiser&review=cs" aria-label="View Kaiser CS summaries needing review">
+                <Badge
+                  variant="outline"
+                  className="bg-blue-100 text-blue-800 border-blue-200 cursor-pointer hover:opacity-90"
+                >
+                  K(CS) {csSummaryStats.kaiserNeedsReview}
+                </Badge>
+              </Link>
             </div>
           </CardContent>
         </Card>
@@ -255,14 +271,30 @@ export default function AdminDashboardPage() {
             <AlertCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{documentStats.needsReview}</div>
+            <Link
+              href="/admin/applications?review=docs"
+              className="inline-block text-2xl font-bold hover:underline"
+              aria-label="View documents needing review"
+            >
+              {documentStats.needsReview}
+            </Link>
             <div className="flex flex-wrap gap-2 text-xs">
-              <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
-                HN(D) {documentStats.hnNeedsReview}
-              </Badge>
-              <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">
-                K(D) {documentStats.kaiserNeedsReview}
-              </Badge>
+              <Link href="/admin/applications?plan=health-net&review=docs" aria-label="View Health Net documents needing review">
+                <Badge
+                  variant="outline"
+                  className="bg-green-100 text-green-800 border-green-200 cursor-pointer hover:opacity-90"
+                >
+                  HN(D) {documentStats.hnNeedsReview}
+                </Badge>
+              </Link>
+              <Link href="/admin/applications?plan=kaiser&review=docs" aria-label="View Kaiser documents needing review">
+                <Badge
+                  variant="outline"
+                  className="bg-blue-100 text-blue-800 border-blue-200 cursor-pointer hover:opacity-90"
+                >
+                  K(D) {documentStats.kaiserNeedsReview}
+                </Badge>
+              </Link>
             </div>
           </CardContent>
         </Card>
@@ -298,7 +330,11 @@ export default function AdminDashboardPage() {
                     </Button>
                 </CardHeader>
                 <CardContent>
-                  <AdminApplicationsTable applications={recentApplications} isLoading={isLoadingApps} />
+                  <AdminApplicationsTable
+                    applications={recentApplications}
+                    isLoading={isLoadingApps}
+                    showInlineTracker
+                  />
                 </CardContent>
               </Card>
             </div>
