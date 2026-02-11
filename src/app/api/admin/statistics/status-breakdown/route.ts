@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchAllCalAIMMembers, getCaspioCredentialsFromEnv } from '@/lib/caspio-api-utils';
-import { KAISER_STATUS_PROGRESSION } from '@/lib/kaiser-status-progression';
+import { getKaiserStatusesInOrder } from '@/lib/kaiser-status-progression';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       acc[normalizeCalaimStatus(status)] = status;
       return acc;
     }, {} as Record<string, string>);
-    const kaiserStatusOrder = KAISER_STATUS_PROGRESSION.map((item) => item.status);
+    const kaiserStatusOrder = getKaiserStatusesInOrder().map((item) => item.status);
 
     const credentials = getCaspioCredentialsFromEnv();
     const result = await fetchAllCalAIMMembers(credentials, { includeRawData: true });

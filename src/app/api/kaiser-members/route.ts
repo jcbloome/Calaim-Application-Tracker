@@ -1,43 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
+import { getKaiserStatusesInOrder } from '@/lib/kaiser-status-progression';
 
 // Helper function to assign sample Kaiser statuses for demo purposes
 function getRandomKaiserStatus(index: number): string {
-  const sampleStatuses = [
-    'T2038 Requested',
-    'T2038 Received', 
-    'T2038 received, Need First Contact',
-    'T2038 received, doc collection',
-    'Needs RN Visit',
-    'RN/MSW Scheduled',
-    'RN Visit Complete',
-    'Need Tier Level',
-    'Tier Level Requested',
-    'Tier Level Received',
-    'Locating RCFEs',
-    'Found RCFE',
-    'R&B Requested',
-    'R&B Signed',
-    'RCFE/ILS for Invoicing',
-    'ILS Contracted (Complete)',
-    'Confirm ILS Contracted',
-    'Tier Level Revision Request',
-    'On-Hold',
-    'Tier Level Appeal',
-    'T2038 email but need auth sheet',
-    'Non-active',
-    'Pending',
-    'Switched MCPs',
-    'Pending to Switch',
-    'Authorized on hold',
-    'Authorized',
-    'Denied',
-    'Expired',
-    'Not interested',
-    'Not CalAIM'
-  ];
-  
-  return sampleStatuses[index % sampleStatuses.length];
+  const ordered = getKaiserStatusesInOrder().map((s) => s.status);
+  if (ordered.length === 0) return 'Pending';
+  return ordered[index % ordered.length];
 }
 
 export async function GET(request: NextRequest) {
