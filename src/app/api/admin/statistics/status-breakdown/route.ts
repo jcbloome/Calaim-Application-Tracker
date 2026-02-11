@@ -1,23 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchAllCalAIMMembers, getCaspioCredentialsFromEnv } from '@/lib/caspio-api-utils';
+import { KAISER_STATUS_PROGRESSION } from '@/lib/kaiser-status-progression';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
   try {
-    // Get members data from Kaiser members API
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-    const kaiserResponse = await fetch(`${baseUrl}/api/kaiser-members`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    const calaimStatusOptions = [
+      'Authorized',
+      'Pending',
+      'Non_Active',
+      'Member Died',
+      'Authorized on hold',
+      'H2022',
+      'Authorization Ended',
+      'Denied',
+      'Not interested',
+      'Pending to switch'
+    ];
+    const normalizeCalaimStatus = (value: string) =>
+      value.trim().toLowerCase().replace(/\s+/g, ' ');
+    const calaimStatusMap = calaimStatusOptions.reduce((acc, status) => {
+      acc[normalizeCalaimStatus(status)] = status;
+      return acc;
+    }, {} as Record<string, string>);
+    const kaiserStatusOrder = KAISER_STATUS_PROGRESSION.map((item) => item.status);
 
-    if (!kaiserResponse.ok) {
-      console.error('Kaiser API response not ok:', kaiserResponse.status, kaiserResponse.statusText);
-      throw new Error(`Failed to fetch Kaiser members data: ${kaiserResponse.status} ${kaiserResponse.statusText}`);
-    }
-
-    const kaiserData = await kaiserResponse.json();
-    const members = kaiserData.members || [];
+    const credentials = getCaspioCredentialsFromEnv();
+    const result = await fetchAllCalAIMMembers(credentials, { includeRawData: true });
+    const members = result.rawMembers || [];
 
     // Calculate status statistics
     const kaiserStatusStats: Record<string, number> = {};
@@ -26,26 +38,34 @@ export async function GET(request: NextRequest) {
 
     members.forEach((member: any) => {
       // Kaiser Status
-      const kaiserStatus = member.Kaiser_Status || 'No Status';
-      kaiserStatusStats[kaiserStatus] = (kaiserStatusStats[kaiserStatus] || 0) + 1;
+      const kaiserStatus = member.Kaiser_Status || member.kaiser_status || 'No Status';
+      if (kaiserStatusOrder.includes(kaiserStatus)) {
+        kaiserStatusStats[kaiserStatus] = (kaiserStatusStats[kaiserStatus] || 0) + 1;
+      }
 
       // CalAIM Status
-      const calaimStatus = member.CalAIM_Status || 'No Status';
-      calaimStatusStats[calaimStatus] = (calaimStatusStats[calaimStatus] || 0) + 1;
+      const calaimStatusRaw = member.CalAIM_Status || member.calaim_status || 'No Status';
+      const normalized = normalizeCalaimStatus(calaimStatusRaw);
+      const mapped = calaimStatusMap[normalized];
+      if (mapped) {
+        calaimStatusStats[mapped] = (calaimStatusStats[mapped] || 0) + 1;
+      }
 
-      // Health Plan (assuming Kaiser for now, but could be expanded)
-      const healthPlan = member.Health_Plan || 'Kaiser';
+      // Health Plan
+      const healthPlan = member.CalAIM_MCO || member.Health_Plan || member.HealthPlan || 'Unknown';
       healthPlanStats[healthPlan] = (healthPlanStats[healthPlan] || 0) + 1;
     });
 
     // Convert to arrays and sort by count (descending)
-    const kaiserStatuses = Object.entries(kaiserStatusStats)
-      .map(([status, count]) => ({ status, count }))
-      .sort((a, b) => b.count - a.count);
+    const kaiserStatuses = kaiserStatusOrder.map((status) => ({
+      status,
+      count: kaiserStatusStats[status] || 0
+    }));
 
-    const calaimStatuses = Object.entries(calaimStatusStats)
-      .map(([status, count]) => ({ status, count }))
-      .sort((a, b) => b.count - a.count);
+    const calaimStatuses = calaimStatusOptions.map((status) => ({
+      status,
+      count: calaimStatusStats[status] || 0
+    }));
 
     const healthPlans = Object.entries(healthPlanStats)
       .map(([plan, count]) => ({ plan, count }))

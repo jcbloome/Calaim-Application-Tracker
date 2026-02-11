@@ -1,12 +1,13 @@
 
 'use client';
 
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useFirestore } from '@/firebase';
 import { collection, query, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
-import { Loader2, Users, Building2, Stethoscope, UserCheck, Activity, BarChart3 } from 'lucide-react';
+import { Loader2, RefreshCw, Users, Building2, Stethoscope, UserCheck, Activity, BarChart3 } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -60,8 +61,9 @@ export default function AdminStatisticsPage() {
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
 
   const [applications, setApplications] = useState<Application[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   // Resource data state
   const [staffData, setStaffData] = useState<any>({});
@@ -106,7 +108,7 @@ export default function AdminStatisticsPage() {
     
     try {
       // Fetch status breakdown
-      const statusResponse = await fetch('/api/admin/statistics/status-breakdown');
+      const statusResponse = await fetch('/api/admin/statistics/status-breakdown', { cache: 'no-store' });
       const statusData = await statusResponse.json();
       
       // Handle both successful and error responses
@@ -134,9 +136,9 @@ export default function AdminStatisticsPage() {
     
     try {
       const [staffResponse, rcfeResponse, memberResponse] = await Promise.all([
-        fetch('/api/staff-locations'),
-        fetch('/api/rcfe-locations'),
-        fetch('/api/member-locations')
+        fetch('/api/staff-locations', { cache: 'no-store' }),
+        fetch('/api/rcfe-locations', { cache: 'no-store' }),
+        fetch('/api/member-locations', { cache: 'no-store' })
       ]);
 
       const staffResult = await staffResponse.json();
@@ -172,11 +174,15 @@ export default function AdminStatisticsPage() {
     }
   }, [isAdmin]);
 
-  useEffect(() => {
-    fetchApps();
-    fetchResourceData();
-    fetchStatusStats();
-  }, [fetchApps, fetchResourceData, fetchStatusStats]);
+  const isRefreshing = isLoading || resourceLoading || statsLoading;
+  const handleRefresh = async () => {
+    setHasLoaded(true);
+    await Promise.all([
+      fetchApps(),
+      fetchResourceData(),
+      fetchStatusStats()
+    ]);
+  };
 
   // Calculate resource statistics
   const resourceStats = useMemo(() => {
@@ -306,12 +312,40 @@ export default function AdminStatisticsPage() {
 
   return (
     <div className="space-y-4 md:space-y-6 p-4 md:p-6">
-        <div>
-            <h1 className="text-2xl md:text-3xl font-bold">Statistics Dashboard</h1>
-            <p className="text-sm md:text-base text-muted-foreground">
-                Comprehensive overview of system resources and applications.
-            </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+                <h1 className="text-2xl md:text-3xl font-bold">Statistics Dashboard</h1>
+                <p className="text-sm md:text-base text-muted-foreground">
+                    Comprehensive overview of system resources and applications.
+                </p>
+            </div>
+            <Button
+                type="button"
+                variant="outline"
+                onClick={handleRefresh}
+                disabled={isRefreshing || isAdminLoading}
+                className="w-full sm:w-auto"
+            >
+                {isRefreshing ? (
+                    <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Refreshing...
+                    </>
+                ) : (
+                    <>
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Refresh Data
+                    </>
+                )}
+            </Button>
         </div>
+        {!hasLoaded && (
+            <Card className="border-dashed">
+                <CardContent className="py-4 text-sm text-muted-foreground">
+                    Data loads only when you click refresh to avoid pulling from Caspio automatically.
+                </CardContent>
+            </Card>
+        )}
 
         {/* Resource Statistics */}
         <div>

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
+import { fetchAllCalAIMMembers, getCaspioCredentialsFromEnv } from '@/lib/caspio-api-utils';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 // Types for CalAIM Member data
 interface CalAIMMember {
@@ -31,77 +34,60 @@ interface CalAIMMember {
 
 export async function GET(request: NextRequest) {
   try {
+    const debugMode = request.nextUrl.searchParams.get('debug') === '1';
     console.log('👥 Fetching CalAIM member locations from Caspio...');
     
     const credentials = getCaspioCredentialsFromEnv();
     
-    console.log('🔐 Getting Caspio access token...');
-    const accessToken = await getCaspioToken(credentials);
+    console.log('🔄 Fetching ALL CalAIM members with partition strategy...');
+    const result = await fetchAllCalAIMMembers(credentials, { includeRawData: true });
+    const allMembers: any[] = result.rawMembers || [];
+    console.log(`✅ Partition fetch complete: ${allMembers.length} total CalAIM members`);
 
-    // Fetch ALL CalAIM members with improved pagination (same as kaiser-members API)
-    const membersTable = 'CalAIM_tbl_Members';
-    console.log('🔄 Starting paginated fetch to get ALL CalAIM members...');
-    let allMembers: any[] = [];
-    let pageNumber = 1;
-    const pageSize = 1000; // Same as kaiser-members API
-    let hasMorePages = true;
+    if (debugMode) {
+      const statusKeyCounts: Record<string, Record<string, number>> = {};
+      const statusKeys = new Set<string>();
 
-    while (hasMorePages && pageNumber <= 10) { // Safety limit of 10 pages = 10,000 records
-      const membersUrl = `${credentials.baseUrl}/rest/v2/tables/${membersTable}/records?q.limit=${pageSize}&q.pageNumber=${pageNumber}`;
-      console.log(`🔗 Page ${pageNumber} Query URL:`, membersUrl);
-      
-      const membersResponse = await fetch(membersUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
+      if (allMembers.length > 0) {
+        Object.keys(allMembers[0]).forEach((key) => {
+          if (key.toLowerCase().includes('status')) statusKeys.add(key);
+        });
+      }
+
+      allMembers.forEach((record) => {
+        statusKeys.forEach((key) => {
+          const value = record[key];
+          const normalized = value == null ? 'null' : String(value).trim() || '(empty)';
+          if (!statusKeyCounts[key]) statusKeyCounts[key] = {};
+          statusKeyCounts[key][normalized] = (statusKeyCounts[key][normalized] || 0) + 1;
+        });
       });
 
-      if (!membersResponse.ok) {
-        const errorText = await membersResponse.text();
-        console.error(`❌ Failed to fetch CalAIM members page ${pageNumber}:`, {
-          status: membersResponse.status,
-          statusText: membersResponse.statusText,
-          error: errorText
-        });
-        break; // Stop pagination on error
-      }
+      const topStatusValues: Record<string, Array<{ value: string; count: number }>> = {};
+      Object.entries(statusKeyCounts).forEach(([key, counts]) => {
+        topStatusValues[key] = Object.entries(counts)
+          .map(([value, count]) => ({ value, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10);
+      });
 
-      const pageData = await membersResponse.json();
-      console.log(`📄 Page ${pageNumber}: ${pageData.Result?.length || 0} records`);
-      
-      // Add comprehensive debugging
-      if (pageData.Result) {
-        console.log(`📊 Page ${pageNumber} - Raw record count: ${pageData.Result.length}`);
-        if (pageData.Result.length > 0) {
-          // Show status breakdown for this page
-          const pageStatuses = pageData.Result.reduce((acc: any, member: any) => {
-            const status = member.CalAIM_Status || 'Unknown';
-            acc[status] = (acc[status] || 0) + 1;
-            return acc;
-          }, {});
-          console.log(`📊 Page ${pageNumber} - Status breakdown:`, pageStatuses);
+      const firstRecord = allMembers[0] || {};
+      const statusSamples: Record<string, any> = {};
+      Array.from(statusKeys).forEach((key) => {
+        statusSamples[key] = firstRecord[key];
+      });
+
+      return NextResponse.json({
+        success: true,
+        debug: {
+          totalRecordsFetched: allMembers.length,
+          statusKeys: Array.from(statusKeys),
+          topStatusValues,
+          statusSamples,
+          firstRecordKeys: Object.keys(firstRecord)
         }
-      }
-      
-      if (pageData.Result && pageData.Result.length > 0) {
-        allMembers = allMembers.concat(pageData.Result);
-        
-        // Check if we have more pages
-        if (pageData.Result.length < pageSize) {
-          hasMorePages = false; // Last page
-          console.log(`📋 Reached last page - got ${pageData.Result.length} records (less than pageSize ${pageSize})`);
-        } else {
-          pageNumber++;
-        }
-      } else {
-        hasMorePages = false; // No more data
-        console.log(`📋 No more data on page ${pageNumber}`);
-      }
+      });
     }
-
-    console.log(`✅ PAGINATION COMPLETE: Fetched ${allMembers.length} total CalAIM members across ${pageNumber} pages`);
     
     // Show total status breakdown before filtering
     const totalStatuses = allMembers.reduce((acc: any, member: any) => {
@@ -156,14 +142,47 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // FILTER RAW DATA FIRST - EXACT same approach as authorization tracker
-    const authorizedMembers = allMembers.filter(member => 
-      member.CalAIM_Status === 'Authorized'
+    const getStatusValue = (record: any) => {
+      const preferred =
+        record.CalAIM_Status ??
+        record.Calaim_Status ??
+        record.calaim_status ??
+        record.Status ??
+        record.status;
+
+      if (preferred) return preferred;
+
+      const statusKeys = Object.keys(record).filter((key) =>
+        key.toLowerCase().includes('status') && key.toLowerCase().includes('calaim')
+      );
+      for (const key of statusKeys) {
+        const value = record[key];
+        if (value) return value;
+      }
+
+      const genericStatusKeys = Object.keys(record).filter((key) =>
+        key.toLowerCase().includes('status')
+      );
+      for (const key of genericStatusKeys) {
+        const value = record[key];
+        if (value) return value;
+      }
+
+      return 'Unknown';
+    };
+    const isAuthorizedStatus = (status: any) => {
+      if (!status) return false;
+      return String(status).trim().toLowerCase() === 'authorized';
+    };
+
+    // Filter to authorized members only (do not require valid names)
+    const authorizedMembers = allMembers.filter((record) =>
+      isAuthorizedStatus(getStatusValue(record))
     );
-    
+
     console.log(`📊 Total members: ${allMembers.length}, Authorized members: ${authorizedMembers.length}`);
 
-    // Map member data using EXACT same field mapping as authorization tracker (using filtered authorized members)
+    // Map member data using same field mapping as authorization tracker (authorized members)
     const members: CalAIMMember[] = authorizedMembers.map((record: any) => {
       // Use EXACT same field names as authorization tracker
       const firstName = record.Senior_First || record.MemberFirstName || record.FirstName || 'Unknown';
@@ -180,7 +199,7 @@ export async function GET(request: NextRequest) {
       const pathway = record.Pathway || record.pathway || '';
       
       // Use EXACT same CalAIM_Status field as authorization tracker
-      const status = record.CalAIM_Status || 'Unknown';
+      const status = getStatusValue(record) || 'Unknown';
       const kaiserStatus = record.Kaiser_Status || record.kaiser_status || '';
       const assignedStaff = record.kaiser_user_assignment || record.assigned_staff || '';
       
@@ -221,23 +240,9 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    console.log(`📊 Total processed members before filtering: ${members.length}`);
-    
-    // Since we already filtered for authorized members at the raw data level, 
-    // just filter for valid names (same as authorization tracker approach)
-    const filteredMembers = members.filter((member: CalAIMMember) => {
-      const hasValidName = member.firstName !== 'Unknown' && member.lastName !== 'Unknown';
-      
-      if (!hasValidName) {
-        console.log(`❌ Filtering out member with invalid name: "${member.firstName}" "${member.lastName}"`);
-      } else {
-        console.log(`✅ Including authorized member: ${member.firstName} ${member.lastName} (Status: "${member.calaimStatus}")`);
-      }
-      
-      return hasValidName;
-    });
+    console.log(`📊 Total processed authorized members: ${members.length}`);
 
-    console.log(`✅ Filtered to ${filteredMembers.length} valid authorized CalAIM members`);
+    const filteredMembers = members;
     
     // Show some examples of authorized members
     if (filteredMembers.length > 0) {
@@ -253,7 +258,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    console.log(`✅ Processed ${members.length} valid authorized CalAIM members`);
+    console.log(`✅ Processed ${members.length} authorized CalAIM members`);
     
     // Debug: Show members with RCFE assignments
     const membersWithRCFE = filteredMembers.filter(m => m.rcfeRegisteredId && String(m.rcfeRegisteredId).trim() !== '');
@@ -385,7 +390,7 @@ export async function GET(request: NextRequest) {
           snfTransition: filteredMembers.filter(m => m.pathway === 'SNF Transition').length,
           snfDiversion: filteredMembers.filter(m => m.pathway === 'SNF Diversion').length,
         },
-        sourceTable: membersTable
+        sourceTable: 'CalAIM_tbl_Members'
       }
     };
 

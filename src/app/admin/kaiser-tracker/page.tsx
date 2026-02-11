@@ -176,46 +176,56 @@ const kaiserWorkflow = {
 
 // Predefined Kaiser statuses to show immediately
 const KAISER_STATUS_ORDER = getKaiserStatusesInOrder().map((status) => status.status);
-const LEGACY_KAISER_STATUSES = [
-  'Pending',
-  'Denied',
-  'Expired',
-  'Authorized',
-  'Not interested',
-  'Not CalAIM',
-  'Switched MCPs',
-  'Pending to Switch',
-  'Authorized on hold'
-];
-
-const buildKaiserStatusList = (statuses: string[]) => {
-  const ordered = new Set<string>();
-  const addStatus = (value?: string) => {
-    if (!value) return;
-    if (!ordered.has(value)) ordered.add(value);
-  };
-
-  KAISER_STATUS_ORDER.forEach(addStatus);
-
-  const extras = statuses
-    .filter((status) => status && !ordered.has(status) && !LEGACY_KAISER_STATUSES.includes(status))
-    .sort((a, b) => a.localeCompare(b));
-  extras.forEach(addStatus);
-
-  LEGACY_KAISER_STATUSES.forEach(addStatus);
-
-  return Array.from(ordered);
+const buildKaiserStatusList = () => {
+  return [...KAISER_STATUS_ORDER];
 };
 
-const CALAIM_STATUSES = [
+const CALAIM_STATUS_OPTIONS = [
   'Authorized',
-  'Non-Active',
   'Pending',
+  'Non_Active',
+  'Member Died',
+  'Authorized on hold',
+  'H2022',
+  'Authorization Ended',
   'Denied',
-  'Expired',
-  'On Hold',
-  'Under Review'
+  'Not interested',
+  'Pending to switch'
 ];
+const CALAIM_STATUSES = CALAIM_STATUS_OPTIONS;
+
+const normalizeCalaimStatus = (value: string) =>
+  value.trim().toLowerCase().replace(/\s+/g, ' ');
+
+const CALAIM_STATUS_MAP = CALAIM_STATUS_OPTIONS.reduce((acc, status) => {
+  acc[normalizeCalaimStatus(status)] = status;
+  return acc;
+}, {} as Record<string, string>);
+
+const toDateValue = (value: any): Date | null => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value?.toDate === 'function') return value.toDate();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const isOverdue = (dateString: any): boolean => {
+  const dueDate = toDateValue(dateString);
+  if (!dueDate) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return dueDate < today;
+};
+
+const getDaysUntilDue = (dateString: any): number => {
+  const dueDate = toDateValue(dateString);
+  if (!dueDate) return 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffTime = dueDate.getTime() - today.getTime();
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
 
 const COUNTIES = [
   'Los Angeles',
@@ -863,20 +873,20 @@ function KaiserTrackerPageContent() {
     overdueOnly: false
   });
 
-  // Calculate status summary - get all unique Kaiser statuses from the data
+  // Calculate status summary using the defined Kaiser status order
   const statusSummary = useMemo(() => {
     const summary: Record<string, number> = {};
-    
-    // Count actual statuses from the data
+
     members.forEach(member => {
       const status = member.Kaiser_Status || 'No Status';
-      summary[status] = (summary[status] || 0) + 1;
+      if (!summary[status]) summary[status] = 0;
+      summary[status] += 1;
     });
-    
-    // Convert to array and sort by status name for consistent display
-    return Object.entries(summary)
-      .sort(([a], [b]) => a.localeCompare(b)) // Sort alphabetically by status name
-      .map(([status, count]) => ({ status, count }));
+
+    return buildKaiserStatusList().map((status) => ({
+      status,
+      count: summary[status] || 0
+    }));
   }, [members]);
 
 
@@ -1155,25 +1165,6 @@ function KaiserTrackerPageContent() {
   };
 
   // Helper functions
-  const isOverdue = (dateString: string): boolean => {
-    if (!dateString) return false;
-    const dueDate = new Date(dateString);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return dueDate < today;
-  };
-
-
-  const getDaysUntilDue = (dateString: string): number => {
-    if (!dateString) return 0;
-    const dueDate = new Date(dateString);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const diffTime = dueDate.getTime() - today.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  };
-
-
   // Fetch Kaiser members from Caspio
   const fetchCaspioData = async () => {
     setIsLoading(true);
@@ -1287,7 +1278,10 @@ function KaiserTrackerPageContent() {
   const filteredMembers = () => {
     return members.filter(member => {
       if (filters.kaiserStatus !== 'all' && member.Kaiser_Status !== filters.kaiserStatus) return false;
-      if (filters.calaimStatus !== 'all' && member.CalAIM_Status !== filters.calaimStatus) return false;
+      if (filters.calaimStatus !== 'all') {
+        const normalized = normalizeCalaimStatus(member.CalAIM_Status || '');
+        if (CALAIM_STATUS_MAP[normalized] !== filters.calaimStatus) return false;
+      }
       if (filters.county !== 'all' && member.memberCounty !== filters.county) return false;
       if (filters.staffAssigned !== 'all' && member.Staff_Assigned !== filters.staffAssigned) return false;
       if (filters.overdueOnly && !isOverdue(member.Next_Step_Due_Date)) return false;
@@ -1374,11 +1368,9 @@ function KaiserTrackerPageContent() {
   };
 
   // Get unique values for filter dropdowns
-  const allKaiserStatuses = buildKaiserStatusList(
-    members.map((member) => member.Kaiser_Status).filter(Boolean)
-  );
+  const allKaiserStatuses = buildKaiserStatusList();
   const availableCounties = [...new Set(members.map(m => m.memberCounty).filter(Boolean))];
-  const availableCalAIMStatuses = [...new Set(members.map(m => m.CalAIM_Status).filter(Boolean))];
+  const availableCalAIMStatuses = CALAIM_STATUS_OPTIONS;
   const staffMembers = [...new Set(members.map(m => m.Staff_Assigned).filter(Boolean))];
 
   // Load data on component mount
@@ -1485,15 +1477,21 @@ function KaiserTrackerPageContent() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="space-y-1">
-              {CALAIM_STATUSES.map((status, index) => {
-                const count = members.filter(m => m.CalAIM_Status === status).length;
+              {CALAIM_STATUS_OPTIONS.map((status, index) => {
+                const count = members.filter((m) => {
+                  const normalized = normalizeCalaimStatus(m.CalAIM_Status || '');
+                  return CALAIM_STATUS_MAP[normalized] === status;
+                }).length;
                 const percentage = members.length > 0 ? ((count / members.length) * 100).toFixed(1) : '0';
                 return (
                   <div key={`calaim-${index}-${status}`} 
                        className="flex items-center justify-between py-0.5 px-1 hover:bg-gray-50 rounded cursor-pointer text-xs"
                 onClick={() => {
                          if (members.length > 0) {
-                           const filteredMembers = members.filter(m => m.CalAIM_Status === status);
+                           const filteredMembers = members.filter((m) => {
+                             const normalized = normalizeCalaimStatus(m.CalAIM_Status || '');
+                             return CALAIM_STATUS_MAP[normalized] === status;
+                           });
                            openMemberModal(filteredMembers, `${status} Members`, `${count} members with CalAIM status: ${status}`, 'calaim_status', status);
                          }
                        }}>
@@ -1956,6 +1954,27 @@ function KaiserTrackerPageContent() {
         availableCalAIMStatuses={availableCalAIMStatuses}
         staffMembers={staffMembers}
       />
+
+      <StaffMemberManagementModal
+        isOpen={staffMemberModal.isOpen}
+        onClose={() => setStaffMemberModal({ isOpen: false, staffName: '', members: [] })}
+        staffName={staffMemberModal.staffName}
+        members={staffMemberModal.members}
+        onMemberUpdate={() => {
+          fetchCaspioData();
+        }}
+      />
+
+      <MemberNotesModal
+        isOpen={memberNotesModal.isOpen}
+        onClose={() => setMemberNotesModal({ isOpen: false, member: null, notes: [], isLoadingNotes: false })}
+        member={memberNotesModal.member}
+        notes={memberNotesModal.notes}
+        isLoadingNotes={memberNotesModal.isLoadingNotes}
+        newNote={newNote}
+        onNewNoteChange={setNewNote}
+        onCreateNote={handleCreateNote}
+      />
             </div>
   );
 }
@@ -2098,7 +2117,7 @@ function MemberListModal({
                       isUrgent ? 'border-l-yellow-500 bg-yellow-50' : 
                       'border-l-blue-500'
                     }`}
-                    onClick={() => handleMemberClick(member)}
+                    onClick={() => onMemberClick(member)}
                   >
                     <CardContent className="p-4">
                       <div className="flex justify-between items-start">
@@ -2229,46 +2248,6 @@ function MemberListModal({
         </div>
       </div>
 
-      {/* Staff Member Management Modal */}
-      <StaffMemberManagementModal
-        isOpen={staffMemberModal.isOpen}
-        onClose={() => setStaffMemberModal({ isOpen: false, staffName: '', members: [] })}
-        staffName={staffMemberModal.staffName}
-        members={staffMemberModal.members}
-        onMemberUpdate={() => {
-          // Refresh data after updates
-          fetchCaspioData();
-        }}
-      />
-
-      {/* Member Notes Modal */}
-      <MemberNotesModal
-        isOpen={memberNotesModal.isOpen}
-        onClose={() => setMemberNotesModal({ isOpen: false, member: null, notes: [], isLoadingNotes: false })}
-        member={memberNotesModal.member}
-        notes={memberNotesModal.notes}
-        isLoadingNotes={memberNotesModal.isLoadingNotes}
-        newNote={newNote}
-        onNewNoteChange={setNewNote}
-        onCreateNote={handleCreateNote}
-      />
-
-      {/* Member List Modal */}
-      <MemberListModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        members={modalMembers}
-        title={modalTitle}
-        description={modalDescription}
-        onMemberClick={handleMemberClick}
-        filters={filters}
-        onFilterChange={handleFilterChange}
-        onClearFilters={handleClearFilters}
-        allKaiserStatuses={allKaiserStatuses}
-        availableCounties={availableCounties}
-        availableCalAIMStatuses={availableCalAIMStatuses}
-        staffMembers={staffMembers}
-      />
     </div>
   );
 }

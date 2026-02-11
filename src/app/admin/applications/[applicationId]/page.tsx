@@ -97,23 +97,38 @@ function StaffAssignmentDropdown({
         // Set staff list based on health plan (hardcoded for now)
         let staff: StaffMember[] = [];
         
-        if (application.healthPlan === 'Kaiser') {
-            staff = [
-                { uid: 'jesse', firstName: 'Jesse', lastName: '', email: 'jesse@example.com', role: 'Admin' },
-                { uid: 'nick', firstName: 'Nick', lastName: '', email: 'nick@example.com', role: 'Admin' },
-                { uid: 'john', firstName: 'John', lastName: '', email: 'john@example.com', role: 'Admin' },
-            ];
-        } else if (application.healthPlan === 'Health Net') {
-            staff = [
-                { uid: 'monica', firstName: 'Monica', lastName: '', email: 'monica@example.com', role: 'Admin' },
-                { uid: 'leidy', firstName: 'Leidy', lastName: '', email: 'leidy@example.com', role: 'Admin' },
-                { uid: 'letitia', firstName: 'Letitia', lastName: '', email: 'letitia@example.com', role: 'Admin' },
-            ];
-        }
-        
-        setStaffList(staff);
-        setIsLoadingStaff(false);
-    }, [application.healthPlan]);
+        const loadStaff = async () => {
+            if (!firestore) {
+                setIsLoadingStaff(false);
+                return;
+            }
+            try {
+                const snapshot = await getDocs(query(collection(firestore, 'users'), where('isStaff', '==', true)));
+                const activeStaff = snapshot.docs
+                    .map((docSnap) => {
+                        const data = docSnap.data() as any;
+                        if (!data?.isStaff) return null;
+                        return {
+                            uid: docSnap.id,
+                            firstName: data.firstName || data.displayName || data.name || '',
+                            lastName: data.lastName || '',
+                            email: data.email || '',
+                            role: data.role || 'Staff'
+                        } as StaffMember;
+                    })
+                    .filter(Boolean) as StaffMember[];
+                staff = activeStaff;
+            } catch (error) {
+                console.error('Error loading staff list:', error);
+            } finally {
+                setStaffList(staff);
+                setIsLoadingStaff(false);
+            }
+        };
+
+        loadStaff();
+
+    }, [application.healthPlan, firestore]);
 
     const handleStaffAssignment = async (staffId: string) => {
         const selectedStaff = staffList.find(staff => staff.uid === staffId);
@@ -1218,14 +1233,11 @@ function ApplicationDetailPageContent() {
     return doc(firestore, `users/${appUserId}/applications`, applicationId);
   }, [firestore, applicationId, appUserId, isUserLoading]);
 
-  const getStaffOptions = (healthPlan?: Application['healthPlan']) => {
-    if (healthPlan === 'Kaiser') {
-      return ['Jesse', 'Nick', 'John'];
+  const getStaffOptions = () => {
+    if (staffList.length > 0) {
+      return staffList.map((staff) => staff.name).filter(Boolean);
     }
-    if (healthPlan === 'Health Net') {
-      return ['Monica', 'Leidy', 'Letitia'];
-    }
-    return ['Jesse', 'Nick', 'John', 'Monica', 'Leidy', 'Letitia'];
+    return [];
   };
 
   const activityLog = useMemo(() => {
@@ -1415,42 +1427,27 @@ function ApplicationDetailPageContent() {
       return chunks;
     };
 
-    const fetchAdminStaffFromFirestore = async () => {
+    const fetchStaffFromFirestore = async () => {
       if (!firestore) return [];
       try {
-        const [adminSnap, superAdminSnap] = await Promise.all([
-          getDocs(collection(firestore, 'roles_admin')),
-          getDocs(collection(firestore, 'roles_super_admin'))
-        ]);
-
-        const adminIds = adminSnap.docs.map((docItem) => docItem.id);
-        const superAdminIds = superAdminSnap.docs.map((docItem) => docItem.id);
-        const allIds = Array.from(new Set([...adminIds, ...superAdminIds]));
-
-        if (allIds.length === 0) return [];
-
-        const idChunks = chunkArray(allIds, 10);
+        const usersSnap = await getDocs(
+          query(collection(firestore, 'users'), where('isStaff', '==', true))
+        );
         const users: Array<{ uid: string; name: string; email: string; role: string }> = [];
 
-        for (const chunk of idChunks) {
-          const usersSnap = await getDocs(
-            query(collection(firestore, 'users'), where(documentId(), 'in', chunk))
-          );
-          usersSnap.forEach((docItem) => {
-            const data = docItem.data() as any;
-            const role = superAdminIds.includes(docItem.id) ? 'Super Admin' : 'Admin';
-            users.push({
-              uid: docItem.id,
-              name: data.firstName && data.lastName ? `${data.firstName} ${data.lastName}` : data.email || 'Unknown Staff',
-              email: data.email || '',
-              role
-            });
+        usersSnap.forEach((docItem) => {
+          const data = docItem.data() as any;
+          users.push({
+            uid: docItem.id,
+            name: data.firstName && data.lastName ? `${data.firstName} ${data.lastName}` : data.email || 'Unknown Staff',
+            email: data.email || '',
+            role: data.role || 'Staff'
           });
-        }
+        });
 
         return users.sort((a, b) => a.name.localeCompare(b.name));
       } catch (error) {
-        console.error('Firestore staff fallback failed:', error);
+        console.error('Firestore staff load failed:', error);
         return [];
       }
     };
@@ -1458,7 +1455,7 @@ function ApplicationDetailPageContent() {
     const loadStaffMembers = async () => {
       try {
         setIsLoadingStaff(true);
-        const fallback = await fetchAdminStaffFromFirestore();
+        const fallback = await fetchStaffFromFirestore();
         if (fallback.length > 0) {
           const merged = mergeCurrentUserIntoStaff(fallback);
           setStaffList(merged);
@@ -2737,22 +2734,6 @@ function ApplicationDetailPageContent() {
                     </span>
                 )}
             </CardTitle>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              {quickStatusItems.map((item) => {
-                const status = getComponentStatus(item.key);
-                if (status === 'Not Applicable') return null;
-                return (
-                  <span key={item.key} className="flex items-center gap-1" title={`${item.key}: ${status}`}>
-                    {status === 'Completed' ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-orange-500" />
-                    )}
-                    <span>{item.label}</span>
-                  </span>
-                );
-              })}
-            </div>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <CardDescription>
                 Submitted by {application.referrerName || user?.displayName} | {application.pathway} ({application.healthPlan})
@@ -2856,8 +2837,25 @@ function ApplicationDetailPageContent() {
                 </div>
             </div>
 
+            <div className="space-y-2">
+                <Label className="text-sm font-medium">Documents needing acknowledgement</Label>
+                {pendingFormAlerts.length === 0 ? (
+                    <div className="text-xs text-muted-foreground ml-6">No documents pending acknowledgement.</div>
+                ) : (
+                    <div className="space-y-1 ml-6">
+                        {pendingFormAlerts.map((form) => (
+                            <div key={`${form.name}-${form.status}-${form.dateCompleted?.seconds || form.dateCompleted || ''}`} className="flex items-center gap-2 text-sm">
+                                <span className="h-2 w-2 rounded-full bg-blue-600" />
+                                {form.name}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
             {/* Staff Assignment Display */}
-            <div className="border-t pt-4 space-y-4">
+            <Card className="border-dashed">
+            <CardContent className="space-y-4 pt-4">
                 {/* Assigned Staff Section */}
                 <div className="space-y-2">
                     <Label htmlFor="main-staff-assignment" className="text-sm font-medium flex items-center gap-2">
@@ -2907,7 +2905,7 @@ function ApplicationDetailPageContent() {
                                         <SelectValue placeholder="Select staff" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {getStaffOptions(application.healthPlan).map((name) => (
+                                        {getStaffOptions().map((name) => (
                                             <SelectItem key={name} value={name}>
                                                 {name}
                                             </SelectItem>
@@ -2931,30 +2929,33 @@ function ApplicationDetailPageContent() {
                         </div>
                     )}
                 </div>
-                <div className="space-y-2">
-                    <Label className="text-sm font-medium">Documents needing acknowledgement</Label>
-                    {pendingFormAlerts.length === 0 ? (
-                        <div className="text-xs text-muted-foreground ml-6">No documents pending acknowledgement.</div>
-                    ) : (
-                        <div className="space-y-1 ml-6">
-                            {pendingFormAlerts.map((form) => (
-                                <div key={`${form.name}-${form.status}-${form.dateCompleted?.seconds || form.dateCompleted || ''}`} className="flex items-center gap-2 text-sm">
-                                    <span className="h-2 w-2 rounded-full bg-blue-600" />
-                                    {form.name}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
 
-            <div>
-                <div className="flex justify-between text-sm text-muted-foreground mb-1">
-                    <span className="font-medium">User-Submitted Documents</span>
-                    <span>{completedCount} of {totalCount} required items completed</span>
+                <div className="space-y-2">
+                    <div className="flex justify-between text-sm text-muted-foreground">
+                        <span className="font-medium">User-Submitted Documents</span>
+                        <span>{completedCount} of {totalCount} required items completed</span>
+                    </div>
+                    <Progress value={progress} className="h-2" />
                 </div>
-                <Progress value={progress} className="h-2" />
-            </div>
+
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  {quickStatusItems.map((item) => {
+                    const status = getComponentStatus(item.key);
+                    if (status === 'Not Applicable') return null;
+                    return (
+                      <span key={item.key} className="flex items-center gap-1" title={`${item.key}: ${status}`}>
+                        {status === 'Completed' ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-orange-500" />
+                        )}
+                        <span>{item.label}</span>
+                      </span>
+                    );
+                  })}
+                </div>
+            </CardContent>
+            </Card>
             </CardContent>
         </Card>
 
