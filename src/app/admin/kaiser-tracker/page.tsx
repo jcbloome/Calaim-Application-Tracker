@@ -108,6 +108,9 @@ const getStatusColor = (status: string): string => {
   return statusColors[status] || 'bg-gray-50 text-gray-700 border-gray-200';
 };
 
+const getMemberKey = (member: KaiserMember, index: number) =>
+  `${member.id}-${member.client_ID2}-${member.memberFirstName}-${member.memberLastName}-${index}`;
+
 const getStatusIcon = (status: string) => {
   const iconMap: Record<string, React.ReactNode> = {
     'Complete': <CheckCircle className="h-3 w-3" />,
@@ -601,7 +604,7 @@ function StaffMemberManagementModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden">
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <User className="h-5 w-5" />
@@ -612,15 +615,15 @@ function StaffMemberManagementModal({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 pr-4">
-          <div className="space-y-4">
-            {members.map((member) => {
+        <div className="flex-1 min-h-0 overflow-y-auto pr-4">
+            <div className="space-y-4">
+            {members.map((member, index) => {
               const isEditing = editingMember === member.id;
               const updates = memberUpdates[member.id] || {};
               const isAddingNote = addingNoteFor === member.id;
 
               return (
-                <Card key={member.id} className="border-l-4 border-l-blue-500">
+                <Card key={getMemberKey(member, index)} className="border-l-4 border-l-blue-500">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <div>
@@ -668,8 +671,8 @@ function StaffMemberManagementModal({
                           </SelectTrigger>
                           <SelectContent>
                             {getKaiserStatusesInOrder().map((status) => (
-                              <SelectItem key={status} value={status}>
-                                {status}
+                              <SelectItem key={status.status} value={status.status}>
+                                {status.status}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -816,8 +819,8 @@ function StaffMemberManagementModal({
                 </Card>
               );
             })}
-          </div>
-        </ScrollArea>
+            </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -890,6 +893,15 @@ function KaiserTrackerPageContent() {
   }, [members]);
 
 
+  // Treat numeric-only staff values (e.g. Caspio user IDs 107, 224, 33, 48) as unassigned
+  const normalizeStaffForSummary = (value: any): string => {
+    const s = value != null ? String(value).trim() : '';
+    if (!s) return 'Unassigned';
+    // If it's only digits, treat as unassigned (legacy ID, not a staff name)
+    if (/^\d+$/.test(s)) return 'Unassigned';
+    return s;
+  };
+
   // Calculate staff assignments dynamically from actual data
   const staffAssignments = useMemo(() => {
     const assignments: Record<string, { 
@@ -900,9 +912,12 @@ function KaiserTrackerPageContent() {
     }> = {};
     
     // Count members assigned to each staff (including unassigned)
+    const normalizeLabel = (value: any, fallback: string) =>
+      value ? String(value) : fallback;
+
     members.forEach(member => {
-      // Use the same field mapping as the API route
-      const staffName = member.Staff_Assigned || 'Unassigned';
+      // Use normalized staff so numeric IDs (107, 224, 33, 48) count as Unassigned
+      const staffName = normalizeStaffForSummary(member.Staff_Assigned);
       
       // Initialize staff if not exists
       if (!assignments[staffName]) {
@@ -918,11 +933,11 @@ function KaiserTrackerPageContent() {
       assignments[staffName].members.push(member);
         
         // Count status breakdown
-        const status = member.Kaiser_Status || 'No Status';
+        const status = normalizeLabel(member.Kaiser_Status, 'No Status');
         assignments[staffName].statusBreakdown[status] = (assignments[staffName].statusBreakdown[status] || 0) + 1;
         
         // Count next steps
-        const nextStep = member.Next_Step || member.workflow_step || 'No Next Step';
+        const nextStep = normalizeLabel(member.Next_Step || member.workflow_step, 'No Next Step');
         const nextStepDate = member.Next_Step_Due_Date || member.Next_Step_Date || '';
         
         if (!assignments[staffName].nextSteps[nextStep]) {
@@ -1207,27 +1222,32 @@ function KaiserTrackerPageContent() {
         console.log('🔍 FRONTEND ALL FIELDS:', Object.keys(firstMember).sort());
       }
       
-      // Clean and process the data
-      const cleanMembers = data.map((member: any, index: number) => ({
-        ...member,
-        id: member?.id || `frontend-member-${index}-${member?.Client_ID2 || Math.random().toString(36).substring(7)}`,
-        memberFirstName: member?.memberFirstName || 'Unknown',
-        memberLastName: member?.memberLastName || 'Member',
-        memberMrn: member?.memberMrn || '',
-        memberCounty: member?.memberCounty || 'Unknown',
-        memberPhone: member?.memberPhone || '',
-        memberEmail: member?.memberEmail || '',
-        client_ID2: member?.Client_ID2 || 'N/A',
-        pathway: member?.pathway || 'Unknown',
-        Kaiser_Status: member?.Kaiser_Status || member?.Kaiser_ID_Status || 'No Status',
-        CalAIM_Status: member?.CalAIM_Status || 'No Status',
-        Staff_Assigned: member?.Kaiser_User_Assignment || member?.kaiser_user_assignment || member?.SW_ID || '',
-        Next_Step_Due_Date: member?.Next_Step_Due_Date || '',
-        workflow_step: member?.workflow_step || '',
-        workflow_notes: member?.workflow_notes || '',
-        last_updated: member?.lastUpdated || new Date().toISOString(),
-        created_at: member?.created_at || new Date().toISOString()
-      }));
+      // Clean and process the data (numeric-only staff IDs → treat as unassigned)
+      const cleanMembers = data.map((member: any, index: number) => {
+        const rawStaff = member?.Kaiser_User_Assignment || member?.kaiser_user_assignment || member?.SW_ID || '';
+        const staffVal = rawStaff != null ? String(rawStaff).trim() : '';
+        const staffAssigned = !staffVal || /^\d+$/.test(staffVal) ? '' : staffVal;
+        return {
+          ...member,
+          id: member?.id || `frontend-member-${index}-${member?.Client_ID2 || Math.random().toString(36).substring(7)}`,
+          memberFirstName: member?.memberFirstName || 'Unknown',
+          memberLastName: member?.memberLastName || 'Member',
+          memberMrn: member?.memberMrn || '',
+          memberCounty: member?.memberCounty || 'Unknown',
+          memberPhone: member?.memberPhone || '',
+          memberEmail: member?.memberEmail || '',
+          client_ID2: member?.Client_ID2 || 'N/A',
+          pathway: member?.pathway || 'Unknown',
+          Kaiser_Status: member?.Kaiser_Status || member?.Kaiser_ID_Status || 'No Status',
+          CalAIM_Status: member?.CalAIM_Status || 'No Status',
+          Staff_Assigned: staffAssigned,
+          Next_Step_Due_Date: member?.Next_Step_Due_Date || '',
+          workflow_step: member?.workflow_step || '',
+          workflow_notes: member?.workflow_notes || '',
+          last_updated: member?.lastUpdated || new Date().toISOString(),
+          created_at: member?.created_at || new Date().toISOString()
+        };
+      });
 
       setMembers(cleanMembers);
       
@@ -1283,7 +1303,7 @@ function KaiserTrackerPageContent() {
         if (CALAIM_STATUS_MAP[normalized] !== filters.calaimStatus) return false;
       }
       if (filters.county !== 'all' && member.memberCounty !== filters.county) return false;
-      if (filters.staffAssigned !== 'all' && member.Staff_Assigned !== filters.staffAssigned) return false;
+      if (filters.staffAssigned !== 'all' && String(member.Staff_Assigned || '') !== filters.staffAssigned) return false;
       if (filters.overdueOnly && !isOverdue(member.Next_Step_Due_Date)) return false;
       return true;
     });
@@ -1371,7 +1391,7 @@ function KaiserTrackerPageContent() {
   const allKaiserStatuses = buildKaiserStatusList();
   const availableCounties = [...new Set(members.map(m => m.memberCounty).filter(Boolean))];
   const availableCalAIMStatuses = CALAIM_STATUS_OPTIONS;
-  const staffMembers = [...new Set(members.map(m => m.Staff_Assigned).filter(Boolean))];
+  const staffMembers = [...new Set(members.map(m => m.Staff_Assigned).filter(Boolean).map(String))];
 
   // Load data on component mount
   useEffect(() => {
@@ -1891,8 +1911,8 @@ function KaiserTrackerPageContent() {
                       return lastName.startsWith(searchLower);
                     })
                     .slice(0, 10)
-                    .map(member => (
-                      <div key={member.id} className="p-3 bg-gray-50 rounded border">
+                    .map((member, index) => (
+                      <div key={getMemberKey(member, index)} className="p-3 bg-gray-50 rounded border">
                         <div className="font-medium text-gray-900">
                           {member.memberLastName}, {member.memberFirstName}
                           </div>
@@ -2081,8 +2101,8 @@ function MemberListModal({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Staff</SelectItem>
-                {staffMembers.map(staff => (
-                  <SelectItem key={staff} value={staff}>{staff}</SelectItem>
+                {staffMembers.map((staff) => (
+                  <SelectItem key={String(staff)} value={String(staff)}>{String(staff)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -2104,14 +2124,14 @@ function MemberListModal({
                               </div>
           ) : (
             <div className="space-y-3">
-              {members.map((member) => {
+              {members.map((member, index) => {
                 const isStepOverdue = isOverdue(member.Next_Step_Due_Date);
                 const daysUntilDue = getDaysUntilDue(member.Next_Step_Due_Date);
                 const isUrgent = daysUntilDue <= 3 && daysUntilDue > 0;
                 
                 return (
                   <Card 
-                    key={member.id} 
+                    key={getMemberKey(member, index)} 
                     className={`cursor-pointer hover:bg-gray-50 transition-colors border-l-4 ${
                       isStepOverdue ? 'border-l-red-500 bg-red-50' : 
                       isUrgent ? 'border-l-yellow-500 bg-yellow-50' : 
