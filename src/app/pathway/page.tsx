@@ -192,6 +192,13 @@ function PathwayPageContent() {
       });
 
       const updatedForms = Array.from(existingForms.values());
+      const pendingDocReviewCount = updatedForms.filter((form: any) => {
+        const isCompleted = form?.status === 'Completed';
+        const name = String(form?.name || '').trim();
+        const isSummary = name === 'CS Member Summary' || name === 'CS Summary';
+        const acknowledged = Boolean(form?.acknowledged);
+        return isCompleted && !isSummary && !acknowledged;
+      }).length;
       
       try {
           await setDoc(docRef, {
@@ -201,6 +208,9 @@ function PathwayPageContent() {
               hasNewDocuments: true,
               newDocumentCount: updates.length,
               lastDocumentUpload: serverTimestamp(),
+              // Derived fields for staff review workflows
+              pendingDocReviewCount,
+              pendingDocReviewUpdatedAt: serverTimestamp(),
           }, { merge: true });
       } catch (e: any) {
           console.error("Failed to update form status:", e);

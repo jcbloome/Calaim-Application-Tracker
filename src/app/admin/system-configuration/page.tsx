@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Wrench, Settings, BellRing, ArrowRight } from 'lucide-react';
+import { Wrench, Settings, BellRing, ArrowRight, Bell } from 'lucide-react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { Loader2 } from 'lucide-react';
@@ -16,6 +16,13 @@ const systemTools = [
     icon: Wrench,
     href: '/admin/super-admin-tools',
     color: 'text-gray-600'
+  },
+  {
+    title: 'Review Notifications',
+    description: 'Choose who receives Electron pop-ups for CS Summary and document review',
+    icon: Bell,
+    href: '/admin/system-configuration/review-notifications',
+    color: 'text-indigo-600'
   },
   {
     title: 'Notification Settings',

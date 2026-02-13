@@ -155,7 +155,9 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                 // Mark CS Summary as completed for dashboard tracking
                 csSummaryComplete: true,
                 csSummaryCompletedAt: serverTimestamp(),
-                csSummaryNotificationSent: false // Reset notification flag
+                csSummaryNotificationSent: false, // Reset notification flag
+                // Derived field for staff review workflows
+                pendingCsReview: true,
             }, { merge: true });
 
             toast({

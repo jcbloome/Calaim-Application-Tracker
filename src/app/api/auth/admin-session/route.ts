@@ -47,6 +47,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
+    // Global master switch: block admin logins when disabled.
+    // Safety: Super Admins can still log in to re-enable.
+    try {
+      const adminAccessSnap = await adminDb.collection('system_settings').doc('admin_access').get();
+      const adminAccessEnabled = adminAccessSnap.exists
+        ? Boolean((adminAccessSnap.data() as any)?.enabled ?? true)
+        : true;
+      if (!adminAccessEnabled && !isSuperAdmin) {
+        return NextResponse.json({ error: 'Admin portal temporarily disabled by Super Admin' }, { status: 403 });
+      }
+    } catch {
+      // If we can't read the setting, default to allowing access (fail-open).
+    }
+
     try {
       await admin.auth().setCustomUserClaims(uid, {
         admin: true,

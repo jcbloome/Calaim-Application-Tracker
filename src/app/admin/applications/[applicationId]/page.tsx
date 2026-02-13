@@ -2303,10 +2303,17 @@ function ApplicationDetailPageContent() {
 
   const handleApplicationReviewed = async (checked: boolean) => {
     try {
+      const hasCompletedSummary = (application.forms || []).some((form: any) => {
+        const name = String(form?.name || '').trim();
+        const isSummary = name === 'CS Member Summary' || name === 'CS Summary';
+        return isSummary && form?.status === 'Completed';
+      });
       const updateData = {
         applicationChecked: checked,
         applicationCheckedDate: checked ? new Date().toISOString() : null,
-        ...(checked ? {} : { applicationCheckedBy: null })
+        ...(checked ? {} : { applicationCheckedBy: null }),
+        // Derived field for staff review workflows
+        pendingCsReview: !checked && hasCompletedSummary,
       };
 
       if (docRef) {
@@ -2335,7 +2342,19 @@ function ApplicationDetailPageContent() {
         form.name === formName ? { ...form, acknowledged: checked } : form
       );
 
-      await setDoc(docRef, { forms: updatedForms }, { merge: true });
+      const pendingDocReviewCount = updatedForms.filter((form: any) => {
+        const isCompleted = form?.status === 'Completed';
+        const name = String(form?.name || '').trim();
+        const isSummary = name === 'CS Member Summary' || name === 'CS Summary';
+        const acknowledged = Boolean(form?.acknowledged);
+        return isCompleted && !isSummary && !acknowledged;
+      }).length;
+
+      await setDoc(docRef, {
+        forms: updatedForms,
+        pendingDocReviewCount,
+        pendingDocReviewUpdatedAt: serverTimestamp(),
+      }, { merge: true });
       setApplication(prev => prev ? { ...prev, forms: updatedForms } : null);
 
       toast({

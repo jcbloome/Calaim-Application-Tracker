@@ -4,6 +4,7 @@ import React from 'react';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { NotificationProvider } from '@/components/NotificationProvider';
 import { RealTimeNotifications } from '@/components/RealTimeNotifications';
+import { ReviewNotificationPoller } from '@/components/ReviewNotificationPoller';
 import { Toaster } from '@/components/ui/toaster';
 import { SessionIsolationGate } from '@/components/SessionIsolationGate';
 import PWAServiceWorker from '@/components/PWAServiceWorker';
@@ -35,6 +36,7 @@ export default function RootLayout({
             <SessionIsolationGate />
             <PWAServiceWorker />
             <RealTimeNotifications />
+            <ReviewNotificationPoller />
             {children}
           </NotificationProvider>
         </FirebaseClientProvider>
