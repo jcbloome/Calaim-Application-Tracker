@@ -183,6 +183,71 @@ export function ReviewNotificationPoller() {
       const csCount = (csRootSnap?.size || 0) + (csGroupSnap?.size || 0);
       const docsCount = (docRootSnap?.size || 0) + (docGroupSnap?.size || 0);
 
+      // Provide Electron "notepad" list items for documents/CS review.
+      try {
+        const reviewNotes: Array<{
+          title: string;
+          message: string;
+          kind?: 'docs' | 'cs';
+          author?: string;
+          recipientName?: string;
+          memberName?: string;
+          timestamp?: string;
+          actionUrl?: string;
+        }> = [];
+
+        const pushCs = (snap: any) => {
+          (snap?.docs || []).slice(0, 3).forEach((d: any) => {
+            const data = d.data?.() || {};
+            const memberName = `${data.memberFirstName || 'Unknown'} ${data.memberLastName || 'Member'}`.trim();
+            reviewNotes.push({
+              kind: 'cs',
+              title: 'CS Summary received',
+              message: memberName,
+              author: 'System',
+              recipientName: user.displayName || user.email || 'Staff',
+              memberName,
+              timestamp: data.csSummaryCompletedAt?.toDate?.()?.toLocaleString?.() || undefined,
+              actionUrl: '/admin/applications?review=cs'
+            });
+          });
+        };
+
+        const pushDocs = (snap: any) => {
+          (snap?.docs || []).slice(0, 3).forEach((d: any) => {
+            const data = d.data?.() || {};
+            const memberName = `${data.memberFirstName || 'Unknown'} ${data.memberLastName || 'Member'}`.trim();
+            const count = Number(data.pendingDocReviewCount || 0);
+            reviewNotes.push({
+              kind: 'docs',
+              title: 'Documents received',
+              message: count > 0 ? `${memberName} (${count})` : memberName,
+              author: 'System',
+              recipientName: user.displayName || user.email || 'Staff',
+              memberName,
+              timestamp: data.pendingDocReviewUpdatedAt?.toDate?.()?.toLocaleString?.() || undefined,
+              actionUrl: '/admin/applications?review=docs'
+            });
+          });
+        };
+
+        if (shouldCheckCs) {
+          pushCs(csRootSnap);
+          pushCs(csGroupSnap);
+        }
+        if (shouldCheckDocs) {
+          pushDocs(docRootSnap);
+          pushDocs(docGroupSnap);
+        }
+
+        window.desktopNotifications.setReviewPillSummary?.({
+          count: (shouldCheckCs ? csCount : 0) + (shouldCheckDocs ? docsCount : 0),
+          notes: reviewNotes.slice(0, 6)
+        });
+      } catch {
+        // ignore
+      }
+
       const csLatestMs = Math.max(
         ...(csRootSnap?.docs || []).map((d: any) => toMs(d.data()?.csSummaryCompletedAt || d.data()?.lastUpdated)),
         ...(csGroupSnap?.docs || []).map((d: any) => toMs(d.data()?.csSummaryCompletedAt || d.data()?.lastUpdated)),

@@ -457,7 +457,6 @@ export function RealTimeNotifications() {
           const priority = normalizePriorityLabel(data.priority);
           const isUrgent = priority === 'Urgent';
           const isPriority = priority === 'Priority';
-          if (!isUrgent && !isPriority) return;
 
           const notification: NotificationData = {
             id: docSnap.id,
@@ -625,7 +624,8 @@ export function RealTimeNotifications() {
             window.desktopNotifications.setPillSummary({
               count,
               notes: sortedPending.map((note) => ({
-                title: summaryTitle,
+                kind: 'note',
+                title: sanitizeFieldLabel(note.title) || summaryTitle,
                 message: sanitizeNoteMessage(note.message),
                 author: sanitizeFieldLabel(note.senderName) || undefined,
                 recipientName: recipientLabel,

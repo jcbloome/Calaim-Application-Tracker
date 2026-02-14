@@ -19,6 +19,7 @@ declare global {
         notes?: Array<{
           title: string;
           message: string;
+          kind?: 'note' | 'docs' | 'cs';
           author?: string;
           recipientName?: string;
           memberName?: string;
@@ -36,6 +37,17 @@ declare global {
         timestamp?: string;
         replyUrl?: string;
         actionUrl?: string;
+      }) => void;
+      setReviewPillSummary?: (payload: {
+        count: number;
+        notes?: Array<{
+          title: string;
+          message: string;
+          kind?: 'note' | 'docs' | 'cs';
+          memberName?: string;
+          timestamp?: string;
+          actionUrl?: string;
+        }>;
       }) => void;
       checkForUpdates?: () => Promise<void>;
       onChange: (callback: (state: DesktopNotificationState) => void) => () => void;

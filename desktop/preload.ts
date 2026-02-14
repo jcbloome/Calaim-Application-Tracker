@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('desktopNotifications', {
     notes?: Array<{
       title: string;
       message: string;
+      kind?: 'note' | 'docs' | 'cs';
       author?: string;
       recipientName?: string;
       memberName?: string;
@@ -30,6 +31,17 @@ contextBridge.exposeInMainWorld('desktopNotifications', {
     actionUrl?: string;
   }) =>
     ipcRenderer.send('desktop:setPillSummary', payload),
+  setReviewPillSummary: (payload: {
+    count: number;
+    notes?: Array<{
+      title: string;
+      message: string;
+      kind?: 'note' | 'docs' | 'cs';
+      memberName?: string;
+      timestamp?: string;
+      actionUrl?: string;
+    }>;
+  }) => ipcRenderer.send('desktop:setReviewPillSummary', payload),
   checkForUpdates: () => ipcRenderer.invoke('desktop:checkForUpdates'),
   onChange: (callback: (state: any) => void) => {
     const handler = (_event: any, state: any) => callback(state);
