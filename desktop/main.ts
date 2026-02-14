@@ -42,7 +42,6 @@ let reviewPillNotes: PillItem[] = [];
 let staffPillCount = 0;
 let reviewPillCount = 0;
 let pillIndex = 0;
-let pillMode: 'minimized' | 'expanded' = 'minimized';
 let pillPosition: { x: number; y: number } | null = null;
 
 const singleInstanceLock = app.requestSingleInstanceLock();
@@ -239,9 +238,7 @@ const renderNotificationPill = () => {
   const aboutValue = escapeHtml(activeNote.memberName || pillSummary.memberName || '-');
   const sentValue = escapeHtml(activeNote.timestamp || pillSummary.timestamp || '-');
   const metaValues = `${fromValue} · ${toValue} · ${aboutValue} · ${sentValue}`;
-  const indexLabel = pillNotes.length > 1
-    ? `Note ${pillIndex + 1} of ${pillNotes.length}`
-    : '';
+  // Fixed-size pill: no expanded carousel UI.
   const kind = String((activeNote as any)?.kind || 'note');
   const accentColor =
     kind === 'docs'
@@ -256,8 +253,8 @@ const renderNotificationPill = () => {
 
   if (!notificationWindow) {
     notificationWindow = new BrowserWindow({
-      width: pillMode === 'expanded' ? 320 : 320,
-      height: pillMode === 'expanded' ? 180 : 64,
+      width: 360,
+      height: 84,
       frame: false,
       transparent: true,
       resizable: false,
@@ -327,6 +324,26 @@ const renderNotificationPill = () => {
             overflow: hidden;
             text-overflow: ellipsis;
           }
+          .row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+          }
+          .rightCol {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          }
+          .metaLine {
+            margin-top: 4px;
+            font-size: 8px;
+            color: #64748b;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 320px;
+          }
           .title {
             font-weight: 700;
             font-size: 11px;
@@ -383,47 +400,22 @@ const renderNotificationPill = () => {
         </style>
       </head>
       <body>
-        <div class="pill ${pillMode === 'expanded' ? '' : 'minimized'}" id="pill" data-mode="${pillMode}" data-note-id="${escapeHtml(activeNote.noteId || '')}" data-sender-id="${escapeHtml(activeNote.senderId || '')}">
-          ${
-            pillMode === 'expanded'
-              ? `<div class="title">${safeTitle}</div>
-                 <div class="meta meta-labels meta-grid">
-                   <span>From:</span>
-                   <span>To:</span>
-                   <span>About:</span>
-                   <span>Sent:</span>
-                 </div>
-                 <div class="meta meta-values meta-grid">
-                   <span>${fromValue}</span>
-                   <span>${toValue}</span>
-                   <span>${aboutValue}</span>
-                   <span>${sentValue}</span>
-                 </div>
-                 <div class="body">${safeBody.replace(/\\n/g, '<br />')}</div>
-                 ${indexLabel ? `<div class="meta">${indexLabel}</div>` : ''}
-                 <div class="meta">${countLabel}</div>
-                 <div class="actions">
-                   ${safeReply ? `<button class="btn" id="reply">Quick Reply</button>` : ''}
-                   ${pillNotes.length > 1 ? `<button class="btn" id="prev">Prev</button>` : ''}
-                   ${pillNotes.length > 1 ? `<button class="btn" id="next">Next</button>` : ''}
-                   <button class="btn primary" id="open">${openLabel}</button>
-                   <button class="btn" id="closeBtn">Minimize</button>
-                 </div>
-                 ${safeReply ? `<div class="actions" style="margin-top:6px;">
-                    <input id="replyInput" placeholder="Quick reply..." style="flex:1;font-size:9px;padding:3px 6px;border-radius:8px;border:1px solid #e2e8f0;" />
-                    <button class="btn primary" id="sendReply">Send</button>
-                  </div>` : ''}`
-              : `<div>
-                   <div class="label">Notes & documents</div>
-                   <div class="snippet">${safeTitle} — ${safeBody}</div>
-                 </div>
-                 <div class="count">${countLabel}</div>`
-          }
+        <div class="pill minimized" id="pill" data-note-id="${escapeHtml(activeNote.noteId || '')}" data-sender-id="${escapeHtml(activeNote.senderId || '')}">
+          <div class="row">
+            <div>
+              <div class="label">Notes & documents</div>
+              <div class="snippet">${safeTitle} — ${safeBody}</div>
+            </div>
+            <div class="rightCol">
+              <div class="count">${countLabel}</div>
+              <button class="btn primary" id="open">${openLabel}</button>
+            </div>
+          </div>
+          <div class="metaLine">${metaLabels} ${metaValues}</div>
         </div>
-        ${pillMode === 'expanded' ? `<div class="close" id="close">✕</div>` : ''}
+        <div class="close" id="close">✕</div>
         <script>
           const pill = document.getElementById('pill');
-          const mode = pill?.dataset?.mode;
           const noteId = pill?.dataset?.noteId || '';
           const senderId = pill?.dataset?.senderId || '';
           let dragging = false;
@@ -470,21 +462,12 @@ const renderNotificationPill = () => {
             window.desktopNotificationPill?.move?.(originX, originY);
           });
           pill.addEventListener('click', () => {
-            if (mode === 'expanded') {
-              return;
-            }
-            window.desktopNotificationPill?.expand?.();
+            if (dragged) return;
+            window.desktopNotificationPill?.open?.("${safeAction}");
           });
           const closeBtn = document.getElementById('close');
           if (closeBtn) {
             closeBtn.addEventListener('click', (event) => {
-              event.stopPropagation();
-              window.desktopNotificationPill?.dismiss?.();
-            });
-          }
-          const closeAction = document.getElementById('closeBtn');
-          if (closeAction) {
-            closeAction.addEventListener('click', (event) => {
               event.stopPropagation();
               window.desktopNotificationPill?.dismiss?.();
             });
@@ -496,72 +479,15 @@ const renderNotificationPill = () => {
               window.desktopNotificationPill?.open?.("${safeAction}");
             });
           }
-          const reply = document.getElementById('reply');
-          if (reply) {
-            reply.addEventListener('click', (event) => {
-              event.stopPropagation();
-              const input = document.getElementById('replyInput');
-              if (input) {
-                input.focus();
-                input.select?.();
-              }
-            });
-          }
-          const replyInput = document.getElementById('replyInput');
-          const sendReply = document.getElementById('sendReply');
-          if (sendReply && replyInput) {
-            replyInput.addEventListener('click', (event) => {
-              event.stopPropagation();
-            });
-            replyInput.addEventListener('keydown', (event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                sendReply.click();
-              } else {
-                event.stopPropagation();
-              }
-            });
-            sendReply.addEventListener('click', (event) => {
-              event.stopPropagation();
-              const message = replyInput.value.trim();
-              if (!message) return;
-              window.desktopNotificationPill?.sendReply?.({ noteId, senderId, message });
-              replyInput.value = '';
-            });
-          }
-          const prev = document.getElementById('prev');
-          if (prev) {
-            prev.addEventListener('click', (event) => {
-              event.stopPropagation();
-              window.desktopNotificationPill?.navigate?.(-1);
-            });
-          }
-          const next = document.getElementById('next');
-          if (next) {
-            next.addEventListener('click', (event) => {
-              event.stopPropagation();
-              window.desktopNotificationPill?.navigate?.(1);
-            });
-          }
         </script>
       </body>
     </html>
   `;
 
-  notificationWindow.setSize(pillMode === 'expanded' ? 320 : 320, pillMode === 'expanded' ? 180 : 64, false);
+  notificationWindow.setSize(360, 84, false);
   positionNotificationWindow();
   notificationWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => undefined);
   notificationWindow.showInactive();
-
-  if (notificationTimer) clearTimeout(notificationTimer);
-  notificationTimer = setTimeout(() => {
-    if (pillSummary.count > 0) {
-      pillMode = 'minimized';
-      renderNotificationPill();
-    } else {
-      closeNotificationWindow();
-    }
-  }, pillMode === 'expanded' ? 8000 : 12000);
 };
 
 const recomputeCombinedPill = () => {
@@ -581,17 +507,11 @@ const recomputeCombinedPill = () => {
   pillSummary.count = staffPillCount + reviewPillCount;
 };
 
-const showExpandedPill = () => {
-  pillMode = 'expanded';
-  renderNotificationPill();
-};
-
 const showMinimizedPill = () => {
   if (pillSummary.count <= 0) {
     closeNotificationWindow();
     return;
   }
-  pillMode = 'minimized';
   renderNotificationPill();
 };
 
@@ -680,11 +600,7 @@ ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string
     title: payload.title,
     message: payload.body
   };
-  if (payload.openOnNotify) {
-    showExpandedPill();
-  } else {
-    showMinimizedPill();
-  }
+  showMinimizedPill();
 
   if (payload.openOnNotify && mainWindow) {
     mainWindow.show();
@@ -711,11 +627,18 @@ ipcMain.on('desktop:openNotifications', (_event, payload?: { url?: string }) => 
 });
 
 ipcMain.on('desktop:dismissPill', () => {
-  showMinimizedPill();
+  // User dismissed the pill UI (hide it).
+  closeNotificationWindow();
 });
 
 ipcMain.on('desktop:expandPill', () => {
-  showExpandedPill();
+  // Fixed-size pill: treat "expand" as "open notifications".
+  if (!mainWindow) return;
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send('desktop:expand');
+  mainWindow.loadURL(`${appOrigin}/admin/my-notes`).catch(() => undefined);
+  closeNotificationWindow();
 });
 
 ipcMain.on('desktop:navigatePill', (_event, payload: { delta: number }) => {
@@ -723,7 +646,7 @@ ipcMain.on('desktop:navigatePill', (_event, payload: { delta: number }) => {
   const nextIndex = pillIndex + payload.delta;
   if (nextIndex < 0 || nextIndex >= pillNotes.length) return;
   pillIndex = nextIndex;
-  showExpandedPill();
+  renderNotificationPill();
 });
 
 ipcMain.on('desktop:quickReply', (_event, payload: { noteId?: string; senderId?: string; message: string }) => {
