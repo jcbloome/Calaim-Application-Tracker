@@ -43,6 +43,7 @@ let staffPillCount = 0;
 let reviewPillCount = 0;
 let pillIndex = 0;
 let pillPosition: { x: number; y: number } | null = null;
+let pillMode: 'compact' | 'panel' = 'compact';
 
 const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
@@ -250,11 +251,17 @@ const renderNotificationPill = () => {
     kind === 'docs' || kind === 'cs'
       ? 'Go to Applications'
       : 'Go to Notes';
+  const typeLabel =
+    kind === 'docs'
+      ? 'Documents'
+      : kind === 'cs'
+        ? 'CS Summary'
+        : 'Interoffice note';
 
   if (!notificationWindow) {
     notificationWindow = new BrowserWindow({
       width: 360,
-      height: 84,
+      height: pillMode === 'panel' ? 220 : 84,
       frame: false,
       transparent: true,
       resizable: false,
@@ -344,6 +351,31 @@ const renderNotificationPill = () => {
             text-overflow: ellipsis;
             max-width: 320px;
           }
+          .tag {
+            display: inline-block;
+            font-size: 8px;
+            padding: 1px 6px;
+            border-radius: 999px;
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            color: #0f172a;
+            margin-left: 6px;
+          }
+          .tag.note { border-color: #ddd6fe; background: #f5f3ff; color: #5b21b6; }
+          .tag.docs { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+          .tag.cs { border-color: #fed7aa; background: #fff7ed; color: #9a3412; }
+          .panelHeader {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+          }
+          .panelMetaGrid {
+            margin-top: 8px;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+          }
           .title {
             font-weight: 700;
             font-size: 11px;
@@ -400,22 +432,48 @@ const renderNotificationPill = () => {
         </style>
       </head>
       <body>
-        <div class="pill minimized" id="pill" data-note-id="${escapeHtml(activeNote.noteId || '')}" data-sender-id="${escapeHtml(activeNote.senderId || '')}">
-          <div class="row">
-            <div>
-              <div class="label">Notes & documents</div>
-              <div class="snippet">${safeTitle} — ${safeBody}</div>
-            </div>
-            <div class="rightCol">
-              <div class="count">${countLabel}</div>
-              <button class="btn primary" id="open">${openLabel}</button>
-            </div>
-          </div>
-          <div class="metaLine">${metaLabels} ${metaValues}</div>
+        <div class="pill minimized" id="pill" data-mode="${pillMode}" data-note-id="${escapeHtml(activeNote.noteId || '')}" data-sender-id="${escapeHtml(activeNote.senderId || '')}">
+          ${
+            pillMode === 'panel'
+              ? `<div class="panelHeader">
+                   <div class="title">Connections Note<span class="tag ${kind}">${typeLabel}</span></div>
+                   <div style="display:flex;gap:6px;align-items:center;">
+                     ${pillNotes.length > 1 ? `<button class="btn" id="prev">Prev</button><button class="btn" id="next">Next</button>` : ''}
+                     <button class="btn" id="minimize">Minimize</button>
+                     <button class="btn" id="hide">Hide</button>
+                   </div>
+                 </div>
+                 <div class="meta meta-labels panelMetaGrid">
+                   <span>From:</span>
+                   <span>To:</span>
+                   <span>About:</span>
+                   <span>Sent:</span>
+                 </div>
+                 <div class="meta meta-values panelMetaGrid">
+                   <span>${fromValue}</span>
+                   <span>${toValue}</span>
+                   <span>${aboutValue}</span>
+                   <span>${sentValue}</span>
+                 </div>
+                 <div class="body" style="margin-top:8px;max-height:92px;overflow:auto;">${safeBody.replace(/\\n/g, '<br />')}</div>
+                 <div class="actions">
+                   <button class="btn primary" id="open">${openLabel}</button>
+                 </div>`
+              : `<div class="row">
+                   <div>
+                     <div class="label">Notes & documents<span class="tag ${kind}">${typeLabel}</span></div>
+                     <div class="snippet">${safeTitle} — ${safeBody}</div>
+                   </div>
+                   <div class="rightCol">
+                     <div class="count">${countLabel}</div>
+                   </div>
+                 </div>
+                 <div class="metaLine">${metaLabels} ${metaValues}</div>`
+          }
         </div>
-        <div class="close" id="close">✕</div>
         <script>
           const pill = document.getElementById('pill');
+          const mode = pill?.dataset?.mode || 'compact';
           const noteId = pill?.dataset?.noteId || '';
           const senderId = pill?.dataset?.senderId || '';
           let dragging = false;
@@ -463,15 +521,10 @@ const renderNotificationPill = () => {
           });
           pill.addEventListener('click', () => {
             if (dragged) return;
-            window.desktopNotificationPill?.open?.("${safeAction}");
+            if (mode === 'compact') {
+              window.desktopNotificationPill?.expand?.();
+            }
           });
-          const closeBtn = document.getElementById('close');
-          if (closeBtn) {
-            closeBtn.addEventListener('click', (event) => {
-              event.stopPropagation();
-              window.desktopNotificationPill?.dismiss?.();
-            });
-          }
           const open = document.getElementById('open');
           if (open) {
             open.addEventListener('click', (event) => {
@@ -479,15 +532,52 @@ const renderNotificationPill = () => {
               window.desktopNotificationPill?.open?.("${safeAction}");
             });
           }
+          const minimize = document.getElementById('minimize');
+          if (minimize) {
+            minimize.addEventListener('click', (event) => {
+              event.stopPropagation();
+              window.desktopNotificationPill?.dismiss?.();
+            });
+          }
+          const hide = document.getElementById('hide');
+          if (hide) {
+            hide.addEventListener('click', (event) => {
+              event.stopPropagation();
+              window.desktopNotificationPill?.hide?.();
+            });
+          }
+          const prev = document.getElementById('prev');
+          if (prev) {
+            prev.addEventListener('click', (event) => {
+              event.stopPropagation();
+              window.desktopNotificationPill?.navigate?.(-1);
+            });
+          }
+          const next = document.getElementById('next');
+          if (next) {
+            next.addEventListener('click', (event) => {
+              event.stopPropagation();
+              window.desktopNotificationPill?.navigate?.(1);
+            });
+          }
         </script>
       </body>
     </html>
   `;
 
-  notificationWindow.setSize(360, 84, false);
+  notificationWindow.setSize(360, pillMode === 'panel' ? 220 : 84, false);
   positionNotificationWindow();
   notificationWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => undefined);
   notificationWindow.showInactive();
+};
+
+const showPanel = () => {
+  if (pillSummary.count <= 0) {
+    closeNotificationWindow();
+    return;
+  }
+  pillMode = 'panel';
+  renderNotificationPill();
 };
 
 const recomputeCombinedPill = () => {
@@ -512,6 +602,7 @@ const showMinimizedPill = () => {
     closeNotificationWindow();
     return;
   }
+  pillMode = 'compact';
   renderNotificationPill();
 };
 
@@ -627,18 +718,17 @@ ipcMain.on('desktop:openNotifications', (_event, payload?: { url?: string }) => 
 });
 
 ipcMain.on('desktop:dismissPill', () => {
-  // User dismissed the pill UI (hide it).
+  // Return to compact pill (panel -> compact).
+  showMinimizedPill();
+});
+
+ipcMain.on('desktop:hidePill', () => {
   closeNotificationWindow();
 });
 
 ipcMain.on('desktop:expandPill', () => {
-  // Fixed-size pill: treat "expand" as "open notifications".
-  if (!mainWindow) return;
-  mainWindow.show();
-  mainWindow.focus();
-  mainWindow.webContents.send('desktop:expand');
-  mainWindow.loadURL(`${appOrigin}/admin/my-notes`).catch(() => undefined);
-  closeNotificationWindow();
+  // First click behavior: open the note panel (fixed-size).
+  showPanel();
 });
 
 ipcMain.on('desktop:navigatePill', (_event, payload: { delta: number }) => {
