@@ -461,13 +461,23 @@ export function RealTimeNotifications() {
           const notification: NotificationData = {
             id: docSnap.id,
             title: data.title || 'Note',
-            message: data.message || (data as any).content || '',
-            senderName: data.senderName || (data as any).createdByName || 'Staff',
+            // Some sources (ex: Caspio webhook) store the real note text in `noteContent`.
+            message: (data as any).noteContent || data.message || (data as any).content || '',
+            senderName:
+              data.senderName ||
+              (data as any).authorName ||
+              (data as any).createdByName ||
+              (data as any).createdBy ||
+              'Staff',
             senderId: (data as any).senderId || (data as any).createdBy,
             memberName: data.memberName || '',
             type: data.type || 'note',
             priority,
-            timestamp: data.timestamp?.toDate() || new Date(),
+            timestamp:
+              data.timestamp?.toDate?.() ||
+              (data as any).createdAt?.toDate?.() ||
+              ((data as any).createdAt ? new Date((data as any).createdAt) : null) ||
+              new Date(),
             followUpDate: formatFollowUpDate(data.followUpDate),
             applicationId: data.applicationId,
             actionUrl: resolveActionUrl(data),
@@ -551,7 +561,10 @@ export function RealTimeNotifications() {
                 minute: '2-digit'
               })
             : '';
-          const highlightMessage = sanitizeNoteMessage(highlightNote?.message);
+          const highlightMessage =
+            sanitizeNoteMessage(highlightNote?.message) ||
+            sanitizeFieldLabel(highlightNote?.title) ||
+            '';
           const recentLines = sortedPending.slice(0, 3).map((note) => {
             const label = sanitizeFieldLabel(note.memberName) || 'General Note';
             const timeLabel = note.timestamp
@@ -626,7 +639,7 @@ export function RealTimeNotifications() {
               notes: sortedPending.map((note) => ({
                 kind: 'note',
                 title: sanitizeFieldLabel(note.title) || summaryTitle,
-                message: sanitizeNoteMessage(note.message),
+                message: sanitizeNoteMessage(note.message) || sanitizeFieldLabel(note.message) || '',
                 author: sanitizeFieldLabel(note.senderName) || undefined,
                 recipientName: recipientLabel,
                 memberName: sanitizeFieldLabel(note.memberName) || undefined,
@@ -636,7 +649,9 @@ export function RealTimeNotifications() {
                 replyUrl: note.id
                   ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}`
                   : undefined,
-                actionUrl: '/admin/my-notes'
+                actionUrl: note.id
+                  ? `/admin/my-notes?noteId=${encodeURIComponent(note.id)}`
+                  : '/admin/my-notes'
               })),
               title: summaryTitle,
               message: detailMessage,
@@ -645,7 +660,9 @@ export function RealTimeNotifications() {
               memberName: highlightSubject,
               timestamp: highlightTimestamp || undefined,
               replyUrl,
-              actionUrl: '/admin/my-notes'
+              actionUrl: highlightNote?.id
+                ? `/admin/my-notes?noteId=${encodeURIComponent(highlightNote.id)}`
+                : '/admin/my-notes'
             });
           }
 
