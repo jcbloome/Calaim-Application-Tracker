@@ -181,13 +181,19 @@ function PathwayPageContent() {
 
   const handleFormStatusUpdate = async (updates: Partial<FormStatusType>[]) => {
       if (!docRef || !application) return;
+      const isInternalStaffUpload = Boolean(isAdmin || isSuperAdmin);
 
       const existingForms = new Map(application.forms?.map(f => [f.name, f]) || []);
       
       updates.forEach(update => {
           const existingForm = existingForms.get(update.name!);
           if (existingForm) {
-              existingForms.set(update.name!, { ...existingForm, ...update });
+              const shouldAutoAcknowledge = isInternalStaffUpload && update.status === 'Completed';
+              existingForms.set(update.name!, {
+                ...existingForm,
+                ...update,
+                ...(shouldAutoAcknowledge ? { acknowledged: true } : {})
+              });
           }
       });
 
@@ -201,17 +207,22 @@ function PathwayPageContent() {
       }).length;
       
       try {
-          await setDoc(docRef, {
+          const baseUpdate: Record<string, any> = {
               forms: updatedForms,
               lastUpdated: serverTimestamp(),
-              // Track new document uploads for dashboard
-              hasNewDocuments: true,
-              newDocumentCount: updates.length,
               lastDocumentUpload: serverTimestamp(),
               // Derived fields for staff review workflows
               pendingDocReviewCount,
               pendingDocReviewUpdatedAt: serverTimestamp(),
-          }, { merge: true });
+          };
+
+          // Only referrer uploads should trigger "new documents" flags.
+          if (!isInternalStaffUpload) {
+            baseUpdate.hasNewDocuments = true;
+            baseUpdate.newDocumentCount = updates.length;
+          }
+
+          await setDoc(docRef, baseUpdate, { merge: true });
       } catch (e: any) {
           console.error("Failed to update form status:", e);
           enhancedToast.error('Update Error', 'Could not update form status.');

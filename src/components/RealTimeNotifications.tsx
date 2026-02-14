@@ -12,7 +12,8 @@ import {
   Timestamp,
   doc,
   updateDoc,
-  serverTimestamp
+  serverTimestamp,
+  getDoc
 } from 'firebase/firestore';
 import { useGlobalNotifications } from './NotificationProvider';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -114,9 +115,35 @@ export function RealTimeNotifications() {
   const [globalPolicy, setGlobalPolicy] = useState<{ forceSuppressWebWhenDesktopActive: boolean }>({
     forceSuppressWebWhenDesktopActive: false
   });
+  const [webToastPolicy, setWebToastPolicy] = useState<{
+    webAppNotificationsEnabled: boolean;
+    suppressWebWhenDesktopActive: boolean;
+  }>({
+    webAppNotificationsEnabled: true,
+    suppressWebWhenDesktopActive: true
+  });
 
   useEffect(() => {
     firestoreRef.current = firestore;
+  }, [firestore]);
+
+  // Super Admin global toggles for web in-app notifications (stored in system_settings/notifications).
+  useEffect(() => {
+    if (!firestore || typeof window === 'undefined') return;
+    const load = async () => {
+      try {
+        const snap = await getDoc(doc(firestore, 'system_settings', 'notifications'));
+        if (!snap.exists()) return;
+        const data = snap.data() as any;
+        setWebToastPolicy({
+          webAppNotificationsEnabled: Boolean(data?.webAppNotificationsEnabled ?? true),
+          suppressWebWhenDesktopActive: Boolean(data?.suppressWebWhenDesktopActive ?? true)
+        });
+      } catch (error) {
+        console.warn('Failed to load web toast policy:', error);
+      }
+    };
+    load();
   }, [firestore]);
 
   useEffect(() => {
@@ -551,7 +578,11 @@ export function RealTimeNotifications() {
             Boolean(latestPending?.timestamp) &&
             Date.now() - latestPending.timestamp.getTime() <= recentThresholdMs;
           const forceExpanded = hasNewUrgent || hasNewPriority || isRecent;
-          const shouldShowWebToast = shouldShowWebToastBase;
+          const shouldShowWebToast = (() => {
+            if (!webToastPolicy.webAppNotificationsEnabled) return false;
+            if (desktopPresent && webToastPolicy.suppressWebWhenDesktopActive) return false;
+            return shouldShowWebToastBase;
+          })();
           const shouldPopup = shouldShowWebToastBase && forceExpanded;
 
           if (!canShowNotifications() && !forceExpanded) {

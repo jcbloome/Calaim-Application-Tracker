@@ -56,6 +56,10 @@ export default function StaffManagementPage() {
     // Global admin portal access (master switch)
     const [adminPortalEnabled, setAdminPortalEnabled] = useState(true);
 
+    // Web in-app notifications (cards/toasts) for staff notes
+    const [webAppNotificationsEnabled, setWebAppNotificationsEnabled] = useState(true);
+    const [suppressWebWhenDesktopActive, setSuppressWebWhenDesktopActive] = useState(true);
+
     // Electron review popups (incoming forms)
     const [reviewPopupsEnabled, setReviewPopupsEnabled] = useState(true);
     const [reviewPollIntervalSeconds, setReviewPollIntervalSeconds] = useState(180);
@@ -172,6 +176,8 @@ export default function StaffManagementPage() {
                 const data = notificationsSnap.data();
                 setNotificationRecipients(data?.recipientUids || []);
                 setIlsNotePermissions(data?.ilsNotePermissions || []);
+                setWebAppNotificationsEnabled(Boolean((data as any)?.webAppNotificationsEnabled ?? true));
+                setSuppressWebWhenDesktopActive(Boolean((data as any)?.suppressWebWhenDesktopActive ?? true));
             }
 
             if (adminAccessSnap?.exists()) {
@@ -326,6 +332,8 @@ export default function StaffManagementPage() {
             const notificationsData = {
                 recipientUids: notificationRecipients,
                 ilsNotePermissions: ilsNotePermissions,
+                webAppNotificationsEnabled: Boolean(webAppNotificationsEnabled),
+                suppressWebWhenDesktopActive: Boolean(suppressWebWhenDesktopActive),
             };
 
             const adminAccessRef = doc(firestore, 'system_settings', 'admin_access');
@@ -559,6 +567,33 @@ export default function StaffManagementPage() {
                                 </div>
                             </div>
                             <Switch checked={reviewPopupsEnabled} onCheckedChange={(v) => setReviewPopupsEnabled(Boolean(v))} />
+                        </div>
+                    </div>
+
+                    <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4 p-3 border rounded-lg bg-muted/20">
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="space-y-1">
+                                <div className="text-sm font-semibold">Web in-app notifications</div>
+                                <div className="text-xs text-muted-foreground">
+                                    Turns on/off the web notification cards for staff notes.
+                                </div>
+                            </div>
+                            <Switch
+                                checked={webAppNotificationsEnabled}
+                                onCheckedChange={(v) => setWebAppNotificationsEnabled(Boolean(v))}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="space-y-1">
+                                <div className="text-sm font-semibold">Suppress web when Electron is active</div>
+                                <div className="text-xs text-muted-foreground">
+                                    Prevents duplicate notifications inside the desktop app.
+                                </div>
+                            </div>
+                            <Switch
+                                checked={suppressWebWhenDesktopActive}
+                                onCheckedChange={(v) => setSuppressWebWhenDesktopActive(Boolean(v))}
+                            />
                         </div>
                     </div>
 

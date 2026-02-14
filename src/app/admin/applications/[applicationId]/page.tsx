@@ -1909,26 +1909,41 @@ function ApplicationDetailPageContent() {
       updates.forEach(update => {
           const existingForm = existingForms.get(update.name!);
           if (existingForm) {
-              existingForms.set(update.name!, { ...existingForm, ...update });
+              // Staff internal uploads should not trigger "needs review" notifications.
+              const shouldAutoAcknowledge = update.status === 'Completed' && Boolean(update.filePath || update.downloadURL);
+              existingForms.set(update.name!, {
+                ...existingForm,
+                ...update,
+                ...(shouldAutoAcknowledge ? { acknowledged: true } : {})
+              });
           } else if (update.name) {
+              const shouldAutoAcknowledge = update.status === 'Completed' && Boolean((update as any).filePath || (update as any).downloadURL);
               existingForms.set(update.name, {
                 name: update.name,
                 status: update.status || 'Pending',
-                ...update
+                ...update,
+                ...(shouldAutoAcknowledge ? { acknowledged: true } : {})
               });
           }
       });
 
       const updatedForms = Array.from(existingForms.values());
+      const pendingDocReviewCount = updatedForms.filter((form: any) => {
+        const isCompleted = form?.status === 'Completed';
+        const name = String(form?.name || '').trim();
+        const isSummary = name === 'CS Member Summary' || name === 'CS Summary';
+        const acknowledged = Boolean(form?.acknowledged);
+        return isCompleted && !isSummary && !acknowledged;
+      }).length;
       
       try {
           await setDoc(docRef, {
               forms: updatedForms,
               lastUpdated: serverTimestamp(),
-              // Track new document uploads for dashboard
-              hasNewDocuments: true,
-              newDocumentCount: updates.length,
               lastDocumentUpload: serverTimestamp(),
+              // Derived fields for staff review workflows
+              pendingDocReviewCount,
+              pendingDocReviewUpdatedAt: serverTimestamp(),
           }, { merge: true });
       } catch (e: any) {
           console.error("Failed to update form status:", e);
