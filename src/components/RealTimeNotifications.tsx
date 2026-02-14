@@ -734,7 +734,8 @@ export function RealTimeNotifications() {
             window.desktopNotifications.notify({
               title: summaryTitle,
               body: summaryMessage,
-              openOnNotify: hasNew
+              // Avoid repeatedly expanding the pill for general notes.
+              openOnNotify: Boolean(hasNewUrgent || hasNewPriority)
             }).catch(() => undefined);
           }
         }, 400);

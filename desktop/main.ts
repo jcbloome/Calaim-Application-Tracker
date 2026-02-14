@@ -226,18 +226,18 @@ const positionNotificationWindow = () => {
 
 const renderNotificationPill = () => {
   const activeNote = pillNotes.length > 0 ? pillNotes[pillIndex] : pillSummary;
-  const safeTitle = escapeHtml(activeNote.title || 'Connections Note');
-  const safeBody = escapeHtml(activeNote.message || '');
+  const safeTitle = escapeHtml(activeNote.title || pillSummary.title || 'Connections Note');
+  const safeBody = escapeHtml(activeNote.message || pillSummary.message || '');
   const safeReply = activeNote.replyUrl ? escapeHtml(activeNote.replyUrl) : '';
-  const safeAction = escapeHtml(activeNote.actionUrl || '/admin/my-notes');
+  const safeAction = escapeHtml(activeNote.actionUrl || pillSummary.actionUrl || '/admin/my-notes');
   const countLabel = pillSummary.count === 1
     ? '1 pending item'
     : `${pillSummary.count} pending items`;
   const metaLabels = 'From: To: About: Sent:';
-  const fromValue = escapeHtml(activeNote.author || '-');
-  const toValue = escapeHtml(activeNote.recipientName || '-');
-  const aboutValue = escapeHtml(activeNote.memberName || '-');
-  const sentValue = escapeHtml(activeNote.timestamp || '-');
+  const fromValue = escapeHtml(activeNote.author || pillSummary.author || '-');
+  const toValue = escapeHtml(activeNote.recipientName || pillSummary.recipientName || '-');
+  const aboutValue = escapeHtml(activeNote.memberName || pillSummary.memberName || '-');
+  const sentValue = escapeHtml(activeNote.timestamp || pillSummary.timestamp || '-');
   const metaValues = `${fromValue} · ${toValue} · ${aboutValue} · ${sentValue}`;
   const indexLabel = pillNotes.length > 1
     ? `Note ${pillIndex + 1} of ${pillNotes.length}`
@@ -676,10 +676,15 @@ ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string
 
   pillSummary = {
     ...pillSummary,
+    count: Math.max(1, Number(pillSummary.count || 0)),
     title: payload.title,
     message: payload.body
   };
-  showExpandedPill();
+  if (payload.openOnNotify) {
+    showExpandedPill();
+  } else {
+    showMinimizedPill();
+  }
 
   if (payload.openOnNotify && mainWindow) {
     mainWindow.show();
