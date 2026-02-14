@@ -6,7 +6,10 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const fallbackInstallerUrl =
-  'https://github.com/jcbloome/Calaim-Application-Tracker/releases/download/v3.0.1/Connect.CalAIM.Desktop.Setup.3.0.1.exe';
+  'https://github.com/jcbloome/Calaim-Application-Tracker/releases/download/v3.0.2/Connect.CalAIM.Desktop.Setup.3.0.2.exe';
+
+const GITHUB_OWNER = 'jcbloome';
+const GITHUB_REPO = 'Calaim-Application-Tracker';
 
 const localInstallerPath = path.join(process.cwd(), 'public', 'downloads', 'Connect-CalAIM-Desktop-Setup.exe');
 const localSha256Path = `${localInstallerPath}.sha256`;
@@ -36,6 +39,36 @@ const getDesktopPackageVersion = async () => {
   }
 };
 
+const getLatestGithubInstaller = async (): Promise<{
+  version: string | null;
+  url: string | null;
+  name: string | null;
+}> => {
+  try {
+    const apiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
+    const res = await fetch(apiUrl, {
+      cache: 'no-store',
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'Connect-CalAIM-Tracker'
+      }
+    });
+    if (!res.ok) return { version: null, url: null, name: null };
+    const data = await res.json() as any;
+    const tag = String(data?.tag_name || '');
+    const version = tag.replace(/^v/i, '') || null;
+    const assets = Array.isArray(data?.assets) ? data.assets : [];
+    const exe = assets.find((a: any) => typeof a?.name === 'string' && a.name.toLowerCase().endsWith('.exe'));
+    return {
+      version,
+      url: exe?.browser_download_url || null,
+      name: exe?.name || null
+    };
+  } catch {
+    return { version: null, url: null, name: null };
+  }
+};
+
 const getLocalInstallerMeta = async () => {
   try {
     const raw = await fs.readFile(localMetaPath, 'utf8');
@@ -53,15 +86,6 @@ const getLocalInstallerMeta = async () => {
 export async function GET() {
   const installerUrl = getInstallerUrl();
   const localMeta = await getLocalInstallerMeta();
-  const version =
-    localMeta?.version ||
-    getInstallerVersion(installerUrl) ||
-    process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_VERSION ||
-    process.env.DESKTOP_INSTALLER_VERSION ||
-    (await getDesktopPackageVersion());
-  const filename = version
-    ? `Connect-CalAIM-Desktop-Setup-${version}.exe`
-    : 'Connect-CalAIM-Desktop-Setup.exe';
 
   let data: ArrayBuffer;
   let sha256: string | null = localMeta?.sha256 || null;
@@ -79,15 +103,25 @@ export async function GET() {
       sha256 = crypto.createHash('sha256').update(localBuffer).digest('hex');
     }
   } catch {
-    const remoteUrl = localMeta?.releaseUrl || installerUrl;
-    const response = await fetch(remoteUrl, { redirect: 'follow', cache: 'no-store' });
-    if (!response.ok || !response.body) {
-      return new Response('Installer download unavailable.', { status: 502 });
+    // Prefer redirecting directly to GitHub (more reliable than proxying large binaries).
+    const latest = await getLatestGithubInstaller();
+    const remoteUrl = latest.url || localMeta?.releaseUrl || installerUrl;
+    if (remoteUrl) {
+      return Response.redirect(remoteUrl, 302);
     }
-    data = await response.arrayBuffer();
-    sha256 = crypto.createHash('sha256').update(Buffer.from(data)).digest('hex');
-    headers = new Headers(response.headers);
+    return new Response('Installer download unavailable.', { status: 502 });
   }
+
+  const version =
+    localMeta?.version ||
+    getInstallerVersion(installerUrl) ||
+    process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_VERSION ||
+    process.env.DESKTOP_INSTALLER_VERSION ||
+    (await getDesktopPackageVersion());
+  const filename = version
+    ? `Connect-CalAIM-Desktop-Setup-${version}.exe`
+    : 'Connect-CalAIM-Desktop-Setup.exe';
+
   headers.set(
     'Content-Disposition',
     `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
