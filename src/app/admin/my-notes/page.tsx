@@ -21,6 +21,7 @@ import { addDoc, collection, query, where, onSnapshot, doc, updateDoc, writeBatc
 import { logSystemNoteAction } from '@/lib/system-note-log';
 import { isPriorityOrUrgent, normalizePriorityLabel, notifyNotificationSettingsChanged } from '@/lib/notification-utils';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
+import { DesktopPillPreviewOverlay } from '@/components/DesktopPillPreviewOverlay';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,6 +67,11 @@ function MyNotesContent() {
   const firestore = useFirestore();
   const { toast } = useToast();
   const searchParams = useSearchParams();
+  const desktopTesterEnabled = searchParams.get('desktopTester') === '1';
+  const allowDesktopTester =
+    process.env.NODE_ENV !== 'production'
+    || (typeof window !== 'undefined'
+      && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'));
   const [searchTerm, setSearchTerm] = useState('');
   const [notifications, setNotifications] = useState<StaffNotification[]>([]);
   const [isLoadingNotes, setIsLoadingNotes] = useState(true);
@@ -224,7 +230,8 @@ function MyNotesContent() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!window.desktopNotifications) {
+    const isRealDesktop = Boolean(window.desktopNotifications && !window.desktopNotifications.__shim);
+    if (!isRealDesktop) {
       setDesktopActive(false);
       return;
     }
@@ -819,6 +826,7 @@ function MyNotesContent() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       {isAdmin && <PWAInstallPrompt />}
+      {allowDesktopTester && desktopTesterEnabled && <DesktopPillPreviewOverlay />}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -828,6 +836,13 @@ function MyNotesContent() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {allowDesktopTester && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={desktopTesterEnabled ? '/admin/my-notes' : '/admin/my-notes?desktopTester=1'}>
+                {desktopTesterEnabled ? 'Hide Desktop Tester' : 'Desktop Tester'}
+              </Link>
+            </Button>
+          )}
           <div className="flex flex-col items-end gap-1 text-right">
             <Button asChild variant="outline" size="sm">
               <a href={installerDownloadUrl} download>

@@ -3,6 +3,8 @@ import './globals.css';
 import React from 'react';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { NotificationProvider } from '@/components/NotificationProvider';
+import { DesktopNotificationsDevShim } from '@/components/DesktopNotificationsDevShim';
+import { WebNotificationsDevTester } from '@/components/WebNotificationsDevTester';
 import { RealTimeNotifications } from '@/components/RealTimeNotifications';
 import { ReviewNotificationPoller } from '@/components/ReviewNotificationPoller';
 import { Toaster } from '@/components/ui/toaster';
@@ -35,6 +37,8 @@ export default function RootLayout({
           <NotificationProvider>
             <SessionIsolationGate />
             <PWAServiceWorker />
+            <DesktopNotificationsDevShim />
+            <WebNotificationsDevTester />
             <RealTimeNotifications />
             <ReviewNotificationPoller />
             {children}

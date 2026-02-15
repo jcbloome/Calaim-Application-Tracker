@@ -10,6 +10,7 @@ declare global {
 
   interface Window {
     desktopNotifications?: {
+      __shim?: boolean;
       getState: () => Promise<DesktopNotificationState>;
       setPaused: (paused: boolean) => Promise<DesktopNotificationState>;
       notify: (payload: { title: string; body: string; openOnNotify?: boolean }) => Promise<boolean>;

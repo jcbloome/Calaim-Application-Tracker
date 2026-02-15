@@ -46,53 +46,63 @@ const resolveRole = async (email: string, role?: string) => {
   return resolvedRole;
 };
 
-const buildResetUrl = async (baseUrl: string, email: string) => {
+const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user') => {
   const serverKey = process.env.FIREBASE_API_KEY;
   const publicKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
   const firebaseApiKey = serverKey || publicKey;
   const keySource = serverKey ? 'FIREBASE_API_KEY' : publicKey ? 'NEXT_PUBLIC_FIREBASE_API_KEY' : 'missing';
   const keySuffix = firebaseApiKey ? firebaseApiKey.slice(-6) : 'none';
 
-  if (!firebaseApiKey) {
-    throw new Error('Missing Firebase API key for password reset.');
-  }
-
   try {
-    const oobResponse = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${firebaseApiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requestType: 'PASSWORD_RESET',
-          email,
-          returnOobLink: true
-        })
-      }
-    );
+    // Prefer Identity Toolkit when an API key is available (it returns an oobCode we can embed).
+    if (firebaseApiKey) {
+      const oobResponse = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${firebaseApiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requestType: 'PASSWORD_RESET',
+            email,
+            returnOobLink: true
+          })
+        }
+      );
 
-    const oobData = await oobResponse.json();
-    if (!oobResponse.ok) {
-      const baseMessage = oobData?.error?.message || 'Failed to request Firebase reset code';
-      if (process.env.NODE_ENV === 'development') {
-        throw new Error(`${baseMessage} (key: ${keySource}, …${keySuffix})`);
+      const oobData = await oobResponse.json();
+      if (!oobResponse.ok) {
+        const baseMessage = oobData?.error?.message || 'Failed to request Firebase reset code';
+        if (process.env.NODE_ENV === 'development') {
+          throw new Error(`${baseMessage} (key: ${keySource}, …${keySuffix})`);
+        }
+        throw new Error(baseMessage);
       }
-      throw new Error(baseMessage);
+
+      const oobLink = oobData?.oobLink as string | undefined;
+      const oobCode =
+        oobData?.oobCode ||
+        (oobLink ? new URL(oobLink).searchParams.get('oobCode') : null);
+
+      if (!oobCode) {
+        throw new Error('Missing oobCode in Firebase response');
+      }
+
+      const resetPath = '/reset-password';
+      return `${baseUrl}${resetPath}?oobCode=${encodeURIComponent(oobCode)}&role=${encodeURIComponent(role)}`;
     }
 
-    const oobLink = oobData?.oobLink as string | undefined;
-    const oobCode =
-      oobData?.oobCode ||
-      (oobLink ? new URL(oobLink).searchParams.get('oobCode') : null);
-
-    if (!oobCode) {
-      throw new Error('Missing oobCode in Firebase response');
+    // If the API key is missing, don't fail — Admin SDK can still generate a valid reset link.
+    const adminLink = await admin.auth().generatePasswordResetLink(email, {
+      url: `${baseUrl}/reset-password`,
+      handleCodeInApp: true,
+    });
+    const adminCode = new URL(adminLink).searchParams.get('oobCode');
+    if (adminCode) {
+      return `${baseUrl}/reset-password?oobCode=${encodeURIComponent(adminCode)}&role=${encodeURIComponent(role)}`;
     }
-
-    const resetPath = '/reset-password';
-    return `${baseUrl}${resetPath}?oobCode=${encodeURIComponent(oobCode)}`;
+    return adminLink;
   } catch (error: any) {
-    // Fallback to Admin SDK if Identity Toolkit fails
+    // Fallback to Admin SDK if Identity Toolkit fails.
     try {
       const adminLink = await admin.auth().generatePasswordResetLink(email, {
         url: `${baseUrl}/reset-password`,
@@ -100,7 +110,7 @@ const buildResetUrl = async (baseUrl: string, email: string) => {
       });
       const adminCode = new URL(adminLink).searchParams.get('oobCode');
       if (adminCode) {
-        return `${baseUrl}/reset-password?oobCode=${encodeURIComponent(adminCode)}`;
+        return `${baseUrl}/reset-password?oobCode=${encodeURIComponent(adminCode)}&role=${encodeURIComponent(role)}`;
       }
       return adminLink;
     } catch (adminError: any) {
@@ -129,7 +139,7 @@ export const sendPasswordResetEmail = async (request: NextRequest, email: string
 
   const resolvedRole = await resolveRole(normalizedEmail, role);
   const baseUrl = getBaseUrl(request);
-  const resetUrl = await buildResetUrl(baseUrl, normalizedEmail);
+  const resetUrl = await buildResetUrl(baseUrl, normalizedEmail, resolvedRole);
 
   const emailHtml = await renderAsync(PasswordResetEmail({
     resetUrl,

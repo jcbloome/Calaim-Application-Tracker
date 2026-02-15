@@ -153,7 +153,8 @@ function MyTasksPageContent() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!window.desktopNotifications) {
+    const isRealDesktop = Boolean(window.desktopNotifications && !window.desktopNotifications.__shim);
+    if (!isRealDesktop) {
       setDesktopActive(false);
       return;
     }

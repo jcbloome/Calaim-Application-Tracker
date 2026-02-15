@@ -629,7 +629,8 @@ export default function NotificationSettings() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!window.desktopNotifications) return;
+    const isRealDesktop = Boolean(window.desktopNotifications && !window.desktopNotifications.__shim);
+    if (!isRealDesktop) return;
     setDesktopAvailable(true);
     let unsubscribe: (() => void) | undefined;
     window.desktopNotifications.getState()

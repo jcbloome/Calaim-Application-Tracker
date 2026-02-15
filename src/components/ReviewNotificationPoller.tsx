@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useFirestore, useUser } from '@/firebase';
+import { useGlobalNotifications } from '@/components/NotificationProvider';
 import {
   collection,
   collectionGroup,
@@ -95,6 +96,7 @@ const toMs = (value: any): number => {
 export function ReviewNotificationPoller() {
   const { user } = useUser();
   const firestore = useFirestore();
+  const { showNotification } = useGlobalNotifications();
 
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlightRef = useRef(false);
@@ -108,17 +110,16 @@ export function ReviewNotificationPoller() {
     if (!user?.uid) return false;
     if (!firestore) return false;
     if (typeof window === 'undefined') return false;
-    if (!window.desktopNotifications) return false; // Electron only
     return true;
   }, [user?.uid, firestore]);
 
   const pollOnce = async (): Promise<number> => {
     if (!user?.uid || !firestore) return;
-    if (!window.desktopNotifications) return;
     if (inFlightRef.current) return;
     inFlightRef.current = true;
 
     try {
+      const isRealDesktop = Boolean(window.desktopNotifications && !window.desktopNotifications.__shim);
       const configSnap = configRef ? await getDoc(configRef).catch(() => null) : null;
       const config = configSnap?.exists()
         ? ({ ...DEFAULT_CONFIG, ...(configSnap.data() as any) } as ReviewNotificationsConfig)
@@ -184,18 +185,17 @@ export function ReviewNotificationPoller() {
       const docsCount = (docRootSnap?.size || 0) + (docGroupSnap?.size || 0);
 
       // Provide Electron "notepad" list items for documents/CS review.
+      const reviewNotes: Array<{
+        title: string;
+        message: string;
+        kind?: 'docs' | 'cs';
+        author?: string;
+        recipientName?: string;
+        memberName?: string;
+        timestamp?: string;
+        actionUrl?: string;
+      }> = [];
       try {
-        const reviewNotes: Array<{
-          title: string;
-          message: string;
-          kind?: 'docs' | 'cs';
-          author?: string;
-          recipientName?: string;
-          memberName?: string;
-          timestamp?: string;
-          actionUrl?: string;
-        }> = [];
-
         const pushCs = (snap: any) => {
           (snap?.docs || []).slice(0, 3).forEach((d: any) => {
             const data = d.data?.() || {};
@@ -240,10 +240,12 @@ export function ReviewNotificationPoller() {
           pushDocs(docGroupSnap);
         }
 
-        window.desktopNotifications.setReviewPillSummary?.({
-          count: (shouldCheckCs ? csCount : 0) + (shouldCheckDocs ? docsCount : 0),
-          notes: reviewNotes.slice(0, 6)
-        });
+        if (isRealDesktop) {
+          window.desktopNotifications?.setReviewPillSummary?.({
+            count: (shouldCheckCs ? csCount : 0) + (shouldCheckDocs ? docsCount : 0),
+            notes: reviewNotes.slice(0, 6)
+          });
+        }
       } catch {
         // ignore
       }
@@ -267,7 +269,12 @@ export function ReviewNotificationPoller() {
         return;
       }
 
-      const title = 'Review Needed';
+      const title =
+        csIsNew && !docsIsNew
+          ? 'CS Summary received'
+          : docsIsNew && !csIsNew
+            ? 'Documents received'
+            : 'Review items received';
       const parts: string[] = [];
       if (csCount > 0 && shouldCheckCs) {
         parts.push(`${csCount} CS Summary${csCount === 1 ? '' : 'ies'} to review`);
@@ -278,16 +285,47 @@ export function ReviewNotificationPoller() {
       const message = parts.length > 0 ? parts.join(' • ') : 'New items require review.';
 
       const actionUrl =
-        csCount > 0 && shouldCheckCs
+        csIsNew && shouldCheckCs
           ? '/admin/applications?review=cs'
           : '/admin/applications?review=docs';
 
-      // Pop the pill.
-      await window.desktopNotifications.notify({
-        title,
-        body: message,
-        openOnNotify: true,
-      });
+      if (isRealDesktop && window.desktopNotifications?.notify) {
+        // Pop the pill (Electron).
+        await window.desktopNotifications.notify({
+          title,
+          body: message,
+          // Only open the app automatically; don't flip the pill UI open repeatedly.
+          openOnNotify: false,
+        });
+      } else {
+        // Web: small, color-coded card first; click expands, then click message opens Applications.
+        showNotification({
+          keyId: 'review-needed-summary',
+          type: csIsNew && docsIsNew ? 'warning' : csIsNew ? 'task' : 'success',
+          title,
+          message,
+          author: 'System',
+          recipientName: user.displayName || user.email || 'Staff',
+          memberName: '',
+          notes: reviewNotes.slice(0, 6).map((n) => ({
+            message: `${n.title}${n.message ? ` — ${n.message}` : ''}`,
+            author: n.author || 'System',
+            memberName: n.memberName,
+            timestamp: n.timestamp,
+            replyUrl: undefined,
+          })),
+          duration: 0,
+          minimizeAfter: 12000,
+          startMinimized: true,
+          pendingLabel: message,
+          sound: true,
+          animation: 'slide',
+          onClick: () => {
+            if (typeof window === 'undefined') return;
+            window.location.href = actionUrl;
+          }
+        });
+      }
 
       // Update seen state to prevent repeat popups.
       writeSeen(user.uid, {

@@ -572,7 +572,7 @@ export function RealTimeNotifications() {
               : '';
             return `• ${label}${timeLabel ? ` (${timeLabel})` : ''}`;
           });
-          const summaryTitle = 'Connections Note';
+          const summaryTitle = count === 1 ? 'Interoffice note' : 'Interoffice notes';
           const summaryMessage = highlightMessage || `Immediate notes: ${count}`;
           const detailMessage = highlightMessage
             || (recentLines.length > 0 ? `Recent notes:\n${recentLines.join('\n')}` : summaryMessage);
@@ -590,6 +590,9 @@ export function RealTimeNotifications() {
             Boolean(latestPending?.timestamp) &&
             Date.now() - latestPending.timestamp.getTime() <= recentThresholdMs;
           const forceExpanded = hasNewUrgent || hasNewPriority || isRecent;
+          const desktopPresent = typeof window !== 'undefined'
+            && Boolean(window.desktopNotifications)
+            && !Boolean(window.desktopNotifications?.__shim);
           const shouldShowWebToast = (() => {
             if (!webToastPolicy.webAppNotificationsEnabled) return false;
             if (desktopPresent && webToastPolicy.suppressWebWhenDesktopActive) return false;
@@ -604,7 +607,6 @@ export function RealTimeNotifications() {
             }
             return;
           }
-          const desktopPresent = typeof window !== 'undefined' && Boolean(window.desktopNotifications);
           latestSummaryRef.current = {
             type: priorityExists ? 'urgent' : 'note',
             title: summaryTitle,
@@ -616,6 +618,11 @@ export function RealTimeNotifications() {
               author: sanitizeFieldLabel(note.senderName) || undefined,
               memberName: sanitizeFieldLabel(note.memberName) || undefined,
               timestamp: note.timestamp?.toLocaleString?.() || undefined,
+              tagLabel: isUrgentPriority(note.priority)
+                ? 'Urgent'
+                : isPriorityOrUrgent(note.priority)
+                  ? 'Priority'
+                  : undefined,
               noteId: note.id,
               senderId: note.senderId,
               replyUrl: note.id
@@ -627,7 +634,7 @@ export function RealTimeNotifications() {
             soundType: notificationPrefs.soundType,
             memberName: highlightSubject || '',
             timestamp: highlightTimestamp || undefined,
-            tagLabel: priorityTag,
+            tagLabel,
             replyUrl,
             followUpDate: formatFollowUpDate(highlightNote?.followUpDate),
             followUpNoteId: highlightNote?.id
@@ -687,23 +694,30 @@ export function RealTimeNotifications() {
                 author: sanitizeFieldLabel(note.senderName) || undefined,
                 memberName: sanitizeFieldLabel(note.memberName) || undefined,
                 timestamp: note.timestamp?.toLocaleString?.() || undefined,
+                tagLabel: isUrgentPriority(note.priority)
+                  ? 'Urgent'
+                  : isPriorityOrUrgent(note.priority)
+                    ? 'Priority'
+                    : undefined,
                 replyUrl: note.id
                   ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}`
                   : undefined
               })),
               priority: undefined,
-              tagLabel: priorityTag,
-              startMinimized: !shouldPopup && !forceExpanded,
+              tagLabel,
+              // Always start compact; user clicks to expand.
+              startMinimized: true,
               lockToTray: true,
               duration: 0,
               minimizeAfter: 12000,
-              pendingLabel: count === 1 ? `Pending note · ${highlightSender}` : `Notes (${count})`,
+              pendingLabel: count === 1 ? `Interoffice note · ${highlightSender}` : `Interoffice notes (${count})`,
               sound: hasNew && notificationPrefs.enabled ? notificationPrefs.sound : false,
               soundType: notificationPrefs.soundType,
               animation: 'slide',
               links,
               replyUrl,
               followUpDate: formatFollowUpDate(highlightNote?.followUpDate),
+              // Keep full-card click disabled, but allow clicking the message itself to open.
               disableCardClick: true,
               onFollowUpSave: highlightNote?.id
                 ? (date) => {
@@ -721,7 +735,10 @@ export function RealTimeNotifications() {
               requiresSecondClick: false,
               onClick: () => {
                 if (typeof window === 'undefined') return;
-                window.location.href = '/admin/my-notes';
+                const url = highlightNote?.id
+                  ? `/admin/my-notes?noteId=${encodeURIComponent(highlightNote.id)}`
+                  : '/admin/my-notes';
+                window.location.href = url;
               }
             });
 

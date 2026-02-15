@@ -27,7 +27,6 @@ import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
-import { useSocialWorker } from '@/hooks/use-social-worker';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 async function trackLogin(firestore: any, user: User, role: 'Admin' | 'User') {
@@ -52,7 +51,9 @@ export default function LoginPage() {
   const { toast } = useToast();
   const enhancedToast = useEnhancedToast();
   const { user, isUserLoading, isAdmin } = useAdmin();
-  const { isSocialWorker, isLoading: isSocialWorkerLoading } = useSocialWorker();
+  // NOTE: Do not auto-route "user login" into the SW portal.
+  // Social workers should use `/sw-login` explicitly; otherwise a stale/legacy `socialWorkers`
+  // record can incorrectly redirect regular users after password resets.
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -61,19 +62,17 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isUserLoading || isSocialWorkerLoading) {
+    if (isUserLoading) {
       return;
     }
     if (user) {
       if (isAdmin) {
         router.push('/admin');
-      } else if (isSocialWorker) {
-        router.push('/sw-portal');
       } else {
         router.push('/applications');
       }
     }
-  }, [user, isUserLoading, isSocialWorkerLoading, isAdmin, isSocialWorker, router]);
+  }, [user, isUserLoading, isAdmin, router]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();

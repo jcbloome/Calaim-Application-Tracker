@@ -20,9 +20,11 @@ function ResetPasswordContent() {
   
   const token = searchParams.get('token');
   const oobCode = searchParams.get('oobCode'); // Keep for backward compatibility
+  const roleParam = searchParams.get('role');
   const emailParam = searchParams.get('email');
   const hasResetParams = Boolean(token || oobCode);
   const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'sw' | 'user'>(roleParam === 'sw' ? 'sw' : 'user');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -41,6 +43,10 @@ function ResetPasswordContent() {
       setEmail(emailParam);
     }
   }, [hasResetParams, emailParam, email]);
+
+  useEffect(() => {
+    setRole(roleParam === 'sw' ? 'sw' : 'user');
+  }, [roleParam]);
 
   useEffect(() => {
     const validateToken = async () => {
@@ -92,6 +98,9 @@ function ResetPasswordContent() {
           
           if (response.ok && data.valid) {
             setEmail(data.email);
+            if (data.role === 'sw') {
+              setRole('sw');
+            }
             setResetValid(true);
             console.log('✅ Token validation successful');
           } else {
@@ -209,7 +218,7 @@ function ResetPasswordContent() {
 
       // Send user to login after reset
       setTimeout(() => {
-        window.location.href = '/login';
+        window.location.href = role === 'sw' ? '/sw-login' : '/login';
       }, 1500);
 
     } catch (error: any) {
@@ -254,7 +263,7 @@ function ResetPasswordContent() {
                 {error || 'The reset link may have expired or already been used.'}
               </p>
               <Button asChild className="w-full">
-                <a href="/login">Return to Login</a>
+                <a href={role === 'sw' ? '/sw-login' : '/login'}>Return to Login</a>
               </Button>
             </CardContent>
           </Card>
@@ -283,7 +292,7 @@ function ResetPasswordContent() {
                     Reset email sent. Please check your inbox.
                   </p>
                   <Button asChild className="w-full">
-                    <a href="/login">Return to Login</a>
+                    <a href={role === 'sw' ? '/sw-login' : '/login'}>Return to Login</a>
                   </Button>
                 </div>
               ) : (
@@ -353,7 +362,7 @@ function ResetPasswordContent() {
                 Redirecting to the login page...
               </p>
               <Button asChild className="w-full">
-                <a href="/login">Return to Login</a>
+                <a href={role === 'sw' ? '/sw-login' : '/login'}>Return to Login</a>
               </Button>
             </CardContent>
           </Card>

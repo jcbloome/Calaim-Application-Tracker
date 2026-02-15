@@ -31,6 +31,7 @@ interface WindowsNotificationProps {
     memberName?: string;
     timestamp?: string;
     replyUrl?: string;
+    tagLabel?: string;
   }>;
   recipientName?: string;
   memberName?: string;
@@ -59,30 +60,35 @@ const TYPE_CONFIGS = {
   note: {
     icon: MessageSquare,
     color: 'bg-blue-500',
+    borderColor: 'border-blue-500',
     bgColor: 'bg-blue-50 border-blue-200',
     textColor: 'text-blue-900'
   },
   task: {
     icon: Clock,
     color: 'bg-orange-500',
+    borderColor: 'border-orange-500',
     bgColor: 'bg-orange-50 border-orange-200',
     textColor: 'text-orange-900'
   },
   urgent: {
     icon: AlertTriangle,
     color: 'bg-red-500',
+    borderColor: 'border-red-500',
     bgColor: 'bg-red-50 border-red-200',
     textColor: 'text-red-900'
   },
   success: {
     icon: CheckCircle2,
     color: 'bg-green-500',
+    borderColor: 'border-green-500',
     bgColor: 'bg-green-50 border-green-200',
     textColor: 'text-green-900'
   },
   warning: {
     icon: AlertTriangle,
     color: 'bg-yellow-500',
+    borderColor: 'border-yellow-500',
     bgColor: 'bg-yellow-50 border-yellow-200',
     textColor: 'text-yellow-900'
   }
@@ -114,6 +120,7 @@ export default function WindowsNotification({
   animation = 'slide',
   followUpDate,
   replyUrl,
+  tagLabel,
   requiresSecondClick = false,
   disableCardClick = false,
   startMinimized = false,
@@ -130,6 +137,7 @@ export default function WindowsNotification({
   const displayMember = activeNote?.memberName ?? memberName;
   const displayTimestamp = activeNote?.timestamp ?? timestamp;
   const displayReplyUrl = activeNote?.replyUrl ?? replyUrl;
+  const displayTagLabel = activeNote?.tagLabel ?? tagLabel;
   const noteIndexLabel = notes && notes.length > 1
     ? `Note ${noteIndex + 1} of ${notes.length}`
     : '';
@@ -140,8 +148,23 @@ export default function WindowsNotification({
   const [isFollowUpOpen, setIsFollowUpOpen] = useState(false);
   const [followUpDraft, setFollowUpDraft] = useState('');
   const [followUpSaved, setFollowUpSaved] = useState(false);
-  const isUrgent = priority === 'Urgent';
-  const urgentAccentClass = 'bg-orange-500';
+  // Visual accent: urgent (red) vs priority (orange) vs general (use type config)
+  const tone = displayTagLabel === 'Urgent'
+    ? 'urgent'
+    : displayTagLabel === 'Priority'
+      ? 'priority'
+      : null;
+  const isUrgentTone = tone === 'urgent';
+  const toneBorderClass = isUrgentTone
+    ? 'border-red-500'
+    : tone === 'priority'
+      ? 'border-orange-500'
+      : undefined;
+  const toneIconBgClass = isUrgentTone
+    ? 'bg-red-500'
+    : tone === 'priority'
+      ? 'bg-orange-500'
+      : undefined;
   const formattedFollowUpDate = followUpDate
     ? new Date(followUpDate).toLocaleDateString()
     : '';
@@ -151,6 +174,9 @@ export default function WindowsNotification({
 
   const config = TYPE_CONFIGS[type];
   const IconComponent = config.icon;
+  const borderClass = toneBorderClass || config.borderColor;
+  const iconBgClass = toneIconBgClass || config.color;
+  const iconPulse = isUrgentTone ? 'animate-pulse' : '';
 
   // Play notification sound
   const playSound = async () => {
@@ -582,8 +608,8 @@ export default function WindowsNotification({
     return (
       <Card
         className={cn(
-          'fixed bottom-4 right-4 z-50 cursor-pointer shadow-lg border bg-white text-slate-900',
-          isUrgent ? 'border-orange-500' : 'border-slate-200',
+          'fixed bottom-4 right-4 z-50 cursor-pointer shadow-lg border bg-white text-slate-900 border-l-4',
+          borderClass,
           getAnimationClasses()
         )}
         onClick={() => {
@@ -593,11 +619,18 @@ export default function WindowsNotification({
           }
         }}
       >
-        <div className="flex items-center gap-2 px-3 py-2">
-          <div className={cn('p-1 rounded-full', isUrgent ? `${urgentAccentClass} animate-pulse` : 'bg-blue-500')}>
-            <Bell className="h-3 w-3 text-white" />
+        <div className="flex items-center gap-2 px-3 py-2 max-w-[420px]">
+          <div className={cn('p-1 rounded-full shrink-0', iconBgClass, iconPulse)}>
+            <IconComponent className="h-3 w-3 text-white" />
           </div>
-          <span className="text-xs text-slate-700">{pendingLabel}</span>
+          <div className="flex flex-col min-w-0">
+            <span className="text-[10px] uppercase tracking-wide text-slate-500 truncate">
+              {title || 'Notification'}
+            </span>
+            <span className="text-xs text-slate-700 truncate">
+              {pendingLabel}
+            </span>
+          </div>
           <Button
             variant="ghost"
             size="sm"
@@ -617,8 +650,8 @@ export default function WindowsNotification({
   return (
     <Card 
       className={cn(
-        'fixed bottom-4 right-4 z-50 w-80 cursor-pointer shadow-lg border bg-white text-slate-900',
-        isUrgent ? 'border-orange-500' : 'border-slate-200',
+        'fixed bottom-4 right-4 z-50 w-[420px] cursor-pointer shadow-lg border bg-white text-slate-900 border-l-4',
+        borderClass,
         getAnimationClasses()
       )}
       onClick={disableCardClick ? undefined : handleClick}
@@ -627,21 +660,18 @@ export default function WindowsNotification({
         {/* Header */}
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2">
-            <div className={cn('p-1.5 rounded-full', isUrgent ? `${urgentAccentClass} animate-pulse` : 'bg-blue-500')}>
+            <div className={cn('p-1.5 rounded-full', iconBgClass, iconPulse)}>
               <IconComponent className="h-4 w-4 text-white" />
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] uppercase tracking-wide text-slate-500">
-                Connections Note
+                {title || 'Notification'}
               </span>
             </div>
             <div className="flex items-center gap-2">
-              {priority && (
-                <Badge className={cn(
-                  'text-xs text-white',
-                  isUrgent ? 'bg-orange-500 border-orange-400 animate-pulse' : 'bg-orange-500 border-orange-400'
-                )}>
-                  {priority}
+              {displayTagLabel && (
+                <Badge variant="outline" className="text-[10px]">
+                  {displayTagLabel}
                 </Badge>
               )}
             </div>
@@ -678,9 +708,30 @@ export default function WindowsNotification({
               Follow-up: {formattedFollowUpDate}
             </div>
           )}
-          <p className="text-sm font-semibold text-slate-900 leading-snug">
+          <div
+            role={onClick ? 'button' : undefined}
+            tabIndex={onClick ? 0 : undefined}
+            className={cn(
+              'text-sm font-semibold text-slate-900 leading-snug whitespace-pre-wrap max-h-44 overflow-auto rounded-md',
+              onClick ? 'cursor-pointer hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 px-1 -mx-1' : ''
+            )}
+            onClick={(event) => {
+              // If card-click is disabled, still allow clicking the message itself to navigate.
+              if (!onClick) return;
+              event.stopPropagation();
+              handleClick();
+            }}
+            onKeyDown={(event) => {
+              if (!onClick) return;
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              event.stopPropagation();
+              handleClick();
+            }}
+            title={onClick ? 'Click to open' : undefined}
+          >
             {displayMessage}
-          </p>
+          </div>
 
           {formattedFollowUpDate && (
             <div className="pt-1">

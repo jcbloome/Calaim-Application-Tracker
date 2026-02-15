@@ -16,6 +16,7 @@ interface WindowsNotificationProps {
     memberName?: string;
     timestamp?: string;
     replyUrl?: string;
+    tagLabel?: string;
   }>;
   recipientName?: string;
   memberName?: string;

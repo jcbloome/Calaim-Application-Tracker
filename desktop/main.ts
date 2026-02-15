@@ -777,10 +777,10 @@ ipcMain.on('desktop:setPillSummary', (_event, payload: {
     count: pillSummary.count,
     title: payload.title || pillSummary.title,
     message: payload.message || pillSummary.message,
-    author: payload.author || '',
-    recipientName: payload.recipientName || '',
-    memberName: payload.memberName || '',
-    timestamp: payload.timestamp || '',
+    author: payload.author || pillSummary.author || '',
+    recipientName: payload.recipientName || pillSummary.recipientName || '',
+    memberName: payload.memberName || pillSummary.memberName || '',
+    timestamp: payload.timestamp || pillSummary.timestamp || '',
     noteId: pillSummary.noteId,
     senderId: pillSummary.senderId,
     replyUrl: payload.replyUrl,
@@ -816,10 +816,15 @@ ipcMain.on('desktop:setPendingCount', (_event, count: number) => {
   if (tray) {
     tray.setToolTip(`Connect CalAIM Desktop (${pillSummary.count} pending)`);
   }
-  if (pillSummary.count > 0) {
-    showMinimizedPill();
-  } else {
+  // Don't auto-open the pill UI based on count alone.
+  // We only show the UI when we have actual note/review payload (setPillSummary / setReviewPillSummary),
+  // otherwise the panel can render empty fields ("-") if the user clicks too quickly.
+  if (pillSummary.count <= 0) {
     closeNotificationWindow();
+    return;
+  }
+  if (notificationWindow) {
+    renderNotificationPill();
   }
 });
 
