@@ -84,7 +84,6 @@ const adminNavLinks = [
     isSubmenu: true,
     submenuItems: [
       { href: '/admin', label: 'Activity Dashboard', icon: Activity },
-      { href: '/admin/activity-log', label: 'Activity Log', icon: Activity },
       { href: '/admin/applications', label: 'All Applications', icon: FolderKanban },
       { href: '/admin/incomplete-cs-summary', label: 'Incomplete CS Summary', icon: FileText },
       { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },
@@ -132,6 +131,7 @@ const superAdminNavLinks = [
       // Consolidated Management Pages
       { href: '/admin/user-staff-management', label: 'User & Staff Management', icon: Users },
       { href: '/admin/operations-dashboard', label: 'Operations Dashboard', icon: Kanban },
+      { href: '/admin/activity-log', label: 'System Activity Log', icon: Activity },
       { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },
       { href: '/admin/data-integration', label: 'Data & Integration Tools', icon: Database },
       { href: '/admin/communication-notes', label: 'Communication & Notes', icon: MessageSquareText },
@@ -171,6 +171,39 @@ function AdminHeader() {
     docs: { count: number; latestMs: number };
     cs: { count: number; latestMs: number };
   }>({ initialized: false, docs: { count: 0, latestMs: 0 }, cs: { count: 0, latestMs: 0 } });
+
+  // Throttle doc-upload popups so staff isn't spammed by multiple files.
+  // Deliver at most once per window; aggregate by application.
+  const DOC_UPLOAD_THROTTLE_MS = 10 * 60 * 1000;
+  const docsByAppRef = useRef<
+    Map<
+      string,
+      {
+        appId: string;
+        url: string;
+        memberName: string;
+        uploader: string;
+        labels: Set<string>;
+        count: number;
+        latestMs: number;
+      }
+    >
+  >(new Map());
+  const docsBatchRef = useRef<{
+    lastSentAt: number;
+    timer: ReturnType<typeof setTimeout> | null;
+    pending: Map<
+      string,
+      {
+        url: string;
+        memberName: string;
+        uploader: string;
+        labels: Set<string>;
+        count: number;
+        latestMs: number;
+      }
+    >;
+  }>({ lastSentAt: 0, timer: null, pending: new Map() });
 
   const toMs = (value: any): number => {
     if (!value) return 0;
@@ -279,6 +312,19 @@ function AdminHeader() {
       let docsLatestMs = 0;
       const docNotes: Array<{ message: string; timestampMs: number; url: string; author: string }> = [];
 
+      const docsByApp = new Map<
+        string,
+        {
+          appId: string;
+          url: string;
+          memberName: string;
+          uploader: string;
+          labels: Set<string>;
+          count: number;
+          latestMs: number;
+        }
+      >();
+
       dedupedApps.forEach((app: any) => {
         const memberName = `${app.memberFirstName || 'Unknown'} ${app.memberLastName || 'Member'}`.trim();
         const plan = String(app.healthPlan || '').toLowerCase();
@@ -288,6 +334,7 @@ function AdminHeader() {
         const appUrl = ownerUid
           ? `/admin/applications/${app.id}?userId=${encodeURIComponent(ownerUid)}`
           : `/admin/applications/${app.id}`;
+        const appKey = `${app.id}-${ownerUid || 'admin'}`;
 
         const forms = app.forms || [];
 
@@ -336,6 +383,22 @@ function AdminHeader() {
           const docLabel = String(form.name || '').trim();
           const docAuthor = String(form.uploadedByName || form.uploadedByEmail || app.referrerName || app.referrerEmail || '').trim() || 'User';
           docNotes.push({ message: docLabel ? `${memberName} — ${docLabel}` : memberName, timestampMs: ms, url: appUrl, author: docAuthor });
+
+          const current = docsByApp.get(appKey) || {
+            appId: app.id,
+            url: appUrl,
+            memberName,
+            uploader: docAuthor,
+            labels: new Set<string>(),
+            count: 0,
+            latestMs: 0,
+          };
+          current.count += 1;
+          current.latestMs = Math.max(current.latestMs, ms);
+          if (docLabel) current.labels.add(docLabel);
+          // If different files came from different uploaders, show "Multiple".
+          if (current.uploader !== docAuthor) current.uploader = 'Multiple';
+          docsByApp.set(appKey, current);
         });
       });
 
@@ -351,79 +414,149 @@ function AdminHeader() {
       // (Only for recipients explicitly enabled in system settings.)
       const allowDocs = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowDocs);
       const allowCs = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowCs);
-      const prev = reviewNotifyRef.current;
-      const docsIsNew = allowDocs && uploadCount > 0 && (uploadCount > prev.docs.count || docsLatestMs > prev.docs.latestMs);
-      const csIsNew = allowCs && csSummaryCount > 0 && (csSummaryCount > prev.cs.count || csLatestMs > prev.cs.latestMs);
 
-      // Only advance baselines for streams we are authorized to receive.
-      // This prevents "missing" the first popup when app data loads before prefs.
+      // CS summary popups are low volume; fire immediately.
+      const prev = reviewNotifyRef.current;
+      const csIsNew = allowCs && csSummaryCount > 0 && (csSummaryCount > prev.cs.count || csLatestMs > prev.cs.latestMs);
       reviewNotifyRef.current = {
         initialized: true,
-        docs: allowDocs ? { count: uploadCount, latestMs: docsLatestMs } : prev.docs,
+        docs: prev.docs,
         cs: allowCs ? { count: csSummaryCount, latestMs: csLatestMs } : prev.cs,
       };
 
-      if (!docsIsNew && !csIsNew) return;
+      if (csIsNew) {
+        const actionUrl = '/admin/applications?review=cs';
+        const items = csNotes
+          .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
+          .slice(0, 6);
+        const primaryUrl = items.length === 1 ? items[0].url : actionUrl;
+        const fromLabel = items.length === 1 ? items[0].author : 'Multiple';
+        showNotification({
+          keyId: 'review-cs-summary',
+          type: 'task',
+          title: 'CS Summary received',
+          message: `${csSummaryCount} CS Summary${csSummaryCount === 1 ? '' : 'ies'} to review`,
+          author: fromLabel,
+          recipientName: 'System',
+          notes: items.map((n) => ({
+            message: n.message,
+            author: n.author,
+            timestamp: n.timestampMs ? new Date(n.timestampMs).toLocaleString() : undefined,
+          })),
+          duration: 0,
+          minimizeAfter: 12000,
+          startMinimized: true,
+          pendingLabel: `${csSummaryCount} CS Summary${csSummaryCount === 1 ? '' : 'ies'} to review`,
+          sound: true,
+          animation: 'slide',
+          onClick: () => {
+            if (typeof window === 'undefined') return;
+            window.location.href = primaryUrl;
+          }
+        });
+      }
 
-      const title =
-        csIsNew && !docsIsNew
-          ? 'CS Summary received'
-          : docsIsNew && !csIsNew
-            ? 'Documents received'
-            : 'Review items received';
+      // Docs popups can be noisy; throttle and batch per application.
+      if (allowDocs) {
+        const prevByApp = docsByAppRef.current;
+        const newlyChanged: string[] = [];
+        docsByApp.forEach((nextVal, key) => {
+          const prevVal = prevByApp.get(key);
+          const isNew = !prevVal || nextVal.count > prevVal.count || nextVal.latestMs > prevVal.latestMs;
+          if (isNew) newlyChanged.push(key);
+        });
 
-      const parts: string[] = [];
-      if (allowCs && csSummaryCount > 0) parts.push(`${csSummaryCount} CS Summary${csSummaryCount === 1 ? '' : 'ies'} to review`);
-      if (allowDocs && uploadCount > 0) parts.push(`${uploadCount} upload${uploadCount === 1 ? '' : 's'} to acknowledge`);
-      const message = parts.length ? parts.join(' • ') : 'New items require review.';
+        // Update per-app baseline.
+        docsByAppRef.current = docsByApp;
 
-      const actionUrl = csIsNew && allowCs ? '/admin/applications?review=cs' : '/admin/applications?review=docs';
+        if (newlyChanged.length > 0) {
+          const batch = docsBatchRef.current;
+          newlyChanged.forEach((key) => {
+            const nextVal = docsByApp.get(key);
+            if (!nextVal) return;
+            const existing = batch.pending.get(key);
+            if (!existing) {
+              batch.pending.set(key, {
+                url: nextVal.url,
+                memberName: nextVal.memberName,
+                uploader: nextVal.uploader,
+                labels: new Set(nextVal.labels),
+                count: nextVal.count,
+                latestMs: nextVal.latestMs,
+              });
+              return;
+            }
+            existing.count = Math.max(existing.count, nextVal.count);
+            existing.latestMs = Math.max(existing.latestMs, nextVal.latestMs);
+            nextVal.labels.forEach((l) => existing.labels.add(l));
+            if (existing.uploader !== nextVal.uploader) existing.uploader = 'Multiple';
+          });
 
-      // Sort newest first, keep it concise.
-      const noteItems = [
-        ...(allowDocs ? docNotes : []),
-        ...(allowCs ? csNotes : []),
-      ]
-        .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
-        .slice(0, 6);
+          const sendDocsBatch = () => {
+            const now = Date.now();
+            const current = docsBatchRef.current;
+            const items = Array.from(current.pending.values())
+              .sort((a, b) => (b.latestMs || 0) - (a.latestMs || 0))
+              .slice(0, 6);
+            const totalUploads = Array.from(current.pending.values()).reduce((sum, v) => sum + (v.count || 0), 0);
+            const appCount = current.pending.size;
 
-      const primaryUrl =
-        noteItems.length === 1
-          ? noteItems[0].url
-          : actionUrl;
+            current.pending.clear();
+            current.lastSentAt = now;
+            if (current.timer) {
+              clearTimeout(current.timer);
+              current.timer = null;
+            }
 
-      const fromLabel =
-        noteItems.length === 1
-          ? noteItems[0].author
-          : (docsIsNew && csIsNew)
-            ? 'Multiple'
-            : docsIsNew
-              ? (docNotes[0]?.author || 'User')
-              : (csNotes[0]?.author || 'User');
+            const title = 'Documents received';
+            const message =
+              appCount <= 1
+                ? `${totalUploads} upload${totalUploads === 1 ? '' : 's'} to acknowledge`
+                : `${appCount} applications have new uploads • ${totalUploads} uploads to acknowledge`;
 
-      showNotification({
-        keyId: 'review-needed-summary',
-        type: csIsNew && docsIsNew ? 'warning' : csIsNew ? 'task' : 'success',
-        title,
-        message,
-        author: fromLabel,
-        recipientName: 'System',
-        notes: noteItems.map((n) => ({
-          message: n.message,
-          author: n.author,
-          timestamp: n.timestampMs ? new Date(n.timestampMs).toLocaleString() : undefined,
-        })),
-        duration: 0,
-        minimizeAfter: 12000,
-        startMinimized: true,
-        pendingLabel: message,
-        sound: true,
-        animation: 'slide',
-        onClick: () => {
-          if (typeof window === 'undefined') return;
-          window.location.href = primaryUrl;
+            const primaryUrl = appCount === 1 ? items[0]?.url : '/admin/applications?review=docs';
+            const fromLabel = appCount === 1 ? (items[0]?.uploader || 'User') : 'Multiple';
+
+            showNotification({
+              keyId: 'review-docs-batch',
+              type: 'success',
+              title,
+              message,
+              author: fromLabel,
+              recipientName: 'System',
+              notes: items.map((it) => {
+                const labels = Array.from(it.labels || []);
+                const first = labels[0] || 'Documents';
+                const extra = labels.length > 1 ? ` (+${labels.length - 1} more)` : '';
+                return {
+                  message: `${it.memberName} — ${first}${extra}`,
+                  author: it.uploader,
+                  timestamp: it.latestMs ? new Date(it.latestMs).toLocaleString() : undefined,
+                };
+              }),
+              duration: 0,
+              minimizeAfter: 12000,
+              startMinimized: true,
+              pendingLabel: message,
+              sound: true,
+              animation: 'slide',
+              onClick: () => {
+                if (typeof window === 'undefined') return;
+                window.location.href = primaryUrl || '/admin/applications?review=docs';
+              }
+            });
+          };
+
+          const now = Date.now();
+          const earliest = batch.lastSentAt > 0 ? batch.lastSentAt + DOC_UPLOAD_THROTTLE_MS : now;
+          const delay = Math.max(0, earliest - now);
+          if (delay === 0) {
+            sendDocsBatch();
+          } else if (!batch.timer) {
+            batch.timer = setTimeout(sendDocsBatch, delay);
+          }
         }
-      });
+      }
     };
 
     unsubUserApps = onSnapshot(userAppsQuery, (snapshot) => {

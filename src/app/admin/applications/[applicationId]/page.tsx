@@ -74,6 +74,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { format } from 'date-fns';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import NoteTracker from '@/components/NoteTracker';
@@ -2821,74 +2822,7 @@ function ApplicationDetailPageContent() {
             </div>
 
             {/* Application Progression Field */}
-            <div className="border-t pt-4">
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium">Application Progression</label>
-                        <span className="text-xs text-muted-foreground">
-                            {application.healthPlan} Workflow Status
-                        </span>
-                    </div>
-                    
-                    {application.healthPlan?.toLowerCase().includes('kaiser') ? (
-                        <Select 
-                            value={(application as any)?.kaiserStatus || kaiserSteps[0]} 
-                            onValueChange={(value) => updateProgressionStatus(value, 'kaiser')}
-                            disabled={isUpdatingProgression}
-                        >
-                            <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select Kaiser status" />
-                                {isUpdatingProgression && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-                            </SelectTrigger>
-                            <SelectContent>
-                                {getKaiserStatusesInOrder().map((status) => (
-                                    <SelectItem key={status.id} value={status.status}>
-                                        <div className="flex items-center justify-between w-full">
-                                            <span>{status.status}</span>
-                                            <div className="flex items-center gap-2 ml-2">
-                                                <span className="text-xs text-muted-foreground">#{status.sortOrder}</span>
-                                                <span className={cn(
-                                                    "text-xs px-2 py-0.5 rounded-full",
-                                                    status.category === 'initial' && "bg-blue-100 text-blue-700",
-                                                    status.category === 'assessment' && "bg-purple-100 text-purple-700",
-                                                    status.category === 'authorization' && "bg-orange-100 text-orange-700",
-                                                    status.category === 'placement' && "bg-green-100 text-green-700",
-                                                    status.category === 'completion' && "bg-gray-100 text-gray-700",
-                                                    status.category === 'inactive' && "bg-red-100 text-red-700"
-                                                )}>
-                                                    {status.category}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    ) : application.healthPlan?.toLowerCase().includes('health net') ? (
-                        <Select 
-                            value={(application as any)?.healthNetStatus || healthNetSteps[0]} 
-                            onValueChange={(value) => updateProgressionStatus(value, 'healthNet')}
-                            disabled={isUpdatingProgression}
-                        >
-                            <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select Health Net status" />
-                                {isUpdatingProgression && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-                            </SelectTrigger>
-                            <SelectContent>
-                                {healthNetSteps.map((step) => (
-                                    <SelectItem key={step} value={step}>
-                                        {step}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    ) : (
-                        <div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-md">
-                            Application progression tracking is available for Kaiser and Health Net members only.
-                        </div>
-                    )}
-                </div>
-            </div>
+            {/* Application progression moved to Quick actions */}
 
             <div className="space-y-2">
                 <Label className="text-sm font-medium">Documents needing acknowledgement</Label>
@@ -2906,81 +2840,21 @@ function ApplicationDetailPageContent() {
                 )}
             </div>
 
-            {/* Staff Assignment Display */}
+            {/* Staff assignment moved to Quick actions */}
             <Card className="border-dashed">
             <CardContent className="space-y-4 pt-4">
-                {/* Assigned Staff Section */}
-                <div className="space-y-2">
-                    <Label htmlFor="main-staff-assignment" className="text-sm font-medium flex items-center gap-2">
-                        <User className="h-4 w-4 text-muted-foreground" />
-                        Assigned Staff
-                    </Label>
-                    <StaffAssignmentDropdown 
-                        application={application} 
-                        onStaffChange={(staffId, staffName) => {
-                            // Update the application state
-                            setApplication(prev => prev ? { 
-                                ...prev, 
-                                assignedStaffId: staffId,
-                                assignedStaffName: staffName,
-                                assignedDate: new Date().toISOString()
-                            } : null);
-                        }} 
-                    />
-                </div>
-
-                {/* Application Checked Section */}
-                <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                        <Checkbox
-                            id="application-checked"
-                            checked={(application as any)?.applicationChecked || false}
-                            onCheckedChange={(checked) => handleApplicationReviewed(Boolean(checked))}
-                        />
-                        <Label htmlFor="application-checked" className="text-sm font-medium">
-                            Application checked by staff
-                        </Label>
-                    </div>
-                    {(application as any)?.applicationChecked && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 ml-6">
-                            <div className="space-y-1">
-                                <Label className="text-xs text-muted-foreground">Staff Reviewer</Label>
-                                <Select
-                                    value={(application as any)?.applicationCheckedBy || ''}
-                                    onValueChange={async (value) => {
-                                        if (!docRef) return;
-                                        const updateData = { applicationCheckedBy: value };
-                                        await setDoc(docRef, updateData, { merge: true });
-                                        setApplication(prev => prev ? { ...prev, ...updateData } : null);
-                                    }}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select staff" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {getStaffOptions().map((name) => (
-                                            <SelectItem key={name} value={name}>
-                                                {name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-1">
-                                <Label className="text-xs text-muted-foreground">Date Reviewed</Label>
-                                <div className="text-sm font-medium">
-                                    {(application as any)?.applicationCheckedDate
-                                        ? format(new Date((application as any).applicationCheckedDate), 'PPP p')
-                                        : 'Not set'}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                    {(application as any)?.applicationChecked && (application as any)?.applicationCheckedDate && (
-                        <div className="text-xs text-muted-foreground ml-6">
-                            Checked on: {format(new Date((application as any).applicationCheckedDate), 'PPP p')}
-                        </div>
-                    )}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm">
+                    <div className="text-xs text-muted-foreground">Assigned staff</div>
+                    <div className="font-medium">{(application as any)?.assignedStaffName || 'Unassigned'}</div>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {application.healthPlan?.toLowerCase().includes('kaiser')
+                      ? `Progression: ${(application as any)?.kaiserStatus || kaiserSteps[0]}`
+                      : application.healthPlan?.toLowerCase().includes('health net')
+                        ? `Progression: ${(application as any)?.healthNetStatus || healthNetSteps[0]}`
+                        : null}
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -3172,545 +3046,596 @@ function ApplicationDetailPageContent() {
       <aside className="lg:col-span-1 min-w-0 space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5" />
-              Eligibility Check
-            </CardTitle>
+            <CardTitle className="text-base">Quick actions</CardTitle>
             <CardDescription>
-              Track CalAIM eligibility status and supporting uploads.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">CalAIM Status</label>
-                {isUpdatingTracking && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-              </div>
-              <Select
-                value={(application as any)?.calaimTrackingStatus || ''}
-                onValueChange={updateTrackingStatus}
-                disabled={isUpdatingTracking}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select CalAIM status" />
-                </SelectTrigger>
-                <SelectContent>
-                  {calaimTrackingOptions.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {(application as any)?.calaimTrackingStatus === 'Not CalAIM Eligible' && (
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">
-                    Reason
-                  </Label>
-                  <Select
-                    value={(application as any)?.calaimNotEligibleReason || ''}
-                    onValueChange={(value) => {
-                      const nextReason = value || '';
-                      const nextFlags = {
-                        calaimNotEligibleSwitchingProviders: nextReason === 'Switching Providers by end of Month',
-                        calaimNotEligibleHasSoc: nextReason === 'Has SOC',
-                        calaimNotEligibleOutOfCounty: nextReason === 'Not in our contracted CalAIM County',
-                        calaimNotEligibleOther: nextReason === 'Other',
-                        calaimNotEligibleReason: nextReason,
-                        calaimNotEligibleOtherReason: nextReason === 'Other'
-                          ? (application as any)?.calaimNotEligibleOtherReason || ''
-                          : ''
-                      };
-                      setApplication(prev => prev ? { ...prev, ...nextFlags } : null);
-                      updateNotEligibleFlags(nextFlags);
-                    }}
-                    disabled={isUpdatingTracking}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select a reason" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {notEligibleReasonOptions.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {(application as any)?.calaimNotEligibleReason === 'Other' && (
-                    <Textarea
-                      id="not-eligible-other-reason"
-                      rows={2}
-                      placeholder="Describe the reason..."
-                      value={(application as any)?.calaimNotEligibleOtherReason || ''}
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        setApplication(prev => prev ? { ...prev, calaimNotEligibleOtherReason: nextValue } : null);
-                      }}
-                      onBlur={(event) =>
-                        updateNotEligibleFlags({ calaimNotEligibleOtherReason: event.target.value })
-                      }
-                      disabled={isUpdatingTracking}
-                    />
-                  )}
-                  <div className="space-y-2 pt-2">
-                    <Label className="text-sm font-medium">Note to Member (optional)</Label>
-                    <Textarea
-                      rows={3}
-                      placeholder="Add a message that explains the eligibility outcome..."
-                      value={(application as any)?.calaimTrackingReason || ''}
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        setApplication(prev => prev ? { ...prev, calaimTrackingReason: nextValue } : null);
-                      }}
-                      onBlur={(event) => updateTrackingReason(event.target.value)}
-                      disabled={isUpdatingTracking}
-                    />
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={sendEligibilityNote}
-                      disabled={isSendingEligibilityNote}
-                    >
-                      {isSendingEligibilityNote ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Sending Note...
-                        </>
-                      ) : (
-                        'Send Note to Referrer'
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {eligibilityRequirements.length > 0 && (
-              <div className="space-y-3 border-t pt-4">
-                <Label className="text-sm font-medium">Eligibility Uploads</Label>
-                <div className="space-y-3">
-                  {eligibilityRequirements.map((req) => {
-                    const formInfo = formStatusMap.get(req.title);
-                    const status = formInfo?.status || 'Pending';
-                    return (
-                      <div key={req.id} className="rounded-md border p-3 space-y-3">
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-sm font-medium">{req.title}</div>
-                            <StatusIndicator status={status} />
-                          </div>
-                          <p className="text-xs text-muted-foreground">{req.description}</p>
-                        </div>
-                        {getFormAction(req)}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        <AdminActions application={application} />
-        {(application as any)?.client_ID2 ? (
-          <NoteTracker 
-            memberId={(application as any)?.client_ID2}
-            memberName={`${application.memberFirstName} ${application.memberLastName}`}
-          />
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5" />
-                Notes & Communication
-              </CardTitle>
-              <CardDescription>
-                Notes load once a Caspio Client_ID2 is linked to this application.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                This member is not yet linked to a Caspio record, so notes cannot be fetched.
-              </p>
-            </CardContent>
-          </Card>
-        )}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5" />
-              Interoffice Notes
-            </CardTitle>
-            <CardDescription>
-              Send staff-only notes tied to this application.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-2">
-              <Label htmlFor="interoffice-recipient">Recipients</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    id="interoffice-recipient"
-                    variant="outline"
-                    className="w-full justify-between"
-                    disabled={isLoadingStaff}
-                  >
-                    {isLoadingStaff
-                      ? 'Loading staff...'
-                      : interofficeNote.recipientIds.length === 0
-                        ? 'Select staff members'
-                        : `${interofficeNote.recipientIds.length} selected`}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="p-2 w-72">
-                  <div className="max-h-56 overflow-auto space-y-2">
-                    {staffList.map((staff) => {
-                      const checked = interofficeNote.recipientIds.includes(staff.uid);
-                      return (
-                        <label key={staff.uid} className="flex items-center gap-2 text-sm">
-                          <Checkbox
-                            checked={checked}
-                            onCheckedChange={(value) => {
-                              setInterofficeNote((prev) => ({
-                                ...prev,
-                                recipientIds: value
-                                  ? [...prev.recipientIds, staff.uid]
-                                  : prev.recipientIds.filter((id) => id !== staff.uid)
-                              }));
-                            }}
-                          />
-                          <span>{staff.name}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="interoffice-priority">Priority</Label>
-              <Select
-                value={interofficeNote.priority}
-                onValueChange={(value: 'Regular' | 'Immediate') =>
-                  setInterofficeNote((prev) => ({ ...prev, priority: value }))
-                }
-              >
-                <SelectTrigger id="interoffice-priority">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Regular">Regular (no desktop popup)</SelectItem>
-                  <SelectItem value="Immediate">Immediate (desktop popup)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="interoffice-message">Message</Label>
-              <Textarea
-                id="interoffice-message"
-                rows={4}
-                value={interofficeNote.message}
-                onChange={(event) =>
-                  setInterofficeNote((prev) => ({ ...prev, message: event.target.value }))
-                }
-                placeholder="Enter staff-only instructions or updates..."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="interoffice-followup">Follow-up date (optional)</Label>
-              <Input
-                id="interoffice-followup"
-                type="date"
-                value={interofficeNote.followUpDate || ''}
-                onChange={(event) =>
-                  setInterofficeNote((prev) => ({ ...prev, followUpDate: event.target.value }))
-                }
-              />
-            </div>
-            <Button onClick={handleSendInterofficeNote} className="w-full">
-              Send Interoffice Note
-            </Button>
-
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5" />
-              Member Notes (Top 5)
-            </CardTitle>
-            <CardDescription>
-              Notes and replies tied to this member from the notification system.
+              Open eligibility, interoffice notes, and authorization uploads without cluttering the page.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {memberNotifications.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No member-specific notes yet.</p>
-            ) : (
-              memberNotifications.slice(0, 5).map((note) => (
-                <div key={note.id} className="rounded-md border p-2 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{note.title}</span>
-                    <Badge variant="outline">{note.priority}</Badge>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <User className="h-4 w-4" />
+                  Assigned staff & progression
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Assigned staff & progression</DialogTitle>
+                  <DialogDescription>Internal assignment and plan workflow status.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="main-staff-assignment" className="text-sm font-medium flex items-center gap-2">
+                      <User className="h-4 w-4 text-muted-foreground" />
+                      Assigned Staff
+                    </Label>
+                    <StaffAssignmentDropdown
+                      application={application}
+                      onStaffChange={(staffId, staffName) => {
+                        setApplication((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                assignedStaffId: staffId,
+                                assignedStaffName: staffName,
+                                assignedDate: new Date().toISOString(),
+                              }
+                            : null
+                        );
+                      }}
+                    />
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{note.message}</p>
-                  <div className="mt-2 text-xs text-muted-foreground flex items-center justify-between">
-                    <span>{note.createdByName || 'System'}</span>
-                    <span>
-                      {(note.createdAt?.toDate?.() || new Date(note.createdAt)).toLocaleString()}
-                    </span>
+
+                  <div className="space-y-2 border-t pt-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium">Application Progression</label>
+                      <span className="text-xs text-muted-foreground">{application.healthPlan} Workflow Status</span>
+                    </div>
+
+                    {application.healthPlan?.toLowerCase().includes('kaiser') ? (
+                      <Select
+                        value={(application as any)?.kaiserStatus || kaiserSteps[0]}
+                        onValueChange={(value) => updateProgressionStatus(value, 'kaiser')}
+                        disabled={isUpdatingProgression}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select Kaiser status" />
+                          {isUpdatingProgression && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
+                        </SelectTrigger>
+                        <SelectContent>
+                          {getKaiserStatusesInOrder().map((status) => (
+                            <SelectItem key={status.id} value={status.status}>
+                              <div className="flex items-center justify-between w-full">
+                                <span>{status.status}</span>
+                                <div className="flex items-center gap-2 ml-2">
+                                  <span className="text-xs text-muted-foreground">#{status.sortOrder}</span>
+                                  <span
+                                    className={cn(
+                                      'text-xs px-2 py-0.5 rounded-full',
+                                      status.category === 'initial' && 'bg-blue-100 text-blue-700',
+                                      status.category === 'assessment' && 'bg-purple-100 text-purple-700',
+                                      status.category === 'authorization' && 'bg-orange-100 text-orange-700',
+                                      status.category === 'placement' && 'bg-green-100 text-green-700',
+                                      status.category === 'completion' && 'bg-gray-100 text-gray-700',
+                                      status.category === 'inactive' && 'bg-red-100 text-red-700'
+                                    )}
+                                  >
+                                    {status.category}
+                                  </span>
+                                </div>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : application.healthPlan?.toLowerCase().includes('health net') ? (
+                      <Select
+                        value={(application as any)?.healthNetStatus || healthNetSteps[0]}
+                        onValueChange={(value) => updateProgressionStatus(value, 'healthNet')}
+                        disabled={isUpdatingProgression}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select Health Net status" />
+                          {isUpdatingProgression && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
+                        </SelectTrigger>
+                        <SelectContent>
+                          {healthNetSteps.map((step) => (
+                            <SelectItem key={step} value={step}>
+                              {step}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-md">
+                        Application progression tracking is available for Kaiser and Health Net members only.
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))
-            )}
-            <Button asChild variant="outline" size="sm" className="w-full">
+              </DialogContent>
+            </Dialog>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Eligibility check & uploads
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Eligibility check</DialogTitle>
+                  <DialogDescription>Track CalAIM eligibility status and supporting uploads.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium">CalAIM Status</label>
+                      {isUpdatingTracking && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    </div>
+                    <Select
+                      value={(application as any)?.calaimTrackingStatus || ''}
+                      onValueChange={updateTrackingStatus}
+                      disabled={isUpdatingTracking}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select CalAIM status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {calaimTrackingOptions.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {option}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {(application as any)?.calaimTrackingStatus === 'Not CalAIM Eligible' && (
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Reason</Label>
+                        <Select
+                          value={(application as any)?.calaimNotEligibleReason || ''}
+                          onValueChange={(value) => {
+                            const nextReason = value || '';
+                            const nextFlags = {
+                              calaimNotEligibleSwitchingProviders: nextReason === 'Switching Providers by end of Month',
+                              calaimNotEligibleHasSoc: nextReason === 'Has SOC',
+                              calaimNotEligibleOutOfCounty: nextReason === 'Not in our contracted CalAIM County',
+                              calaimNotEligibleOther: nextReason === 'Other',
+                              calaimNotEligibleReason: nextReason,
+                              calaimNotEligibleOtherReason:
+                                nextReason === 'Other' ? (application as any)?.calaimNotEligibleOtherReason || '' : '',
+                            };
+                            setApplication((prev) => (prev ? { ...prev, ...nextFlags } : null));
+                            updateNotEligibleFlags(nextFlags);
+                          }}
+                          disabled={isUpdatingTracking}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select a reason" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {notEligibleReasonOptions.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {(application as any)?.calaimNotEligibleReason === 'Other' && (
+                          <Textarea
+                            id="not-eligible-other-reason"
+                            rows={2}
+                            placeholder="Describe the reason..."
+                            value={(application as any)?.calaimNotEligibleOtherReason || ''}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setApplication((prev) => (prev ? { ...prev, calaimNotEligibleOtherReason: nextValue } : null));
+                            }}
+                            onBlur={(event) => updateNotEligibleFlags({ calaimNotEligibleOtherReason: event.target.value })}
+                            disabled={isUpdatingTracking}
+                          />
+                        )}
+                        <div className="space-y-2 pt-2">
+                          <Label className="text-sm font-medium">Note to Member (optional)</Label>
+                          <Textarea
+                            rows={3}
+                            placeholder="Add a message that explains the eligibility outcome..."
+                            value={(application as any)?.calaimTrackingReason || ''}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setApplication((prev) => (prev ? { ...prev, calaimTrackingReason: nextValue } : null));
+                            }}
+                            onBlur={(event) => updateTrackingReason(event.target.value)}
+                            disabled={isUpdatingTracking}
+                          />
+                          <Button
+                            variant="outline"
+                            className="w-full"
+                            onClick={sendEligibilityNote}
+                            disabled={isSendingEligibilityNote}
+                          >
+                            {isSendingEligibilityNote ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Sending Note...
+                              </>
+                            ) : (
+                              'Send Note to Referrer'
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {eligibilityRequirements.length > 0 && (
+                    <div className="space-y-3 border-t pt-4">
+                      <Label className="text-sm font-medium">Eligibility Uploads</Label>
+                      <div className="space-y-3">
+                        {eligibilityRequirements.map((req) => {
+                          const formInfo = formStatusMap.get(req.title);
+                          const status = formInfo?.status || 'Pending';
+                          return (
+                            <div key={req.id} className="rounded-md border p-3 space-y-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="text-sm font-medium">{req.title}</div>
+                                  <StatusIndicator status={status} />
+                                </div>
+                                <p className="text-xs text-muted-foreground">{req.description}</p>
+                              </div>
+                              {getFormAction(req)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <Mail className="h-4 w-4" />
+                  Interoffice notes
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Interoffice notes</DialogTitle>
+                  <DialogDescription>Send staff-only notes tied to this application.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="interoffice-recipient">Recipients</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          id="interoffice-recipient"
+                          variant="outline"
+                          className="w-full justify-between"
+                          disabled={isLoadingStaff}
+                        >
+                          {isLoadingStaff
+                            ? 'Loading staff...'
+                            : interofficeNote.recipientIds.length === 0
+                              ? 'Select staff members'
+                              : `${interofficeNote.recipientIds.length} selected`}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="p-2 w-72">
+                        <div className="max-h-56 overflow-auto space-y-2">
+                          {staffList.map((staff) => {
+                            const checked = interofficeNote.recipientIds.includes(staff.uid);
+                            return (
+                              <label key={staff.uid} className="flex items-center gap-2 text-sm">
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(value) => {
+                                    setInterofficeNote((prev) => ({
+                                      ...prev,
+                                      recipientIds: value
+                                        ? [...prev.recipientIds, staff.uid]
+                                        : prev.recipientIds.filter((id) => id !== staff.uid),
+                                    }));
+                                  }}
+                                />
+                                <span>{staff.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="interoffice-priority">Priority</Label>
+                    <Select
+                      value={interofficeNote.priority}
+                      onValueChange={(value: 'Regular' | 'Immediate') =>
+                        setInterofficeNote((prev) => ({ ...prev, priority: value }))
+                      }
+                    >
+                      <SelectTrigger id="interoffice-priority">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Regular">Regular (no desktop popup)</SelectItem>
+                        <SelectItem value="Immediate">Immediate (desktop popup)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="interoffice-message">Message</Label>
+                    <Textarea
+                      id="interoffice-message"
+                      rows={4}
+                      value={interofficeNote.message}
+                      onChange={(event) => setInterofficeNote((prev) => ({ ...prev, message: event.target.value }))}
+                      placeholder="Enter staff-only instructions or updates..."
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="interoffice-followup">Follow-up date (optional)</Label>
+                    <Input
+                      id="interoffice-followup"
+                      type="date"
+                      value={interofficeNote.followUpDate || ''}
+                      onChange={(event) =>
+                        setInterofficeNote((prev) => ({ ...prev, followUpDate: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <Button onClick={handleSendInterofficeNote} className="w-full">
+                    Send Interoffice Note
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <UploadCloud className="h-4 w-4" />
+                  Authorization uploads
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Authorization uploads</DialogTitle>
+                  <DialogDescription>
+                    Track authorization windows and upload documents. Use search to find previous auths for reauthorizations.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="authorization-type">Authorization Type</Label>
+                    <Select
+                      value={authorizationUpload.type}
+                      onValueChange={(value) => setAuthorizationUpload((prev) => ({ ...prev, type: value }))}
+                    >
+                      <SelectTrigger id="authorization-type">
+                        <SelectValue placeholder="Select authorization type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {authorizationTypes.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {type}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="authorization-start">Start Date</Label>
+                      <Input
+                        id="authorization-start"
+                        type="date"
+                        value={authorizationUpload.startDate}
+                        onChange={(event) => setAuthorizationUpload((prev) => ({ ...prev, startDate: event.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="authorization-end">End Date</Label>
+                      <Input
+                        id="authorization-end"
+                        type="date"
+                        value={authorizationUpload.endDate}
+                        onChange={(event) => setAuthorizationUpload((prev) => ({ ...prev, endDate: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="authorization-file">Authorization Document</Label>
+                    <Input
+                      id="authorization-file"
+                      type="file"
+                      onChange={(event) =>
+                        setAuthorizationUpload((prev) => ({ ...prev, file: event.target.files?.[0] || null }))
+                      }
+                    />
+                  </div>
+                  {authorizationUploading && <Progress value={authorizationUploadProgress} className="h-1 w-full" />}
+                  <Button onClick={handleAuthorizationUpload} className="w-full" disabled={authorizationUploading}>
+                    {authorizationUploading ? 'Uploading...' : 'Save Authorization'}
+                  </Button>
+
+                  <Separator />
+
+                  <div className="space-y-2">
+                    <Label htmlFor="authorization-search">Search Previous Authorizations</Label>
+                    <Input
+                      id="authorization-search"
+                      value={authorizationSearch}
+                      onChange={(event) => setAuthorizationSearch(event.target.value)}
+                      placeholder="Search by type, date, or file name..."
+                    />
+                  </div>
+
+                  {filteredAuthorizationRecords.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No authorization records found.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredAuthorizationRecords.map((record) => {
+                        const daysUntilEnd = getDaysUntil(record.endDate);
+                        const isExpiringSoon = typeof daysUntilEnd === 'number' && daysUntilEnd <= 30;
+                        return (
+                          <div
+                            key={record.id || `${record.type}-${record.startDate}`}
+                            className="rounded-md border p-3 text-sm"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="font-medium">
+                                {record.type || 'Authorization'}
+                                {isExpiringSoon && (
+                                  <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">
+                                    Expiring in {daysUntilEnd} days
+                                  </span>
+                                )}
+                              </div>
+                              {record.downloadURL && (
+                                <Button asChild variant="ghost" size="sm">
+                                  <a href={record.downloadURL} target="_blank" rel="noopener noreferrer">
+                                    <Download className="mr-2 h-4 w-4" />
+                                    View
+                                  </a>
+                                </Button>
+                              )}
+                            </div>
+                            <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                              <div>Start: {formatAuthorizationDate(record.startDate)}</div>
+                              <div>End: {formatAuthorizationDate(record.endDate)}</div>
+                              <div>Uploaded: {formatAuthorizationDate(record.uploadedAt)}</div>
+                              {record.fileName && <div>File: {record.fileName}</div>}
+                              {record.createdByName && <div>Uploaded by: {record.createdByName}</div>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <FileText className="h-4 w-4" />
+                  Individual service plans (ISP)
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Individual service plans</DialogTitle>
+                  <DialogDescription>
+                    Upload Individual Service Plans for backend record-keeping (not part of the pathway).
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="isp-date">ISP Date</Label>
+                    <Input
+                      id="isp-date"
+                      type="date"
+                      value={ispUpload.planDate}
+                      onChange={(event) => setIspUpload((prev) => ({ ...prev, planDate: event.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="isp-file">ISP Document</Label>
+                    <Input
+                      id="isp-file"
+                      type="file"
+                      onChange={(event) => setIspUpload((prev) => ({ ...prev, file: event.target.files?.[0] || null }))}
+                    />
+                  </div>
+                  {ispUploading && <Progress value={ispUploadProgress} className="h-1 w-full" />}
+                  <Button onClick={handleIspUpload} className="w-full" disabled={ispUploading}>
+                    {ispUploading ? 'Uploading...' : 'Save ISP'}
+                  </Button>
+
+                  <Separator />
+
+                  {ispRecords.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No ISP records uploaded yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {ispRecords.map((record) => (
+                        <div key={record.id || `${record.planDate}-${record.fileName}`} className="rounded-md border p-3 text-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="font-medium">ISP {formatAuthorizationDate(record.planDate)}</div>
+                            {record.downloadURL && (
+                              <Button asChild variant="ghost" size="sm">
+                                <a href={record.downloadURL} target="_blank" rel="noopener noreferrer">
+                                  <Download className="mr-2 h-4 w-4" />
+                                  View
+                                </a>
+                              </Button>
+                            )}
+                          </div>
+                          <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                            {record.fileName && <div>File: {record.fileName}</div>}
+                            {record.createdByName && <div>Uploaded by: {record.createdByName}</div>}
+                            <div>Uploaded: {formatAuthorizationDate(record.uploadedAt)}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* Uploaded files section removed to reduce clutter */}
+
+            <Button asChild variant="outline" className="w-full justify-start gap-2">
               <Link href={`/admin/my-notes?member=${encodeURIComponent(`${application.memberFirstName} ${application.memberLastName}`)}`}>
-                View full notes
+                <MessageSquare className="h-4 w-4" />
+                Open member notes
               </Link>
             </Button>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <UploadCloud className="h-5 w-5" />
-              Authorization Uploads (Interoffice)
-            </CardTitle>
-            <CardDescription>
-              Track authorization windows and upload documents. Use search to find previous auths for reauthorizations.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="authorization-type">Authorization Type</Label>
-              <Select
-                value={authorizationUpload.type}
-                onValueChange={(value) => setAuthorizationUpload((prev) => ({ ...prev, type: value }))}
-              >
-                <SelectTrigger id="authorization-type">
-                  <SelectValue placeholder="Select authorization type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {authorizationTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="authorization-start">Start Date</Label>
-                <Input
-                  id="authorization-start"
-                  type="date"
-                  value={authorizationUpload.startDate}
-                  onChange={(event) =>
-                    setAuthorizationUpload((prev) => ({ ...prev, startDate: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="authorization-end">End Date</Label>
-                <Input
-                  id="authorization-end"
-                  type="date"
-                  value={authorizationUpload.endDate}
-                  onChange={(event) =>
-                    setAuthorizationUpload((prev) => ({ ...prev, endDate: event.target.value }))
-                  }
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="authorization-file">Authorization Document</Label>
-              <Input
-                id="authorization-file"
-                type="file"
-                onChange={(event) =>
-                  setAuthorizationUpload((prev) => ({
-                    ...prev,
-                    file: event.target.files?.[0] || null
-                  }))
-                }
-              />
-            </div>
-            {authorizationUploading && (
-              <Progress value={authorizationUploadProgress} className="h-1 w-full" />
-            )}
-            <Button
-              onClick={handleAuthorizationUpload}
-              className="w-full"
-              disabled={authorizationUploading}
-            >
-              {authorizationUploading ? 'Uploading...' : 'Save Authorization'}
+        <Collapsible>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="w-full justify-between group">
+              More tools
+              <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
             </Button>
-
-            <Separator />
-
-            <div className="space-y-2">
-              <Label htmlFor="authorization-search">Search Previous Authorizations</Label>
-              <Input
-                id="authorization-search"
-                value={authorizationSearch}
-                onChange={(event) => setAuthorizationSearch(event.target.value)}
-                placeholder="Search by type, date, or file name..."
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-6 pt-3">
+            <AdminActions application={application} />
+            {(application as any)?.client_ID2 ? (
+              <NoteTracker
+                memberId={(application as any)?.client_ID2}
+                memberName={`${application.memberFirstName} ${application.memberLastName}`}
               />
-            </div>
-
-            {filteredAuthorizationRecords.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No authorization records found.</p>
             ) : (
-              <div className="space-y-3">
-                {filteredAuthorizationRecords.map((record) => {
-                  const daysUntilEnd = getDaysUntil(record.endDate);
-                  const isExpiringSoon = typeof daysUntilEnd === 'number' && daysUntilEnd <= 30;
-                  return (
-                  <div key={record.id || `${record.type}-${record.startDate}`} className="rounded-md border p-3 text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="font-medium">
-                        {record.type || 'Authorization'}
-                        {isExpiringSoon && (
-                          <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">
-                            Expiring in {daysUntilEnd} days
-                          </span>
-                        )}
-                      </div>
-                      {record.downloadURL && (
-                        <Button asChild variant="ghost" size="sm">
-                          <a href={record.downloadURL} target="_blank" rel="noopener noreferrer">
-                            <Download className="mr-2 h-4 w-4" />
-                            View
-                          </a>
-                        </Button>
-                      )}
-                    </div>
-                    <div className="mt-2 text-xs text-muted-foreground space-y-1">
-                      <div>Start: {formatAuthorizationDate(record.startDate)}</div>
-                      <div>End: {formatAuthorizationDate(record.endDate)}</div>
-                      <div>Uploaded: {formatAuthorizationDate(record.uploadedAt)}</div>
-                      {record.fileName && <div>File: {record.fileName}</div>}
-                      {record.createdByName && <div>Uploaded by: {record.createdByName}</div>}
-                    </div>
-                  </div>
-                )})}
-              </div>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5" />
+                    Notes & Communication
+                  </CardTitle>
+                  <CardDescription>
+                    Notes load once a Caspio Client_ID2 is linked to this application.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    This member is not yet linked to a Caspio record, so notes cannot be fetched.
+                  </p>
+                </CardContent>
+              </Card>
             )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Individual Service Plans
-            </CardTitle>
-            <CardDescription>
-              Upload Individual Service Plans for backend record-keeping (not part of the pathway).
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="isp-date">ISP Date</Label>
-              <Input
-                id="isp-date"
-                type="date"
-                value={ispUpload.planDate}
-                onChange={(event) =>
-                  setIspUpload((prev) => ({ ...prev, planDate: event.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="isp-file">ISP Document</Label>
-              <Input
-                id="isp-file"
-                type="file"
-                onChange={(event) =>
-                  setIspUpload((prev) => ({
-                    ...prev,
-                    file: event.target.files?.[0] || null
-                  }))
-                }
-              />
-            </div>
-            {ispUploading && (
-              <Progress value={ispUploadProgress} className="h-1 w-full" />
-            )}
-            <Button
-              onClick={handleIspUpload}
-              className="w-full"
-              disabled={ispUploading}
-            >
-              {ispUploading ? 'Uploading...' : 'Save ISP'}
-            </Button>
-
-            <Separator />
-
-            {ispRecords.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No ISP records uploaded yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {ispRecords.map((record) => (
-                  <div key={record.id || `${record.planDate}-${record.fileName}`} className="rounded-md border p-3 text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="font-medium">
-                        ISP {formatAuthorizationDate(record.planDate)}
-                      </div>
-                      {record.downloadURL && (
-                        <Button asChild variant="ghost" size="sm">
-                          <a href={record.downloadURL} target="_blank" rel="noopener noreferrer">
-                            <Download className="mr-2 h-4 w-4" />
-                            View
-                          </a>
-                        </Button>
-                      )}
-                    </div>
-                    <div className="mt-2 text-xs text-muted-foreground space-y-1">
-                      {record.fileName && <div>File: {record.fileName}</div>}
-                      {record.createdByName && <div>Uploaded by: {record.createdByName}</div>}
-                      <div>Uploaded: {formatAuthorizationDate(record.uploadedAt)}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-         <Card>
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2"><List className="h-5 w-5" /> Uploaded Files</CardTitle>
-                <CardDescription>A list of all files recorded for this application.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                {uploadedFiles.length > 0 ? (
-                    <ul className="space-y-2">
-                        {uploadedFiles.map(file => (
-                             <li key={file.name} className="flex items-center justify-between text-sm p-2 rounded-md bg-muted/50">
-                                <span className="font-medium flex-1 truncate">{file.name}</span>
-                                {file.downloadURL ? (
-                                    <Button asChild variant="ghost" size="sm">
-                                        <a href={file.downloadURL} target="_blank" rel="noopener noreferrer">
-                                            <Download className="mr-2 h-4 w-4" />
-                                            Download
-                                        </a>
-                                    </Button>
-                                ) : (
-                                    <span className="text-xs text-muted-foreground">No link</span>
-                                )}
-                            </li>
-                        ))}
-                    </ul>
-                ) : (
-                    <p className="text-sm text-center text-muted-foreground py-4">No files uploaded yet.</p>
-                )}
-            </CardContent>
-             <CardFooter>
-                <p className="text-xs text-muted-foreground italic">Uploaded files can be downloaded here.</p>
-            </CardFooter>
-        </Card>
+          </CollapsibleContent>
+        </Collapsible>
       </aside>
     </div>
   );
