@@ -7,6 +7,9 @@ import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAdmin } from '@/hooks/use-admin';
 import { useSocialWorker } from '@/hooks/use-social-worker';
+import { DesktopNotificationsDevShim } from '@/components/DesktopNotificationsDevShim';
+import { WebNotificationsDevTester } from '@/components/WebNotificationsDevTester';
+import { RealTimeNotifications } from '@/components/RealTimeNotifications';
 import {
   LayoutDashboard,
   Shield,
@@ -1123,6 +1126,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <SocialWorkerRedirect />
+      <DesktopNotificationsDevShim />
+      <WebNotificationsDevTester />
+      <RealTimeNotifications />
       <div className="flex flex-col min-h-screen">
         <AdminHeader />
         <main className="flex-grow min-w-0 p-4 sm:p-6 md:p-8 bg-slate-50/50 overflow-x-hidden">
