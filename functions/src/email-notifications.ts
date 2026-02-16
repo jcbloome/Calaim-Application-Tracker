@@ -276,6 +276,12 @@ async function getStaffToNotify(applicationData: any): Promise<any[]> {
     
     if (settingsDoc.exists) {
       const settings = settingsDoc.data()!;
+      // For now, staff email alerts for doc uploads / CS summary are OFF by default.
+      // To enable, set `system_settings/notifications.reviewUploadEmailsEnabled = true`.
+      if (settings.reviewUploadEmailsEnabled !== true) {
+        console.log('📧 Review upload email notifications are disabled (reviewUploadEmailsEnabled != true)');
+        return [];
+      }
       const healthPlan = applicationData.healthPlan || applicationData.existingHealthPlan;
       
       // Route based on health plan

@@ -163,8 +163,8 @@ export default function ReviewNotificationsPage() {
     }
     return {
       enabled: false,
-      csSummary: true,
-      documents: true,
+      csSummary: false,
+      documents: false,
       email,
       label
     };

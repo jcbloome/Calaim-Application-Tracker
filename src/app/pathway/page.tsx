@@ -186,15 +186,28 @@ function PathwayPageContent() {
       const existingForms = new Map(application.forms?.map(f => [f.name, f]) || []);
       
       updates.forEach(update => {
-          const existingForm = existingForms.get(update.name!);
-          if (existingForm) {
-              const shouldAutoAcknowledge = isInternalStaffUpload && update.status === 'Completed';
-              existingForms.set(update.name!, {
-                ...existingForm,
-                ...update,
-                ...(shouldAutoAcknowledge ? { acknowledged: true } : {})
-              });
-          }
+          const name = String(update.name || '').trim();
+          if (!name) return;
+          const existingForm = existingForms.get(name);
+          const isCompleted = update.status === 'Completed';
+          const isSummary = name === 'CS Member Summary' || name === 'CS Summary';
+          const hasFile = Boolean((update as any).filePath || (update as any).downloadURL || (update as any).fileName);
+
+          // Staff internal uploads should stay acknowledged (they're doing the reviewing).
+          const shouldAutoAcknowledge = isInternalStaffUpload && isCompleted;
+
+          // Referrer uploads should *reset* acknowledgement so staff sees it as new.
+          const shouldResetAcknowledge =
+            !isInternalStaffUpload && isCompleted && hasFile && !isSummary;
+
+          const next = {
+            ...(existingForm || { name, status: 'Pending' }),
+            ...update,
+            ...(shouldAutoAcknowledge ? { acknowledged: true } : {}),
+            ...(shouldResetAcknowledge ? { acknowledged: false } : {})
+          } as any;
+
+          existingForms.set(name, next);
       });
 
       const updatedForms = Array.from(existingForms.values());
@@ -210,6 +223,7 @@ function PathwayPageContent() {
           const baseUpdate: Record<string, any> = {
               forms: updatedForms,
               lastUpdated: serverTimestamp(),
+              lastModified: serverTimestamp(),
               lastDocumentUpload: serverTimestamp(),
               // Derived fields for staff review workflows
               pendingDocReviewCount,
@@ -220,6 +234,15 @@ function PathwayPageContent() {
           if (!isInternalStaffUpload) {
             baseUpdate.hasNewDocuments = true;
             baseUpdate.newDocumentCount = updates.length;
+            // If the referrer resubmits CS Summary, force it back into "needs review".
+            const anyCsCompleted = updates.some((u) => {
+              const nm = String(u?.name || '').trim();
+              const isSummary = nm === 'CS Member Summary' || nm === 'CS Summary';
+              return isSummary && u.status === 'Completed';
+            });
+            if (anyCsCompleted) {
+              baseUpdate.applicationChecked = false;
+            }
           }
 
           await setDoc(docRef, baseUpdate, { merge: true });
@@ -410,6 +433,9 @@ function PathwayPageContent() {
                 filePath: uploadResult.path,
                 downloadURL: uploadResult.downloadURL,
                 dateCompleted: Timestamp.now(),
+                uploadedByUid: user.uid,
+                uploadedByEmail: user.email || null,
+                uploadedByName: user.displayName || user.email || 'User',
             }]);
             console.log('Form status updated successfully');
             toast({ 
@@ -468,6 +494,9 @@ function PathwayPageContent() {
           filePath: uploadResult.path,
           downloadURL: uploadResult.downloadURL,
           dateCompleted: Timestamp.now(),
+          uploadedByUid: user.uid,
+          uploadedByEmail: user.email || null,
+          uploadedByName: user.displayName || user.email || 'User',
         }));
         await handleFormStatusUpdate(updates);
         toast({ title: 'Upload Successful', description: 'Consolidated documents have been uploaded.' });
@@ -484,20 +513,47 @@ function PathwayPageContent() {
 
   const handleFileRemove = async (form: FormStatusType) => {
     if (!form.filePath) {
-      await handleFormStatusUpdate([{ name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null }]);
+      await handleFormStatusUpdate([{
+        name: form.name,
+        status: 'Pending',
+        fileName: null,
+        filePath: null,
+        downloadURL: null,
+        uploadedByUid: null,
+        uploadedByEmail: null,
+        uploadedByName: null,
+      }]);
       return;
     }
     
     const storageRef = ref(storage, form.filePath);
     try {
       await deleteObject(storageRef);
-      await handleFormStatusUpdate([{ name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null }]);
+      await handleFormStatusUpdate([{
+        name: form.name,
+        status: 'Pending',
+        fileName: null,
+        filePath: null,
+        downloadURL: null,
+        uploadedByUid: null,
+        uploadedByEmail: null,
+        uploadedByName: null,
+      }]);
       toast({ title: 'File Removed', description: `${form.fileName} has been removed.`});
     } catch (error) {
       console.error("Error removing file:", error);
       toast({ variant: 'destructive', title: 'Error', description: 'Could not remove file. It may have already been deleted.'});
       // Force update Firestore record even if storage deletion fails
-      await handleFormStatusUpdate([{ name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null }]);
+      await handleFormStatusUpdate([{
+        name: form.name,
+        status: 'Pending',
+        fileName: null,
+        filePath: null,
+        downloadURL: null,
+        uploadedByUid: null,
+        uploadedByEmail: null,
+        uploadedByName: null,
+      }]);
     }
   };
 

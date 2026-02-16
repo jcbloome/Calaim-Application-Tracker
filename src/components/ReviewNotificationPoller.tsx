@@ -1,42 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { useFirestore, useUser } from '@/firebase';
+import { useUser } from '@/firebase';
 import { useGlobalNotifications } from '@/components/NotificationProvider';
-import {
-  collection,
-  collectionGroup,
-  doc,
-  getDoc,
-  limit,
-  query,
-  where,
-  orderBy,
-  getDocs,
-} from 'firebase/firestore';
 
-type RecipientSettings = {
-  enabled: boolean;
-  csSummary: boolean;
-  documents: boolean;
-  label?: string;
-  email?: string;
-};
-
-type ReviewNotificationsConfig = {
-  enabled: boolean;
-  pollIntervalSeconds: number;
-  recipients: Record<string, RecipientSettings>;
-};
-
-const DEFAULT_CONFIG: ReviewNotificationsConfig = {
-  enabled: true,
-  pollIntervalSeconds: 180,
-  recipients: {}
-};
+const DEFAULT_POLL_SECONDS = 180;
 
 const clampPollSeconds = (value: number) => {
-  if (!Number.isFinite(value)) return DEFAULT_CONFIG.pollIntervalSeconds;
+  if (!Number.isFinite(value)) return DEFAULT_POLL_SECONDS;
   return Math.max(30, Math.min(3600, Math.round(value)));
 };
 
@@ -95,175 +66,79 @@ const toMs = (value: any): number => {
 
 export function ReviewNotificationPoller() {
   const { user } = useUser();
-  const firestore = useFirestore();
   const { showNotification } = useGlobalNotifications();
+  const warnedRef = useRef<{ missingRecipient: boolean; queryError: boolean }>({ missingRecipient: false, queryError: false });
 
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlightRef = useRef(false);
 
-  const configRef = useMemo(() => {
-    if (!firestore) return null;
-    return doc(firestore, 'system_settings', 'review_notifications');
-  }, [firestore]);
-
   const shouldRun = useMemo(() => {
     if (!user?.uid) return false;
-    if (!firestore) return false;
     if (typeof window === 'undefined') return false;
+    // Admin pages already trigger review popups from live action-item counters.
+    if (typeof window !== 'undefined' && window.location?.pathname?.startsWith('/admin')) return false;
     return true;
-  }, [user?.uid, firestore]);
+  }, [user?.uid]);
 
   const pollOnce = async (): Promise<number> => {
-    if (!user?.uid || !firestore) return;
+    if (!user?.uid) return;
     if (inFlightRef.current) return;
     inFlightRef.current = true;
 
     try {
       const isRealDesktop = Boolean(window.desktopNotifications && !window.desktopNotifications.__shim);
-      const configSnap = configRef ? await getDoc(configRef).catch(() => null) : null;
-      const config = configSnap?.exists()
-        ? ({ ...DEFAULT_CONFIG, ...(configSnap.data() as any) } as ReviewNotificationsConfig)
-        : DEFAULT_CONFIG;
-      const intervalSeconds = clampPollSeconds(Number((config as any)?.pollIntervalSeconds ?? DEFAULT_CONFIG.pollIntervalSeconds));
-
-      if (!config.enabled) return intervalSeconds;
-      const recipient = config.recipients?.[user.uid] || null;
-      if (!recipient?.enabled) return intervalSeconds;
-
       const seen = readSeen(user.uid);
-
-      const shouldCheckCs = Boolean(recipient?.enabled && recipient?.csSummary);
-      const shouldCheckDocs = Boolean(recipient?.enabled && recipient?.documents);
-      if (!shouldCheckCs && !shouldCheckDocs) return intervalSeconds;
-
-      const csQueries = shouldCheckCs
-        ? [
-            getDocs(
-              query(
-                collection(firestore, 'applications'),
-                where('pendingCsReview', '==', true),
-                orderBy('csSummaryCompletedAt', 'desc'),
-                limit(50)
-              )
-            ),
-            getDocs(
-              query(
-                collectionGroup(firestore, 'applications'),
-                where('pendingCsReview', '==', true),
-                orderBy('csSummaryCompletedAt', 'desc'),
-                limit(50)
-              )
-            ),
-          ]
-        : [];
-
-      const docQueries = shouldCheckDocs
-        ? [
-            getDocs(
-              query(
-                collection(firestore, 'applications'),
-                where('pendingDocReviewCount', '>', 0),
-                limit(50)
-              )
-            ),
-            getDocs(
-              query(
-                collectionGroup(firestore, 'applications'),
-                where('pendingDocReviewCount', '>', 0),
-                limit(50)
-              )
-            ),
-          ]
-        : [];
-
-      const [csRootSnap, csGroupSnap, docRootSnap, docGroupSnap] = await Promise.all([
-        ...(csQueries.length === 2 ? csQueries : [Promise.resolve(null), Promise.resolve(null)]),
-        ...(docQueries.length === 2 ? docQueries : [Promise.resolve(null), Promise.resolve(null)]),
-      ] as any);
-
-      const csCount = (csRootSnap?.size || 0) + (csGroupSnap?.size || 0);
-      const docsCount = (docRootSnap?.size || 0) + (docGroupSnap?.size || 0);
-
-      // Provide Electron "notepad" list items for documents/CS review.
-      const reviewNotes: Array<{
-        title: string;
-        message: string;
-        kind?: 'docs' | 'cs';
-        author?: string;
-        recipientName?: string;
-        memberName?: string;
-        timestamp?: string;
-        actionUrl?: string;
-      }> = [];
+      // Use server API (Admin SDK) so web notifications work regardless of Firestore client rules.
+      let intervalSeconds = DEFAULT_POLL_SECONDS;
+      let reviewPrefs: any = null;
+      let tasks: any[] = [];
       try {
-        const pushCs = (snap: any) => {
-          (snap?.docs || []).slice(0, 3).forEach((d: any) => {
-            const data = d.data?.() || {};
-            const memberName = `${data.memberFirstName || 'Unknown'} ${data.memberLastName || 'Member'}`.trim();
-            reviewNotes.push({
-              kind: 'cs',
-              title: 'CS Summary received',
-              message: memberName,
-              author: 'System',
-              recipientName: user.displayName || user.email || 'Staff',
-              memberName,
-              timestamp: data.csSummaryCompletedAt?.toDate?.()?.toLocaleString?.() || undefined,
-              actionUrl: '/admin/applications?review=cs'
-            });
-          });
-        };
-
-        const pushDocs = (snap: any) => {
-          (snap?.docs || []).slice(0, 3).forEach((d: any) => {
-            const data = d.data?.() || {};
-            const memberName = `${data.memberFirstName || 'Unknown'} ${data.memberLastName || 'Member'}`.trim();
-            const count = Number(data.pendingDocReviewCount || 0);
-            reviewNotes.push({
-              kind: 'docs',
-              title: 'Documents received',
-              message: count > 0 ? `${memberName} (${count})` : memberName,
-              author: 'System',
-              recipientName: user.displayName || user.email || 'Staff',
-              memberName,
-              timestamp: data.pendingDocReviewUpdatedAt?.toDate?.()?.toLocaleString?.() || undefined,
-              actionUrl: '/admin/applications?review=docs'
-            });
-          });
-        };
-
-        if (shouldCheckCs) {
-          pushCs(csRootSnap);
-          pushCs(csGroupSnap);
+        const res = await fetch(`/api/staff/tasks?userId=${encodeURIComponent(user.uid)}`, { cache: 'no-store' });
+        const contentType = res.headers.get('content-type') || '';
+        const isJson = contentType.includes('application/json');
+        const data = isJson ? await res.json() : null;
+        if (!res.ok) throw new Error(data?.error || `Request failed with status ${res.status}`);
+        reviewPrefs = data?.reviewPrefs || null;
+        tasks = Array.isArray(data?.tasks) ? data.tasks : [];
+        intervalSeconds = clampPollSeconds(Number(reviewPrefs?.pollIntervalSeconds || DEFAULT_POLL_SECONDS));
+      } catch (error) {
+        if (process.env.NODE_ENV !== 'production' && !warnedRef.current.queryError) {
+          warnedRef.current.queryError = true;
+          console.warn('[ReviewNotificationPoller] /api/staff/tasks failed:', error);
         }
-        if (shouldCheckDocs) {
-          pushDocs(docRootSnap);
-          pushDocs(docGroupSnap);
-        }
-
-        if (isRealDesktop) {
-          window.desktopNotifications?.setReviewPillSummary?.({
-            count: (shouldCheckCs ? csCount : 0) + (shouldCheckDocs ? docsCount : 0),
-            notes: reviewNotes.slice(0, 6)
-          });
-        }
-      } catch {
-        // ignore
+        return intervalSeconds;
       }
 
-      const csLatestMs = Math.max(
-        ...(csRootSnap?.docs || []).map((d: any) => toMs(d.data()?.csSummaryCompletedAt || d.data()?.lastUpdated)),
-        ...(csGroupSnap?.docs || []).map((d: any) => toMs(d.data()?.csSummaryCompletedAt || d.data()?.lastUpdated)),
-        0
-      );
+      if (!reviewPrefs?.enabled || !reviewPrefs?.recipientEnabled) {
+        if (process.env.NODE_ENV !== 'production' && !warnedRef.current.missingRecipient) {
+          warnedRef.current.missingRecipient = true;
+          console.warn('[ReviewNotificationPoller] Review prefs disabled for user:', user.uid);
+        }
+        return intervalSeconds;
+      }
 
-      const docsLatestMs = Math.max(
-        ...(docRootSnap?.docs || []).map((d: any) => toMs(d.data()?.pendingDocReviewUpdatedAt || d.data()?.lastUpdated)),
-        ...(docGroupSnap?.docs || []).map((d: any) => toMs(d.data()?.pendingDocReviewUpdatedAt || d.data()?.lastUpdated)),
-        0
-      );
+      const allowCs = Boolean(reviewPrefs?.allowCs);
+      const allowDocs = Boolean(reviewPrefs?.allowDocs);
+      if (!allowCs && !allowDocs) {
+        return intervalSeconds;
+      }
 
-      const csIsNew = shouldCheckCs && csCount > 0 && (csLatestMs > seen.cs.latestMs || csCount > seen.cs.count);
-      const docsIsNew = shouldCheckDocs && docsCount > 0 && (docsLatestMs > seen.docs.latestMs || docsCount > seen.docs.count);
+      const reviewTasks = tasks.filter((t) => t?.taskType === 'review');
+      const csTasks = allowCs
+        ? reviewTasks.filter((t) => t?.reviewKind === 'cs' || String(t?.title || '').toLowerCase().includes('cs'))
+        : [];
+      const docTasks = allowDocs
+        ? reviewTasks.filter((t) => t?.reviewKind === 'docs' || String(t?.title || '').toLowerCase().includes('document'))
+        : [];
+
+      const csCount = csTasks.length;
+      const docsCount = docTasks.length;
+
+      const csLatestMs = Math.max(...csTasks.map((t) => toMs(t?.dueDate || t?.updatedAt || t?.createdAt)), 0);
+      const docsLatestMs = Math.max(...docTasks.map((t) => toMs(t?.dueDate || t?.updatedAt || t?.createdAt)), 0);
+
+      const csIsNew = allowCs && csCount > 0 && (csLatestMs > seen.cs.latestMs || csCount > seen.cs.count);
+      const docsIsNew = allowDocs && docsCount > 0 && (docsLatestMs > seen.docs.latestMs || docsCount > seen.docs.count);
 
       if (!csIsNew && !docsIsNew) {
         return;
@@ -285,9 +160,41 @@ export function ReviewNotificationPoller() {
       const message = parts.length > 0 ? parts.join(' • ') : 'New items require review.';
 
       const actionUrl =
-        csIsNew && shouldCheckCs
+        csIsNew && allowCs
           ? '/admin/applications?review=cs'
           : '/admin/applications?review=docs';
+
+      const reviewNotes = [
+        ...docTasks.slice(0, 4).map((t) => ({
+          title: 'Doc uploads received',
+          message: t?.memberName ? `${t.memberName}${t?.description ? ` — ${t.description}` : ''}` : String(t?.description || t?.title || ''),
+          timestamp: t?.dueDate || t?.createdAt,
+        })),
+        ...csTasks.slice(0, 4).map((t) => ({
+          title: 'CS Summary received',
+          message: t?.memberName ? t.memberName : String(t?.description || t?.title || ''),
+          timestamp: t?.dueDate || t?.createdAt,
+        })),
+      ].slice(0, 6);
+
+      if (isRealDesktop) {
+        try {
+          window.desktopNotifications?.setReviewPillSummary?.({
+            count: (allowCs ? csCount : 0) + (allowDocs ? docsCount : 0),
+            notes: reviewNotes.map((n) => ({
+              title: n.title,
+              message: n.message,
+              author: 'System',
+              recipientName: user.displayName || user.email || 'Staff',
+              memberName: '',
+              timestamp: n.timestamp ? new Date(n.timestamp).toLocaleString() : undefined,
+              actionUrl,
+            })),
+          });
+        } catch {
+          // ignore
+        }
+      }
 
       if (isRealDesktop && window.desktopNotifications?.notify) {
         // Pop the pill (Electron).
@@ -305,13 +212,13 @@ export function ReviewNotificationPoller() {
           title,
           message,
           author: 'System',
-          recipientName: user.displayName || user.email || 'Staff',
+          recipientName: 'System',
           memberName: '',
-          notes: reviewNotes.slice(0, 6).map((n) => ({
+          notes: reviewNotes.map((n) => ({
             message: `${n.title}${n.message ? ` — ${n.message}` : ''}`,
-            author: n.author || 'System',
-            memberName: n.memberName,
-            timestamp: n.timestamp,
+            author: 'System',
+            memberName: '',
+            timestamp: n.timestamp ? new Date(n.timestamp).toLocaleString() : undefined,
             replyUrl: undefined,
           })),
           duration: 0,
@@ -330,12 +237,12 @@ export function ReviewNotificationPoller() {
       // Update seen state to prevent repeat popups.
       writeSeen(user.uid, {
         cs: {
-          count: shouldCheckCs ? csCount : seen.cs.count,
-          latestMs: shouldCheckCs ? Math.max(seen.cs.latestMs, csLatestMs) : seen.cs.latestMs,
+          count: allowCs ? csCount : seen.cs.count,
+          latestMs: allowCs ? Math.max(seen.cs.latestMs, csLatestMs) : seen.cs.latestMs,
         },
         docs: {
-          count: shouldCheckDocs ? docsCount : seen.docs.count,
-          latestMs: shouldCheckDocs ? Math.max(seen.docs.latestMs, docsLatestMs) : seen.docs.latestMs,
+          count: allowDocs ? docsCount : seen.docs.count,
+          latestMs: allowDocs ? Math.max(seen.docs.latestMs, docsLatestMs) : seen.docs.latestMs,
         },
       });
       return intervalSeconds;
@@ -355,8 +262,8 @@ export function ReviewNotificationPoller() {
     let stopped = false;
     const loop = async () => {
       if (stopped) return;
-      const nextSeconds = await pollOnce().catch(() => DEFAULT_CONFIG.pollIntervalSeconds);
-      const delaySeconds = clampPollSeconds(Number(nextSeconds || DEFAULT_CONFIG.pollIntervalSeconds));
+      const nextSeconds = await pollOnce().catch(() => DEFAULT_POLL_SECONDS);
+      const delaySeconds = clampPollSeconds(Number(nextSeconds || DEFAULT_POLL_SECONDS));
       pollTimeoutRef.current = setTimeout(loop, delaySeconds * 1000);
     };
 

@@ -691,18 +691,35 @@ export default function WindowsNotification({
 
         {/* Content */}
         <div className="space-y-1.5">
-          <div className="grid grid-cols-4 gap-x-3 text-[11px] text-slate-400 uppercase tracking-wide">
-            <span>From:</span>
-            <span>To:</span>
-            <span>About:</span>
-            <span>Sent:</span>
-          </div>
-          <div className="grid grid-cols-4 gap-x-3 text-xs text-slate-600">
-            <span>{displayAuthor || '-'}</span>
-            <span>{recipientName || '-'}</span>
-            <span>{displayMember || '-'}</span>
-            <span>{formattedTimestamp || '-'}</span>
-          </div>
+          {displayMember ? (
+            <>
+              <div className="grid grid-cols-4 gap-x-3 text-[11px] text-slate-400 uppercase tracking-wide">
+                <span>From:</span>
+                <span>To:</span>
+                <span>About:</span>
+                <span>Sent:</span>
+              </div>
+              <div className="grid grid-cols-4 gap-x-3 text-xs text-slate-600">
+                <span>{displayAuthor || '-'}</span>
+                <span>{recipientName || '-'}</span>
+                <span>{displayMember}</span>
+                <span>{formattedTimestamp || '-'}</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-x-3 text-[11px] text-slate-400 uppercase tracking-wide">
+                <span>From:</span>
+                <span>To:</span>
+                <span>Sent:</span>
+              </div>
+              <div className="grid grid-cols-3 gap-x-3 text-xs text-slate-600">
+                <span>{displayAuthor || '-'}</span>
+                <span>{recipientName || '-'}</span>
+                <span>{formattedTimestamp || '-'}</span>
+              </div>
+            </>
+          )}
           {formattedFollowUpDate && (
             <div className="text-xs text-slate-500">
               Follow-up: {formattedFollowUpDate}
@@ -817,7 +834,7 @@ export default function WindowsNotification({
                     handleClose();
                   }}
                 >
-                  Go to Notes
+                  Open
                 </Button>
               )}
             </div>

@@ -30,6 +30,7 @@ interface MyTask {
   memberName?: string;
   memberClientId?: string;
   healthPlan?: string;
+  reviewKind?: 'docs' | 'cs';
   taskType: 'note_assignment' | 'follow_up' | 'review' | 'contact' | 'administrative' | 'kaiser_status';
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   status: 'pending' | 'in_progress' | 'completed' | 'overdue';
@@ -334,6 +335,31 @@ function MyTasksPageContent() {
         return date >= monthStart && date <= monthEnd && t.status !== 'completed';
       }).length
     };
+  }, [tasks]);
+
+  const actionItemCounts = useMemo(() => {
+    const isDocs = (task: MyTask) => {
+      if (task.reviewKind === 'docs') return true;
+      const title = String(task.title || '').toLowerCase();
+      return title.includes('document');
+    };
+    const isCs = (task: MyTask) => {
+      if (task.reviewKind === 'cs') return true;
+      const title = String(task.title || '').toLowerCase();
+      return title.includes('cs summary') || title.includes('cs') || title.includes('summary');
+    };
+    const isKaiser = (task: MyTask) => String(task.healthPlan || '').toLowerCase().includes('kaiser');
+    const isHealthNet = (task: MyTask) => {
+      const plan = String(task.healthPlan || '').toLowerCase();
+      return plan.includes('health net') || plan.includes('healthnet');
+    };
+
+    const review = tasks.filter((t) => t.taskType === 'review' && t.status !== 'completed');
+    const kDocs = review.filter((t) => isKaiser(t) && isDocs(t)).length;
+    const kCs = review.filter((t) => isKaiser(t) && isCs(t)).length;
+    const hDocs = review.filter((t) => isHealthNet(t) && isDocs(t)).length;
+    const hCs = review.filter((t) => isHealthNet(t) && isCs(t)).length;
+    return { kDocs, kCs, hDocs, hCs };
   }, [tasks]);
 
   const getStatusColor = (status: string) => {
@@ -977,6 +1003,19 @@ function MyTasksPageContent() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Action item counts (uploads)</CardTitle>
+          <CardDescription>Counts of items needing review by plan and type.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Badge variant="outline">K(D) {actionItemCounts.kDocs}</Badge>
+          <Badge variant="outline">K(CS) {actionItemCounts.kCs}</Badge>
+          <Badge variant="outline">H(D) {actionItemCounts.hDocs}</Badge>
+          <Badge variant="outline">H(CS) {actionItemCounts.hCs}</Badge>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

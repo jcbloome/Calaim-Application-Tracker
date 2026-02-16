@@ -70,20 +70,21 @@ export function useSessionIsolation(currentSessionType: SessionType) {
 
       // If switching between admin and user sides, force logout
       if (storedSessionType && storedSessionType !== newSessionType && auth.currentUser) {
-        // Clear all session data
+        // If user is switching from admin -> user, don't force a second login.
+        // Clear admin-only context and record the new session type.
+        if (newSessionType === 'user') {
+          localStorage.setItem('calaim_session_type', 'user');
+          localStorage.removeItem('calaim_admin_context');
+          return;
+        }
+
+        // Switching into admin mode still requires an explicit admin login.
         localStorage.removeItem('calaim_session_type');
         localStorage.removeItem('calaim_admin_context');
         sessionStorage.clear();
-        
-        // Sign out current user
+
         await auth.signOut();
-        
-        // Redirect to appropriate login
-        if (newSessionType === 'admin') {
-          router.push('/admin/login');
-        } else {
-          router.push('/');
-        }
+        router.push('/admin/login');
         return;
       }
 

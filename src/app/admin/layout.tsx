@@ -53,6 +53,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth, useFirestore } from '@/firebase';
+import { useGlobalNotifications } from '@/components/NotificationProvider';
 import { StaffNotificationBell } from '@/components/StaffNotificationBell';
 import { SocialWorkerRedirect } from '@/components/SocialWorkerRedirect';
 import {
@@ -144,6 +145,7 @@ function AdminHeader() {
   const { isSocialWorker } = useSocialWorker();
   const auth = useAuth();
   const firestore = useFirestore();
+  const { showNotification } = useGlobalNotifications();
   const pathname = usePathname();
   const router = useRouter();
   const [openSubmenus, setOpenSubmenus] = useState<Set<string>>(new Set());
@@ -155,10 +157,70 @@ function AdminHeader() {
   const [kaiserCsCount, setKaiserCsCount] = useState(0);
   const [kaiserDocCount, setKaiserDocCount] = useState(0);
   const [hasAdminSessionCookie, setHasAdminSessionCookie] = useState(false);
+  const [reviewPopupPrefs, setReviewPopupPrefs] = useState<{
+    enabled: boolean;
+    recipientEnabled: boolean;
+    allowDocs: boolean;
+    allowCs: boolean;
+  }>({ enabled: true, recipientEnabled: false, allowDocs: false, allowCs: false });
+  // In admin, show the review popup whenever there are pending review items.
+  // Use an in-memory baseline so we don't spam repeatedly while the page is open,
+  // but refreshing the page will show the reminder again (like interoffice notes).
+  const reviewNotifyRef = useRef<{
+    initialized: boolean;
+    docs: { count: number; latestMs: number };
+    cs: { count: number; latestMs: number };
+  }>({ initialized: false, docs: { count: 0, latestMs: 0 }, cs: { count: 0, latestMs: 0 } });
+
+  const toMs = (value: any): number => {
+    if (!value) return 0;
+    try {
+      if (typeof value?.toMillis === 'function') return value.toMillis();
+      if (typeof value?.toDate === 'function') return value.toDate().getTime();
+      const d = new Date(value);
+      const ms = d.getTime();
+      return Number.isNaN(ms) ? 0 : ms;
+    } catch {
+      return 0;
+    }
+  };
+
   useEffect(() => {
     if (typeof document === 'undefined') return;
     setHasAdminSessionCookie(document.cookie.includes('calaim_admin_session='));
   }, []);
+
+  useEffect(() => {
+    if (!firestore || !user?.uid) return;
+    const reviewRef = doc(firestore, 'system_settings', 'review_notifications');
+    const unsubscribe = onSnapshot(
+      reviewRef,
+      (snap) => {
+        const data = snap.exists() ? (snap.data() as any) : {};
+        const enabled = data?.enabled === undefined ? true : Boolean(data?.enabled);
+        const recipients = (data?.recipients || {}) as Record<string, any>;
+        const email = String(user.email || '').trim().toLowerCase();
+        const byUid = recipients?.[user.uid] || null;
+        const byEmailKey = email ? recipients?.[email] || null : null;
+        const byEmailField =
+          !byUid && !byEmailKey && email
+            ? (Object.values(recipients).find((r: any) => String(r?.email || '').trim().toLowerCase() === email) || null)
+            : null;
+        const recipient = byUid || byEmailKey || byEmailField || null;
+        setReviewPopupPrefs({
+          enabled,
+          recipientEnabled: Boolean(recipient?.enabled),
+          allowDocs: Boolean(recipient?.documents),
+          allowCs: Boolean(recipient?.csSummary),
+        });
+      },
+      () => {
+        // If prefs cannot be loaded, keep notifications disabled (explicit authorization required).
+        setReviewPopupPrefs({ enabled: true, recipientEnabled: false, allowDocs: false, allowCs: false });
+      }
+    );
+    return () => unsubscribe();
+  }, [firestore, user?.uid, user?.email]);
 
   const handleSignOut = async () => {
     if (auth) {
@@ -210,41 +272,72 @@ function AdminHeader() {
       let nextKaiserCs = 0;
       let nextKaiserDocs = 0;
 
-      const csSummaryCount = dedupedApps.filter((app) => {
+      let csSummaryCount = 0;
+      let csLatestMs = 0;
+      const csNotes: Array<{ message: string; timestampMs: number; url: string; author: string }> = [];
+      let uploadCount = 0;
+      let docsLatestMs = 0;
+      const docNotes: Array<{ message: string; timestampMs: number; url: string; author: string }> = [];
+
+      dedupedApps.forEach((app: any) => {
+        const memberName = `${app.memberFirstName || 'Unknown'} ${app.memberLastName || 'Member'}`.trim();
+        const plan = String(app.healthPlan || '').toLowerCase();
+        const isKaiser = plan.includes('kaiser');
+        const isHn = plan.includes('health net');
+        const ownerUid = app.__ownerUid || app.userId || null;
+        const appUrl = ownerUid
+          ? `/admin/applications/${app.id}?userId=${encodeURIComponent(ownerUid)}`
+          : `/admin/applications/${app.id}`;
+
         const forms = app.forms || [];
+
+        // CS Summary needs review: completed CS Summary + not checked.
         const hasCompletedSummary = forms.some((form: any) =>
           (form.name === 'CS Member Summary' || form.name === 'CS Summary') && form.status === 'Completed'
         );
         const reviewed = Boolean(app.applicationChecked);
         if (hasCompletedSummary && !reviewed) {
-          const plan = String(app.healthPlan || '').toLowerCase();
-          if (plan.includes('kaiser')) {
-            nextKaiserCs += 1;
-          } else if (plan.includes('health net')) {
-            nextHnCs += 1;
-          }
-        }
-        return hasCompletedSummary && !reviewed;
-      }).length;
+          csSummaryCount += 1;
+          if (isKaiser) nextKaiserCs += 1;
+          else if (isHn) nextHnCs += 1;
 
-      const uploadCount = dedupedApps.reduce((total: number, app: any) => {
-        const forms = app.forms || [];
-        const unacknowledgedUploads = forms.filter((form: any) => {
+          const ms = Math.max(
+            toMs(app.csSummaryCompletedAt),
+            toMs(app.lastUpdated),
+            toMs(app.lastModified),
+            toMs(app.createdAt)
+          );
+          csLatestMs = Math.max(csLatestMs, ms);
+          const csAuthor = String(app.csSummarySubmittedByName || app.csSummarySubmittedByEmail || app.referrerName || app.referrerEmail || '').trim() || 'User';
+          csNotes.push({ message: memberName, timestampMs: ms, url: appUrl, author: csAuthor });
+        }
+
+        // Documents need review: any non-CS form completed + not acknowledged.
+        forms.forEach((form: any) => {
           const isCompleted = form.status === 'Completed';
           const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
           const isPending = isCompleted && !isSummary && !form.acknowledged;
-          if (isPending) {
-            const plan = String(app.healthPlan || '').toLowerCase();
-            if (plan.includes('kaiser')) {
-              nextKaiserDocs += 1;
-            } else if (plan.includes('health net')) {
-              nextHnDocs += 1;
-            }
-          }
-          return isPending;
-        }).length;
-        return total + unacknowledgedUploads;
-      }, 0);
+          if (!isPending) return;
+
+          uploadCount += 1;
+          if (isKaiser) nextKaiserDocs += 1;
+          else if (isHn) nextHnDocs += 1;
+
+          const ms = Math.max(
+            toMs(form.dateCompleted),
+            toMs(form.uploadedAt),
+            toMs(app.pendingDocReviewUpdatedAt),
+            toMs(app.lastDocumentUpload),
+            toMs(app.lastUpdated),
+            toMs(app.lastModified),
+            toMs(app.createdAt)
+          );
+          docsLatestMs = Math.max(docsLatestMs, ms);
+          const docLabel = String(form.name || '').trim();
+          const docAuthor = String(form.uploadedByName || form.uploadedByEmail || app.referrerName || app.referrerEmail || '').trim() || 'User';
+          docNotes.push({ message: docLabel ? `${memberName} — ${docLabel}` : memberName, timestampMs: ms, url: appUrl, author: docAuthor });
+        });
+      });
 
       
       setNewCsSummaryCount(csSummaryCount);
@@ -253,15 +346,97 @@ function AdminHeader() {
       setHnDocCount(nextHnDocs);
       setKaiserCsCount(nextKaiserCs);
       setKaiserDocCount(nextKaiserDocs);
+
+      // Trigger in-app web popup when counts/timestamps advance.
+      // (Only for recipients explicitly enabled in system settings.)
+      const allowDocs = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowDocs);
+      const allowCs = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowCs);
+      const prev = reviewNotifyRef.current;
+      const docsIsNew = allowDocs && uploadCount > 0 && (uploadCount > prev.docs.count || docsLatestMs > prev.docs.latestMs);
+      const csIsNew = allowCs && csSummaryCount > 0 && (csSummaryCount > prev.cs.count || csLatestMs > prev.cs.latestMs);
+
+      // Only advance baselines for streams we are authorized to receive.
+      // This prevents "missing" the first popup when app data loads before prefs.
+      reviewNotifyRef.current = {
+        initialized: true,
+        docs: allowDocs ? { count: uploadCount, latestMs: docsLatestMs } : prev.docs,
+        cs: allowCs ? { count: csSummaryCount, latestMs: csLatestMs } : prev.cs,
+      };
+
+      if (!docsIsNew && !csIsNew) return;
+
+      const title =
+        csIsNew && !docsIsNew
+          ? 'CS Summary received'
+          : docsIsNew && !csIsNew
+            ? 'Documents received'
+            : 'Review items received';
+
+      const parts: string[] = [];
+      if (allowCs && csSummaryCount > 0) parts.push(`${csSummaryCount} CS Summary${csSummaryCount === 1 ? '' : 'ies'} to review`);
+      if (allowDocs && uploadCount > 0) parts.push(`${uploadCount} upload${uploadCount === 1 ? '' : 's'} to acknowledge`);
+      const message = parts.length ? parts.join(' • ') : 'New items require review.';
+
+      const actionUrl = csIsNew && allowCs ? '/admin/applications?review=cs' : '/admin/applications?review=docs';
+
+      // Sort newest first, keep it concise.
+      const noteItems = [
+        ...(allowDocs ? docNotes : []),
+        ...(allowCs ? csNotes : []),
+      ]
+        .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
+        .slice(0, 6);
+
+      const primaryUrl =
+        noteItems.length === 1
+          ? noteItems[0].url
+          : actionUrl;
+
+      const fromLabel =
+        noteItems.length === 1
+          ? noteItems[0].author
+          : (docsIsNew && csIsNew)
+            ? 'Multiple'
+            : docsIsNew
+              ? (docNotes[0]?.author || 'User')
+              : (csNotes[0]?.author || 'User');
+
+      showNotification({
+        keyId: 'review-needed-summary',
+        type: csIsNew && docsIsNew ? 'warning' : csIsNew ? 'task' : 'success',
+        title,
+        message,
+        author: fromLabel,
+        recipientName: 'System',
+        notes: noteItems.map((n) => ({
+          message: n.message,
+          author: n.author,
+          timestamp: n.timestampMs ? new Date(n.timestampMs).toLocaleString() : undefined,
+        })),
+        duration: 0,
+        minimizeAfter: 12000,
+        startMinimized: true,
+        pendingLabel: message,
+        sound: true,
+        animation: 'slide',
+        onClick: () => {
+          if (typeof window === 'undefined') return;
+          window.location.href = primaryUrl;
+        }
+      });
     };
 
     unsubUserApps = onSnapshot(userAppsQuery, (snapshot) => {
-      userApps = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      userApps = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        __ownerUid: docSnap.ref?.parent?.parent?.id || null,
+        ...docSnap.data(),
+      }));
       computeCount();
     });
 
     unsubAdminApps = onSnapshot(adminAppsQuery, (snapshot) => {
-      adminApps = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      adminApps = snapshot.docs.map((docSnap) => ({ id: docSnap.id, __ownerUid: null, ...docSnap.data() }));
       computeCount();
     });
 
@@ -270,7 +445,7 @@ function AdminHeader() {
       unsubUserApps?.();
       unsubAdminApps?.();
     };
-  }, [firestore, user?.uid]);
+  }, [firestore, user?.uid, reviewPopupPrefs.enabled, reviewPopupPrefs.recipientEnabled, reviewPopupPrefs.allowDocs, reviewPopupPrefs.allowCs, showNotification]);
 
   useEffect(() => {
     if (!firestore || !user?.uid) return;
@@ -363,9 +538,7 @@ function AdminHeader() {
         dot: 'bg-blue-600',
         href: '/admin/applications?plan=kaiser&review=cs',
       },
-    ].filter((item) => item.count > 0);
-
-    if (items.length === 0) return null;
+    ];
 
     return (
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -373,8 +546,11 @@ function AdminHeader() {
           <Link
             key={item.key}
             href={item.href}
-            className="inline-flex items-center gap-2 rounded-full border border-border px-2.5 py-1 hover:bg-accent"
-            title="View matching applications"
+            className={cn(
+              "inline-flex items-center gap-2 rounded-full border border-border px-2.5 py-1 hover:bg-accent",
+              item.count > 0 ? "" : "opacity-60"
+            )}
+            title={item.count > 0 ? "View matching applications" : "No matching applications right now"}
           >
             <span className={`h-2 w-2 rounded-full ${item.dot}`} />
             <span className="font-semibold text-foreground">{item.label}</span>

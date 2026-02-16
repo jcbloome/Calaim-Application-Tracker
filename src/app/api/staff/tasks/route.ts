@@ -14,15 +14,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user's staff name from user ID (this would typically come from auth context)
-    // For now, we'll map some common staff names
-    const staffNameMap: Record<string, string> = {
-      'john-user-id': 'John',
-      'nick-user-id': 'Nick', 
-      'jesse-user-id': 'Jesse'
-    };
-    
-    const staffName = staffNameMap[userId] || 'John'; // Default to John for demo
+    const userSnap = await adminDb.collection('users').doc(userId).get().catch(() => null);
+    const userData = userSnap?.exists ? userSnap.data() : null;
+    const staffName = String(
+      (userData as any)?.firstName
+        ? `${(userData as any)?.firstName || ''} ${(userData as any)?.lastName || ''}`.trim()
+        : (userData as any)?.displayName || ''
+    ).trim() || 'Staff';
+    const staffEmail = String((userData as any)?.email || '').trim().toLowerCase();
 
     try {
       const loadReviewNotificationRecipient = async () => {
@@ -32,10 +31,17 @@ export async function GET(request: NextRequest) {
             .doc('review_notifications')
             .get();
           const settings = settingsSnap.exists ? settingsSnap.data() : null;
-          const enabled = Boolean((settings as any)?.enabled);
-          const pollIntervalSeconds = Number((settings as any)?.pollIntervalSeconds || 0);
+          // Match the web poller defaults: enabled unless explicitly disabled.
+          const enabled = (settings as any)?.enabled === undefined ? true : Boolean((settings as any)?.enabled);
+          const pollIntervalSeconds = Number((settings as any)?.pollIntervalSeconds || 180);
           const recipients = ((settings as any)?.recipients || {}) as Record<string, any>;
-          const recipient = recipients?.[userId] || null;
+          const byUid = recipients?.[userId] || null;
+          const byEmailKey = staffEmail ? recipients?.[staffEmail] || null : null;
+          const byEmailField =
+            !byUid && !byEmailKey && staffEmail
+              ? (Object.values(recipients).find((r: any) => String(r?.email || '').trim().toLowerCase() === staffEmail) || null)
+              : null;
+          const recipient = byUid || byEmailKey || byEmailField || null;
           const recipientEnabled = Boolean(recipient?.enabled);
           const allowCs = Boolean(recipient?.csSummary);
           const allowDocs = Boolean(recipient?.documents);
@@ -44,23 +50,27 @@ export async function GET(request: NextRequest) {
             pollIntervalSeconds,
             recipientEnabled,
             allowCs,
-            allowDocs
+            allowDocs,
           };
         } catch {
           return {
-            enabled: false,
-            pollIntervalSeconds: 0,
+            enabled: true,
+            pollIntervalSeconds: 180,
             recipientEnabled: false,
             allowCs: false,
-            allowDocs: false
+            allowDocs: false,
           };
         }
       };
 
       // Fetch Kaiser members assigned to this staff member
-      const kaiserResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/kaiser-members`);
+      const reviewPrefs = await loadReviewNotificationRecipient();
+      const shouldIncludeKaiserTasks = true; // (separate from upload prefs)
+      const kaiserResponse = shouldIncludeKaiserTasks
+        ? await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/kaiser-members`)
+        : null;
       
-      if (!kaiserResponse.ok) {
+      if (kaiserResponse && !kaiserResponse.ok) {
         console.warn('Failed to fetch Kaiser members, returning empty tasks');
         return NextResponse.json({
           success: true,
@@ -69,8 +79,8 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      const kaiserData = await kaiserResponse.json();
-      const allMembers = kaiserData.members || [];
+      const kaiserData = kaiserResponse ? await kaiserResponse.json() : { members: [] };
+      const allMembers = (kaiserData as any).members || [];
 
       // Filter members assigned to this staff member
       const assignedMembers = allMembers.filter((member: any) => {
@@ -236,7 +246,6 @@ export async function GET(request: NextRequest) {
 
       // Review-needed tasks (CS Summary + Documents), controlled by Super Admin toggles.
       try {
-        const reviewPrefs = await loadReviewNotificationRecipient();
         if (reviewPrefs.enabled && reviewPrefs.recipientEnabled && (reviewPrefs.allowCs || reviewPrefs.allowDocs)) {
           const maxItems = 60;
 
@@ -283,6 +292,7 @@ export async function GET(request: NextRequest) {
 
             const pushCsTask = (docSnap: any, ownerUid?: string | null) => {
               const data = docSnap.data() || {};
+              const plan = String(data.healthPlan || '').trim();
               const memberName = `${data.memberFirstName || 'Unknown'} ${data.memberLastName || 'Member'}`.trim();
               const dueDate = formatIso(data.csSummaryCompletedAt || data.lastUpdated || data.createdAt);
               reviewTasks.push({
@@ -291,8 +301,9 @@ export async function GET(request: NextRequest) {
                 description: 'A CS Summary form has been completed and needs review.',
                 memberName,
                 memberClientId: buildMemberClientId(data),
-                healthPlan: data.healthPlan,
+                healthPlan: plan || data.healthPlan,
                 taskType: 'review',
+                reviewKind: 'cs',
                 priority: 'High',
                 status: 'pending',
                 dueDate,
@@ -317,7 +328,7 @@ export async function GET(request: NextRequest) {
           }
 
           if (reviewPrefs.allowDocs) {
-            const [rootDocSnap, groupDocSnap] = await Promise.all([
+            const [rootDocSnap, groupDocSnap, rootFlagSnap, groupFlagSnap] = await Promise.all([
               adminDb.collection('applications')
                 .where('pendingDocReviewCount', '>', 0)
                 .limit(maxItems)
@@ -328,23 +339,37 @@ export async function GET(request: NextRequest) {
                 .limit(maxItems)
                 .get()
                 .catch(() => null)
+              ,
+              adminDb.collection('applications')
+                .where('hasNewDocuments', '==', true)
+                .limit(maxItems)
+                .get()
+                .catch(() => null),
+              adminDb.collectionGroup('applications')
+                .where('hasNewDocuments', '==', true)
+                .limit(maxItems)
+                .get()
+                .catch(() => null)
             ]);
 
             const pushDocTask = (docSnap: any, ownerUid?: string | null) => {
               const data = docSnap.data() || {};
+              const plan = String(data.healthPlan || '').trim();
               const memberName = `${data.memberFirstName || 'Unknown'} ${data.memberLastName || 'Member'}`.trim();
               const count = Number(data.pendingDocReviewCount || 0);
-              const dueDate = formatIso(data.pendingDocReviewUpdatedAt || data.lastUpdated || data.createdAt);
+              const newCount = Number(data.newDocumentCount || 0);
+              const dueDate = formatIso(data.lastDocumentUpload || data.pendingDocReviewUpdatedAt || data.lastUpdated || data.createdAt);
               reviewTasks.push({
                 id: `review-docs-${docSnap.id}-${ownerUid || 'admin'}`,
                 title: 'Review Uploaded Documents',
-                description: count > 0
-                  ? `${count} uploaded document${count === 1 ? '' : 's'} need acknowledgement.`
+                description: (newCount > 0 ? newCount : count) > 0
+                  ? `${newCount > 0 ? newCount : count} uploaded document${(newCount > 0 ? newCount : count) === 1 ? '' : 's'} need acknowledgement.`
                   : 'Uploaded documents need acknowledgement.',
                 memberName,
                 memberClientId: buildMemberClientId(data),
-                healthPlan: data.healthPlan,
+                healthPlan: plan || data.healthPlan,
                 taskType: 'review',
+                reviewKind: 'docs',
                 priority: 'High',
                 status: 'pending',
                 dueDate,
@@ -363,6 +388,11 @@ export async function GET(request: NextRequest) {
 
             rootDocSnap?.docs?.forEach((docSnap: any) => pushDocTask(docSnap, null));
             groupDocSnap?.docs?.forEach((docSnap: any) => {
+              const ownerUid = docSnap.ref?.parent?.parent?.id || null;
+              pushDocTask(docSnap, ownerUid);
+            });
+            rootFlagSnap?.docs?.forEach((docSnap: any) => pushDocTask(docSnap, null));
+            groupFlagSnap?.docs?.forEach((docSnap: any) => {
               const ownerUid = docSnap.ref?.parent?.parent?.id || null;
               pushDocTask(docSnap, ownerUid);
             });
@@ -385,6 +415,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         tasks: [...followUpTasks, ...reviewTasks, ...tasks],
+        reviewPrefs,
         message: `Found ${tasks.length + followUpTasks.length + reviewTasks.length} tasks for ${staffName}`
       });
 

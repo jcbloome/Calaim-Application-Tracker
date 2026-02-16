@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,10 @@ type ReviewRecipientSettings = {
     enabled: boolean;
     csSummary: boolean;
     documents: boolean;
+    // Which plan uploads should count as action items / popups for this staff member.
+    // Defaults to true when not explicitly set.
+    kaiserUploads?: boolean;
+    healthNetUploads?: boolean;
     label?: string;
     email?: string;
 };
@@ -52,6 +56,7 @@ export default function StaffManagementPage() {
     const [createdStaff, setCreatedStaff] = useState<null | { email: string; role: string; uid: string; tempPassword: string }>(null);
     const [staffNameFilter, setStaffNameFilter] = useState('');
     const [staffRoleFilter, setStaffRoleFilter] = useState<'all' | 'Admin' | 'Super Admin'>('all');
+    const [notificationRecipientsHadField, setNotificationRecipientsHadField] = useState<boolean | null>(null);
 
     // Global admin portal access (master switch)
     const [adminPortalEnabled, setAdminPortalEnabled] = useState(true);
@@ -64,6 +69,10 @@ export default function StaffManagementPage() {
     const [reviewPopupsEnabled, setReviewPopupsEnabled] = useState(true);
     const [reviewPollIntervalSeconds, setReviewPollIntervalSeconds] = useState(180);
     const [reviewRecipients, setReviewRecipients] = useState<Record<string, ReviewRecipientSettings>>({});
+    const [isAutoSaving, setIsAutoSaving] = useState(false);
+    const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const autoSaveInFlightRef = useRef(false);
+    const autoSaveQueuedRef = useRef(false);
 
     // Redirect if not super admin
     useEffect(() => {
@@ -99,17 +108,35 @@ export default function StaffManagementPage() {
                 return acc;
             }, {} as Record<string, any>);
 
+            // Map email -> canonical UID (avoid legacy email doc IDs).
+            const emailToUid = Object.entries(users).reduce((acc, [uid, data]) => {
+                const email = String((data as any)?.email || '').trim().toLowerCase();
+                if (email) acc[email] = uid;
+                return acc;
+            }, {} as Record<string, string>);
+
             const staffFlagIds = usersSnap.docs
                 .filter(d => Boolean((d.data() as any)?.isStaff))
                 .map(d => d.id);
 
-            const allStaffIds = Array.from(new Set([
+            const rawStaffIds = Array.from(new Set([
                 ...Array.from(adminIds),
                 ...Array.from(superAdminIds),
                 ...staffFlagIds,
             ]));
 
-            let staff: StaffMember[] = allStaffIds.map(uid => {
+            const canonicalStaffIds = Array.from(new Set(
+                rawStaffIds.map((id) => {
+                    const looksLikeEmail = String(id).includes('@');
+                    if (looksLikeEmail) {
+                        const mapped = emailToUid[String(id).trim().toLowerCase()];
+                        return mapped || id;
+                    }
+                    return id;
+                })
+            ));
+
+            let staff: StaffMember[] = canonicalStaffIds.map(uid => {
                 const userData = users[uid] || {};
                 return {
                     uid,
@@ -159,6 +186,67 @@ export default function StaffManagementPage() {
             setIsLoadingStaff(false);
         }
     };
+
+    // Normalize any legacy email-based IDs in settings to canonical UIDs.
+    const emailToCanonicalUid = useMemo(() => {
+        const map: Record<string, string> = {};
+        staffList.forEach((s) => {
+            const email = String(s.email || '').trim().toLowerCase();
+            if (!email) return;
+            // Prefer non-email doc IDs as canonical keys.
+            if (!String(s.uid).includes('@')) {
+                map[email] = s.uid;
+            }
+        });
+        return map;
+    }, [staffList]);
+
+    useEffect(() => {
+        if (!staffList.length) return;
+
+        // recipientUids / ilsNotePermissions arrays
+        const normalizeIdList = (list: string[]) => {
+            const mapped = (list || []).map((id) => {
+                const str = String(id || '');
+                if (str.includes('@')) {
+                    const canonical = emailToCanonicalUid[str.trim().toLowerCase()];
+                    return canonical || str;
+                }
+                return str;
+            });
+            return Array.from(new Set(mapped.filter(Boolean)));
+        };
+
+        setNotificationRecipients((prev) => normalizeIdList(prev));
+        setIlsNotePermissions((prev) => normalizeIdList(prev));
+
+        // reviewRecipients map
+        setReviewRecipients((prev) => {
+            const next: Record<string, ReviewRecipientSettings> = { ...(prev || {}) };
+            let changed = false;
+            Object.entries(prev || {}).forEach(([key, value]) => {
+                if (!String(key).includes('@')) return;
+                const canonical = emailToCanonicalUid[String(key).trim().toLowerCase()];
+                if (!canonical) return;
+                if (!next[canonical]) {
+                    next[canonical] = value;
+                } else {
+                    // Merge conservatively: any "true" should remain true.
+                    next[canonical] = {
+                        ...next[canonical],
+                        enabled: Boolean(next[canonical].enabled || value.enabled),
+                        csSummary: Boolean(next[canonical].csSummary || value.csSummary),
+                        documents: Boolean(next[canonical].documents || value.documents),
+                        email: next[canonical].email || value.email,
+                        label: next[canonical].label || value.label,
+                    };
+                }
+                delete next[key];
+                changed = true;
+            });
+            return changed ? next : prev;
+        });
+    }, [staffList.length, emailToCanonicalUid]);
     
     const fetchNotificationRecipients = async () => {
         if (!firestore) return;
@@ -174,10 +262,14 @@ export default function StaffManagementPage() {
 
             if (notificationsSnap?.exists()) {
                 const data = notificationsSnap.data();
-                setNotificationRecipients(data?.recipientUids || []);
+                const rawRecipientUids = (data as any)?.recipientUids;
+                setNotificationRecipientsHadField(rawRecipientUids !== undefined);
+                setNotificationRecipients(Array.isArray(rawRecipientUids) ? rawRecipientUids : []);
                 setIlsNotePermissions(data?.ilsNotePermissions || []);
                 setWebAppNotificationsEnabled(Boolean((data as any)?.webAppNotificationsEnabled ?? true));
                 setSuppressWebWhenDesktopActive(Boolean((data as any)?.suppressWebWhenDesktopActive ?? true));
+            } else {
+                setNotificationRecipientsHadField(false);
             }
 
             if (adminAccessSnap?.exists()) {
@@ -208,6 +300,17 @@ export default function StaffManagementPage() {
             fetchNotificationRecipients();
         }
     }, [firestore, isSuperAdmin, isAdminLoading]);
+
+    // Interoffice notes should be ON by default for staff.
+    // If `recipientUids` isn't present yet, default it to all staff IDs in the UI (and on save it will persist).
+    useEffect(() => {
+        if (notificationRecipientsHadField !== false) return;
+        if (!staffList || staffList.length === 0) return;
+        setNotificationRecipients((prev) => {
+            if (prev && prev.length > 0) return prev;
+            return staffList.map((s) => s.uid).filter(Boolean);
+        });
+    }, [notificationRecipientsHadField, staffList]);
 
     const handleAddStaff = async () => {
         if (!firestore || !newStaffFirstName || !newStaffLastName || !newStaffEmail) {
@@ -316,15 +419,17 @@ export default function StaffManagementPage() {
         setNotificationRecipients(prev => 
             checked ? [...prev, uid] : prev.filter(id => id !== uid)
         );
+        queueAutoSave();
     };
 
     const handleIlsNoteToggle = (uid: string, checked: boolean) => {
         setIlsNotePermissions(prev => 
             checked ? [...prev, uid] : prev.filter(id => id !== uid)
         );
+        queueAutoSave();
     };
 
-    const handleSaveNotifications = async () => {
+    const handleSaveNotifications = async (options?: { silentSuccess?: boolean }) => {
         if (!firestore) return;
         setIsSavingNotifications(true);
         try {
@@ -357,28 +462,71 @@ export default function StaffManagementPage() {
                     errorEmitter.emit('permission-error', new FirestorePermissionError({ path: notificationsRef.path, operation: 'update', requestResourceData: notificationsData }));
                     throw e;
                 }),
-                setDoc(adminAccessRef, adminAccessData, { merge: true }).catch(() => undefined),
-                setDoc(reviewRef, reviewData, { merge: true }).catch(() => undefined),
+                setDoc(adminAccessRef, adminAccessData, { merge: true }).catch(e => {
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: adminAccessRef.path, operation: 'update', requestResourceData: adminAccessData }));
+                    throw e;
+                }),
+                setDoc(reviewRef, reviewData, { merge: true }).catch(e => {
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: reviewRef.path, operation: 'update', requestResourceData: reviewData }));
+                    throw e;
+                }),
             ]);
 
-            toast({ 
-                title: "Settings Saved", 
-                description: "All settings updated.", 
-                className: 'bg-green-100 text-green-900 border-green-200' 
-            });
+            if (!options?.silentSuccess) {
+                toast({ 
+                    title: "Settings Saved", 
+                    description: "All settings updated.", 
+                    className: 'bg-green-100 text-green-900 border-green-200' 
+                });
+            }
         } catch (error: any) {
-            // Error emitted above
+            toast({
+                title: 'Save failed',
+                description: error?.message || 'Unable to save staff notification settings.',
+                variant: 'destructive',
+            });
         } finally {
             setIsSavingNotifications(false);
         }
+    };
+
+    const queueAutoSave = () => {
+        if (!firestore) return;
+        if (!currentUser?.uid) return;
+        if (autoSaveInFlightRef.current) {
+            autoSaveQueuedRef.current = true;
+            return;
+        }
+        setIsAutoSaving(true);
+        // Debounce saves to avoid spamming Firestore during rapid toggles.
+        if (autoSaveTimerRef.current) {
+            clearTimeout(autoSaveTimerRef.current);
+        }
+        autoSaveTimerRef.current = setTimeout(async () => {
+            autoSaveInFlightRef.current = true;
+            autoSaveQueuedRef.current = false;
+            try {
+                await handleSaveNotifications({ silentSuccess: true });
+            } finally {
+                autoSaveInFlightRef.current = false;
+                // If changes happened while saving, run one more save pass.
+                if (autoSaveQueuedRef.current) {
+                    queueAutoSave();
+                } else {
+                    setIsAutoSaving(false);
+                }
+            }
+        }, 750);
     };
 
     const setReviewRecipient = (uid: string, updates: Partial<ReviewRecipientSettings>, staff?: StaffMember) => {
         setReviewRecipients(prev => {
             const current = prev[uid] || {
                 enabled: false,
-                csSummary: true,
-                documents: true,
+                csSummary: false,
+                documents: false,
+                kaiserUploads: true,
+                healthNetUploads: true,
                 email: staff?.email,
                 label: (staff?.firstName || staff?.lastName) ? `${staff?.firstName || ''} ${staff?.lastName || ''}`.trim() : staff?.email,
             };
@@ -387,11 +535,14 @@ export default function StaffManagementPage() {
                 [uid]: {
                     ...current,
                     ...updates,
+                    kaiserUploads: updates.kaiserUploads === undefined ? (current.kaiserUploads ?? true) : updates.kaiserUploads,
+                    healthNetUploads: updates.healthNetUploads === undefined ? (current.healthNetUploads ?? true) : updates.healthNetUploads,
                     email: current.email || staff?.email,
                     label: current.label || ((staff?.firstName || staff?.lastName) ? `${staff?.firstName || ''} ${staff?.lastName || ''}`.trim() : staff?.email),
                 }
             };
         });
+        queueAutoSave();
     };
 
     const handleSetAdminAccessForUser = async (uid: string, enabled: boolean, role: StaffMember['role']) => {
@@ -557,7 +708,10 @@ export default function StaffManagementPage() {
                                     Turn off to block Admin logins (Super Admins can still log in).
                                 </div>
                             </div>
-                            <Switch checked={adminPortalEnabled} onCheckedChange={(v) => setAdminPortalEnabled(Boolean(v))} />
+                            <Switch
+                                checked={adminPortalEnabled}
+                                onCheckedChange={(v) => { setAdminPortalEnabled(Boolean(v)); queueAutoSave(); }}
+                            />
                         </div>
                         <div className="flex items-center justify-between gap-4">
                             <div className="space-y-1">
@@ -566,7 +720,10 @@ export default function StaffManagementPage() {
                                     Controls CS Summary + Documents review popups for selected staff.
                                 </div>
                             </div>
-                            <Switch checked={reviewPopupsEnabled} onCheckedChange={(v) => setReviewPopupsEnabled(Boolean(v))} />
+                            <Switch
+                                checked={reviewPopupsEnabled}
+                                onCheckedChange={(v) => { setReviewPopupsEnabled(Boolean(v)); queueAutoSave(); }}
+                            />
                         </div>
                     </div>
 
@@ -580,7 +737,7 @@ export default function StaffManagementPage() {
                             </div>
                             <Switch
                                 checked={webAppNotificationsEnabled}
-                                onCheckedChange={(v) => setWebAppNotificationsEnabled(Boolean(v))}
+                                onCheckedChange={(v) => { setWebAppNotificationsEnabled(Boolean(v)); queueAutoSave(); }}
                             />
                         </div>
                         <div className="flex items-center justify-between gap-4">
@@ -592,7 +749,7 @@ export default function StaffManagementPage() {
                             </div>
                             <Switch
                                 checked={suppressWebWhenDesktopActive}
-                                onCheckedChange={(v) => setSuppressWebWhenDesktopActive(Boolean(v))}
+                                onCheckedChange={(v) => { setSuppressWebWhenDesktopActive(Boolean(v)); queueAutoSave(); }}
                             />
                         </div>
                     </div>
@@ -663,7 +820,19 @@ export default function StaffManagementPage() {
                                 const superAdmins = filtered.filter((s) => s.role === 'Super Admin');
                                 const nonSuperAdmins = filtered.filter((s) => s.role !== 'Super Admin');
 
-                                const renderCard = (staff: any) => (
+                                const renderCard = (staff: any) => {
+                                    const reviewRecipient = reviewRecipients[staff.uid] || {
+                                        enabled: false,
+                                        csSummary: false,
+                                        documents: false,
+                                        kaiserUploads: true,
+                                        healthNetUploads: true,
+                                        email: staff?.email,
+                                        label: (staff?.firstName || staff?.lastName) ? `${staff?.firstName || ''} ${staff?.lastName || ''}`.trim() : staff?.email,
+                                    } satisfies ReviewRecipientSettings;
+                                    const notificationsEnabled = notificationRecipients.includes(staff.uid);
+
+                                    return (
                                     <div key={staff.uid} className="p-3 border rounded-lg">
                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                         <div className="space-y-1">
@@ -698,14 +867,17 @@ export default function StaffManagementPage() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
-                                                <Bell className={`h-4 w-4 ${notificationRecipients.includes(staff.uid) ? 'text-primary' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`notif-${staff.uid}`} className="text-sm font-medium">General</Label>
+                                                <Bell className={`h-4 w-4 ${notificationsEnabled ? 'text-primary' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`notif-${staff.uid}`} className="text-sm font-medium">Interoffice notes</Label>
                                             </div>
                                             <Checkbox 
                                                 id={`notif-${staff.uid}`} 
-                                                checked={notificationRecipients.includes(staff.uid)} 
-                                                onCheckedChange={(checked) => handleNotificationToggle(staff.uid, !!checked)} 
-                                                aria-label={`Toggle general notifications for ${staff.email}`} 
+                                                checked={notificationsEnabled} 
+                                                onCheckedChange={(checked) => {
+                                                    const nextValue = Boolean(checked);
+                                                    handleNotificationToggle(staff.uid, nextValue);
+                                                }} 
+                                                aria-label={`Toggle interoffice notes for ${staff.email}`} 
                                             />
                                         </div>
                                         <div className="flex items-center justify-between gap-3">
@@ -720,49 +892,42 @@ export default function StaffManagementPage() {
                                                 aria-label={`Toggle ILS note permissions for ${staff.email}`} 
                                             />
                                         </div>
-                                        {/* Electron notifications for incoming forms (review popups) */}
+                                        {/* Incoming forms review notifications (Doc uploads / CS Summary) */}
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
-                                                <Bell className={`h-4 w-4 ${Boolean(reviewRecipients[staff.uid]?.enabled) ? 'text-indigo-600' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`electron-enabled-${staff.uid}`} className="text-sm font-medium">Electron Forms</Label>
+                                                <Bell className={`h-4 w-4 ${Boolean(reviewRecipient.documents || reviewRecipient.csSummary) ? 'text-indigo-600' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`review-docs-${staff.uid}`} className="text-sm font-medium">Doc uploads</Label>
                                             </div>
                                             <Checkbox
-                                                id={`electron-enabled-${staff.uid}`}
-                                                checked={Boolean(reviewRecipients[staff.uid]?.enabled)}
+                                                id={`review-docs-${staff.uid}`}
+                                                checked={Boolean(reviewRecipient.documents || reviewRecipient.csSummary)}
                                                 disabled={!reviewPopupsEnabled}
-                                                onCheckedChange={(checked) => setReviewRecipient(staff.uid, { enabled: !!checked }, staff)}
-                                                aria-label={`Toggle Electron form review popups for ${staff.email}`}
-                                            />
-                                        </div>
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div className="flex items-center gap-2">
-                                                <Bell className="h-4 w-4 text-muted-foreground" />
-                                                <Label htmlFor={`electron-cs-${staff.uid}`} className="text-sm font-medium">CS Summary</Label>
-                                            </div>
-                                            <Checkbox
-                                                id={`electron-cs-${staff.uid}`}
-                                                checked={Boolean(reviewRecipients[staff.uid]?.csSummary)}
-                                                disabled={!reviewPopupsEnabled || !reviewRecipients[staff.uid]?.enabled}
-                                                onCheckedChange={(checked) => setReviewRecipient(staff.uid, { csSummary: !!checked }, staff)}
-                                                aria-label={`Toggle CS Summary review popups for ${staff.email}`}
-                                            />
-                                        </div>
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div className="flex items-center gap-2">
-                                                <Bell className="h-4 w-4 text-muted-foreground" />
-                                                <Label htmlFor={`electron-docs-${staff.uid}`} className="text-sm font-medium">Documents</Label>
-                                            </div>
-                                            <Checkbox
-                                                id={`electron-docs-${staff.uid}`}
-                                                checked={Boolean(reviewRecipients[staff.uid]?.documents)}
-                                                disabled={!reviewPopupsEnabled || !reviewRecipients[staff.uid]?.enabled}
-                                                onCheckedChange={(checked) => setReviewRecipient(staff.uid, { documents: !!checked }, staff)}
-                                                aria-label={`Toggle document review popups for ${staff.email}`}
+                                                onCheckedChange={(checked) => {
+                                                    const nextValue = Boolean(checked);
+                                                    setReviewRecipient(
+                                                      staff.uid,
+                                                      {
+                                                        documents: nextValue,
+                                                        csSummary: nextValue,
+                                                        enabled: nextValue,
+                                                        // When enabling, default both plans on unless explicitly set.
+                                                        ...(nextValue
+                                                          ? {
+                                                              kaiserUploads: reviewRecipient.kaiserUploads ?? true,
+                                                              healthNetUploads: reviewRecipient.healthNetUploads ?? true,
+                                                            }
+                                                          : {}),
+                                                      },
+                                                      staff
+                                                    );
+                                                }}
+                                                aria-label={`Toggle document upload review notifications for ${staff.email}`}
                                             />
                                         </div>
                                     </div>
                                 </div>
                                 );
+                                };
 
                                 return (
                                     <>
@@ -810,10 +975,10 @@ export default function StaffManagementPage() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Bell className="h-5 w-5" />
-                        Email Notification System
+                        Staff Review Email Alerts (SendGrid)
                     </CardTitle>
                     <CardDescription>
-                        Manage automated email notifications for document uploads and CS Summary completions
+                        Controls staff-facing emails for doc uploads (includes CS Summary). This does not affect user/referrer reminder emails (Resend).
                     </CardDescription>
                 </CardHeader>
                 <CardContent>

@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useFirestore, useUser } from '@/firebase';
-import { doc, updateDoc, onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore';
 import { 
   Bell, 
   Mail, 
@@ -39,18 +39,16 @@ interface NotificationLog {
 }
 
 interface NotificationSettings {
-  emailNotifications: boolean;
-  documentUploadNotifications: boolean;
-  csSummaryNotifications: boolean;
+  // Master switch for staff email alerts when documents/CS summary need review.
+  // (CS Summary is consolidated under doc uploads.)
+  reviewUploadEmailsEnabled: boolean;
   emailAddress: string;
 }
 
 export function NotificationManager() {
   const [notificationLogs, setNotificationLogs] = useState<NotificationLog[]>([]);
   const [settings, setSettings] = useState<NotificationSettings>({
-    emailNotifications: true,
-    documentUploadNotifications: true,
-    csSummaryNotifications: true,
+    reviewUploadEmailsEnabled: false,
     emailAddress: ''
   });
   const [isLoading, setIsLoading] = useState(true);
@@ -94,21 +92,18 @@ export function NotificationManager() {
     return () => unsubscribe();
   }, [firestore]);
 
-  // Load user notification settings
+  // Load system email notification settings (global)
   useEffect(() => {
     if (!firestore || !user) return;
 
-    const userDocRef = doc(firestore, 'users', user.uid);
-    const unsubscribe = onSnapshot(userDocRef, (doc) => {
-      if (doc.exists()) {
-        const userData = doc.data();
-        setSettings({
-          emailNotifications: userData.emailNotifications ?? true,
-          documentUploadNotifications: userData.documentUploadNotifications ?? true,
-          csSummaryNotifications: userData.csSummaryNotifications ?? true,
-          emailAddress: userData.email || user.email || ''
-        });
-      }
+    const systemDocRef = doc(firestore, 'system_settings', 'notifications');
+    const unsubscribe = onSnapshot(systemDocRef, (snap) => {
+      const data = snap.exists() ? (snap.data() as any) : {};
+      setSettings((prev) => ({
+        ...prev,
+        reviewUploadEmailsEnabled: Boolean(data?.reviewUploadEmailsEnabled ?? false),
+        emailAddress: prev.emailAddress || user.email || ''
+      }));
     });
 
     return () => unsubscribe();
@@ -119,17 +114,16 @@ export function NotificationManager() {
 
     setIsSaving(true);
     try {
-      const userDocRef = doc(firestore, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        emailNotifications: settings.emailNotifications,
-        documentUploadNotifications: settings.documentUploadNotifications,
-        csSummaryNotifications: settings.csSummaryNotifications,
-        email: settings.emailAddress
-      });
+      const systemDocRef = doc(firestore, 'system_settings', 'notifications');
+      await setDoc(systemDocRef, {
+        reviewUploadEmailsEnabled: Boolean(settings.reviewUploadEmailsEnabled),
+        updatedAt: new Date(),
+        updatedBy: user.uid,
+      }, { merge: true });
 
       toast({
         title: 'Settings Saved',
-        description: 'Your notification preferences have been updated',
+        description: 'Email notification settings have been updated',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -150,7 +144,7 @@ export function NotificationManager() {
       const sendTest = httpsCallable(functions, 'sendManualNotification');
       
       const result = await sendTest({
-        type: 'cs_summary_complete',
+        type: 'document_upload',
         applicationId: 'test-application',
         recipients: [settings.emailAddress]
       });
@@ -203,10 +197,10 @@ export function NotificationManager() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            Notification Settings
+            Staff Review Email Alerts (SendGrid)
           </CardTitle>
           <CardDescription>
-            Configure your email notification preferences
+            Global setting for staff alert emails when doc uploads need review. User/referrer reminders are a separate system (Resend).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -227,50 +221,16 @@ export function NotificationManager() {
             <div className="flex items-center justify-between">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-blue-600" />
-                  <span className="font-medium">Email Notifications</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Receive email notifications for application updates
-                </p>
-              </div>
-              <Switch
-                checked={settings.emailNotifications}
-                onCheckedChange={(checked) => setSettings(prev => ({ ...prev, emailNotifications: checked }))}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
                   <Upload className="h-4 w-4 text-blue-600" />
-                  <span className="font-medium">Document Upload Alerts</span>
+                  <span className="font-medium">Doc Upload Alerts</span>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Get notified when new documents are uploaded
+                  Staff email notifications for doc uploads (includes CS Summary form).
                 </p>
               </div>
               <Switch
-                checked={settings.documentUploadNotifications}
-                onCheckedChange={(checked) => setSettings(prev => ({ ...prev, documentUploadNotifications: checked }))}
-                disabled={!settings.emailNotifications}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-green-600" />
-                  <span className="font-medium">CS Summary Completion</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Get notified when CS Summary forms are completed
-                </p>
-              </div>
-              <Switch
-                checked={settings.csSummaryNotifications}
-                onCheckedChange={(checked) => setSettings(prev => ({ ...prev, csSummaryNotifications: checked }))}
-                disabled={!settings.emailNotifications}
+                checked={settings.reviewUploadEmailsEnabled}
+                onCheckedChange={(checked) => setSettings(prev => ({ ...prev, reviewUploadEmailsEnabled: checked }))}
               />
             </div>
           </div>
