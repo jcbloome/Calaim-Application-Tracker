@@ -35,22 +35,26 @@ export async function GET(request: Request) {
       data: doc.data() as Application & FormValues
     }));
 
-    const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
     const now = Date.now();
-    const isDueForReminder = (lastSent: any) => {
+    const getCadenceMs = (appData: any) => {
+      const raw = Number(appData?.documentReminderFrequencyDays);
+      const days = Number.isFinite(raw) && raw > 0 ? Math.max(1, Math.min(30, Math.round(raw))) : 2;
+      return days * 24 * 60 * 60 * 1000;
+    };
+    const isDueForReminder = (lastSent: any, cadenceMs: number) => {
       if (!lastSent) return true;
       const lastDate = typeof lastSent?.toDate === 'function'
         ? lastSent.toDate()
         : new Date(lastSent);
       if (Number.isNaN(lastDate.getTime())) return true;
-      return now - lastDate.getTime() >= TWO_DAYS_MS;
+      return now - lastDate.getTime() >= cadenceMs;
     };
 
     const appsToRemind = allApplications.filter(({ data }) =>
       data.emailRemindersEnabled === true &&
       (data.status === 'In Progress' || data.status === 'Requires Revision') &&
       data.forms?.some(form => form.status === 'Pending') &&
-      isDueForReminder((data as any).emailReminderLastSentAt)
+      isDueForReminder((data as any).emailReminderLastSentAt, getCadenceMs(data))
     );
     
     if (appsToRemind.length === 0) {

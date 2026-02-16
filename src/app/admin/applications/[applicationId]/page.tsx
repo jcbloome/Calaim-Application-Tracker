@@ -978,7 +978,7 @@ function AdminActions({ application }: { application: Application }) {
                                         Email Reminders for Missing Documents
                                     </Label>
                                     <p className="text-xs text-muted-foreground">
-                                        Current cadence: every 2 days.
+                                        Current cadence: every {(application as any)?.documentReminderFrequencyDays ? Number((application as any)?.documentReminderFrequencyDays) : 2} days.
                                     </p>
                                     <p className="text-xs text-muted-foreground">
                                         Recipient: {(application as any)?.referrerEmail || 'Email not available'}
@@ -1211,7 +1211,49 @@ function ApplicationDetailPageContent() {
   const [isUpdatingProgression, setIsUpdatingProgression] = useState(false);
   const [isUpdatingTracking, setIsUpdatingTracking] = useState(false);
   const [isSendingEligibilityNote, setIsSendingEligibilityNote] = useState(false);
+  const [isUpdatingReminderControls, setIsUpdatingReminderControls] = useState(false);
   const [nextStepDateMissing, setNextStepDateMissing] = useState(false);
+
+  const reminderFrequencyOptions = useMemo(() => [2, 7] as const, []);
+  const documentReminderFrequencyDays = useMemo(() => {
+    const raw = Number((application as any)?.documentReminderFrequencyDays);
+    if (!Number.isFinite(raw) || raw <= 0) return 2;
+    return Math.max(1, Math.min(30, Math.round(raw)));
+  }, [application]);
+  const statusReminderFrequencyDays = useMemo(() => {
+    const raw = Number((application as any)?.statusReminderFrequencyDays);
+    if (!Number.isFinite(raw) || raw <= 0) return 7;
+    return Math.max(1, Math.min(30, Math.round(raw)));
+  }, [application]);
+
+  const updateReminderSettings = async (patch: Record<string, any>) => {
+    if (!application?.id) return;
+    setIsUpdatingReminderControls(true);
+    try {
+      const res = await fetch('/api/admin/update-notification-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationId: application.id,
+          userId: (application as any)?.userId || null,
+          ...patch,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || 'Failed to update reminder settings');
+      }
+      setApplication((prev) => (prev ? ({ ...(prev as any), ...patch } as any) : prev));
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error?.message || 'Failed to update reminder settings.',
+      });
+    } finally {
+      setIsUpdatingReminderControls(false);
+    }
+  };
   const ensureAdminClaim = async () => {
     if (!user) return;
     try {
@@ -2962,23 +3004,111 @@ function ApplicationDetailPageContent() {
             
             {/* Notification Status Icons */}
             <div className="flex items-center gap-4 pt-2 border-t">
-                <div className="flex items-center gap-2">
-                    <div className={`flex items-center gap-1 ${(application as any)?.emailRemindersEnabled === true ? 'text-green-600' : 'text-muted-foreground'}`}>
-                        <Mail className="h-4 w-4" />
-                        <span className="text-xs font-medium">
-                            {(application as any)?.emailRemindersEnabled === true ? 'Email Reminders Active' : 'Email Reminders Off'}
-                        </span>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <div className="leading-tight">
+                      <div className="text-xs font-medium">
+                        {(application as any)?.emailRemindersEnabled === true ? 'Email reminders: On' : 'Email reminders: Off'}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {(application as any)?.emailRemindersEnabled === true
+                          ? documentReminderFrequencyDays === 7
+                            ? 'Weekly'
+                            : 'Every 2 days'
+                          : 'None'}
+                      </div>
                     </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isUpdatingReminderControls && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    <Switch
+                      checked={Boolean((application as any)?.emailRemindersEnabled)}
+                      onCheckedChange={(enabled) => updateReminderSettings({ emailRemindersEnabled: Boolean(enabled) })}
+                      disabled={isUpdatingReminderControls}
+                    />
+                  </div>
+                  <Select
+                    value={Boolean((application as any)?.emailRemindersEnabled) ? String(documentReminderFrequencyDays) : 'none'}
+                    onValueChange={(v) => {
+                      if (v === 'none') {
+                        updateReminderSettings({ emailRemindersEnabled: false });
+                        return;
+                      }
+                      updateReminderSettings({
+                        emailRemindersEnabled: true,
+                        documentReminderFrequencyDays: Number(v),
+                      });
+                    }}
+                    disabled={isUpdatingReminderControls}
+                  >
+                    <SelectTrigger className="h-8 w-[120px]">
+                      <SelectValue placeholder="Frequency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {reminderFrequencyOptions.map((d) => (
+                        <SelectItem key={`doc-freq-${d}`} value={String(d)}>
+                          {d === 7 ? 'Weekly' : 'Every 2 days'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                
-                <div className="flex items-center gap-2">
-                    <div className={`flex items-center gap-1 ${(application as any)?.statusRemindersEnabled === true ? 'text-green-600' : 'text-muted-foreground'}`}>
-                        <Bell className="h-4 w-4" />
-                        <span className="text-xs font-medium">
-                            {(application as any)?.statusRemindersEnabled === true ? 'Status Updates Active' : 'Status Updates Off'}
-                        </span>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-muted-foreground" />
+                    <div className="leading-tight">
+                      <div className="text-xs font-medium">
+                        {(application as any)?.statusRemindersEnabled === true ? 'Status updates: On' : 'Status updates: Off'}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {(application as any)?.statusRemindersEnabled === true
+                          ? statusReminderFrequencyDays === 2
+                            ? 'Every 2 days'
+                            : 'Weekly'
+                          : 'None'}
+                      </div>
                     </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isUpdatingReminderControls && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    <Switch
+                      checked={Boolean((application as any)?.statusRemindersEnabled)}
+                      onCheckedChange={(enabled) => updateReminderSettings({ statusRemindersEnabled: Boolean(enabled) })}
+                      disabled={isUpdatingReminderControls}
+                    />
+                  </div>
+                  <Select
+                    value={Boolean((application as any)?.statusRemindersEnabled) ? String(statusReminderFrequencyDays) : 'none'}
+                    onValueChange={(v) => {
+                      if (v === 'none') {
+                        updateReminderSettings({ statusRemindersEnabled: false });
+                        return;
+                      }
+                      updateReminderSettings({
+                        statusRemindersEnabled: true,
+                        statusReminderFrequencyDays: Number(v),
+                      });
+                    }}
+                    disabled={isUpdatingReminderControls}
+                  >
+                    <SelectTrigger className="h-8 w-[120px]">
+                      <SelectValue placeholder="Frequency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {reminderFrequencyOptions.map((d) => (
+                        <SelectItem key={`status-freq-${d}`} value={String(d)}>
+                          {d === 7 ? 'Weekly' : 'Every 2 days'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
+              </div>
             </div>
 
             {/* Application Progression Field */}
@@ -3215,6 +3345,149 @@ function ApplicationDetailPageContent() {
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" className="w-full justify-start gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Eligibility check & uploads
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Eligibility check</DialogTitle>
+                  <DialogDescription>Track CalAIM eligibility status and supporting uploads.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium">CalAIM Status</label>
+                      {isUpdatingTracking && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    </div>
+                    <Select
+                      value={(application as any)?.calaimTrackingStatus || ''}
+                      onValueChange={updateTrackingStatus}
+                      disabled={isUpdatingTracking}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select CalAIM status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {calaimTrackingOptions.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {option}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {(application as any)?.calaimTrackingStatus === 'Not CalAIM Eligible' && (
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Reason</Label>
+                        <Select
+                          value={(application as any)?.calaimNotEligibleReason || ''}
+                          onValueChange={(value) => {
+                            const nextReason = value || '';
+                            const nextFlags = {
+                              calaimNotEligibleSwitchingProviders: nextReason === 'Switching Providers by end of Month',
+                              calaimNotEligibleHasSoc: nextReason === 'Has SOC',
+                              calaimNotEligibleOutOfCounty: nextReason === 'Not in our contracted CalAIM County',
+                              calaimNotEligibleOther: nextReason === 'Other',
+                              calaimNotEligibleReason: nextReason,
+                              calaimNotEligibleOtherReason:
+                                nextReason === 'Other' ? (application as any)?.calaimNotEligibleOtherReason || '' : '',
+                            };
+                            setApplication((prev) => (prev ? { ...prev, ...nextFlags } : null));
+                            updateNotEligibleFlags(nextFlags);
+                          }}
+                          disabled={isUpdatingTracking}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select a reason" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {notEligibleReasonOptions.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {(application as any)?.calaimNotEligibleReason === 'Other' && (
+                          <Textarea
+                            id="not-eligible-other-reason"
+                            rows={2}
+                            placeholder="Describe the reason..."
+                            value={(application as any)?.calaimNotEligibleOtherReason || ''}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setApplication((prev) => (prev ? { ...prev, calaimNotEligibleOtherReason: nextValue } : null));
+                            }}
+                            onBlur={(event) =>
+                              updateNotEligibleFlags({ calaimNotEligibleOtherReason: event.target.value })
+                            }
+                            disabled={isUpdatingTracking}
+                          />
+                        )}
+                        <div className="space-y-2 pt-2">
+                          <Label className="text-sm font-medium">Note to Member (optional)</Label>
+                          <Textarea
+                            rows={3}
+                            placeholder="Add a message that explains the eligibility outcome..."
+                            value={(application as any)?.calaimTrackingReason || ''}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setApplication((prev) => (prev ? { ...prev, calaimTrackingReason: nextValue } : null));
+                            }}
+                            onBlur={(event) => updateTrackingReason(event.target.value)}
+                            disabled={isUpdatingTracking}
+                          />
+                          <Button
+                            variant="outline"
+                            className="w-full"
+                            onClick={sendEligibilityNote}
+                            disabled={isSendingEligibilityNote}
+                          >
+                            {isSendingEligibilityNote ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Sending Note...
+                              </>
+                            ) : (
+                              'Send Note to Referrer'
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {eligibilityRequirements.length > 0 && (
+                    <div className="space-y-3 border-t pt-4">
+                      <Label className="text-sm font-medium">Eligibility Uploads</Label>
+                      <div className="space-y-3">
+                        {eligibilityRequirements.map((req) => {
+                          const formInfo = formStatusMap.get(req.title);
+                          const status = formInfo?.status || 'Pending';
+                          return (
+                            <div key={req.id} className="rounded-md border p-3 space-y-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="text-sm font-medium">{req.title}</div>
+                                  <StatusIndicator status={status} />
+                                </div>
+                                <p className="text-xs text-muted-foreground">{req.description}</p>
+                              </div>
+                              {getFormAction(req)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2">
                   <User className="h-4 w-4" />
                   Assigned staff
                 </Button>
@@ -3396,149 +3669,6 @@ function ApplicationDetailPageContent() {
                       To change workflow, next step, next step date, or assigned staff, use the tracker pages (Caspio-backed).
                     </div>
                   </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Eligibility check & uploads
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Eligibility check</DialogTitle>
-                  <DialogDescription>Track CalAIM eligibility status and supporting uploads.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium">CalAIM Status</label>
-                      {isUpdatingTracking && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                    </div>
-                    <Select
-                      value={(application as any)?.calaimTrackingStatus || ''}
-                      onValueChange={updateTrackingStatus}
-                      disabled={isUpdatingTracking}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select CalAIM status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {calaimTrackingOptions.map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {option}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    {(application as any)?.calaimTrackingStatus === 'Not CalAIM Eligible' && (
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium">Reason</Label>
-                        <Select
-                          value={(application as any)?.calaimNotEligibleReason || ''}
-                          onValueChange={(value) => {
-                            const nextReason = value || '';
-                            const nextFlags = {
-                              calaimNotEligibleSwitchingProviders: nextReason === 'Switching Providers by end of Month',
-                              calaimNotEligibleHasSoc: nextReason === 'Has SOC',
-                              calaimNotEligibleOutOfCounty: nextReason === 'Not in our contracted CalAIM County',
-                              calaimNotEligibleOther: nextReason === 'Other',
-                              calaimNotEligibleReason: nextReason,
-                              calaimNotEligibleOtherReason:
-                                nextReason === 'Other' ? (application as any)?.calaimNotEligibleOtherReason || '' : '',
-                            };
-                            setApplication((prev) => (prev ? { ...prev, ...nextFlags } : null));
-                            updateNotEligibleFlags(nextFlags);
-                          }}
-                          disabled={isUpdatingTracking}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select a reason" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {notEligibleReasonOptions.map((option) => (
-                              <SelectItem key={option} value={option}>
-                                {option}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {(application as any)?.calaimNotEligibleReason === 'Other' && (
-                          <Textarea
-                            id="not-eligible-other-reason"
-                            rows={2}
-                            placeholder="Describe the reason..."
-                            value={(application as any)?.calaimNotEligibleOtherReason || ''}
-                            onChange={(event) => {
-                              const nextValue = event.target.value;
-                              setApplication((prev) => (prev ? { ...prev, calaimNotEligibleOtherReason: nextValue } : null));
-                            }}
-                            onBlur={(event) =>
-                              updateNotEligibleFlags({ calaimNotEligibleOtherReason: event.target.value })
-                            }
-                            disabled={isUpdatingTracking}
-                          />
-                        )}
-                        <div className="space-y-2 pt-2">
-                          <Label className="text-sm font-medium">Note to Member (optional)</Label>
-                          <Textarea
-                            rows={3}
-                            placeholder="Add a message that explains the eligibility outcome..."
-                            value={(application as any)?.calaimTrackingReason || ''}
-                            onChange={(event) => {
-                              const nextValue = event.target.value;
-                              setApplication((prev) => (prev ? { ...prev, calaimTrackingReason: nextValue } : null));
-                            }}
-                            onBlur={(event) => updateTrackingReason(event.target.value)}
-                            disabled={isUpdatingTracking}
-                          />
-                          <Button
-                            variant="outline"
-                            className="w-full"
-                            onClick={sendEligibilityNote}
-                            disabled={isSendingEligibilityNote}
-                          >
-                            {isSendingEligibilityNote ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Sending Note...
-                              </>
-                            ) : (
-                              'Send Note to Referrer'
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {eligibilityRequirements.length > 0 && (
-                    <div className="space-y-3 border-t pt-4">
-                      <Label className="text-sm font-medium">Eligibility Uploads</Label>
-                      <div className="space-y-3">
-                        {eligibilityRequirements.map((req) => {
-                          const formInfo = formStatusMap.get(req.title);
-                          const status = formInfo?.status || 'Pending';
-                          return (
-                            <div key={req.id} className="rounded-md border p-3 space-y-3">
-                              <div className="space-y-1">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="text-sm font-medium">{req.title}</div>
-                                  <StatusIndicator status={status} />
-                                </div>
-                                <p className="text-xs text-muted-foreground">{req.description}</p>
-                              </div>
-                              {getFormAction(req)}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </DialogContent>
             </Dialog>

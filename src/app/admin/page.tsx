@@ -5,15 +5,13 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ClipboardCheck, FileText, AlertCircle } from 'lucide-react';
-import { ApplicationListSkeleton } from '@/components/ui/application-skeleton';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, type WithId } from '@/firebase';
-import { collection, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
+import { collection, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
-import { AdminApplicationsTable } from './applications/components/AdminApplicationsTable';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
@@ -350,17 +348,6 @@ export default function AdminDashboardPage() {
     return result;
   }, [allApplications]);
 
-  const recentApplications = useMemo(() => {
-    if (!allApplications) return [];
-    return [...allApplications]
-      .sort((a, b) => {
-        const timeA = a.lastUpdated ? (a.lastUpdated as Timestamp).toMillis() : 0;
-        const timeB = b.lastUpdated ? (b.lastUpdated as Timestamp).toMillis() : 0;
-        return timeB - timeA;
-      })
-      .slice(0, 10);
-  }, [allApplications]);
-
   if (isAdminLoading || isLoadingApps) {
     return (
       <div className="space-y-6">
@@ -370,18 +357,6 @@ export default function AdminDashboardPage() {
           <Skeleton className="h-32 rounded-lg" />
           <Skeleton className="h-32 rounded-lg" />
           <Skeleton className="h-32 rounded-lg" />
-        </div>
-        
-        {/* Recent Applications Skeleton */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="md:col-span-2 lg:col-span-3">
-            <CardHeader>
-              <Skeleton className="h-6 w-48" />
-            </CardHeader>
-            <CardContent>
-              <ApplicationListSkeleton />
-            </CardContent>
-          </Card>
         </div>
       </div>
     );
@@ -405,7 +380,7 @@ export default function AdminDashboardPage() {
       <div>
         <h1 className="text-3xl font-bold">Activity Dashboard</h1>
         <p className="text-muted-foreground">
-          Daily dashboard with notifications, statistics, and recent applications.
+          Daily dashboard with notifications and statistics.
         </p>
       </div>
 
@@ -697,29 +672,6 @@ export default function AdminDashboardPage() {
         </CardContent>
       </Card>
       
-      <div className="grid grid-cols-1 gap-6">
-            <div>
-               <Card>
-                <CardHeader className="flex items-center justify-between flex-row">
-                    <div>
-                      <CardTitle>Recent Applications</CardTitle>
-                      <CardDescription>A list of the 10 most recently updated applications.</CardDescription>
-                    </div>
-                    <Button asChild variant="outline">
-                        <Link href="/admin/applications">More</Link>
-                    </Button>
-                </CardHeader>
-                <CardContent>
-                  <AdminApplicationsTable
-                    applications={recentApplications}
-                    isLoading={isLoadingApps}
-                    showInlineTracker
-                  />
-                </CardContent>
-              </Card>
-            </div>
-        </div>
-
     </div>
   );
 }

@@ -24,7 +24,8 @@ export async function POST(request: NextRequest) {
       emailRemindersEnabled,
       statusRemindersEnabled,
       reviewNotificationSent,
-      documentReminderFrequencyDays
+      documentReminderFrequencyDays,
+      statusReminderFrequencyDays
     } = await request.json();
 
     if (!applicationId) {
@@ -56,6 +57,9 @@ export async function POST(request: NextRequest) {
     }
     if (documentReminderFrequencyDays !== undefined) {
       updateData.documentReminderFrequencyDays = Number(documentReminderFrequencyDays);
+    }
+    if (statusReminderFrequencyDays !== undefined) {
+      updateData.statusReminderFrequencyDays = Number(statusReminderFrequencyDays);
     }
 
     const isAdminApp = applicationId.startsWith('admin_app_') || !userId;
