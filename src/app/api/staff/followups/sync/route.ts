@@ -21,18 +21,32 @@ const normalizeLower = (value: any) => normalizeString(value).toLowerCase();
 
 const escapeQuotes = (value: string) => value.replace(/'/g, "''");
 
+const safeIso = (value: any) => {
+  const iso = asIso(value);
+  return iso && iso.length >= 10 ? iso : '';
+};
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const userId = normalizeString(body?.userId);
     const start = normalizeString(body?.start);
     const end = normalizeString(body?.end);
+    const modeRaw = normalizeString(body?.mode);
+    const mode: 'auto' | 'full' | 'incremental' =
+      modeRaw === 'full' || modeRaw === 'incremental' ? (modeRaw as any) : 'auto';
 
     if (!userId) {
       return NextResponse.json({ success: false, error: 'userId is required' }, { status: 400 });
     }
 
     const firestore = admin.firestore();
+    const syncRef = firestore.collection('staff_followups_sync').doc(userId);
+    const syncSnap = await syncRef.get().catch(() => null);
+    const syncData = syncSnap?.exists ? syncSnap.data() : null;
+    const lastCursorIso = safeIso((syncData as any)?.lastCursorIso);
+    const lastSyncAtIso = safeIso((syncData as any)?.lastSyncAt?.toDate?.() || (syncData as any)?.lastSyncAt);
+
     const userSnap = await firestore.collection('users').doc(userId).get().catch(() => null);
     const userData = userSnap?.exists ? userSnap.data() : null;
 
@@ -64,6 +78,26 @@ export async function POST(request: NextRequest) {
     const credentials = getCaspioCredentialsFromEnv();
     const accessToken = await getCaspioToken(credentials);
 
+    const shouldIncremental =
+      mode === 'incremental' ||
+      (mode === 'auto' && Boolean(lastCursorIso || lastSyncAtIso));
+
+    // Use lastCursorIso when available. Add a small lookback window to catch late edits.
+    const lookbackMs = 24 * 60 * 60 * 1000;
+    const sinceIso = shouldIncremental
+      ? (() => {
+          const base = lastCursorIso || lastSyncAtIso;
+          if (!base) return '';
+          try {
+            const ms = new Date(base).getTime();
+            if (Number.isNaN(ms)) return '';
+            return new Date(ms - lookbackMs).toISOString();
+          } catch {
+            return '';
+          }
+        })()
+      : '';
+
     // Pull only follow-up notes (Open) that have a follow-up date.
     // Filter by Follow_Up_Assignment == candidate. Date range filtering is applied in-process
     // because Caspio where clause formatting for dates varies by environment.
@@ -72,7 +106,10 @@ export async function POST(request: NextRequest) {
 
     const allNotes: any[] = [];
     for (const candidate of assignmentCandidates) {
-      const where = `Follow_Up_Assignment='${escapeQuotes(candidate)}' AND Follow_Up_Status<>'Closed' AND Follow_Up_Date IS NOT NULL`;
+      const baseWhere = `Follow_Up_Assignment='${escapeQuotes(candidate)}' AND Follow_Up_Status<>'Closed' AND Follow_Up_Date IS NOT NULL`;
+      const where = sinceIso
+        ? `${baseWhere} AND Time_Stamp >= '${escapeQuotes(sinceIso)}'`
+        : baseWhere;
       const rows = await fetchCaspioRecords(credentials, accessToken, table, where, limit);
       allNotes.push(...rows);
     }
@@ -151,6 +188,16 @@ export async function POST(request: NextRequest) {
       new Map(notesToWrite.map((n) => [n.noteId, n])).values()
     );
 
+    const nextCursorIso = (() => {
+      // Prefer Caspio Time_Stamp as cursor. If missing, fallback to now.
+      const maxIso = uniqueByNoteId
+        .map((n) => safeIso(n.timeStamp))
+        .filter(Boolean)
+        .sort()
+        .slice(-1)[0];
+      return maxIso || new Date().toISOString();
+    })();
+
     const batchSize = 450;
     let written = 0;
     for (let i = 0; i < uniqueByNoteId.length; i += batchSize) {
@@ -164,10 +211,27 @@ export async function POST(request: NextRequest) {
       written += slice.length;
     }
 
+    await syncRef.set(
+      {
+        userId,
+        lastSyncAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastCursorIso: nextCursorIso,
+        lastMode: sinceIso ? 'incremental' : 'full',
+        lastWindowStart: start || null,
+        lastWindowEnd: end || null,
+        lastSyncedCount: written,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
     return NextResponse.json({
       success: true,
       synced: written,
       assignmentsChecked: assignmentCandidates.length,
+      mode: sinceIso ? 'incremental' : 'full',
+      sinceIso: sinceIso || null,
+      nextCursorIso,
       message: `Synced ${written} follow-up notes from Caspio`,
     });
   } catch (error: any) {

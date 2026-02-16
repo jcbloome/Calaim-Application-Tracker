@@ -92,6 +92,9 @@ export async function GET(request: NextRequest) {
       : await loadReviewNotificationRecipient();
 
     // Kaiser tasks can be expensive; skip entirely for follow-up-only calendar queries.
+    // We also build a lookup map (clientId2 -> current Kaiser status) so other task types
+    // can display current Kaiser status consistently.
+    const kaiserStatusByClientId2 = new Map<string, string>();
     let tasks: any[] = [];
     if (!onlyFollowUp) {
       try {
@@ -106,6 +109,15 @@ export async function GET(request: NextRequest) {
 
         const kaiserData = kaiserResponse && kaiserResponse.ok ? await kaiserResponse.json() : { members: [] };
         const allMembers = (kaiserData as any).members || [];
+
+        // Populate lookup for later (follow-ups, reviews, etc.)
+        allMembers.forEach((m: any) => {
+          const clientId2 = String(m?.client_ID2 || m?.clientId2 || '').trim();
+          const status = String(m?.Kaiser_Status || m?.kaiser_status || '').trim();
+          if (clientId2 && status) {
+            kaiserStatusByClientId2.set(clientId2, status);
+          }
+        });
 
         // Filter members assigned to this staff member (Caspio: Kaiser_User_Assignment)
         const staffNameLower = staffName.toLowerCase();
@@ -217,7 +229,8 @@ export async function GET(request: NextRequest) {
           const data = docSnap.data();
           const followUpRequired = Boolean(data.followUpRequired) || Boolean(data.followUpDate);
           if (!followUpRequired) return;
-          if (String(data.status || '').toLowerCase() === 'closed') return;
+          const closed = String(data.status || '').toLowerCase() === 'closed';
+          if (onlyFollowUp && closed) return;
           const followUpDate = data.followUpDate?.toDate?.()?.toISOString?.()
             || data.followUpDate
             || data.timestamp?.toDate?.()?.toISOString?.()
@@ -232,7 +245,7 @@ export async function GET(request: NextRequest) {
             healthPlan: data.healthPlan,
             taskType: 'follow_up',
             priority: normalizePriority(data.priority),
-            status: isOverdue ? 'overdue' : 'pending',
+            status: closed ? 'completed' : isOverdue ? 'overdue' : 'pending',
             dueDate: followUpDate,
             assignedBy: data.createdBy || 'system',
             assignedByName: data.senderName || data.createdByName || 'Staff',
@@ -241,7 +254,8 @@ export async function GET(request: NextRequest) {
             createdAt: data.timestamp?.toDate?.()?.toISOString?.() || data.createdAt || new Date().toISOString(),
             updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() || data.timestamp?.toDate?.()?.toISOString?.() || new Date().toISOString(),
             notes: data.message || data.content || '',
-            source: 'notes'
+            source: 'notes',
+            followUpStatus: closed ? 'Closed' : String(data.status || '').trim() || 'Open',
           });
         });
       } catch (followupError) {
@@ -275,7 +289,8 @@ export async function GET(request: NextRequest) {
             seen.add(docSnap.id);
             const data = docSnap.data();
             if (Boolean((data as any)?.deleted)) return;
-            if (String(data.followUpStatus || '').toLowerCase() === 'closed') return;
+            const noteClosed = String(data.followUpStatus || '').toLowerCase() === 'closed';
+            if (onlyFollowUp && noteClosed) return;
             const followUpDate = data.followUpDate || data.timeStamp || data.createdAt;
             if (!followUpDate) return;
             const dueDate = followUpDate?.toDate?.()?.toISOString?.() || followUpDate;
@@ -283,6 +298,7 @@ export async function GET(request: NextRequest) {
             const isOverdue = dueDate ? new Date(dueDate) < now : false;
             const noteId = String(data.noteId || docSnap.id).trim() || docSnap.id;
             const clientId2 = String(data.clientId2 || '').trim();
+            const kaiserStatus = clientId2 ? (kaiserStatusByClientId2.get(clientId2) || '') : '';
             followUpTasks.push({
               id: `client-followup-${noteId}`,
               noteId,
@@ -291,10 +307,10 @@ export async function GET(request: NextRequest) {
               description: data.comments || '',
               memberName: data.memberName || `Client ${clientId2 || ''}`.trim(),
               memberClientId: clientId2,
-              healthPlan: data.healthPlan,
+              healthPlan: data.healthPlan || (kaiserStatus ? 'Kaiser' : undefined),
               taskType: 'follow_up',
               priority: normalizePriority(data.priority),
-              status: isOverdue ? 'overdue' : 'pending',
+              status: noteClosed ? 'completed' : isOverdue ? 'overdue' : 'pending',
               dueDate: dueDate,
               assignedBy: data.createdBy || 'system',
               assignedByName: data.createdByName || data.userFullName || 'Staff',
@@ -307,6 +323,7 @@ export async function GET(request: NextRequest) {
               actionUrl: buildClientNotesUrl(clientId2, noteId),
               followUpStatus: data.followUpStatus,
               followUpAssignment: data.followUpAssignment,
+              ...(kaiserStatus ? { currentKaiserStatus: kaiserStatus } : {}),
             });
           });
         });
@@ -326,13 +343,15 @@ export async function GET(request: NextRequest) {
           if (!followUpDate) return;
           const dueDate = followUpDate?.toDate?.()?.toISOString?.() || followUpDate;
           const isOverdue = dueDate ? new Date(dueDate) < now : false;
+          const clientId2 = String(data.clientId2 || '').trim();
+          const kaiserStatus = clientId2 ? (kaiserStatusByClientId2.get(clientId2) || '') : '';
           followUpTasks.push({
             id: `member-followup-${docSnap.id}`,
             title: `Member follow-up: ${data.memberName || data.clientId2 || 'Member'}`,
             description: data.noteText || '',
             memberName: data.memberName,
             memberClientId: data.clientId2,
-            healthPlan: data.healthPlan,
+            healthPlan: data.healthPlan || (kaiserStatus ? 'Kaiser' : undefined),
             taskType: 'follow_up',
             priority: normalizePriority(data.priority),
             status: isOverdue ? 'overdue' : 'pending',
@@ -344,7 +363,8 @@ export async function GET(request: NextRequest) {
             createdAt: data.createdAt || new Date().toISOString(),
             updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
             notes: data.noteText || '',
-            source: 'notes'
+            source: 'notes',
+            ...(kaiserStatus ? { currentKaiserStatus: kaiserStatus } : {}),
           });
         });
       } catch (memberError) {

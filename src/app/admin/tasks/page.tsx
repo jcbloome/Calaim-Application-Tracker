@@ -23,6 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Calendar as DateCalendar } from '@/components/ui/calendar';
 import { addDoc, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { getKaiserStatusByName, getNextKaiserStatus } from '@/lib/kaiser-status-progression';
+import { getAllStaff } from '@/lib/staff-directory';
 
 interface MyTask {
   id: string;
@@ -68,8 +69,9 @@ interface MemberNote {
   updatedAt: string;
   source: 'Caspio' | 'App' | 'Admin';
   isRead: boolean;
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  priority: 'General' | 'Priority' | 'Low' | 'Medium' | 'High' | 'Urgent';
   followUpDate?: string;
+  status?: 'Open' | 'Closed' | string;
   tags?: string[];
 }
 
@@ -97,8 +99,6 @@ function MyTasksPageContent() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [timeRange, setTimeRange] = useState<'all' | 'daily' | 'weekly' | 'monthly'>('all');
-  const [desktopActive, setDesktopActive] = useState(false);
-  const [suppressWebWhenDesktopActive, setSuppressWebWhenDesktopActive] = useState(false);
   const [isCreateFollowUpOpen, setIsCreateFollowUpOpen] = useState(false);
   const [isCreatingFollowUp, setIsCreatingFollowUp] = useState(false);
   const [followUpForm, setFollowUpForm] = useState({
@@ -116,6 +116,7 @@ function MyTasksPageContent() {
   const [isMemberCardOpen, setIsMemberCardOpen] = useState(false);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isSyncingMemberNotes, setIsSyncingMemberNotes] = useState(false);
+  const [isUpdatingMemberNotes, setIsUpdatingMemberNotes] = useState<Record<string, boolean>>({});
   const [showClosedMemberNotes, setShowClosedMemberNotes] = useState(false);
   const [newNote, setNewNote] = useState({
     noteText: '',
@@ -133,6 +134,7 @@ function MyTasksPageContent() {
   const [selectedFollowUpTask, setSelectedFollowUpTask] = useState<MyTask | null>(null);
   const [isFollowUpTaskModalOpen, setIsFollowUpTaskModalOpen] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState('');
+  const [reassignTo, setReassignTo] = useState('');
   const [isUpdatingFollowUpTask, setIsUpdatingFollowUpTask] = useState(false);
   const [isSyncingFollowUps, setIsSyncingFollowUps] = useState(false);
   const [isImportingAllFollowUps, setIsImportingAllFollowUps] = useState(false);
@@ -146,74 +148,6 @@ function MyTasksPageContent() {
       setTimeRange(range);
     }
   }, [searchParams]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const readSettings = () => {
-      try {
-        const raw = localStorage.getItem('notificationSettings');
-        if (!raw) return;
-        const parsed = JSON.parse(raw) as any;
-        const nextValue = parsed?.userControls?.suppressWebWhenDesktopActive;
-        setSuppressWebWhenDesktopActive(nextValue === undefined ? true : Boolean(nextValue));
-      } catch {
-        setSuppressWebWhenDesktopActive(true);
-      }
-    };
-    readSettings();
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === 'notificationSettings') {
-        readSettings();
-      }
-    };
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const isRealDesktop = Boolean(window.desktopNotifications && !window.desktopNotifications.__shim);
-    if (!isRealDesktop) {
-      setDesktopActive(false);
-      return;
-    }
-    setDesktopActive(true);
-    let unsubscribe: (() => void) | undefined;
-    window.desktopNotifications.getState()
-      .then(() => setDesktopActive(true))
-      .catch(() => setDesktopActive(true));
-    unsubscribe = window.desktopNotifications.onChange(() => {
-      setDesktopActive(true);
-    });
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!desktopActive) return;
-    if (suppressWebWhenDesktopActive) return;
-    updateSuppressSetting(true);
-  }, [desktopActive, suppressWebWhenDesktopActive]);
-
-  const updateSuppressSetting = (nextValue: boolean) => {
-    setSuppressWebWhenDesktopActive(nextValue);
-    if (typeof window === 'undefined') return;
-    try {
-      const raw = localStorage.getItem('notificationSettings');
-      const parsed = raw ? JSON.parse(raw) as any : {};
-      const updated = {
-        ...parsed,
-        userControls: {
-          ...(parsed?.userControls || {}),
-          suppressWebWhenDesktopActive: nextValue
-        }
-      };
-      localStorage.setItem('notificationSettings', JSON.stringify(updated));
-    } catch (error) {
-      console.warn('Failed to update notification settings:', error);
-    }
-  };
 
   const fetchMyTasks = async () => {
     if (!user?.uid) return;
@@ -264,6 +198,9 @@ function MyTasksPageContent() {
   const filteredTasks = useMemo(() => {
     const now = new Date();
     const range = (() => {
+      // Overdue should always be visible regardless of the "This month/week/day" filter,
+      // otherwise older overdue items disappear and feel "unopenable".
+      if (selectedTab === 'overdue') return null;
       if (timeRange === 'daily') {
         return { start: startOfDay(now), end: endOfDay(now) };
       }
@@ -879,6 +816,7 @@ function MyTasksPageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.uid,
+          mode: 'incremental',
           start: start.toISOString(),
           end: end.toISOString(),
         }),
@@ -987,10 +925,14 @@ function MyTasksPageContent() {
     } catch {
       setRescheduleDate('');
     }
+    setReassignTo(String(task.followUpAssignment || task.assignedToName || '').trim());
     setIsFollowUpTaskModalOpen(true);
   };
 
-  const updateClientNote = async (task: MyTask, patch: { followUpStatus?: string; followUpDate?: string }) => {
+  const updateClientNote = async (
+    task: MyTask,
+    patch: { followUpStatus?: string; followUpDate?: string; followUpAssignment?: string }
+  ) => {
     if (!task?.memberClientId) throw new Error('Client ID missing');
     const noteId = String(task.noteId || '').trim() || String(task.id || '').replace('client-followup-', '');
     if (!noteId) throw new Error('Note ID missing');
@@ -1012,6 +954,19 @@ function MyTasksPageContent() {
     if (!response.ok || !data?.success) {
       throw new Error(data?.error || 'Failed to update note');
     }
+  };
+
+  const followUpNoteState = (task?: MyTask | null) => {
+    const raw = String(task?.followUpStatus || '').trim().toLowerCase();
+    if (!raw) return 'Open';
+    if (raw === 'closed') return 'Closed';
+    return 'Open';
+  };
+
+  const getNoteStateColor = (state: string) => {
+    return state === 'Closed'
+      ? 'bg-red-100 text-red-800 border-red-200'
+      : 'bg-green-100 text-green-800 border-green-200';
   };
 
   const deleteClientNote = async (task: MyTask) => {
@@ -1045,6 +1000,30 @@ function MyTasksPageContent() {
       return !statusLower.includes('closed');
     });
   }, [selectedMember?.notes, showClosedMemberNotes]);
+
+  const updateMemberNoteFollowUpStatus = async (note: MemberNote, nextStatus: 'Open' | 'Closed') => {
+    if (!selectedMember?.clientId2) throw new Error('Client ID missing');
+    const noteId = String(note?.id || '').trim();
+    if (!noteId) throw new Error('Note ID missing');
+    const actorName = user?.displayName || user?.email || 'Staff';
+    const actorEmail = user?.email || '';
+
+    const response = await fetch('/api/client-notes', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        noteId,
+        clientId2: selectedMember.clientId2,
+        followUpStatus: nextStatus,
+        actorName,
+        actorEmail,
+      }),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.error || 'Failed to update note status');
+    }
+  };
 
   if (!isAdmin) {
     return (
@@ -1209,26 +1188,6 @@ function MyTasksPageContent() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Desktop App Active</CardTitle>
-          <CardDescription>
-            {desktopActive
-              ? 'Suppress in-app task alerts to avoid duplicate notifications while the desktop tray is running.'
-              : 'Desktop tray not detected. In-app alerts will display normally.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            {desktopActive ? 'Hide in-app alerts when desktop is active' : 'Desktop app not detected (suppression still available)'}
-          </div>
-          <Switch
-            checked={suppressWebWhenDesktopActive}
-            onCheckedChange={updateSuppressSetting}
-          />
-        </CardContent>
-      </Card>
-
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
         <Card>
@@ -1302,19 +1261,6 @@ function MyTasksPageContent() {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Action item counts (uploads)</CardTitle>
-          <CardDescription>Counts of items needing review by plan and type.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Badge variant="outline">K(D) {actionItemCounts.kDocs}</Badge>
-          <Badge variant="outline">K(CS) {actionItemCounts.kCs}</Badge>
-          <Badge variant="outline">H(D) {actionItemCounts.hDocs}</Badge>
-          <Badge variant="outline">H(CS) {actionItemCounts.hCs}</Badge>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
@@ -1673,7 +1619,20 @@ function MyTasksPageContent() {
                               {getTaskTypeIcon(task.taskType)}
                             </div>
                             <div>
-                              <p className="font-medium">{task.title}</p>
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="font-medium">{task.title}</p>
+                                {task.taskType === 'follow_up' && task.id.startsWith('client-followup-') ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => openFollowUpTaskModal(task)}
+                                    title="Manage follow-up (close/reassign/date)"
+                                  >
+                                    <Edit className="h-4 w-4 mr-1" />
+                                    Manage
+                                  </Button>
+                                ) : null}
+                              </div>
                               {task.description && (
                                 <p className="text-sm text-muted-foreground">{task.description}</p>
                               )}
@@ -1742,9 +1701,20 @@ function MyTasksPageContent() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={getStatusColor(task.status)}>
-                            {task.status.replace('_', ' ')}
-                          </Badge>
+                          <div className="flex flex-wrap gap-2">
+                            {task.taskType === 'follow_up' && task.id.startsWith('client-followup-') ? (
+                              <Badge
+                                variant="outline"
+                                className={getNoteStateColor(followUpNoteState(task))}
+                                title="Caspio Follow_Up_Status"
+                              >
+                                {followUpNoteState(task)}
+                              </Badge>
+                            ) : null}
+                            <Badge variant="outline" className={getStatusColor(task.status)}>
+                              {task.status.replace('_', ' ')}
+                            </Badge>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className={`font-medium ${task.status === 'overdue' ? 'text-red-600' : ''}`}>
@@ -1796,9 +1766,30 @@ function MyTasksPageContent() {
                                     </Link>
                                   </Button>
                                 )}
-                                <Button variant="outline" size="sm">
-                                  <Edit className="h-4 w-4" />
-                                </Button>
+                                {task.taskType === 'follow_up' && task.status !== 'completed' ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => openFollowUpTaskModal(task)}
+                                    title="Open follow-up details"
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={!task.actionUrl && !(task.memberName && task.memberClientId)}
+                                    onClick={() => {
+                                      if (task.memberName && task.memberClientId) {
+                                        handleMemberClick(task.memberClientId, task.memberName, task.healthPlan || 'Unknown');
+                                      }
+                                    }}
+                                    title={task.memberName && task.memberClientId ? 'Open member notes' : 'No details available'}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                )}
                                 {task.status !== 'completed' && (
                                   <Button
                                     variant="outline"
@@ -1938,7 +1929,49 @@ function MyTasksPageContent() {
                               )}
                             </div>
                             <div className="text-sm text-muted-foreground">
-                              {format(new Date(note.createdAt), 'MMM d, yyyy h:mm a')}
+                              <div className="flex items-center gap-2">
+                                {note.source === 'Caspio' && note.followUpDate ? (
+                                  <div className="flex items-center gap-2 rounded-md border px-2 py-1">
+                                    <div className="text-xs text-muted-foreground">
+                                      {String(note.status || 'Open').toLowerCase().includes('closed') ? 'Closed' : 'Open'}
+                                    </div>
+                                    <Switch
+                                      checked={String(note.status || 'Open').toLowerCase().includes('closed')}
+                                      disabled={Boolean(isUpdatingMemberNotes[note.id])}
+                                      onCheckedChange={async (checked) => {
+                                        setIsUpdatingMemberNotes((prev) => ({ ...prev, [note.id]: true }));
+                                        try {
+                                          const nextStatus: 'Open' | 'Closed' = checked ? 'Closed' : 'Open';
+                                          await updateMemberNoteFollowUpStatus(note, nextStatus);
+                                          setSelectedMember((prev) => {
+                                            if (!prev) return prev;
+                                            return {
+                                              ...prev,
+                                              notes: (prev.notes || []).map((n) =>
+                                                n.id === note.id ? { ...n, status: nextStatus } : n
+                                              ),
+                                            };
+                                          });
+                                          toast({
+                                            title: nextStatus === 'Closed' ? 'Note closed' : 'Note reopened',
+                                            description: 'Updated in Caspio.',
+                                            className: 'bg-green-100 text-green-900 border-green-200',
+                                          });
+                                        } catch (error: any) {
+                                          toast({
+                                            variant: 'destructive',
+                                            title: 'Error',
+                                            description: error.message || 'Failed to update note.',
+                                          });
+                                        } finally {
+                                          setIsUpdatingMemberNotes((prev) => ({ ...prev, [note.id]: false }));
+                                        }
+                                      }}
+                                    />
+                                  </div>
+                                ) : null}
+                                <div>{format(new Date(note.createdAt), 'MMM d, yyyy h:mm a')}</div>
+                              </div>
                             </div>
                           </div>
                           
@@ -2096,9 +2129,29 @@ function MyTasksPageContent() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Assigned to</Label>
-                  <div className="text-sm">
-                    {selectedFollowUpTask.followUpAssignment || selectedFollowUpTask.assignedToName || '—'}
-                  </div>
+                  {selectedFollowUpTask.id.startsWith('client-followup-') ? (
+                    <Select value={reassignTo || 'unassigned'} onValueChange={(v) => setReassignTo(v === 'unassigned' ? '' : v)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select staff..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unassigned">Unassigned</SelectItem>
+                        {getAllStaff()
+                          .map((s) => s.name)
+                          .filter(Boolean)
+                          .sort((a, b) => a.localeCompare(b))
+                          .map((name) => (
+                            <SelectItem key={name} value={name}>
+                              {name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="text-sm">
+                      {selectedFollowUpTask.followUpAssignment || selectedFollowUpTask.assignedToName || '—'}
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Follow-up date</Label>
@@ -2110,6 +2163,47 @@ function MyTasksPageContent() {
                   />
                 </div>
               </div>
+
+              {selectedFollowUpTask.id.startsWith('client-followup-') ? (
+                <div className="flex items-center justify-between rounded-md border p-3">
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">Note status (Caspio)</div>
+                    <div className="text-xs text-muted-foreground">
+                      Toggle to close or reopen this follow-up note.
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className={getNoteStateColor(followUpNoteState(selectedFollowUpTask))}>
+                      {followUpNoteState(selectedFollowUpTask)}
+                    </Badge>
+                    <Switch
+                      checked={followUpNoteState(selectedFollowUpTask) === 'Closed'}
+                      disabled={isUpdatingFollowUpTask}
+                      onCheckedChange={async (checked) => {
+                        if (!selectedFollowUpTask) return;
+                        setIsUpdatingFollowUpTask(true);
+                        try {
+                          await updateClientNote(selectedFollowUpTask, { followUpStatus: checked ? 'Closed' : 'Open' });
+                          toast({ title: checked ? 'Closed' : 'Reopened', description: 'Note status updated.' });
+                          await fetchFollowUpCalendar(followUpMonth);
+                          fetchMyTasks();
+                          if (checked) {
+                            setIsFollowUpTaskModalOpen(false);
+                          }
+                        } catch (error: any) {
+                          toast({
+                            variant: 'destructive',
+                            title: 'Error',
+                            description: error.message || 'Failed to update note status.',
+                          });
+                        } finally {
+                          setIsUpdatingFollowUpTask(false);
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : null}
 
               <div className="flex flex-wrap gap-2 justify-end">
                 {selectedFollowUpTask.actionUrl ? (
@@ -2158,50 +2252,23 @@ function MyTasksPageContent() {
                     if (!selectedFollowUpTask) return;
                     setIsUpdatingFollowUpTask(true);
                     try {
-                      await updateClientNote(selectedFollowUpTask, { followUpStatus: 'Closed' });
-                      toast({ title: 'Closed', description: 'Follow-up marked Closed.' });
-                      await fetchFollowUpCalendar(followUpMonth);
-                      fetchMyTasks();
-                      setIsFollowUpTaskModalOpen(false);
-                    } catch (error: any) {
-                      toast({
-                        variant: 'destructive',
-                        title: 'Error',
-                        description: error.message || 'Failed to close.',
-                      });
-                    } finally {
-                      setIsUpdatingFollowUpTask(false);
-                    }
-                  }}
-                >
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Close
-                </Button>
-
-                <Button
-                  variant="outline"
-                  disabled={isUpdatingFollowUpTask || !selectedFollowUpTask.id.startsWith('client-followup-')}
-                  onClick={async () => {
-                    if (!selectedFollowUpTask) return;
-                    setIsUpdatingFollowUpTask(true);
-                    try {
-                      await updateClientNote(selectedFollowUpTask, { followUpStatus: 'Open' });
-                      toast({ title: 'Reopened', description: 'Follow-up marked Open.' });
+                      await updateClientNote(selectedFollowUpTask, { followUpAssignment: reassignTo || null });
+                      toast({ title: 'Reassigned', description: 'Follow-up assignment updated.' });
                       await fetchFollowUpCalendar(followUpMonth);
                       fetchMyTasks();
                     } catch (error: any) {
                       toast({
                         variant: 'destructive',
                         title: 'Error',
-                        description: error.message || 'Failed to reopen.',
+                        description: error.message || 'Failed to reassign.',
                       });
                     } finally {
                       setIsUpdatingFollowUpTask(false);
                     }
                   }}
                 >
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Reopen
+                  <User className="mr-2 h-4 w-4" />
+                  Save assignment
                 </Button>
 
                 <Button

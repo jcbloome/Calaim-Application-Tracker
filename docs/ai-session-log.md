@@ -8,6 +8,21 @@ This is a lightweight, append-only log of notable work completed with the Cursor
 
 ---
 
+## 2026-02-16 — Daily Task Tracker follow-up UX + incremental sync
+
+### Follow-up sync improvements (Caspio → Firestore)
+- Added a per-staff sync cursor so “Sync from Caspio” can run **incrementally** after the initial import:
+  - File: `src/app/api/staff/followups/sync/route.ts`
+- Updated the Calendar “Sync from Caspio” button to use incremental mode:
+  - File: `src/app/admin/tasks/page.tsx`
+
+### Follow-up workflow UX
+- Fixed Overdue tab behavior so overdue items don’t disappear due to the “This Month/Week/Day” filter:
+  - File: `src/app/admin/tasks/page.tsx`
+- Follow-up tasks now show a clear **Open/Closed** badge, and add a visible **Manage** button on the left (avoids hidden right-side Actions column).
+- Follow-up details modal: added **reassign** support (updates `Follow_Up_Assignment`) and a **status toggle** (Open/Closed).
+- Member Notes modal: added per-note **Open/Closed toggle** for quick closing/reopening follow-up notes.
+
 ## 2026-02-16 — Daily Task Tracker follow-up calendars + Caspio client notes (on-demand)
 
 ### Follow-up calendar + on-demand sync

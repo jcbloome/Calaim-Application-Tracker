@@ -4,6 +4,12 @@ This file summarizes notable product/engineering changes to the Connect CalAIM T
 
 ## 2026-02-16
 
+### Daily Task Tracker (follow-ups UX improvements)
+- Follow-up sync now supports **incremental updates** after initial import (per-staff cursor stored in Firestore).
+- Overdue tab now **shows overdue tasks regardless of “This Month/Week/Day”** filter.
+- Follow-up tasks: show **Open/Closed** status badge and add visible **Manage** button in the Task column.
+- Member Notes modal: added per-note **Open/Closed toggle** to quickly close/reopen Caspio follow-up notes.
+
 ### Desktop app (Electron)
 - Added a dedicated admin route to render **web-style notification cards** in Electron (`/admin/desktop-notification-window`).
 - Bridged card + summary payloads into the notification window via IPC.
