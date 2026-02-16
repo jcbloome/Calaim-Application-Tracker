@@ -58,6 +58,8 @@ interface KaiserMember {
   client_ID2: string;
   pathway: string;
   Kaiser_Status: string;
+  // Caspio field: tracks staff/user assignment for Kaiser
+  Kaiser_User_Assignment?: string;
   CalAIM_Status: string;
   Staff_Assigned: string;
   Next_Step_Due_Date: string;
@@ -418,8 +420,9 @@ function MemberNotesModal({
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">Assign to Staff (Optional)</label>
                   <Select
-                    value={newNote.assignedToName}
+                    value={newNote.assignedToName || 'none'}
                     onValueChange={(value) => {
+                      const normalized = value === 'none' ? '' : value;
                       // Map staff names to IDs (in production, this would come from a staff API)
                       const staffMap: Record<string, string> = {
                         'John': 'john-user-id',
@@ -428,8 +431,8 @@ function MemberNotesModal({
                       };
                       onNewNoteChange({ 
                         ...newNote, 
-                        assignedToName: value,
-                        assignedTo: staffMap[value] || ''
+                        assignedToName: normalized,
+                        assignedTo: normalized ? (staffMap[normalized] || '') : ''
                       });
                     }}
                   >
@@ -437,7 +440,7 @@ function MemberNotesModal({
                       <SelectValue placeholder="Select staff member" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       <SelectItem value="John">John</SelectItem>
                       <SelectItem value="Nick">Nick</SelectItem>
                       <SelectItem value="Jesse">Jesse</SelectItem>
@@ -487,39 +490,11 @@ function StaffMemberManagementModal({
   members,
   onMemberUpdate
 }: StaffMemberManagementModalProps) {
-  const [editingMember, setEditingMember] = useState<string | null>(null);
-  const [memberUpdates, setMemberUpdates] = useState<Record<string, Partial<KaiserMember>>>({});
   const [newNote, setNewNote] = useState('');
   const [addingNoteFor, setAddingNoteFor] = useState<string | null>(null);
   const { toast } = useToast();
 
   if (!isOpen) return null;
-
-  const handleStatusUpdate = async (memberId: string, newStatus: string) => {
-    try {
-      const response = await fetch('/api/kaiser-members/update-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId, status: newStatus })
-      });
-
-      if (response.ok) {
-          toast({
-          title: "Status Updated",
-          description: "Member status has been updated successfully.",
-        });
-        onMemberUpdate();
-        } else {
-        throw new Error('Failed to update status');
-      }
-    } catch (error) {
-          toast({
-        title: "Update Failed",
-        description: "Failed to update member status. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleAddNote = async (memberId: string) => {
     if (!newNote.trim()) return;
@@ -557,51 +532,6 @@ function StaffMemberManagementModal({
     }
   };
 
-  const handleNextStepUpdate = (memberId: string, field: string, value: string) => {
-    setMemberUpdates(prev => ({
-      ...prev,
-      [memberId]: {
-        ...prev[memberId],
-        [field]: value
-      }
-    }));
-  };
-
-  const saveNextStepUpdates = async (memberId: string) => {
-    const updates = memberUpdates[memberId];
-    if (!updates) return;
-
-    try {
-      const response = await fetch('/api/kaiser-members/update-workflow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId, ...updates })
-      });
-
-      if (response.ok) {
-      toast({
-          title: "Updates Saved",
-          description: "Member workflow has been updated successfully.",
-        });
-        setEditingMember(null);
-        setMemberUpdates(prev => {
-          const newUpdates = { ...prev };
-          delete newUpdates[memberId];
-          return newUpdates;
-        });
-        onMemberUpdate();
-      } else {
-        throw new Error('Failed to save updates');
-      }
-    } catch (error) {
-      toast({
-        title: "Save Failed",
-        description: "Failed to save updates. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
@@ -611,15 +541,13 @@ function StaffMemberManagementModal({
             {staffName} - Member Management
           </DialogTitle>
           <DialogDescription>
-            Manage {members.length} members assigned to {staffName}. Update statuses, next steps, and add notes.
+            View {members.length} members assigned to {staffName}. Tracker fields are read-only (Caspio-backed). You can add internal notes.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto pr-4">
             <div className="space-y-4">
             {members.map((member, index) => {
-              const isEditing = editingMember === member.id;
-              const updates = memberUpdates[member.id] || {};
               const isAddingNote = addingNoteFor === member.id;
 
               return (
@@ -644,14 +572,6 @@ function StaffMemberManagementModal({
                           <Plus className="h-4 w-4 mr-1" />
                           Note
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setEditingMember(isEditing ? null : member.id)}
-                        >
-                          <Edit className="h-4 w-4 mr-1" />
-                          {isEditing ? 'Cancel' : 'Edit'}
-                        </Button>
                       </div>
                     </div>
                   </CardHeader>
@@ -662,21 +582,9 @@ function StaffMemberManagementModal({
                         <label className="text-sm font-medium text-gray-700 mb-2 block">
                           Kaiser Status
                         </label>
-                        <Select
-                          value={member.Kaiser_Status}
-                          onValueChange={(value) => handleStatusUpdate(member.id, value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {getKaiserStatusesInOrder().map((status) => (
-                              <SelectItem key={status.status} value={status.status}>
-                                {status.status}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Badge variant="outline" className="text-sm">
+                          {member.Kaiser_Status || 'Not set'}
+                        </Badge>
                       </div>
 
                       <div>
@@ -696,86 +604,30 @@ function StaffMemberManagementModal({
                         <span className="font-medium">Next Steps & Workflow</span>
                       </div>
 
-                      {isEditing ? (
-                        <div className="space-y-3 bg-gray-50 p-3 rounded-lg">
-                          <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1 block">
-                              Next Step
-                            </label>
-                            <Input
-                              value={updates.workflow_step || member.workflow_step || ''}
-                              onChange={(e) => handleNextStepUpdate(member.id, 'workflow_step', e.target.value)}
-                              placeholder="Enter next step..."
-                            />
-                          </div>
-
-                          <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1 block">
-                              Due Date
-                            </label>
-                            <Input
-                              type="date"
-                              value={updates.Next_Step_Due_Date || member.Next_Step_Due_Date || ''}
-                              onChange={(e) => handleNextStepUpdate(member.id, 'Next_Step_Due_Date', e.target.value)}
-                            />
-                          </div>
-
-                          <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1 block">
-                              Notes
-                            </label>
-                            <Textarea
-                              value={updates.workflow_notes || member.workflow_notes || ''}
-                              onChange={(e) => handleNextStepUpdate(member.id, 'workflow_notes', e.target.value)}
-                              placeholder="Add workflow notes..."
-                              rows={3}
-                            />
-                          </div>
-
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => saveNextStepUpdates(member.id)}
-                              className="bg-green-600 hover:bg-green-700"
-                            >
-                              <Save className="h-4 w-4 mr-1" />
-                              Save Changes
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setEditingMember(null)}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
+                      <div className="space-y-2 text-sm">
+                        <div>
+                          <span className="text-gray-600">Next Step:</span>
+                          <span className="ml-2 font-medium">
+                            {member.workflow_step || 'Not set'}
+                          </span>
                         </div>
-                      ) : (
-                        <div className="space-y-2 text-sm">
+                        {member.Next_Step_Due_Date && (
                           <div>
-                            <span className="text-gray-600">Next Step:</span>
+                            <span className="text-gray-600">Due Date:</span>
                             <span className="ml-2 font-medium">
-                              {member.workflow_step || 'Not set'}
+                              {formatDate(member.Next_Step_Due_Date)}
                             </span>
                           </div>
-                          {member.Next_Step_Due_Date && (
-                            <div>
-                              <span className="text-gray-600">Due Date:</span>
-                              <span className="ml-2 font-medium">
-                                {formatDate(member.Next_Step_Due_Date)}
-                              </span>
-                            </div>
-                          )}
-                          {member.workflow_notes && (
-                            <div>
-                              <span className="text-gray-600">Notes:</span>
-                              <span className="ml-2 text-gray-800">
-                                {member.workflow_notes}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                        )}
+                        {member.workflow_notes && (
+                          <div>
+                            <span className="text-gray-600">Notes:</span>
+                            <span className="ml-2 text-gray-800">
+                              {member.workflow_notes}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {isAddingNote && (
@@ -838,7 +690,6 @@ function KaiserTrackerPageContent() {
   const [sortField, setSortField] = useState<string>('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [selectedStaff, setSelectedStaff] = useState<string>('all');
-  const [editingMember, setEditingMember] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMembers, setModalMembers] = useState<KaiserMember[]>([]);
   const [modalTitle, setModalTitle] = useState('');
@@ -917,7 +768,7 @@ function KaiserTrackerPageContent() {
 
     members.forEach(member => {
       // Use normalized staff so numeric IDs (107, 224, 33, 48) count as Unassigned
-      const staffName = normalizeStaffForSummary(member.Staff_Assigned);
+      const staffName = normalizeStaffForSummary(String(member.Kaiser_User_Assignment || member.Staff_Assigned || '').trim());
       
       // Initialize staff if not exists
       if (!assignments[staffName]) {
@@ -1303,7 +1154,7 @@ function KaiserTrackerPageContent() {
         if (CALAIM_STATUS_MAP[normalized] !== filters.calaimStatus) return false;
       }
       if (filters.county !== 'all' && member.memberCounty !== filters.county) return false;
-      if (filters.staffAssigned !== 'all' && String(member.Staff_Assigned || '') !== filters.staffAssigned) return false;
+      if (filters.staffAssigned !== 'all' && String(member.Kaiser_User_Assignment || member.Staff_Assigned || '') !== filters.staffAssigned) return false;
       if (filters.overdueOnly && !isOverdue(member.Next_Step_Due_Date)) return false;
       return true;
     });
@@ -1333,8 +1184,8 @@ function KaiserTrackerPageContent() {
         bValue = b.CalAIM_Status;
               break;
       case 'staff':
-        aValue = a.Staff_Assigned;
-        bValue = b.Staff_Assigned;
+        aValue = String(a.Kaiser_User_Assignment || a.Staff_Assigned || '');
+        bValue = String(b.Kaiser_User_Assignment || b.Staff_Assigned || '');
               break;
             case 'due_date':
         aValue = new Date(a.Next_Step_Due_Date || '9999-12-31');
@@ -1391,7 +1242,7 @@ function KaiserTrackerPageContent() {
   const allKaiserStatuses = buildKaiserStatusList();
   const availableCounties = [...new Set(members.map(m => m.memberCounty).filter(Boolean))];
   const availableCalAIMStatuses = CALAIM_STATUS_OPTIONS;
-  const staffMembers = [...new Set(members.map(m => m.Staff_Assigned).filter(Boolean).map(String))];
+  const staffMembers = [...new Set(members.map(m => String(m.Kaiser_User_Assignment || m.Staff_Assigned || '')).filter(Boolean).map(String))];
 
   // Load data on component mount
   useEffect(() => {
@@ -1920,7 +1771,7 @@ function KaiserTrackerPageContent() {
                           ID: {member.client_ID2} | {member.memberCounty} County
                         </div>
                         <div className="text-sm text-gray-600 mt-1">
-                          <span className="font-medium">Staff:</span> {member.Staff_Assigned || 'Unassigned'}
+                          <span className="font-medium">Assigned:</span> {String(member.Kaiser_User_Assignment || member.Staff_Assigned || '').trim() || 'Unassigned'}
                         </div>
                         <div className="flex gap-2 mt-2">
                           <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
@@ -2097,7 +1948,7 @@ function MemberListModal({
 
             <Select value={filters.staffAssigned} onValueChange={(value) => onFilterChange('staffAssigned', value)}>
               <SelectTrigger className="w-auto h-7 text-xs">
-                <SelectValue placeholder="Staff Assigned" />
+                <SelectValue placeholder="Kaiser user assignment" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Staff</SelectItem>
@@ -2125,8 +1976,10 @@ function MemberListModal({
           ) : (
             <div className="space-y-3">
               {members.map((member, index) => {
-                const isStepOverdue = isOverdue(member.Next_Step_Due_Date);
-                const daysUntilDue = getDaysUntilDue(member.Next_Step_Due_Date);
+                const assigned = String(member.Kaiser_User_Assignment || member.Staff_Assigned || '').trim();
+                const dueDate = String(member.Kaiser_Next_Step_Date || member.Next_Step_Due_Date || '').trim();
+                const isStepOverdue = isOverdue(dueDate);
+                const daysUntilDue = getDaysUntilDue(dueDate);
                 const isUrgent = daysUntilDue <= 3 && daysUntilDue > 0;
                 
                 return (
@@ -2178,9 +2031,9 @@ function MemberListModal({
                               <div className="flex items-center gap-2">
                               <User className="h-4 w-4 text-blue-500" />
                               <div>
-                                <span className="text-gray-600">Staff:</span>
+                                <span className="text-gray-600">Assigned:</span>
                                 <span className="ml-1 font-medium">
-                                  {member.Staff_Assigned || 'Unassigned'}
+                                  {assigned || 'Unassigned'}
                                 </span>
                               </div>
                                 </div>
@@ -2196,55 +2049,23 @@ function MemberListModal({
                         </div>
                               </div>
 
-                          {/* Next Step Due Date */}
-                          {member.Next_Step_Due_Date && (
+                          {/* Next step date (Caspio: Kaiser_Next_Step_Date preferred) */}
+                          {dueDate && (
                             <div className="mt-2 flex items-center gap-2 text-sm">
                               <Clock className={`h-4 w-4 ${isStepOverdue ? 'text-red-500' : isUrgent ? 'text-yellow-500' : 'text-gray-500'}`} />
                               <div>
-                                <span className="text-gray-600">Due:</span>
+                                <span className="text-gray-600">Next step date:</span>
                                 <span className={`ml-1 font-medium ${
                                   isStepOverdue ? 'text-red-600' : 
                                   isUrgent ? 'text-yellow-600' : 
                                   'text-gray-900'
                                 }`}>
-                                  {formatDate(member.Next_Step_Due_Date)}
+                                  {formatDate(dueDate)}
                                   {daysUntilDue !== 0 && (
                                     <span className="ml-1 text-xs">
                                       ({daysUntilDue > 0 ? `${daysUntilDue} days left` : `${Math.abs(daysUntilDue)} days overdue`})
                                     </span>
                                   )}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Kaiser Next Step Date */}
-                          {member.Kaiser_Next_Step_Date && (
-                            <div className="mt-2 flex items-center gap-2 text-sm">
-                              <Calendar className={`h-4 w-4 ${
-                                isOverdue(member.Kaiser_Next_Step_Date) ? 'text-red-500' : 
-                                getDaysUntilDue(member.Kaiser_Next_Step_Date) <= 3 && getDaysUntilDue(member.Kaiser_Next_Step_Date) > 0 ? 'text-yellow-500' : 
-                                'text-purple-500'
-                              }`} />
-                              <div>
-                                <span className="text-gray-600">Kaiser Date:</span>
-                                <span className={`ml-1 font-medium ${
-                                  isOverdue(member.Kaiser_Next_Step_Date) ? 'text-red-600' : 
-                                  getDaysUntilDue(member.Kaiser_Next_Step_Date) <= 3 && getDaysUntilDue(member.Kaiser_Next_Step_Date) > 0 ? 'text-yellow-600' : 
-                                  'text-purple-600'
-                                }`}>
-                                  {formatDate(member.Kaiser_Next_Step_Date)}
-                                  {(() => {
-                                    const kaiserDays = getDaysUntilDue(member.Kaiser_Next_Step_Date);
-                                    if (kaiserDays !== 0) {
-                                      return (
-                                        <span className="ml-1 text-xs">
-                                          ({kaiserDays > 0 ? `${kaiserDays} days left` : `${Math.abs(kaiserDays)} days overdue`})
-                                        </span>
-                                      );
-                                    }
-                                    return null;
-                                  })()}
                                 </span>
                               </div>
                             </div>

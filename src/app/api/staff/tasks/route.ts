@@ -82,33 +82,67 @@ export async function GET(request: NextRequest) {
       const kaiserData = kaiserResponse ? await kaiserResponse.json() : { members: [] };
       const allMembers = (kaiserData as any).members || [];
 
-      // Filter members assigned to this staff member
+      // Filter members assigned to this staff member (Caspio: Kaiser_User_Assignment)
+      const staffNameLower = staffName.toLowerCase();
+      const staffFirstNameLower = String((userData as any)?.firstName || '').trim().toLowerCase();
+      const staffDisplayLower = String((userData as any)?.displayName || '').trim().toLowerCase();
       const assignedMembers = allMembers.filter((member: any) => {
-        const assignedStaff = member.Staff_Assignment || 
-                             member.Staff_Assigned || 
-                             member.kaiser_user_assignment || 
-                             member.SW_ID || 
-                             member.Assigned_Staff;
-        return assignedStaff === staffName;
+        const assignedStaffRaw =
+          member.Kaiser_User_Assignment ||
+          member.Staff_Assignment ||
+          member.Staff_Assigned ||
+          member.kaiser_user_assignment ||
+          member.SW_ID ||
+          member.Assigned_Staff ||
+          '';
+        const assigned = String(assignedStaffRaw || '').trim();
+        const assignedLower = assigned.toLowerCase();
+        if (!assignedLower) return false;
+
+        // If Caspio stores an email, match by email.
+        if (assignedLower.includes('@')) {
+          return Boolean(staffEmail) && assignedLower === staffEmail;
+        }
+
+        // Otherwise treat as a name (often just first name).
+        if (assignedLower === staffNameLower) return true;
+        if (staffFirstNameLower && assignedLower === staffFirstNameLower) return true;
+        if (staffDisplayLower && assignedLower === staffDisplayLower) return true;
+        return false;
       });
 
-      // Create tasks from assigned members
+      // Create tasks from assigned members (use Kaiser_Next_Step_Date as primary due date)
       const tasks = assignedMembers.map((member: any) => {
-        const isOverdue = member.Next_Step_Due_Date && new Date(member.Next_Step_Due_Date) < new Date();
-        const isUrgent = member.Next_Step_Due_Date && 
-          new Date(member.Next_Step_Due_Date) <= new Date(Date.now() + 2 * 24 * 60 * 60 * 1000); // 2 days
+        const dueRaw = member.Kaiser_Next_Step_Date || member.Next_Step_Due_Date || '';
+        const dueDateIso = dueRaw
+          ? (() => {
+              try {
+                const d = new Date(dueRaw);
+                const ms = d.getTime();
+                if (!ms || Number.isNaN(ms)) return '';
+                return new Date(ms).toISOString();
+              } catch {
+                return '';
+              }
+            })()
+          : '';
+
+        const isOverdue = dueDateIso ? new Date(dueDateIso) < new Date() : false;
+        const isUrgent = dueDateIso
+          ? new Date(dueDateIso) <= new Date(Date.now() + 2 * 24 * 60 * 60 * 1000) // 2 days
+          : false;
 
         return {
           id: `kaiser-${member.id}`,
-          title: `Kaiser Status Update: ${member.memberFirstName} ${member.memberLastName}`,
-          description: member.workflow_step || 'Update Kaiser status and next steps',
+          title: `Kaiser: ${member.memberFirstName} ${member.memberLastName}`,
+          description: `Status: ${member.Kaiser_Status || '—'}. Next: ${member.workflow_step || 'Review next step in Caspio.'}`,
           memberName: `${member.memberFirstName} ${member.memberLastName}`,
           memberClientId: member.client_ID2,
           healthPlan: 'Kaiser',
           taskType: 'kaiser_status',
           priority: isOverdue ? 'Urgent' : isUrgent ? 'Priority' : 'General',
           status: isOverdue ? 'overdue' : 'pending',
-          dueDate: member.Next_Step_Due_Date || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          dueDate: dueDateIso || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
           assignedBy: 'system',
           assignedByName: 'System',
           assignedTo: userId,
@@ -126,7 +160,15 @@ export async function GET(request: NextRequest) {
 
       const followUpTasks: any[] = [];
       const reviewTasks: any[] = [];
+      const nextStepTasks: any[] = [];
       const now = new Date();
+
+      const buildActionUrl = (applicationId: string, ownerUid?: string | null) => {
+        if (ownerUid) {
+          return `/admin/applications/${applicationId}?userId=${encodeURIComponent(ownerUid)}`;
+        }
+        return `/admin/applications/${applicationId}`;
+      };
 
       try {
         const staffSnap = await adminDb
@@ -248,13 +290,6 @@ export async function GET(request: NextRequest) {
       try {
         if (reviewPrefs.enabled && reviewPrefs.recipientEnabled && (reviewPrefs.allowCs || reviewPrefs.allowDocs)) {
           const maxItems = 60;
-
-          const buildActionUrl = (applicationId: string, ownerUid?: string | null) => {
-            if (ownerUid) {
-              return `/admin/applications/${applicationId}?userId=${encodeURIComponent(ownerUid)}`;
-            }
-            return `/admin/applications/${applicationId}`;
-          };
 
           const buildMemberClientId = (data: any) => {
             return (
@@ -412,11 +447,72 @@ export async function GET(request: NextRequest) {
         console.warn('Failed to load review tasks:', reviewError);
       }
 
+      // Next-step tasks (from staffTrackers), shown on staff Daily Task Tracker calendar.
+      try {
+        const trackerSnap = await adminDb
+          .collectionGroup('staffTrackers')
+          .where('assignedStaffId', '==', userId)
+          .limit(200)
+          .get()
+          .catch(() => null);
+
+        trackerSnap?.docs?.forEach((docSnap: any) => {
+          const data = docSnap.data() || {};
+          const applicationId = String(data.applicationId || docSnap.id || '').trim();
+          const ownerUid = String(data.userId || docSnap.ref?.parent?.parent?.parent?.parent?.id || '').trim() || null;
+          const memberName = String(data.memberName || '').trim();
+          const memberClientId = String(data.memberClientId || data.client_ID2 || '').trim();
+          const plan = String(data.healthPlan || '').trim();
+          const nextStep = String(data.nextStep || '').trim();
+
+          const dueDate = (() => {
+            try {
+              const d = data.nextStepDate?.toDate?.() || (data.nextStepDate ? new Date(data.nextStepDate) : null);
+              const ms = d?.getTime?.();
+              if (!ms || Number.isNaN(ms)) return '';
+              return new Date(ms).toISOString();
+            } catch {
+              return '';
+            }
+          })();
+          if (!dueDate) return;
+
+          const due = new Date(dueDate);
+          const isOverdue = due < now;
+          const isUrgent = due <= new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+
+          nextStepTasks.push({
+            id: `next-step-${applicationId}-${ownerUid || 'admin'}`,
+            title: memberName ? `Next step: ${memberName}` : 'Next step due',
+            description: nextStep || 'Follow the assigned next step.',
+            memberName: memberName || undefined,
+            memberClientId: memberClientId || undefined,
+            healthPlan: plan || undefined,
+            taskType: 'next_step',
+            priority: normalizePriority(isOverdue ? 'Urgent' : isUrgent ? 'High' : 'Medium'),
+            status: isOverdue ? 'overdue' : 'pending',
+            dueDate,
+            assignedBy: 'system',
+            assignedByName: 'System',
+            assignedTo: userId,
+            assignedToName: staffName,
+            createdAt: dueDate,
+            updatedAt: dueDate,
+            notes: '',
+            source: 'applications',
+            applicationId,
+            actionUrl: applicationId ? buildActionUrl(applicationId, ownerUid) : undefined,
+          });
+        });
+      } catch (nextStepError) {
+        console.warn('Failed to load next-step tasks:', nextStepError);
+      }
+
       return NextResponse.json({
         success: true,
-        tasks: [...followUpTasks, ...reviewTasks, ...tasks],
+        tasks: [...followUpTasks, ...nextStepTasks, ...reviewTasks, ...tasks],
         reviewPrefs,
-        message: `Found ${tasks.length + followUpTasks.length + reviewTasks.length} tasks for ${staffName}`
+        message: `Found ${tasks.length + followUpTasks.length + reviewTasks.length + nextStepTasks.length} tasks for ${staffName}`
       });
 
     } catch (fetchError) {

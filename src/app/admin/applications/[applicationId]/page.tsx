@@ -44,6 +44,8 @@ import {
   Eye,
   EyeOff,
   ChevronDown,
+  Target,
+  Wrench,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
@@ -74,7 +76,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { format } from 'date-fns';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import NoteTracker from '@/components/NoteTracker';
@@ -1210,6 +1211,7 @@ function ApplicationDetailPageContent() {
   const [isUpdatingProgression, setIsUpdatingProgression] = useState(false);
   const [isUpdatingTracking, setIsUpdatingTracking] = useState(false);
   const [isSendingEligibilityNote, setIsSendingEligibilityNote] = useState(false);
+  const [nextStepDateMissing, setNextStepDateMissing] = useState(false);
   const ensureAdminClaim = async () => {
     if (!user) return;
     try {
@@ -1233,6 +1235,143 @@ function ApplicationDetailPageContent() {
     if (isUserLoading || !firestore || !applicationId || !appUserId) return null;
     return doc(firestore, `users/${appUserId}/applications`, applicationId);
   }, [firestore, applicationId, appUserId, isUserLoading]);
+
+  const staffTrackerRef = useMemoFirebase(() => {
+    if (isUserLoading || !firestore || !applicationId || !appUserId) return null;
+    return doc(firestore, `users/${appUserId}/applications/${applicationId}/staffTrackers`, applicationId);
+  }, [firestore, applicationId, appUserId, isUserLoading]);
+
+  const { data: staffTracker } = useDoc<StaffTracker>(staffTrackerRef);
+
+  const assignedStaffSettingsRef = useMemoFirebase(() => {
+    const staffId = String((application as any)?.assignedStaffId || '').trim();
+    if (isUserLoading || !firestore || !staffId) return null;
+    return doc(firestore, 'users', staffId);
+  }, [firestore, isUserLoading, (application as any)?.assignedStaffId]);
+
+  const { data: assignedStaffSettings } = useDoc<any>(assignedStaffSettingsRef);
+  // NOTE: next step date is now mandatory whenever a next step is assigned.
+  // We still load staff settings in case you want to re-enable conditional behavior later.
+
+  const nextStepDateInputValue = useMemo(() => {
+    try {
+      const raw: any = (staffTracker as any)?.nextStepDate;
+      const d: Date | null = raw?.toDate?.() || (raw ? new Date(raw) : null);
+      const ms = d?.getTime?.();
+      if (!ms || Number.isNaN(ms)) return '';
+      const yyyy = String(d!.getFullYear());
+      const mm = String(d!.getMonth() + 1).padStart(2, '0');
+      const dd = String(d!.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    } catch {
+      return '';
+    }
+  }, [staffTracker]);
+
+  const NEXT_STEP_OPTIONS: Array<{ value: string; label: string }> = [
+    { value: 'none', label: '— None —' },
+    { value: 'contact-referrer', label: 'Contact referrer' },
+    { value: 'review-documents', label: 'Review documents' },
+    { value: 'schedule-isp', label: 'Schedule ISP' },
+    { value: 'other', label: 'Other' },
+  ];
+
+  const planLower = String((application as any)?.healthPlan || '').toLowerCase();
+  const isKaiserPlan = planLower.includes('kaiser');
+  const isHealthNetPlan = planLower.includes('health net');
+
+  const kaiserCurrentStatus = String((application as any)?.kaiserStatus || kaiserSteps[0] || '').trim();
+  const kaiserWorkflowOptions = useMemo(() => {
+    return getKaiserStatusesInOrder()
+      .filter((s) => Boolean((s as any)?.isActive))
+      .map((s) => String(s.status || '').trim())
+      .filter(Boolean);
+  }, []);
+  const kaiserNextStatus = useMemo(() => {
+    if (!isKaiserPlan) return '';
+    const idx = kaiserWorkflowOptions.findIndex((s) => s === kaiserCurrentStatus);
+    if (idx === -1) return '';
+    if (idx >= kaiserWorkflowOptions.length - 1) return '';
+    return String(kaiserWorkflowOptions[idx + 1] || '').trim();
+  }, [isKaiserPlan, kaiserCurrentStatus, kaiserWorkflowOptions]);
+
+  const healthNetCurrentStatus = String((application as any)?.healthNetStatus || healthNetSteps[0] || '').trim();
+  const healthNetNextStatus = useMemo(() => {
+    if (!isHealthNetPlan) return '';
+    const idx = healthNetSteps.findIndex((s) => s === healthNetCurrentStatus);
+    if (idx === -1) return '';
+    if (idx >= healthNetSteps.length - 1) return '';
+    return String(healthNetSteps[idx + 1] || '').trim();
+  }, [isHealthNetPlan, healthNetCurrentStatus]);
+
+  const effectiveNextStep = useMemo(() => {
+    if (isKaiserPlan) return String(kaiserNextStatus || '').trim();
+    if (isHealthNetPlan) return String(healthNetNextStatus || '').trim();
+    return String((staffTracker as any)?.nextStep || '').trim();
+  }, [isKaiserPlan, isHealthNetPlan, kaiserNextStatus, healthNetNextStatus, staffTracker]);
+
+  const nextStepSuggestedLabel = useMemo(() => {
+    if (isKaiserPlan) return kaiserNextStatus ? `Suggested: ${kaiserNextStatus}` : 'Suggested: —';
+    if (isHealthNetPlan) return healthNetNextStatus ? `Suggested: ${healthNetNextStatus}` : 'Suggested: —';
+    return '';
+  }, [isKaiserPlan, isHealthNetPlan, kaiserNextStatus, healthNetNextStatus]);
+
+  const nextStepSelectOptions = useMemo(() => {
+    if (isKaiserPlan) {
+      return [
+        { value: 'none', label: '— None —' },
+        ...kaiserWorkflowOptions.map((s) => ({ value: s, label: s })),
+      ];
+    }
+    if (isHealthNetPlan) {
+      return [
+        { value: 'none', label: '— None —' },
+        ...healthNetSteps.map((s) => ({ value: s, label: s })),
+      ];
+    }
+    return NEXT_STEP_OPTIONS;
+  }, [isKaiserPlan, isHealthNetPlan, kaiserWorkflowOptions]);
+
+  const nextStepSelectValue = useMemo(() => {
+    const stored = String((staffTracker as any)?.nextStep || '').trim();
+    if (stored) return stored;
+    if (isKaiserPlan) return String(kaiserNextStatus || '').trim() || 'none';
+    if (isHealthNetPlan) return String(healthNetNextStatus || '').trim() || 'none';
+    return 'none';
+  }, [staffTracker, isKaiserPlan, isHealthNetPlan, kaiserNextStatus, healthNetNextStatus]);
+
+  const updateStaffTracker = async (patch: Partial<StaffTracker>) => {
+    if (!staffTrackerRef || !applicationId || !appUserId || !application) return;
+    try {
+      const memberName = `${(application as any)?.memberFirstName || ''} ${(application as any)?.memberLastName || ''}`.trim();
+      const memberClientId = String((application as any)?.client_ID2 || '').trim();
+      const base: any = {
+        id: applicationId,
+        applicationId,
+        userId: appUserId,
+        healthPlan: String((application as any)?.healthPlan || '').trim(),
+        memberName,
+        memberClientId,
+        lastUpdated: serverTimestamp(),
+      };
+      await setDoc(staffTrackerRef, { ...base, ...(patch as any) }, { merge: true });
+    } catch (e) {
+      // non-fatal; page can still operate without tracker updates
+      console.warn('Failed to update staff tracker:', e);
+    }
+  };
+
+  useEffect(() => {
+    // If no next step is set yet, seed it with the suggested workflow next step.
+    if (!isKaiserPlan && !isHealthNetPlan) return;
+    const desired = String(effectiveNextStep || '').trim();
+    if (!desired) return;
+    const current = String((staffTracker as any)?.nextStep || '').trim();
+    if (current) return;
+    updateStaffTracker({ nextStep: desired } as any);
+    if (!nextStepDateInputValue) setNextStepDateMissing(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isKaiserPlan, isHealthNetPlan, effectiveNextStep, staffTrackerRef]);
 
   const getStaffOptions = () => {
     if (staffList.length > 0) {
@@ -2414,6 +2553,27 @@ function ApplicationDetailPageContent() {
       
       // Update local state
       setApplication(prev => prev ? { ...prev, ...updateData } : null);
+
+      if (statusType === 'kaiser') {
+        const oldSuggested = String(kaiserNextStatus || '').trim();
+        const currentNext = String((staffTracker as any)?.nextStep || '').trim();
+        const idx = kaiserWorkflowOptions.findIndex((s) => s === status);
+        const next = idx !== -1 && idx < kaiserWorkflowOptions.length - 1 ? String(kaiserWorkflowOptions[idx + 1] || '').trim() : '';
+        // Only auto-update nextStep if it was empty OR it matched the previous suggestion.
+        if (next && (!currentNext || currentNext === oldSuggested)) {
+          updateStaffTracker({ nextStep: next } as any);
+          if (!nextStepDateInputValue) setNextStepDateMissing(true);
+        }
+      } else if (statusType === 'healthNet') {
+        const oldSuggested = String(healthNetNextStatus || '').trim();
+        const currentNext = String((staffTracker as any)?.nextStep || '').trim();
+        const idx = healthNetSteps.findIndex((s) => s === status);
+        const next = idx !== -1 && idx < healthNetSteps.length - 1 ? String(healthNetSteps[idx + 1] || '').trim() : '';
+        if (next && (!currentNext || currentNext === oldSuggested)) {
+          updateStaffTracker({ nextStep: next } as any);
+          if (!nextStepDateInputValue) setNextStepDateMissing(true);
+        }
+      }
       
       toast({
         title: "Status Updated",
@@ -3048,7 +3208,7 @@ function ApplicationDetailPageContent() {
           <CardHeader>
             <CardTitle className="text-base">Quick actions</CardTitle>
             <CardDescription>
-              Open eligibility, interoffice notes, and authorization uploads without cluttering the page.
+              Keep this page focused. Open tools only when needed.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -3056,14 +3216,50 @@ function ApplicationDetailPageContent() {
               <DialogTrigger asChild>
                 <Button variant="outline" className="w-full justify-start gap-2">
                   <User className="h-4 w-4" />
-                  Assigned staff & progression
+                  Assigned staff
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
                 <DialogHeader>
-                  <DialogTitle>Assigned staff & progression</DialogTitle>
-                  <DialogDescription>Internal assignment and plan workflow status.</DialogDescription>
+                  <DialogTitle>Assigned staff</DialogTitle>
+                  <DialogDescription>Assign primary staff for this application.</DialogDescription>
                 </DialogHeader>
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      try {
+                        const memberName = `${application.memberFirstName || ''} ${application.memberLastName || ''}`.trim();
+                        const assignedStaff = String((application as any)?.assignedStaffName || '').trim();
+                        const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
+
+                        const rows = [
+                          ['applicationId', application.id],
+                          ['memberName', memberName],
+                          ['assignedStaffName', assignedStaff],
+                          ['assignedStaffId', assignedStaffId],
+                          ['exportedAt', new Date().toISOString()],
+                        ];
+
+                        const csv = rows.map(([k, v]) => `"${String(k).replace(/"/g, '""')}","${String(v).replace(/"/g, '""')}"`).join('\n');
+                        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `assignment-${application.id}.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(url);
+                      } catch {
+                        // ignore
+                      }
+                    }}
+                  >
+                    Download
+                  </Button>
+                </div>
                 <div className="space-y-5">
                   <div className="space-y-2">
                     <Label htmlFor="main-staff-assignment" className="text-sm font-medium flex items-center gap-2">
@@ -3083,79 +3279,127 @@ function ApplicationDetailPageContent() {
                               }
                             : null
                         );
+                        updateStaffTracker({ assignedStaffId: staffId, assignedStaffName: staffName } as any);
                       }}
                     />
-                  </div>
-
-                  <div className="space-y-2 border-t pt-4">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium">Application Progression</label>
-                      <span className="text-xs text-muted-foreground">{application.healthPlan} Workflow Status</span>
-                    </div>
-
-                    {application.healthPlan?.toLowerCase().includes('kaiser') ? (
-                      <Select
-                        value={(application as any)?.kaiserStatus || kaiserSteps[0]}
-                        onValueChange={(value) => updateProgressionStatus(value, 'kaiser')}
-                        disabled={isUpdatingProgression}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select Kaiser status" />
-                          {isUpdatingProgression && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-                        </SelectTrigger>
-                        <SelectContent>
-                          {getKaiserStatusesInOrder().map((status) => (
-                            <SelectItem key={status.id} value={status.status}>
-                              <div className="flex items-center justify-between w-full">
-                                <span>{status.status}</span>
-                                <div className="flex items-center gap-2 ml-2">
-                                  <span className="text-xs text-muted-foreground">#{status.sortOrder}</span>
-                                  <span
-                                    className={cn(
-                                      'text-xs px-2 py-0.5 rounded-full',
-                                      status.category === 'initial' && 'bg-blue-100 text-blue-700',
-                                      status.category === 'assessment' && 'bg-purple-100 text-purple-700',
-                                      status.category === 'authorization' && 'bg-orange-100 text-orange-700',
-                                      status.category === 'placement' && 'bg-green-100 text-green-700',
-                                      status.category === 'completion' && 'bg-gray-100 text-gray-700',
-                                      status.category === 'inactive' && 'bg-red-100 text-red-700'
-                                    )}
-                                  >
-                                    {status.category}
-                                  </span>
-                                </div>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : application.healthPlan?.toLowerCase().includes('health net') ? (
-                      <Select
-                        value={(application as any)?.healthNetStatus || healthNetSteps[0]}
-                        onValueChange={(value) => updateProgressionStatus(value, 'healthNet')}
-                        disabled={isUpdatingProgression}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select Health Net status" />
-                          {isUpdatingProgression && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-                        </SelectTrigger>
-                        <SelectContent>
-                          {healthNetSteps.map((step) => (
-                            <SelectItem key={step} value={step}>
-                              {step}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <div className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-md">
-                        Application progression tracking is available for Kaiser and Health Net members only.
-                      </div>
-                    )}
                   </div>
                 </div>
               </DialogContent>
             </Dialog>
+
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <Target className="h-4 w-4" />
+                  Application progression
+                  <span className="ml-auto flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">
+                      {String((application as any)?.assignedStaffName || '').trim() || 'Unassigned'}
+                    </Badge>
+                  </span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Application progression</DialogTitle>
+                  <DialogDescription>
+                    View Caspio workflow status and tracking fields. Updates should be made in the tracker pages (Caspio-backed), not here.
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Assigned staff:{' '}
+                      <span className="font-medium text-foreground">
+                        {String((application as any)?.assignedStaffName || '').trim() || 'Unassigned'}
+                      </span>
+                    </div>
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium">Workflow status</label>
+                      <span className="text-xs text-muted-foreground">{application.healthPlan} workflow</span>
+                    </div>
+
+                    <div className="rounded-md border bg-muted/30 p-3 space-y-3">
+                      {Boolean((application as any)?.caspioSent) ? (
+                        <>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <div className="text-xs text-muted-foreground">Current status</div>
+                              <div className="text-sm font-medium">
+                                {String(
+                                  (application as any)?.healthPlan?.toLowerCase?.().includes('kaiser')
+                                    ? ((application as any)?.kaiserStatus || '')
+                                    : (application as any)?.healthPlan?.toLowerCase?.().includes('health net')
+                                      ? ((application as any)?.healthNetStatus || '')
+                                      : ''
+                                ).trim() || '—'}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {(application as any)?.healthPlan?.toLowerCase?.().includes('kaiser') ? (
+                                <Button asChild variant="outline" size="sm">
+                                  <Link href="/admin/kaiser-tracker">Open Kaiser Tracker</Link>
+                                </Button>
+                              ) : (application as any)?.healthPlan?.toLowerCase?.().includes('health net') ? (
+                                <Button asChild variant="outline" size="sm">
+                                  <Link href="/admin/progress-tracker">Open Progress Tracker</Link>
+                                </Button>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            This page is read-only for workflow status and next-step tracking. Edits are handled in the tracker pages after the application is in Caspio.
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">
+                          Not yet sent to Caspio. Workflow status / next step tracking will appear after the application is pushed to Caspio.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 border-t pt-4">
+                    <div className="text-sm font-medium">Next step tracking (Caspio)</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground">Suggested next step</div>
+                        <div className="text-sm font-medium">
+                          {String((isKaiserPlan || isHealthNetPlan) ? (effectiveNextStep || '') : '').trim() || '—'}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground">Next step due date</div>
+                        <div className="text-sm font-medium">
+                          {(() => {
+                            const raw: any =
+                              (application as any)?.Next_Step_Due_Date ||
+                              (application as any)?.nextStepDueDate ||
+                              (application as any)?.Kaiser_Next_Step_Date ||
+                              (application as any)?.kaiserNextStepDate ||
+                              (application as any)?.nextStepDate ||
+                              (staffTracker as any)?.nextStepDate ||
+                              null;
+                            try {
+                              const d: Date | null = raw?.toDate?.() || (raw ? new Date(raw) : null);
+                              const ms = d?.getTime?.();
+                              if (!ms || Number.isNaN(ms)) return '—';
+                              return format(d as Date, 'MMM d, yyyy');
+                            } catch {
+                              return '—';
+                            }
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      To change workflow, next step, next step date, or assigned staff, use the tracker pages (Caspio-backed).
+                    </div>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" className="w-full justify-start gap-2">
@@ -3233,7 +3477,9 @@ function ApplicationDetailPageContent() {
                               const nextValue = event.target.value;
                               setApplication((prev) => (prev ? { ...prev, calaimNotEligibleOtherReason: nextValue } : null));
                             }}
-                            onBlur={(event) => updateNotEligibleFlags({ calaimNotEligibleOtherReason: event.target.value })}
+                            onBlur={(event) =>
+                              updateNotEligibleFlags({ calaimNotEligibleOtherReason: event.target.value })
+                            }
                             disabled={isUpdatingTracking}
                           />
                         )}
@@ -3385,9 +3631,7 @@ function ApplicationDetailPageContent() {
                       id="interoffice-followup"
                       type="date"
                       value={interofficeNote.followUpDate || ''}
-                      onChange={(event) =>
-                        setInterofficeNote((prev) => ({ ...prev, followUpDate: event.target.value }))
-                      }
+                      onChange={(event) => setInterofficeNote((prev) => ({ ...prev, followUpDate: event.target.value }))}
                     />
                   </div>
                   <Button onClick={handleSendInterofficeNote} className="w-full">
@@ -3455,9 +3699,7 @@ function ApplicationDetailPageContent() {
                     <Input
                       id="authorization-file"
                       type="file"
-                      onChange={(event) =>
-                        setAuthorizationUpload((prev) => ({ ...prev, file: event.target.files?.[0] || null }))
-                      }
+                      onChange={(event) => setAuthorizationUpload((prev) => ({ ...prev, file: event.target.files?.[0] || null }))}
                     />
                   </div>
                   {authorizationUploading && <Progress value={authorizationUploadProgress} className="h-1 w-full" />}
@@ -3485,10 +3727,7 @@ function ApplicationDetailPageContent() {
                         const daysUntilEnd = getDaysUntil(record.endDate);
                         const isExpiringSoon = typeof daysUntilEnd === 'number' && daysUntilEnd <= 30;
                         return (
-                          <div
-                            key={record.id || `${record.type}-${record.startDate}`}
-                            className="rounded-md border p-3 text-sm"
-                          >
+                          <div key={record.id || `${record.type}-${record.startDate}`} className="rounded-md border p-3 text-sm">
                             <div className="flex items-center justify-between gap-2">
                               <div className="font-medium">
                                 {record.type || 'Authorization'}
@@ -3592,50 +3831,78 @@ function ApplicationDetailPageContent() {
               </DialogContent>
             </Dialog>
 
-            {/* Uploaded files section removed to reduce clutter */}
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <Wrench className="h-4 w-4" />
+                  Admin actions
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[85vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Admin actions</DialogTitle>
+                  <DialogDescription>Operational tools for this application.</DialogDescription>
+                </DialogHeader>
+                <AdminActions application={application} />
+              </DialogContent>
+            </Dialog>
 
-            <Button asChild variant="outline" className="w-full justify-start gap-2">
-              <Link href={`/admin/my-notes?member=${encodeURIComponent(`${application.memberFirstName} ${application.memberLastName}`)}`}>
-                <MessageSquare className="h-4 w-4" />
-                Open member notes
-              </Link>
-            </Button>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <MessageSquare className="h-4 w-4" />
+                  Notes & communication
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[85vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Notes & communication</DialogTitle>
+                  <DialogDescription>Member notes and notification-system communication.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  {(application as any)?.client_ID2 ? (
+                    <NoteTracker
+                      memberId={(application as any)?.client_ID2}
+                      memberName={`${application.memberFirstName} ${application.memberLastName}`}
+                    />
+                  ) : (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <MessageSquare className="h-5 w-5" />
+                          Notes & Communication
+                        </CardTitle>
+                        <CardDescription>
+                          Notes load once a Caspio Client_ID2 is linked to this application.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-sm text-muted-foreground">
+                          This member is not yet linked to a Caspio record, so notes cannot be fetched.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/admin/my-notes?member=${encodeURIComponent(`${application.memberFirstName} ${application.memberLastName}`)}`}>
+                        Open notifications (member)
+                      </Link>
+                    </Button>
+                    {(application as any)?.client_ID2 && (
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/admin/member-notes?clientId2=${encodeURIComponent(String((application as any)?.client_ID2 || ''))}`}>
+                          Member notes lookup
+                        </Link>
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </CardContent>
         </Card>
-        <Collapsible>
-          <CollapsibleTrigger asChild>
-            <Button variant="ghost" className="w-full justify-between group">
-              More tools
-              <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="space-y-6 pt-3">
-            <AdminActions application={application} />
-            {(application as any)?.client_ID2 ? (
-              <NoteTracker
-                memberId={(application as any)?.client_ID2}
-                memberName={`${application.memberFirstName} ${application.memberLastName}`}
-              />
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MessageSquare className="h-5 w-5" />
-                    Notes & Communication
-                  </CardTitle>
-                  <CardDescription>
-                    Notes load once a Caspio Client_ID2 is linked to this application.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    This member is not yet linked to a Caspio record, so notes cannot be fetched.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </CollapsibleContent>
-        </Collapsible>
       </aside>
     </div>
   );

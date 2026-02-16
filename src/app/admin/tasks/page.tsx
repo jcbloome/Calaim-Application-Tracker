@@ -31,7 +31,7 @@ interface MyTask {
   memberClientId?: string;
   healthPlan?: string;
   reviewKind?: 'docs' | 'cs';
-  taskType: 'note_assignment' | 'follow_up' | 'review' | 'contact' | 'administrative' | 'kaiser_status';
+  taskType: 'note_assignment' | 'follow_up' | 'review' | 'contact' | 'administrative' | 'kaiser_status' | 'next_step';
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   status: 'pending' | 'in_progress' | 'completed' | 'overdue';
   dueDate: string;
@@ -45,6 +45,8 @@ interface MyTask {
   source: 'notes' | 'applications' | 'manual';
   kaiserStatus?: string;
   currentKaiserStatus?: string;
+  actionUrl?: string;
+  applicationId?: string;
 }
 
 interface MemberNote {
@@ -380,6 +382,7 @@ function MyTasksPageContent() {
       case 'contact': return <Bell className="h-4 w-4" />;
       case 'administrative': return <ListTodo className="h-4 w-4" />;
       case 'kaiser_status': return <Target className="h-4 w-4" />;
+      case 'next_step': return <CalendarDays className="h-4 w-4" />;
       default: return <Target className="h-4 w-4" />;
     }
   };
@@ -1369,6 +1372,13 @@ function MyTasksPageContent() {
                                   <Button variant="outline" size="sm" asChild>
                                     <Link href={`/admin/my-notes?replyTo=${task.id.replace('staff-followup-', '')}`}>
                                       <MessageSquare className="h-4 w-4" />
+                                    </Link>
+                                  </Button>
+                                )}
+                                {task.actionUrl && (
+                                  <Button variant="outline" size="sm" asChild>
+                                    <Link href={task.actionUrl}>
+                                      <FileText className="h-4 w-4" />
                                     </Link>
                                   </Button>
                                 )}
