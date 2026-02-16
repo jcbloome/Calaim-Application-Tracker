@@ -1,9 +1,36 @@
 // Caspio Integration Configuration
 // Centralized configuration for all Caspio operations
 
+function normalizeCaspioRestBaseUrl(raw: string): string {
+  const input = String(raw || '').trim();
+  if (!input) return 'https://c7ebl500.caspio.com/rest/v2';
+
+  // Handle corrupted values by extracting domain.
+  const domainMatch = input.match(/https?:\/\/([^\/\s]+)/i);
+  const domain = domainMatch ? `https://${domainMatch[1]}` : input;
+
+  // Remove duplicate protocol prefixes and whitespace.
+  let base = domain.replace(/ffhttps:\/\//gi, 'https://').trim();
+
+  // Ensure protocol.
+  if (!/^https?:\/\//i.test(base)) {
+    base = `https://${base}`;
+  }
+
+  // Remove any embedded /rest/v2 then re-append once.
+  base = base.replace(/\/rest\/v2\/?/gi, '');
+  base = base.replace(/\/+$/g, '');
+
+  return `${base}/rest/v2`;
+}
+
 export const CASPIO_CONFIG = {
   // API Configuration
-  BASE_URL: process.env.NEXT_PUBLIC_CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2',
+  BASE_URL: normalizeCaspioRestBaseUrl(
+    process.env.NEXT_PUBLIC_CASPIO_BASE_URL ||
+      process.env.CASPIO_BASE_URL ||
+      'https://c7ebl500.caspio.com/rest/v2'
+  ),
   
   // Table Names
   TABLES: {

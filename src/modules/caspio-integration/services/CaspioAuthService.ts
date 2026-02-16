@@ -63,7 +63,13 @@ export class CaspioAuthService {
       throw new Error('Caspio credentials not configured');
     }
 
-    const tokenUrl = `${CASPIO_CONFIG.BASE_URL}${CASPIO_CONFIG.AUTH.TOKEN_ENDPOINT}`;
+    // Caspio OAuth token endpoint does NOT live under /rest/v2.
+    // Some parts of the codebase store BASE_URL as ".../rest/v2" for table calls,
+    // so we must strip it here to avoid auth failures.
+    const authBaseUrl = String(CASPIO_CONFIG.BASE_URL || '')
+      .replace(/\/rest\/v2\/?$/i, '')
+      .replace(/\/rest\/v2\/?/i, '');
+    const tokenUrl = `${authBaseUrl}${CASPIO_CONFIG.AUTH.TOKEN_ENDPOINT}`;
     const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
 
     const response = await fetch(tokenUrl, {

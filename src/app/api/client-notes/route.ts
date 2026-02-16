@@ -753,26 +753,42 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { noteId, clientId2, followUpStatus, actorName, actorEmail } = body || {};
+    const { noteId, clientId2, followUpStatus, followUpDate, followUpAssignment, actorName, actorEmail } = body || {};
 
-    if (!noteId || !clientId2 || !followUpStatus) {
+    if (!noteId || !clientId2) {
       return NextResponse.json(
-        { success: false, error: 'Note ID, client ID, and status are required' },
+        { success: false, error: 'Note ID and client ID are required' },
+        { status: 400 }
+      );
+    }
+
+    const hasAnyUpdate =
+      followUpStatus !== undefined ||
+      followUpDate !== undefined ||
+      followUpAssignment !== undefined;
+
+    if (!hasAnyUpdate) {
+      return NextResponse.json(
+        { success: false, error: 'No updates provided' },
         { status: 400 }
       );
     }
 
     const { accessToken, dataBaseUrl } = await getCaspioAccessToken();
     const updateUrl = `${dataBaseUrl}/tables/connect_tbl_clientnotes/records?q.where=Note_ID='${noteId}'`;
+
+    const updatePayload: Record<string, any> = {};
+    if (followUpStatus !== undefined) updatePayload.Follow_Up_Status = followUpStatus;
+    if (followUpDate !== undefined) updatePayload.Follow_Up_Date = followUpDate || null;
+    if (followUpAssignment !== undefined) updatePayload.Follow_Up_Assignment = followUpAssignment || null;
+
     const updateResponse = await fetch(updateUrl, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        Follow_Up_Status: followUpStatus
-      })
+      body: JSON.stringify(updatePayload)
     });
 
     if (!updateResponse.ok) {
@@ -782,12 +798,21 @@ export async function PUT(request: NextRequest) {
 
     const firestore = admin.firestore();
     await firestore.doc(`client_notes/${noteId}`).set({
-      followUpStatus,
+      ...(followUpStatus !== undefined ? { followUpStatus } : {}),
+      ...(followUpDate !== undefined ? { followUpDate } : {}),
+      ...(followUpAssignment !== undefined ? { followUpAssignment } : {}),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 
     await logSystemNoteAction({
-      action: 'Client note status updated',
+      action:
+        followUpStatus !== undefined && (followUpDate !== undefined || followUpAssignment !== undefined)
+          ? 'Client note updated'
+          : followUpDate !== undefined
+            ? 'Client note follow-up date updated'
+            : followUpAssignment !== undefined
+              ? 'Client note follow-up assignment updated'
+              : 'Client note status updated',
       noteId,
       clientId2,
       status: followUpStatus,
@@ -797,10 +822,10 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Note status updated'
+      message: 'Note updated'
     });
   } catch (error: any) {
-    console.error('❌ Error updating client note status:', error);
+    console.error('❌ Error updating client note:', error);
     return NextResponse.json(
       { success: false, error: error.message || 'Failed to update note status' },
       { status: 500 }

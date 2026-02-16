@@ -22,6 +22,17 @@ This file summarizes notable product/engineering changes to the Connect CalAIM T
   - `users/{uid}.isHealthNetStaff`
 - Updated Assigned Staff dropdown to filter by plan flags and show staff display names (with safe fallback behavior).
 
+### Daily Task Tracker (follow-ups + Caspio notes)
+- Added a **follow-up calendar** (month + day agenda) and a details modal with actions (reschedule / close / reopen / delete for Caspio client notes).
+- Added **on-demand Caspio sync** controls:
+  - “Sync from Caspio” (month-scoped)
+  - “Initial import (all open)” (pull all open follow-ups with dates)
+- Added a new API endpoint to support on-demand follow-up syncing: `/api/staff/followups/sync`.
+- Member Notes modal:
+  - Added “Show closed” toggle
+  - Added “Sync all notes” (on-demand)
+  - Simplified “Add New Note” to **General** vs **Immediate** (notification trigger)
+
 ### Notes / Known issues
 - GitHub Actions deploy workflow (“Deploy CalAIM Application”) has been failing on recent pushes; the live site build timestamp won’t update until deploy succeeds.
 

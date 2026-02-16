@@ -6,6 +6,10 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
+    const only = String(searchParams.get('only') || '').trim().toLowerCase();
+    const start = searchParams.get('start');
+    const end = searchParams.get('end');
+    const onlyFollowUp = only === 'follow_up';
 
     if (!userId) {
       return NextResponse.json(
@@ -23,142 +27,168 @@ export async function GET(request: NextRequest) {
     ).trim() || 'Staff';
     const staffEmail = String((userData as any)?.email || '').trim().toLowerCase();
 
-    try {
-      const loadReviewNotificationRecipient = async () => {
-        try {
-          const settingsSnap = await adminDb
-            .collection('system_settings')
-            .doc('review_notifications')
-            .get();
-          const settings = settingsSnap.exists ? settingsSnap.data() : null;
-          // Match the web poller defaults: enabled unless explicitly disabled.
-          const enabled = (settings as any)?.enabled === undefined ? true : Boolean((settings as any)?.enabled);
-          const pollIntervalSeconds = Number((settings as any)?.pollIntervalSeconds || 180);
-          const recipients = ((settings as any)?.recipients || {}) as Record<string, any>;
-          const byUid = recipients?.[userId] || null;
-          const byEmailKey = staffEmail ? recipients?.[staffEmail] || null : null;
-          const byEmailField =
-            !byUid && !byEmailKey && staffEmail
-              ? (Object.values(recipients).find((r: any) => String(r?.email || '').trim().toLowerCase() === staffEmail) || null)
-              : null;
-          const recipient = byUid || byEmailKey || byEmailField || null;
-          const recipientEnabled = Boolean(recipient?.enabled);
-          const allowCs = Boolean(recipient?.csSummary);
-          const allowDocs = Boolean(recipient?.documents);
-          return {
-            enabled,
-            pollIntervalSeconds,
-            recipientEnabled,
-            allowCs,
-            allowDocs,
-          };
-        } catch {
-          return {
-            enabled: true,
-            pollIntervalSeconds: 180,
-            recipientEnabled: false,
-            allowCs: false,
-            allowDocs: false,
-          };
-        }
-      };
-
-      // Fetch Kaiser members assigned to this staff member
-      const reviewPrefs = await loadReviewNotificationRecipient();
-      const shouldIncludeKaiserTasks = true; // (separate from upload prefs)
-      const kaiserResponse = shouldIncludeKaiserTasks
-        ? await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/kaiser-members`)
-        : null;
-      
-      if (kaiserResponse && !kaiserResponse.ok) {
-        console.warn('Failed to fetch Kaiser members, returning empty tasks');
-        return NextResponse.json({
-          success: true,
-          tasks: [],
-          message: 'No Kaiser members data available'
-        });
+    const parseMs = (value: any) => {
+      if (!value) return null;
+      try {
+        const d = new Date(String(value));
+        const ms = d.getTime();
+        return Number.isNaN(ms) ? null : ms;
+      } catch {
+        return null;
       }
+    };
+    const startMs = parseMs(start);
+    const endMs = parseMs(end);
+    const isWithinRange = (iso: string) => {
+      if (!startMs && !endMs) return true;
+      const ms = parseMs(iso);
+      if (!ms) return false;
+      if (startMs && ms < startMs) return false;
+      if (endMs && ms > endMs) return false;
+      return true;
+    };
 
-      const kaiserData = kaiserResponse ? await kaiserResponse.json() : { members: [] };
-      const allMembers = (kaiserData as any).members || [];
+    const loadReviewNotificationRecipient = async () => {
+      try {
+        const settingsSnap = await adminDb
+          .collection('system_settings')
+          .doc('review_notifications')
+          .get();
+        const settings = settingsSnap.exists ? settingsSnap.data() : null;
+        // Match the web poller defaults: enabled unless explicitly disabled.
+        const enabled = (settings as any)?.enabled === undefined ? true : Boolean((settings as any)?.enabled);
+        const pollIntervalSeconds = Number((settings as any)?.pollIntervalSeconds || 180);
+        const recipients = ((settings as any)?.recipients || {}) as Record<string, any>;
+        const byUid = recipients?.[userId] || null;
+        const byEmailKey = staffEmail ? recipients?.[staffEmail] || null : null;
+        const byEmailField =
+          !byUid && !byEmailKey && staffEmail
+            ? (Object.values(recipients).find((r: any) => String(r?.email || '').trim().toLowerCase() === staffEmail) || null)
+            : null;
+        const recipient = byUid || byEmailKey || byEmailField || null;
+        const recipientEnabled = Boolean(recipient?.enabled);
+        const allowCs = Boolean(recipient?.csSummary);
+        const allowDocs = Boolean(recipient?.documents);
+        return {
+          enabled,
+          pollIntervalSeconds,
+          recipientEnabled,
+          allowCs,
+          allowDocs,
+        };
+      } catch {
+        return {
+          enabled: true,
+          pollIntervalSeconds: 180,
+          recipientEnabled: false,
+          allowCs: false,
+          allowDocs: false,
+        };
+      }
+    };
 
-      // Filter members assigned to this staff member (Caspio: Kaiser_User_Assignment)
-      const staffNameLower = staffName.toLowerCase();
-      const staffFirstNameLower = String((userData as any)?.firstName || '').trim().toLowerCase();
-      const staffDisplayLower = String((userData as any)?.displayName || '').trim().toLowerCase();
-      const assignedMembers = allMembers.filter((member: any) => {
-        const assignedStaffRaw =
-          member.Kaiser_User_Assignment ||
-          member.Staff_Assignment ||
-          member.Staff_Assigned ||
-          member.kaiser_user_assignment ||
-          member.SW_ID ||
-          member.Assigned_Staff ||
-          '';
-        const assigned = String(assignedStaffRaw || '').trim();
-        const assignedLower = assigned.toLowerCase();
-        if (!assignedLower) return false;
+    const reviewPrefs = onlyFollowUp
+      ? { enabled: false, pollIntervalSeconds: 180, recipientEnabled: false, allowCs: false, allowDocs: false }
+      : await loadReviewNotificationRecipient();
 
-        // If Caspio stores an email, match by email.
-        if (assignedLower.includes('@')) {
-          return Boolean(staffEmail) && assignedLower === staffEmail;
+    // Kaiser tasks can be expensive; skip entirely for follow-up-only calendar queries.
+    let tasks: any[] = [];
+    if (!onlyFollowUp) {
+      try {
+        const shouldIncludeKaiserTasks = true; // (separate from upload prefs)
+        const kaiserResponse = shouldIncludeKaiserTasks
+          ? await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/kaiser-members`)
+          : null;
+
+        if (kaiserResponse && !kaiserResponse.ok) {
+          console.warn('Failed to fetch Kaiser members, continuing without Kaiser tasks');
         }
 
-        // Otherwise treat as a name (often just first name).
-        if (assignedLower === staffNameLower) return true;
-        if (staffFirstNameLower && assignedLower === staffFirstNameLower) return true;
-        if (staffDisplayLower && assignedLower === staffDisplayLower) return true;
-        return false;
-      });
+        const kaiserData = kaiserResponse && kaiserResponse.ok ? await kaiserResponse.json() : { members: [] };
+        const allMembers = (kaiserData as any).members || [];
 
-      // Create tasks from assigned members (use Kaiser_Next_Step_Date as primary due date)
-      const tasks = assignedMembers.map((member: any) => {
-        const dueRaw = member.Kaiser_Next_Step_Date || member.Next_Step_Due_Date || '';
-        const dueDateIso = dueRaw
-          ? (() => {
-              try {
-                const d = new Date(dueRaw);
-                const ms = d.getTime();
-                if (!ms || Number.isNaN(ms)) return '';
-                return new Date(ms).toISOString();
-              } catch {
-                return '';
-              }
-            })()
-          : '';
+        // Filter members assigned to this staff member (Caspio: Kaiser_User_Assignment)
+        const staffNameLower = staffName.toLowerCase();
+        const staffFirstNameLower = String((userData as any)?.firstName || '').trim().toLowerCase();
+        const staffDisplayLower = String((userData as any)?.displayName || '').trim().toLowerCase();
+        const assignedMembers = allMembers.filter((member: any) => {
+          const assignedStaffRaw =
+            member.Kaiser_User_Assignment ||
+            member.Staff_Assignment ||
+            member.Staff_Assigned ||
+            member.kaiser_user_assignment ||
+            member.SW_ID ||
+            member.Assigned_Staff ||
+            '';
+          const assigned = String(assignedStaffRaw || '').trim();
+          const assignedLower = assigned.toLowerCase();
+          if (!assignedLower) return false;
 
-        const isOverdue = dueDateIso ? new Date(dueDateIso) < new Date() : false;
-        const isUrgent = dueDateIso
-          ? new Date(dueDateIso) <= new Date(Date.now() + 2 * 24 * 60 * 60 * 1000) // 2 days
-          : false;
+          // If Caspio stores an email, match by email.
+          if (assignedLower.includes('@')) {
+            return Boolean(staffEmail) && assignedLower === staffEmail;
+          }
 
-        return {
-          id: `kaiser-${member.id}`,
-          title: `Kaiser: ${member.memberFirstName} ${member.memberLastName}`,
-          description: `Status: ${member.Kaiser_Status || '—'}. Next: ${member.workflow_step || 'Review next step in Caspio.'}`,
-          memberName: `${member.memberFirstName} ${member.memberLastName}`,
-          memberClientId: member.client_ID2,
-          healthPlan: 'Kaiser',
-          taskType: 'kaiser_status',
-          priority: isOverdue ? 'Urgent' : isUrgent ? 'Priority' : 'General',
-          status: isOverdue ? 'overdue' : 'pending',
-          dueDate: dueDateIso || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          assignedBy: 'system',
-          assignedByName: 'System',
-          assignedTo: userId,
-          assignedToName: staffName,
-          createdAt: member.created_at || new Date().toISOString(),
-          updatedAt: member.last_updated || new Date().toISOString(),
-          notes: member.workflow_notes,
-          source: 'applications',
-          kaiserStatus: member.Kaiser_Status,
-          currentKaiserStatus: member.Kaiser_Status
-        };
-      });
+          // Otherwise treat as a name (often just first name).
+          if (assignedLower === staffNameLower) return true;
+          if (staffFirstNameLower && assignedLower === staffFirstNameLower) return true;
+          if (staffDisplayLower && assignedLower === staffDisplayLower) return true;
+          return false;
+        });
+
+        // Create tasks from assigned members (use Kaiser_Next_Step_Date as primary due date)
+        tasks = assignedMembers.map((member: any) => {
+          const dueRaw = member.Kaiser_Next_Step_Date || member.Next_Step_Due_Date || '';
+          const dueDateIso = dueRaw
+            ? (() => {
+                try {
+                  const d = new Date(dueRaw);
+                  const ms = d.getTime();
+                  if (!ms || Number.isNaN(ms)) return '';
+                  return new Date(ms).toISOString();
+                } catch {
+                  return '';
+                }
+              })()
+            : '';
+
+          const isOverdue = dueDateIso ? new Date(dueDateIso) < new Date() : false;
+          const isUrgent = dueDateIso
+            ? new Date(dueDateIso) <= new Date(Date.now() + 2 * 24 * 60 * 60 * 1000) // 2 days
+            : false;
+
+          return {
+            id: `kaiser-${member.id}`,
+            title: `Kaiser: ${member.memberFirstName} ${member.memberLastName}`,
+            description: `Status: ${member.Kaiser_Status || '—'}. Next: ${member.workflow_step || 'Review next step in Caspio.'}`,
+            memberName: `${member.memberFirstName} ${member.memberLastName}`,
+            memberClientId: member.client_ID2,
+            healthPlan: 'Kaiser',
+            taskType: 'kaiser_status',
+            priority: isOverdue ? 'Urgent' : isUrgent ? 'Priority' : 'General',
+            status: isOverdue ? 'overdue' : 'pending',
+            dueDate: dueDateIso || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            assignedBy: 'system',
+            assignedByName: 'System',
+            assignedTo: userId,
+            assignedToName: staffName,
+            createdAt: member.created_at || new Date().toISOString(),
+            updatedAt: member.last_updated || new Date().toISOString(),
+            notes: member.workflow_notes,
+            source: 'applications',
+            kaiserStatus: member.Kaiser_Status,
+            currentKaiserStatus: member.Kaiser_Status
+          };
+        });
+      } catch (kaiserError) {
+        console.warn('Failed to load Kaiser tasks:', kaiserError);
+        tasks = [];
+      }
+    }
 
       const normalizePriority = (value: any) => normalizePriorityLabel(value);
 
-      const followUpTasks: any[] = [];
+      let followUpTasks: any[] = [];
       const reviewTasks: any[] = [];
       const nextStepTasks: any[] = [];
       const now = new Date();
@@ -168,6 +198,13 @@ export async function GET(request: NextRequest) {
           return `/admin/applications/${applicationId}?userId=${encodeURIComponent(ownerUid)}`;
         }
         return `/admin/applications/${applicationId}`;
+      };
+      const buildClientNotesUrl = (clientId2?: string, noteId?: string) => {
+        const params = new URLSearchParams();
+        if (clientId2) params.set('clientId2', String(clientId2));
+        if (noteId) params.set('noteId', String(noteId));
+        const qs = params.toString();
+        return qs ? `/admin/client-notes?${qs}` : '/admin/client-notes';
       };
 
       try {
@@ -212,37 +249,65 @@ export async function GET(request: NextRequest) {
       }
 
       try {
-        const clientSnap = await adminDb
-          .collection('client_notes')
-          .where('followUpAssignment', '==', userId)
-          .limit(200)
-          .get();
-        clientSnap.docs.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (String(data.followUpStatus || '').toLowerCase() === 'closed') return;
-          const followUpDate = data.followUpDate || data.timeStamp || data.createdAt;
-          if (!followUpDate) return;
-          const dueDate = followUpDate?.toDate?.()?.toISOString?.() || followUpDate;
-          const isOverdue = dueDate ? new Date(dueDate) < now : false;
-          followUpTasks.push({
-            id: `client-followup-${docSnap.id}`,
-            title: `Client follow-up: ${data.clientId2 || 'Client'}`,
-            description: data.comments || '',
-            memberName: data.memberName || `Client ${data.clientId2 || ''}`.trim(),
-            memberClientId: data.clientId2,
-            healthPlan: data.healthPlan,
-            taskType: 'follow_up',
-            priority: normalizePriority(data.priority),
-            status: isOverdue ? 'overdue' : 'pending',
-            dueDate: dueDate,
-            assignedBy: data.createdBy || 'system',
-            assignedByName: data.createdByName || 'Staff',
-            assignedTo: userId,
-            assignedToName: staffName,
-            createdAt: data.timeStamp || data.createdAt || new Date().toISOString(),
-            updatedAt: data.syncedAt?.toDate?.()?.toISOString?.() || data.timeStamp || new Date().toISOString(),
-            notes: data.comments || '',
-            source: 'notes'
+        const assignmentCandidates = Array.from(new Set([
+          userId,
+          staffEmail,
+          String((userData as any)?.firstName || '').trim(),
+          staffName,
+        ].filter(Boolean).map((v) => String(v))));
+
+        const snaps = await Promise.all(
+          assignmentCandidates.map((value) =>
+            adminDb
+              .collection('client_notes')
+              .where('followUpAssignment', '==', value)
+              .limit(200)
+              .get()
+              .catch(() => null)
+          )
+        );
+
+        const seen = new Set<string>();
+        snaps.forEach((snap) => {
+          if (!snap) return;
+          snap.docs.forEach((docSnap) => {
+            if (seen.has(docSnap.id)) return;
+            seen.add(docSnap.id);
+            const data = docSnap.data();
+            if (Boolean((data as any)?.deleted)) return;
+            if (String(data.followUpStatus || '').toLowerCase() === 'closed') return;
+            const followUpDate = data.followUpDate || data.timeStamp || data.createdAt;
+            if (!followUpDate) return;
+            const dueDate = followUpDate?.toDate?.()?.toISOString?.() || followUpDate;
+            if (!dueDate || typeof dueDate !== 'string') return;
+            const isOverdue = dueDate ? new Date(dueDate) < now : false;
+            const noteId = String(data.noteId || docSnap.id).trim() || docSnap.id;
+            const clientId2 = String(data.clientId2 || '').trim();
+            followUpTasks.push({
+              id: `client-followup-${noteId}`,
+              noteId,
+              clientId2,
+              title: `Client follow-up: ${clientId2 || 'Client'}`,
+              description: data.comments || '',
+              memberName: data.memberName || `Client ${clientId2 || ''}`.trim(),
+              memberClientId: clientId2,
+              healthPlan: data.healthPlan,
+              taskType: 'follow_up',
+              priority: normalizePriority(data.priority),
+              status: isOverdue ? 'overdue' : 'pending',
+              dueDate: dueDate,
+              assignedBy: data.createdBy || 'system',
+              assignedByName: data.createdByName || data.userFullName || 'Staff',
+              assignedTo: userId,
+              assignedToName: staffName,
+              createdAt: data.timeStamp || data.createdAt || new Date().toISOString(),
+              updatedAt: data.syncedAt?.toDate?.()?.toISOString?.() || data.timeStamp || new Date().toISOString(),
+              notes: data.comments || '',
+              source: 'notes',
+              actionUrl: buildClientNotesUrl(clientId2, noteId),
+              followUpStatus: data.followUpStatus,
+              followUpAssignment: data.followUpAssignment,
+            });
           });
         });
       } catch (clientError) {
@@ -284,6 +349,20 @@ export async function GET(request: NextRequest) {
         });
       } catch (memberError) {
         console.warn('Failed to load member follow-up notes:', memberError);
+      }
+
+      // Optional date range filtering for calendar requests.
+      if (startMs || endMs) {
+        followUpTasks = followUpTasks.filter((t) => isWithinRange(String(t?.dueDate || '')));
+      }
+
+      if (onlyFollowUp) {
+        return NextResponse.json({
+          success: true,
+          tasks: [...followUpTasks],
+          reviewPrefs,
+          message: `Found ${followUpTasks.length} follow-up tasks for ${staffName}`
+        });
       }
 
       // Review-needed tasks (CS Summary + Documents), controlled by Super Admin toggles.
@@ -514,15 +593,6 @@ export async function GET(request: NextRequest) {
         reviewPrefs,
         message: `Found ${tasks.length + followUpTasks.length + reviewTasks.length + nextStepTasks.length} tasks for ${staffName}`
       });
-
-    } catch (fetchError) {
-      console.error('Error fetching Kaiser data:', fetchError);
-      return NextResponse.json({
-        success: true,
-        tasks: [],
-        message: 'Unable to load Kaiser member tasks at this time'
-      });
-    }
     
   } catch (error: any) {
     console.error('Error getting staff tasks:', error);

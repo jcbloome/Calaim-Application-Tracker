@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useMemo } from 'react';
+import { Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useSearchParams } from 'next/navigation';
 import { useFirestore } from '@/firebase';
@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Calendar as DateCalendar } from '@/components/ui/calendar';
 import { addDoc, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { getKaiserStatusByName, getNextKaiserStatus } from '@/lib/kaiser-status-progression';
 
@@ -32,7 +33,7 @@ interface MyTask {
   healthPlan?: string;
   reviewKind?: 'docs' | 'cs';
   taskType: 'note_assignment' | 'follow_up' | 'review' | 'contact' | 'administrative' | 'kaiser_status' | 'next_step';
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  priority: 'General' | 'Priority' | 'Low' | 'Medium' | 'High' | 'Urgent';
   status: 'pending' | 'in_progress' | 'completed' | 'overdue';
   dueDate: string;
   assignedBy: string;
@@ -47,6 +48,10 @@ interface MyTask {
   currentKaiserStatus?: string;
   actionUrl?: string;
   applicationId?: string;
+  noteId?: string;
+  clientId2?: string;
+  followUpStatus?: string;
+  followUpAssignment?: string;
 }
 
 interface MemberNote {
@@ -78,6 +83,7 @@ interface MemberCardData {
 }
 
 function MyTasksPageContent() {
+  const tabsAnchorRef = useRef<HTMLDivElement | null>(null);
   const { user, isAdmin } = useAdmin();
   const searchParams = useSearchParams();
   const firestore = useFirestore();
@@ -109,20 +115,30 @@ function MyTasksPageContent() {
   const [selectedMember, setSelectedMember] = useState<MemberCardData | null>(null);
   const [isMemberCardOpen, setIsMemberCardOpen] = useState(false);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
+  const [isSyncingMemberNotes, setIsSyncingMemberNotes] = useState(false);
+  const [showClosedMemberNotes, setShowClosedMemberNotes] = useState(false);
   const [newNote, setNewNote] = useState({
     noteText: '',
-    noteType: 'General' as MemberNote['noteType'],
-    priority: 'Medium' as MemberNote['priority'],
+    urgency: 'General' as 'General' | 'Immediate',
     assignedTo: '',
     assignedToName: '',
     followUpDate: ''
   });
 
-  useEffect(() => {
-    if (user?.uid) {
-      fetchMyTasks();
-    }
-  }, [user?.uid]);
+  // Follow-up calendar state (month + day agenda)
+  const [followUpMonth, setFollowUpMonth] = useState<Date>(() => new Date());
+  const [followUpDay, setFollowUpDay] = useState<Date | undefined>(() => new Date());
+  const [followUpCalendarTasks, setFollowUpCalendarTasks] = useState<MyTask[]>([]);
+  const [isLoadingFollowUpCalendar, setIsLoadingFollowUpCalendar] = useState(false);
+  const [selectedFollowUpTask, setSelectedFollowUpTask] = useState<MyTask | null>(null);
+  const [isFollowUpTaskModalOpen, setIsFollowUpTaskModalOpen] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [isUpdatingFollowUpTask, setIsUpdatingFollowUpTask] = useState(false);
+  const [isSyncingFollowUps, setIsSyncingFollowUps] = useState(false);
+  const [isImportingAllFollowUps, setIsImportingAllFollowUps] = useState(false);
+
+  // NOTE: Intentionally do NOT auto-fetch tasks on page load.
+  // Staff should explicitly click Refresh / Sync buttons to pull data.
 
   useEffect(() => {
     const range = searchParams.get('range');
@@ -612,31 +628,89 @@ function MyTasksPageContent() {
     }
   };
 
-  const handleMemberClick = async (clientId2: string, memberName: string, healthPlan: string) => {
+  const fetchMemberNotes = async (
+    clientId2: string,
+    memberName: string,
+    healthPlan: string,
+    forceSync: boolean
+  ): Promise<boolean> => {
     setIsLoadingNotes(true);
     setIsMemberCardOpen(true);
     
     try {
-      // Check if this is the first time loading notes for this member
-      const response = await fetch(`/api/member-notes?clientId2=${clientId2}`);
-      const data = await response.json();
+      const params = new URLSearchParams();
+      params.set('clientId2', clientId2);
+      if (forceSync) {
+        params.set('forceRefresh', 'true');
+        params.set('includeAll', 'true');
+      }
+      const response = await fetch(`/api/client-notes?${params.toString()}`);
+      const data = await response.json().catch(() => null);
       
-      if (data.success) {
+      const rawNotes = data?.data?.notes;
+      if (response.ok && data?.success && Array.isArray(rawNotes)) {
+        const mappedNotes: MemberNote[] = rawNotes.map((n: any) => {
+          const followUpStatus = String(n?.followUpStatus || '').trim();
+          const statusLower = followUpStatus.toLowerCase();
+          const isClosed = statusLower.includes('closed') || statusLower.includes('resolved');
+          const isImmediate =
+            statusLower.includes('immediate') ||
+            statusLower.includes('urgent') ||
+            statusLower.includes('priority') ||
+            statusLower.includes('🔴') ||
+            statusLower.includes('🟡');
+          const createdAt = String(n?.timeStamp || '').trim() || new Date().toISOString();
+          return {
+            id: String(n?.noteId || n?.id || '').trim() || String(Math.random()),
+            clientId2: String(n?.clientId2 || clientId2),
+            memberName: String(n?.seniorFullName || memberName || '').trim() || memberName,
+            noteText: String(n?.comments || '').trim(),
+            noteType: 'General',
+            createdBy: String(n?.userId || 'system'),
+            createdByName: String(n?.userFullName || 'System'),
+            assignedToName: String(n?.followUpAssignment || '').trim() || undefined,
+            createdAt,
+            updatedAt: createdAt,
+            source: 'Caspio',
+            isRead: true,
+            priority: isImmediate ? 'Priority' : 'General',
+            status: isClosed ? 'Closed' : 'Open',
+            followUpDate: String(n?.followUpDate || '').trim() || undefined,
+          };
+        });
+
         setSelectedMember({
           clientId2,
           memberName,
           healthPlan,
-          notes: data.notes || [],
-          isFirstTimeLoad: !data.fromCache,
-          lastSyncTime: data.lastSync
+          notes: mappedNotes,
+          isFirstTimeLoad: false,
+          lastSyncTime: new Date().toISOString()
         });
         
         toast({
-          title: data.fromCache ? "Notes Loaded from Cache" : "Notes Synced from Caspio",
-          description: `${data.notes?.length || 0} notes loaded for ${memberName}`,
+          title: forceSync ? 'Notes synced from Caspio' : 'Notes loaded',
+          description: `${mappedNotes.length} notes loaded for ${memberName}`,
         });
+        return true;
       } else {
-        throw new Error(data.error || 'Failed to load notes');
+        const msg =
+          data?.error ||
+          (response.ok ? 'Failed to load notes' : `Request failed (${response.status})`);
+        console.warn('Member notes request failed:', msg);
+        toast({
+          title: "Error",
+          description: msg || "Failed to load member notes",
+          variant: "destructive"
+        });
+        setSelectedMember({
+          clientId2,
+          memberName,
+          healthPlan,
+          notes: [],
+          isFirstTimeLoad: true
+        });
+        return false;
       }
       
     } catch (error: any) {
@@ -655,8 +729,17 @@ function MyTasksPageContent() {
         notes: [],
         isFirstTimeLoad: true
       });
+      return false;
     } finally {
       setIsLoadingNotes(false);
+    }
+  };
+
+  const handleMemberClick = async (clientId2: string, memberName: string, healthPlan: string) => {
+    try {
+      await fetchMemberNotes(clientId2, memberName, healthPlan, false);
+    } catch (error) {
+      console.warn('Member click handler swallowed error:', error);
     }
   };
 
@@ -671,20 +754,22 @@ function MyTasksPageContent() {
     }
 
     try {
+      const actorName = user?.displayName || user?.email || 'Staff';
+      const actorEmail = user?.email || '';
+      const followUpStatus = newNote.urgency === 'Immediate' ? 'Immediate' : 'Open';
+
       const noteData = {
         clientId2: selectedMember.clientId2,
-        memberName: selectedMember.memberName,
-        noteText: newNote.noteText,
-        noteType: newNote.noteType,
-        priority: newNote.priority,
-        assignedTo: newNote.assignedTo || undefined,
-        assignedToName: newNote.assignedToName || undefined,
-        followUpDate: newNote.followUpDate || undefined,
-        createdBy: user?.uid || 'current-user',
-        createdByName: user?.displayName || user?.email || 'Current User'
+        comments: newNote.noteText,
+        followUpDate: newNote.followUpDate || null,
+        followUpAssignment: newNote.assignedToName || null,
+        followUpStatus,
+        userId: user?.uid || null,
+        actorName,
+        actorEmail,
       };
 
-      const response = await fetch('/api/member-notes', {
+      const response = await fetch('/api/client-notes', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -695,17 +780,12 @@ function MyTasksPageContent() {
       const data = await response.json();
 
       if (data.success) {
-        // Update the selected member's notes
-        setSelectedMember(prev => prev ? {
-          ...prev,
-          notes: [data.note, ...prev.notes]
-        } : null);
+        await fetchMemberNotes(selectedMember.clientId2, selectedMember.memberName, selectedMember.healthPlan, true);
 
         // Reset form
         setNewNote({
           noteText: '',
-          noteType: 'General',
-          priority: 'Medium',
+          urgency: 'General',
           assignedTo: '',
           assignedToName: '',
           followUpDate: ''
@@ -715,14 +795,6 @@ function MyTasksPageContent() {
           title: "Note Created",
           description: `Note added for ${selectedMember.memberName}${newNote.assignedToName ? ` and assigned to ${newNote.assignedToName}` : ''}`,
         });
-
-        // Show notification if assigned
-        if (newNote.assignedTo) {
-          toast({
-            title: "Notification Sent",
-            description: `${newNote.assignedToName} has been notified`,
-          });
-        }
       } else {
         throw new Error(data.error || 'Failed to create note');
       }
@@ -740,9 +812,11 @@ function MyTasksPageContent() {
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'Urgent': return 'bg-red-100 text-red-800 border-red-200';
+      case 'Priority': return 'bg-orange-100 text-orange-800 border-orange-200';
       case 'High': return 'bg-orange-100 text-orange-800 border-orange-200';
       case 'Medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'Low': return 'bg-green-100 text-green-800 border-green-200';
+      case 'General': return 'bg-gray-100 text-gray-800 border-gray-200';
       default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
@@ -763,6 +837,214 @@ function MyTasksPageContent() {
     if (isYesterday(date)) return 'Yesterday';
     return format(date, 'MMM d, yyyy');
   };
+
+  const fetchFollowUpCalendar = async (month: Date) => {
+    if (!user?.uid) return;
+    setIsLoadingFollowUpCalendar(true);
+    try {
+      const start = startOfMonth(month);
+      const end = endOfMonth(month);
+      const params = new URLSearchParams();
+      params.set('userId', user.uid);
+      params.set('only', 'follow_up');
+      params.set('start', start.toISOString());
+      params.set('end', end.toISOString());
+      const response = await fetch(`/api/staff/tasks?${params.toString()}`);
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to load follow-up calendar');
+      }
+      setFollowUpCalendarTasks(Array.isArray(data?.tasks) ? data.tasks : []);
+    } catch (error: any) {
+      console.error('Failed to load follow-up calendar:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Calendar error',
+        description: error.message || 'Could not load follow-up calendar.',
+      });
+      setFollowUpCalendarTasks([]);
+    } finally {
+      setIsLoadingFollowUpCalendar(false);
+    }
+  };
+
+  const syncFollowUpsFromCaspio = async (month: Date) => {
+    if (!user?.uid) return;
+    setIsSyncingFollowUps(true);
+    try {
+      const start = startOfMonth(month);
+      const end = endOfMonth(month);
+      const response = await fetch('/api/staff/followups/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.uid,
+          start: start.toISOString(),
+          end: end.toISOString(),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to sync follow-ups');
+      }
+      toast({
+        title: 'Synced from Caspio',
+        description: `Pulled ${data?.synced ?? 0} follow-up notes.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      await fetchFollowUpCalendar(month);
+      fetchMyTasks();
+    } catch (error: any) {
+      console.error('Follow-up sync failed:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Sync failed',
+        description: error.message || 'Could not sync follow-ups from Caspio.',
+      });
+    } finally {
+      setIsSyncingFollowUps(false);
+    }
+  };
+
+  const importAllOpenFollowUpsFromCaspio = async () => {
+    if (!user?.uid) return;
+    const ok = confirm(
+      'Initial import will pull ALL open follow-up notes with dates from Caspio for your assignment. This may take a bit the first time. Continue?'
+    );
+    if (!ok) return;
+
+    setIsImportingAllFollowUps(true);
+    try {
+      const response = await fetch('/api/staff/followups/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.uid,
+          // No start/end = import all open follow-ups with dates
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to import follow-ups');
+      }
+
+      toast({
+        title: 'Initial import complete',
+        description: `Imported ${data?.synced ?? 0} open follow-up notes from Caspio.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+
+      // Refresh current month calendar + full task list so overdue/past follow-ups appear.
+      await fetchFollowUpCalendar(followUpMonth);
+      fetchMyTasks();
+    } catch (error: any) {
+      console.error('Initial follow-up import failed:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Import failed',
+        description: error.message || 'Could not import follow-ups from Caspio.',
+      });
+    } finally {
+      setIsImportingAllFollowUps(false);
+    }
+  };
+
+  // NOTE: Intentionally do NOT auto-fetch calendar data when switching tabs or months.
+  // Use the explicit Calendar controls (Initial import / Sync / Refresh).
+
+  const followUpByDay = useMemo(() => {
+    const map = new Map<string, MyTask[]>();
+    followUpCalendarTasks
+      .filter((t) => t.taskType === 'follow_up' && t.status !== 'completed')
+      .forEach((task) => {
+        const d = new Date(task.dueDate);
+        if (Number.isNaN(d.getTime())) return;
+        const key = format(d, 'yyyy-MM-dd');
+        const cur = map.get(key) || [];
+        cur.push(task);
+        map.set(key, cur);
+      });
+    return map;
+  }, [followUpCalendarTasks]);
+
+  const selectedFollowUpsForDay = useMemo(() => {
+    if (!followUpDay) return [];
+    const key = format(followUpDay, 'yyyy-MM-dd');
+    const items = followUpByDay.get(key) || [];
+    return [...items].sort((a, b) => {
+      const ams = new Date(a.dueDate).getTime();
+      const bms = new Date(b.dueDate).getTime();
+      if (ams !== bms) return ams - bms;
+      return String(a.memberName || '').localeCompare(String(b.memberName || ''));
+    });
+  }, [followUpByDay, followUpDay]);
+
+  const openFollowUpTaskModal = (task: MyTask) => {
+    setSelectedFollowUpTask(task);
+    try {
+      const d = new Date(String(task.dueDate || ''));
+      setRescheduleDate(Number.isNaN(d.getTime()) ? '' : format(d, 'yyyy-MM-dd'));
+    } catch {
+      setRescheduleDate('');
+    }
+    setIsFollowUpTaskModalOpen(true);
+  };
+
+  const updateClientNote = async (task: MyTask, patch: { followUpStatus?: string; followUpDate?: string }) => {
+    if (!task?.memberClientId) throw new Error('Client ID missing');
+    const noteId = String(task.noteId || '').trim() || String(task.id || '').replace('client-followup-', '');
+    if (!noteId) throw new Error('Note ID missing');
+    const actorName = user?.displayName || user?.email || 'Staff';
+    const actorEmail = user?.email || '';
+
+    const response = await fetch('/api/client-notes', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        noteId,
+        clientId2: task.memberClientId,
+        ...patch,
+        actorName,
+        actorEmail
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.error || 'Failed to update note');
+    }
+  };
+
+  const deleteClientNote = async (task: MyTask) => {
+    if (!task?.memberClientId) throw new Error('Client ID missing');
+    const noteId = String(task.noteId || '').trim() || String(task.id || '').replace('client-followup-', '');
+    if (!noteId) throw new Error('Note ID missing');
+    const actorName = user?.displayName || user?.email || 'Staff';
+    const actorEmail = user?.email || '';
+
+    const response = await fetch('/api/client-notes', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        noteId,
+        clientId2: task.memberClientId,
+        actorName,
+        actorEmail
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.error || 'Failed to delete note');
+    }
+  };
+
+  const filteredMemberNotes = useMemo(() => {
+    const notes = selectedMember?.notes || [];
+    if (showClosedMemberNotes) return notes;
+    return notes.filter((note) => {
+      const statusLower = String(note?.status || 'Open').toLowerCase();
+      return !statusLower.includes('closed');
+    });
+  }, [selectedMember?.notes, showClosedMemberNotes]);
 
   if (!isAdmin) {
     return (
@@ -794,6 +1076,20 @@ function MyTasksPageContent() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setSelectedTab('followup_calendar');
+              try {
+                tabsAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              } catch {
+                // ignore
+              }
+            }}
+          >
+            <CalendarDays className="mr-2 h-4 w-4" />
+            Calendar / Import
+          </Button>
           <Dialog open={isCreateFollowUpOpen} onOpenChange={setIsCreateFollowUpOpen}>
             <DialogTrigger asChild>
               <Button onClick={resetFollowUpForm}>
@@ -1191,17 +1487,135 @@ function MyTasksPageContent() {
       </Card>
 
       {/* Tasks Tabs */}
+      <div ref={tabsAnchorRef} />
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="all">All ({taskCounts.all})</TabsTrigger>
           <TabsTrigger value="overdue">Overdue ({taskCounts.overdue})</TabsTrigger>
           <TabsTrigger value="today">Today ({taskCounts.today})</TabsTrigger>
           <TabsTrigger value="upcoming">Upcoming ({taskCounts.upcoming})</TabsTrigger>
           <TabsTrigger value="followup">Follow-ups ({taskCounts.followup})</TabsTrigger>
+          <TabsTrigger value="followup_calendar">Calendar</TabsTrigger>
           <TabsTrigger value="completed">Completed ({taskCounts.completed})</TabsTrigger>
         </TabsList>
 
         <TabsContent value={selectedTab} className="space-y-4">
+          {selectedTab === 'followup_calendar' ? (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div>
+                    <CardTitle>Follow-up Calendar</CardTitle>
+                    <CardDescription>
+                      Month view + daily agenda for follow-ups (click a date to see items)
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="default"
+                      onClick={importAllOpenFollowUpsFromCaspio}
+                      disabled={isImportingAllFollowUps || isSyncingFollowUps || isLoadingFollowUpCalendar}
+                    >
+                      <RefreshCw className={`mr-2 h-4 w-4 ${isImportingAllFollowUps ? 'animate-spin' : ''}`} />
+                      Initial import (all open)
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => syncFollowUpsFromCaspio(followUpMonth)}
+                      disabled={isSyncingFollowUps || isLoadingFollowUpCalendar}
+                    >
+                      <RefreshCw className={`mr-2 h-4 w-4 ${isSyncingFollowUps ? 'animate-spin' : ''}`} />
+                      Sync from Caspio
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => fetchFollowUpCalendar(followUpMonth)}
+                      disabled={isLoadingFollowUpCalendar}
+                    >
+                      <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingFollowUpCalendar ? 'animate-spin' : ''}`} />
+                      Refresh month
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="rounded-lg border p-3">
+                    <DateCalendar
+                      mode="single"
+                      selected={followUpDay}
+                      month={followUpMonth}
+                      onMonthChange={(m) => setFollowUpMonth(m)}
+                      onSelect={(d) => {
+                        if (!d) return;
+                        setFollowUpDay(d);
+                      }}
+                      disabled={isLoadingFollowUpCalendar}
+                      modifiers={{
+                        hasFollowUps: (day) => followUpByDay.has(format(day, 'yyyy-MM-dd')),
+                      }}
+                      modifiersClassNames={{
+                        hasFollowUps: 'ring-1 ring-primary/40',
+                      }}
+                    />
+                    <div className="text-xs text-muted-foreground pt-2">
+                      Days with follow-ups are highlighted. Select a day to see the agenda.
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-medium">
+                        {followUpDay ? format(followUpDay, 'EEEE, MMM d, yyyy') : 'Select a day'}
+                      </div>
+                      <Badge variant="outline">
+                        {selectedFollowUpsForDay.length} item{selectedFollowUpsForDay.length !== 1 ? 's' : ''}
+                      </Badge>
+                    </div>
+
+                    {isLoadingFollowUpCalendar ? (
+                      <div className="text-sm text-muted-foreground py-6">Loading follow-ups…</div>
+                    ) : selectedFollowUpsForDay.length === 0 ? (
+                      <div className="text-sm text-muted-foreground py-6">No follow-ups on this day.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {selectedFollowUpsForDay.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            className="w-full text-left rounded-md border px-3 py-2 hover:bg-slate-50 transition-colors"
+                            onClick={() => openFollowUpTaskModal(t)}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="font-medium text-sm">
+                                  {t.memberName || 'Member'} {t.memberClientId ? `• ${t.memberClientId}` : ''}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {t.title}
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  Assigned to: {t.followUpAssignment || t.assignedToName || '—'} • Assigned by: {t.assignedByName || '—'}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className={getSourceBadge(t.source)}>
+                                  {t.source === 'applications' ? 'Applications' : t.source === 'notes' ? 'Notes' : 'Manual'}
+                                </Badge>
+                                <Badge variant="outline" className={getPriorityColor(t.priority)}>
+                                  {t.priority}
+                                </Badge>
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
           <Card>
             <CardHeader>
               <CardTitle>
@@ -1406,6 +1820,7 @@ function MyTasksPageContent() {
               )}
             </CardContent>
           </Card>
+          )}
         </TabsContent>
       </Tabs>
 
@@ -1432,9 +1847,48 @@ function MyTasksPageContent() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-medium">Notes History</h3>
-                <Badge variant="outline">
-                  {selectedMember?.notes.length || 0} notes
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 rounded-md border px-2 py-1">
+                    <div className="text-xs text-muted-foreground">Show closed</div>
+                    <Switch
+                      checked={showClosedMemberNotes}
+                      onCheckedChange={setShowClosedMemberNotes}
+                      disabled={isLoadingNotes}
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isLoadingNotes || isSyncingMemberNotes || !selectedMember?.clientId2 || !selectedMember?.memberName}
+                    onClick={async () => {
+                      if (!selectedMember?.clientId2 || !selectedMember?.memberName) return;
+                      setIsSyncingMemberNotes(true);
+                      try {
+                        const ok = await fetchMemberNotes(
+                          selectedMember.clientId2,
+                          selectedMember.memberName,
+                          selectedMember.healthPlan,
+                          true
+                        );
+                        if (ok) {
+                          toast({
+                            title: 'Synced notes from Caspio',
+                            description: 'Loaded full note history (including closed notes).',
+                            className: 'bg-green-100 text-green-900 border-green-200',
+                          });
+                        }
+                      } finally {
+                        setIsSyncingMemberNotes(false);
+                      }
+                    }}
+                  >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${isSyncingMemberNotes ? 'animate-spin' : ''}`} />
+                    Sync all notes
+                  </Button>
+                  <Badge variant="outline">
+                    {filteredMemberNotes.length} shown
+                  </Badge>
+                </div>
               </div>
 
               {isLoadingNotes ? (
@@ -1447,16 +1901,18 @@ function MyTasksPageContent() {
               ) : (
                 <ScrollArea className="h-[50vh]">
                   <div className="space-y-3">
-                    {selectedMember?.notes.length === 0 ? (
+                    {filteredMemberNotes.length === 0 ? (
                       <div className="text-center py-8">
                         <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                         <h3 className="text-lg font-medium mb-2">No Notes Found</h3>
                         <p className="text-muted-foreground">
-                          No notes have been created for this member yet.
+                          {showClosedMemberNotes
+                            ? 'No notes have been created for this member yet.'
+                            : 'No open notes. Toggle “Show closed” to view closed notes.'}
                         </p>
                       </div>
                     ) : (
-                      selectedMember?.notes.map((note) => (
+                      filteredMemberNotes.map((note) => (
                         <div key={note.id} className={`p-4 border rounded-lg ${!note.isRead ? 'border-blue-200 bg-blue-50' : ''}`}>
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex gap-2">
@@ -1469,6 +1925,11 @@ function MyTasksPageContent() {
                               <Badge variant="outline" className={getSourceColor(note.source)}>
                                 {note.source}
                               </Badge>
+                              {String(note.status || 'Open').toLowerCase().includes('closed') && (
+                                <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-200">
+                                  Closed
+                                </Badge>
+                              )}
                               {!note.isRead && (
                                 <Badge className="bg-blue-600">
                                   <Bell className="h-3 w-3 mr-1" />
@@ -1515,11 +1976,11 @@ function MyTasksPageContent() {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="noteType">Note Type</Label>
+                    <Label htmlFor="urgency">Type</Label>
                     <Select 
-                      value={newNote.noteType} 
-                      onValueChange={(value: MemberNote['noteType']) => 
-                        setNewNote(prev => ({ ...prev, noteType: value }))
+                      value={newNote.urgency}
+                      onValueChange={(value: 'General' | 'Immediate') =>
+                        setNewNote((prev) => ({ ...prev, urgency: value }))
                       }
                     >
                       <SelectTrigger>
@@ -1527,33 +1988,14 @@ function MyTasksPageContent() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="General">General</SelectItem>
-                        <SelectItem value="Medical">Medical</SelectItem>
-                        <SelectItem value="Social">Social</SelectItem>
-                        <SelectItem value="Administrative">Administrative</SelectItem>
-                        <SelectItem value="Follow-up">Follow-up</SelectItem>
-                        <SelectItem value="Emergency">Emergency</SelectItem>
+                        <SelectItem value="Immediate">Immediate (triggers notification)</SelectItem>
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Immediate is used for notifications only.
+                    </p>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="priority">Priority</Label>
-                    <Select 
-                      value={newNote.priority} 
-                      onValueChange={(value: MemberNote['priority']) => 
-                        setNewNote(prev => ({ ...prev, priority: value }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Low">Low</SelectItem>
-                        <SelectItem value="Medium">Medium</SelectItem>
-                        <SelectItem value="High">High</SelectItem>
-                        <SelectItem value="Urgent">Urgent</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <div className="space-y-2" />
                 </div>
 
                 <div className="space-y-2">
@@ -1599,20 +2041,208 @@ function MyTasksPageContent() {
                   Add Note
                 </Button>
 
-                {selectedMember?.isFirstTimeLoad && (
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <div className="flex items-center gap-2 text-blue-800 mb-1">
-                      <CheckCircle className="h-4 w-4" />
-                      <span className="font-medium">Smart Sync Active</span>
-                    </div>
-                    <p className="text-xs text-blue-700">
-                      All existing notes have been imported from Caspio. Future updates will sync automatically.
-                    </p>
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2 text-blue-800 mb-1">
+                    <CheckCircle className="h-4 w-4" />
+                    <span className="font-medium">On-demand sync</span>
                   </div>
-                )}
+                  <p className="text-xs text-blue-700">
+                    Click “Sync all notes” to pull the full history from Caspio (including closed notes).
+                  </p>
+                </div>
               </div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isFollowUpTaskModalOpen} onOpenChange={setIsFollowUpTaskModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Follow-up details</DialogTitle>
+            <DialogDescription>
+              View and manage this follow-up note. Caspio client notes can be rescheduled, closed/reopened, or deleted.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedFollowUpTask ? (
+            <div className="space-y-4">
+              <div className="rounded-md border p-3 space-y-1">
+                <div className="font-medium">
+                  {selectedFollowUpTask.memberName || 'Member'}{' '}
+                  {selectedFollowUpTask.memberClientId ? `• ${selectedFollowUpTask.memberClientId}` : ''}
+                </div>
+                <div className="text-sm text-muted-foreground">{selectedFollowUpTask.title}</div>
+                {selectedFollowUpTask.description ? (
+                  <div className="text-sm">{selectedFollowUpTask.description}</div>
+                ) : null}
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <Badge variant="outline" className={getSourceBadge(selectedFollowUpTask.source)}>
+                    {selectedFollowUpTask.source === 'applications'
+                      ? 'Applications'
+                      : selectedFollowUpTask.source === 'notes'
+                        ? 'Notes'
+                        : 'Manual'}
+                  </Badge>
+                  <Badge variant="outline" className={getPriorityColor(selectedFollowUpTask.priority)}>
+                    {selectedFollowUpTask.priority}
+                  </Badge>
+                  <Badge variant="outline" className={getStatusColor(selectedFollowUpTask.status)}>
+                    {selectedFollowUpTask.status.replace('_', ' ')}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Assigned to</Label>
+                  <div className="text-sm">
+                    {selectedFollowUpTask.followUpAssignment || selectedFollowUpTask.assignedToName || '—'}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Follow-up date</Label>
+                  <Input
+                    type="date"
+                    value={rescheduleDate}
+                    onChange={(e) => setRescheduleDate(e.target.value)}
+                    disabled={isUpdatingFollowUpTask}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 justify-end">
+                {selectedFollowUpTask.actionUrl ? (
+                  <Button variant="outline" asChild>
+                    <Link href={selectedFollowUpTask.actionUrl}>
+                      <MessageSquare className="mr-2 h-4 w-4" />
+                      Open notes
+                    </Link>
+                  </Button>
+                ) : null}
+
+                <Button
+                  variant="outline"
+                  disabled={
+                    isUpdatingFollowUpTask ||
+                    !selectedFollowUpTask.id.startsWith('client-followup-') ||
+                    !rescheduleDate
+                  }
+                  onClick={async () => {
+                    if (!selectedFollowUpTask) return;
+                    setIsUpdatingFollowUpTask(true);
+                    try {
+                      await updateClientNote(selectedFollowUpTask, { followUpDate: rescheduleDate });
+                      toast({ title: 'Rescheduled', description: 'Follow-up date updated.' });
+                      await fetchFollowUpCalendar(followUpMonth);
+                      fetchMyTasks();
+                    } catch (error: any) {
+                      toast({
+                        variant: 'destructive',
+                        title: 'Error',
+                        description: error.message || 'Failed to reschedule.',
+                      });
+                    } finally {
+                      setIsUpdatingFollowUpTask(false);
+                    }
+                  }}
+                >
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Save date
+                </Button>
+
+                <Button
+                  variant="outline"
+                  disabled={isUpdatingFollowUpTask || !selectedFollowUpTask.id.startsWith('client-followup-')}
+                  onClick={async () => {
+                    if (!selectedFollowUpTask) return;
+                    setIsUpdatingFollowUpTask(true);
+                    try {
+                      await updateClientNote(selectedFollowUpTask, { followUpStatus: 'Closed' });
+                      toast({ title: 'Closed', description: 'Follow-up marked Closed.' });
+                      await fetchFollowUpCalendar(followUpMonth);
+                      fetchMyTasks();
+                      setIsFollowUpTaskModalOpen(false);
+                    } catch (error: any) {
+                      toast({
+                        variant: 'destructive',
+                        title: 'Error',
+                        description: error.message || 'Failed to close.',
+                      });
+                    } finally {
+                      setIsUpdatingFollowUpTask(false);
+                    }
+                  }}
+                >
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Close
+                </Button>
+
+                <Button
+                  variant="outline"
+                  disabled={isUpdatingFollowUpTask || !selectedFollowUpTask.id.startsWith('client-followup-')}
+                  onClick={async () => {
+                    if (!selectedFollowUpTask) return;
+                    setIsUpdatingFollowUpTask(true);
+                    try {
+                      await updateClientNote(selectedFollowUpTask, { followUpStatus: 'Open' });
+                      toast({ title: 'Reopened', description: 'Follow-up marked Open.' });
+                      await fetchFollowUpCalendar(followUpMonth);
+                      fetchMyTasks();
+                    } catch (error: any) {
+                      toast({
+                        variant: 'destructive',
+                        title: 'Error',
+                        description: error.message || 'Failed to reopen.',
+                      });
+                    } finally {
+                      setIsUpdatingFollowUpTask(false);
+                    }
+                  }}
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Reopen
+                </Button>
+
+                <Button
+                  variant="destructive"
+                  disabled={isUpdatingFollowUpTask || !selectedFollowUpTask.id.startsWith('client-followup-')}
+                  onClick={async () => {
+                    if (!selectedFollowUpTask) return;
+                    const ok = confirm('Delete this note? This will delete it in Caspio.');
+                    if (!ok) return;
+                    setIsUpdatingFollowUpTask(true);
+                    try {
+                      await deleteClientNote(selectedFollowUpTask);
+                      toast({ title: 'Deleted', description: 'Note deleted.' });
+                      await fetchFollowUpCalendar(followUpMonth);
+                      fetchMyTasks();
+                      setIsFollowUpTaskModalOpen(false);
+                    } catch (error: any) {
+                      toast({
+                        variant: 'destructive',
+                        title: 'Error',
+                        description: error.message || 'Failed to delete.',
+                      });
+                    } finally {
+                      setIsUpdatingFollowUpTask(false);
+                    }
+                  }}
+                >
+                  <X className="mr-2 h-4 w-4" />
+                  Delete
+                </Button>
+              </div>
+
+              {!selectedFollowUpTask.id.startsWith('client-followup-') && (
+                <div className="text-xs text-muted-foreground">
+                  This follow-up is not a Caspio client note, so only viewing/opening is supported here.
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">No follow-up selected.</div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -8,6 +8,39 @@ This is a lightweight, append-only log of notable work completed with the Cursor
 
 ---
 
+## 2026-02-16 — Daily Task Tracker follow-up calendars + Caspio client notes (on-demand)
+
+### Follow-up calendar + on-demand sync
+- Added a Follow-up Calendar tab (month picker + day agenda) to the Daily Task Tracker:
+  - File: `src/app/admin/tasks/page.tsx`
+- Added on-demand sync/import controls (no automatic background refresh):
+  - “Sync from Caspio” (month window)
+  - “Initial import (all open)” (all open follow-ups with dates)
+- Added server-side sync endpoint to pull Caspio follow-up notes into Firestore cache:
+  - File: `src/app/api/staff/followups/sync/route.ts`
+
+### Staff tasks API enhancements
+- Added `only=follow_up` mode and optional `start`/`end` filtering to support calendar queries and reduce expensive aggregation when only follow-ups are needed:
+  - File: `src/app/api/staff/tasks/route.ts`
+- Improved follow-up assignment matching by checking UID + staff email/name candidates.
+
+### Member Notes modal (Daily Task Tracker)
+- Added “Show closed” toggle and “Sync all notes” (on-demand).
+- Simplified “Add New Note” to only:
+  - **General**
+  - **Immediate** (used to trigger notifications)
+- Switched the modal to use the **Caspio client notes system** (`connect_tbl_clientnotes`) via `/api/client-notes` to avoid the separate member-notes module’s table/base-url mismatch.
+  - File: `src/app/admin/tasks/page.tsx`
+
+### Caspio module auth/base URL fixes
+- Fixed Caspio OAuth token URL construction in the Caspio module (token endpoint must not include `/rest/v2`):
+  - File: `src/modules/caspio-integration/services/CaspioAuthService.ts`
+- Normalized Caspio REST base URL in the Caspio module to ensure table calls use `.../rest/v2`:
+  - File: `src/modules/caspio-integration/config/constants.ts`
+
+### Notes
+- This session intentionally avoided committing `.env`.
+
 ## 2026-02-16 — Electron web-card notifications + admin UX/perf improvements
 
 ### Desktop (Electron)
