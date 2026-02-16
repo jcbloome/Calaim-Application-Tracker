@@ -23,6 +23,8 @@ interface StaffMember {
     firstName: string;
     lastName: string;
     email: string;
+    isKaiserStaff?: boolean;
+    isHealthNetStaff?: boolean;
 }
 
 type ReviewRecipientSettings = {
@@ -143,7 +145,9 @@ export default function StaffManagementPage() {
                     role: superAdminIds.has(uid) ? 'Super Admin' : adminIds.has(uid) ? 'Admin' : 'Staff',
                     firstName: userData.firstName || '',
                     lastName: userData.lastName || '',
-                    email: userData.email || uid
+                    email: userData.email || uid,
+                    isKaiserStaff: Boolean(userData.isKaiserStaff),
+                    isHealthNetStaff: Boolean(userData.isHealthNetStaff),
                 };
             });
 
@@ -185,6 +189,38 @@ export default function StaffManagementPage() {
         } finally {
             setIsLoadingStaff(false);
         }
+    };
+
+    const handlePlanFlagUpdate = async (
+      uid: string,
+      patch: Partial<Pick<StaffMember, 'isKaiserStaff' | 'isHealthNetStaff'>>
+    ) => {
+      if (!firestore) return;
+      const cleanUid = String(uid || '').trim();
+      if (!cleanUid) return;
+
+      // Optimistic UI update
+      setStaffList((prev) =>
+        prev.map((s) => (s.uid === cleanUid ? { ...s, ...patch } : s))
+      );
+
+      try {
+        await setDoc(doc(firestore, 'users', cleanUid), patch, { merge: true });
+      } catch (error) {
+        // Revert on error (best effort)
+        setStaffList((prev) =>
+          prev.map((s) => {
+            if (s.uid !== cleanUid) return s;
+            const current = prev.find((x) => x.uid === cleanUid) || s;
+            return current;
+          })
+        );
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'Could not update plan staff flags. Please try again.',
+        });
+      }
     };
 
     // Normalize any legacy email-based IDs in settings to canonical UIDs.
@@ -865,6 +901,34 @@ export default function StaffManagementPage() {
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <Users className={`h-4 w-4 ${staff.isKaiserStaff ? 'text-orange-600' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`kaiser-staff-${staff.uid}`} className="text-sm font-medium">Kaiser staff</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`kaiser-staff-${staff.uid}`}
+                                                checked={Boolean(staff.isKaiserStaff)}
+                                                onCheckedChange={(checked) => {
+                                                    handlePlanFlagUpdate(staff.uid, { isKaiserStaff: Boolean(checked) }).catch(() => undefined);
+                                                }}
+                                                aria-label={`Toggle Kaiser staff for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <Users className={`h-4 w-4 ${staff.isHealthNetStaff ? 'text-blue-600' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`hn-staff-${staff.uid}`} className="text-sm font-medium">Health Net staff</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`hn-staff-${staff.uid}`}
+                                                checked={Boolean(staff.isHealthNetStaff)}
+                                                onCheckedChange={(checked) => {
+                                                    handlePlanFlagUpdate(staff.uid, { isHealthNetStaff: Boolean(checked) }).catch(() => undefined);
+                                                }}
+                                                aria-label={`Toggle Health Net staff for ${staff.email}`}
+                                            />
+                                        </div>
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
                                                 <Bell className={`h-4 w-4 ${notificationsEnabled ? 'text-primary' : 'text-muted-foreground'}`} />

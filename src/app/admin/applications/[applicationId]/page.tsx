@@ -50,7 +50,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
-import { addDoc, collection, doc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Label } from '@/components/ui/label';
@@ -91,13 +91,24 @@ function StaffAssignmentDropdown({
 }) {
     const firestore = useFirestore();
     const { toast } = useToast();
-    const [staffList, setStaffList] = useState<StaffMember[]>([]);
+    type StaffCandidate = {
+      uid: string;
+      role: 'Admin' | 'Super Admin' | 'Staff';
+      firstName: string;
+      lastName: string;
+      email: string;
+      isKaiserStaff?: boolean;
+      isHealthNetStaff?: boolean;
+      displayName: string;
+    };
+    const [staffList, setStaffList] = useState<StaffCandidate[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
+    const [staffFilterLabel, setStaffFilterLabel] = useState<string>('Showing all staff');
 
     useEffect(() => {
-        // Set staff list based on health plan (hardcoded for now)
-        let staff: StaffMember[] = [];
+        // Filter staff list based on the application's health plan.
+        let staff: StaffCandidate[] = [];
         
         const loadStaff = async () => {
             if (!firestore) {
@@ -105,21 +116,89 @@ function StaffAssignmentDropdown({
                 return;
             }
             try {
-                const snapshot = await getDocs(query(collection(firestore, 'users'), where('isStaff', '==', true)));
-                const activeStaff = snapshot.docs
-                    .map((docSnap) => {
-                        const data = docSnap.data() as any;
-                        if (!data?.isStaff) return null;
-                        return {
-                            uid: docSnap.id,
-                            firstName: data.firstName || data.displayName || data.name || '',
-                            lastName: data.lastName || '',
-                            email: data.email || '',
-                            role: data.role || 'Staff'
-                        } as StaffMember;
-                    })
-                    .filter(Boolean) as StaffMember[];
-                staff = activeStaff;
+                const planLower = String(application.healthPlan || '').toLowerCase();
+                const isKaiserPlan = planLower.includes('kaiser');
+                const isHealthNetPlan = planLower.includes('health net');
+
+                // Pull three small staff sets and merge:
+                // - isStaff (general staff)
+                // - isKaiserStaff (designated Kaiser staff)
+                // - isHealthNetStaff (designated Health Net staff)
+                // This avoids missing staff that are designated but not flagged isStaff.
+                const [staffSnap, kaiserSnap, hnSnap, adminRolesSnap, superAdminRolesSnap] = await Promise.all([
+                  getDocs(query(collection(firestore, 'users'), where('isStaff', '==', true))),
+                  getDocs(query(collection(firestore, 'users'), where('isKaiserStaff', '==', true))),
+                  getDocs(query(collection(firestore, 'users'), where('isHealthNetStaff', '==', true))),
+                  getDocs(collection(firestore, 'roles_admin')),
+                  getDocs(collection(firestore, 'roles_super_admin')),
+                ]);
+
+                const adminIds = new Set(adminRolesSnap.docs.map((d) => d.id));
+                const superAdminIds = new Set(superAdminRolesSnap.docs.map((d) => d.id));
+
+                const userDataByUid = new Map<string, any>();
+                staffSnap.docs.forEach((d) => userDataByUid.set(d.id, d.data()));
+                kaiserSnap.docs.forEach((d) => userDataByUid.set(d.id, d.data()));
+                hnSnap.docs.forEach((d) => userDataByUid.set(d.id, d.data()));
+
+                // Ensure currently assigned staff is always visible in the dropdown.
+                const currentAssignedId = String((application as any)?.assignedStaffId || '').trim();
+                if (currentAssignedId && !userDataByUid.has(currentAssignedId)) {
+                  try {
+                    const snap = await getDoc(doc(firestore, 'users', currentAssignedId));
+                    if (snap.exists()) {
+                      userDataByUid.set(currentAssignedId, snap.data());
+                    }
+                  } catch {
+                    // ignore
+                  }
+                }
+
+                const toCandidate = (uid: string, data: any): StaffCandidate | null => {
+                  if (!data) return null;
+                  const firstName = String(data?.firstName || data?.displayName || data?.name || '').trim();
+                  const lastName = String(data?.lastName || '').trim();
+                  const email = String(data?.email || '').trim();
+                  const displayName = `${firstName} ${lastName}`.trim() || email;
+                  if (!displayName) return null;
+                  const role: StaffCandidate['role'] =
+                    superAdminIds.has(uid) ? 'Super Admin' : adminIds.has(uid) ? 'Admin' : 'Staff';
+                  return {
+                    uid,
+                    role,
+                    firstName,
+                    lastName,
+                    email: email || uid,
+                    isKaiserStaff: Boolean(data?.isKaiserStaff),
+                    isHealthNetStaff: Boolean(data?.isHealthNetStaff),
+                    displayName,
+                  };
+                };
+
+                const candidates: StaffCandidate[] = Array.from(userDataByUid.entries())
+                  .map(([uid, data]) => toCandidate(uid, data))
+                  .filter(Boolean) as StaffCandidate[];
+
+                const designatedCandidates = isKaiserPlan
+                  ? candidates.filter((c) => c.isKaiserStaff)
+                  : isHealthNetPlan
+                    ? candidates.filter((c) => c.isHealthNetStaff)
+                    : [];
+
+                let filtered = candidates;
+                let label = 'Showing all staff';
+
+                if ((isKaiserPlan || isHealthNetPlan) && designatedCandidates.length > 0) {
+                  filtered = designatedCandidates;
+                  label = isKaiserPlan ? 'Showing Kaiser staff' : 'Showing Health Net staff';
+                } else if (isKaiserPlan) {
+                  label = 'No Kaiser staff designated; showing all staff';
+                } else if (isHealthNetPlan) {
+                  label = 'No Health Net staff designated; showing all staff';
+                }
+
+                staff = [...filtered].sort((a, b) => a.displayName.localeCompare(b.displayName));
+                setStaffFilterLabel(label);
             } catch (error) {
                 console.error('Error loading staff list:', error);
             } finally {
@@ -141,16 +220,16 @@ function StaffAssignmentDropdown({
             const docRef = doc(firestore, `users/${application.userId}/applications/${application.id}`);
             const updateData = {
                 assignedStaffId: staffId,
-                assignedStaffName: selectedStaff.firstName,
+                assignedStaffName: selectedStaff.displayName,
                 assignedDate: new Date().toISOString()
             };
             
             await setDoc(docRef, updateData, { merge: true });
-            onStaffChange(staffId, selectedStaff.firstName);
+            onStaffChange(staffId, selectedStaff.displayName);
             
             toast({
                 title: "Staff Assigned",
-                description: `Application assigned to ${selectedStaff.firstName}`,
+                description: `Application assigned to ${selectedStaff.displayName}`,
             });
         } catch (error) {
             console.error('Error assigning staff:', error);
@@ -173,22 +252,25 @@ function StaffAssignmentDropdown({
         : 'Date unavailable';
 
     return (
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">{staffFilterLabel}</div>
         <Select
-            value={(application as any)?.assignedStaffId || ''}
-            onValueChange={handleStaffAssignment}
-            disabled={isLoading}
+          value={(application as any)?.assignedStaffId || ''}
+          onValueChange={handleStaffAssignment}
+          disabled={isLoading || isLoadingStaff}
         >
-            <SelectTrigger>
-                <SelectValue placeholder="Assign a staff member..." />
-            </SelectTrigger>
-            <SelectContent>
-                {staffList.map(staff => (
-                    <SelectItem key={staff.uid} value={staff.uid}>
-                        {staff.firstName}
-                    </SelectItem>
-                ))}
-            </SelectContent>
+          <SelectTrigger>
+            <SelectValue placeholder={isLoadingStaff ? 'Loading staff…' : 'Assign a staff member...'} />
+          </SelectTrigger>
+          <SelectContent>
+            {staffList.map((staff) => (
+              <SelectItem key={staff.uid} value={staff.uid}>
+                {staff.displayName}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
+      </div>
     );
 }
 
