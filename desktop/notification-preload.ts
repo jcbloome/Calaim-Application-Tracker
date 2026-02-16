@@ -9,5 +9,16 @@ contextBridge.exposeInMainWorld('desktopNotificationPill', {
   sendReply: (payload: { noteId?: string; senderId?: string; message: string }) =>
     ipcRenderer.send('desktop:quickReply', payload),
   move: (x: number, y: number) => ipcRenderer.send('desktop:movePill', { x, y }),
-  getPosition: () => ipcRenderer.invoke('desktop:getPillPosition')
+  getPosition: () => ipcRenderer.invoke('desktop:getPillPosition'),
+
+  onNotifyCard: (callback: (payload: any) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('desktop:notifyCard', handler);
+    return () => ipcRenderer.removeListener('desktop:notifyCard', handler);
+  },
+  onPillState: (callback: (payload: any) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('desktop:pillState', handler);
+    return () => ipcRenderer.removeListener('desktop:pillState', handler);
+  }
 });

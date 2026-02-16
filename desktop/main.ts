@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, dialog, screen } from 'electron';
+import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, dialog, screen, shell } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { autoUpdater } from 'electron-updater';
@@ -8,6 +8,7 @@ let tray: Tray | null = null;
 let notificationWindow: BrowserWindow | null = null;
 let notificationTimer: NodeJS.Timeout | null = null;
 let isQuitting = false;
+let notificationWindowLoaded = false;
 
 let pillSummary = {
   count: 0,
@@ -51,15 +52,23 @@ if (!singleInstanceLock) {
 }
 
 const isDev = !app.isPackaged;
-const appUrl = process.env.DESKTOP_APP_URL
+let appUrl = process.env.DESKTOP_APP_URL
   || (isDev ? 'http://localhost:3000/admin/my-notes' : 'https://connectcalaim.com/admin/my-notes');
-const appOrigin = (() => {
+let appOrigin = (() => {
   try {
     return new URL(appUrl).origin;
   } catch {
     return 'https://connectcalaim.com';
   }
 })();
+const setAppUrl = (nextUrl: string) => {
+  appUrl = nextUrl;
+  try {
+    appOrigin = new URL(nextUrl).origin;
+  } catch {
+    // ignore
+  }
+};
 const updateUrl = process.env.DESKTOP_UPDATE_URL
   || 'https://github.com/jcbloome/Calaim-Application-Tracker/releases';
 
@@ -172,7 +181,22 @@ const createWindow = () => {
     }
   });
 
-  mainWindow.loadURL(appUrl).catch(() => undefined);
+  mainWindow.loadURL(appUrl).catch(() => {
+    if (!isDev) return;
+    // Dev fallback when the Next dev server starts on 3001.
+    try {
+      const fallback = appUrl.includes('localhost:3000')
+        ? appUrl.replace('localhost:3000', 'localhost:3001')
+        : appUrl.includes('localhost:3001')
+          ? appUrl.replace('localhost:3001', 'localhost:3000')
+          : '';
+      if (!fallback) return;
+      setAppUrl(fallback);
+      mainWindow?.loadURL(fallback).catch(() => undefined);
+    } catch {
+      // ignore
+    }
+  });
 
   mainWindow.on('close', (event) => {
     if (isQuitting) return;
@@ -197,7 +221,69 @@ const closeNotificationWindow = () => {
   if (notificationWindow) {
     notificationWindow.close();
     notificationWindow = null;
+    notificationWindowLoaded = false;
   }
+};
+
+const getExternalUrl = (url?: string) => {
+  const raw = String(url || '').trim();
+  if (!raw) return appOrigin;
+  if (raw.startsWith('http')) return raw;
+  if (raw.startsWith('/')) return `${appOrigin}${raw}`;
+  return `${appOrigin}/${raw}`;
+};
+
+const ensureNotificationWindow = () => {
+  if (!notificationWindow) {
+    notificationWindow = new BrowserWindow({
+      width: 420,
+      height: 520,
+      frame: false,
+      transparent: false,
+      resizable: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      hasShadow: true,
+      backgroundColor: '#00000000',
+      webPreferences: {
+        preload: path.join(__dirname, 'notification-preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    });
+
+    notificationWindow.setAlwaysOnTop(true, 'screen-saver');
+    notificationWindow.setVisibleOnAllWorkspaces(true);
+    notificationWindow.on('closed', () => {
+      notificationWindow = null;
+      notificationWindowLoaded = false;
+    });
+    notificationWindow.on('show', () => positionNotificationWindow());
+    notificationWindow.webContents.once('did-finish-load', () => {
+      notificationWindowLoaded = true;
+      positionNotificationWindow();
+    });
+  }
+
+  if (!notificationWindowLoaded) {
+    const url = `${appOrigin}/admin/desktop-notification-window`;
+    notificationWindow.loadURL(url).catch(() => {
+      if (!isDev) return;
+      try {
+        const fallbackOrigin = appOrigin.includes('localhost:3000')
+          ? appOrigin.replace('localhost:3000', 'localhost:3001')
+          : appOrigin.includes('localhost:3001')
+            ? appOrigin.replace('localhost:3001', 'localhost:3000')
+            : '';
+        if (!fallbackOrigin) return;
+        notificationWindow?.loadURL(`${fallbackOrigin}/admin/desktop-notification-window`).catch(() => undefined);
+      } catch {
+        // ignore
+      }
+    });
+  }
+
+  return notificationWindow;
 };
 
 const positionNotificationWindow = () => {
@@ -225,10 +311,37 @@ const positionNotificationWindow = () => {
 };
 
 const renderNotificationPill = () => {
+  // New system: render web-style notification cards in a dedicated window.
+  // Keep the old HTML pill implementation below as a fallback (unreachable).
+  if (pillSummary.count <= 0) {
+    closeNotificationWindow();
+    return;
+  }
+  try {
+    const win = ensureNotificationWindow();
+    positionNotificationWindow();
+    win.showInactive();
+    win.webContents.send('desktop:pillState', {
+      count: pillSummary.count,
+      title: pillSummary.title,
+      message: pillSummary.message,
+      author: pillSummary.author,
+      recipientName: pillSummary.recipientName,
+      memberName: pillSummary.memberName,
+      timestamp: pillSummary.timestamp,
+      replyUrl: pillSummary.replyUrl,
+      actionUrl: pillSummary.actionUrl,
+      notes: pillNotes
+    });
+  } catch {
+    // ignore
+  }
+  return;
+
   const activeNote = pillNotes.length > 0 ? pillNotes[pillIndex] : pillSummary;
   const safeTitle = escapeHtml(activeNote.title || pillSummary.title || 'Connections Note');
   const safeBody = escapeHtml(activeNote.message || pillSummary.message || '');
-  const safeReply = activeNote.replyUrl ? escapeHtml(activeNote.replyUrl) : '';
+  const safeReply = activeNote.replyUrl ? escapeHtml(activeNote.replyUrl || '') : '';
   const safeAction = escapeHtml(activeNote.actionUrl || pillSummary.actionUrl || '/admin/my-notes');
   const countLabel = pillSummary.count === 1
     ? '1 pending item'
@@ -275,13 +388,13 @@ const renderNotificationPill = () => {
       }
     });
 
-    notificationWindow.setAlwaysOnTop(true, 'screen-saver');
-    notificationWindow.setVisibleOnAllWorkspaces(true);
-    notificationWindow.on('closed', () => {
+    notificationWindow!.setAlwaysOnTop(true, 'screen-saver');
+    notificationWindow!.setVisibleOnAllWorkspaces(true);
+    notificationWindow!.on('closed', () => {
       notificationWindow = null;
     });
-    notificationWindow.on('show', () => positionNotificationWindow());
-    notificationWindow.webContents.once('did-finish-load', () => positionNotificationWindow());
+    notificationWindow!.on('show', () => positionNotificationWindow());
+    notificationWindow!.webContents.once('did-finish-load', () => positionNotificationWindow());
   }
 
   const html = `
@@ -565,10 +678,10 @@ const renderNotificationPill = () => {
     </html>
   `;
 
-  notificationWindow.setSize(360, pillMode === 'panel' ? 220 : 84, false);
+  notificationWindow!.setSize(360, pillMode === 'panel' ? 220 : 84, false);
   positionNotificationWindow();
-  notificationWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => undefined);
-  notificationWindow.showInactive();
+  notificationWindow!.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => undefined);
+  notificationWindow!.showInactive();
 };
 
 const showPanel = () => {
@@ -693,27 +806,32 @@ ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string
   };
   showMinimizedPill();
 
-  if (payload.openOnNotify && mainWindow) {
-    mainWindow.show();
-    mainWindow.focus();
-    mainWindow.webContents.send('desktop:expand');
+  try {
+    const win = ensureNotificationWindow();
+    win.showInactive();
+    win.webContents.send('desktop:notifyCard', {
+      id: `desktop-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type: 'task',
+      title: payload.title,
+      message: payload.body,
+      author: 'System',
+      recipientName: 'System',
+      actionUrl: pillSummary.actionUrl || '/admin/my-notes',
+      timestamp: new Date().toISOString(),
+    });
+  } catch {
+    // ignore
+  }
+
+  if (payload.openOnNotify) {
+    shell.openExternal(getExternalUrl('/admin')).catch(() => undefined);
   }
   return true;
 });
 
 ipcMain.on('desktop:openNotifications', (_event, payload?: { url?: string }) => {
-  if (!mainWindow) return;
-  mainWindow.show();
-  mainWindow.focus();
-  mainWindow.webContents.send('desktop:expand');
-  if (payload?.url) {
-    const nextUrl = payload.url.startsWith('http')
-      ? payload.url
-      : payload.url.startsWith('/')
-        ? `${appOrigin}${payload.url}`
-        : `${appOrigin}/${payload.url}`;
-    mainWindow.loadURL(nextUrl).catch(() => undefined);
-  }
+  const target = getExternalUrl(payload?.url || '/admin/my-notes');
+  shell.openExternal(target).catch(() => undefined);
   closeNotificationWindow();
 });
 

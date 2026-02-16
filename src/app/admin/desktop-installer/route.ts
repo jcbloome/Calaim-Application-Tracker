@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const fallbackInstallerUrl =
-  'https://github.com/jcbloome/Calaim-Application-Tracker/releases/download/v3.0.2/Connect.CalAIM.Desktop.Setup.3.0.2.exe';
+  'https://github.com/jcbloome/Calaim-Application-Tracker/releases/download/v3.0.8/Connect.CalAIM.Desktop.Setup.3.0.8.exe';
 
 const GITHUB_OWNER = 'jcbloome';
 const GITHUB_REPO = 'Calaim-Application-Tracker';

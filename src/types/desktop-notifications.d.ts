@@ -55,5 +55,18 @@ declare global {
       onExpand: (callback: () => void) => () => void;
       onQuickReply?: (callback: (payload: { noteId?: string; senderId?: string; message: string }) => void) => () => void;
     };
+
+    desktopNotificationPill?: {
+      open?: (url?: string) => void;
+      dismiss?: () => void;
+      hide?: () => void;
+      expand?: () => void;
+      navigate?: (delta: number) => void;
+      sendReply?: (payload: { noteId?: string; senderId?: string; message: string }) => void;
+      move?: (x: number, y: number) => void;
+      getPosition?: () => Promise<{ x: number; y: number } | null>;
+      onNotifyCard?: (callback: (payload: any) => void) => () => void;
+      onPillState?: (callback: (payload: any) => void) => () => void;
+    };
   }
 }
