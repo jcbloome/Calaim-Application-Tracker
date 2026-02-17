@@ -16,7 +16,13 @@ const getBaseUrl = (request: NextRequest) => {
       ? `${forwardedProto || 'https'}://${requestHost}`
       : '';
 
-  let baseUrl = requestOrigin || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  // In production, prefer the canonical app URL over request headers.
+  // Proxies / preview domains can produce a host that isn't authorized in Firebase Auth action links.
+  const canonical = process.env.NEXT_PUBLIC_APP_URL;
+  let baseUrl =
+    process.env.NODE_ENV !== 'development' && canonical
+      ? canonical
+      : requestOrigin || canonical || 'http://localhost:3000';
   if (baseUrl.includes(',')) {
     baseUrl = baseUrl.split(',')[0].trim();
   }
@@ -47,54 +53,11 @@ const resolveRole = async (email: string, role?: string) => {
 };
 
 const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user') => {
-  const serverKey = process.env.FIREBASE_API_KEY;
-  const publicKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
-  const firebaseApiKey = serverKey || publicKey;
-  const keySource = serverKey ? 'FIREBASE_API_KEY' : publicKey ? 'NEXT_PUBLIC_FIREBASE_API_KEY' : 'missing';
-  const keySuffix = firebaseApiKey ? firebaseApiKey.slice(-6) : 'none';
-
   try {
-    // Prefer Identity Toolkit when an API key is available (it returns an oobCode we can embed).
-    if (firebaseApiKey) {
-      const oobResponse = await fetch(
-        `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${firebaseApiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            requestType: 'PASSWORD_RESET',
-            email,
-            returnOobLink: true
-          })
-        }
-      );
-
-      const oobData = await oobResponse.json();
-      if (!oobResponse.ok) {
-        const baseMessage = oobData?.error?.message || 'Failed to request Firebase reset code';
-        if (process.env.NODE_ENV === 'development') {
-          throw new Error(`${baseMessage} (key: ${keySource}, …${keySuffix})`);
-        }
-        throw new Error(baseMessage);
-      }
-
-      const oobLink = oobData?.oobLink as string | undefined;
-      const oobCode =
-        oobData?.oobCode ||
-        (oobLink ? new URL(oobLink).searchParams.get('oobCode') : null);
-
-      if (!oobCode) {
-        throw new Error('Missing oobCode in Firebase response');
-      }
-
-      const resetPath = '/reset-password';
-      return `${baseUrl}${resetPath}?oobCode=${encodeURIComponent(oobCode)}&role=${encodeURIComponent(role)}`;
-    }
-
-    // If the API key is missing, don't fail — Admin SDK can still generate a valid reset link.
+    // Always use Admin SDK to generate a reset link.
+    // This avoids API-key-based server calls (which often fail due to key restrictions).
     const adminLink = await admin.auth().generatePasswordResetLink(email, {
       url: `${baseUrl}/reset-password`,
-      handleCodeInApp: true,
     });
     const adminCode = new URL(adminLink).searchParams.get('oobCode');
     if (adminCode) {
@@ -102,25 +65,8 @@ const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user'
     }
     return adminLink;
   } catch (error: any) {
-    // Fallback to Admin SDK if Identity Toolkit fails.
-    try {
-      const adminLink = await admin.auth().generatePasswordResetLink(email, {
-        url: `${baseUrl}/reset-password`,
-        handleCodeInApp: true,
-      });
-      const adminCode = new URL(adminLink).searchParams.get('oobCode');
-      if (adminCode) {
-        return `${baseUrl}/reset-password?oobCode=${encodeURIComponent(adminCode)}&role=${encodeURIComponent(role)}`;
-      }
-      return adminLink;
-    } catch (adminError: any) {
-      const baseMessage = error?.message || 'Failed to request Firebase reset code';
-      if (process.env.NODE_ENV === 'development') {
-        const adminMessage = adminError?.message || 'Admin SDK reset link failed';
-        throw new Error(`${baseMessage} | ${adminMessage} (key: ${keySource}, …${keySuffix})`);
-      }
-      throw error;
-    }
+    const message = error?.message || 'Failed to generate password reset link';
+    throw new Error(message);
   }
 };
 
