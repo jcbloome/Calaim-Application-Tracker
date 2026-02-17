@@ -3,7 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/firebase';
-import { confirmPasswordReset, sendPasswordResetEmail } from 'firebase/auth';
+import { confirmPasswordReset } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -76,8 +76,7 @@ function ResetPasswordContent() {
 
     setIsRequesting(true);
     try {
-      // Prefer server-side custom email (Resend). If it fails in production due to
-      // IAM / IdentityToolkit permissions, fall back to Firebase client reset email.
+      // Use server-side custom email (Resend). This sends a branded reset email.
       const response = await fetch('/api/auth/password-reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -87,39 +86,6 @@ function ResetPasswordContent() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         const details = String(data?.error || data?.details || '').trim() || JSON.stringify(data);
-        const hay = `${details}`.toLowerCase();
-        const isPermission =
-          hay.includes('permission_denied') ||
-          hay.includes('insufficient_permission') ||
-          hay.includes('identitytoolkit') ||
-          hay.includes('serviceusage') ||
-          hay.includes('caller does not have') ||
-          response.status === 403;
-
-        // Only attempt Firebase fallback when we have auth available.
-        if (isPermission && auth) {
-          const origin = typeof window !== 'undefined' ? window.location.origin : '';
-          const continueUrl = `${origin || ''}/reset-password?role=${encodeURIComponent(role)}`;
-          try {
-            await withTimeout(
-              sendPasswordResetEmail(auth, normalizedEmail, { url: continueUrl, handleCodeInApp: true }),
-              12000,
-              'Firebase password reset timed out. Please try again.'
-            );
-            setDebugInfo('Server email reset failed; sent Firebase reset email as fallback.');
-            setRequestSuccess(true);
-            toast({
-              title: 'Password Reset Email Sent',
-              description: 'Check your email for a reset link to continue.',
-            });
-            return;
-          } catch (fallbackError: any) {
-            const fallbackMsg = String(fallbackError?.message || 'Firebase fallback failed');
-            setDebugInfo(`Server failed (${response.status}). Fallback failed: ${fallbackMsg}`);
-            throw new Error('Failed to send password reset email');
-          }
-        }
-
         setDebugInfo(`Status ${response.status}: ${details}`);
         throw new Error(String(data?.error || 'Failed to send password reset email'));
       }

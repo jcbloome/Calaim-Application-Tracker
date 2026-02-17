@@ -3,6 +3,8 @@ import { Resend } from 'resend';
 import { renderAsync } from '@react-email/render';
 import PasswordResetEmail from '@/components/emails/PasswordResetEmail';
 import admin, { adminDb } from '@/firebase-admin';
+import crypto from 'crypto';
+import { resetTokenStore } from '@/lib/reset-tokens';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -54,16 +56,34 @@ const resolveRole = async (email: string, role?: string) => {
 
 const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user') => {
   try {
-    // Always use Admin SDK to generate a reset link.
-    // This avoids API-key-based server calls (which often fail due to key restrictions).
-    const adminLink = await admin.auth().generatePasswordResetLink(email, {
-      url: `${baseUrl}/reset-password`,
-    });
-    const adminCode = new URL(adminLink).searchParams.get('oobCode');
-    if (adminCode) {
-      return `${baseUrl}/reset-password?oobCode=${encodeURIComponent(adminCode)}&role=${encodeURIComponent(role)}`;
+    // Use our custom token flow (Resend email + /reset-password?token=...).
+    // This avoids Firebase Auth "email action link" generation (IdentityToolkit/serviceusage),
+    // which can fail in production depending on runtime IAM.
+    const token = crypto.randomBytes(32).toString('hex'); // 64 hex chars
+    const expires = Date.now() + 60 * 60 * 1000; // 1 hour
+
+    resetTokenStore.set(token, { email, expires });
+
+    if (process.env.NODE_ENV !== 'development') {
+      try {
+        await adminDb.collection('passwordResetTokens').doc(token).set(
+          {
+            email,
+            expires,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch (err) {
+        // If Firestore write fails, the in-memory token still works for single-instance runtimes,
+        // but multi-instance production may fail to validate later. Surface a clear error.
+        throw new Error('Password reset is temporarily unavailable (token storage failed). Please try again.');
+      }
     }
-    return adminLink;
+
+    const resetPath = '/reset-password';
+    return `${baseUrl}${resetPath}?token=${encodeURIComponent(token)}&role=${encodeURIComponent(role)}`;
   } catch (error: any) {
     const message = error?.message || 'Failed to generate password reset link';
     throw new Error(message);
