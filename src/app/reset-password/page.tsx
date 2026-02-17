@@ -38,6 +38,20 @@ function ResetPasswordContent() {
   const [success, setSuccess] = useState(false);
   const [requestSuccess, setRequestSuccess] = useState(false);
 
+  const withTimeout = async <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> => {
+    let t: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          t = setTimeout(() => reject(new Error(message)), ms);
+        }),
+      ]);
+    } finally {
+      if (t) clearTimeout(t);
+    }
+  };
+
   useEffect(() => {
     if (!hasResetParams && emailParam && !email) {
       setEmail(emailParam);
@@ -64,11 +78,28 @@ function ResetPasswordContent() {
           return;
         }
         try {
-          const resetEmail = await verifyPasswordResetCode(auth, oobCode);
+          const resetEmail = await withTimeout(
+            verifyPasswordResetCode(auth, oobCode),
+            12000,
+            'Reset link validation timed out. Please refresh and try again, or request a new reset email.'
+          );
           setEmail(resetEmail || '');
           setResetValid(true);
         } catch (verifyError: any) {
-          setError(verifyError?.message || 'Invalid or expired reset link');
+          const message = String(verifyError?.message || '');
+          const isTimeout = message.toLowerCase().includes('timed out');
+          const isNetwork = message.toLowerCase().includes('network') || message.toLowerCase().includes('fetch');
+
+          // If validation fails due to timeout/network, don't trap the user in an "invalid link" state.
+          // Let them proceed to set a new password; the final `confirmPasswordReset` call will still validate the code.
+          if (isTimeout || isNetwork) {
+            setDebugInfo(message || 'Reset link validation failed due to network issues. You can still try setting a new password.');
+            setResetValid(true);
+            // Try to keep any email hint if present in query params.
+            if (emailParam && !email) setEmail(emailParam);
+          } else {
+            setError(message || 'Invalid or expired reset link');
+          }
         } finally {
           setIsValidating(false);
         }
@@ -185,8 +216,12 @@ function ResetPasswordContent() {
           setError('Authentication service not available');
           return;
         }
-        
-        await confirmPasswordReset(auth, oobCode, password);
+
+        await withTimeout(
+          confirmPasswordReset(auth, oobCode, password),
+          12000,
+          'Password reset timed out. Please refresh and try again.'
+        );
       } else if (token) {
         // Custom token reset flow
         const response = await fetch('/api/auth/reset-password-confirm', {
