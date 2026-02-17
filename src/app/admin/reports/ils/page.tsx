@@ -16,6 +16,7 @@ type ILSMember = {
   memberLastName: string;
   memberFullName: string;
   memberMrn: string;
+  birthDate?: string;
   CalAIM_Status: string;
   Kaiser_Status: string;
   pathway: string;
@@ -166,6 +167,7 @@ export default function IlsReportPage() {
                   <TableRow>
                     <TableHead>Member Name</TableHead>
                     <TableHead>MRN</TableHead>
+                      <TableHead>DOB</TableHead>
                     <TableHead>Health Plan</TableHead>
                     <TableHead>CalAIM Status</TableHead>
                     <TableHead>Kaiser Status</TableHead>
@@ -180,6 +182,9 @@ export default function IlsReportPage() {
                     <TableRow key={member.client_ID2 || index}>
                       <TableCell className="font-medium">{member.memberFullName}</TableCell>
                       <TableCell>{member.memberMrn || 'N/A'}</TableCell>
+                      <TableCell>
+                        {member.birthDate ? format(new Date(member.birthDate), 'MMM d, yyyy') : 'N/A'}
+                      </TableCell>
                       <TableCell>{member.healthPlan || 'N/A'}</TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs ${

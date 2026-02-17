@@ -142,6 +142,12 @@ export default function SuperAdminRedirectPage() {
                                 Caspio API Test
                             </Button>
                         </Link>
+                        <Link href="/admin/global-task-tracker">
+                            <Button variant="outline" className="w-full justify-start">
+                                <Wrench className="mr-2 h-4 w-4" />
+                                Global Task Tracker
+                            </Button>
+                        </Link>
                         <Link href="/admin/migrate-drive">
                             <Button variant="outline" className="w-full justify-start">
                                 <Wrench className="mr-2 h-4 w-4" />

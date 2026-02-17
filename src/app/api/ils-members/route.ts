@@ -50,9 +50,12 @@ export async function GET(request: NextRequest) {
       memberFirstName: member.Senior_First || '',
       memberLastName: member.Senior_Last || '',
       memberFullName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
-      memberMrn: member.MediCal_Number || '',
+      // Prefer MCP_CIN (CalAIM_tbl_Members), fallback to MediCal_Number
+      memberMrn: member.MCP_CIN || member.MediCal_Number || '',
+      birthDate: member.Birth_Date || '',
       CalAIM_Status: member.CalAIM_Status || '',
       Kaiser_Status: member.Kaiser_Status || '',
+      T2038_Auth_Email_Kaiser: member.T2038_Auth_Email_Kaiser || '',
       pathway: member.SNF_Diversion_or_Transition || '',
       healthPlan: member.CalAIM_MCO || '',
       ILS_View: member.ILS_View || '',

@@ -2580,6 +2580,25 @@ function ApplicationDetailPageContent() {
     return !form.acknowledged;
   });
 
+  const getReviewerMeta = (reqTitle: string, formInfo?: any) => {
+    const isSummary = reqTitle === 'CS Member Summary' || reqTitle === 'CS Summary';
+    const rawName = isSummary ? (application as any)?.applicationCheckedBy : formInfo?.acknowledgedBy;
+    const rawDate = isSummary ? (application as any)?.applicationCheckedDate : formInfo?.acknowledgedDate;
+
+    const name = typeof rawName === 'string' && rawName.trim() ? rawName.trim() : '';
+    const iso = typeof rawDate === 'string' && rawDate.trim() ? rawDate.trim() : '';
+
+    let dateLabel = '';
+    if (iso) {
+      const d = new Date(iso);
+      if (!Number.isNaN(d.getTime())) {
+        dateLabel = format(d, 'MMM d, yyyy');
+      }
+    }
+
+    return { name, dateLabel };
+  };
+
   const handleApplicationReviewed = async (checked: boolean) => {
     try {
       const hasCompletedSummary = (application.forms || []).some((form: any) => {
@@ -2587,10 +2606,13 @@ function ApplicationDetailPageContent() {
         const isSummary = name === 'CS Member Summary' || name === 'CS Summary';
         return isSummary && form?.status === 'Completed';
       });
+      const reviewerName = user?.displayName || user?.email || 'Admin';
+      const reviewerUid = user?.uid || null;
       const updateData = {
         applicationChecked: checked,
         applicationCheckedDate: checked ? new Date().toISOString() : null,
-        ...(checked ? {} : { applicationCheckedBy: null }),
+        applicationCheckedBy: checked ? reviewerName : null,
+        applicationCheckedByUid: checked ? reviewerUid : null,
         // Derived field for staff review workflows
         pendingCsReview: !checked && hasCompletedSummary,
       };
@@ -2617,8 +2639,18 @@ function ApplicationDetailPageContent() {
   const handleFormReviewed = async (formName: string, checked: boolean) => {
     if (!docRef) return;
     try {
+      const reviewerName = user?.displayName || user?.email || 'Admin';
+      const reviewerUid = user?.uid || null;
       const updatedForms = (application.forms || []).map((form) =>
-        form.name === formName ? { ...form, acknowledged: checked } : form
+        form.name === formName
+          ? {
+              ...form,
+              acknowledged: checked,
+              acknowledgedBy: checked ? reviewerName : null,
+              acknowledgedByUid: checked ? reviewerUid : null,
+              acknowledgedDate: checked ? new Date().toISOString() : null,
+            }
+          : form
       );
 
       const pendingDocReviewCount = updatedForms.filter((form: any) => {
@@ -3317,6 +3349,16 @@ function ApplicationDetailPageContent() {
                                         {isReviewed ? 'Reviewed' : 'Mark reviewed'}
                                       </Label>
                                     </div>
+                                    {isReviewed && (() => {
+                                      const meta = getReviewerMeta(req.title, formInfo);
+                                      if (!meta.name && !meta.dateLabel) return null;
+                                      const parts = [meta.dateLabel, meta.name].filter(Boolean);
+                                      return (
+                                        <div className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                          {parts.join(' · ')}
+                                        </div>
+                                      );
+                                    })()}
                                   </div>
                                 )}
                             </div>

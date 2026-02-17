@@ -39,6 +39,14 @@ export type Application = {
   healthPlan: 'Kaiser' | 'Health Net' | 'Other';
   forms: FormStatus[];
   progress: number;
+  // Staff review metadata
+  applicationChecked?: boolean;
+  applicationCheckedBy?: string | null;
+  applicationCheckedByUid?: string | null;
+  applicationCheckedDate?: string | null; // ISO string
+  pendingCsReview?: boolean;
+  pendingDocReviewCount?: number;
+  pendingDocReviewUpdatedAt?: Timestamp | FieldValue;
   referrerName?: string;
   referrerEmail?: string;
   ispContactName?: string;
@@ -132,6 +140,11 @@ export type FormStatus = {
   href: string;
   downloadHref?: string;
   dateCompleted?: Timestamp;
+  // Staff review metadata (document acknowledgement)
+  acknowledged?: boolean;
+  acknowledgedBy?: string | null;
+  acknowledgedByUid?: string | null;
+  acknowledgedDate?: string | null; // ISO string
   choice?: 'accept' | 'decline';
   fileName?: string | null;
   filePath?: string | null;

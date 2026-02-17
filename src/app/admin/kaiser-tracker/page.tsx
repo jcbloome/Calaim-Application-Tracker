@@ -52,12 +52,15 @@ interface KaiserMember {
   memberFirstName: string;
   memberLastName: string;
   memberMrn: string;
+  birthDate?: string;
+  Birth_Date?: string;
   memberCounty: string;
   memberPhone: string;
   memberEmail: string;
   client_ID2: string;
   pathway: string;
   Kaiser_Status: string;
+  T2038_Auth_Email_Kaiser?: string;
   // Caspio field: tracks staff/user assignment for Kaiser
   Kaiser_User_Assignment?: string;
   CalAIM_Status: string;
@@ -157,6 +160,18 @@ const formatDate = (dateString: string): string => {
   }
 };
 
+const formatBirthDate = (member: any): string => {
+  const raw = String(member?.birthDate || member?.Birth_Date || '').trim();
+  if (!raw) return 'Not set';
+  try {
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return raw;
+    return d.toLocaleDateString();
+  } catch {
+    return raw;
+  }
+};
+
 // Helper functions moved inside component to avoid module-level const declarations
 
 // Kaiser workflow configuration
@@ -206,6 +221,26 @@ const CALAIM_STATUS_MAP = CALAIM_STATUS_OPTIONS.reduce((acc, status) => {
   acc[normalizeCalaimStatus(status)] = status;
   return acc;
 }, {} as Record<string, string>);
+
+const hasMeaningfulValue = (value: any) => {
+  const s = value != null ? String(value).trim() : '';
+  if (!s) return false;
+  const lower = s.toLowerCase();
+  return lower !== 'null' && lower !== 'undefined' && lower !== 'n/a';
+};
+
+const getEffectiveKaiserStatus = (member: any): string => {
+  // If Kaiser has authorized (email flag present) but official T2038 isn't received yet,
+  // bucket these into "T2038 Auth Only Email" for summary/reporting.
+  const hasAuthEmail = hasMeaningfulValue(member?.T2038_Auth_Email_Kaiser);
+  const hasOfficialAuth =
+    hasMeaningfulValue(member?.Kaiser_T2038_Received_Date) ||
+    hasMeaningfulValue(member?.Kaiser_T038_Received) ||
+    hasMeaningfulValue(member?.Kaiser_T2038_Received);
+
+  if (hasAuthEmail && !hasOfficialAuth) return 'T2038 Auth Only Email';
+  return String(member?.Kaiser_Status || 'No Status');
+};
 
 const toDateValue = (value: any): Date | null => {
   if (!value) return null;
@@ -303,7 +338,7 @@ function MemberNotesModal({
             {member.memberFirstName} {member.memberLastName} - Member Notes
           </DialogTitle>
           <DialogDescription>
-            MRN: {member.memberMrn} | County: {member.memberCounty} | Kaiser Status: {member.Kaiser_Status}
+            DOB: {formatBirthDate(member)} | MRN: {member.memberMrn} | County: {member.memberCounty} | Kaiser Status: {member.Kaiser_Status}
           </DialogDescription>
         </DialogHeader>
 
@@ -559,6 +594,7 @@ function StaffMemberManagementModal({
                           {member.memberFirstName} {member.memberLastName}
                         </CardTitle>
                         <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
+                          <span>DOB: {formatBirthDate(member)}</span>
                           <span>MRN: {member.memberMrn}</span>
                           <span>County: {member.memberCounty}</span>
                         </div>
@@ -732,7 +768,7 @@ function KaiserTrackerPageContent() {
     const summary: Record<string, number> = {};
 
     members.forEach(member => {
-      const status = member.Kaiser_Status || 'No Status';
+      const status = getEffectiveKaiserStatus(member);
       if (!summary[status]) summary[status] = 0;
       summary[status] += 1;
     });
@@ -1310,14 +1346,14 @@ function KaiserTrackerPageContent() {
           <CardContent className="pt-0">
             <div className="space-y-1 max-h-48 overflow-y-auto">
               {allKaiserStatuses.map((status, index) => {
-                const count = members.filter(m => m.Kaiser_Status === status).length;
+                const count = members.filter(m => getEffectiveKaiserStatus(m) === status).length;
                 const percentage = members.length > 0 ? ((count / members.length) * 100).toFixed(1) : '0';
                 return (
                   <div key={`kaiser-${index}-${status}`} 
                        className="flex items-center justify-between py-0.5 px-1 hover:bg-gray-50 rounded cursor-pointer text-xs"
                        onClick={() => {
                          if (members.length > 0) {
-                           const filteredMembers = members.filter(m => m.Kaiser_Status === status);
+                           const filteredMembers = members.filter(m => getEffectiveKaiserStatus(m) === status);
                            openMemberModal(filteredMembers, `${status} Members`, `${count} members with status: ${status}`, 'kaiser_status', status);
                          }
                        }}>
@@ -1981,6 +2017,7 @@ function MemberListModal({
                 const isStepOverdue = isOverdue(dueDate);
                 const daysUntilDue = getDaysUntilDue(dueDate);
                 const isUrgent = daysUntilDue <= 3 && daysUntilDue > 0;
+                const effectiveKaiserStatus = getEffectiveKaiserStatus(member);
                 
                 return (
                   <Card 
@@ -2014,14 +2051,14 @@ function MemberListModal({
                               </div>
                           
                           <p className="text-sm text-muted-foreground mt-1">
-                            ID: {member.client_ID2} | County: {member.memberCounty}
+                            ID: {member.client_ID2} | DOB: {formatBirthDate(member)} | MRN: {member.memberMrn} | County: {member.memberCounty}
                           </p>
                           
                           <div className="flex gap-2 mt-2">
-                            <Badge variant="outline" className={`text-xs ${getStatusColor(member.Kaiser_Status)}`}>
-                              Kaiser: {member.Kaiser_Status || 'No Status'}
+                            <Badge variant="outline" className={`text-xs ${getStatusColor(effectiveKaiserStatus)}`}>
+                              Kaiser: {effectiveKaiserStatus || 'No Status'}
                             </Badge>
-                            <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                            <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
                               CalAIM: {member.CalAIM_Status || 'No Status'}
                             </Badge>
                               </div>

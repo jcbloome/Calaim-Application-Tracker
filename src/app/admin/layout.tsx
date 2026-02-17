@@ -135,6 +135,7 @@ const superAdminNavLinks = [
       { href: '/admin/user-staff-management', label: 'User & Staff Management', icon: Users },
       { href: '/admin/operations-dashboard', label: 'Operations Dashboard', icon: Kanban },
       { href: '/admin/application-progression', label: 'Application Progression', icon: ListChecks },
+      { href: '/admin/global-task-tracker', label: 'Global Task Tracker', icon: ClipboardList },
       { href: '/admin/activity-log', label: 'System Activity Log', icon: Activity },
       { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },
       { href: '/admin/data-integration', label: 'Data & Integration Tools', icon: Database },

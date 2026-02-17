@@ -48,6 +48,7 @@ interface ILSReportMember {
 const BOTTLENECK_STATUSES = [
   // Kaiser workflow bottleneck statuses (these should be in Kaiser_Status field)
   'T2038 Requested',
+  'T2038 Auth Only Email',
   'Tier Level Requested', 
   'Need Tier Level',
   'Locating RCFEs',
@@ -60,6 +61,24 @@ const BOTTLENECK_STATUSES = [
   'RN Visit Complete',
   'Needs RN Visit'
 ];
+
+const hasMeaningfulValue = (value: any) => {
+  const s = value != null ? String(value).trim() : '';
+  if (!s) return false;
+  const lower = s.toLowerCase();
+  return lower !== 'null' && lower !== 'undefined' && lower !== 'n/a';
+};
+
+const getEffectiveKaiserStatus = (member: any): string => {
+  const hasAuthEmail = hasMeaningfulValue(member?.T2038_Auth_Email_Kaiser);
+  const hasOfficialAuth =
+    hasMeaningfulValue(member?.Kaiser_T2038_Received_Date) ||
+    hasMeaningfulValue(member?.Kaiser_T038_Received) ||
+    hasMeaningfulValue(member?.Kaiser_T2038_Received);
+
+  if (hasAuthEmail && !hasOfficialAuth) return 'T2038 Auth Only Email';
+  return String(member?.Kaiser_Status || '');
+};
 
 export default function ILSReportEditorPage() {
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
@@ -113,7 +132,7 @@ export default function ILSReportEditorPage() {
         // Filter for bottleneck statuses
         const bottleneckMembers = data.members
           .filter((member: any) => 
-            BOTTLENECK_STATUSES.includes(member.Kaiser_Status)
+            BOTTLENECK_STATUSES.includes(getEffectiveKaiserStatus(member))
           );
           
         console.log('🔍 ILS REPORT DEBUG - Found bottleneck members:', bottleneckMembers.length);
@@ -122,6 +141,7 @@ export default function ILSReportEditorPage() {
         );
         
         const processedMembers = bottleneckMembers.map((member: any) => {
+          const effectiveStatus = getEffectiveKaiserStatus(member) || member.Kaiser_Status;
           console.log('🔍 Processing member date fields:', {
             memberName: `${member.memberFirstName} ${member.memberLastName}`,
             Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date,
@@ -137,7 +157,7 @@ export default function ILSReportEditorPage() {
             memberName: `${member.memberFirstName} ${member.memberLastName}`,
             memberMrn: member.memberMrn,
             client_ID2: member.client_ID2 || member.Client_ID2,
-            Kaiser_Status: member.Kaiser_Status,
+            Kaiser_Status: effectiveStatus,
             // Use the date fields directly from the API response
             Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date || '',
             Kaiser_T2038_Received_Date: member.Kaiser_T2038_Received_Date || '',

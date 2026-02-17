@@ -316,7 +316,10 @@ export async function GET(request: NextRequest) {
       memberLastName: member.Senior_Last || 'Member',
       Senior_Last_First_ID: member.Senior_Last_First_ID || `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
       memberCounty: member.Member_County || member.County || 'Unknown',
-      memberMrn: member.memberMrn || member.Member_MRN || '',
+      // Prefer MCP_CIN (CalAIM_tbl_Members), fallback to legacy fields
+      memberMrn: member.MCP_CIN || member.MediCal_Number || member.memberMrn || member.Member_MRN || '',
+      Birth_Date: member.Birth_Date || '',
+      birthDate: member.Birth_Date || '',
       memberPhone: member.memberPhone || member.Member_Phone || '',
       memberEmail: member.memberEmail || member.Member_Email || '',
       CalAIM_MCO: member.CalAIM_MCO,
@@ -326,6 +329,8 @@ export async function GET(request: NextRequest) {
       SW_ID: member.SW_ID,
       Kaiser_User_Assignment: member.Kaiser_User_Assignment,
       Kaiser_Next_Step_Date: member.Kaiser_Next_Step_Date,
+      // Kaiser authorization-only email flag (used for summary categorization)
+      T2038_Auth_Email_Kaiser: member.T2038_Auth_Email_Kaiser || '',
         // Use Social_Worker_Assigned field for actual social workers (Kaiser_User_Assignment contains users/staff)
         Social_Worker_Assigned: member.Social_Worker_Assigned || '',
       // Kaiser Tracker expects Staff_Assigned field (using Kaiser_User_Assignment for staff assignments)

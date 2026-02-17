@@ -97,7 +97,9 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
     sortOrder: 9,
     description: 'Tier level request is needed',
     category: 'assessment',
-    isActive: true
+    // Not present in the current Caspio Kaiser status list; keep for backward-compat
+    // but hide from the ordered active status list.
+    isActive: false
   },
   {
     id: 5,

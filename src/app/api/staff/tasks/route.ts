@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/firebase-admin';
 import { normalizePriorityLabel } from '@/lib/notification-utils';
+import { FieldPath } from 'firebase-admin/firestore';
 
 export async function GET(request: NextRequest) {
   try {
@@ -90,6 +91,29 @@ export async function GET(request: NextRequest) {
     const reviewPrefs = onlyFollowUp
       ? { enabled: false, pollIntervalSeconds: 180, recipientEnabled: false, allowCs: false, allowDocs: false }
       : await loadReviewNotificationRecipient();
+
+    const fetchAllDocs = async (
+      baseQuery: FirebaseFirestore.Query,
+      opts?: { pageSize?: number; maxItems?: number }
+    ) => {
+      const pageSize = Math.max(1, Math.min(1000, Number(opts?.pageSize || 500)));
+      const maxItems = Math.max(1, Number(opts?.maxItems || 10000));
+
+      const docs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+      let last: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+
+      while (docs.length < maxItems) {
+        let q = baseQuery.limit(pageSize);
+        if (last) q = q.startAfter(last);
+        const snap = await q.get();
+        docs.push(...snap.docs);
+        if (snap.size < pageSize) break;
+        last = snap.docs[snap.docs.length - 1] || null;
+        if (!last) break;
+      }
+
+      return docs.slice(0, maxItems);
+    };
 
     // Kaiser tasks can be expensive; skip entirely for follow-up-only calendar queries.
     // We also build a lookup map (clientId2 -> current Kaiser status) so other task types
@@ -220,12 +244,14 @@ export async function GET(request: NextRequest) {
       };
 
       try {
-        const staffSnap = await adminDb
-          .collection('staff_notifications')
-          .where('userId', '==', userId)
-          .limit(200)
-          .get();
-        staffSnap.docs.forEach((docSnap) => {
+        const staffDocs = await fetchAllDocs(
+          adminDb
+            .collection('staff_notifications')
+            .where('userId', '==', userId)
+            .orderBy(FieldPath.documentId()),
+          { pageSize: 500, maxItems: 20000 }
+        );
+        staffDocs.forEach((docSnap) => {
           const data = docSnap.data();
           const followUpRequired = Boolean(data.followUpRequired) || Boolean(data.followUpDate);
           if (!followUpRequired) return;
@@ -270,21 +296,17 @@ export async function GET(request: NextRequest) {
           staffName,
         ].filter(Boolean).map((v) => String(v))));
 
-        const snaps = await Promise.all(
-          assignmentCandidates.map((value) =>
+        const seen = new Set<string>();
+        for (const value of assignmentCandidates) {
+          const docs = await fetchAllDocs(
             adminDb
               .collection('client_notes')
               .where('followUpAssignment', '==', value)
-              .limit(200)
-              .get()
-              .catch(() => null)
-          )
-        );
+              .orderBy(FieldPath.documentId()),
+            { pageSize: 500, maxItems: 20000 }
+          ).catch(() => []);
 
-        const seen = new Set<string>();
-        snaps.forEach((snap) => {
-          if (!snap) return;
-          snap.docs.forEach((docSnap) => {
+          docs.forEach((docSnap) => {
             if (seen.has(docSnap.id)) return;
             seen.add(docSnap.id);
             const data = docSnap.data();
@@ -326,18 +348,20 @@ export async function GET(request: NextRequest) {
               ...(kaiserStatus ? { currentKaiserStatus: kaiserStatus } : {}),
             });
           });
-        });
+        }
       } catch (clientError) {
         console.warn('Failed to load client follow-up notes:', clientError);
       }
 
       try {
-        const memberSnap = await adminDb
-          .collection('member-notes')
-          .where('assignedTo', '==', userId)
-          .limit(200)
-          .get();
-        memberSnap.docs.forEach((docSnap) => {
+        const memberDocs = await fetchAllDocs(
+          adminDb
+            .collection('member-notes')
+            .where('assignedTo', '==', userId)
+            .orderBy(FieldPath.documentId()),
+          { pageSize: 500, maxItems: 20000 }
+        );
+        memberDocs.forEach((docSnap) => {
           const data = docSnap.data();
           const followUpDate = data.followUpDate;
           if (!followUpDate) return;
@@ -548,14 +572,15 @@ export async function GET(request: NextRequest) {
 
       // Next-step tasks (from staffTrackers), shown on staff Daily Task Tracker calendar.
       try {
-        const trackerSnap = await adminDb
-          .collectionGroup('staffTrackers')
-          .where('assignedStaffId', '==', userId)
-          .limit(200)
-          .get()
-          .catch(() => null);
+        const trackerDocs = await fetchAllDocs(
+          adminDb
+            .collectionGroup('staffTrackers')
+            .where('assignedStaffId', '==', userId)
+            .orderBy(FieldPath.documentId()),
+          { pageSize: 500, maxItems: 20000 }
+        ).catch(() => []);
 
-        trackerSnap?.docs?.forEach((docSnap: any) => {
+        trackerDocs.forEach((docSnap: any) => {
           const data = docSnap.data() || {};
           const applicationId = String(data.applicationId || docSnap.id || '').trim();
           const ownerUid = String(data.userId || docSnap.ref?.parent?.parent?.parent?.parent?.id || '').trim() || null;
