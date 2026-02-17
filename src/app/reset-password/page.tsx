@@ -3,7 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/firebase';
-import { confirmPasswordReset, verifyPasswordResetCode } from 'firebase/auth';
+import { confirmPasswordReset, sendPasswordResetEmail } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -31,8 +31,6 @@ function ResetPasswordContent() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isRequesting, setIsRequesting] = useState(false);
-  const [isValidating, setIsValidating] = useState(true);
-  const [resetValid, setResetValid] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -61,98 +59,8 @@ function ResetPasswordContent() {
   useEffect(() => {
     setRole(roleParam === 'sw' ? 'sw' : 'user');
   }, [roleParam]);
-
-  useEffect(() => {
-    const validateToken = async () => {
-      if (!hasResetParams) {
-        setIsValidating(false);
-        setResetValid(false);
-        setError(null);
-        return;
-      }
-
-      if (oobCode) {
-        if (!auth) {
-          setError('Authentication service not available');
-          setIsValidating(false);
-          return;
-        }
-        try {
-          const resetEmail = await withTimeout(
-            verifyPasswordResetCode(auth, oobCode),
-            12000,
-            'Reset link validation timed out. Please refresh and try again, or request a new reset email.'
-          );
-          setEmail(resetEmail || '');
-          setResetValid(true);
-        } catch (verifyError: any) {
-          const message = String(verifyError?.message || '');
-          const isTimeout = message.toLowerCase().includes('timed out');
-          const isNetwork = message.toLowerCase().includes('network') || message.toLowerCase().includes('fetch');
-
-          // If validation fails due to timeout/network, don't trap the user in an "invalid link" state.
-          // Let them proceed to set a new password; the final `confirmPasswordReset` call will still validate the code.
-          if (isTimeout || isNetwork) {
-            setDebugInfo(message || 'Reset link validation failed due to network issues. You can still try setting a new password.');
-            setResetValid(true);
-            // Try to keep any email hint if present in query params.
-            if (emailParam && !email) setEmail(emailParam);
-          } else {
-            setError(message || 'Invalid or expired reset link');
-          }
-        } finally {
-          setIsValidating(false);
-        }
-        return;
-      }
-      
-      if (token) {
-        // Custom token - validate it
-        try {
-          console.log('🔍 Validating token:', token.substring(0, 8) + '...');
-          console.log('🔍 Full token:', token);
-          console.log('🔍 Token length:', token.length);
-          
-          // Add timeout to prevent hanging
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-          
-          const response = await fetch(`/api/auth/password-reset?token=${token}`, {
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
-          
-          console.log('📡 API Response status:', response.status);
-          
-          const data = await response.json();
-          console.log('📄 API Response data:', data);
-          
-          if (response.ok && data.valid) {
-            setEmail(data.email);
-            if (data.role === 'sw') {
-              setRole('sw');
-            }
-            setResetValid(true);
-            console.log('✅ Token validation successful');
-          } else {
-            console.log('❌ Token validation failed:', data.error);
-            setError(data.error || 'Invalid or expired reset token');
-          }
-        } catch (error: any) {
-          console.error('❌ Token validation error:', error);
-          if (error.name === 'AbortError') {
-            setError('Request timed out. Please try again or request a new reset link.');
-          } else {
-            setError('Failed to validate reset token. Please try again.');
-          }
-        }
-      }
-      
-      setIsValidating(false);
-    };
-
-    validateToken();
-  }, [token, oobCode, auth, hasResetParams]);
+  // No pre-validation: render the reset form immediately when `oobCode` or `token` is present.
+  // The submit actions (`confirmPasswordReset` or token-confirm API) are the authoritative validators.
 
   const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,6 +76,8 @@ function ResetPasswordContent() {
 
     setIsRequesting(true);
     try {
+      // Prefer server-side custom email (Resend). If it fails in production due to
+      // IAM / IdentityToolkit permissions, fall back to Firebase client reset email.
       const response = await fetch('/api/auth/password-reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -176,10 +86,44 @@ function ResetPasswordContent() {
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const details = data?.error || data?.details || JSON.stringify(data);
+        const details = String(data?.error || data?.details || '').trim() || JSON.stringify(data);
+        const hay = `${details}`.toLowerCase();
+        const isPermission =
+          hay.includes('permission_denied') ||
+          hay.includes('insufficient_permission') ||
+          hay.includes('identitytoolkit') ||
+          hay.includes('serviceusage') ||
+          hay.includes('caller does not have') ||
+          response.status === 403;
+
+        // Only attempt Firebase fallback when we have auth available.
+        if (isPermission && auth) {
+          const origin = typeof window !== 'undefined' ? window.location.origin : '';
+          const continueUrl = `${origin || ''}/reset-password?role=${encodeURIComponent(role)}`;
+          try {
+            await withTimeout(
+              sendPasswordResetEmail(auth, normalizedEmail, { url: continueUrl, handleCodeInApp: true }),
+              12000,
+              'Firebase password reset timed out. Please try again.'
+            );
+            setDebugInfo('Server email reset failed; sent Firebase reset email as fallback.');
+            setRequestSuccess(true);
+            toast({
+              title: 'Password Reset Email Sent',
+              description: 'Check your email for a reset link to continue.',
+            });
+            return;
+          } catch (fallbackError: any) {
+            const fallbackMsg = String(fallbackError?.message || 'Firebase fallback failed');
+            setDebugInfo(`Server failed (${response.status}). Fallback failed: ${fallbackMsg}`);
+            throw new Error('Failed to send password reset email');
+          }
+        }
+
         setDebugInfo(`Status ${response.status}: ${details}`);
-        throw new Error(data?.error || 'Failed to send password reset email');
+        throw new Error(String(data?.error || 'Failed to send password reset email'));
       }
+
       setRequestSuccess(true);
       toast({
         title: 'Password Reset Email Sent',
@@ -263,49 +207,6 @@ function ResetPasswordContent() {
       setIsLoading(false);
     }
   };
-
-  if (isValidating) {
-    return (
-      <>
-        <Header />
-        <main className="flex-grow flex items-center justify-center bg-slate-50 p-4">
-          <Card className="w-full max-w-md shadow-2xl">
-            <CardContent className="flex items-center justify-center p-8">
-              <Loader2 className="h-8 w-8 animate-spin mr-3" />
-              <p>Validating reset link...</p>
-            </CardContent>
-          </Card>
-        </main>
-      </>
-    );
-  }
-
-  if (hasResetParams && (!resetValid || error)) {
-    return (
-      <>
-        <Header />
-        <main className="flex-grow flex items-center justify-center bg-slate-50 p-4">
-          <Card className="w-full max-w-md shadow-2xl">
-            <CardHeader className="text-center">
-              <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-              <CardTitle className="text-2xl">Invalid Reset Link</CardTitle>
-              <CardDescription>
-                This password reset link is invalid or has expired.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-center">
-              <p className="text-sm text-muted-foreground mb-4">
-                {error || 'The reset link may have expired or already been used.'}
-              </p>
-              <Button asChild className="w-full">
-                <a href={role === 'sw' ? '/sw-login' : '/login'}>Return to Login</a>
-              </Button>
-            </CardContent>
-          </Card>
-        </main>
-      </>
-    );
-  }
 
   if (!hasResetParams) {
     return (
