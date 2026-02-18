@@ -109,6 +109,31 @@ service cloud.firestore {
         allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
         allow list, read: if isSuperAdmin();
     }
+
+    // 5. Staff Chat (Firestore source of truth)
+    // Conversations are limited to admins and the conversation participants.
+    match /chat_conversations/{conversationId} {
+      function isParticipant() {
+        return isSignedIn() && request.auth.uid in resource.data.participants;
+      }
+      function isParticipantCreate() {
+        return isSignedIn() && request.auth.uid in request.resource.data.participants;
+      }
+
+      allow get, list: if isAdmin() || isParticipant();
+      allow create: if isAdmin() || isParticipantCreate();
+      allow update, delete: if isAdmin() || isParticipant();
+
+      match /messages/{messageId} {
+        allow get, list: if isAdmin() || isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chat_conversations/$(conversationId)).data.participants;
+        allow create: if isAdmin() || (
+          isSignedIn() &&
+          request.resource.data.senderUid == request.auth.uid &&
+          request.auth.uid in get(/databases/$(database)/documents/chat_conversations/$(conversationId)).data.participants
+        );
+        allow update, delete: if isAdmin();
+      }
+    }
   }
 }
 

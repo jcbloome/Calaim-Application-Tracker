@@ -114,6 +114,7 @@ const adminNavLinks = [
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
       { href: '/admin/social-worker-assignments', label: 'Social Worker Assignments', icon: UserPlus },
+      { href: '/admin/chat', label: 'Staff Chat', icon: MessageSquareText },
       { href: '/admin/sw-visit-tracking', label: 'SW Visit Tracking System', icon: FileBarChart },
       { href: '/admin/sw-claims-tracking', label: 'SW Claims Tracking', icon: FileBarChart },
       { href: '/admin/member-activity', label: 'Member Activity', icon: Activity },

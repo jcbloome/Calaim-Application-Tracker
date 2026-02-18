@@ -110,17 +110,56 @@ const computeEffectivePaused = () => {
   notificationState.effectivePaused = notificationState.pausedByUser || pausedForHours;
 };
 
+const openInMainWindow = (route?: string) => {
+  const target = getExternalUrl(route || '/admin/my-notes');
+  try {
+    if (!mainWindow) {
+      createWindow();
+    }
+    if (!mainWindow) {
+      shell.openExternal(target).catch(() => undefined);
+      return;
+    }
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.loadURL(target).catch(() => {
+      if (!isDev) return;
+      try {
+        const fallbackOrigin = appOrigin.includes('localhost:3000')
+          ? appOrigin.replace('localhost:3000', 'localhost:3001')
+          : appOrigin.includes('localhost:3001')
+            ? appOrigin.replace('localhost:3001', 'localhost:3000')
+            : '';
+        if (!fallbackOrigin) return;
+        const url = String(target).replace(appOrigin, fallbackOrigin);
+        setAppUrl(url);
+        mainWindow?.loadURL(url).catch(() => undefined);
+      } catch {
+        // ignore
+      }
+    });
+  } catch {
+    shell.openExternal(target).catch(() => undefined);
+  }
+};
+
 const buildTrayMenu = () => {
   const statusLabel = notificationState.effectivePaused ? 'Silent' : 'Active';
   const template: Array<Electron.MenuItemConstructorOptions> = [
     {
       label: 'Open Notifications',
       click: () => {
-        if (!mainWindow) return;
-        mainWindow.show();
-        mainWindow.focus();
-        mainWindow.webContents.send('desktop:expand');
+        openInMainWindow('/admin/my-notes');
+        try {
+          mainWindow?.webContents.send('desktop:expand');
+        } catch {
+          // ignore
+        }
       }
+    },
+    {
+      label: 'Open Staff Chat',
+      click: () => openInMainWindow('/admin/chat')
     },
     { type: 'separator' },
     {
@@ -923,14 +962,13 @@ ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string
   }
 
   if (payload.openOnNotify) {
-    shell.openExternal(getExternalUrl('/admin')).catch(() => undefined);
+    openInMainWindow('/admin');
   }
   return true;
 });
 
 ipcMain.on('desktop:openNotifications', (_event, payload?: { url?: string }) => {
-  const target = getExternalUrl(payload?.url || '/admin/my-notes');
-  shell.openExternal(target).catch(() => undefined);
+  openInMainWindow(payload?.url || '/admin/my-notes');
   closeNotificationWindow();
 });
 
