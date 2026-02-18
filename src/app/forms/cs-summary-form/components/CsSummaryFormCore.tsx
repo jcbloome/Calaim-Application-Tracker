@@ -39,7 +39,7 @@ const steps = [
       'onALWWaitlist', 'hasPrefRCFE', 
       'rcfeName', 'rcfeAddress', 'rcfePreferredCities',
       'rcfeAdminFirstName', 'rcfeAdminLastName', 'rcfeAdminPhone', 'rcfeAdminEmail',
-      'monthlyIncome', 'ackRoomAndBoard'
+      'ackRoomAndBoard'
   ]},
 ];
 

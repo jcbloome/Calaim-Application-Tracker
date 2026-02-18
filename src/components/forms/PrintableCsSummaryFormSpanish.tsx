@@ -330,8 +330,6 @@ export function PrintableCsSummaryFormSpanish({
         key: 'income-proof-note',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black'
       }, 'Se deberá presentar comprobante de ingresos (carta anual de adjudicación o 3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social) como parte de esta solicitud. Si los ingresos son superiores a aproximadamente $1,800, esto podría activar el Share of Cost de Medi-Cal que debe resolverse antes de solicitar CalAIM. Consulte las páginas de información del programa para más detalles.'),
-      buildField({ label: 'Ingreso mensual actual del miembro', value: data.monthlyIncome, placeholder: '$0.00', required: true, width: 'half' }),
-      buildField({ label: 'Pago esperado al RCFE/ARF como "alojamiento y comida"', value: data.expectedRoomBoardPayment, placeholder: '$0.00', required: true, width: 'half' }),
       buildField({
         label: 'Reconoce Responsabilidad de Alojamiento y Comida',
         value: data.ackRoomAndBoard ? 'Sí' : 'No',

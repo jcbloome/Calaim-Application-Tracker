@@ -645,20 +645,6 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           more information about this.
         </div>
         <PrintableField
-          label="Member's current monthly income"
-          value={data.monthlyIncome}
-          placeholder="$0.00"
-          required
-          width="half"
-        />
-        <PrintableField
-          label={'Expected payment to RCFE/ARF as "room and board"'}
-          value={data.expectedRoomBoardPayment}
-          placeholder="$0.00"
-          required
-          width="half"
-        />
-        <PrintableField
           label="Acknowledges Room & Board Responsibility"
           value={data.ackRoomAndBoard ? 'Yes' : 'No'}
           type="radio"

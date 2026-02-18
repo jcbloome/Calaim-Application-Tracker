@@ -22,15 +22,6 @@ export default function Step4() {
   
   const hasPrefRCFE = watch('hasPrefRCFE');
 
-  const formatCurrencyInput = (value: string) => {
-    const normalized = value.replace(/[^0-9.]/g, '');
-    if (!normalized) return '';
-    const [whole, decimal] = normalized.split('.');
-    const formattedWhole = whole.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    const formattedDecimal = decimal ? `.${decimal.slice(0, 2)}` : '';
-    return `$${formattedWhole || '0'}${formattedDecimal}`;
-  };
-  
   const formatName = (value: string) => {
     if (!value) return '';
     return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
@@ -162,56 +153,6 @@ export default function Step4() {
               will need to be submitted as part of this application.
             </p>
           </div>
-
-            <FormField
-              control={control}
-              name="monthlyIncome"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Member's current monthly income <span className="text-destructive">*</span></FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      value={field.value ?? ''}
-                      type="text"
-                      inputMode="numeric"
-                      className="pl-3"
-                      onChange={(event) => field.onChange(formatCurrencyInput(event.target.value))}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Any income above $1,444.07 is not paid as "room and board" unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees to a higher amount for a private room (since the program does not mandate private rooms). If income is above approximately $1,800, this might trigger Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See{' '}
-                    <a href="/info" className="text-primary hover:underline">
-                      Program Information
-                    </a>{' '}
-                    pages for more information.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={control}
-              name="expectedRoomBoardPayment"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Expected payment to RCFE/ARF as "room and board" <span className="text-destructive">*</span></FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <Input
-                        {...field}
-                        value={field.value ?? ''}
-                        type="text"
-                        inputMode="numeric"
-                        className="pl-3"
-                        onChange={(event) => field.onChange(formatCurrencyInput(event.target.value))}
-                      />
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
             <FormField
               control={control}
               name="ackRoomAndBoard"
