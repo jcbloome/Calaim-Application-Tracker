@@ -218,7 +218,7 @@ export default function SWUserManagementPage() {
       }
       
       // Check which ones are already in Firestore
-      const caspioWithStatus = caspioStaff.map((staff: CaspioStaffMember) => {
+      const caspioWithStatusRaw = caspioStaff.map((staff: CaspioStaffMember) => {
         const staffSwId = String(staff.sw_id || staff.id || '');
         const staffEmail = normalizeEmail(String(staff.email || ''));
         
@@ -244,6 +244,40 @@ export default function SWUserManagementPage() {
           needsSync: !alreadyInFirestore
         };
       });
+
+      // Deduplicate rows (Caspio can return duplicates). Prefer rows with an email.
+      const caspioWithStatus = (() => {
+        const pickBetter = (a: any, b: any) => {
+          const aEmail = String(a.email || '').trim();
+          const bEmail = String(b.email || '').trim();
+          if (!!aEmail !== !!bEmail) return aEmail ? a : b;
+          const aName = String(a.name || '').trim();
+          const bName = String(b.name || '').trim();
+          if (aName.length !== bName.length) return aName.length >= bName.length ? a : b;
+          return a;
+        };
+        const bySwId = new Map<string, any>();
+        const byEmail = new Map<string, any>();
+        for (const row of caspioWithStatusRaw) {
+          const swId = String(row.sw_id || '').trim();
+          const email = normalizeEmail(String(row.email || ''));
+          if (swId) {
+            const existing = bySwId.get(swId);
+            bySwId.set(swId, existing ? pickBetter(existing, row) : row);
+            continue;
+          }
+          if (email) {
+            const existing = byEmail.get(email);
+            byEmail.set(email, existing ? pickBetter(existing, row) : row);
+          }
+        }
+        const result = Array.from(bySwId.values()).concat(
+          Array.from(byEmail.entries())
+            .filter(([email]) => !Array.from(bySwId.values()).some((s) => normalizeEmail(String(s.email || '')) === email))
+            .map(([, row]) => row)
+        );
+        return result;
+      })();
       
       // Persist Caspio names to Firestore so they don't fall back to SW_ID
       const batch = writeBatch(firestore);
@@ -721,11 +755,11 @@ export default function SWUserManagementPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {syncedStaff.map((staff) => {
+                {syncedStaff.map((staff, idx) => {
                   const staffEmail = normalizeEmail(staff.email);
                   const rowKey = `${staff.sw_id || staff.id || staffEmail || staff.name || 'sw'}-${staff.email || ''}`;
                   return (
-                    <TableRow key={rowKey}>
+                    <TableRow key={`${rowKey}-${idx}`}>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <UserCheck className="h-4 w-4 text-primary" />

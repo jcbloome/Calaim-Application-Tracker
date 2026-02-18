@@ -362,7 +362,7 @@ export async function fetchCaspioSocialWorkers(
   const swData = await swResponse.json();
   const allSocialWorkers = swData.Result || [];
 
-  const transformedStaff: CaspioSocialWorker[] = allSocialWorkers
+  const transformedStaffRaw: CaspioSocialWorker[] = allSocialWorkers
     .map((sw: any) => {
       const swId = (sw.SW_ID || sw.SW_table_id || '').toString().trim();
       if (!swId) {
@@ -388,6 +388,44 @@ export async function fetchCaspioSocialWorkers(
       };
     })
     .filter(Boolean) as CaspioSocialWorker[];
+
+  // Caspio can contain duplicate staff rows (same SW_ID or same email). Deduplicate here so
+  // downstream UI rendering and Firestore caching don't create conflicts.
+  const pickBetter = (a: CaspioSocialWorker, b: CaspioSocialWorker) => {
+    const aEmail = String(a.email || '').trim();
+    const bEmail = String(b.email || '').trim();
+    if (!!aEmail !== !!bEmail) return aEmail ? a : b;
+    const aName = String(a.name || '').trim();
+    const bName = String(b.name || '').trim();
+    if (aName.length !== bName.length) return aName.length >= bName.length ? a : b;
+    const aRate = a.rate ?? null;
+    const bRate = b.rate ?? null;
+    if ((aRate === null) !== (bRate === null)) return aRate !== null ? a : b;
+    return a;
+  };
+
+  const bySwId = new Map<string, CaspioSocialWorker>();
+  const byEmail = new Map<string, CaspioSocialWorker>();
+  for (const staff of transformedStaffRaw) {
+    const swId = String(staff.sw_id || '').trim();
+    const email = String(staff.email || '').trim().toLowerCase();
+    if (swId) {
+      const existing = bySwId.get(swId);
+      bySwId.set(swId, existing ? pickBetter(existing, staff) : staff);
+      continue;
+    }
+    if (email) {
+      const existing = byEmail.get(email);
+      byEmail.set(email, existing ? pickBetter(existing, staff) : staff);
+      continue;
+    }
+  }
+
+  const transformedStaff = Array.from(bySwId.values()).concat(
+    Array.from(byEmail.entries())
+      .filter(([email]) => !Array.from(bySwId.values()).some((s) => String(s.email || '').trim().toLowerCase() === email))
+      .map(([, staff]) => staff)
+  );
 
   // Assignment counts are helpful but can be expensive (requires fetching full member dataset).
   // If counting fails (timeouts / data issues), return staff with 0 counts instead of failing the whole request.
