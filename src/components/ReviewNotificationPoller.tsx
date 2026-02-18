@@ -166,11 +166,13 @@ export function ReviewNotificationPoller() {
 
       const reviewNotes = [
         ...docTasks.slice(0, 4).map((t) => ({
+          kind: 'docs' as const,
           title: 'Doc uploads received',
           message: t?.memberName ? `${t.memberName}${t?.description ? ` — ${t.description}` : ''}` : String(t?.description || t?.title || ''),
           timestamp: t?.dueDate || t?.createdAt,
         })),
         ...csTasks.slice(0, 4).map((t) => ({
+          kind: 'cs' as const,
           title: 'CS Summary received',
           message: t?.memberName ? t.memberName : String(t?.description || t?.title || ''),
           timestamp: t?.dueDate || t?.createdAt,
@@ -184,6 +186,7 @@ export function ReviewNotificationPoller() {
             notes: reviewNotes.map((n) => ({
               title: n.title,
               message: n.message,
+              kind: n.kind,
               author: 'System',
               recipientName: user.displayName || user.email || 'Staff',
               memberName: '',

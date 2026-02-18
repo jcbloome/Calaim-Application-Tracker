@@ -59,6 +59,24 @@ const normalizeType = (value: any): NotifyCardPayload['type'] => {
   return 'note';
 };
 
+const typeFromKind = (kind?: string): NotifyCardPayload['type'] => {
+  const k = String(kind || '').toLowerCase().trim();
+  if (k === 'docs') return 'success'; // green like web for uploads received
+  if (k === 'cs') return 'task'; // orange like web for CS summary review
+  return 'note'; // blue for general notes
+};
+
+const typeFromNotes = (notes?: PillStatePayload['notes']): NotifyCardPayload['type'] => {
+  if (!Array.isArray(notes) || notes.length === 0) return 'note';
+  const hasDocs = notes.some((n) => n?.kind === 'docs');
+  const hasCs = notes.some((n) => n?.kind === 'cs');
+  if (hasDocs && hasCs) return 'warning'; // mixed: match web "review items received"
+  if (hasDocs) return 'success';
+  if (hasCs) return 'task';
+  // Fallback to the first item (notes)
+  return typeFromKind(notes[0]?.kind);
+};
+
 export default function DesktopNotificationWindowClient() {
   const { showNotification, clearAll } = useGlobalNotifications();
   const unsubRef = useRef<null | (() => void)>(null);
@@ -136,10 +154,11 @@ export default function DesktopNotificationWindowClient() {
 
       const summaryId = 'desktop-pill-summary';
       const actionUrl = String(payload?.actionUrl || '/admin/my-notes');
+      const summaryType = typeFromNotes(payload?.notes);
 
       showNotification({
         keyId: summaryId,
-        type: 'task',
+        type: summaryType,
         title: String(payload?.title || 'Connections notifications'),
         message: String(payload?.message || (count === 1 ? '1 pending item' : `${count} pending items`)),
         author: payload?.author,

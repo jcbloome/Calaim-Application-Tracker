@@ -9,6 +9,9 @@ let notificationWindow: BrowserWindow | null = null;
 let notificationTimer: NodeJS.Timeout | null = null;
 let isQuitting = false;
 let notificationWindowLoaded = false;
+let updateReadyToInstall = false;
+let updateReadyVersion: string | null = null;
+let updaterConfigured = false;
 
 let pillSummary = {
   count: 0,
@@ -45,6 +48,24 @@ let reviewPillCount = 0;
 let pillIndex = 0;
 let pillPosition: { x: number; y: number } | null = null;
 let pillMode: 'compact' | 'panel' = 'compact';
+
+const PILL_WINDOW_SIZES = {
+  compact: { width: 420, height: 110 },
+  panel: { width: 460, height: 340 }
+} as const;
+
+const applyPillWindowSize = () => {
+  if (!notificationWindow) return;
+  const target = pillMode === 'panel' ? PILL_WINDOW_SIZES.panel : PILL_WINDOW_SIZES.compact;
+  try {
+    notificationWindow.setResizable(false);
+    notificationWindow.setMinimumSize(target.width, target.height);
+    notificationWindow.setMaximumSize(target.width, target.height);
+    notificationWindow.setSize(target.width, target.height, false);
+  } catch {
+    // ignore
+  }
+};
 
 const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
@@ -91,7 +112,7 @@ const computeEffectivePaused = () => {
 
 const buildTrayMenu = () => {
   const statusLabel = notificationState.effectivePaused ? 'Silent' : 'Active';
-  return Menu.buildFromTemplate([
+  const template: Array<Electron.MenuItemConstructorOptions> = [
     {
       label: 'Open Notifications',
       click: () => {
@@ -152,6 +173,22 @@ const buildTrayMenu = () => {
         autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
       }
     },
+    ...(updateReadyToInstall
+      ? ([
+          {
+            label: updateReadyVersion ? `Restart to Update (v${updateReadyVersion})` : 'Restart to Update',
+            click: () => {
+              try {
+                isQuitting = true;
+                autoUpdater.quitAndInstall();
+              } catch {
+                // ignore
+              }
+            }
+          },
+          { type: 'separator' as const },
+        ] as const)
+      : []),
     { type: 'separator' },
     {
       label: 'Quit',
@@ -160,7 +197,8 @@ const buildTrayMenu = () => {
         app.quit();
       }
     }
-  ]);
+  ];
+  return Menu.buildFromTemplate(template);
 };
 
 const updateTrayMenu = () => {
@@ -236,10 +274,10 @@ const getExternalUrl = (url?: string) => {
 const ensureNotificationWindow = () => {
   if (!notificationWindow) {
     notificationWindow = new BrowserWindow({
-      width: 420,
-      height: 520,
+      width: PILL_WINDOW_SIZES.compact.width,
+      height: PILL_WINDOW_SIZES.compact.height,
       frame: false,
-      transparent: false,
+      transparent: true,
       resizable: false,
       alwaysOnTop: true,
       skipTaskbar: true,
@@ -254,6 +292,7 @@ const ensureNotificationWindow = () => {
 
     notificationWindow.setAlwaysOnTop(true, 'screen-saver');
     notificationWindow.setVisibleOnAllWorkspaces(true);
+    applyPillWindowSize();
     notificationWindow.on('closed', () => {
       notificationWindow = null;
       notificationWindowLoaded = false;
@@ -319,6 +358,7 @@ const renderNotificationPill = () => {
   }
   try {
     const win = ensureNotificationWindow();
+    applyPillWindowSize();
     positionNotificationWindow();
     win.showInactive();
     win.webContents.send('desktop:pillState', {
@@ -766,6 +806,18 @@ const createAppMenu = () => {
       submenu: [
         { label: 'About Connect CalAIM', click: showAboutDialog },
         { label: 'Check for Updates', click: () => autoUpdater.checkForUpdatesAndNotify().catch(() => undefined) },
+        {
+          label: updateReadyVersion ? `Restart to Update (v${updateReadyVersion})` : 'Restart to Update',
+          enabled: updateReadyToInstall,
+          click: () => {
+            try {
+              isQuitting = true;
+              autoUpdater.quitAndInstall();
+            } catch {
+              // ignore
+            }
+          }
+        },
         { type: 'separator' as const },
         { label: 'Quit', click: () => { isQuitting = true; app.quit(); } }
       ]
@@ -776,8 +828,55 @@ const createAppMenu = () => {
 };
 
 const configureAutoUpdater = () => {
+  if (updaterConfigured) return;
+  updaterConfigured = true;
+  // Auto-update is only intended for packaged builds.
+  if (isDev) return;
+
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-downloaded', async (info: any) => {
+    updateReadyToInstall = true;
+    updateReadyVersion = typeof info?.version === 'string' ? info.version : null;
+    try {
+      updateTrayMenu();
+      createAppMenu();
+    } catch {
+      // ignore
+    }
+
+    try {
+      const result = await dialog.showMessageBox({
+        type: 'info',
+        title: 'Update downloaded',
+        message: 'Update downloaded — restart now?',
+        detail: updateReadyVersion
+          ? `Version ${updateReadyVersion} is ready to install.`
+          : 'A new version is ready to install.',
+        buttons: ['Restart now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+      });
+
+      if (result.response === 0) {
+        isQuitting = true;
+        autoUpdater.quitAndInstall();
+      }
+    } catch {
+      // ignore
+    }
+  });
+
+  autoUpdater.on('error', (error: any) => {
+    // Keep this quiet unless debugging; updater failures are common on locked-down machines.
+    try {
+      console.warn('Auto-updater error:', error instanceof Error ? error.message : String(error));
+    } catch {
+      // ignore
+    }
+  });
+
   autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
 };
 
@@ -847,6 +946,13 @@ ipcMain.on('desktop:hidePill', () => {
 ipcMain.on('desktop:expandPill', () => {
   // First click behavior: open the note panel (fixed-size).
   showPanel();
+});
+
+ipcMain.on('desktop:setPillMode', (_event, payload?: { mode?: 'compact' | 'panel' }) => {
+  const mode = payload?.mode === 'panel' ? 'panel' : 'compact';
+  pillMode = mode;
+  applyPillWindowSize();
+  positionNotificationWindow();
 });
 
 ipcMain.on('desktop:navigatePill', (_event, payload: { delta: number }) => {

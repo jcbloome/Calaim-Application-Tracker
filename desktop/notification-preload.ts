@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('desktopNotificationPill', {
   dismiss: () => ipcRenderer.send('desktop:dismissPill'),
   hide: () => ipcRenderer.send('desktop:hidePill'),
   expand: () => ipcRenderer.send('desktop:expandPill'),
+  setMode: (mode: 'compact' | 'panel') => ipcRenderer.send('desktop:setPillMode', { mode }),
   navigate: (delta: number) => ipcRenderer.send('desktop:navigatePill', { delta }),
   sendReply: (payload: { noteId?: string; senderId?: string; message: string }) =>
     ipcRenderer.send('desktop:quickReply', payload),

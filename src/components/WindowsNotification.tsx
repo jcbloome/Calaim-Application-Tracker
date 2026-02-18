@@ -155,6 +155,7 @@ export default function WindowsNotification({
       ? 'priority'
       : null;
   const isUrgentTone = tone === 'urgent';
+  const isPriorityTone = tone === 'priority';
   const toneBorderClass = isUrgentTone
     ? 'border-red-500'
     : tone === 'priority'
@@ -176,7 +177,20 @@ export default function WindowsNotification({
   const IconComponent = config.icon;
   const borderClass = toneBorderClass || config.borderColor;
   const iconBgClass = toneIconBgClass || config.color;
-  const iconPulse = isUrgentTone ? 'animate-pulse' : '';
+  const iconPulse = isUrgentTone
+    ? 'animate-[pulse_1s_ease-in-out_infinite]'
+    : isPriorityTone
+      ? 'animate-[pulse_2s_ease-in-out_infinite]'
+      : '';
+
+  // In Electron, keep the notification window sized to the current card mode.
+  useEffect(() => {
+    try {
+      window.desktopNotificationPill?.setMode?.(isMinimized ? 'compact' : 'panel');
+    } catch {
+      // ignore
+    }
+  }, [isMinimized]);
 
   // Play notification sound
   const playSound = async () => {

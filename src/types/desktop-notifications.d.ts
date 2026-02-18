@@ -61,6 +61,7 @@ declare global {
       dismiss?: () => void;
       hide?: () => void;
       expand?: () => void;
+      setMode?: (mode: 'compact' | 'panel') => void;
       navigate?: (delta: number) => void;
       sendReply?: (payload: { noteId?: string; senderId?: string; message: string }) => void;
       move?: (x: number, y: number) => void;
