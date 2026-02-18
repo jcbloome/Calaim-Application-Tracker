@@ -443,22 +443,24 @@ export default function AdminChatPage() {
       <Suspense fallback={null}>
         <DeepLinkListener onCid={setDeepLinkCid} />
       </Suspense>
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Staff Chat</h1>
-          <p className="text-sm text-muted-foreground">
-            Real-time staff messaging (Firestore). Conversations are direct (1:1) for now.
-          </p>
+      <div className="rounded-xl border bg-gradient-to-r from-slate-50 to-indigo-50/40 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Staff Chat</h1>
+            <p className="text-sm text-muted-foreground">
+              Real-time staff messaging (Firestore). Conversations are direct (1:1) for now.
+            </p>
+          </div>
+          <Badge variant="outline" className="flex items-center gap-2 bg-white/60">
+            <Users className="h-3.5 w-3.5" />
+            Admin only
+          </Badge>
         </div>
-        <Badge variant="outline" className="flex items-center gap-2">
-          <Users className="h-3.5 w-3.5" />
-          Admin only
-        </Badge>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left rail */}
-        <Card className="lg:col-span-4">
+        <Card className="lg:col-span-4 overflow-hidden">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2">
               <MessageSquareText className="h-4 w-4" />
@@ -472,6 +474,7 @@ export default function AdminChatPage() {
                 value={staffFilter}
                 onChange={(e) => setStaffFilter(e.target.value)}
                 placeholder="Search staff…"
+                className="bg-white"
               />
               <Select
                 value={staffSelectUid}
@@ -500,7 +503,7 @@ export default function AdminChatPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <ScrollArea className="h-[180px] rounded-md border">
+              <ScrollArea className="h-[180px] rounded-md border bg-white">
                 <div className="p-2 space-y-1">
                   {staffLoading ? (
                     <div className="p-2 text-sm text-muted-foreground flex items-center gap-2">
@@ -514,7 +517,7 @@ export default function AdminChatPage() {
                       <button
                         key={s.uid}
                         onClick={() => void openDirectChat(s)}
-                        className="w-full text-left rounded-md px-2 py-2 hover:bg-accent"
+                        className="w-full text-left rounded-md px-2 py-2 hover:bg-accent/70 transition-colors"
                         title={s.email || s.uid}
                       >
                         <div className="flex items-center gap-2">
@@ -543,7 +546,7 @@ export default function AdminChatPage() {
 
             <div className="space-y-2">
               <div className="text-xs font-medium text-muted-foreground">Your conversations</div>
-              <ScrollArea className="h-[260px] rounded-md border">
+              <ScrollArea className="h-[260px] rounded-md border bg-white">
                 <div className="p-2 space-y-1">
                   {convLoading ? (
                     <div className="p-2 text-sm text-muted-foreground flex items-center gap-2">
@@ -569,8 +572,8 @@ export default function AdminChatPage() {
                         <button
                           key={c.id}
                           onClick={() => openConversation(c)}
-                          className={`w-full text-left rounded-md px-2 py-2 hover:bg-accent ${
-                            active ? 'bg-accent' : ''
+                          className={`w-full text-left rounded-md px-2 py-2 hover:bg-accent/70 transition-colors ${
+                            active ? 'bg-indigo-50 ring-1 ring-indigo-100' : ''
                           }`}
                         >
                           <div className="flex items-center gap-2">
@@ -582,7 +585,7 @@ export default function AdminChatPage() {
                             />
                             <div className="text-sm font-medium truncate">{label}</div>
                             {isUnread ? (
-                              <Badge variant="default" className="ml-auto text-[10px]">
+                              <Badge variant="default" className="ml-auto text-[10px] bg-indigo-600 hover:bg-indigo-600">
                                 {unreadCount}
                               </Badge>
                             ) : isDesktopActive(otherUid) ? (
@@ -605,8 +608,8 @@ export default function AdminChatPage() {
         </Card>
 
         {/* Chat panel */}
-        <Card className="lg:col-span-8">
-          <CardHeader className="pb-3">
+        <Card className="lg:col-span-8 overflow-hidden">
+          <CardHeader className="pb-3 bg-gradient-to-b from-white to-slate-50/40">
             <CardTitle className="flex items-center justify-between gap-2">
               <span className="truncate">
                 {activeOther ? `Chat with ${displayNameForUser(activeOther)}` : 'Select a conversation'}
@@ -614,7 +617,7 @@ export default function AdminChatPage() {
               {activeConversationId ? (
                 <span className="flex items-center gap-2">
                   {activeOtherUid && isDesktopActive(activeOtherUid) ? (
-                    <Badge variant="secondary" className="text-xs">
+                    <Badge variant="secondary" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
                       Desktop active
                     </Badge>
                   ) : null}
@@ -626,8 +629,8 @@ export default function AdminChatPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <ScrollArea className="h-[520px] rounded-md border">
-              <div className="p-3 space-y-2">
+            <ScrollArea className="h-[520px] rounded-md border bg-gradient-to-b from-slate-50/30 to-white">
+              <div className="p-4 space-y-3">
                 {!activeConversationId ? (
                   <div className="text-sm text-muted-foreground">
                     Pick a staff member on the left to start chatting.
@@ -644,12 +647,22 @@ export default function AdminChatPage() {
                     const mine = String(m.senderUid || '') === myUid;
                     return (
                       <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[80%] rounded-lg border p-2 ${mine ? 'bg-blue-50' : 'bg-white'}`}>
-                          <div className="text-xs text-muted-foreground flex items-center justify-between gap-2">
+                        <div
+                          className={`max-w-[78%] rounded-2xl px-3 py-2 shadow-sm ${
+                            mine
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-white border'
+                          }`}
+                        >
+                          <div
+                            className={`text-[11px] flex items-center justify-between gap-2 ${
+                              mine ? 'text-indigo-100/90' : 'text-muted-foreground'
+                            }`}
+                          >
                             <span className="truncate">{mine ? 'You' : m.senderName || m.senderUid}</span>
                             <span className="flex-shrink-0">{formatTime(m.createdAt)}</span>
                           </div>
-                          <div className="text-sm whitespace-pre-wrap break-words">{m.text}</div>
+                          <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">{m.text}</div>
                         </div>
                       </div>
                     );
@@ -659,12 +672,13 @@ export default function AdminChatPage() {
               </div>
             </ScrollArea>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-end rounded-lg border bg-white p-2 shadow-sm">
               <Input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder={activeConversationId ? 'Type a message…' : 'Select a conversation to chat…'}
                 disabled={!activeConversationId || sending}
+                className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -672,7 +686,11 @@ export default function AdminChatPage() {
                   }
                 }}
               />
-              <Button onClick={() => void sendMessage()} disabled={!activeConversationId || sending || !draft.trim()}>
+              <Button
+                onClick={() => void sendMessage()}
+                disabled={!activeConversationId || sending || !draft.trim()}
+                className="bg-indigo-600 hover:bg-indigo-700"
+              >
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
             </div>

@@ -58,7 +58,8 @@ interface StaffNotification {
 }
 
 function MyNotesContent() {
-  const installerDownloadUrl = '/admin/desktop-installer';
+  // Use the smart installer endpoint that redirects to the latest GitHub asset.
+  const installerDownloadUrl = '/installapp';
   const [installerMeta, setInstallerMeta] = useState<{
     version: string | null;
     sha256: string | null;
@@ -845,7 +846,7 @@ function MyNotesContent() {
           )}
           <div className="flex flex-col items-end gap-1 text-right">
             <Button asChild variant="outline" size="sm">
-              <a href={installerDownloadUrl} download>
+              <a href={installerDownloadUrl} target="_blank" rel="noreferrer">
                 Download Desktop Installer{installerMeta.version ? ` (${installerMeta.version})` : ''}
               </a>
             </Button>
