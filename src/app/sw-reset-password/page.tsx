@@ -9,7 +9,9 @@ function SWResetPasswordRedirect() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    const query = searchParams.toString();
+    const params = new URLSearchParams(searchParams.toString());
+    if (!params.get('role')) params.set('role', 'sw');
+    const query = params.toString();
     const target = query ? `/reset-password?${query}` : '/reset-password';
     router.replace(target);
   }, [router, searchParams]);

@@ -36,7 +36,11 @@ const getBaseUrl = (request: NextRequest) => {
 };
 
 const resolveRole = async (email: string, role?: string) => {
-  let resolvedRole: 'sw' | 'user' = role === 'sw' ? 'sw' : 'user';
+  // If the caller provides an explicit role, treat it as authoritative.
+  if (role === 'sw') return 'sw';
+  if (role === 'user') return 'user';
+
+  let resolvedRole: 'sw' | 'user' = 'user';
   if (resolvedRole !== 'sw') {
     try {
       const swSnapshot = await adminDb
