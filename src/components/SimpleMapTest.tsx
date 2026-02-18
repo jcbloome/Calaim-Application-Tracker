@@ -437,6 +437,10 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
         icon: icon
       });
 
+      // Track marker type + store markers so layer toggles work.
+      (marker as any).markerType = item.type;
+      createdMarkers.push(marker);
+
       const infoWindow = new window.google.maps.InfoWindow({
         content: content
       });
@@ -445,6 +449,9 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
         infoWindow.open(map, marker);
       });
     });
+
+    // Store markers for layer controls (SW/RN/RCFE/MEMBERS).
+    setMarkers(createdMarkers);
 
     console.log(`✅ Added ${calAIMData.length} CalAIM markers`);
 

@@ -79,6 +79,7 @@ import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle,
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { collection, collectionGroup, doc, getDocs, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
+import { CaspioUsageAlert } from '@/components/admin/CaspioUsageAlert';
 
 const adminNavLinks = [
   { 
@@ -1130,6 +1131,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <DesktopNotificationsDevShim />
       <WebNotificationsDevTester />
       <RealTimeNotifications />
+      <CaspioUsageAlert />
       <div className="flex flex-col min-h-screen">
         <AdminHeader />
         <main className="flex-grow min-w-0 p-4 sm:p-6 md:p-8 bg-slate-50/50 overflow-x-hidden">
