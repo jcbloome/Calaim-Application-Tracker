@@ -72,6 +72,27 @@ export default function SWLoginPage() {
       const normalizedEmail = email.trim().toLowerCase();
       // Sign in with Firebase Auth
       const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
+
+      // Establish SW session (server-side verification + claim sync).
+      const idToken = await userCredential.user.getIdToken();
+      const sessionResponse = await fetch('/api/auth/sw-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
+
+      if (!sessionResponse.ok) {
+        const sessionData = await sessionResponse.json().catch(() => ({}));
+        const sessionError = sessionData?.error || 'Social worker access required.';
+        await auth.signOut();
+        setLoginAttempted(false);
+        setError(sessionError);
+        setIsLoading(false);
+        return;
+      }
+
+      // Force refresh to pick up custom claims.
+      await userCredential.user.getIdToken(true);
       
       setLoginAttempted(true);
       

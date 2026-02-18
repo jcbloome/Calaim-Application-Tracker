@@ -766,7 +766,7 @@ export default function SWVisitVerification() {
               </p>
               <div className="space-y-3">
                 <Button asChild className="w-full bg-blue-600 hover:bg-blue-700">
-                  <Link href="/swvisit/login">
+                  <Link href="/sw-login">
                     <Users className="h-4 w-4 mr-2" />
                     Social Worker Login
                   </Link>

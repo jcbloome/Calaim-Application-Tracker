@@ -43,6 +43,20 @@ export function useSocialWorker() {
       }
 
       try {
+        // Fast-path: trust token claim if present (set by `/api/auth/sw-session`).
+        try {
+          const tokenResult = await user.getIdTokenResult();
+          const claims = (tokenResult?.claims || {}) as Record<string, any>;
+          if (Boolean(claims.socialWorker)) {
+            setIsSocialWorker(true);
+            setStatus('active');
+            setIsLoading(false);
+            return;
+          }
+        } catch (claimError) {
+          console.warn('⚠️ useSocialWorker: Failed to read token claims', claimError);
+        }
+
         // Check if user exists in social workers collection by UID first
         const socialWorkerDoc = await getDoc(doc(firestore, 'socialWorkers', user.uid));
         const normalizedEmail = user.email?.trim().toLowerCase();
