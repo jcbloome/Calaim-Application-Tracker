@@ -47,9 +47,34 @@ export function useAdmin(): AdminStatus {
     const checkAdminRoles = async () => {
       const isEmailAdmin = isHardcodedAdminEmail(user.email);
 
+      // Fast-path: if custom claims are present, trust them (avoids Firestore-permission issues).
+      // These claims are set by `/api/auth/admin-session` during login.
+      try {
+        const tokenResult = await user.getIdTokenResult();
+        const claims = (tokenResult?.claims || {}) as Record<string, any>;
+        const hasAdminClaim = Boolean(claims.admin);
+        const hasSuperAdminClaim = Boolean(claims.superAdmin);
+        if (hasAdminClaim || hasSuperAdminClaim) {
+          setIsAdmin(true);
+          setIsSuperAdmin(Boolean(isEmailAdmin || hasSuperAdminClaim));
+          setIsLoading(false);
+          return;
+        }
+      } catch (claimError) {
+        console.warn('⚠️ useAdmin: Failed to read token claims', claimError);
+      }
+
+      // Email allow-list always wins.
+      if (isEmailAdmin) {
+        setIsAdmin(true);
+        setIsSuperAdmin(true);
+        setIsLoading(false);
+        return;
+      }
+
       if (!firestore) {
-        setIsAdmin(isEmailAdmin);
-        setIsSuperAdmin(isEmailAdmin);
+        setIsAdmin(false);
+        setIsSuperAdmin(false);
         setIsLoading(false);
         return;
       }
@@ -87,8 +112,8 @@ export function useAdmin(): AdminStatus {
         setIsSuperAdmin(isSuperAdminUser);
       } catch (error) {
         console.error('❌ useAdmin: Error checking admin roles', error);
-        setIsAdmin(isEmailAdmin);
-        setIsSuperAdmin(isEmailAdmin);
+        setIsAdmin(false);
+        setIsSuperAdmin(false);
       } finally {
         setIsLoading(false);
       }
