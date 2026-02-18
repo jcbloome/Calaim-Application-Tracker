@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resetTokenStore } from '@/lib/reset-tokens';
-// DO NOT MOVE THIS IMPORT. It must be early to initialize Firebase Admin.
-import '@/ai/firebase';
-import * as admin from 'firebase-admin';
+import admin, { adminAuth, adminDb } from '@/firebase-admin';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     if (!tokenData && process.env.NODE_ENV !== 'development') {
       // Only try Firestore in production where credentials are available
       try {
-        const tokenDoc = await admin.firestore().collection('passwordResetTokens').doc(token).get();
+        const tokenDoc = await adminDb.collection('passwordResetTokens').doc(token).get();
         if (tokenDoc.exists) {
           const data = tokenDoc.data() as { email?: string; expires?: number } | undefined;
           if (data?.email && data?.expires) {
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
       resetTokenStore.delete(token);
       if (process.env.NODE_ENV !== 'development') {
         try {
-          await admin.firestore().collection('passwordResetTokens').doc(token).delete();
+          await adminDb.collection('passwordResetTokens').doc(token).delete();
         } catch (deleteError) {
           console.warn('⚠️ Failed to delete expired Firestore token:', deleteError);
         }
@@ -76,8 +77,8 @@ export async function POST(request: NextRequest) {
 
     try {
       // Get user by email and update password using Firebase Admin SDK
-      const userRecord = await admin.auth().getUserByEmail(email);
-      await admin.auth().updateUser(userRecord.uid, {
+      const userRecord = await adminAuth.getUserByEmail(email);
+      await adminAuth.updateUser(userRecord.uid, {
         password: newPassword,
       });
 
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
       resetTokenStore.delete(token);
       if (process.env.NODE_ENV !== 'development') {
         try {
-          await admin.firestore().collection('passwordResetTokens').doc(token).delete();
+          await adminDb.collection('passwordResetTokens').doc(token).delete();
         } catch (deleteError) {
           console.warn('⚠️ Failed to delete used Firestore token:', deleteError);
         }
@@ -130,7 +131,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { 
             error: 'Server configuration error: Firebase Admin SDK lacks required permissions. Please contact your administrator to update service account roles in Google Cloud Console.',
-            details: 'Required roles: Service Usage Consumer, Firebase Admin, Firebase Auth Admin'
+            details: 'Required roles: Service Usage Consumer, Firebase Admin, Firebase Auth Admin',
+            errorCode: adminError.code || 'unknown'
           },
           { status: 500 }
         );
