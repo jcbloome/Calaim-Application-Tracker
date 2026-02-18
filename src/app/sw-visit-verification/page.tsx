@@ -64,7 +64,7 @@ interface MemberVisitQuestionnaire {
   };
   
   memberConcerns: {
-    hasConcerns: boolean;
+    hasConcerns: boolean | null;
     concernTypes: {
       medical: boolean;
       staff: boolean;
@@ -330,7 +330,7 @@ export default function SWVisitVerification() {
     },
     
     memberConcerns: {
-      hasConcerns: false,
+      hasConcerns: null,
       concernTypes: {
         medical: false,
         staff: false,
@@ -1175,19 +1175,48 @@ export default function SWVisitVerification() {
                   <div className="space-y-3">
                     <label className="flex items-center space-x-3">
                       <input
-                        type="checkbox"
-                        checked={questionnaire.memberConcerns.hasConcerns}
-                        onChange={(e) => setQuestionnaire(prev => ({
+                        type="radio"
+                        name="memberHasConcerns"
+                        checked={questionnaire.memberConcerns.hasConcerns === true}
+                        onChange={() => setQuestionnaire(prev => ({
                           ...prev,
-                          memberConcerns: { ...prev.memberConcerns, hasConcerns: e.target.checked }
+                          memberConcerns: { ...prev.memberConcerns, hasConcerns: true }
                         }))}
                         className="h-4 w-4 text-blue-600"
                       />
                       <span className="font-medium">Member has concerns</span>
                     </label>
+                    <label className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        name="memberHasConcerns"
+                        checked={questionnaire.memberConcerns.hasConcerns === false}
+                        onChange={() => setQuestionnaire(prev => ({
+                          ...prev,
+                          memberConcerns: {
+                            ...prev.memberConcerns,
+                            hasConcerns: false,
+                            concernTypes: {
+                              medical: false,
+                              staff: false,
+                              safety: false,
+                              food: false,
+                              social: false,
+                              financial: false,
+                              other: false
+                            },
+                            urgencyLevel: 'low',
+                            detailedConcerns: '',
+                            actionRequired: false
+                          }
+                        }))}
+                        className="h-4 w-4 text-blue-600"
+                      />
+                      <span className="font-medium">Member has no concerns</span>
+                    </label>
                   </div>
                   
-                  {questionnaire.memberConcerns.hasConcerns && (
+                  {questionnaire.memberConcerns.hasConcerns === true && (
                     <div className="space-y-4 border-l-4 border-orange-400 pl-4">
                       <div className="space-y-3">
                         <p className="font-medium">Select all concern types that apply:</p>
