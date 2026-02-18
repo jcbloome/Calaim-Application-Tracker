@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
+import { trackCaspioCall } from '@/lib/caspio-usage-tracker';
 
 // Types for staff data
 interface StaffMember {
@@ -59,6 +60,7 @@ export async function GET(request: NextRequest) {
               'Content-Type': 'application/json',
             },
           });
+          trackCaspioCall({ method: 'GET', kind: 'read', status: staffResponse.status, ok: staffResponse.ok, context: `staff-locations:${tableName}` });
 
           console.log(`📡 Response status for ${tableName} page ${pageNumber}:`, staffResponse.status);
           

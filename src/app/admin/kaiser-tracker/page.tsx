@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/firebase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -717,6 +718,7 @@ function StaffMemberManagementModal({
 function KaiserTrackerPageContent() {
   const { isAdmin, isLoading: isAdminLoading, user } = useAdmin();
   const { toast } = useToast();
+  const auth = useAuth();
   const searchParams = useSearchParams();
 
   // State declarations
@@ -1071,6 +1073,22 @@ function KaiserTrackerPageContent() {
   const fetchCaspioData = async () => {
     setIsLoading(true);
     try {
+      if (!auth?.currentUser) {
+        throw new Error('You must be signed in to sync.');
+      }
+
+      // On-demand incremental sync from Caspio → Firestore cache.
+      const idToken = await auth.currentUser.getIdToken();
+      const syncRes = await fetch('/api/caspio/members-cache/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, mode: 'incremental' }),
+      });
+      const syncData = await syncRes.json().catch(() => ({}));
+      if (!syncRes.ok || !(syncData as any)?.success) {
+        throw new Error((syncData as any)?.error || 'Failed to sync members cache');
+      }
+
       const response = await fetch('/api/kaiser-members');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -1140,7 +1158,7 @@ function KaiserTrackerPageContent() {
       
       toast({
         title: "Data Synced Successfully",
-        description: `Loaded ${cleanMembers.length} Kaiser members from Caspio`,
+        description: `Loaded ${cleanMembers.length} Kaiser members`,
       });
     } catch (error) {
       console.error('Error fetching Kaiser members:', error);

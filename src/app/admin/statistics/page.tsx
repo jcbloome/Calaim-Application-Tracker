@@ -4,7 +4,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useFirestore } from '@/firebase';
+import { useAuth, useFirestore } from '@/firebase';
 import { collection, query, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import { Loader2, RefreshCw, Users, Building2, Stethoscope, UserCheck, Activity, BarChart3 } from 'lucide-react';
@@ -56,6 +56,7 @@ const DataList = ({ data, emptyText = "No data available." }: { data: { name: st
 
 
 export default function AdminStatisticsPage() {
+  const auth = useAuth();
   const firestore = useFirestore();
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
@@ -76,6 +77,31 @@ export default function AdminStatisticsPage() {
   const [statusBreakdown, setStatusBreakdown] = useState<any>({});
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
+
+  const [isSyncingMembers, setIsSyncingMembers] = useState(false);
+
+  const syncMembersFromCaspio = useCallback(async () => {
+    if (!isAdmin) return;
+    if (!auth?.currentUser) return;
+
+    setIsSyncingMembers(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/caspio/members-cache/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, mode: 'incremental' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !(data as any)?.success) {
+        throw new Error((data as any)?.error || 'Failed to sync members cache');
+      }
+    } catch (e) {
+      console.error('Failed to sync members cache:', e);
+    } finally {
+      setIsSyncingMembers(false);
+    }
+  }, [auth, isAdmin]);
 
   const fetchApps = useCallback(async () => {
     if (isAdminLoading || !firestore || !isAdmin) {
@@ -319,25 +345,46 @@ export default function AdminStatisticsPage() {
                     Comprehensive overview of system resources and applications.
                 </p>
             </div>
-            <Button
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={syncMembersFromCaspio}
+                disabled={isSyncingMembers || isAdminLoading || !isAdmin}
+                className="w-full sm:w-auto"
+              >
+                {isSyncingMembers ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Syncing members...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Sync members (Caspio)
+                  </>
+                )}
+              </Button>
+              <Button
                 type="button"
                 variant="outline"
                 onClick={handleRefresh}
                 disabled={isRefreshing || isAdminLoading}
                 className="w-full sm:w-auto"
-            >
+              >
                 {isRefreshing ? (
-                    <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Refreshing...
-                    </>
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Refreshing...
+                  </>
                 ) : (
-                    <>
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        Refresh Data
-                    </>
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Refresh Data
+                  </>
                 )}
-            </Button>
+              </Button>
+            </div>
         </div>
         {!hasLoaded && (
             <Card className="border-dashed">

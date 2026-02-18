@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { getKaiserStatusesInOrder } from '@/lib/kaiser-status-progression';
 
+type CacheValue = { expiresAt: number; value: any; inFlight?: Promise<any> };
+const g = globalThis as any;
+const CACHE_KEY = '__api_kaiser_members_cache_v1__';
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
 // Helper function to assign sample Kaiser statuses for demo purposes
 function getRandomKaiserStatus(index: number): string {
   const ordered = getKaiserStatusesInOrder().map((s) => s.status);
@@ -11,9 +16,117 @@ function getRandomKaiserStatus(index: number): string {
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('🔍 Fetching Kaiser members from Caspio...');
+    const preferCaspio = request.nextUrl.searchParams.get('refresh') === '1' || request.nextUrl.searchParams.get('source') === 'caspio';
 
-    const credentials = getCaspioCredentialsFromEnv();
+    // Default: read from Firestore cache so Kaiser tracker doesn't hammer Caspio.
+    if (!preferCaspio) {
+      const adminModule = await import('@/firebase-admin');
+      const adminDb = adminModule.adminDb;
+      const snapshot = await adminDb
+        .collection('caspio_members_cache')
+        .where('CalAIM_MCO', '==', 'Kaiser')
+        .limit(5000)
+        .get();
+      const cached = snapshot.docs.map((doc) => doc.data());
+
+      if (cached.length === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Kaiser members cache is empty. Click "Sync from Caspio" to load data.',
+            members: [],
+            count: 0,
+            timestamp: new Date().toISOString(),
+          },
+          { status: 409 }
+        );
+      }
+
+      const transformedMembers = cached.map((member: any, index: number) => ({
+        id: member.Client_ID2 || member.client_ID2 || `member-${Math.random().toString(36).substring(7)}`,
+        Client_ID2: member.Client_ID2 || member.client_ID2,
+        client_ID2: member.Client_ID2 || member.client_ID2,
+        memberName:
+          member.Senior_Last_First_ID ||
+          member.Senior_Last_First ||
+          member.Senior_Last_First_Id ||
+          member.Senior_Last_First_ID ||
+          member.memberName ||
+          `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
+        memberFirstName: member.Senior_First || member.memberFirstName || 'Unknown',
+        memberLastName: member.Senior_Last || member.memberLastName || 'Member',
+        Senior_Last_First_ID:
+          member.Senior_Last_First_ID ||
+          member.Senior_Last_First ||
+          member.Senior_Last_First_Id ||
+          `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
+        memberCounty: member.Member_County || member.memberCounty || 'Unknown',
+        memberMrn: member.MCP_CIN || member.MediCal_Number || member.memberMrn || member.Member_MRN || '',
+        Birth_Date: member.Birth_Date || '',
+        birthDate: member.Birth_Date || '',
+        memberPhone: member.Member_Phone || member.memberPhone || '',
+        memberEmail: member.Member_Email || member.memberEmail || '',
+        CalAIM_MCO: member.CalAIM_MCO,
+        CalAIM_Status: member.CalAIM_Status || 'No CalAIM Status',
+        Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || member.Status || getRandomKaiserStatus(index),
+        Kaiser_ID_Status: member.Kaiser_ID_Status,
+        SW_ID: member.SW_ID,
+        Kaiser_User_Assignment: member.Kaiser_User_Assignment,
+        Kaiser_Next_Step_Date: member.Kaiser_Next_Step_Date,
+        T2038_Auth_Email_Kaiser: member.T2038_Auth_Email_Kaiser || '',
+        Social_Worker_Assigned: member.Social_Worker_Assigned || '',
+        Staff_Assigned: member.Kaiser_User_Assignment || member.Staff_Assigned || '',
+        RCFE_Name: member.RCFE_Name,
+        RCFE_Address: member.RCFE_Address,
+        RCFE_City: member.RCFE_City,
+        RCFE_Zip: member.RCFE_Zip,
+        pathway: member.Pathway || member.CalAIM_Pathway || 'Kaiser',
+        Next_Step_Due_Date: member.Next_Step_Due_Date || member.next_steps_date || '',
+        workflow_step: member.workflow_step || '',
+        workflow_notes: member.workflow_notes || '',
+        last_updated: member.Date_Modified || member.last_updated || new Date().toISOString(),
+        created_at: member.Date_Created || member.created_at || new Date().toISOString(),
+        Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date || member.Kaiser_T038_Requested || member.Kaiser_T2038_Requested || '',
+        Kaiser_T2038_Received_Date: member.Kaiser_T2038_Received_Date || member.Kaiser_T038_Received || member.Kaiser_T2038_Received || '',
+        Kaiser_Tier_Level_Requested_Date: member.Kaiser_Tier_Level_Requested_Date || member.Kaiser_Tier_Level_Requested || '',
+        Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date || member.Kaiser_Tier_Level_Received || '',
+        ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || member.ILS_RCFE_Sent_For_Contract || '',
+        ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || member.ILS_RCFE_Received_Contract || '',
+        Hold_For_Social_Worker: member.Hold_For_Social_Worker || '',
+      }));
+
+      const responseBody = {
+        success: true,
+        members: transformedMembers,
+        count: transformedMembers.length,
+        timestamp: new Date().toISOString(),
+        source: 'firestore-cache',
+      };
+
+      return NextResponse.json(responseBody, {
+        headers: { 'Cache-Control': 'no-store', 'X-Data-Source': 'firestore-cache' },
+      });
+    }
+
+    const forceRefresh = request.nextUrl.searchParams.get('refresh') === '1';
+    const now = Date.now();
+    const cache: CacheValue | undefined = g[CACHE_KEY];
+    if (!forceRefresh && cache?.value && cache.expiresAt > now) {
+      return NextResponse.json(cache.value, {
+        headers: { 'Cache-Control': 'no-store', 'X-Server-Cache': 'HIT' }
+      });
+    }
+    if (!forceRefresh && cache?.inFlight) {
+      const value = await cache.inFlight;
+      return NextResponse.json(value, {
+        headers: { 'Cache-Control': 'no-store', 'X-Server-Cache': 'HIT-INFLIGHT' }
+      });
+    }
+
+    const compute = async () => {
+      console.log('🔍 Fetching Kaiser members from Caspio...');
+
+      const credentials = getCaspioCredentialsFromEnv();
 
     console.log('🔧 Environment check:', {
       hasBaseUrl: true,
@@ -22,9 +135,9 @@ export async function GET(request: NextRequest) {
       baseUrl: credentials.baseUrl ? `${credentials.baseUrl.substring(0, 20)}...` : 'undefined'
     });
 
-    // Get OAuth token
-    console.log('🔐 Getting Caspio OAuth token...');
-    const accessToken = await getCaspioToken(credentials);
+      // Get OAuth token
+      console.log('🔐 Getting Caspio OAuth token...');
+      const accessToken = await getCaspioToken(credentials);
 
     // Fetch Kaiser members from CalAIM_tbl_Members where CalAIM_MCO = 'Kaiser'
     console.log('📊 Fetching Kaiser members...');
@@ -306,7 +419,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Transform the data to match expected format
-    const transformedMembers = (membersData.Result || []).map((member: any, index: number) => ({
+      const transformedMembers = (membersData.Result || []).map((member: any, index: number) => ({
       id: member.Client_ID2 || `member-${Math.random().toString(36).substring(7)}`,
       Client_ID2: member.Client_ID2,
       client_ID2: member.Client_ID2, // Duplicate for compatibility
@@ -358,13 +471,23 @@ export async function GET(request: NextRequest) {
       Hold_For_Social_Worker: member.Hold_For_Social_Worker || '',
       
       // Add any other fields needed by the Kaiser tracker
-    }));
+      }));
 
-    return NextResponse.json({
-      success: true,
-      members: transformedMembers,
-      count: transformedMembers.length,
-      timestamp: new Date().toISOString()
+      return {
+        success: true,
+        members: transformedMembers,
+        count: transformedMembers.length,
+        timestamp: new Date().toISOString()
+      };
+    };
+
+    const inFlight = compute();
+    g[CACHE_KEY] = { expiresAt: 0, value: undefined, inFlight } as CacheValue;
+    const responseBody = await inFlight;
+    g[CACHE_KEY] = { expiresAt: Date.now() + CACHE_TTL_MS, value: responseBody } as CacheValue;
+
+    return NextResponse.json(responseBody, {
+      headers: { 'Cache-Control': 'no-store', 'X-Server-Cache': 'MISS' }
     });
 
   } catch (error) {

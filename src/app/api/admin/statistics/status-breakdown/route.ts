@@ -27,9 +27,33 @@ export async function GET(request: NextRequest) {
     }, {} as Record<string, string>);
     const kaiserStatusOrder = getKaiserStatusesInOrder().map((item) => item.status);
 
-    const credentials = getCaspioCredentialsFromEnv();
-    const result = await fetchAllCalAIMMembers(credentials, { includeRawData: true });
-    const members = result.rawMembers || [];
+    const forceRefresh = request.nextUrl.searchParams.get('refresh') === '1';
+
+    let members: any[] = [];
+    if (!forceRefresh) {
+      const adminModule = await import('@/firebase-admin');
+      const adminDb = adminModule.adminDb;
+      const snapshot = await adminDb.collection('caspio_members_cache').limit(5000).get();
+      members = snapshot.docs.map((doc) => doc.data());
+      if (members.length === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Members cache is empty. Click "Sync from Caspio" to load data.',
+            kaiserStatuses: [{ status: 'No Data Available', count: 0 }],
+            calaimStatuses: [{ status: 'No Data Available', count: 0 }],
+            healthPlans: [{ plan: 'No Data Available', count: 0 }],
+            totalMembers: 0,
+            summary: { totalKaiserStatuses: 0, totalCalaimStatuses: 0, totalHealthPlans: 0 },
+          },
+          { status: 409 }
+        );
+      }
+    } else {
+      const credentials = getCaspioCredentialsFromEnv();
+      const result = await fetchAllCalAIMMembers(credentials, { forceRefresh: true });
+      members = result.members || [];
+    }
 
     // Calculate status statistics
     const kaiserStatusStats: Record<string, number> = {};

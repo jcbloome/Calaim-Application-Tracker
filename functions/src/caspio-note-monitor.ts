@@ -7,6 +7,11 @@ import * as admin from "firebase-admin";
  * 
  * This system ONLY READS from Caspio to monitor for new priority notes
  * and sends notifications to staff via FCM. NO WRITE OPERATIONS to Caspio.
+ *
+ * IMPORTANT (2026-02-18+):
+ * The production notification flow is webhook-driven (Caspio Triggered Actions → Functions webhooks).
+ * This polling-based monitor is intentionally DISABLED to avoid unnecessary Caspio API usage and
+ * to prevent any risk of hardcoded credentials being used.
  */
 
 interface CaspioNote {
@@ -39,30 +44,10 @@ interface NotificationPayload {
  * Get Caspio access token (READ-ONLY)
  */
 async function getCaspioAccessToken(): Promise<string> {
-  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-  const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-  const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-  
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
-  
-  const tokenResponse = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json'
-    },
-    body: 'grant_type=client_credentials',
-  });
-  
-  if (!tokenResponse.ok) {
-    const errorText = await tokenResponse.text();
-    throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
-  }
-  
-  const tokenData = await tokenResponse.json();
-  return tokenData.access_token;
+  throw new HttpsError(
+    'failed-precondition',
+    'Caspio note polling is disabled. Use Caspio Triggered Actions webhooks instead.'
+  );
 }
 
 /**
@@ -290,59 +275,8 @@ export const monitorCaspioPriorityNotes = onSchedule({
   memory: "256MiB",
   timeoutSeconds: 300
 }, async (event) => {
-  try {
-    console.log('🔍 Starting Caspio priority note monitoring...');
-    
-    // Get last check timestamp
-    const lastCheck = await getLastCheckTimestamp();
-    const currentTime = new Date().toISOString();
-    
-    console.log('📅 Last check:', lastCheck || 'Never');
-    console.log('📅 Current time:', currentTime);
-    
-    // Fetch new priority notes since last check
-    const newNotes = await fetchNewPriorityNotes(lastCheck || undefined);
-    
-    if (newNotes.length === 0) {
-      console.log('✅ No new priority notes found');
-      await updateLastCheckTimestamp(currentTime);
-      return;
-    }
-    
-    console.log(`🚨 Found ${newNotes.length} new priority notes!`);
-    
-    // Get staff FCM tokens
-    const staffTokens = await getStaffFCMTokens();
-    
-    if (staffTokens.length === 0) {
-      console.warn('⚠️ No staff FCM tokens found - cannot send notifications');
-      await updateLastCheckTimestamp(currentTime);
-      return;
-    }
-    
-    // Send notification for each priority note
-    for (const note of newNotes) {
-      try {
-        await sendPriorityNoteNotification(note, staffTokens);
-        console.log(`✅ Sent notification for note ${note.noteId}`);
-        
-        // Small delay between notifications to avoid rate limits
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-      } catch (error) {
-        console.error(`❌ Failed to send notification for note ${note.noteId}:`, error);
-      }
-    }
-    
-    // Update last check timestamp
-    await updateLastCheckTimestamp(currentTime);
-    
-    console.log(`🎉 Priority note monitoring complete: ${newNotes.length} notifications sent`);
-    
-  } catch (error: any) {
-    console.error('❌ Error in priority note monitoring:', error);
-    throw error;
-  }
+  console.log('ℹ️ Caspio priority note polling is disabled (webhook-driven notifications enabled).');
+  return;
 });
 
 /**
@@ -350,38 +284,10 @@ export const monitorCaspioPriorityNotes = onSchedule({
  * Call this from admin panel to test the system
  */
 export const testPriorityNoteMonitoring = onCall(async (request) => {
-  try {
-    console.log('🧪 Testing priority note monitoring system...');
-    
-    // Fetch recent priority notes (last 24 hours)
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const testNotes = await fetchNewPriorityNotes(yesterday.toISOString());
-    
-    console.log(`📋 Found ${testNotes.length} priority notes in last 24 hours`);
-    
-    // Get staff tokens
-    const staffTokens = await getStaffFCMTokens();
-    console.log(`📱 Found ${staffTokens.length} staff FCM tokens`);
-    
-    if (testNotes.length > 0 && staffTokens.length > 0) {
-      // Send test notification for first note
-      await sendPriorityNoteNotification(testNotes[0], staffTokens);
-      console.log('✅ Test notification sent successfully');
-    }
-    
-    return {
-      success: true,
-      message: `Test complete: ${testNotes.length} notes found, ${staffTokens.length} staff tokens`,
-      notesFound: testNotes.length,
-      staffTokens: staffTokens.length,
-      sampleNote: testNotes[0] || null
-    };
-    
-  } catch (error: any) {
-    console.error('❌ Error testing priority note monitoring:', error);
-    throw new HttpsError('internal', `Test failed: ${error.message}`);
-  }
+  throw new HttpsError(
+    'failed-precondition',
+    'Caspio note polling is disabled. Use Caspio Triggered Actions webhooks instead.'
+  );
 });
 
 /**
@@ -389,24 +295,8 @@ export const testPriorityNoteMonitoring = onCall(async (request) => {
  * This allows admins to view priority notes in the app
  */
 export const getPriorityNotesForDashboard = onCall(async (request) => {
-  try {
-    console.log('📊 Fetching priority notes for admin dashboard...');
-    
-    // Get recent priority notes (last 7 days)
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    
-    const priorityNotes = await fetchNewPriorityNotes(weekAgo.toISOString());
-    
-    return {
-      success: true,
-      notes: priorityNotes,
-      count: priorityNotes.length,
-      message: `Found ${priorityNotes.length} priority notes in last 7 days`
-    };
-    
-  } catch (error: any) {
-    console.error('❌ Error fetching priority notes for dashboard:', error);
-    throw new HttpsError('internal', `Failed to fetch priority notes: ${error.message}`);
-  }
+  throw new HttpsError(
+    'failed-precondition',
+    'Caspio note polling is disabled. Use Caspio Triggered Actions webhooks instead.'
+  );
 });

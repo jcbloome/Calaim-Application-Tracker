@@ -25,6 +25,8 @@ export interface CaspioCredentials {
   clientSecret: string;
 }
 
+import { trackCaspioCall } from '@/lib/caspio-usage-tracker';
+
 export function getCaspioCredentialsFromEnv(): CaspioCredentials {
   const baseUrlRaw = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com';
   const clientId = process.env.CASPIO_CLIENT_ID;
@@ -91,6 +93,7 @@ export async function getCaspioToken(credentials: CaspioCredentials): Promise<st
       client_secret: credentials.clientSecret,
     }),
   });
+  trackCaspioCall({ method: 'POST', kind: 'token', status: tokenResponse.status, ok: tokenResponse.ok, context: 'oauth/token' });
 
   if (!tokenResponse.ok) {
     const errorText = await tokenResponse.text();
@@ -120,6 +123,7 @@ export async function getCaspioRecordCount(
       'Content-Type': 'application/json',
     },
   });
+  trackCaspioCall({ method: 'GET', kind: 'read', status: countResponse.status, ok: countResponse.ok, context: `COUNT:${tableName}` });
 
   if (!countResponse.ok) {
     console.warn('Count query failed, proceeding without total count');
@@ -157,6 +161,7 @@ export async function fetchCaspioRecords(
         'Content-Type': 'application/json',
       },
     });
+    trackCaspioCall({ method: 'GET', kind: 'read', status: response.status, ok: response.ok, context: `records:${tableName}` });
 
     if (!response.ok) {
       console.error(`   ❌ Failed to fetch page ${pageNumber} for: ${whereClause}`);
@@ -430,8 +435,21 @@ export async function fetchCaspioSocialWorkers(
   // Assignment counts are helpful but can be expensive (requires fetching full member dataset).
   // If counting fails (timeouts / data issues), return staff with 0 counts instead of failing the whole request.
   try {
-    const result = await fetchAllCalAIMMembers(credentials, { includeRawData: true });
-    const rawMembers = result.rawMembers || [];
+    // Prefer Firestore cache if available to avoid frequent Caspio reads.
+    let rawMembers: any[] = [];
+    try {
+      const adminModule = await import('@/firebase-admin');
+      const adminDb = adminModule.adminDb;
+      const snap = await adminDb.collection('caspio_members_cache').limit(5000).get();
+      rawMembers = snap.docs.map((doc) => doc.data());
+    } catch (cacheError) {
+      console.warn('⚠️ Failed to load members from Firestore cache; falling back to Caspio.', cacheError);
+    }
+
+    if (rawMembers.length === 0) {
+      const result = await fetchAllCalAIMMembers(credentials, { includeRawData: true });
+      rawMembers = result.rawMembers || [];
+    }
 
     const byName: Record<string, number> = {};
     const bySwId: Record<string, number> = {};
@@ -472,36 +490,106 @@ export async function fetchCaspioSocialWorkers(
  */
 export async function fetchAllCalAIMMembers(
   credentials: CaspioCredentials, 
-  options: { includeRawData?: boolean } = {}
+  options: { includeRawData?: boolean; cacheTtlMs?: number; forceRefresh?: boolean } = {}
 ) {
+  const cacheTtlMs = Number.isFinite(options.cacheTtlMs as number) ? Number(options.cacheTtlMs) : 5 * 60 * 1000;
+  const useCache = cacheTtlMs > 0;
+
+  type CacheValue = {
+    expiresAt: number;
+    value: {
+      members: any[];
+      rawMembers?: any[];
+      count: number;
+      mcoStats: Record<string, number>;
+    };
+    inFlight?: Promise<CacheValue['value']>;
+  };
+
+  const g = globalThis as any;
+  const cacheKey = '__calaim_fetchAllCalAIMMembers_cache_v1__';
+  const cache: CacheValue | undefined = g[cacheKey];
+  const now = Date.now();
+
+  if (useCache && !options.forceRefresh && cache?.value && cache.expiresAt > now) {
+    return {
+      members: cache.value.members,
+      rawMembers: options.includeRawData ? cache.value.rawMembers : undefined,
+      count: cache.value.count,
+      mcoStats: cache.value.mcoStats
+    };
+  }
+
+  if (useCache && !options.forceRefresh && cache?.inFlight) {
+    const inFlightValue = await cache.inFlight;
+    return {
+      members: inFlightValue.members,
+      rawMembers: options.includeRawData ? inFlightValue.rawMembers : undefined,
+      count: inFlightValue.count,
+      mcoStats: inFlightValue.mcoStats
+    };
+  }
+
   // Define MCO partition strategy
   const mcoPartitions = ['Kaiser', 'Health Net', 'Molina', 'Blue Cross', 'Anthem'];
   
-  // Fetch all records using partition strategy
-  const rawMembers = await fetchAllCaspioRecords(credentials, {
-    table: 'CalAIM_tbl_Members',
-    partitionField: 'CalAIM_MCO',
-    partitionValues: mcoPartitions,
-    limit: 1000
-  });
+  const compute = async () => {
+    // Fetch all records using partition strategy
+    const rawMembers = await fetchAllCaspioRecords(credentials, {
+      table: 'CalAIM_tbl_Members',
+      partitionField: 'CalAIM_MCO',
+      partitionValues: mcoPartitions,
+      limit: 1000
+    });
 
-  // Transform to application format
-  const transformedMembers = rawMembers.map(transformCaspioMember);
+    // Transform to application format
+    const transformedMembers = rawMembers.map(transformCaspioMember);
 
-  // Calculate statistics
-  const mcoStats: Record<string, number> = {};
-  transformedMembers.forEach(member => {
-    const mco = member.CalAIM_MCO || 'Unknown';
-    mcoStats[mco] = (mcoStats[mco] || 0) + 1;
-  });
+    // Calculate statistics
+    const mcoStats: Record<string, number> = {};
+    transformedMembers.forEach(member => {
+      const mco = member.CalAIM_MCO || 'Unknown';
+      mcoStats[mco] = (mcoStats[mco] || 0) + 1;
+    });
 
-  console.log('📈 Final MCO Distribution:', mcoStats);
+    console.log('📈 Final MCO Distribution:', mcoStats);
+
+    return {
+      members: transformedMembers,
+      rawMembers,
+      count: transformedMembers.length,
+      mcoStats
+    };
+  };
+
+  if (!useCache) {
+    const value = await compute();
+    return {
+      members: value.members,
+      rawMembers: options.includeRawData ? value.rawMembers : undefined,
+      count: value.count,
+      mcoStats: value.mcoStats
+    };
+  }
+
+  const inFlight = compute();
+  g[cacheKey] = {
+    expiresAt: 0,
+    value: undefined,
+    inFlight
+  } as CacheValue;
+
+  const value = await inFlight;
+  g[cacheKey] = {
+    expiresAt: Date.now() + cacheTtlMs,
+    value
+  } as CacheValue;
 
   return {
-    members: transformedMembers,
-    rawMembers: options.includeRawData ? rawMembers : undefined,
-    count: transformedMembers.length,
-    mcoStats: mcoStats
+    members: value.members,
+    rawMembers: options.includeRawData ? value.rawMembers : undefined,
+    count: value.count,
+    mcoStats: value.mcoStats
   };
 }
 

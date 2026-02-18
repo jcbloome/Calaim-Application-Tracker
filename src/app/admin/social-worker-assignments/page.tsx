@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
+import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -85,6 +86,7 @@ function SortableHeader({
 export default function SocialWorkerAssignmentsPage() {
   const { isAdmin, isLoading } = useAdmin();
   const { toast } = useToast();
+  const auth = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -107,6 +109,21 @@ export default function SocialWorkerAssignmentsPage() {
   const fetchAllMembers = async () => {
     setIsLoadingMembers(true);
     try {
+      if (!auth?.currentUser) {
+        throw new Error('You must be signed in to sync.');
+      }
+
+      const idToken = await auth.currentUser.getIdToken();
+      const syncRes = await fetch('/api/caspio/members-cache/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, mode: 'incremental' }),
+      });
+      const syncData = await syncRes.json().catch(() => ({}));
+      if (!syncRes.ok || !(syncData as any)?.success) {
+        throw new Error((syncData as any)?.error || 'Failed to sync members cache');
+      }
+
       const response = await fetch('/api/all-members');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -121,7 +138,7 @@ export default function SocialWorkerAssignmentsPage() {
       
       toast({
         title: "Data Loaded Successfully",
-        description: `Loaded ${responseData.members?.length || 0} members from all MCOs`,
+        description: `Loaded ${responseData.members?.length || 0} members`,
       });
     } catch (error) {
       console.error('Error fetching all members:', error);

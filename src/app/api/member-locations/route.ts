@@ -35,14 +35,53 @@ interface CalAIMMember {
 export async function GET(request: NextRequest) {
   try {
     const debugMode = request.nextUrl.searchParams.get('debug') === '1';
+    const forceRefresh = request.nextUrl.searchParams.get('refresh') === '1';
     console.log('👥 Fetching CalAIM member locations from Caspio...');
     
-    const credentials = getCaspioCredentialsFromEnv();
-    
-    console.log('🔄 Fetching ALL CalAIM members with partition strategy...');
-    const result = await fetchAllCalAIMMembers(credentials, { includeRawData: true });
-    const allMembers: any[] = result.rawMembers || [];
-    console.log(`✅ Partition fetch complete: ${allMembers.length} total CalAIM members`);
+    let allMembers: any[] = [];
+
+    // Default: load from Firestore cache (no Caspio calls).
+    if (!(forceRefresh || debugMode)) {
+      const adminModule = await import('@/firebase-admin');
+      const adminDb = adminModule.adminDb;
+      const snapshot = await adminDb
+        .collection('caspio_members_cache')
+        .where('CalAIM_Status', '==', 'Authorized')
+        .limit(5000)
+        .get();
+      allMembers = snapshot.docs.map((doc) => doc.data());
+      if (allMembers.length === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Members cache is empty. Click "Sync from Caspio" to load data.',
+            data: {
+              membersByCounty: {},
+              membersByCity: {},
+              membersByRCFE: {},
+              totalMembers: 0,
+              counties: 0,
+              cities: 0,
+              rcfesWithMembers: 0,
+              breakdown: { active: 0, kaiser: 0, healthNet: 0, snfTransition: 0, snfDiversion: 0 },
+              sourceTable: 'firestore-cache-empty',
+            },
+          },
+          { status: 409 }
+        );
+      }
+      console.log(`✅ Loaded ${allMembers.length} authorized members from Firestore cache`);
+    } else {
+      const credentials = getCaspioCredentialsFromEnv();
+      console.log('🔄 Refresh/debug: Fetching ALL CalAIM members with partition strategy...');
+      const result = await fetchAllCalAIMMembers(credentials, {
+        includeRawData: true,
+        forceRefresh: true,
+        cacheTtlMs: 0,
+      });
+      allMembers = result.rawMembers || [];
+      console.log(`✅ Partition fetch complete: ${allMembers.length} total CalAIM members`);
+    }
 
     if (debugMode) {
       const statusKeyCounts: Record<string, Record<string, number>> = {};
