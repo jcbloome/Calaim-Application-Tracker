@@ -14,6 +14,9 @@ interface VisitSubmission {
   memberId: string;
   memberName: string;
   socialWorkerId: string;
+  socialWorkerUid?: string;
+  socialWorkerEmail?: string;
+  socialWorkerName?: string;
   rcfeId: string;
   rcfeName: string;
   rcfeAddress: string;
@@ -43,7 +46,7 @@ interface VisitSubmission {
   };
   
   memberConcerns: {
-    hasConcerns: boolean;
+    hasConcerns: boolean | null;
     concernTypes: {
       medical: boolean;
       staff: boolean;
@@ -207,17 +210,25 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Here you would typically:
-    // 1. Save to Firestore for immediate storage
-    // 2. Optionally sync to Caspio for integration
-    // 3. Send notifications if flagged
-    
-    // For now, we'll simulate the save
-    const visitRecord = {
-      ...visitData,
-      submittedAt: new Date().toISOString(),
-      status: 'submitted'
-    };
+    const adminModule = await import('@/firebase-admin');
+    const admin = adminModule.default;
+    const adminDb = adminModule.adminDb;
+    const submittedAtDate = new Date();
+    const submittedAtIso = submittedAtDate.toISOString();
+    const submittedAtTs = admin.firestore.Timestamp.fromDate(submittedAtDate);
+
+    const socialWorkerUid = String(visitData.socialWorkerUid || '').trim() || null;
+    const socialWorkerEmail = String(visitData.socialWorkerEmail || '').trim().toLowerCase() || null;
+    const socialWorkerName = String(visitData.socialWorkerName || '').trim()
+      || String(visitData.socialWorkerId || '').trim()
+      || socialWorkerEmail
+      || 'Social Worker';
+
+    const claimDay = String(visitData.visitDate || submittedAtIso.slice(0, 10)).slice(0, 10);
+    const claimMonth = claimDay.slice(0, 7);
+    const claimKey = (claimDay || submittedAtIso.slice(0, 10)).replace(/-/g, '');
+    const claimSwKey = socialWorkerUid || socialWorkerEmail || String(visitData.socialWorkerId || '').trim() || 'unknown';
+    const claimId = `swClaim_${claimSwKey}_${claimKey}`;
 
     // Check if visit should trigger notifications
     const shouldNotify = visitData.visitSummary.flagged || 
@@ -261,8 +272,119 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Simulate database save
-    console.log('💾 Visit saved successfully');
+    const flagReasons = shouldNotify ? generateFlagReasons(visitData) : [];
+    const geolocationVerified = Boolean(visitData.geolocation);
+    const status: 'pending_signoff' | 'flagged' =
+      shouldNotify ? 'flagged' : 'pending_signoff';
+    const geolocationLat = typeof visitData.geolocation?.latitude === 'number' ? visitData.geolocation.latitude : null;
+    const geolocationLng = typeof visitData.geolocation?.longitude === 'number' ? visitData.geolocation.longitude : null;
+
+    // Persist the visit so it appears in admin "Visit Records"
+    await adminDb.collection('sw_visit_records').doc(visitData.visitId).set({
+      id: visitData.visitId,
+      visitId: visitData.visitId,
+      socialWorkerId: visitData.socialWorkerId,
+      socialWorkerUid,
+      socialWorkerEmail,
+      socialWorkerName,
+      memberId: visitData.memberId,
+      memberName: visitData.memberName,
+      rcfeId: visitData.rcfeId,
+      rcfeName: visitData.rcfeName,
+      rcfeAddress: visitData.rcfeAddress,
+      visitDate: visitData.visitDate,
+      completedAt: submittedAtIso,
+      submittedAt: submittedAtIso,
+      submittedAtTs,
+      totalScore: Number(visitData.visitSummary?.totalScore || 0),
+      flagged: Boolean(shouldNotify),
+      flagReasons,
+      signedOff: false,
+      geolocationVerified,
+      geolocationLat,
+      geolocationLng,
+      geolocation: visitData.geolocation || null,
+      status,
+      raw: visitData,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    // Auto-upsert daily claim draft ($45/visit + $20/day gas if any visit that day)
+    await adminDb.runTransaction(async (tx) => {
+      const claimRef = adminDb.collection('sw-claims').doc(claimId);
+      const claimSnap = await tx.get(claimRef);
+
+      const existing = claimSnap.exists ? (claimSnap.data() as any) : null;
+      const existingVisitIds: string[] = Array.isArray(existing?.visitIds) ? existing.visitIds : [];
+      const nextVisitIds = existingVisitIds.includes(visitData.visitId)
+        ? existingVisitIds
+        : [...existingVisitIds, visitData.visitId];
+
+      const visitFeeRate = 45;
+      const gasAmount = 20;
+      const visitCount = nextVisitIds.length;
+      const visitTotal = visitCount * visitFeeRate;
+      const totalAmount = visitTotal + (visitCount >= 1 ? gasAmount : 0);
+
+      const memberVisits = Array.isArray(existing?.memberVisits) ? existing.memberVisits : [];
+      const hasVisitEntry = memberVisits.some((v: any) => String(v?.id || v?.visitId || '') === visitData.visitId);
+      const nextMemberVisits = hasVisitEntry
+        ? memberVisits
+        : [
+            ...memberVisits,
+            {
+              id: visitData.visitId,
+              memberName: visitData.memberName,
+              rcfeName: visitData.rcfeName,
+              rcfeAddress: visitData.rcfeAddress,
+              visitDate: claimDay,
+              visitTime: '',
+              notes: '',
+            }
+          ];
+
+      const base = {
+        socialWorkerUid,
+        socialWorkerEmail,
+        socialWorkerName,
+        claimDate: admin.firestore.Timestamp.fromDate(new Date(`${claimDay}T00:00:00.000Z`)),
+        claimMonth,
+        visitIds: nextVisitIds,
+        visitCount,
+        visitFeeRate,
+        gasPolicy: 'perDayIfAnyVisit',
+        gasAmount: visitCount >= 1 ? gasAmount : 0,
+        gasReimbursement: visitCount >= 1 ? gasAmount : 0,
+        totalMemberVisitFees: visitTotal,
+        totalAmount,
+        memberVisits: nextMemberVisits,
+        status: existing?.status || 'draft',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      } as const;
+
+      if (!existing) {
+        tx.set(claimRef, {
+          ...base,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } else {
+        tx.set(claimRef, base, { merge: true });
+      }
+
+      const visitRef = adminDb.collection('sw_visit_records').doc(visitData.visitId);
+      tx.set(visitRef, {
+        claimId,
+        claimMonth,
+        claimStatus: existing?.status || 'draft',
+        claimVisitFeeRate: visitFeeRate,
+        claimGasAmount: visitCount >= 1 ? gasAmount : 0,
+        claimTotalAmount: totalAmount,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    });
+
+    console.log('💾 Visit saved to Firestore:', visitData.visitId);
 
     return NextResponse.json({
       success: true,

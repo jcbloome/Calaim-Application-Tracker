@@ -121,136 +121,50 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
         const loginData = await loginResponse.json();
         setLoginEvents(loginData.events || []);
       }
-      
-      // Simulate loading data - in production this would come from Firestore
-      // For now, we'll create mock data to demonstrate the system
-      
-      const mockVisits: VisitRecord[] = [
-        {
-          id: '1',
-          visitId: 'visit-1737584123456',
-          socialWorkerName: 'Billy Buckhalter',
-          memberName: 'Mike Kirby',
-          rcfeName: 'Highland Manor Assisted Living',
-          rcfeAddress: '123 Highland Ave, Los Angeles, CA',
-          visitDate: '2025-01-22',
-          completedAt: '2025-01-22T14:30:15Z',
-          totalScore: 58,
-          flagged: false,
-          flagReasons: [],
-          signedOff: true,
-          rcfeStaffName: 'Jennifer Martinez',
-          rcfeStaffTitle: 'Administrator',
-          signOffDate: '2025-01-22T15:10:00Z',
-          geolocationVerified: true,
-          geolocationLabel: 'GPS verified at Highland Manor',
-          geolocationLat: 34.0599,
-          geolocationLng: -118.2468,
-          visitLocationDetails: 'Room 12B (member present in room)',
-          questionnaireAnswers: [
-            { question: 'Was the member present?', answer: 'Yes' },
-            { question: 'Is the care plan being followed?', answer: 'Mostly' },
-            { question: 'Any safety concerns?', answer: 'No' }
-          ],
-          status: 'signed_off',
-          claimSubmitted: true,
-          claimMonth: '2025-01',
-          claimPaid: true,
-          claimSubmittedAt: '2025-01-23',
-          claimPaidAt: '2025-02-05',
-          starRatings: {
-            care: 4,
-            safety: 5,
-            communication: 4,
-            overall: 4
-          }
-        },
-        {
-          id: '2',
-          visitId: 'visit-1737584234567',
-          socialWorkerName: 'Billy Buckhalter',
-          memberName: 'Sarah Johnson',
-          rcfeName: 'Highland Manor Assisted Living',
-          rcfeAddress: '123 Highland Ave, Los Angeles, CA',
-          visitDate: '2025-01-22',
-          completedAt: '2025-01-22T15:15:30Z',
-          totalScore: 35,
-          flagged: true,
-          flagReasons: ['Low care satisfaction', 'Member has urgent concerns'],
-          signedOff: false,
-          geolocationVerified: true,
-          geolocationLabel: 'GPS verified at Highland Manor',
-          geolocationLat: 34.0599,
-          geolocationLng: -118.2468,
-          visitLocationDetails: 'Dining hall (group activity)',
-          questionnaireAnswers: [
-            { question: 'Was the member present?', answer: 'Yes' },
-            { question: 'Is the care plan being followed?', answer: 'No' },
-            { question: 'Any safety concerns?', answer: 'Yes - needs follow-up' }
-          ],
-          status: 'flagged',
-          claimSubmitted: false,
-          starRatings: {
-            care: 2,
-            safety: 2,
-            communication: 3,
-            overall: 2
-          }
-        },
-        {
-          id: '3',
-          visitId: 'visit-1737584345678',
-          socialWorkerName: 'Billy Buckhalter',
-          memberName: 'Robert Chen',
-          rcfeName: 'Savant of Santa Monica',
-          rcfeAddress: '456 Ocean Blvd, Santa Monica, CA',
-          visitDate: '2025-01-22',
-          completedAt: '2025-01-22T16:45:00Z',
-          totalScore: 62,
-          flagged: false,
-          flagReasons: [],
-          signedOff: false,
-          geolocationVerified: true,
-          geolocationLabel: 'GPS verified at Savant of Santa Monica',
-          geolocationLat: 34.0104,
-          geolocationLng: -118.4963,
-          visitLocationDetails: 'Common lounge (member present with staff)',
-          questionnaireAnswers: [
-            { question: 'Was the member present?', answer: 'Yes' },
-            { question: 'Is the care plan being followed?', answer: 'Yes' },
-            { question: 'Any safety concerns?', answer: 'No' }
-          ],
-          status: 'pending_signoff',
-          claimSubmitted: true,
-          claimMonth: '2025-01',
-          claimPaid: false,
-          claimSubmittedAt: '2025-01-24',
-          starRatings: {
-            care: 5,
-            safety: 4,
-            communication: 5,
-            overall: 5
-          }
-        }
-      ];
 
-      const mockSignOffs: SignOffRecord[] = [
-        {
-          id: 'signoff-1',
-          rcfeName: 'Highland Manor Assisted Living',
-          socialWorkerName: 'Billy Buckhalter',
-          visitDate: '2025-01-22',
-          completedVisits: 2,
-          rcfeStaffName: 'Jennifer Martinez',
-          rcfeStaffTitle: 'Administrator',
-          signedAt: '2025-01-22T15:30:00Z',
-          geolocationVerified: true,
-          flaggedVisits: 1
-        }
-      ];
+      // Load real visit records (Firestore-backed)
+      const days = dateFilter === 'all' ? '30' : dateFilter;
+      const visitsResponse = await fetch(`/api/sw-visits/records?days=${encodeURIComponent(days)}`);
+      if (visitsResponse.ok) {
+        const visitsData = await visitsResponse.json().catch(() => ({}));
+        const visitsRaw = Array.isArray((visitsData as any)?.visits) ? (visitsData as any).visits : [];
+        const toYyyyMmDd = (value: any): string => {
+          if (!value) return '';
+          if (typeof value === 'string') return value.slice(0, 10);
+          if (typeof value === 'number') return new Date(value).toISOString().slice(0, 10);
+          if (typeof value?.toDate === 'function') return value.toDate().toISOString().slice(0, 10);
+          return '';
+        };
+        const normalized = visitsRaw.map((v: any) => ({
+          ...v,
+          id: String(v?.id || v?.visitId || ''),
+          visitId: String(v?.visitId || v?.id || ''),
+          socialWorkerName: String(v?.socialWorkerName || v?.socialWorkerId || ''),
+          memberName: String(v?.memberName || ''),
+          rcfeName: String(v?.rcfeName || ''),
+          rcfeAddress: String(v?.rcfeAddress || ''),
+          visitDate: String(v?.visitDate || ''),
+          completedAt: String(v?.completedAt || v?.submittedAt || ''),
+          totalScore: Number(v?.totalScore || 0),
+          flagged: Boolean(v?.flagged),
+          flagReasons: Array.isArray(v?.flagReasons) ? v.flagReasons : [],
+          signedOff: Boolean(v?.signedOff),
+          geolocationVerified: Boolean(v?.geolocationVerified),
+          questionnaireAnswers: Array.isArray(v?.questionnaireAnswers) ? v.questionnaireAnswers : [],
+          status: (v?.status as VisitRecord['status']) || (v?.flagged ? 'flagged' : 'pending_signoff'),
+          claimSubmitted: Boolean(v?.claimSubmitted),
+          claimMonth: String(v?.claimMonth || ''),
+          claimPaid: Boolean(v?.claimPaid),
+          claimSubmittedAt: toYyyyMmDd(v?.claimSubmittedAt) || toYyyyMmDd(v?.submittedAt),
+          claimPaidAt: toYyyyMmDd(v?.claimPaidAt),
+        })) as VisitRecord[];
+        setVisitRecords(normalized);
+      } else {
+        setVisitRecords([]);
+      }
 
-      setVisitRecords(mockVisits);
-      setSignOffRecords(mockSignOffs);
+      // Sign-off records are not yet persisted; keep empty until wired
+      setSignOffRecords([]);
     } catch (error) {
       console.error('Error loading tracking data:', error);
     } finally {

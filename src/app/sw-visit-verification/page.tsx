@@ -760,6 +760,9 @@ export default function SWVisitVerification() {
       // Submit to API
       const submitData = {
         ...questionnaire,
+        socialWorkerUid: user?.uid || null,
+        socialWorkerEmail: (user?.email || '').toLowerCase() || null,
+        socialWorkerName: user?.displayName || user?.email || questionnaire.socialWorkerId || null,
         geolocation
       };
 

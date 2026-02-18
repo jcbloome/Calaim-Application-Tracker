@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
-import { collection, query, orderBy, getDocs, doc, updateDoc, where } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, doc, updateDoc, where, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { 
   DollarSign, 
@@ -183,12 +183,48 @@ export default function SWClaimsManagementPage() {
     
     try {
       const claimRef = doc(firestore, 'sw-claims', claimId);
-      await updateDoc(claimRef, {
+      const updates: any = {
         status: newStatus,
         reviewedAt: new Date(),
         reviewedBy: 'Admin', // In production, use actual admin name
         reviewNotes: reviewNotes || ''
-      });
+      };
+
+      if (newStatus === 'paid') {
+        updates.paidAt = serverTimestamp();
+        updates.claimPaid = true;
+      }
+
+      await updateDoc(claimRef, updates);
+
+      // When paid, propagate paid fields to linked visit records
+      if (newStatus === 'paid') {
+        const claim = claims.find((c) => c.id === claimId) as any;
+        const visitIdsFromDoc: string[] = Array.isArray(claim?.visitIds) ? claim.visitIds : [];
+        const visitIdsFromMemberVisits: string[] = Array.isArray(claim?.memberVisits)
+          ? claim.memberVisits.map((v: any) => String(v?.id || '').trim()).filter(Boolean)
+          : [];
+        const visitIds = Array.from(new Set([...visitIdsFromDoc, ...visitIdsFromMemberVisits]));
+
+        if (visitIds.length > 0) {
+          const batch = writeBatch(firestore);
+          visitIds.slice(0, 500).forEach((visitId) => {
+            const visitRef = doc(firestore, 'sw_visit_records', String(visitId));
+            batch.set(
+              visitRef,
+              {
+                claimId,
+                claimPaid: true,
+                claimPaidAt: serverTimestamp(),
+                claimStatus: 'paid',
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            );
+          });
+          await batch.commit();
+        }
+      }
 
       // Update local state
       setClaims(claims.map(claim => 
