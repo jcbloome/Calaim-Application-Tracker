@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server';
 
-export function GET() {
-  const targetUrl = process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_URL;
-
-  if (!targetUrl) {
-    return new NextResponse('Installer link not configured.', { status: 404 });
-  }
-
-  return NextResponse.redirect(targetUrl);
+export function GET(request: Request) {
+  // Always redirect through our smart installer endpoint, which resolves the
+  // latest GitHub release asset (and can fall back to a locally bundled installer).
+  const url = new URL('/admin/desktop-installer', request.url);
+  return NextResponse.redirect(url);
 }
