@@ -389,34 +389,41 @@ export async function fetchCaspioSocialWorkers(
     })
     .filter(Boolean) as CaspioSocialWorker[];
 
-  const result = await fetchAllCalAIMMembers(credentials, { includeRawData: true });
-  const rawMembers = result.rawMembers || [];
+  // Assignment counts are helpful but can be expensive (requires fetching full member dataset).
+  // If counting fails (timeouts / data issues), return staff with 0 counts instead of failing the whole request.
+  try {
+    const result = await fetchAllCalAIMMembers(credentials, { includeRawData: true });
+    const rawMembers = result.rawMembers || [];
 
-  const byName: Record<string, number> = {};
-  const bySwId: Record<string, number> = {};
+    const byName: Record<string, number> = {};
+    const bySwId: Record<string, number> = {};
 
-  rawMembers.forEach((member: any) => {
-    const swId = String(member.SW_ID || '').trim();
-    if (swId) {
-      bySwId[swId] = (bySwId[swId] || 0) + 1;
-    }
+    rawMembers.forEach((member: any) => {
+      const swId = String(member.SW_ID || '').trim();
+      if (swId) {
+        bySwId[swId] = (bySwId[swId] || 0) + 1;
+      }
 
-    const swName = normalizeSocialWorkerName(String(member.Social_Worker_Assigned || '').trim());
-    if (swName) {
-      byName[swName] = (byName[swName] || 0) + 1;
-    }
-  });
+      const swName = normalizeSocialWorkerName(String(member.Social_Worker_Assigned || '').trim());
+      if (swName) {
+        byName[swName] = (byName[swName] || 0) + 1;
+      }
+    });
 
-  return transformedStaff.map((staff) => {
-    const staffId = String(staff.sw_id || '').trim();
-    const staffName = normalizeSocialWorkerName(String(staff.name || '').trim());
-    const countByName = staffName ? byName[staffName] ?? 0 : 0;
-    const countById = staffId ? bySwId[staffId] ?? 0 : 0;
-    return {
-      ...staff,
-      assignedMemberCount: Math.max(countByName, countById)
-    };
-  });
+    return transformedStaff.map((staff) => {
+      const staffId = String(staff.sw_id || '').trim();
+      const staffName = normalizeSocialWorkerName(String(staff.name || '').trim());
+      const countByName = staffName ? byName[staffName] ?? 0 : 0;
+      const countById = staffId ? bySwId[staffId] ?? 0 : 0;
+      return {
+        ...staff,
+        assignedMemberCount: Math.max(countByName, countById)
+      };
+    });
+  } catch (countError) {
+    console.warn('⚠️ Failed to compute SW assignment counts; returning staff without counts.', countError);
+    return transformedStaff.map((staff) => ({ ...staff, assignedMemberCount: 0 }));
+  }
 }
 
 /**
