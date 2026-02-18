@@ -1,9 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Emergency rules - allow all authenticated users full access
+    // Default deny. Add explicit collection rules below.
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
     
     // Social Workers collection - admin management only
@@ -46,6 +46,13 @@ service cloud.firestore {
       // Super admins can delete claims
       allow delete: if request.auth != null && 
                     request.auth.token.email in ['jason@carehomefinders.com'];
+    }
+
+    // Desktop Presence (Electron online indicator)
+    match /desktop_presence/{uid} {
+      allow read, list: if request.auth != null;
+      allow create, update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if request.auth != null && request.auth.token.email in ['jason@carehomefinders.com'];
     }
 
     // Staff Chat (Firestore source of truth)

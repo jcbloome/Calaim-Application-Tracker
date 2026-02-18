@@ -110,6 +110,13 @@ service cloud.firestore {
         allow list, read: if isSuperAdmin();
     }
 
+    // 5. Desktop Presence (Electron online indicator)
+    match /desktop_presence/{uid} {
+      allow read, list: if isAdmin();
+      allow create, update: if isSignedIn() && request.auth.uid == uid;
+      allow delete: if isAdmin();
+    }
+
     // 5. Staff Chat (Firestore source of truth)
     // Conversations are limited to admins and the conversation participants.
     match /chat_conversations/{conversationId} {

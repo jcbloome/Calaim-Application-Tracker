@@ -3,9 +3,19 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('desktopNotifications', {
   getState: () => ipcRenderer.invoke('desktop:getState'),
   setPaused: (paused: boolean) => ipcRenderer.invoke('desktop:setPaused', paused),
-  notify: (payload: { title: string; body: string; openOnNotify?: boolean }) =>
+  notify: (payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) =>
     ipcRenderer.invoke('desktop:notify', payload),
   setPendingCount: (count: number) => ipcRenderer.send('desktop:setPendingCount', count),
+  setChatPillSummary: (payload: {
+    count: number;
+    notes?: Array<{
+      title: string;
+      message: string;
+      memberName?: string;
+      timestamp?: string;
+      actionUrl?: string;
+    }>;
+  }) => ipcRenderer.send('desktop:setChatPillSummary', payload),
   setPillSummary: (payload: {
     count: number;
     notes?: Array<{

@@ -1,18 +1,20 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
 import {
   addDoc,
   collection,
   doc,
+  increment,
   getDoc,
   getDocs,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   writeBatch,
 } from 'firebase/firestore';
@@ -22,8 +24,10 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, MessageSquareText, Send, Users } from 'lucide-react';
 import { getDirectConversationId, getOtherParticipantUid } from '@/lib/chat-utils';
+import { useSearchParams } from 'next/navigation';
 
 type StaffUser = {
   uid: string;
@@ -41,6 +45,10 @@ type ConversationDoc = {
   participantInfo?: Record<string, { name?: string; email?: string }>;
   lastMessageText?: string;
   lastMessageAt?: any;
+  lastMessageSenderUid?: string;
+  lastMessageId?: string;
+  readAtByUid?: Record<string, any>;
+  unreadCountByUid?: Record<string, number>;
   updatedAt?: any;
   createdAt?: any;
 };
@@ -53,11 +61,40 @@ type MessageDoc = {
   createdAt?: any;
 };
 
+type DesktopPresenceDoc = {
+  uid?: string;
+  active?: boolean;
+  source?: string;
+  lastSeenAt?: any;
+};
+
+function toMs(value: any) {
+  try {
+    if (!value) return 0;
+    if (typeof value?.toMillis === 'function') return value.toMillis();
+    if (typeof value?.toDate === 'function') return value.toDate().getTime();
+    const d = new Date(value);
+    const ms = d.getTime();
+    return Number.isNaN(ms) ? 0 : ms;
+  } catch {
+    return 0;
+  }
+}
+
 function displayNameForUser(u: StaffUser) {
   const name =
     u.displayName ||
     `${String(u.firstName || '').trim()} ${String(u.lastName || '').trim()}`.trim();
   return name || u.email || u.uid;
+}
+
+function DeepLinkListener({ onCid }: { onCid: (cid: string) => void }) {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const cid = String(searchParams?.get('cid') || '').trim();
+    if (cid) onCid(cid);
+  }, [searchParams, onCid]);
+  return null;
 }
 
 function formatTime(value: any) {
@@ -84,6 +121,9 @@ export default function AdminChatPage() {
   const [staff, setStaff] = useState<StaffUser[]>([]);
   const [staffLoading, setStaffLoading] = useState(false);
   const [staffFilter, setStaffFilter] = useState('');
+  const [staffSelectUid, setStaffSelectUid] = useState<string>('');
+
+  const [desktopPresenceByUid, setDesktopPresenceByUid] = useState<Record<string, DesktopPresenceDoc>>({});
 
   const [conversations, setConversations] = useState<ConversationDoc[]>([]);
   const [convLoading, setConvLoading] = useState(false);
@@ -94,10 +134,35 @@ export default function AdminChatPage() {
 
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [deepLinkCid, setDeepLinkCid] = useState<string>('');
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const myUid = String(user?.uid || '').trim();
+
+  const markConversationRead = async (conversationId: string) => {
+    if (!firestore || !myUid) return;
+    const ref = doc(firestore, 'chat_conversations', conversationId);
+    const field = `readAtByUid.${myUid}`;
+    const unreadField = `unreadCountByUid.${myUid}`;
+    try {
+      await updateDoc(ref, { [field]: serverTimestamp(), [unreadField]: 0 } as any);
+    } catch {
+      // ignore
+    }
+  };
+
+  const isDesktopActive = (uid?: string | null) => {
+    const id = String(uid || '').trim();
+    if (!id) return false;
+    const p = desktopPresenceByUid[id];
+    if (!p) return false;
+    if (p.source !== 'electron') return false;
+    if (p.active === false) return false;
+    const ms = typeof p?.lastSeenAt?.toMillis === 'function' ? p.lastSeenAt.toMillis() : 0;
+    if (!ms) return false;
+    return Date.now() - ms <= 120_000; // 2 minutes freshness window
+  };
 
   const activeOther = useMemo(() => {
     if (!activeOtherUid) return null;
@@ -208,6 +273,22 @@ export default function AdminChatPage() {
   }, [firestore, isAdmin, myUid]);
 
   useEffect(() => {
+    if (!isAdmin || !firestore) return;
+    const unsub = onSnapshot(
+      collection(firestore, 'desktop_presence'),
+      (snap) => {
+        const next: Record<string, DesktopPresenceDoc> = {};
+        snap.docs.forEach((d) => {
+          next[String(d.id)] = { ...(d.data() as any) };
+        });
+        setDesktopPresenceByUid(next);
+      },
+      () => setDesktopPresenceByUid({})
+    );
+    return () => unsub();
+  }, [firestore, isAdmin]);
+
+  useEffect(() => {
     if (!firestore || !activeConversationId) {
       setMessages([]);
       setMessagesLoading(false);
@@ -264,12 +345,14 @@ export default function AdminChatPage() {
 
     setActiveConversationId(id);
     setActiveOtherUid(otherUid);
+    void markConversationRead(id);
   };
 
   const openConversation = (c: ConversationDoc) => {
     setActiveConversationId(c.id);
     const otherUid = getOtherParticipantUid(c.participants || [], myUid);
     setActiveOtherUid(otherUid);
+    void markConversationRead(c.id);
   };
 
   const sendMessage = async () => {
@@ -289,21 +372,45 @@ export default function AdminChatPage() {
         senderName: user?.displayName || user?.email || myUid,
         createdAt: serverTimestamp(),
       });
+
+      const otherUid = String(activeOtherUid || '').trim();
+      const myUnreadField = `unreadCountByUid.${myUid}`;
+      const otherUnreadField = otherUid ? `unreadCountByUid.${otherUid}` : null;
+      const myReadField = `readAtByUid.${myUid}`;
+
       batch.set(
         convRef,
         {
           lastMessageText: text.slice(0, 400),
           lastMessageAt: serverTimestamp(),
+          lastMessageSenderUid: myUid,
+          lastMessageId: msgRef.id,
+          [myReadField]: serverTimestamp(),
+          [myUnreadField]: 0,
+          ...(otherUnreadField ? { [otherUnreadField]: increment(1) } : {}),
           updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
       await batch.commit();
+      void markConversationRead(activeConversationId);
       setDraft('');
     } finally {
       setSending(false);
     }
   };
+
+  // Deep-link: /admin/chat?cid=<conversationId>
+  useEffect(() => {
+    if (!myUid) return;
+    const cid = String(deepLinkCid || '').trim();
+    if (!cid) return;
+    if (cid === activeConversationId) return;
+    const found = conversations.find((c) => c.id === cid);
+    if (!found) return;
+    openConversation(found);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkCid, conversations, myUid]);
 
   if (isAdminLoading) {
     return (
@@ -333,6 +440,9 @@ export default function AdminChatPage() {
 
   return (
     <div className="container mx-auto py-6 space-y-4">
+      <Suspense fallback={null}>
+        <DeepLinkListener onCid={setDeepLinkCid} />
+      </Suspense>
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Staff Chat</h1>
@@ -363,6 +473,33 @@ export default function AdminChatPage() {
                 onChange={(e) => setStaffFilter(e.target.value)}
                 placeholder="Search staff…"
               />
+              <Select
+                value={staffSelectUid}
+                onValueChange={(uid) => {
+                  setStaffSelectUid(uid);
+                  const target = staff.find((s) => String(s.uid) === String(uid));
+                  if (target) void openDirectChat(target);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select staff…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredStaff.slice(0, 50).map((s) => (
+                    <SelectItem key={s.uid} value={s.uid}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={`h-2 w-2 rounded-full ${
+                            isDesktopActive(s.uid) ? 'bg-green-500' : 'bg-gray-300'
+                          }`}
+                          aria-hidden="true"
+                        />
+                        <span className="truncate">{displayNameForUser(s)}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <ScrollArea className="h-[180px] rounded-md border">
                 <div className="p-2 space-y-1">
                   {staffLoading ? (
@@ -380,7 +517,20 @@ export default function AdminChatPage() {
                         className="w-full text-left rounded-md px-2 py-2 hover:bg-accent"
                         title={s.email || s.uid}
                       >
-                        <div className="text-sm font-medium truncate">{displayNameForUser(s)}</div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              isDesktopActive(s.uid) ? 'bg-green-500' : 'bg-gray-300'
+                            }`}
+                            aria-hidden="true"
+                          />
+                          <div className="text-sm font-medium truncate">{displayNameForUser(s)}</div>
+                          {isDesktopActive(s.uid) ? (
+                            <Badge variant="secondary" className="ml-auto text-[10px]">
+                              Desktop
+                            </Badge>
+                          ) : null}
+                        </div>
                         <div className="text-xs text-muted-foreground truncate">{s.email || s.uid}</div>
                       </button>
                     ))
@@ -410,6 +560,11 @@ export default function AdminChatPage() {
                       const otherInfo = otherUid ? c.participantInfo?.[otherUid] : null;
                       const label = otherInfo?.name || otherInfo?.email || otherUid || c.id;
                       const active = c.id === activeConversationId;
+                      const isUnread =
+                        Boolean(myUid) &&
+                        toMs(c.lastMessageAt) > toMs(c.readAtByUid?.[myUid]) &&
+                        String(c.lastMessageSenderUid || '').trim() !== String(myUid).trim();
+                      const unreadCount = Math.max(0, Number(c.unreadCountByUid?.[myUid] ?? (isUnread ? 1 : 0)) || 0);
                       return (
                         <button
                           key={c.id}
@@ -418,7 +573,24 @@ export default function AdminChatPage() {
                             active ? 'bg-accent' : ''
                           }`}
                         >
-                          <div className="text-sm font-medium truncate">{label}</div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`h-2 w-2 rounded-full ${
+                                isDesktopActive(otherUid) ? 'bg-green-500' : 'bg-gray-300'
+                              }`}
+                              aria-hidden="true"
+                            />
+                            <div className="text-sm font-medium truncate">{label}</div>
+                            {isUnread ? (
+                              <Badge variant="default" className="ml-auto text-[10px]">
+                                {unreadCount}
+                              </Badge>
+                            ) : isDesktopActive(otherUid) ? (
+                              <Badge variant="secondary" className="ml-auto text-[10px]">
+                                Desktop
+                              </Badge>
+                            ) : null}
+                          </div>
                           <div className="text-xs text-muted-foreground truncate">
                             {c.lastMessageText || 'No messages yet'}
                           </div>
@@ -440,9 +612,16 @@ export default function AdminChatPage() {
                 {activeOther ? `Chat with ${displayNameForUser(activeOther)}` : 'Select a conversation'}
               </span>
               {activeConversationId ? (
-                <Badge variant="secondary" className="font-mono text-xs">
-                  {activeConversationId.slice(0, 10)}
-                </Badge>
+                <span className="flex items-center gap-2">
+                  {activeOtherUid && isDesktopActive(activeOtherUid) ? (
+                    <Badge variant="secondary" className="text-xs">
+                      Desktop active
+                    </Badge>
+                  ) : null}
+                  <Badge variant="secondary" className="font-mono text-xs">
+                    {activeConversationId.slice(0, 10)}
+                  </Badge>
+                </span>
               ) : null}
             </CardTitle>
           </CardHeader>

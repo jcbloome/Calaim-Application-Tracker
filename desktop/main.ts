@@ -43,8 +43,10 @@ type PillItem = {
 let pillNotes: PillItem[] = [];
 let staffPillNotes: PillItem[] = [];
 let reviewPillNotes: PillItem[] = [];
+let chatPillNotes: PillItem[] = [];
 let staffPillCount = 0;
 let reviewPillCount = 0;
+let chatPillCount = 0;
 let pillIndex = 0;
 let pillPosition: { x: number; y: number } | null = null;
 let pillMode: 'compact' | 'panel' = 'compact';
@@ -776,6 +778,7 @@ const recomputeCombinedPill = () => {
   const combined: PillItem[] = [];
   combined.push(...staffPillNotes);
   combined.push(...reviewPillNotes);
+  combined.push(...chatPillNotes);
 
   // Best-effort newest-first sort using Date.parse on timestamp labels.
   combined.sort((a, b) => {
@@ -786,7 +789,7 @@ const recomputeCombinedPill = () => {
 
   pillNotes = combined;
   pillIndex = 0;
-  pillSummary.count = staffPillCount + reviewPillCount;
+  pillSummary.count = staffPillCount + reviewPillCount + chatPillCount;
 };
 
 const showMinimizedPill = () => {
@@ -932,10 +935,13 @@ ipcMain.handle('desktop:setPaused', (_event, paused: boolean) => {
   return { ...notificationState };
 });
 
-ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string; openOnNotify?: boolean }) => {
+ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) => {
   computeEffectivePaused();
   if (notificationState.effectivePaused) return false;
 
+  if (payload.actionUrl) {
+    pillSummary.actionUrl = String(payload.actionUrl);
+  }
   pillSummary = {
     ...pillSummary,
     count: Math.max(1, Number(pillSummary.count || 0)),
@@ -954,7 +960,7 @@ ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string
       message: payload.body,
       author: 'System',
       recipientName: 'System',
-      actionUrl: pillSummary.actionUrl || '/admin/my-notes',
+      actionUrl: payload.actionUrl || pillSummary.actionUrl || '/admin/my-notes',
       timestamp: new Date().toISOString(),
     });
   } catch {
@@ -1064,6 +1070,33 @@ ipcMain.on('desktop:setReviewPillSummary', (_event, payload: {
     kind: note.kind || 'docs'
   }));
   reviewPillCount = payload.count || 0;
+  recomputeCombinedPill();
+  if (pillSummary.count > 0) {
+    showMinimizedPill();
+  } else {
+    closeNotificationWindow();
+  }
+});
+
+ipcMain.on('desktop:setChatPillSummary', (_event, payload: {
+  count: number;
+  notes?: Array<{
+    title: string;
+    message: string;
+    memberName?: string;
+    timestamp?: string;
+    actionUrl?: string;
+  }>;
+}) => {
+  chatPillNotes = (payload.notes || []).map((note) => ({
+    title: note.title,
+    message: note.message,
+    kind: 'note',
+    memberName: note.memberName,
+    timestamp: note.timestamp,
+    actionUrl: note.actionUrl,
+  }));
+  chatPillCount = payload.count || 0;
   recomputeCombinedPill();
   if (pillSummary.count > 0) {
     showMinimizedPill();

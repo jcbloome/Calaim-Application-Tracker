@@ -13,8 +13,18 @@ declare global {
       __shim?: boolean;
       getState: () => Promise<DesktopNotificationState>;
       setPaused: (paused: boolean) => Promise<DesktopNotificationState>;
-      notify: (payload: { title: string; body: string; openOnNotify?: boolean }) => Promise<boolean>;
+      notify: (payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) => Promise<boolean>;
       setPendingCount: (count: number) => void;
+      setChatPillSummary?: (payload: {
+        count: number;
+        notes?: Array<{
+          title: string;
+          message: string;
+          memberName?: string;
+          timestamp?: string;
+          actionUrl?: string;
+        }>;
+      }) => void;
       setPillSummary?: (payload: {
         count: number;
         notes?: Array<{
