@@ -25,6 +25,7 @@ import {
   Send,
   ArrowLeft,
   ArrowRight,
+  RotateCcw,
   Home,
   Shield,
   Users
@@ -450,6 +451,94 @@ export default function SWVisitVerification() {
     }));
     setQuestionStep(1);
     setCurrentStep('questionnaire');
+  };
+
+  const restartQuestionnaire = async () => {
+    if (!selectedMember) return;
+
+    const confirmed = typeof window !== 'undefined'
+      ? window.confirm('Restart this questionnaire? This will clear all answers (and any saved draft) for this member.')
+      : false;
+    if (!confirmed) return;
+
+    const socialWorkerId = user?.displayName || user?.email || user?.uid || questionnaire.socialWorkerId || 'unknown';
+    const memberKey = selectedMember.id || selectedMember.name || questionnaire.memberId;
+    if (memberKey) {
+      try {
+        localStorage.removeItem(getDraftKey(memberKey, socialWorkerId));
+      } catch {
+        // ignore
+      }
+      setDraftsByMember((prev) => {
+        const next = { ...prev };
+        delete next[memberKey];
+        return next;
+      });
+    }
+
+    setQuestionnaire({
+      visitId: `visit-${Date.now()}`,
+      memberId: memberKey || `member-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      memberName: selectedMember.name,
+      socialWorkerId,
+      rcfeId: selectedMember.rcfeId,
+      rcfeName: selectedMember.rcfeName,
+      rcfeAddress: selectedMember.rcfeAddress,
+      visitDate: new Date().toISOString().split('T')[0],
+      meetingLocation: {
+        location: '',
+        otherLocation: '',
+        notes: '',
+      },
+      memberWellbeing: {
+        physicalHealth: 0,
+        mentalHealth: 0,
+        socialEngagement: 0,
+        overallMood: 0,
+        notes: '',
+      },
+      careSatisfaction: {
+        staffAttentiveness: 0,
+        mealQuality: 0,
+        cleanlinessOfRoom: 0,
+        activitiesPrograms: 0,
+        overallSatisfaction: 0,
+        notes: '',
+      },
+      memberConcerns: {
+        hasConcerns: null,
+        concernTypes: {
+          medical: false,
+          staff: false,
+          safety: false,
+          food: false,
+          social: false,
+          financial: false,
+          other: false,
+        },
+        urgencyLevel: 'low',
+        detailedConcerns: '',
+        actionRequired: false,
+      },
+      rcfeAssessment: {
+        facilityCondition: 0,
+        staffProfessionalism: 0,
+        safetyCompliance: 0,
+        careQuality: 0,
+        overallRating: 0,
+        notes: '',
+        flagForReview: false,
+      },
+      visitSummary: {
+        totalScore: 0,
+        flagged: false,
+      },
+    });
+    setQuestionStep(1);
+    toast({
+      title: 'Questionnaire restarted',
+      description: 'All answers have been cleared. You are back on Question 1.',
+    });
   };
 
   // Form validation functions
@@ -978,9 +1067,21 @@ export default function SWVisitVerification() {
                       {selectedRCFE?.name} - {selectedMember.room}
                     </p>
                   </div>
-                  <Badge variant="outline">
-                    Question {questionStep} of 6
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={restartQuestionnaire}
+                      className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                    >
+                      <RotateCcw className="h-4 w-4 mr-2" />
+                      Restart
+                    </Button>
+                    <Badge variant="outline">
+                      Question {questionStep} of 6
+                    </Badge>
+                  </div>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div 
