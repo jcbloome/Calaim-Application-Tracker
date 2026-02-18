@@ -66,6 +66,15 @@ export function PrintableRoomBoardObligationForm({
               realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting
               CalAIM members, RCFEs will need to know the "room and board" payment.
             </p>
+            <p>
+              The RCFE may also require the member/family to sign a separate admission agreement or contract that confirms
+              the "room and board" obligation.
+            </p>
+            <p>
+              If the member requests a private room, or the selected RCFE’s rates exceed the standard "room and board"
+              plus the MCP "assisted living" payment, the RCFE may require a separate agreement for the member/family to
+              pay an additional amount. Any such additional amount is not reflected in this commitment form.
+            </p>
           </div>
         </div>
 
@@ -75,16 +84,6 @@ export function PrintableRoomBoardObligationForm({
             <div>
               <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
                 Member's current monthly income: *
-              </label>
-              <div className="flex items-center space-x-2">
-                <span className="text-lg font-semibold">$</span>
-                <div className="flex-1 h-12 border-b-2 border-gray-400 print:border-black"></div>
-                <span className="text-sm text-gray-600 print:text-black">per month</span>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-                Expected payment to RCFE/ARF as "room and board": *
               </label>
               <div className="flex items-center space-x-2">
                 <span className="text-lg font-semibold">$</span>
@@ -107,17 +106,11 @@ export function PrintableRoomBoardObligationForm({
             Commitment
           </h3>
           <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
-            <p>I understand and acknowledge that:</p>
-            <ul className="list-disc list-inside space-y-1 ml-4">
-              <li>I must pay the room and board portion directly to the facility.</li>
-              <li>SSI/SSP + NMOHC may increase the payment toward room and board.</li>
-              <li>If I cannot pay any room and board, I may be ineligible.</li>
-            </ul>
-            <div className="flex items-start gap-2 pt-2">
+            <div className="flex items-start gap-2">
               <div className="h-4 w-4 border border-gray-400 print:border-black mt-0.5" />
               <p>
-                If Member is eligible for NMOHC he/she agrees to pay the required NMOHC portion (while retaining the
-                personal need expenses).
+                Member (or authorized representative) acknowledges the "room and board" commitment for participation in
+                the CalAIM program.
               </p>
             </div>
           </div>
@@ -130,8 +123,8 @@ export function PrintableRoomBoardObligationForm({
           </h3>
           <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
             <p>
-              By signing below, I acknowledge this Room and Board Commitment and agree that, if eligible for NMOHC, I will
-              pay the NMOHC supplement minus personal need expenses to the RCFE/ARF.
+              By signing below, I acknowledge I am the member or an authorized representative (POA) legally empowered to
+              sign on behalf of the member.
             </p>
           </div>
 

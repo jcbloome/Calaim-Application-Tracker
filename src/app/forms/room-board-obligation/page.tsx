@@ -27,9 +27,7 @@ function RoomBoardObligationContent() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [monthlyIncome, setMonthlyIncome] = useState('');
-  const [expectedRoomBoardPayment, setExpectedRoomBoardPayment] = useState('');
   const [ackRoomAndBoard, setAckRoomAndBoard] = useState(false);
-  const [ackNmoHC, setAckNmoHC] = useState(false);
   const [signerType, setSignerType] = useState<'member' | 'representative' | null>(null);
   const [signerName, setSignerName] = useState('');
   const [signerRelationship, setSignerRelationship] = useState('');
@@ -59,8 +57,7 @@ function RoomBoardObligationContent() {
         setSignerType(form.signerType || null);
         setSignerName(form.signerName || '');
         setSignerRelationship(form.signerRelationship || '');
-        setAckRoomAndBoard(!!form.ackRoomAndBoard);
-        setAckNmoHC(!!form.ackNmoHC);
+        setAckRoomAndBoard(Boolean(form.ackRoomAndBoard) || Boolean(application.ackRoomAndBoard));
         setSignatureDate(
           form.dateCompleted
             ? new Date(form.dateCompleted.seconds * 1000).toLocaleDateString()
@@ -71,7 +68,6 @@ function RoomBoardObligationContent() {
       }
 
       setMonthlyIncome(application.monthlyIncome || '');
-      setExpectedRoomBoardPayment(application.expectedRoomBoardPayment || '');
     } else {
       setSignatureDate(new Date().toLocaleDateString());
     }
@@ -79,19 +75,17 @@ function RoomBoardObligationContent() {
 
   const isFormComplete = useMemo(() => {
     if (!monthlyIncome.trim()) return false;
-    if (!expectedRoomBoardPayment.trim()) return false;
     if (!ackRoomAndBoard) return false;
-    if (!ackNmoHC) return false;
     if (!signerType || !signerName.trim() || !signerRelationship.trim()) return false;
     return true;
-  }, [monthlyIncome, expectedRoomBoardPayment, ackRoomAndBoard, ackNmoHC, signerType, signerName, signerRelationship]);
+  }, [monthlyIncome, ackRoomAndBoard, signerType, signerName, signerRelationship]);
 
   const handleSubmit = async () => {
     if (!isFormComplete) {
       toast({
         variant: 'destructive',
         title: 'Incomplete Form',
-        description: 'Please complete the income, room and board amount, acknowledgment, and signature fields.',
+        description: 'Please complete the income, commitment acknowledgment, and signature fields.',
       });
       return;
     }
@@ -112,7 +106,6 @@ function RoomBoardObligationContent() {
       signerName,
       signerRelationship,
       ackRoomAndBoard: true,
-      ackNmoHC: true,
       dateCompleted: Timestamp.now(),
     };
 
@@ -137,7 +130,7 @@ function RoomBoardObligationContent() {
         {
           forms: updatedForms,
           monthlyIncome,
-          expectedRoomBoardPayment,
+          ackRoomAndBoard: true,
           lastUpdated: Timestamp.now(),
         },
         { merge: true }
@@ -215,8 +208,10 @@ function RoomBoardObligationContent() {
                 <p>The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible for paying the RCFE the "assisted living" portion.</p>
                 <p>For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Any income above $1,444.07 is not paid as "room and board" unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees to a higher amount for a private room (since the program does not mandate private rooms).</p>
                 <p>Members not eligible for the NMOHC will still have a "room and board" obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.</p>
-                <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a "room and board" payment from the member (or their family).</p>
+                <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a "room and board" payment from the member or, in certain cases, from a family member/authorized representative.</p>
                 <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the "room and board" payment.</p>
+                <p>The RCFE may also require the member/family to sign a separate admission agreement or contract that confirms the "room and board" obligation (and, in some cases, a notarized form).</p>
+                <p>If the member requests a private room, or the selected RCFE’s rates exceed the standard "room and board" plus the MCP "assisted living" payment, the RCFE may require a separate agreement for the member/family to pay an additional amount. Any such additional amount is not reflected in this commitment form.</p>
               </div>
 
               <div className="space-y-4">
@@ -239,21 +234,6 @@ function RoomBoardObligationContent() {
                     pages for more information about this.
                   </p>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="expected-room-board">Expected payment to RCFE/ARF as "room and board" <span className="text-destructive">*</span></Label>
-                  <div className="relative">
-                    <Input
-                      id="expected-room-board"
-                      type="text"
-                      inputMode="numeric"
-                      className="pl-3"
-                      value={expectedRoomBoardPayment}
-                      onChange={(e) => setExpectedRoomBoardPayment(formatCurrencyInput(e.target.value))}
-                      disabled={isReadOnly}
-                    />
-                  </div>
-                </div>
-
                 <div className="flex items-start space-x-3 rounded-md border p-4">
                   <Checkbox
                     id="ack-room-board"
@@ -263,21 +243,8 @@ function RoomBoardObligationContent() {
                   />
                   <div className="space-y-1 leading-none">
                     <Label htmlFor="ack-room-board" className="text-blue-700">
-                      I have read and understood the financial obligation for Room and Board. <span className="text-destructive">*</span>
-                    </Label>
-                  </div>
-                </div>
-
-                <div className="flex items-start space-x-3 rounded-md border p-4">
-                  <Checkbox
-                    id="ack-nmohc"
-                    checked={ackNmoHC}
-                    onCheckedChange={(checked) => setAckNmoHC(!!checked)}
-                    disabled={isReadOnly}
-                  />
-                  <div className="space-y-1 leading-none">
-                    <Label htmlFor="ack-nmohc" className="text-blue-700">
-                      If Member is eligible for NMOHC he/she agrees to pay the required NMOHC portion (while retaining the personal need expenses). <span className="text-destructive">*</span>
+                      Member (or authorized representative) acknowledges the "room and board" commitment for participation in the CalAIM program.{' '}
+                      <span className="text-destructive">*</span>
                     </Label>
                   </div>
                 </div>

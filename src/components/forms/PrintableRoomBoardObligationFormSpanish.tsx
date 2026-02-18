@@ -66,6 +66,16 @@ export function PrintableRoomBoardObligationFormSpanish({
               tener la expectativa realista de que los RCFEs de CalAIM podrían estar ubicados en áreas más asequibles. Antes
               de aceptar miembros de CalAIM, los RCFEs necesitarán conocer el pago de "alojamiento y comida".
             </p>
+            <p>
+              El RCFE también puede requerir que el miembro/familia firme un acuerdo de admisión o contrato por separado
+              que confirme la obligación de "alojamiento y comida".
+            </p>
+            <p>
+              Si el miembro solicita un cuarto privado, o si las tarifas del RCFE seleccionado superan el "alojamiento y
+              comida" estándar más el pago de "vida asistida" del MCP, el RCFE puede requerir un acuerdo por separado para
+              que el miembro/familia pague una cantidad adicional. Cualquier cantidad adicional no se refleja en este
+              formulario de compromiso.
+            </p>
           </div>
         </div>
 
@@ -75,16 +85,6 @@ export function PrintableRoomBoardObligationFormSpanish({
             <div>
               <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
                 Ingreso mensual actual del miembro: *
-              </label>
-              <div className="flex items-center space-x-2">
-                <span className="text-lg font-semibold">$</span>
-                <div className="flex-1 h-12 border-b-2 border-gray-400 print:border-black"></div>
-                <span className="text-sm text-gray-600 print:text-black">por mes</span>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-                Pago esperado al RCFE/ARF como "alojamiento y comida": *
               </label>
               <div className="flex items-center space-x-2">
                 <span className="text-lg font-semibold">$</span>
@@ -107,16 +107,11 @@ export function PrintableRoomBoardObligationFormSpanish({
             Compromiso
           </h3>
           <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
-            <p>Entiendo y reconozco que:</p>
-            <ul className="list-disc list-inside space-y-1 ml-4">
-              <li>Debo pagar la porción de alojamiento y comida directamente a la instalación.</li>
-              <li>SSI/SSP + NMOHC puede aumentar el pago a alojamiento y comida.</li>
-              <li>Si no puedo pagar, podría no ser elegible.</li>
-            </ul>
-            <div className="flex items-start gap-2 pt-2">
+            <div className="flex items-start gap-2">
               <div className="h-4 w-4 border border-gray-400 print:border-black mt-0.5" />
               <p>
-                Si el miembro es elegible para NMOHC, él/ella acepta pagar la porción requerida de NMOHC (mientras conserva los gastos personales).
+                El miembro (o representante autorizado) reconoce el compromiso de "alojamiento y comida" para participar
+                en el programa CalAIM.
               </p>
             </div>
           </div>
@@ -129,8 +124,8 @@ export function PrintableRoomBoardObligationFormSpanish({
           </h3>
           <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
             <p>
-              Al firmar abajo, reconozco este Compromiso de Alojamiento y Comida y acepto que, si soy elegible para NMOHC,
-              pagaré el suplemento de NMOHC menos los gastos personales al RCFE/ARF.
+              Al firmar abajo, reconozco que soy el miembro o un representante autorizado (POA) legalmente facultado para
+              firmar en nombre del miembro.
             </p>
           </div>
 

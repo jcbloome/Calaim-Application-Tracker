@@ -109,6 +109,8 @@ export type Application = {
   monthlyIncome?: string;
   expectedRoomBoardPayment?: string;
   ackRoomAndBoard?: boolean;
+  roomBoardFamilyPayAttestation?: boolean;
+  roomBoardNoIncomeFacilityDiscretionAck?: boolean;
   hasPrefRCFE?: 'Yes' | 'No';
   rcfeName?: string | null;
   rcfeAddress?: string | null;
