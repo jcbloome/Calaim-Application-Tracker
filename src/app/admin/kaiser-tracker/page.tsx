@@ -634,39 +634,6 @@ function StaffMemberManagementModal({
                       </div>
                     </div>
 
-                    <Separator />
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <Target className="h-4 w-4 text-blue-600" />
-                        <span className="font-medium">Next Steps & Workflow</span>
-                      </div>
-
-                      <div className="space-y-2 text-sm">
-                        <div>
-                          <span className="text-gray-600">Next Step:</span>
-                          <span className="ml-2 font-medium">
-                            {member.workflow_step || 'Not set'}
-                          </span>
-                        </div>
-                        {member.Next_Step_Due_Date && (
-                          <div>
-                            <span className="text-gray-600">Due Date:</span>
-                            <span className="ml-2 font-medium">
-                              {formatDate(member.Next_Step_Due_Date)}
-                            </span>
-                          </div>
-                        )}
-                        {member.workflow_notes && (
-                          <div>
-                            <span className="text-gray-600">Notes:</span>
-                            <span className="ml-2 text-gray-800">
-                              {member.workflow_notes}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
                     {isAddingNote && (
                       <>
                         <Separator />
@@ -727,12 +694,11 @@ function KaiserTrackerPageContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<string>('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [selectedStaff, setSelectedStaff] = useState<string>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMembers, setModalMembers] = useState<KaiserMember[]>([]);
   const [modalTitle, setModalTitle] = useState('');
   const [modalDescription, setModalDescription] = useState('');
-  const [modalFilterType, setModalFilterType] = useState<'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'overdue_tasks' | 'staff_members'>('kaiser_status');
+  const [modalFilterType, setModalFilterType] = useState<'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'staff_members'>('kaiser_status');
   const [modalFilterValue, setModalFilterValue] = useState('');
   const [staffMemberModal, setStaffMemberModal] = useState<{
     isOpen: boolean;
@@ -760,9 +726,7 @@ function KaiserTrackerPageContent() {
     kaiserStatus: 'all',
     calaimStatus: 'all',
     county: 'all',
-    assignment: 'all',
-    staffAssigned: 'all',
-    overdueOnly: false
+    staffAssigned: 'all'
   });
 
   // Calculate status summary using the defined Kaiser status order
@@ -797,7 +761,6 @@ function KaiserTrackerPageContent() {
       count: number; 
       members: any[];
       statusBreakdown: Record<string, number>;
-      nextSteps: Record<string, { count: number; dates: string[] }>;
     }> = {};
     
     // Count members assigned to each staff (including unassigned)
@@ -813,8 +776,7 @@ function KaiserTrackerPageContent() {
         assignments[staffName] = { 
           count: 0, 
           members: [], 
-          statusBreakdown: {},
-          nextSteps: {}
+          statusBreakdown: {}
         };
       }
       
@@ -825,18 +787,6 @@ function KaiserTrackerPageContent() {
         const status = normalizeLabel(member.Kaiser_Status, 'No Status');
         assignments[staffName].statusBreakdown[status] = (assignments[staffName].statusBreakdown[status] || 0) + 1;
         
-        // Count next steps
-        const nextStep = normalizeLabel(member.Next_Step || member.workflow_step, 'No Next Step');
-        const nextStepDate = member.Next_Step_Due_Date || member.Next_Step_Date || '';
-        
-        if (!assignments[staffName].nextSteps[nextStep]) {
-          assignments[staffName].nextSteps[nextStep] = { count: 0, dates: [] };
-        }
-        assignments[staffName].nextSteps[nextStep].count++;
-        if (nextStepDate) {
-          assignments[staffName].nextSteps[nextStep].dates.push(nextStepDate);
-        }
-
     });
     
     return assignments;
@@ -853,51 +803,12 @@ function KaiserTrackerPageContent() {
   }, [staffAssignments]);
 
 
-  // Function to determine next required steps based on current Kaiser status
-  const getNextRequiredSteps = (currentStatus: string): string[] => {
-    const statusToNextSteps: Record<string, string[]> = {
-      'T2038 Requested': ['T2038 Received', 'Follow up on T2038'],
-      'T2038 Received': ['T2038 received, Need First Contact', 'Schedule first contact'],
-      'T2038 received, Need First Contact': ['T2038 received, doc collection', 'Complete first contact'],
-      'T2038 received, doc collection': ['Needs RN Visit', 'Collect required documents'],
-      'Needs RN Visit': ['RN/MSW Scheduled', 'Schedule RN visit'],
-      'RN/MSW Scheduled': ['RN Visit Complete', 'Complete RN visit'],
-      'RN Visit Complete': ['Need Tier Level', 'Request tier level'],
-      'Need Tier Level': ['Tier Level Requested', 'Submit tier level request'],
-      'Tier Level Requested': ['Tier Level Received', 'Follow up on tier level'],
-      'Tier Level Received': ['Locating RCFEs', 'Begin RCFE search'],
-      'Locating RCFEs': ['Found RCFE', 'Continue RCFE search'],
-      'Found RCFE': ['R&B Requested', 'Request R&B'],
-      'R&B Requested': ['R&B Signed', 'Follow up on R&B'],
-      'R&B Signed': ['RCFE/ILS for Invoicing', 'Set up invoicing'],
-      'RCFE/ILS for Invoicing': ['ILS Contracted (Complete)', 'Complete ILS contract'],
-      'ILS Contracted (Complete)': ['Confirm ILS Contracted', 'Confirm contract completion'],
-      'Confirm ILS Contracted': ['Case Complete', 'Close case'],
-      'Tier Level Revision Request': ['Tier Level Received', 'Follow up on revision'],
-      'On-Hold': ['Resume case', 'Review hold status'],
-      'Tier Level Appeal': ['Tier Level Received', 'Follow up on appeal'],
-      'T2038 email but need auth sheet': ['T2038 Received', 'Obtain authorization sheet'],
-      'Non-active': ['Reactivate case', 'Review case status'],
-      'Pending': ['Determine next action', 'Review case details'],
-      'Switched MCPs': ['Transfer case', 'Complete MCP transfer'],
-      'Pending to Switch': ['Complete switch', 'Process MCP change'],
-      'Authorized on hold': ['Resume authorization', 'Review hold reason'],
-      'Authorized': ['Begin service delivery', 'Implement authorization'],
-      'Denied': ['Appeal process', 'Review denial reason'],
-      'Expired': ['Renewal process', 'Submit renewal request'],
-      'Not interested': ['Close case', 'Document decision'],
-      'Not CalAIM': ['Transfer/close case', 'Redirect appropriately']
-    };
-
-    return statusToNextSteps[currentStatus] || ['Review case', 'Determine appropriate action'];
-  };
-
   // Helper function to open member list modal
   const openMemberModal = (
     memberList: KaiserMember[],
     title: string,
     description: string,
-    filterType: 'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'overdue_tasks' | 'staff_members',
+    filterType: 'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'staff_members',
     filterValue: string
   ) => {
     setModalMembers(memberList);
@@ -1172,33 +1083,6 @@ function KaiserTrackerPageContent() {
     }
   };
 
-  // Update member status
-  const updateMemberStatus = async (memberId: string, field: string, value: string) => {
-    try {
-      // Update local state immediately for better UX
-      setMembers(prev => prev.map(member => 
-        member.id === memberId 
-          ? { ...member, [field]: value, last_updated: new Date().toISOString() }
-          : member
-      ));
-
-      // Here you would typically make an API call to update the backend
-      // await updateMemberInCaspio(memberId, field, value);
-      
-      toast({
-        title: "Status Updated",
-        description: `Member ${field} updated successfully`,
-      });
-    } catch (error) {
-      console.error('Error updating member:', error);
-      toast({
-        title: "Update Failed",
-        description: "Failed to update member status",
-        variant: "destructive",
-      });
-    }
-  };
-
   // Filter and sort functions
   const filteredMembers = () => {
     return members.filter(member => {
@@ -1209,7 +1093,6 @@ function KaiserTrackerPageContent() {
       }
       if (filters.county !== 'all' && member.memberCounty !== filters.county) return false;
       if (filters.staffAssigned !== 'all' && String(member.Kaiser_User_Assignment || member.Staff_Assigned || '') !== filters.staffAssigned) return false;
-      if (filters.overdueOnly && !isOverdue(member.Next_Step_Due_Date)) return false;
       return true;
     });
   };
@@ -1240,10 +1123,6 @@ function KaiserTrackerPageContent() {
       case 'staff':
         aValue = String(a.Kaiser_User_Assignment || a.Staff_Assigned || '');
         bValue = String(b.Kaiser_User_Assignment || b.Staff_Assigned || '');
-              break;
-            case 'due_date':
-        aValue = new Date(a.Next_Step_Due_Date || '9999-12-31');
-        bValue = new Date(b.Next_Step_Due_Date || '9999-12-31');
               break;
             default:
               return 0;
@@ -1286,9 +1165,7 @@ function KaiserTrackerPageContent() {
       kaiserStatus: 'all',
       calaimStatus: 'all',
       county: 'all',
-      assignment: 'all',
       staffAssigned: 'all',
-      overdueOnly: false
     });
   };
 
@@ -1551,7 +1428,7 @@ function KaiserTrackerPageContent() {
                     <CheckCircle className={`h-4 w-4 ${
                       staffName === 'Unassigned' ? 'text-gray-500' : 'text-orange-600'
                     }`} />
-                    {staffName} - Status & Next Steps
+                    {staffName} - Status
             </CardTitle>
           </CardHeader>
                 <CardContent className="pt-0">
@@ -1591,181 +1468,6 @@ function KaiserTrackerPageContent() {
                               </button>
                         </div>
                           ))}
-                        </div>
-                      </div>
-                      
-                      {/* Next Steps */}
-                      <div>
-                        <h4 className="text-xs font-semibold text-gray-700 mb-2">Next Steps</h4>
-                        <div className="space-y-1 max-h-32 overflow-y-auto">
-                          {Object.entries(assignment.nextSteps)
-                            .sort(([,a], [,b]) => b.count - a.count)
-                            .slice(0, 3)
-                            .map(([nextStep, data]) => (
-                            <div key={`${staffName}-next-${nextStep}`} className="text-xs">
-                              <div className="flex justify-between items-center">
-                                <span className="truncate pr-2" title={nextStep}>{nextStep}</span>
-                                <button
-                                  onClick={() => {
-                                    // Filter members by this staff and next step
-                                    const nextStepMembers = assignment.members.filter(member => 
-                                      (member.workflow_step || member.Next_Step || 'No Next Step') === nextStep
-                                    );
-                                    openMemberModal(
-                                      nextStepMembers,
-                                      `${staffName} - Next Step: ${nextStep}`,
-                                      `${data.count} members with next step: ${nextStep}`,
-                                      'staff_members',
-                                      staffName
-                                    );
-                                  }}
-                                  className="font-semibold text-blue-600 hover:text-blue-800 cursor-pointer hover:underline"
-                                >
-                                  {data.count}
-                                </button>
-                  </div>
-                              {data.dates.length > 0 && (
-                                <div className="text-xs mt-1">
-                                  {(() => {
-                                    // Check for overdue and urgent dates
-                                    const today = new Date();
-                                    const overdueDates = data.dates.filter(date => {
-                                      try {
-                                        return new Date(date) < today;
-                                      } catch {
-                                        return false;
-                                      }
-                                    });
-                                    const urgentDates = data.dates.filter(date => {
-                                      try {
-                                        const dueDate = new Date(date);
-                                        const diffTime = dueDate.getTime() - today.getTime();
-                                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                                        return diffDays <= 3 && diffDays > 0;
-                                      } catch {
-                                        return false;
-                                      }
-                                    });
-
-                                    const hasOverdue = overdueDates.length > 0;
-                                    const hasUrgent = urgentDates.length > 0;
-
-                                    return (
-                                      <div className={`flex items-center gap-1 ${
-                                        hasOverdue ? 'text-red-600' : 
-                                        hasUrgent ? 'text-yellow-600' : 
-                                        'text-gray-500'
-                                      }`}>
-                                        {hasOverdue && <AlertTriangle className="h-3 w-3" />}
-                                        {hasUrgent && !hasOverdue && <Clock className="h-3 w-3" />}
-                                        <span>
-                                          Due: {data.dates.slice(0, 2).map(date => {
-                                            try {
-                                              return format(new Date(date), 'MM/dd');
-                                            } catch {
-                                              return date;
-                                            }
-                                          }).join(', ')}
-                                          {data.dates.length > 2 && ` +${data.dates.length - 2} more`}
-                                        </span>
-                                        {hasOverdue && (
-                                          <span className="text-red-600 font-medium ml-1">
-                                            ({overdueDates.length} overdue)
-                                          </span>
-                                        )}
-                                        {hasUrgent && !hasOverdue && (
-                                          <span className="text-yellow-600 font-medium ml-1">
-                                            ({urgentDates.length} urgent)
-                                          </span>
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
-                </div>
-                              )}
-                  </div>
-                          ))}
-                        </div>
-                      </div>
-
-
-                      {/* Kaiser Next Step Date Warnings */}
-                      <div>
-                        <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3 text-red-500" />
-                          Kaiser Date Warnings
-                        </h4>
-                        <div className="space-y-1 max-h-32 overflow-y-auto">
-                          {(() => {
-                            // Filter members with Kaiser_Next_Step_Date that are overdue or upcoming
-                            const kaiserDateMembers = assignment.members.filter(member => 
-                              member.Kaiser_Next_Step_Date && member.Kaiser_Next_Step_Date.trim() !== ''
-                            );
-                            
-                            const overdueMembers = kaiserDateMembers.filter(member => 
-                              isOverdue(member.Kaiser_Next_Step_Date)
-                            );
-                            
-                            const urgentMembers = kaiserDateMembers.filter(member => {
-                              const days = getDaysUntilDue(member.Kaiser_Next_Step_Date);
-                              return days <= 3 && days > 0;
-                            });
-
-                            if (overdueMembers.length === 0 && urgentMembers.length === 0) {
-                              return (
-                                <div className="text-xs text-gray-500 italic">
-                                  No urgent Kaiser dates
-                                </div>
-                              );
-                            }
-
-                            return (
-                              <>
-                                {overdueMembers.length > 0 && (
-                                  <div className="flex justify-between items-center text-xs">
-                                    <span className="truncate pr-2 text-red-600 font-medium">
-                                      Overdue Kaiser Dates
-                                    </span>
-                                    <button
-                                      onClick={() => {
-                                        openMemberModal(
-                                          overdueMembers,
-                                          `${staffName} - Overdue Kaiser Dates`,
-                                          `${overdueMembers.length} members with overdue Kaiser next step dates`,
-                                          'staff_members',
-                                          staffName
-                                        );
-                                      }}
-                                      className="font-semibold text-red-600 hover:text-red-800 cursor-pointer hover:underline"
-                                    >
-                                      {overdueMembers.length}
-                                    </button>
-                                  </div>
-                                )}
-                                {urgentMembers.length > 0 && (
-                                  <div className="flex justify-between items-center text-xs">
-                                    <span className="truncate pr-2 text-yellow-600 font-medium">
-                                      Urgent Kaiser Dates (≤3 days)
-                                    </span>
-                                    <button
-                                      onClick={() => {
-                                        openMemberModal(
-                                          urgentMembers,
-                                          `${staffName} - Urgent Kaiser Dates`,
-                                          `${urgentMembers.length} members with urgent Kaiser next step dates`,
-                                          'staff_members',
-                                          staffName
-                                        );
-                                      }}
-                                      className="font-semibold text-yellow-600 hover:text-yellow-800 cursor-pointer hover:underline"
-                                    >
-                                      {urgentMembers.length}
-                                    </button>
-                                  </div>
-                                )}
-                              </>
-                            );
-                          })()}
                         </div>
                       </div>
                     </div>
@@ -2031,20 +1733,12 @@ function MemberListModal({
             <div className="space-y-3">
               {members.map((member, index) => {
                 const assigned = String(member.Kaiser_User_Assignment || member.Staff_Assigned || '').trim();
-                const dueDate = String(member.Kaiser_Next_Step_Date || member.Next_Step_Due_Date || '').trim();
-                const isStepOverdue = isOverdue(dueDate);
-                const daysUntilDue = getDaysUntilDue(dueDate);
-                const isUrgent = daysUntilDue <= 3 && daysUntilDue > 0;
                 const effectiveKaiserStatus = getEffectiveKaiserStatus(member);
                 
                 return (
                   <Card 
                     key={getMemberKey(member, index)} 
-                    className={`cursor-pointer hover:bg-gray-50 transition-colors border-l-4 ${
-                      isStepOverdue ? 'border-l-red-500 bg-red-50' : 
-                      isUrgent ? 'border-l-yellow-500 bg-yellow-50' : 
-                      'border-l-blue-500'
-                    }`}
+                    className="cursor-pointer hover:bg-gray-50 transition-colors border-l-4 border-l-blue-500"
                     onClick={() => onMemberClick(member)}
                   >
                     <CardContent className="p-4">
@@ -2054,18 +1748,6 @@ function MemberListModal({
                             <h3 className="font-medium">
                               {member.memberFirstName} {member.memberLastName}
                             </h3>
-                            {isStepOverdue && (
-                              <div className="flex items-center gap-1 text-red-600">
-                                <AlertTriangle className="h-4 w-4" />
-                                <span className="text-xs font-medium">OVERDUE</span>
-                              </div>
-                            )}
-                            {isUrgent && !isStepOverdue && (
-                              <div className="flex items-center gap-1 text-yellow-600">
-                                <Clock className="h-4 w-4" />
-                                <span className="text-xs font-medium">URGENT</span>
-                              </div>
-                            )}
                               </div>
                           
                           <p className="text-sm text-muted-foreground mt-1">
@@ -2081,9 +1763,7 @@ function MemberListModal({
                             </Badge>
                               </div>
 
-                          {/* Staff Assignment and Next Step Info */}
-                          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                              <div className="flex items-center gap-2">
+                          <div className="mt-3 flex items-center gap-2 text-sm">
                               <User className="h-4 w-4 text-blue-500" />
                               <div>
                                 <span className="text-gray-600">Assigned:</span>
@@ -2091,50 +1771,9 @@ function MemberListModal({
                                   {assigned || 'Unassigned'}
                                 </span>
                               </div>
-                                </div>
-                            
-                        <div className="flex items-center gap-2">
-                              <Calendar className="h-4 w-4 text-purple-500" />
-                              <div>
-                                <span className="text-gray-600">Next Step:</span>
-                                <span className="ml-1 font-medium">
-                                  {member.workflow_step || 'Not set'}
-                              </span>
-                            </div>
-                        </div>
-                              </div>
-
-                          {/* Next step date (Caspio: Kaiser_Next_Step_Date preferred) */}
-                          {dueDate && (
-                            <div className="mt-2 flex items-center gap-2 text-sm">
-                              <Clock className={`h-4 w-4 ${isStepOverdue ? 'text-red-500' : isUrgent ? 'text-yellow-500' : 'text-gray-500'}`} />
-                              <div>
-                                <span className="text-gray-600">Next step date:</span>
-                                <span className={`ml-1 font-medium ${
-                                  isStepOverdue ? 'text-red-600' : 
-                                  isUrgent ? 'text-yellow-600' : 
-                                  'text-gray-900'
-                                }`}>
-                                  {formatDate(dueDate)}
-                                  {daysUntilDue !== 0 && (
-                                    <span className="ml-1 text-xs">
-                                      ({daysUntilDue > 0 ? `${daysUntilDue} days left` : `${Math.abs(daysUntilDue)} days overdue`})
-                                    </span>
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Workflow Notes */}
-                          {member.workflow_notes && (
-                            <div className="mt-2 text-sm">
-                              <span className="text-gray-600">Notes:</span>
-                              <span className="ml-1 text-gray-800">{member.workflow_notes}</span>
-                        </div>
-                          )}
                         </div>
             </div>
+                      </div>
         </CardContent>
       </Card>
                 );
