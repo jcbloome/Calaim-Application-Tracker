@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const fallbackInstallerUrl =
-  'https://github.com/jcbloome/Calaim-Application-Tracker/releases/download/v3.0.8/Connect.CalAIM.Desktop.Setup.3.0.8.exe';
+  'https://github.com/jcbloome/Calaim-Application-Tracker/releases/latest';
 
 const GITHUB_OWNER = 'jcbloome';
 const GITHUB_REPO = 'Calaim-Application-Tracker';
@@ -63,15 +63,39 @@ const getLatestGithubInstaller = async (): Promise<{
   }
 };
 
+const getLatestFromLatestYml = async (): Promise<{
+  version: string | null;
+  url: string | null;
+  name: string | null;
+}> => {
+  try {
+    const latestYmlUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest/download/latest.yml`;
+    const res = await fetch(latestYmlUrl, { cache: 'no-store' });
+    if (!res.ok) return { version: null, url: null, name: null };
+    const text = await res.text();
+    const versionMatch = text.match(/^\s*version:\s*("?)([0-9]+(?:\.[0-9]+)+)\1\s*$/mi);
+    const pathMatch = text.match(/^\s*path:\s*("?)(.+?)\1\s*$/mi);
+    const version = versionMatch?.[2] || null;
+    const name = pathMatch?.[2] ? String(pathMatch[2]).trim() : null;
+    const url = version && name
+      ? `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${version}/${encodeURIComponent(name)}`
+      : null;
+    return { version, url, name };
+  } catch {
+    return { version: null, url: null, name: null };
+  }
+};
+
 export async function GET() {
   const installerUrl = process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_URL || fallbackInstallerUrl;
   const meta = await fs.readFile(localMetaPath, 'utf8').then(JSON.parse).catch(() => null);
 
-  const latest = await getLatestGithubInstaller();
+  const latestYml = await getLatestFromLatestYml();
+  const latest = latestYml.url ? latestYml : await getLatestGithubInstaller();
 
   const version =
-    meta?.version ||
     latest.version ||
+    meta?.version ||
     getInstallerVersion(installerUrl) ||
     process.env.NEXT_PUBLIC_DESKTOP_INSTALLER_VERSION ||
     process.env.DESKTOP_INSTALLER_VERSION ||
@@ -79,8 +103,8 @@ export async function GET() {
 
   return Response.json({
     version,
-    filename: meta?.filename || latest.name || null,
-    releaseUrl: meta?.releaseUrl || latest.url || installerUrl,
+    filename: latest.name || meta?.filename || null,
+    releaseUrl: latest.url || meta?.releaseUrl || installerUrl,
     sha256: meta?.sha256 || null
   });
 }
