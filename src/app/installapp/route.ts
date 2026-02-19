@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 
 export function GET(request: Request) {
-  // Always redirect through our smart installer endpoint, which resolves the
-  // latest GitHub release asset (and can fall back to a locally bundled installer).
-  const url = new URL('/admin/desktop-installer', request.url);
-  return NextResponse.redirect(url);
+  // IMPORTANT: use a relative redirect here.
+  // In some hosting setups (Cloud Run / App Hosting), `request.url` can reflect the
+  // internal container address (e.g. `0.0.0.0:8080`). A relative redirect avoids
+  // leaking that internal host into the Location header.
+  return NextResponse.redirect('/admin/desktop-installer');
 }
