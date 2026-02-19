@@ -216,7 +216,9 @@ export default function SWVisitVerification() {
   // Update socialWorkerId when user data becomes available
   useEffect(() => {
     if (user && (user.displayName || user.email || user.uid)) {
-      const socialWorkerId = user.displayName || user.email || user.uid || 'Billy Buckhalter';
+      // Prefer email for assignment matching. Caspio sometimes stores SW names as "Last, First"
+      // which won't necessarily match Firebase displayName (e.g. "Frodo Baggins").
+      const socialWorkerId = user.email || user.displayName || user.uid || 'Billy Buckhalter';
       setQuestionnaire(prev => ({
         ...prev,
         socialWorkerId
@@ -231,8 +233,8 @@ export default function SWVisitVerification() {
       
       setIsLoadingRCFEs(true);
       try {
-        // Use display name first (for Billy Buckhalter), then email, then uid
-        const socialWorkerId = user.displayName || user.email || user.uid;
+        // Prefer email for assignment matching (see note above).
+        const socialWorkerId = user.email || user.displayName || user.uid;
         console.log('🔍 Fetching assignments for SW:', socialWorkerId);
         
         const response = await fetch(`/api/sw-visits?socialWorkerId=${encodeURIComponent(socialWorkerId)}`);
@@ -283,7 +285,7 @@ export default function SWVisitVerification() {
       setDraftsByMember({});
       return;
     }
-    const socialWorkerId = user?.displayName || user?.email || user?.uid || 'unknown';
+    const socialWorkerId = user?.email || user?.displayName || user?.uid || 'unknown';
     const nextDrafts: Record<string, { questionnaire: MemberVisitQuestionnaire; questionStep: number; savedAt: string }> = {};
     selectedRCFE.members.forEach((member) => {
       const memberKey = member.id || member.name;
@@ -411,7 +413,7 @@ export default function SWVisitVerification() {
 
   const handleMemberSelect = (member: Member, mode: 'auto' | 'resume' | 'new' = 'auto') => {
     setSelectedMember(member);
-    const socialWorkerId = user?.displayName || user?.email || user?.uid || 'Billy Buckhalter';
+    const socialWorkerId = user?.email || user?.displayName || user?.uid || 'Billy Buckhalter';
     const memberKey = member.id || member.name;
     const draft = memberKey ? loadDraftForMember(memberKey, socialWorkerId) : null;
 
@@ -461,7 +463,7 @@ export default function SWVisitVerification() {
       : false;
     if (!confirmed) return;
 
-    const socialWorkerId = user?.displayName || user?.email || user?.uid || questionnaire.socialWorkerId || 'unknown';
+    const socialWorkerId = user?.email || user?.displayName || user?.uid || questionnaire.socialWorkerId || 'unknown';
     const memberKey = selectedMember.id || selectedMember.name || questionnaire.memberId;
     if (memberKey) {
       try {
@@ -1815,7 +1817,7 @@ export default function SWVisitVerification() {
                             const signOffSubmission = {
                               rcfeId: selectedRCFE.id,
                               rcfeName: selectedRCFE.name,
-                              socialWorkerId: user?.displayName || user?.email || 'Billy Buckhalter',
+                              socialWorkerId: user?.email || user?.displayName || 'Billy Buckhalter',
                               completedVisits,
                               signOffData,
                               submittedAt: new Date().toISOString()

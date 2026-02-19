@@ -332,7 +332,13 @@ export async function POST(req: NextRequest) {
 
     // Determine which columns exist in Caspio so we don't request invalid ones.
     let availableFields = await getCachedCaspioTableFields({ adminDb, tableName: MEMBERS_TABLE });
-    if (availableFields.length === 0) {
+    // If we have a cached schema but it appears stale (missing critical fields we rely on),
+    // refresh it from Caspio once so new columns like Hold_For_Social_Worker can be synced.
+    const cachedLower = new Set(availableFields.map((f) => String(f).trim().toLowerCase()));
+    const criticalFields = ['client_id2', 'social_worker_assigned', 'hold_for_social_worker'];
+    const cacheLooksStale = availableFields.length > 0 && criticalFields.some((f) => !cachedLower.has(f));
+
+    if (availableFields.length === 0 || cacheLooksStale) {
       try {
         availableFields = await fetchCaspioTableFields({
           accessToken,
@@ -343,7 +349,10 @@ export async function POST(req: NextRequest) {
           await writeCachedCaspioTableFields({ adminDb, tableName: MEMBERS_TABLE, fields: availableFields });
         }
       } catch {
-        availableFields = [];
+        // If the cache existed but refresh failed, keep the cached list to avoid blocking sync entirely.
+        if (availableFields.length === 0) {
+          availableFields = [];
+        }
       }
     }
 
