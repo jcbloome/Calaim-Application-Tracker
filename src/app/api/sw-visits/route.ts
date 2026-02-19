@@ -94,27 +94,70 @@ function swMatchesMember(params: {
   memberStaffAssigned: unknown;
   memberSwId: unknown;
 }): boolean {
-  const needle = String(params.socialWorkerId || '').trim().toLowerCase();
-  if (!needle) return false;
+  const rawNeedle = String(params.socialWorkerId || '').trim();
+  if (!rawNeedle) return false;
 
-  const swAssigned = String(params.memberSwAssigned ?? '').trim().toLowerCase();
-  const staffAssigned = String(params.memberStaffAssigned ?? '').trim().toLowerCase();
-  const swId = String(params.memberSwId ?? '').trim().toLowerCase();
+  const normalize = (value: unknown) =>
+    String(value ?? '')
+      .trim()
+      .toLowerCase()
+      // turn punctuation into spaces so "Last, First" matches "First Last"
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
 
-  if (swAssigned && swAssigned.includes(needle)) return true;
-  if (staffAssigned && staffAssigned.includes(needle)) return true;
-  if (swId && swId === needle) return true;
+  const tokenize = (value: unknown) =>
+    normalize(value)
+      .split(' ')
+      .map((t) => t.trim())
+      .filter((t) => t.length >= 2);
+
+  const needleLower = rawNeedle.toLowerCase();
+  const needleNorm = normalize(rawNeedle);
+  const needleTokens = tokenize(rawNeedle);
+
+  const swAssignedRaw = String(params.memberSwAssigned ?? '').trim();
+  const staffAssignedRaw = String(params.memberStaffAssigned ?? '').trim();
+  const swIdRaw = String(params.memberSwId ?? '').trim();
+
+  const swAssignedLower = swAssignedRaw.toLowerCase();
+  const staffAssignedLower = staffAssignedRaw.toLowerCase();
+  const swIdLower = swIdRaw.toLowerCase();
+
+  // Exact ID match always wins.
+  if (swIdLower && (swIdLower === needleLower || swIdLower === needleNorm)) return true;
+
+  // Fast substring checks.
+  if (swAssignedLower && swAssignedLower.includes(needleLower)) return true;
+  if (staffAssignedLower && staffAssignedLower.includes(needleLower)) return true;
+
+  // Normalized substring checks (handles punctuation / ordering variance).
+  const swAssignedNorm = normalize(swAssignedRaw);
+  const staffAssignedNorm = normalize(staffAssignedRaw);
+  if (needleNorm && swAssignedNorm.includes(needleNorm)) return true;
+  if (needleNorm && staffAssignedNorm.includes(needleNorm)) return true;
+
+  // Token-subset match: if all needle tokens appear in the assigned name tokens, treat as match.
+  // Example: "Frodo Baggins" <-> "Baggins, Frodo"
+  if (needleTokens.length >= 2) {
+    const swTokenSet = new Set(tokenize(swAssignedRaw));
+    const staffTokenSet = new Set(tokenize(staffAssignedRaw));
+    const allIn = (set: Set<string>) => needleTokens.every((t) => set.has(t));
+    if (allIn(swTokenSet) || allIn(staffTokenSet)) return true;
+  }
 
   // If the identifier looks like an email, try matching on local-part fragments.
-  if (needle.includes('@')) {
-    const local = needle.split('@')[0] || '';
+  if (needleLower.includes('@')) {
+    const local = needleLower.split('@')[0] || '';
     const parts = local
       .split(/[._+\-]/g)
       .map((p) => p.trim())
       .filter((p) => p.length >= 3);
 
     for (const p of parts) {
-      if (swAssigned.includes(p) || staffAssigned.includes(p)) return true;
+      const pNorm = normalize(p);
+      if (!pNorm) continue;
+      if (swAssignedNorm.includes(pNorm) || staffAssignedNorm.includes(pNorm)) return true;
     }
   }
 
@@ -154,9 +197,19 @@ export async function GET(req: NextRequest) {
     const assignedMembers = members.filter((member) => {
       const assigned = swMatchesMember({
         socialWorkerId,
-        memberSwAssigned: member?.Social_Worker_Assigned,
-        memberStaffAssigned: member?.Staff_Assigned,
-        memberSwId: member?.SW_ID,
+        memberSwAssigned:
+          member?.Social_Worker_Assigned ??
+          member?.social_worker_assigned ??
+          member?.SocialWorkerAssigned ??
+          member?.socialWorkerAssigned ??
+          '',
+        memberStaffAssigned:
+          member?.Staff_Assigned ??
+          member?.staff_assigned ??
+          member?.Kaiser_User_Assignment ??
+          member?.kaiser_user_assignment ??
+          '',
+        memberSwId: member?.SW_ID ?? member?.sw_id ?? member?.Sw_Id ?? '',
       });
       if (!assigned) return false;
 
