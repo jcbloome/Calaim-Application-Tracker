@@ -203,6 +203,12 @@ export {
   triggerCsSummaryReminders
 } from './cs-summary-reminders';
 
+// Export Caspio members cache sync schedulers (SW portal freshness)
+export {
+  syncCaspioMembersCacheIncremental,
+  syncCaspioMembersCacheFull
+} from './caspio-members-cache-sync';
+
 if (!admin.apps.length) {
   admin.initializeApp();
 }
