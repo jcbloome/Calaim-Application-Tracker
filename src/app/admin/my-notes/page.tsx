@@ -249,6 +249,15 @@ function MyNotesContent() {
     };
   }, []);
 
+  // In Electron, treat this as a Priority-only compose tool.
+  useEffect(() => {
+    if (!desktopActive) return;
+    setGeneralNote((prev) => ({
+      ...prev,
+      priority: 'Priority',
+    }));
+  }, [desktopActive]);
+
   const updateSuppressSetting = (nextValue: boolean) => {
     setSuppressWebWhenDesktopActive(nextValue);
     if (typeof window === 'undefined') return;
@@ -1271,9 +1280,15 @@ function MyNotesContent() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="General">General (no popup)</SelectItem>
-                    <SelectItem value="Priority">Priority (popup)</SelectItem>
-                    <SelectItem value="Urgent">Urgent (popup + top)</SelectItem>
+                    {desktopActive ? (
+                      <SelectItem value="Priority">Priority (desktop alert)</SelectItem>
+                    ) : (
+                      <>
+                        <SelectItem value="General">General (no popup)</SelectItem>
+                        <SelectItem value="Priority">Priority (popup)</SelectItem>
+                        <SelectItem value="Urgent">Urgent (popup + top)</SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>

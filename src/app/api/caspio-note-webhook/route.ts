@@ -117,7 +117,8 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
         priority: normalizedPriority,
         timestamp: getFirestore().Timestamp.now(),
         isRead: false,
-        applicationId: Client_ID2,
+        // Preserve Client_ID2 as explicit metadata for Electron replies.
+        clientId2: Client_ID2,
         source: 'caspio',
         noteContent: Note_Content.substring(0, 200) + (Note_Content.length > 200 ? '...' : ''), // Truncate for notification
         noteType: Note_Type || 'General'

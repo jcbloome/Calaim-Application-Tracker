@@ -30,6 +30,8 @@ type PillItem = {
   title: string;
   message: string;
   kind?: 'note' | 'docs' | 'cs';
+  source?: string;
+  clientId2?: string;
   author?: string;
   recipientName?: string;
   memberName?: string;
@@ -43,10 +45,8 @@ type PillItem = {
 let pillNotes: PillItem[] = [];
 let staffPillNotes: PillItem[] = [];
 let reviewPillNotes: PillItem[] = [];
-let chatPillNotes: PillItem[] = [];
 let staffPillCount = 0;
 let reviewPillCount = 0;
-let chatPillCount = 0;
 let pillIndex = 0;
 let pillPosition: { x: number; y: number } | null = null;
 let pillMode: 'compact' | 'panel' = 'compact';
@@ -259,10 +259,6 @@ const buildTrayMenu = () => {
         }
       }
     },
-    {
-      label: 'Open Staff Chat',
-      click: () => openInMainWindow('/admin/chat')
-    },
     { type: 'separator' },
     {
       label: `Business hours: ${notificationState.isWithinBusinessHours ? 'Active' : 'Silent'}`,
@@ -423,6 +419,21 @@ const closeNotificationWindow = () => {
   }
 };
 
+const scheduleAutoMinimize = (ms: number = 14_000) => {
+  if (notificationTimer) {
+    clearTimeout(notificationTimer);
+    notificationTimer = null;
+  }
+  notificationTimer = setTimeout(() => {
+    notificationTimer = null;
+    try {
+      showMinimizedPill();
+    } catch {
+      // ignore
+    }
+  }, ms);
+};
+
 const getExternalUrl = (url?: string) => {
   const raw = String(url || '').trim();
   if (!raw) return appOrigin;
@@ -521,8 +532,13 @@ const renderNotificationPill = () => {
     applyPillWindowSize();
     positionNotificationWindow();
     win.showInactive();
+    const activeIndex = Math.max(0, Math.min(pillIndex, Math.max(0, pillNotes.length - 1)));
+    const activeNote = pillNotes.length > 0 ? pillNotes[activeIndex] : null;
     win.webContents.send('desktop:pillState', {
       count: pillSummary.count,
+      mode: pillMode,
+      activeIndex,
+      activeNote,
       title: pillSummary.title,
       message: pillSummary.message,
       author: pillSummary.author,
@@ -897,7 +913,6 @@ const recomputeCombinedPill = () => {
   const combined: PillItem[] = [];
   combined.push(...staffPillNotes);
   combined.push(...reviewPillNotes);
-  combined.push(...chatPillNotes);
 
   // Best-effort newest-first sort using Date.parse on timestamp labels.
   combined.sort((a, b) => {
@@ -908,7 +923,7 @@ const recomputeCombinedPill = () => {
 
   pillNotes = combined;
   pillIndex = 0;
-  pillSummary.count = staffPillCount + reviewPillCount + chatPillCount;
+  pillSummary.count = staffPillCount + reviewPillCount;
 };
 
 const showMinimizedPill = () => {
@@ -1155,6 +1170,7 @@ ipcMain.handle('desktop:getPillPosition', () => {
 
 ipcMain.on('desktop:setPillSummary', (_event, payload: {
   count: number;
+  openPanel?: boolean;
   notes?: PillItem[];
   title?: string;
   message?: string;
@@ -1185,7 +1201,12 @@ ipcMain.on('desktop:setPillSummary', (_event, payload: {
     actionUrl: payload.actionUrl || '/admin/my-notes'
   };
   if (pillSummary.count > 0) {
-    showMinimizedPill();
+    if (payload.openPanel) {
+      showPanel();
+      scheduleAutoMinimize();
+    } else {
+      showMinimizedPill();
+    }
   } else {
     closeNotificationWindow();
   }
@@ -1193,6 +1214,7 @@ ipcMain.on('desktop:setPillSummary', (_event, payload: {
 
 ipcMain.on('desktop:setReviewPillSummary', (_event, payload: {
   count: number;
+  openPanel?: boolean;
   notes?: PillItem[];
 }) => {
   reviewPillNotes = (payload.notes || []).map((note) => ({
@@ -1202,34 +1224,12 @@ ipcMain.on('desktop:setReviewPillSummary', (_event, payload: {
   reviewPillCount = payload.count || 0;
   recomputeCombinedPill();
   if (pillSummary.count > 0) {
-    showMinimizedPill();
-  } else {
-    closeNotificationWindow();
-  }
-});
-
-ipcMain.on('desktop:setChatPillSummary', (_event, payload: {
-  count: number;
-  notes?: Array<{
-    title: string;
-    message: string;
-    memberName?: string;
-    timestamp?: string;
-    actionUrl?: string;
-  }>;
-}) => {
-  chatPillNotes = (payload.notes || []).map((note) => ({
-    title: note.title,
-    message: note.message,
-    kind: 'note',
-    memberName: note.memberName,
-    timestamp: note.timestamp,
-    actionUrl: note.actionUrl,
-  }));
-  chatPillCount = payload.count || 0;
-  recomputeCombinedPill();
-  if (pillSummary.count > 0) {
-    showMinimizedPill();
+    if (payload.openPanel) {
+      showPanel();
+      scheduleAutoMinimize();
+    } else {
+      showMinimizedPill();
+    }
   } else {
     closeNotificationWindow();
   }

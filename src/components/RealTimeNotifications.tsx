@@ -52,6 +52,8 @@ interface NotificationData {
   senderName: string;
   senderId?: string;
   memberName: string;
+  clientId2?: string;
+  source?: string;
   type: string;
   priority: 'General' | 'Priority' | 'Urgent';
   timestamp: Date;
@@ -307,22 +309,49 @@ export function RealTimeNotifications() {
         return;
       }
       try {
-        await addDoc(collection(firestoreRef.current, 'staff_notifications'), {
-          userId: payload.senderId,
+        const message = payload.message.trim();
+        const now = serverTimestamp();
+        const createdByName = user.displayName || user.email || 'Staff';
+
+        const base = {
           title: 'Reply from Desktop',
-          message: payload.message.trim(),
+          message,
           type: 'interoffice_reply',
           priority: 'General',
           status: 'Open',
           isRead: false,
           createdBy: user.uid,
-          createdByName: user.displayName || user.email || 'Staff',
-          senderName: user.displayName || user.email || 'Staff',
-          timestamp: serverTimestamp(),
+          createdByName,
+          senderName: createdByName,
+          senderId: user.uid,
+          timestamp: now,
           replyToId: payload.noteId || null,
           threadId: payload.noteId || null,
-          actionUrl: payload.noteId ? `/admin/my-notes?replyTo=${encodeURIComponent(payload.noteId)}` : '/admin/my-notes'
-        });
+          actionUrl: payload.noteId
+            ? `/admin/my-notes?replyTo=${encodeURIComponent(payload.noteId)}`
+            : '/admin/my-notes',
+        };
+
+        const targetUid = String(payload.senderId || '').trim();
+        const myUid = String(user.uid || '').trim();
+
+        // Recipient copy (the person you're replying to).
+        if (targetUid) {
+          await addDoc(collection(firestoreRef.current, 'staff_notifications'), {
+            ...base,
+            userId: targetUid,
+          });
+        }
+
+        // Sender copy (so the replier can see what they sent in My Notifications).
+        if (myUid && myUid !== targetUid) {
+          await addDoc(collection(firestoreRef.current, 'staff_notifications'), {
+            ...base,
+            userId: myUid,
+            title: `You replied: ${base.title}`,
+            recipientName: 'Self',
+          });
+        }
       } catch (error) {
         console.warn('Failed to send quick reply:', error);
       }
@@ -407,6 +436,13 @@ export function RealTimeNotifications() {
     return '/admin/my-notes';
   };
 
+  // Electron should only react to Priority-like notes.
+  // Treat legacy "Urgent" as Priority (no separate urgent tier).
+  const isDesktopPriority = (priority: unknown) => {
+    const normalized = normalizePriorityLabel(String(priority || ''));
+    return normalized === 'Priority' || normalized === 'Urgent';
+  };
+
   const sanitizeFieldLabel = (value?: string) => {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -471,6 +507,8 @@ export function RealTimeNotifications() {
               'Staff',
             senderId: (data as any).senderId || (data as any).createdBy,
             memberName: data.memberName || '',
+            clientId2: (data as any).clientId2 || (data as any).client_ID2 || undefined,
+            source: (data as any).source || undefined,
             type: data.type || 'note',
             priority,
             timestamp:
@@ -514,7 +552,8 @@ export function RealTimeNotifications() {
           });
 
           if (window.desktopNotifications?.setPendingCount) {
-            window.desktopNotifications.setPendingCount(sortedPending.length);
+            const desktopPending = sortedPending.filter((n) => isDesktopPriority(n.priority));
+            window.desktopNotifications.setPendingCount(desktopPending.length);
           }
 
           if (sortedPending.length === 0) {
@@ -641,11 +680,29 @@ export function RealTimeNotifications() {
           };
 
           if (window.desktopNotifications?.setPillSummary) {
+            const desktopPending = sortedPending.filter((n) => isDesktopPriority(n.priority));
+            const desktopCount = desktopPending.length;
+            const desktopHighlight = desktopPending[0] || null;
+            const desktopTitle = desktopCount === 1 ? 'Priority note' : 'Priority notes';
+            const desktopMessage =
+              desktopHighlight
+                ? (sanitizeNoteMessage(desktopHighlight.message) || sanitizeFieldLabel(desktopHighlight.title) || 'Priority note')
+                : (desktopCount === 1 ? '1 priority note pending' : `${desktopCount} priority notes pending`);
+            const desktopLatest = desktopPending[0];
+            const recentThresholdMs = 2 * 60 * 1000;
+            const desktopIsRecent =
+              Boolean(desktopLatest?.timestamp) &&
+              Date.now() - desktopLatest.timestamp.getTime() <= recentThresholdMs;
+            const openPanel = Boolean(hasNewPriority || hasNewUrgent || desktopIsRecent);
+
             window.desktopNotifications.setPillSummary({
-              count,
-              notes: sortedPending.map((note) => ({
+              count: desktopCount,
+              openPanel,
+              notes: desktopPending.map((note) => ({
                 kind: 'note',
-                title: sanitizeFieldLabel(note.title) || summaryTitle,
+                source: note.source,
+                clientId2: note.clientId2,
+                title: sanitizeFieldLabel(note.title) || desktopTitle,
                 message: sanitizeNoteMessage(note.message) || sanitizeFieldLabel(note.message) || '',
                 author: sanitizeFieldLabel(note.senderName) || undefined,
                 recipientName: recipientLabel,
@@ -656,20 +713,16 @@ export function RealTimeNotifications() {
                 replyUrl: note.id
                   ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}`
                   : undefined,
-                actionUrl: note.id
-                  ? `/admin/my-notes?noteId=${encodeURIComponent(note.id)}`
-                  : '/admin/my-notes'
+                actionUrl: note.id ? `/admin/my-notes?noteId=${encodeURIComponent(note.id)}` : '/admin/my-notes'
               })),
-              title: summaryTitle,
-              message: detailMessage,
-              author: highlightSender,
+              title: desktopTitle,
+              message: desktopMessage,
+              author: desktopHighlight ? sanitizeFieldLabel(desktopHighlight.senderName) || highlightSender : highlightSender,
               recipientName: recipientLabel,
-              memberName: highlightSubject,
-              timestamp: highlightTimestamp || undefined,
-              replyUrl,
-              actionUrl: highlightNote?.id
-                ? `/admin/my-notes?noteId=${encodeURIComponent(highlightNote.id)}`
-                : '/admin/my-notes'
+              memberName: desktopHighlight ? sanitizeFieldLabel(desktopHighlight.memberName) || '' : '',
+              timestamp: desktopHighlight?.timestamp ? desktopHighlight.timestamp.toLocaleString?.() : undefined,
+              replyUrl: desktopHighlight?.id ? `/admin/my-notes?replyTo=${encodeURIComponent(desktopHighlight.id)}` : undefined,
+              actionUrl: '/admin/my-notes'
             });
           }
 
@@ -746,14 +799,6 @@ export function RealTimeNotifications() {
           } else if (summaryNotificationIdRef.current) {
             removeNotification(summaryNotificationIdRef.current);
             summaryNotificationIdRef.current = null;
-          }
-          if (hasNew && window.desktopNotifications?.notify) {
-            window.desktopNotifications.notify({
-              title: summaryTitle,
-              body: summaryMessage,
-              // Avoid repeatedly expanding the pill for general notes.
-              openOnNotify: Boolean(hasNewUrgent || hasNewPriority)
-            }).catch(() => undefined);
           }
         }, 400);
       },

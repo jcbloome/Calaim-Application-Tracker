@@ -81,7 +81,6 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } 
 import { collection, collectionGroup, doc, getDocs, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { CaspioUsageAlert } from '@/components/admin/CaspioUsageAlert';
 import { DesktopPresenceBeacon } from '@/components/admin/DesktopPresenceBeacon';
-import { ChatDesktopNotifier } from '@/components/admin/ChatDesktopNotifier';
 
 const adminNavLinks = [
   { 
@@ -116,7 +115,6 @@ const adminNavLinks = [
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
       { href: '/admin/social-worker-assignments', label: 'Social Worker Assignments', icon: UserPlus },
-      { href: '/admin/chat', label: 'Staff Chat', icon: MessageSquareText },
       { href: '/admin/sw-visit-tracking', label: 'SW Visit Tracking System', icon: FileBarChart },
       { href: '/admin/sw-claims-tracking', label: 'SW Claims Tracking', icon: FileBarChart },
       { href: '/admin/member-activity', label: 'Member Activity', icon: Activity },
@@ -451,6 +449,7 @@ function AdminHeader() {
           if (isRealDesktop) {
             window.desktopNotifications?.setReviewPillSummary?.({
               count: csSummaryCount,
+              openPanel: true,
               notes: items.map((n) => ({
                 title: 'CS Summary received',
                 message: n.message,
@@ -1161,7 +1160,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <RealTimeNotifications />
       <CaspioUsageAlert />
       <DesktopPresenceBeacon />
-      <ChatDesktopNotifier />
       <div className="flex flex-col min-h-screen">
         <AdminHeader />
         <main className="flex-grow min-w-0 p-4 sm:p-6 md:p-8 bg-slate-50/50 overflow-x-hidden">

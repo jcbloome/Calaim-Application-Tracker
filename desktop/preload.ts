@@ -6,22 +6,15 @@ contextBridge.exposeInMainWorld('desktopNotifications', {
   notify: (payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) =>
     ipcRenderer.invoke('desktop:notify', payload),
   setPendingCount: (count: number) => ipcRenderer.send('desktop:setPendingCount', count),
-  setChatPillSummary: (payload: {
-    count: number;
-    notes?: Array<{
-      title: string;
-      message: string;
-      memberName?: string;
-      timestamp?: string;
-      actionUrl?: string;
-    }>;
-  }) => ipcRenderer.send('desktop:setChatPillSummary', payload),
   setPillSummary: (payload: {
     count: number;
+    openPanel?: boolean;
     notes?: Array<{
       title: string;
       message: string;
       kind?: 'note' | 'docs' | 'cs';
+      source?: string;
+      clientId2?: string;
       author?: string;
       recipientName?: string;
       memberName?: string;
@@ -43,6 +36,7 @@ contextBridge.exposeInMainWorld('desktopNotifications', {
     ipcRenderer.send('desktop:setPillSummary', payload),
   setReviewPillSummary: (payload: {
     count: number;
+    openPanel?: boolean;
     notes?: Array<{
       title: string;
       message: string;
