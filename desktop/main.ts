@@ -122,6 +122,18 @@ const openInMainWindow = (route?: string) => {
       shell.openExternal(target).catch(() => undefined);
       return;
     }
+    // Avoid reloading the same URL repeatedly (can create a reload loop if the renderer
+    // re-triggers open requests during startup).
+    try {
+      const current = mainWindow.webContents.getURL();
+      if (current && current === target) {
+        mainWindow.show();
+        mainWindow.focus();
+        return;
+      }
+    } catch {
+      // ignore
+    }
     mainWindow.show();
     mainWindow.focus();
     mainWindow.loadURL(target).catch(() => {
@@ -968,7 +980,18 @@ ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string
   }
 
   if (payload.openOnNotify) {
-    openInMainWindow('/admin');
+    // Show/focus without navigating. Navigating via loadURL during startup can cause a reload
+    // loop if the web app re-emits notifications on every load.
+    try {
+      if (!mainWindow) {
+        createWindow();
+      }
+      mainWindow?.show();
+      mainWindow?.focus();
+      mainWindow?.webContents.send('desktop:expand');
+    } catch {
+      // ignore
+    }
   }
   return true;
 });
