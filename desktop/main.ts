@@ -76,12 +76,12 @@ if (!singleInstanceLock) {
 
 const isDev = !app.isPackaged;
 let appUrl = process.env.DESKTOP_APP_URL
-  || (isDev ? 'http://localhost:3000/admin/my-notes' : 'https://connectcalaim.com/admin/my-notes');
+  || (isDev ? 'http://localhost:3000/admin/my-notes' : 'https://www.connectcalaim.com/admin/my-notes');
 let appOrigin = (() => {
   try {
     return new URL(appUrl).origin;
   } catch {
-    return 'https://connectcalaim.com';
+    return 'https://www.connectcalaim.com';
   }
 })();
 const setAppUrl = (nextUrl: string) => {
