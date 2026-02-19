@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { action, staffId, memberId } = await request.json();
+    const { action, staffId, memberId, idToken } = await request.json();
 
     if (action === 'assignMember' && staffId && memberId) {
       // Update member's SW_ID in CalAIM_tbl_Members
@@ -73,6 +73,45 @@ export async function POST(request: NextRequest) {
 
       if (!response.ok) {
         throw new Error(`Failed to update member assignment: ${response.status} ${response.statusText}`);
+      }
+
+      // Best-effort: log member activity (real audit trail)
+      try {
+        const adminModule = await import('@/firebase-admin');
+        const adminDb = adminModule.adminDb;
+        const admin = adminModule.default;
+
+        let changedBy = 'system';
+        let changedByName = 'System';
+        try {
+          if (idToken) {
+            const decoded = await adminModule.adminAuth.verifyIdToken(String(idToken));
+            changedBy = decoded.uid || changedBy;
+            changedByName = String((decoded as any)?.name || decoded.email || 'Admin');
+          }
+        } catch {
+          // ignore decode issues
+        }
+
+        await adminDb.collection('member_activities').add({
+          clientId2: String(memberId),
+          activityType: 'assignment_change',
+          category: 'assignment',
+          title: 'Social worker assigned',
+          description: `SW_ID set to "${staffId}" for member ${memberId}.`,
+          oldValue: '',
+          newValue: String(staffId),
+          fieldChanged: 'SW_ID',
+          changedBy,
+          changedByName,
+          priority: 'normal',
+          requiresNotification: true,
+          source: 'admin_app',
+          timestamp: new Date().toISOString(),
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch {
+        // best-effort only
       }
 
       return NextResponse.json({

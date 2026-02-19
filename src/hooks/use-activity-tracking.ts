@@ -1,6 +1,5 @@
 // Hook for automatic activity tracking in forms and components
 import { useCallback, useRef } from 'react';
-import { memberActivityTracker } from '@/lib/member-activity-tracker';
 import { useAuth } from '@/firebase';
 
 interface FormData {
@@ -17,6 +16,23 @@ interface TrackingOptions {
 export function useActivityTracking() {
   const { user } = useAuth();
   const previousDataRef = useRef<FormData>({});
+
+  const postActivity = useCallback(
+    async (activity: any) => {
+      if (!user) return;
+      try {
+        const idToken = await user.getIdToken();
+        await fetch('/api/admin/member-activity/log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken, activity }),
+        });
+      } catch (error) {
+        console.warn('Failed to log member activity', error);
+      }
+    },
+    [user]
+  );
 
   // Track changes between form states
   const trackFormChanges = useCallback((
@@ -61,7 +77,7 @@ export function useActivityTracking() {
       const activityType = getActivityType(change.field);
       const category = getCategoryFromField(change.field);
       
-      memberActivityTracker.logActivity({
+      void postActivity({
         clientId2: options.clientId2,
         activityType,
         category,
@@ -82,7 +98,7 @@ export function useActivityTracking() {
     previousDataRef.current = { ...newData };
 
     return changes.length;
-  }, [user]);
+  }, [user, postActivity]);
 
   // Set initial form data (call this when form loads)
   const setInitialData = useCallback((data: FormData) => {
@@ -98,15 +114,22 @@ export function useActivityTracking() {
   ) => {
     if (!user) return;
 
-    return memberActivityTracker.trackStatusChange(
+    void postActivity({
       clientId2,
-      fieldName,
+      activityType: 'status_change',
+      category: getCategoryFromField(fieldName),
+      title: `Status Updated: ${fieldName}`,
+      description: `${fieldName} changed from "${oldValue}" to "${newValue}" for member ${clientId2}`,
       oldValue,
       newValue,
-      user.uid,
-      user.displayName || user.email || 'Unknown User'
-    );
-  }, [user]);
+      fieldChanged: fieldName,
+      changedBy: user.uid,
+      changedByName: user.displayName || user.email || 'Unknown User',
+      priority: getPriorityFromField(fieldName, oldValue, newValue),
+      requiresNotification: shouldNotifyForField(fieldName),
+      source: 'admin_app',
+    });
+  }, [user, postActivity]);
 
   // Track date updates
   const trackDateUpdate = useCallback((
@@ -117,15 +140,22 @@ export function useActivityTracking() {
   ) => {
     if (!user) return;
 
-    return memberActivityTracker.trackDateUpdate(
+    void postActivity({
       clientId2,
-      dateField,
-      oldDate,
-      newDate,
-      user.uid,
-      user.displayName || user.email || 'Unknown User'
-    );
-  }, [user]);
+      activityType: 'date_update',
+      category: 'application',
+      title: `Date Updated: ${dateField}`,
+      description: `${dateField} updated for member ${clientId2}`,
+      oldValue: oldDate,
+      newValue: newDate,
+      fieldChanged: dateField,
+      changedBy: user.uid,
+      changedByName: user.displayName || user.email || 'Unknown User',
+      priority: 'normal',
+      requiresNotification: true,
+      source: 'admin_app',
+    });
+  }, [user, postActivity]);
 
   // Track pathway changes
   const trackPathwayChange = useCallback((
@@ -135,14 +165,22 @@ export function useActivityTracking() {
   ) => {
     if (!user) return;
 
-    return memberActivityTracker.trackPathwayChange(
+    void postActivity({
       clientId2,
-      oldPathway,
-      newPathway,
-      user.uid,
-      user.displayName || user.email || 'Unknown User'
-    );
-  }, [user]);
+      activityType: 'pathway_change',
+      category: 'pathway',
+      title: 'Pathway Changed',
+      description: `Member pathway changed from "${oldPathway}" to "${newPathway}"`,
+      oldValue: oldPathway,
+      newValue: newPathway,
+      fieldChanged: 'pathway',
+      changedBy: user.uid,
+      changedByName: user.displayName || user.email || 'Unknown User',
+      priority: 'high',
+      requiresNotification: true,
+      source: 'admin_app',
+    });
+  }, [user, postActivity]);
 
   // Track staff assignments
   const trackAssignmentChange = useCallback((
@@ -153,15 +191,23 @@ export function useActivityTracking() {
   ) => {
     if (!user) return;
 
-    return memberActivityTracker.trackAssignmentChange(
+    void postActivity({
       clientId2,
-      staffField,
-      oldStaff,
-      newStaff,
-      user.uid,
-      user.displayName || user.email || 'Unknown User'
-    );
-  }, [user]);
+      activityType: 'assignment_change',
+      category: 'assignment',
+      title: 'Staff Assignment Changed',
+      description: `${staffField} changed from "${oldStaff}" to "${newStaff}"`,
+      oldValue: oldStaff,
+      newValue: newStaff,
+      fieldChanged: staffField,
+      changedBy: user.uid,
+      changedByName: user.displayName || user.email || 'Unknown User',
+      priority: 'normal',
+      requiresNotification: true,
+      assignedStaff: [newStaff],
+      source: 'admin_app',
+    });
+  }, [user, postActivity]);
 
   // Track note creation
   const trackNoteCreation = useCallback((
@@ -171,7 +217,7 @@ export function useActivityTracking() {
   ) => {
     if (!user) return;
 
-    return memberActivityTracker.logActivity({
+    void postActivity({
       clientId2,
       activityType: 'note_added',
       category: 'communication',
@@ -187,7 +233,7 @@ export function useActivityTracking() {
       assignedStaff: assignedTo ? [assignedTo] : undefined,
       source: 'admin_app'
     });
-  }, [user]);
+  }, [user, postActivity]);
 
   return {
     trackFormChanges,

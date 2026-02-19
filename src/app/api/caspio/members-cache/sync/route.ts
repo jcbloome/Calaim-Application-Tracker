@@ -14,6 +14,26 @@ const SETTINGS_DOC_ID = 'caspio-members-sync';
 const UPDATED_FIELD = 'Date_Modified';
 const TABLE_FIELDS_SETTINGS_DOC_ID = 'caspio-table-fields';
 
+type MemberActivityType =
+  | 'status_change'
+  | 'pathway_change'
+  | 'date_update'
+  | 'assignment_change'
+  | 'note_added'
+  | 'form_update'
+  | 'authorization_change';
+
+type MemberActivityCategory =
+  | 'pathway'
+  | 'kaiser'
+  | 'application'
+  | 'assignment'
+  | 'communication'
+  | 'authorization'
+  | 'system';
+
+type MemberActivityPriority = 'low' | 'normal' | 'high' | 'urgent';
+
 const PAGE_SIZE = 1000;
 const MAX_PAGES = 50; // safety cap
 
@@ -295,6 +315,8 @@ export async function POST(req: NextRequest) {
     }
 
     const { adminDb, uid } = adminCheck;
+    const adminModule = await import('@/firebase-admin');
+    const admin = adminModule.default;
     const settingsRef = adminDb.collection(SETTINGS_COLLECTION).doc(SETTINGS_DOC_ID);
     const settingsSnap = await settingsRef.get();
     const settings = (settingsSnap.exists ? (settingsSnap.data() as any) : {}) as any;
@@ -333,6 +355,7 @@ export async function POST(req: NextRequest) {
 
     // If we've never synced, treat "incremental" as full.
     const effectiveMode: SyncMode = mode === 'incremental' && !since ? 'full' : mode;
+    const shouldLogPerMember = effectiveMode === 'incremental' && !!since;
 
     let rawMembers: any[] = [];
     if (effectiveMode === 'full') {
@@ -364,6 +387,12 @@ export async function POST(req: NextRequest) {
       const slice = rawMembers.slice(i, i + chunkSize);
       const batch = adminDb.batch();
 
+      const prepared: Array<{
+        clientId2: string;
+        docRef: FirebaseFirestore.DocumentReference;
+        newDoc: Record<string, any>;
+      }> = [];
+
       slice.forEach((raw) => {
         const { clientId2, normalized } = normalizeRawMember(raw);
         if (!clientId2) {
@@ -393,22 +422,138 @@ export async function POST(req: NextRequest) {
         }
 
         const docRef = adminDb.collection(CACHE_COLLECTION).doc(clientId2);
-        batch.set(
-          docRef,
-          {
-            ...normalized,
-            ...transformed,
-            Client_ID2: clientId2,
-            CalAIM_Status: calaimStatus,
-            CalAIM_MCO: calaimMco,
-            cachedAt: now.toISOString(),
-          },
-          { merge: true }
-        );
+        const newDoc = {
+          ...normalized,
+          ...transformed,
+          Client_ID2: clientId2,
+          CalAIM_Status: calaimStatus,
+          CalAIM_MCO: calaimMco,
+          cachedAt: now.toISOString(),
+        };
+
+        prepared.push({ clientId2, docRef, newDoc });
+        batch.set(docRef, newDoc, { merge: true });
         upserted += 1;
       });
 
       await batch.commit();
+
+      // Write activity logs for incremental syncs only (keeps initial full sync from flooding the log).
+      if (shouldLogPerMember && prepared.length > 0) {
+        const existingSnaps = await adminDb.getAll(...prepared.map((p) => p.docRef));
+
+        const activityDocs: Array<Record<string, any>> = [];
+        for (let idx = 0; idx < prepared.length; idx += 1) {
+          const p = prepared[idx];
+          const snap = existingSnaps[idx];
+          const oldData = snap?.exists ? (snap.data() as any) : null;
+          if (!oldData) continue;
+
+          const trackedKeys = [
+            'Kaiser_Status',
+            'CalAIM_Status',
+            'pathway',
+            'Social_Worker_Assigned',
+            'Staff_Assigned',
+            'Hold_For_Social_Worker',
+            'RCFE_Name',
+          ];
+
+          const changes = trackedKeys
+            .map((key) => {
+              const oldVal = oldData?.[key];
+              const newVal = p.newDoc?.[key];
+              const oldStr = oldVal == null ? '' : String(oldVal);
+              const newStr = newVal == null ? '' : String(newVal);
+              if (oldStr === newStr) return null;
+              return { key, oldStr, newStr };
+            })
+            .filter(Boolean) as Array<{ key: string; oldStr: string; newStr: string }>;
+
+          if (changes.length === 0) continue;
+
+          const pickPrimaryKey = () => {
+            const order = ['Kaiser_Status', 'CalAIM_Status', 'pathway', 'Hold_For_Social_Worker', 'Social_Worker_Assigned', 'Staff_Assigned', 'RCFE_Name'];
+            for (const k of order) {
+              if (changes.some((c) => c.key === k)) return k;
+            }
+            return changes[0].key;
+          };
+
+          const primaryKey = pickPrimaryKey();
+          const primary = changes.find((c) => c.key === primaryKey) || changes[0];
+
+          const typeByKey: Record<string, MemberActivityType> = {
+            Kaiser_Status: 'status_change',
+            CalAIM_Status: 'authorization_change',
+            pathway: 'pathway_change',
+            Hold_For_Social_Worker: 'status_change',
+            Social_Worker_Assigned: 'assignment_change',
+            Staff_Assigned: 'assignment_change',
+            RCFE_Name: 'form_update',
+          };
+
+          const categoryByKey: Record<string, MemberActivityCategory> = {
+            Kaiser_Status: 'kaiser',
+            CalAIM_Status: 'authorization',
+            pathway: 'pathway',
+            Hold_For_Social_Worker: 'assignment',
+            Social_Worker_Assigned: 'assignment',
+            Staff_Assigned: 'assignment',
+            RCFE_Name: 'application',
+          };
+
+          const priority: MemberActivityPriority =
+            ['Kaiser_Status', 'CalAIM_Status', 'pathway', 'Hold_For_Social_Worker'].includes(primaryKey)
+              ? 'high'
+              : 'normal';
+
+          const requiresNotification =
+            ['Kaiser_Status', 'CalAIM_Status', 'pathway', 'Hold_For_Social_Worker'].includes(primaryKey);
+
+          const memberName = String(p.newDoc?.memberName || oldData?.memberName || '').trim();
+          const changeSummary = changes
+            .slice(0, 3)
+            .map((c) => `${c.key}: "${c.oldStr}" → "${c.newStr}"`)
+            .join('; ');
+
+          activityDocs.push({
+            clientId2: p.clientId2,
+            activityType: typeByKey[primaryKey] || 'form_update',
+            category: categoryByKey[primaryKey] || 'system',
+            title: `${primaryKey} Updated`,
+            description: memberName
+              ? `${primaryKey} updated for ${memberName} (${p.clientId2}). ${changeSummary}`
+              : `${primaryKey} updated for ${p.clientId2}. ${changeSummary}`,
+            oldValue: primary.oldStr,
+            newValue: primary.newStr,
+            fieldChanged: primaryKey,
+            changedBy: 'caspio_sync',
+            changedByName: 'Caspio Sync',
+            priority,
+            requiresNotification,
+            source: 'caspio_sync',
+            relatedData: {
+              mode: effectiveMode,
+              since: since ? since.toISOString() : null,
+              changedFields: changes.map((c) => c.key),
+            },
+            timestamp: new Date().toISOString(),
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+
+        // Write activities in batches under Firestore limits.
+        for (let j = 0; j < activityDocs.length; j += 450) {
+          const chunk = activityDocs.slice(j, j + 450);
+          const ab = adminDb.batch();
+          chunk.forEach((doc) => {
+            const ref = adminDb.collection('member_activities').doc();
+            ab.set(ref, doc);
+          });
+          await ab.commit();
+        }
+      }
     }
 
     const nextSyncAt = maxModified ? maxModified.toISOString() : now.toISOString();
@@ -426,6 +571,32 @@ export async function POST(req: NextRequest) {
       },
       { merge: true }
     );
+
+    // Always log a lightweight system activity for the sync itself.
+    try {
+      await adminDb.collection('member_activities').add({
+        clientId2: 'SYSTEM',
+        activityType: 'form_update',
+        category: 'system',
+        title: 'Members cache synced',
+        description: `Caspio members cache sync completed (mode=${effectiveMode}, fetched=${rawMembers.length}, upserted=${upserted}).`,
+        fieldChanged: 'caspio_members_cache',
+        changedBy: uid,
+        changedByName: 'Admin',
+        priority: 'low',
+        requiresNotification: false,
+        source: 'system_auto',
+        relatedData: {
+          mode: effectiveMode,
+          since: since ? since.toISOString() : null,
+          lastSyncAt: nextSyncAt,
+        },
+        timestamp: new Date().toISOString(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch {
+      // best-effort only
+    }
 
     return NextResponse.json({
       success: true,

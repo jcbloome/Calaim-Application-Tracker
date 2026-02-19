@@ -9,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useToast } from '@/hooks/use-toast';
 import { 
   Activity, 
   TrendingUp, 
@@ -54,8 +53,6 @@ export default function MemberActivityPage() {
     getMemberActivities,
     getMemberActivitySummary 
   } = useMemberActivityTracker();
-  
-  const { toast } = useToast();
 
   // Get filtered activities
   const getFilteredActivities = () => {
@@ -148,69 +145,6 @@ export default function MemberActivityPage() {
     return colors[category as keyof typeof colors] || colors.system;
   };
 
-  // Demo function to simulate activity
-  const simulateActivity = () => {
-    const demoActivities = [
-      {
-        clientId2: 'CL001234',
-        activityType: 'status_change' as const,
-        category: 'kaiser' as const,
-        title: 'Kaiser Status Updated',
-        description: 'Kaiser_Status changed from "T2038 Requested" to "T2038 Received" for John Doe',
-        oldValue: 'T2038 Requested',
-        newValue: 'T2038 Received',
-        fieldChanged: 'Kaiser_Status',
-        changedBy: 'current-user',
-        changedByName: 'Current User',
-        priority: 'high' as const,
-        requiresNotification: true,
-        source: 'admin_app' as const
-      },
-      {
-        clientId2: 'CL001235',
-        activityType: 'pathway_change' as const,
-        category: 'pathway' as const,
-        title: 'Pathway Changed',
-        description: 'Member pathway changed from "SNF Diversion" to "SNF Transition" for Jane Smith',
-        oldValue: 'SNF Diversion',
-        newValue: 'SNF Transition',
-        fieldChanged: 'pathway',
-        changedBy: 'current-user',
-        changedByName: 'Current User',
-        priority: 'high' as const,
-        requiresNotification: true,
-        source: 'admin_app' as const
-      },
-      {
-        clientId2: 'CL001236',
-        activityType: 'date_update' as const,
-        category: 'application' as const,
-        title: 'Follow-up Date Set',
-        description: 'Next steps date updated for Bob Johnson',
-        oldValue: '',
-        newValue: '2026-01-25',
-        fieldChanged: 'next_steps_date',
-        changedBy: 'current-user',
-        changedByName: 'Current User',
-        priority: 'normal' as const,
-        requiresNotification: true,
-        source: 'admin_app' as const
-      }
-    ];
-
-    const randomActivity = demoActivities[Math.floor(Math.random() * demoActivities.length)];
-    
-    // This would normally be called from your form submission handlers
-    console.log('Simulating activity:', randomActivity);
-    
-    toast({
-      title: "Activity Simulated",
-      description: `${randomActivity.title} for ${randomActivity.clientId2}`,
-    });
-    
-    refreshStats();
-  };
-
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
@@ -222,16 +156,21 @@ export default function MemberActivityPage() {
           </p>
         </div>
         <div className="flex space-x-2">
-          <Button onClick={simulateActivity} variant="outline">
-            <Activity className="w-4 h-4 mr-2" />
-            Simulate Activity
-          </Button>
           <Button onClick={refreshStats} variant="outline">
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
           </Button>
         </div>
       </div>
+
+      {filteredActivities.length === 0 && (
+        <Alert>
+          <AlertDescription>
+            No activity has been logged yet. This dashboard shows real member activity events (for example: staff assignment
+            updates, pathway/status changes, and other tracked actions).
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Statistics Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
