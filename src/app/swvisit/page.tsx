@@ -21,9 +21,13 @@ import {
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useAutoTrackPortalAccess } from '@/hooks/use-sw-login-tracking';
 import Image from 'next/image';
+import { useAuth } from '@/firebase';
+import { useRouter } from 'next/navigation';
 
 export default function SocialWorkerPortal() {
   const { user, isSocialWorker, isLoading } = useSocialWorker();
+  const auth = useAuth();
+  const router = useRouter();
   
   // Track portal access
   useAutoTrackPortalAccess('portal-home');
@@ -89,6 +93,25 @@ export default function SocialWorkerPortal() {
                 <p className="text-sm font-medium text-gray-900">{user?.displayName || 'Social Worker'}</p>
                 <p className="text-xs text-gray-600">Field Representative</p>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    if (auth) await auth.signOut();
+                  } catch {
+                    // ignore
+                  }
+                  try {
+                    await fetch('/api/auth/sw-session', { method: 'DELETE' });
+                  } catch {
+                    // ignore
+                  }
+                  router.push('/sw-login');
+                }}
+              >
+                Logout
+              </Button>
               <div className="bg-green-100 rounded-full p-2">
                 <Users className="h-5 w-5 text-green-600" />
               </div>

@@ -112,9 +112,11 @@ const adminNavLinks = [
     icon: Wrench, 
     isSubmenu: true,
     submenuItems: [
+      { href: '/admin/tools', label: 'Tools Home', icon: Wrench },
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
       { href: '/admin/social-worker-assignments', label: 'Social Worker Assignments', icon: UserPlus },
+      { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },
       { href: '/admin/sw-visit-tracking', label: 'SW Visit Tracking System', icon: FileBarChart },
       { href: '/admin/sw-claims-tracking', label: 'SW Claims Tracking', icon: FileBarChart },
       { href: '/admin/member-activity', label: 'Member Activity', icon: Activity },

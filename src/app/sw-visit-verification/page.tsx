@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useAutoTrackPortalAccess } from '@/hooks/use-sw-login-tracking';
+import { useAuth } from '@/firebase';
 import { 
   MapPin, 
   Star, 
@@ -28,7 +30,8 @@ import {
   RotateCcw,
   Home,
   Shield,
-  Users
+  Users,
+  LogOut
 } from 'lucide-react';
 
 interface MemberVisitQuestionnaire {
@@ -154,6 +157,8 @@ const StarRating: React.FC<{
 export default function SWVisitVerification() {
   const { user, isSocialWorker } = useSocialWorker();
   const { toast } = useToast();
+  const auth = useAuth();
+  const router = useRouter();
   
   // Track visit verification access
   useAutoTrackPortalAccess('visit-verification');
@@ -363,6 +368,20 @@ export default function SWVisitVerification() {
       flagged: false
     }
   });
+
+  const handleSignOut = async () => {
+    try {
+      if (auth) await auth.signOut();
+    } catch {
+      // ignore
+    }
+    try {
+      await fetch('/api/auth/sw-session', { method: 'DELETE' });
+    } catch {
+      // ignore
+    }
+    router.push('/sw-login');
+  };
 
   // Calculate total score and flags
   const calculateScore = () => {
@@ -889,7 +908,7 @@ export default function SWVisitVerification() {
             <div>
               <h1 className="text-lg font-semibold">SW Visit Verification</h1>
               <p className="text-sm text-muted-foreground">
-                {user?.displayName || 'Social Worker'}
+                {String((user as any)?.displayName || (user as any)?.email || 'Social Worker')}
               </p>
             </div>
           </div>
@@ -899,6 +918,10 @@ export default function SWVisitVerification() {
                 <Home className="h-4 w-4 mr-2" />
                 Main Menu
               </Link>
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleSignOut}>
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
             </Button>
             {currentStep === 'questionnaire' && (
               <Button variant="outline" size="sm" onClick={saveProgress}>
@@ -922,7 +945,9 @@ export default function SWVisitVerification() {
               {membersOnHold > 0 && (
                 <div className="flex items-center gap-2 text-amber-600 text-sm">
                   <AlertTriangle className="h-4 w-4" />
-                  <span>{membersOnHold} member{membersOnHold !== 1 ? 's' : ''} currently on hold for SW visits</span>
+                  <span>
+                    {membersOnHold} of your authorized member{membersOnHold !== 1 ? 's are' : ' is'} currently on hold for SW visits (not shown here)
+                  </span>
                 </div>
               )}
             </CardHeader>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,6 +42,7 @@ import { findCountyByCity, searchCities, getCitiesInCounty } from '@/lib/califor
 import { useToast } from '@/hooks/use-toast';
 import SimpleMapTest from '@/components/SimpleMapTest';
 import { ResourceDetailModal } from '@/components/ResourceDetailModal';
+import { useAuth } from '@/firebase';
 
 interface ResourceCounts {
   rcfes: number;
@@ -90,6 +91,7 @@ interface RCFEMemberData {
 
 export default function MapIntelligencePage() {
   const { toast } = useToast();
+  const auth = useAuth();
   
   // Map state
   const [resourceCounts, setResourceCounts] = useState<ResourceCounts>({
@@ -123,7 +125,7 @@ export default function MapIntelligencePage() {
   const [isLoadingRcfeMembers, setIsLoadingRcfeMembers] = useState(false);
 
   // Load RCFE member distribution data
-  const loadRcfeMemberData = async () => {
+  const loadRcfeMemberData = async (opts?: { quiet?: boolean }) => {
     setIsLoadingRcfeMembers(true);
     try {
       // Fetch real member data from existing member-locations API
@@ -168,19 +170,22 @@ export default function MapIntelligencePage() {
         });
         
         setRcfeMembers(Object.values(rcfeGroups));
-        
-        toast({
-          title: "RCFE Data Loaded",
-          description: `Found ${Object.keys(rcfeGroups).length} RCFE facilities with ${data.data.members.length} members`,
-        });
+        if (!opts?.quiet) {
+          toast({
+            title: "RCFE Data Loaded",
+            description: `Found ${Object.keys(rcfeGroups).length} RCFE facilities with ${data.data.members.length} members`,
+          });
+        }
       } else {
         // Show fallback message if no data
         setRcfeMembers([]);
-        toast({
-          title: "No RCFE Data",
-          description: "No member RCFE assignments found",
-          variant: "destructive"
-        });
+        if (!opts?.quiet) {
+          toast({
+            title: "No RCFE Data",
+            description: "No member RCFE assignments found",
+            variant: "destructive"
+          });
+        }
       }
     } catch (error) {
       console.error('❌ Error loading RCFE member data:', error);
@@ -194,134 +199,153 @@ export default function MapIntelligencePage() {
     }
   };
 
-  // Load resource counts from APIs
-  useEffect(() => {
-    const loadResourceCounts = async () => {
-      setIsMapLoading(true);
-      try {
-        // Fetch data from all the API endpoints
-        const [rcfeResponse, staffResponse, memberResponse] = await Promise.all([
-          fetch('/api/rcfe-locations'),
-          fetch('/api/staff-locations'), 
-          fetch('/api/member-locations')
-        ]);
-        
+  const loadResourceCounts = async (): Promise<ResourceCounts | null> => {
+    setIsMapLoading(true);
+    try {
+      const [rcfeResponse, staffResponse, memberResponse] = await Promise.all([
+        fetch('/api/rcfe-locations'),
+        fetch('/api/staff-locations'),
+        fetch('/api/member-locations'),
+      ]);
 
-        const [rcfeData, staffData, memberData] = await Promise.all([
-          rcfeResponse.json(),
-          staffResponse.json(),
-          memberResponse.json()
-        ]);
+      const [rcfeData, staffData, memberData] = await Promise.all([
+        rcfeResponse.json(),
+        staffResponse.json(),
+        memberResponse.json(),
+      ]);
 
+      const counts: ResourceCounts = {
+        rcfes: rcfeData.success ? (rcfeData.data?.totalRCFEs || 0) : 0,
+        socialWorkers: staffData.success ? (staffData.data?.breakdown?.socialWorkers || 0) : 0,
+        registeredNurses: staffData.success ? (staffData.data?.breakdown?.rns || 0) : 0,
+        authorizedMembers: memberData.success ? (memberData.data?.totalMembers || 0) : 0,
+      };
 
-        // Count resources based on CORRECT API response structure
-        const counts: ResourceCounts = {
-          rcfes: rcfeData.success ? (rcfeData.data?.totalRCFEs || 0) : 0,
-          socialWorkers: staffData.success ? (staffData.data?.breakdown?.socialWorkers || 0) : 0,
-          registeredNurses: staffData.success ? (staffData.data?.breakdown?.rns || 0) : 0,
-          authorizedMembers: memberData.success ? (memberData.data?.totalMembers || 0) : 0
-        };
+      setResourceCounts(counts);
+      return counts;
+    } catch (error) {
+      console.error('❌ Error loading resource counts:', error);
+      toast({
+        title: 'Data Loading Error',
+        description: 'Failed to load resource counts from APIs',
+        variant: 'destructive',
+      });
+      return null;
+    } finally {
+      setIsMapLoading(false);
+    }
+  };
 
+  const loadVisitsAndStaff = async () => {
+    setIsVisitsLoading(true);
+    try {
+      const idToken = await auth?.currentUser?.getIdToken?.().catch(() => '');
+      const authHeaders: Record<string, string> = idToken ? { Authorization: `Bearer ${idToken}` } : {};
 
-        setResourceCounts(counts);
+      const [staffResponse, memberResponse, rcfeResponse, eftResponse] = await Promise.all([
+        fetch('/api/caspio-staff'),
+        fetch('/api/member-locations'),
+        fetch('/api/rcfe-locations'),
+        fetch('/api/caspio/eft-setup', { headers: authHeaders }),
+      ]);
 
-      } catch (error) {
-        console.error('❌ Error loading resource counts:', error);
-        toast({
-          title: "Data Loading Error",
-          description: "Failed to load resource counts from APIs",
-          variant: "destructive"
+      const [staffData, memberData, rcfeData, eftData] = await Promise.all([
+        staffResponse.json(),
+        memberResponse.json(),
+        rcfeResponse.json(),
+        eftResponse.json().catch(() => ({})),
+      ]);
+
+      // Process real staff data with detailed information
+      const eftBySwId = (() => {
+        const map = new Map<string, string>();
+        const records = Array.isArray((eftData as any)?.records) ? (eftData as any).records : [];
+        records.forEach((r: any) => {
+          const swId = String(r?.swId || r?.SW_ID || r?.sw_id || '').trim();
+          const address = String(r?.address || '').trim();
+          if (swId && address && !map.has(swId)) map.set(swId, address);
         });
-      } finally {
-        setIsMapLoading(false);
-      }
-    };
+        return map;
+      })();
 
-    loadResourceCounts();
-    loadRcfeMemberData();
-  }, []); // Remove toast dependency to test
+      if (staffData.success && staffData.staff) {
+        const realStaff: StaffMember[] = staffData.staff.map((staff: any) => {
+          const swId = String(staff?.SW_ID ?? staff?.sw_id ?? staff?.Sw_Id ?? staff?.id ?? '').trim();
+          const fullName =
+            String(staff?.name || '').trim() ||
+            `${staff?.FirstName || ''} ${staff?.LastName || ''}`.trim() ||
+            `${staff?.firstName || ''} ${staff?.lastName || ''}`.trim() ||
+            'Unknown Staff';
 
-  // Load comprehensive visits and staff data from APIs
-  useEffect(() => {
-    const loadVisitsAndStaff = async () => {
-      setIsVisitsLoading(true);
-      try {
-        // Fetch comprehensive data from all APIs
-        const [staffResponse, memberResponse, rcfeResponse] = await Promise.all([
-          fetch('/api/caspio-staff'),
-          fetch('/api/member-locations'),
-          fetch('/api/rcfe-locations')
-        ]);
+          const eftAddress = swId ? eftBySwId.get(swId) : undefined;
+          const fallbackCounty = String(staff?.County || staff?.county || '').trim();
+          const location = eftAddress || (fallbackCounty ? `${fallbackCounty} County` : 'Unknown');
 
-        const [staffData, memberData, rcfeData] = await Promise.all([
-          staffResponse.json(),
-          memberResponse.json(),
-          rcfeResponse.json()
-        ]);
-
-        console.log('📊 Loading comprehensive staff and visit data...');
-
-        // Process real staff data with detailed information
-        if (staffData.success && staffData.staff) {
-          const realStaff: StaffMember[] = staffData.staff.map((staff: any) => ({
-            id: staff.SW_ID || staff.id || Math.random().toString(36),
-            name: `${staff.FirstName || ''} ${staff.LastName || ''}`.trim() || 'Unknown Staff',
+          const assignedMemberCount = Number(staff?.assignedMemberCount || 0);
+          return {
+            id: swId || Math.random().toString(36),
+            name: fullName,
             role: 'Social Worker (MSW)',
-            location: `${staff.County || 'Unknown'} County`,
-            assignedMembers: staff.assignedMemberCount || 0,
+            // Use real EFT address when available; otherwise fall back to county.
+            location,
+            assignedMembers: assignedMemberCount,
             capacity: 30,
-            workload: staff.assignedMemberCount > 25 ? 'Overloaded' : 
-                     staff.assignedMemberCount > 20 ? 'High' : 
-                     staff.assignedMemberCount > 10 ? 'Medium' : 'Low'
-          }));
-          setStaffMembers(realStaff);
-        }
+            workload:
+              assignedMemberCount > 25
+                ? 'Overloaded'
+                : assignedMemberCount > 20
+                  ? 'High'
+                  : assignedMemberCount > 10
+                    ? 'Medium'
+                    : 'Low',
+          };
+        });
+        setStaffMembers(realStaff);
+      }
 
-        // Create comprehensive visit data based on real members and RCFEs
-        if (memberData.success && memberData.data && rcfeData.success && rcfeData.data) {
-          const visits: Visit[] = [];
-          const membersByRCFE = memberData.data.membersByRCFE || {};
-          const rcfesByCounty = rcfeData.data.rcfesByCounty || {};
-          
-          // Create visits for members at different RCFEs
-          Object.entries(membersByRCFE).slice(0, 15).forEach(([rcfeId, rcfeInfo]: [string, any], index) => {
+      // Create comprehensive visit data based on real members and RCFEs
+      if (memberData.success && memberData.data && rcfeData.success && rcfeData.data) {
+        const visits: Visit[] = [];
+        const membersByRCFE = memberData.data.membersByRCFE || {};
+
+        Object.entries(membersByRCFE)
+          .slice(0, 15)
+          .forEach(([_rcfeId, rcfeInfo]: [string, any], index) => {
             if (rcfeInfo.members && rcfeInfo.members.length > 0) {
-              const member = rcfeInfo.members[0]; // Take first member from this RCFE
+              const member = rcfeInfo.members[0];
               const staffMember = staffData.staff?.[index % (staffData.staff?.length || 1)];
-              
+
               visits.push({
                 id: `visit-${index + 1}`,
                 memberName: `${member.firstName} ${member.lastName}`,
                 memberClientId: member.clientId2 || `ID-${index + 1}`,
                 healthPlan: member.healthPlan || 'Kaiser',
-                visitType: index % 3 === 0 ? 'Monthly Check' : index % 3 === 1 ? 'Follow-up' : 'Initial Assessment',
-                scheduledDate: new Date(Date.now() + (index * 24 * 60 * 60 * 1000)).toISOString().split('T')[0],
+                visitType:
+                  index % 3 === 0 ? 'Monthly Check' : index % 3 === 1 ? 'Follow-up' : 'Initial Assessment',
+                scheduledDate: new Date(Date.now() + index * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
                 scheduledTime: ['09:00', '10:30', '14:00', '15:30'][index % 4],
-                status: ['Scheduled', 'Completed', 'In Progress'][index % 3],
+                // NOTE: 'In Progress' is not part of Visit['status'], keep within allowed values
+                status: (['Scheduled', 'Completed', 'Rescheduled'][index % 3] as Visit['status']),
                 assignedStaff: staffMember ? `${staffMember.FirstName} ${staffMember.LastName}` : 'Unassigned',
                 location: `${rcfeInfo.rcfeCity || 'Unknown'}, ${rcfeInfo.rcfeState || 'CA'}`,
                 notes: `Visit at ${rcfeInfo.rcfeName || 'RCFE'} - ${rcfeInfo.totalMembers} members total`,
-                completedDate: index % 3 === 1 ? new Date(Date.now() - (index * 24 * 60 * 60 * 1000)).toISOString().split('T')[0] : undefined,
-                duration: index % 3 === 1 ? 30 + (index * 5) : undefined
+                completedDate:
+                  index % 3 === 1 ? new Date(Date.now() - index * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : undefined,
+                duration: index % 3 === 1 ? 30 + index * 5 : undefined,
               });
             }
           });
 
-          setVisits(visits);
-          console.log(`✅ Created ${visits.length} comprehensive visits from real data`);
-        }
-
-      } catch (error) {
-        console.error('❌ Error loading comprehensive visits and staff:', error);
-        setStaffMembers([]);
-        setVisits([]);
-      } finally {
-        setIsVisitsLoading(false);
+        setVisits(visits);
       }
-    };
-
-    loadVisitsAndStaff();
-  }, []);
+    } catch (error) {
+      console.error('❌ Error loading comprehensive visits and staff:', error);
+      setStaffMembers([]);
+      setVisits([]);
+    } finally {
+      setIsVisitsLoading(false);
+    }
+  };
 
   // Resource counts are now loaded directly from APIs in useEffect
 
@@ -450,42 +474,17 @@ export default function MapIntelligencePage() {
         <Button
           variant="outline"
           onClick={async () => {
-              setIsMapLoading(true);
               try {
-                // Fetch data from all the API endpoints
-                const [rcfeResponse, staffResponse, memberResponse] = await Promise.all([
-                  fetch('/api/rcfe-locations'),
-                  fetch('/api/staff-locations'), 
-                  fetch('/api/member-locations')
-                ]);
-
-                const [rcfeData, staffData, memberData] = await Promise.all([
-                  rcfeResponse.json(),
-                  staffResponse.json(),
-                  memberResponse.json()
-                ]);
-
-                console.log('🔄 Refresh API Response Debug:', {
-                  rcfeData: rcfeData,
-                  staffData: staffData,
-                  memberData: memberData
-                });
-
-                // Count resources based on CORRECT API response structure
-                const counts: ResourceCounts = {
-                  rcfes: rcfeData.success ? (rcfeData.data?.totalRCFEs || 0) : 0,
-                  socialWorkers: staffData.success ? (staffData.data?.breakdown?.socialWorkers || 0) : 0,
-                  registeredNurses: staffData.success ? (staffData.data?.breakdown?.rns || 0) : 0,
-                  authorizedMembers: memberData.success ? (memberData.data?.totalMembers || 0) : 0
-                };
-
-                setResourceCounts(counts);
-                toast({
-                  title: "Data Refreshed",
-                  description: `Loaded ${counts.rcfes} RCFEs, ${counts.socialWorkers} social workers, ${counts.registeredNurses} nurses, and ${counts.authorizedMembers} authorized members`,
-                  className: 'bg-green-100 text-green-900 border-green-200',
-                });
-
+                // On-demand only: do not auto-sync on page load.
+                const counts = await loadResourceCounts();
+                await Promise.all([loadRcfeMemberData({ quiet: true }), loadVisitsAndStaff()]);
+                if (counts) {
+                  toast({
+                    title: 'Data Loaded',
+                    description: `Loaded ${counts.rcfes} RCFEs, ${counts.socialWorkers} social workers, ${counts.registeredNurses} nurses, and ${counts.authorizedMembers} authorized members`,
+                    className: 'bg-green-100 text-green-900 border-green-200',
+                  });
+                }
               } catch (error) {
                 console.error('❌ Error refreshing data:', error);
                 toast({
@@ -493,14 +492,12 @@ export default function MapIntelligencePage() {
                   description: "Failed to refresh resource data",
                   variant: "destructive"
                 });
-              } finally {
-                setIsMapLoading(false);
               }
             }}
             disabled={isMapLoading}
           >
           <RefreshCw className={`mr-2 h-4 w-4 ${isMapLoading ? 'animate-spin' : ''}`} />
-          {isMapLoading ? 'Refreshing...' : 'Refresh Data'}
+          {isMapLoading ? 'Loading...' : 'Load Data'}
         </Button>
         
         <Button

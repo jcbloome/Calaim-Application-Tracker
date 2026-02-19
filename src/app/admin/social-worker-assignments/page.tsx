@@ -508,6 +508,19 @@ export default function SocialWorkerAssignmentsPage() {
                       </div>
                     </div>
                     <div className="text-sm">
+                      <strong>CalAIM Status:</strong>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {Object.entries(sw.statusBreakdown)
+                          .sort(([, a], [, b]) => b - a)
+                          .slice(0, 2)
+                          .map(([status, count]) => (
+                            <Badge key={status} variant="outline" className="text-xs">
+                              {status}: {count}
+                            </Badge>
+                          ))}
+                      </div>
+                    </div>
+                    <div className="text-sm">
                       <strong>Top RCFEs:</strong>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {Object.entries(sw.rcfeBreakdown)

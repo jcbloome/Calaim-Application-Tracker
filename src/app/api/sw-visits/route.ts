@@ -191,12 +191,12 @@ export async function GET(req: NextRequest) {
         .replace(/\s+/g, ' ')
         .trim();
 
-    const pickQueryToken = (id: string): string | null => {
+    const pickQueryTokens = (id: string): string[] => {
       const raw = String(id || '').trim().toLowerCase();
-      if (!raw) return null;
+      if (!raw) return [];
 
       // If SW_ID is used, prefer that exact token.
-      if (/^\d{3,}$/.test(raw)) return raw;
+      if (/^\d{3,}$/.test(raw)) return [raw];
 
       const tokens: string[] = [];
       const norm = normalize(raw);
@@ -204,36 +204,126 @@ export async function GET(req: NextRequest) {
 
       if (raw.includes('@')) {
         const local = raw.split('@')[0] || '';
-        tokens.push(...local.split(/[._+\-]/g));
+        const localParts = local.split(/[._+\-]/g);
+        tokens.push(...localParts);
+        // Heuristic: handle emails like "fbaggins" when Caspio stores "Baggins, Frodo".
+        // Add a "likely last name" token by stripping a leading initial.
+        for (const part of localParts) {
+          const p = String(part || '').trim();
+          if (p.length >= 5 && /^[a-z][a-z]+$/.test(p)) {
+            tokens.push(p.slice(1));
+          }
+        }
       }
 
-      const cleaned = tokens
+      const cleaned = Array.from(
+        new Set(
+          tokens
+            .map((t) => normalize(t))
+            .filter((t) => t.length >= 3)
+        )
+      )
         .map((t) => normalize(t))
         .filter((t) => t.length >= 3);
 
-      if (cleaned.length === 0) return null;
+      if (cleaned.length === 0) return [];
       // Prefer a longer token (often last name) to reduce result size.
       cleaned.sort((a, b) => b.length - a.length);
-      return cleaned[0] || null;
+      return cleaned;
     };
 
-    const token = pickQueryToken(socialWorkerId);
+    const needles: string[] = [String(socialWorkerId || '').trim()].filter(Boolean);
+
+    // If they pass an email, try to resolve the Caspio SW_ID from `syncedSocialWorkers`.
+    // This helps when Caspio member rows are keyed by SW_ID but the portal uses email login.
+    try {
+      const maybeEmail = needles[0] && needles[0].includes('@') ? needles[0].toLowerCase() : '';
+      if (maybeEmail) {
+        const swSnap = await adminDb
+          .collection('syncedSocialWorkers')
+          .where('email', '==', maybeEmail)
+          .limit(1)
+          .get();
+        const swId = swSnap.empty ? '' : String(swSnap.docs[0].data()?.sw_id || '').trim();
+        if (swId) needles.push(swId);
+      }
+    } catch {
+      // best-effort only
+    }
+
+    const tokens = needles.flatMap((n) => pickQueryTokens(n));
     let snapshot: FirebaseFirestore.QuerySnapshot | null = null;
 
-    if (token) {
+    // Try a few possible query tokens (last-name, first-name, SW_ID, email local-part, etc.)
+    // until we get a hit. This avoids "0 assigned" when token choice doesn't exist.
+    for (const token of tokens.slice(0, 6)) {
       try {
-        snapshot = await adminDb
+        const s = await adminDb
           .collection('caspio_members_cache')
           .where('sw_search_keys', 'array-contains', token)
           .limit(5000)
           .get();
+        if (!s.empty) {
+          snapshot = s;
+          break;
+        }
       } catch {
-        snapshot = null;
+        // ignore and try next token
       }
     }
 
     if (!snapshot || snapshot.empty) {
-      snapshot = await adminDb.collection('caspio_members_cache').limit(5000).get();
+      // Fallback scan: if the cache is large and `sw_search_keys` isn't present yet,
+      // a hard `limit(5000)` can exclude the SW's assignments completely.
+      // Scan in pages (bounded) until we find some assigned members.
+      let page = await adminDb
+        .collection('caspio_members_cache')
+        .orderBy(adminModule.default.firestore.FieldPath.documentId())
+        .limit(5000)
+        .get();
+      snapshot = page;
+
+      let scanned = page.size;
+      let assignedCount = 0;
+
+      const maxScan = 25_000; // safety cap
+      while (page.size > 0 && scanned < maxScan) {
+        const pageMembers = page.docs.map((d) => d.data() as any);
+        assignedCount = pageMembers.filter((member) =>
+          needles.some((needle) =>
+            swMatchesMember({
+              socialWorkerId: needle,
+              memberSwAssigned:
+                member?.Social_Worker_Assigned ??
+                member?.social_worker_assigned ??
+                member?.SocialWorkerAssigned ??
+                member?.socialWorkerAssigned ??
+                '',
+              memberStaffAssigned:
+                member?.Staff_Assigned ??
+                member?.staff_assigned ??
+                member?.Kaiser_User_Assignment ??
+                member?.kaiser_user_assignment ??
+                '',
+              memberSwId: member?.SW_ID ?? member?.sw_id ?? member?.Sw_Id ?? '',
+            })
+          )
+        ).length;
+        if (assignedCount > 0) {
+          // Use this page for results (good enough to show the SW their assignments).
+          snapshot = page;
+          break;
+        }
+
+        const last = page.docs[page.docs.length - 1];
+        page = await adminDb
+          .collection('caspio_members_cache')
+          .orderBy(adminModule.default.firestore.FieldPath.documentId())
+          .startAfter(last)
+          .limit(5000)
+          .get();
+        scanned += page.size;
+      }
     }
 
     const members = snapshot.docs.map((d) => d.data() as any);
@@ -244,35 +334,50 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const membersOnHold = members.filter((m) =>
+    const isAuthorized = (value: unknown) => {
+      const v = String(value ?? '').trim().toLowerCase();
+      if (!v) return false;
+      // Avoid matching "Not Authorized"
+      return v === 'authorized' || v.startsWith('authorized ');
+    };
+
+    const assignedAll = members.filter((member) => {
+      const assigned = needles.some((needle) =>
+        swMatchesMember({
+          socialWorkerId: needle,
+          memberSwAssigned:
+            member?.Social_Worker_Assigned ??
+            member?.social_worker_assigned ??
+            member?.SocialWorkerAssigned ??
+            member?.socialWorkerAssigned ??
+            '',
+          memberStaffAssigned:
+            member?.Staff_Assigned ??
+            member?.staff_assigned ??
+            member?.Kaiser_User_Assignment ??
+            member?.kaiser_user_assignment ??
+            '',
+          memberSwId: member?.SW_ID ?? member?.sw_id ?? member?.Sw_Id ?? '',
+        })
+      );
+      return assigned;
+    });
+
+    // Monthly SW visit questionnaires are for Authorized members only.
+    const assignedAuthorized = assignedAll.filter((member) =>
+      isAuthorized(member?.CalAIM_Status ?? member?.calaim_status ?? member?.CalAIMStatus ?? member?.calaimStatus)
+    );
+
+    const membersOnHold = assignedAuthorized.filter((member) =>
       isHoldValue(
-        m?.Hold_For_Social_Worker ??
-          m?.Hold_for_Social_Worker ??
-          m?.Hold_For_Social_Worker_Visit ??
-          m?.Hold_for_Social_Worker_Visit
+        member?.Hold_For_Social_Worker ??
+          member?.Hold_for_Social_Worker ??
+          member?.Hold_For_Social_Worker_Visit ??
+          member?.Hold_for_Social_Worker_Visit
       )
     ).length;
 
-    const assignedMembers = members.filter((member) => {
-      const assigned = swMatchesMember({
-        socialWorkerId,
-        memberSwAssigned:
-          member?.Social_Worker_Assigned ??
-          member?.social_worker_assigned ??
-          member?.SocialWorkerAssigned ??
-          member?.socialWorkerAssigned ??
-          '',
-        memberStaffAssigned:
-          member?.Staff_Assigned ??
-          member?.staff_assigned ??
-          member?.Kaiser_User_Assignment ??
-          member?.kaiser_user_assignment ??
-          '',
-        memberSwId: member?.SW_ID ?? member?.sw_id ?? member?.Sw_Id ?? '',
-      });
-      if (!assigned) return false;
-
-      // Exclude members on hold for social worker visits.
+    const assignedMembers = assignedAuthorized.filter((member) => {
       const hold = isHoldValue(
         member?.Hold_For_Social_Worker ??
           member?.Hold_for_Social_Worker ??
@@ -322,7 +427,10 @@ export async function GET(req: NextRequest) {
       rcfeList,
       totalMembers: assignedMembers.length,
       totalRCFEs: rcfeList.length,
-      membersOnHold: membersOnHold
+      membersOnHold,
+      // Extra diagnostics (safe for SW portal UI / admin debugging).
+      totalAssignedAuthorized: assignedAuthorized.length,
+      totalAssignedAll: assignedAll.length
     });
 
   } catch (error: any) {
@@ -358,6 +466,48 @@ export async function POST(req: NextRequest) {
     const adminModule = await import('@/firebase-admin');
     const admin = adminModule.default;
     const adminDb = adminModule.adminDb;
+
+    // Enforce portal rules:
+    // - Monthly SW visit questionnaires are for Authorized members only.
+    // - If the member is on Hold for SW visits, the questionnaire cannot be submitted.
+    try {
+      const isAuthorized = (value: unknown) => {
+        const v = String(value ?? '').trim().toLowerCase();
+        if (!v) return false;
+        return v === 'authorized' || v.startsWith('authorized ');
+      };
+      const memberSnap = await adminDb.collection('caspio_members_cache').doc(String(visitData.memberId)).get();
+      const member = memberSnap.exists ? (memberSnap.data() as any) : null;
+      if (member) {
+        const status = member?.CalAIM_Status ?? member?.calaim_status ?? member?.CalAIMStatus ?? member?.calaimStatus;
+        if (!isAuthorized(status)) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'Monthly questionnaires are only allowed for Authorized members.',
+            },
+            { status: 403 }
+          );
+        }
+        const hold = isHoldValue(
+          member?.Hold_For_Social_Worker ??
+            member?.Hold_for_Social_Worker ??
+            member?.Hold_For_Social_Worker_Visit ??
+            member?.Hold_for_Social_Worker_Visit
+        );
+        if (hold) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'This member is currently on hold for SW visits and cannot be submitted.',
+            },
+            { status: 403 }
+          );
+        }
+      }
+    } catch {
+      // If we cannot validate, continue (best-effort); the UI should still prevent selection.
+    }
     const submittedAtDate = new Date();
     const submittedAtIso = submittedAtDate.toISOString();
     const submittedAtTs = admin.firestore.Timestamp.fromDate(submittedAtDate);

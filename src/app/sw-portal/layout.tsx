@@ -38,13 +38,18 @@ const swNavLinks = [
 export default function SWPortalLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { isSocialWorker, isLoading } = useSocialWorker();
+  const { user, isSocialWorker, isLoading } = useSocialWorker();
   const auth = useAuth();
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   const handleSignOut = async () => {
     if (auth) {
       await auth.signOut();
+    }
+    try {
+      await fetch('/api/auth/sw-session', { method: 'DELETE' });
+    } catch {
+      // ignore
     }
     router.push('/sw-login');
   };
@@ -112,9 +117,16 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-sm">
+            <div className="hidden sm:flex items-center gap-2 text-sm">
               <UserCheck className="h-4 w-4 text-primary" />
-              <span className="hidden sm:inline-block">Social Worker Portal</span>
+              <div className="leading-tight">
+                <div className="font-medium text-foreground">
+                  {String((user as any)?.displayName || (user as any)?.email || 'Social Worker')}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {String((user as any)?.email || 'Social Worker Portal')}
+                </div>
+              </div>
             </div>
             <Button variant="ghost" size="sm" onClick={handleSignOut}>
               <LogOut className="h-4 w-4 mr-2" />
