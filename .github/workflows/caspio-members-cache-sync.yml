@@ -1,0 +1,62 @@
+name: Caspio members cache sync
+
+on:
+  schedule:
+    # Every 15 minutes incremental sync (UTC). This keeps SW assignments fresh in Firestore cache.
+    - cron: '*/15 * * * *'
+    # Nightly full sync (UTC). Adjust to your preferred local time.
+    - cron: '35 10 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Sync mode'
+        required: true
+        default: 'incremental'
+        type: choice
+        options:
+          - incremental
+          - full
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Select mode
+        id: pick
+        shell: bash
+        run: |
+          MODE="incremental"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ inputs.mode }}"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            if [ "${{ github.event.schedule }}" = "35 10 * * *" ]; then
+              MODE="full"
+            fi
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger members-cache sync
+        shell: bash
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          MODE: ${{ steps.pick.outputs.mode }}
+        run: |
+          if [ -z "${APP_BASE_URL}" ]; then
+            echo "Missing secrets.APP_BASE_URL"
+            exit 1
+          fi
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "Missing secrets.CRON_SECRET"
+            exit 1
+          fi
+          URL="${APP_BASE_URL%/}/api/caspio/members-cache/sync"
+          echo "Calling: ${URL} (mode=${MODE})"
+          curl --fail-with-body -sS \
+            --max-time 1800 \
+            -X POST "${URL}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            --data "{\"mode\":\"${MODE}\"}"
+

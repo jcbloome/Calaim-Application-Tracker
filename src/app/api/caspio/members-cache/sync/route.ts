@@ -345,21 +345,33 @@ async function fetchUpdatedMembersFromCaspio(params: {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const idToken = String(body?.idToken || '').trim();
     const mode = (String(body?.mode || 'incremental') as SyncMode) || 'incremental';
 
-    if (!idToken) {
-      return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
-    }
+    // Allow trusted schedulers (Cloud Scheduler / GitHub Actions) to call this endpoint without an interactive admin idToken.
+    // Matches the existing `/api/cron/reminders` pattern: Authorization: Bearer ${CRON_SECRET}
+    const authHeader = req.headers.get('authorization');
+    const cronAuthorized = Boolean(process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`);
 
-    const adminCheck = await requireAdmin(idToken);
-    if (!adminCheck.ok) {
-      return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
-    }
-
-    const { adminDb, uid } = adminCheck;
     const adminModule = await import('@/firebase-admin');
     const admin = adminModule.default;
+    let adminDb: any = adminModule.adminDb;
+    let uid = 'cron';
+
+    if (!cronAuthorized) {
+      const idToken = String(body?.idToken || '').trim();
+      if (!idToken) {
+        return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
+      }
+
+      const adminCheck = await requireAdmin(idToken);
+      if (!adminCheck.ok) {
+        return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
+      }
+
+      adminDb = adminCheck.adminDb;
+      uid = adminCheck.uid;
+    }
+
     const settingsRef = adminDb.collection(SETTINGS_COLLECTION).doc(SETTINGS_DOC_ID);
     const settingsSnap = await settingsRef.get();
     const settings = (settingsSnap.exists ? (settingsSnap.data() as any) : {}) as any;

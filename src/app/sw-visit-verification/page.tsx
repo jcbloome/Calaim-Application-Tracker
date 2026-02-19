@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -192,6 +192,12 @@ export default function SWVisitVerification() {
   const [rcfeList, setRcfeList] = useState<RCFE[]>([]);
   const [isLoadingRCFEs, setIsLoadingRCFEs] = useState(false);
   const [membersOnHold, setMembersOnHold] = useState(0);
+  const [membersCacheStatus, setMembersCacheStatus] = useState<{
+    lastRunAt?: string | null;
+    lastSyncAt?: string | null;
+    lastMode?: string | null;
+  } | null>(null);
+  const [confirmFreshWithin15, setConfirmFreshWithin15] = useState(false);
   const [draftsByMember, setDraftsByMember] = useState<Record<string, {
     questionnaire: MemberVisitQuestionnaire;
     questionStep: number;
@@ -231,23 +237,25 @@ export default function SWVisitVerification() {
     }
   }, [user]);
 
-  // Fetch assigned RCFEs when component mounts
-  useEffect(() => {
-    const fetchAssignedRCFEs = async () => {
+  const fetchAssignedRCFEs = useCallback(
+    async (opts?: { quiet?: boolean }) => {
       if (!isSocialWorker || isLoading) return;
-      
+
       setIsLoadingRCFEs(true);
       try {
         // Prefer email for assignment matching (see note above).
-        const socialWorkerId = user.email || user.displayName || user.uid;
+        const socialWorkerId = user?.email || user?.displayName || user?.uid;
         console.log('🔍 Fetching assignments for SW:', socialWorkerId);
-        
-        const response = await fetch(`/api/sw-visits?socialWorkerId=${encodeURIComponent(socialWorkerId)}`);
+
+        const response = await fetch(`/api/sw-visits?socialWorkerId=${encodeURIComponent(String(socialWorkerId || ''))}`);
         const data = await response.json();
-        
+
         if (data.success) {
           setRcfeList(data.rcfeList || []);
           setMembersOnHold(data.membersOnHold || 0);
+          setMembersCacheStatus(data.cacheStatus || null);
+          setConfirmFreshWithin15(false);
+
           console.log(`✅ Loaded ${data.totalRCFEs} RCFEs with ${data.totalMembers} assigned members`);
           if (data.membersOnHold > 0) {
             console.log(`🚫 ${data.membersOnHold} members excluded due to SW visit hold`);
@@ -257,12 +265,14 @@ export default function SWVisitVerification() {
         }
       } catch (error) {
         console.error('Error fetching RCFE assignments:', error);
-        toast({
-          title: "Loading Error",
-          description: "Failed to load your assigned RCFEs. Using demo data.",
-          variant: "destructive"
-        });
-        
+        if (!opts?.quiet) {
+          toast({
+            title: "Loading Error",
+            description: "Failed to load your assigned RCFEs. Using demo data.",
+            variant: "destructive"
+          });
+        }
+
         // Fallback to demo data
         setRcfeList([
           {
@@ -280,10 +290,14 @@ export default function SWVisitVerification() {
       } finally {
         setIsLoadingRCFEs(false);
       }
-    };
+    },
+    [isSocialWorker, isLoading, toast, user]
+  );
 
-    fetchAssignedRCFEs();
-  }, [isSocialWorker, isLoading]);
+  // Fetch assigned RCFEs when component mounts
+  useEffect(() => {
+    fetchAssignedRCFEs({ quiet: true });
+  }, [fetchAssignedRCFEs]);
 
   useEffect(() => {
     if (!selectedRCFE) {
@@ -740,7 +754,30 @@ export default function SWVisitVerification() {
     return errors;
   };
 
+  const cacheFreshness = useMemo(() => {
+    const raw = String(membersCacheStatus?.lastRunAt || membersCacheStatus?.lastSyncAt || '').trim();
+    const d = raw ? new Date(raw) : null;
+    const valid = d && !Number.isNaN(d.getTime()) ? d : null;
+    const ageMs = valid ? Date.now() - valid.getTime() : Number.POSITIVE_INFINITY;
+    const isStale = ageMs > 15 * 60 * 1000;
+    const ageMinutes = Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 60000)) : null;
+    return {
+      lastUpdate: valid,
+      ageMinutes,
+      isStale,
+    };
+  }, [membersCacheStatus]);
+
   const submitQuestionnaire = async () => {
+    if (cacheFreshness.isStale && !confirmFreshWithin15) {
+      toast({
+        title: "Please confirm data freshness",
+        description: "Your assignments cache is older than 15 minutes. Refresh assignments, then confirm before submitting the visit.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     // Validate all required fields before submission
     const validationErrors = validateCompleteForm();
     if (validationErrors.length > 0) {
@@ -1549,6 +1586,49 @@ export default function SWVisitVerification() {
                       </div>
                     )}
                   </div>
+
+                  <div className={`rounded-lg border p-4 ${cacheFreshness.isStale ? 'bg-amber-50 border-amber-200' : 'bg-white'}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium">Assignments cache freshness</div>
+                        <div className="text-xs text-muted-foreground">
+                          Last update:{' '}
+                          {cacheFreshness.lastUpdate
+                            ? cacheFreshness.lastUpdate.toLocaleString()
+                            : 'Unknown (sync not available)'}
+                          {cacheFreshness.ageMinutes != null ? ` • ~${cacheFreshness.ageMinutes} min ago` : ''}
+                        </div>
+                        {cacheFreshness.isStale ? (
+                          <div className="text-xs text-amber-700">
+                            Your assignments cache is older than 15 minutes. Refresh assignments, then confirm before submitting this visit.
+                          </div>
+                        ) : null}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchAssignedRCFEs()}
+                        disabled={isLoadingRCFEs}
+                      >
+                        {isLoadingRCFEs ? 'Refreshing…' : 'Refresh assignments'}
+                      </Button>
+                    </div>
+
+                    {cacheFreshness.isStale ? (
+                      <label className="mt-3 flex items-start gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={confirmFreshWithin15}
+                          onChange={(e) => setConfirmFreshWithin15(e.target.checked)}
+                          className="mt-1 h-4 w-4"
+                        />
+                        <span>
+                          I confirm I refreshed assignments and the last update is within 15 minutes (or I understand data may be stale).
+                        </span>
+                      </label>
+                    ) : null}
+                  </div>
                   
                 </CardContent>
               </Card>
@@ -1573,13 +1653,18 @@ export default function SWVisitVerification() {
               ) : (
                 <Button 
                   onClick={submitQuestionnaire}
-                  disabled={isLoading || validateCompleteForm().length > 0}
+                  disabled={isLoading || validateCompleteForm().length > 0 || (cacheFreshness.isStale && !confirmFreshWithin15)}
                   className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
                 >
                   {isLoading ? (
                     <>
                       <Clock className="h-4 w-4 mr-2 animate-spin" />
                       Submitting...
+                    </>
+                  ) : cacheFreshness.isStale && !confirmFreshWithin15 ? (
+                    <>
+                      <AlertTriangle className="h-4 w-4 mr-2" />
+                      Confirm Freshness to Submit
                     </>
                   ) : validateCompleteForm().length > 0 ? (
                     <>

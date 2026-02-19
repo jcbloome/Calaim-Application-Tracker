@@ -422,12 +422,32 @@ export async function GET(req: NextRequest) {
       console.log(`🚫 ${membersOnHold} members excluded due to SW visit hold status`);
     }
 
+    // Expose cache freshness for the SW portal UI (so they can confirm they are working off a recent sync).
+    let cacheStatus: { lastRunAt?: string | null; lastSyncAt?: string | null; lastMode?: string | null } | null = null;
+    try {
+      const settingsSnap = await adminDb.collection('admin-settings').doc('caspio-members-sync').get();
+      const settings = settingsSnap.exists ? (settingsSnap.data() as any) : null;
+      const lastRunAt = String(settings?.lastRunAt || '').trim();
+      const lastSyncAt = String(settings?.lastSyncAt || '').trim();
+      const lastMode = String(settings?.lastMode || '').trim();
+      if (lastRunAt || lastSyncAt || lastMode) {
+        cacheStatus = {
+          lastRunAt: lastRunAt || null,
+          lastSyncAt: lastSyncAt || null,
+          lastMode: lastMode || null,
+        };
+      }
+    } catch {
+      // best-effort only
+    }
+
     return NextResponse.json({
       success: true,
       rcfeList,
       totalMembers: assignedMembers.length,
       totalRCFEs: rcfeList.length,
       membersOnHold,
+      cacheStatus,
       // Extra diagnostics (safe for SW portal UI / admin debugging).
       totalAssignedAuthorized: assignedAuthorized.length,
       totalAssignedAll: assignedAll.length
