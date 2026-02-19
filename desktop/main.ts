@@ -107,6 +107,94 @@ const broadcastState = () => {
   mainWindow.webContents.send('desktop:state', { ...notificationState });
 };
 
+const safeToggleDevTools = (win: BrowserWindow | null) => {
+  try {
+    if (!win) return;
+    if (win.webContents.isDevToolsOpened()) {
+      win.webContents.closeDevTools();
+    } else {
+      win.webContents.openDevTools({ mode: 'detach' });
+    }
+  } catch {
+    // ignore
+  }
+};
+
+const readBridgeState = async () => {
+  if (!mainWindow) return { bridgePresent: false, shim: null as null | boolean, error: 'Main window not created' };
+  try {
+    const res = await mainWindow.webContents.executeJavaScript(
+      `(() => {
+        const dn = (window && window.desktopNotifications) ? window.desktopNotifications : null;
+        return {
+          hasDesktopNotifications: Boolean(dn),
+          shim: dn ? Boolean(dn.__shim) : null,
+          keys: dn ? Object.keys(dn) : [],
+        };
+      })()`,
+      true
+    );
+    const hasDesktopNotifications = Boolean(res?.hasDesktopNotifications);
+    const shim = res?.shim === null ? null : Boolean(res?.shim);
+    return { bridgePresent: hasDesktopNotifications, shim, error: null as string | null, keys: res?.keys || [] };
+  } catch (error: any) {
+    return {
+      bridgePresent: false,
+      shim: null,
+      error: error instanceof Error ? error.message : String(error),
+      keys: [],
+    };
+  }
+};
+
+const showDebugDialog = async () => {
+  const mainUrl = (() => {
+    try {
+      return mainWindow?.webContents.getURL() || '(none)';
+    } catch {
+      return '(unavailable)';
+    }
+  })();
+  const pillUrl = (() => {
+    try {
+      return notificationWindow?.webContents.getURL() || '(none)';
+    } catch {
+      return '(unavailable)';
+    }
+  })();
+  const bridge = await readBridgeState();
+
+  const lines = [
+    `App version: ${app.getVersion()}`,
+    `isDev: ${String(isDev)}`,
+    '',
+    `Main window URL: ${mainUrl}`,
+    `Desktop bridge present: ${String(bridge.bridgePresent)}`,
+    `Desktop bridge shim: ${bridge.shim === null ? '(unknown)' : String(bridge.shim)}`,
+    bridge.keys?.length ? `Desktop bridge keys: ${bridge.keys.join(', ')}` : 'Desktop bridge keys: (none)',
+    bridge.error ? `Bridge check error: ${bridge.error}` : '',
+    '',
+    `Pill window exists: ${String(Boolean(notificationWindow))}`,
+    `Pill window loaded: ${String(notificationWindowLoaded)}`,
+    `Pill window URL: ${pillUrl}`,
+    '',
+    `Pending count (pillSummary.count): ${String(pillSummary.count)}`,
+    `Paused: ${String(notificationState.effectivePaused)}`,
+  ].filter((l) => l !== '');
+
+  try {
+    await dialog.showMessageBox({
+      type: 'info',
+      title: 'Desktop Debug Info',
+      message: 'Connect CalAIM Desktop Debug',
+      detail: lines.join('\n'),
+      buttons: ['OK'],
+    });
+  } catch {
+    // ignore
+  }
+};
+
 const computeEffectivePaused = () => {
   const pausedForHours = !notificationState.allowAfterHours && !notificationState.isWithinBusinessHours;
   notificationState.effectivePaused = notificationState.pausedByUser || pausedForHours;
@@ -224,6 +312,25 @@ const buildTrayMenu = () => {
       label: 'Check for Updates',
       click: () => {
         autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Debug: Show state',
+      click: () => {
+        void showDebugDialog();
+      }
+    },
+    {
+      label: 'Debug: Toggle DevTools (main)',
+      click: () => {
+        safeToggleDevTools(mainWindow);
+      }
+    },
+    {
+      label: 'Debug: Toggle DevTools (pill)',
+      click: () => {
+        safeToggleDevTools(notificationWindow);
       }
     },
     ...(updateReadyToInstall
