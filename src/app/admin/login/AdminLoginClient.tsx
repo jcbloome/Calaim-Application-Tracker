@@ -6,6 +6,7 @@ import {
   signInWithEmailAndPassword,
   setPersistence,
   browserSessionPersistence,
+  browserLocalPersistence,
   type User
 } from 'firebase/auth';
 import type { AuthError } from 'firebase/auth';
@@ -72,7 +73,14 @@ export default function AdminLoginClient() {
         await auth.signOut();
       }
 
-      await setPersistence(auth, browserSessionPersistence);
+      const isRealDesktop =
+        typeof window !== 'undefined' &&
+        Boolean((window as any).desktopNotifications) &&
+        !Boolean((window as any).desktopNotifications?.__shim);
+
+      // In Electron we want logins to persist across app restarts, so use local persistence.
+      // In normal web browsers, keep session persistence to avoid shared-computer surprises.
+      await setPersistence(auth, isRealDesktop ? browserLocalPersistence : browserSessionPersistence);
 
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
 

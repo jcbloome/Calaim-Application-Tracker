@@ -82,6 +82,7 @@ export default function DesktopNotificationWindowClient() {
   const unsubRef = useRef<null | (() => void)>(null);
   const unsubSummaryRef = useRef<null | (() => void)>(null);
   const [lastCount, setLastCount] = useState<number>(0);
+  const lastCountRef = useRef<number>(0);
 
   const titleLabel = useMemo(() => {
     if (!lastCount) return 'Desktop notifications';
@@ -152,6 +153,10 @@ export default function DesktopNotificationWindowClient() {
       setLastCount(count);
       if (!count) return;
 
+      const prevCount = lastCountRef.current;
+      lastCountRef.current = count;
+      const isNew = count > prevCount;
+
       const summaryId = 'desktop-pill-summary';
       const actionUrl = String(payload?.actionUrl || '/admin/my-notes');
       const summaryType = typeFromNotes(payload?.notes);
@@ -176,8 +181,9 @@ export default function DesktopNotificationWindowClient() {
           : undefined,
         duration: 0,
         minimizeAfter: 14000,
-        startMinimized: true,
-        sound: false,
+        // When new items arrive, show the full panel briefly then auto-minimize.
+        startMinimized: !isNew,
+        sound: isNew,
         animation: 'slide',
         onClick: () => openExternal(actionUrl),
       });

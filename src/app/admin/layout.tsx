@@ -440,6 +440,31 @@ function AdminHeader() {
           .slice(0, 6);
         const primaryUrl = items.length === 1 ? items[0].url : actionUrl;
         const fromLabel = items.length === 1 ? items[0].author : 'Multiple';
+
+        // Also notify the Electron desktop pill (for enabled recipients) so staff can be alerted
+        // even when the main window is hidden.
+        try {
+          const isRealDesktop =
+            typeof window !== 'undefined' &&
+            Boolean((window as any).desktopNotifications) &&
+            !Boolean((window as any).desktopNotifications?.__shim);
+          if (isRealDesktop) {
+            window.desktopNotifications?.setReviewPillSummary?.({
+              count: csSummaryCount,
+              notes: items.map((n) => ({
+                title: 'CS Summary received',
+                message: n.message,
+                kind: 'cs',
+                memberName: '',
+                timestamp: n.timestampMs ? new Date(n.timestampMs).toLocaleString() : undefined,
+                actionUrl: primaryUrl,
+              })),
+            });
+          }
+        } catch {
+          // ignore
+        }
+
         showNotification({
           keyId: 'review-cs-summary',
           type: 'task',
