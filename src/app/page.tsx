@@ -2,14 +2,14 @@ import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Header } from '@/components/Header';
+import { PublicHeader } from '@/components/PublicHeader';
 import { ArrowRight } from 'lucide-react';
 
 export default function HomePage() {
   // Force cache bust - timestamp: 2026-01-21-16:30
   return (
     <>
-      <Header />
+      <PublicHeader />
       <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 relative overflow-hidden">
         {/* Background decoration */}
         <div className="absolute inset-0 bg-white/20 backdrop-blur-3xl"></div>

@@ -4,14 +4,14 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Phone, Mail, Globe, MapPin, Clock, Users } from 'lucide-react';
-import { Header } from '@/components/Header';
+import { PublicHeader } from '@/components/PublicHeader';
 import Link from 'next/link';
 import Image from 'next/image';
 
 export default function ContactPage() {
   return (
     <>
-      <Header />
+      <PublicHeader />
       <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
         <div className="container mx-auto px-4 py-8 sm:py-16">
           {/* Header Section */}

@@ -7,7 +7,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { Header } from '@/components/Header';
+import { PublicHeader } from '@/components/PublicHeader';
 import { acronyms } from '@/lib/data';
 import { Separator } from '@/components/ui/separator';
 
@@ -50,7 +50,7 @@ const faqs = [
 export default function FaqPage() {
   return (
     <>
-      <Header />
+      <PublicHeader />
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
         <div className="text-center mb-10">
           <h1 className="text-3xl font-bold tracking-tight">

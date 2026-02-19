@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Header } from '@/components/Header';
+import { PublicHeader } from '@/components/PublicHeader';
 import React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -110,7 +110,7 @@ const infoSections = [
 export default function InfoEligibilityPage() {
   return (
     <>
-      <Header />
+      <PublicHeader />
       <main className="flex-grow">
         <div className="container mx-auto max-w-4xl px-4 py-8 sm:px-6 space-y-6">
             <div className="mb-10">

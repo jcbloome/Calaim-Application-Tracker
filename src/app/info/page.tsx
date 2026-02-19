@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Header } from '@/components/Header';
+import { PublicHeader } from '@/components/PublicHeader';
 import React from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -65,7 +65,7 @@ const infoSections: InfoSection[] = [
 export default function InfoPage() {
   return (
     <>
-      <Header />
+      <PublicHeader />
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
         <div className="max-w-4xl mx-auto space-y-6">
             <div className="mb-10">

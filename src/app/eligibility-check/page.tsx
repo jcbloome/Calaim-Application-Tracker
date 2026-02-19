@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { Header } from '@/components/Header';
+import { PublicHeader } from '@/components/PublicHeader';
 import { 
   CheckCircle, 
   AlertTriangle, 
@@ -162,7 +162,7 @@ export default function EligibilityCheckPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header />
+      <PublicHeader />
       
       <main className="container mx-auto px-4 py-8 max-w-4xl">
         {/* Page Header */}
