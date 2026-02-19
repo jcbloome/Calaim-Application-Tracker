@@ -119,16 +119,24 @@ export default function SocialWorkerAssignmentsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken, mode: 'incremental' }),
       });
-      const syncData = await syncRes.json().catch(() => ({}));
+      const syncData = await syncRes.json().catch(() => ({} as any));
       if (!syncRes.ok || !(syncData as any)?.success) {
-        throw new Error((syncData as any)?.error || 'Failed to sync members cache');
+        const msg =
+          (syncData as any)?.error ||
+          (syncData as any)?.details ||
+          `Failed to sync members cache (HTTP ${syncRes.status})`;
+        throw new Error(msg);
       }
 
       const response = await fetch('/api/all-members');
+      const responseData = await response.json().catch(() => ({} as any));
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const msg =
+          (responseData as any)?.error ||
+          (responseData as any)?.details ||
+          `Failed to fetch members (HTTP ${response.status})`;
+        throw new Error(msg);
       }
-      const responseData = await response.json();
       
       if (!responseData.success) {
         throw new Error(responseData.error || 'Failed to fetch members');
@@ -144,7 +152,7 @@ export default function SocialWorkerAssignmentsPage() {
       console.error('Error fetching all members:', error);
       toast({
         title: "Load Failed",
-        description: "Failed to load members. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to load members. Please try again.",
         variant: "destructive",
       });
     } finally {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken, transformCaspioMember } from '@/lib/caspio-api-utils';
+import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,7 @@ const CACHE_COLLECTION = 'caspio_members_cache';
 const SETTINGS_COLLECTION = 'admin-settings';
 const SETTINGS_DOC_ID = 'caspio-members-sync';
 const UPDATED_FIELD = 'Date_Modified';
+const TABLE_FIELDS_SETTINGS_DOC_ID = 'caspio-table-fields';
 
 const PAGE_SIZE = 1000;
 const MAX_PAGES = 50; // safety cap
@@ -64,6 +66,94 @@ function toCaspioComparableDate(value: Date): string {
   return value.toISOString().slice(0, 19);
 }
 
+async function getCachedCaspioTableFields(params: { adminDb: any; tableName: string }): Promise<string[]> {
+  const { adminDb, tableName } = params;
+  try {
+    const snap = await adminDb.collection(SETTINGS_COLLECTION).doc(TABLE_FIELDS_SETTINGS_DOC_ID).get();
+    const data = snap.exists ? (snap.data() as any) : null;
+    const tableData = (data?.tables && (data.tables as Record<string, any>)[tableName]) || null;
+    const fields = Array.isArray(tableData?.fields) ? tableData.fields : [];
+    return fields
+      .filter((f: any) => typeof f === 'string' && f.trim().length > 0)
+      .map((f: string) => f.trim());
+  } catch {
+    return [];
+  }
+}
+
+async function fetchCaspioTableFields(params: {
+  accessToken: string;
+  baseUrl: string;
+  tableName: string;
+}): Promise<string[]> {
+  const { accessToken, baseUrl, tableName } = params;
+  const restBaseUrl = baseUrl.replace(/\/$/, '').endsWith('/rest/v2')
+    ? baseUrl.replace(/\/$/, '')
+    : `${baseUrl.replace(/\/$/, '')}/rest/v2`;
+
+  const encodedTableName = encodeURIComponent(tableName);
+
+  // Try schema endpoint first (often includes fields inline).
+  const schemaUrl = `${restBaseUrl}/tables/${encodedTableName}`;
+  const schemaResponse = await fetch(schemaUrl, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+    cache: 'no-store',
+  });
+  if (schemaResponse.ok) {
+    const schemaData = (await schemaResponse.json().catch(() => ({}))) as any;
+    const inlineFields = Array.isArray(schemaData?.Result?.Fields)
+      ? schemaData.Result.Fields.map((f: any) => f?.Name).filter(Boolean)
+      : [];
+    if (inlineFields.length > 0) {
+      return inlineFields.map((n: any) => String(n).trim()).filter((n: string) => n.length > 0);
+    }
+  }
+
+  // Fallback to /fields or /columns endpoints.
+  for (const endpoint of ['fields', 'columns'] as const) {
+    const url = `${restBaseUrl}/tables/${encodedTableName}/${endpoint}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+      cache: 'no-store',
+    });
+    if (!res.ok) continue;
+    const data = (await res.json().catch(() => ({}))) as any;
+    const rows = Array.isArray(data?.Result) ? data.Result : [];
+    const names = rows.map((r: any) => r?.Name).filter(Boolean);
+    if (names.length > 0) {
+      return names.map((n: any) => String(n).trim()).filter((n: string) => n.length > 0);
+    }
+  }
+
+  return [];
+}
+
+async function writeCachedCaspioTableFields(params: { adminDb: any; tableName: string; fields: string[] }) {
+  const { adminDb, tableName, fields } = params;
+  try {
+    const adminModule = await import('@/firebase-admin');
+    const admin = adminModule.default;
+    await adminDb
+      .collection(SETTINGS_COLLECTION)
+      .doc(TABLE_FIELDS_SETTINGS_DOC_ID)
+      .set(
+        {
+          tables: {
+            [tableName]: {
+              fields,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+          },
+        },
+        { merge: true }
+      );
+  } catch {
+    // best-effort only
+  }
+}
+
 function normalizeRawMember(raw: any) {
   const clientId2 = String(raw?.Client_ID2 || raw?.client_ID2 || raw?.clientId2 || '').trim();
   const normalized = {
@@ -80,15 +170,42 @@ async function requireAdmin(idToken: string) {
 
   const decoded = await adminAuth.verifyIdToken(idToken);
   const uid = decoded.uid;
+  const email = String((decoded as any)?.email || '').trim().toLowerCase();
+
   if (!uid) {
     return { ok: false as const, status: 401, error: 'Invalid token' };
+  }
+
+  // Fast-path: trust custom claims set by `/api/auth/admin-session`
+  // (avoids relying on Firestore role reads for admin gating).
+  const hasAdminClaim = Boolean((decoded as any)?.admin);
+  const hasSuperAdminClaim = Boolean((decoded as any)?.superAdmin);
+  if (hasAdminClaim || hasSuperAdminClaim) {
+    return { ok: true as const, uid, adminDb };
+  }
+
+  // Email allow-list always wins.
+  if (isHardcodedAdminEmail(email)) {
+    return { ok: true as const, uid, adminDb };
   }
 
   const [adminRole, superAdminRole] = await Promise.all([
     adminDb.collection('roles_admin').doc(uid).get(),
     adminDb.collection('roles_super_admin').doc(uid).get(),
   ]);
-  if (!adminRole.exists && !superAdminRole.exists) {
+
+  let isAdmin = adminRole.exists || superAdminRole.exists;
+
+  // Backward-compat: some roles were stored by email instead of UID.
+  if (!isAdmin && email) {
+    const [emailAdminRole, emailSuperAdminRole] = await Promise.all([
+      adminDb.collection('roles_admin').doc(email).get(),
+      adminDb.collection('roles_super_admin').doc(email).get(),
+    ]);
+    isAdmin = emailAdminRole.exists || emailSuperAdminRole.exists;
+  }
+
+  if (!isAdmin) {
     return { ok: false as const, status: 403, error: 'Admin privileges required' };
   }
 
@@ -99,42 +216,64 @@ async function fetchUpdatedMembersFromCaspio(params: {
   accessToken: string;
   baseUrl: string;
   since: Date | null;
+  updatedField: string | null;
+  selectFields: string[] | null;
 }) {
-  const { accessToken, baseUrl, since } = params;
+  const { accessToken, baseUrl, since, updatedField, selectFields } = params;
 
-  const select = MEMBERS_SELECT_FIELDS.join(',');
-  const where = since ? `${UPDATED_FIELD}>'${toCaspioComparableDate(since)}'` : null;
+  const select = Array.isArray(selectFields) && selectFields.length > 0 ? selectFields.join(',') : null;
+  const where = since && updatedField ? `${updatedField}>'${toCaspioComparableDate(since)}'` : null;
 
   const results: any[] = [];
   for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
-    const sp = new URLSearchParams();
-    if (where) sp.set('q.where', where);
-    sp.set('q.pageSize', String(PAGE_SIZE));
-    sp.set('q.pageNumber', String(pageNumber));
-    sp.set('q.select', select);
+    const attempt = async (opts: { includeWhere: boolean; includeSelect: boolean }) => {
+      const sp = new URLSearchParams();
+      if (opts.includeWhere && where) sp.set('q.where', where);
+      sp.set('q.pageSize', String(PAGE_SIZE));
+      sp.set('q.pageNumber', String(pageNumber));
+      if (opts.includeSelect && select) sp.set('q.select', select);
 
-    const url = `${baseUrl}/rest/v2/tables/${MEMBERS_TABLE}/records?${sp.toString()}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      cache: 'no-store',
-    });
+      const url = `${baseUrl}/rest/v2/tables/${MEMBERS_TABLE}/records?${sp.toString()}`;
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        return { ok: false as const, status: res.status, statusText: res.statusText, text, url };
+      }
+
+      const data = (await res.json().catch(() => ({}))) as any;
+      const page = Array.isArray(data?.Result) ? data.Result : [];
+      return { ok: true as const, page, url };
+    };
+
+    // Prefer strict query; fall back if Caspio reports invalid columns.
+    let res = await attempt({ includeWhere: true, includeSelect: true });
+    if (!res.ok) {
+      const textLower = String(res.text || '').toLowerCase();
+      const invalidColumn = textLower.includes('invalid column name');
+      if (invalidColumn && select) {
+        res = await attempt({ includeWhere: true, includeSelect: false });
+      }
+      if (!res.ok && invalidColumn && where) {
+        res = await attempt({ includeWhere: false, includeSelect: false });
+      }
+    }
 
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Caspio fetch failed (${res.status}): ${text || res.statusText}`);
+      throw new Error(
+        `Caspio fetch failed (${res.status}): ${res.text || res.statusText}\nResource: "${res.url}"`
+      );
     }
 
-    const data = (await res.json().catch(() => ({}))) as any;
-    const page = Array.isArray(data?.Result) ? data.Result : [];
-    results.push(...page);
-
-    if (page.length < PAGE_SIZE) {
-      break;
-    }
+    results.push(...res.page);
+    if (res.page.length < PAGE_SIZE) break;
   }
 
   return results;
@@ -167,6 +306,31 @@ export async function POST(req: NextRequest) {
     const credentials = getCaspioCredentialsFromEnv();
     const accessToken = await getCaspioToken(credentials);
 
+    // Determine which columns exist in Caspio so we don't request invalid ones.
+    let availableFields = await getCachedCaspioTableFields({ adminDb, tableName: MEMBERS_TABLE });
+    if (availableFields.length === 0) {
+      try {
+        availableFields = await fetchCaspioTableFields({
+          accessToken,
+          baseUrl: credentials.baseUrl,
+          tableName: MEMBERS_TABLE,
+        });
+        if (availableFields.length > 0) {
+          await writeCachedCaspioTableFields({ adminDb, tableName: MEMBERS_TABLE, fields: availableFields });
+        }
+      } catch {
+        availableFields = [];
+      }
+    }
+
+    const availableLower = new Set(availableFields.map((f) => String(f).trim().toLowerCase()));
+    const selectFields =
+      availableLower.size > 0
+        ? MEMBERS_SELECT_FIELDS.filter((f) => availableLower.has(String(f).trim().toLowerCase()))
+        : null;
+    const updatedField =
+      availableLower.size > 0 && availableLower.has(UPDATED_FIELD.toLowerCase()) ? UPDATED_FIELD : null;
+
     // If we've never synced, treat "incremental" as full.
     const effectiveMode: SyncMode = mode === 'incremental' && !since ? 'full' : mode;
 
@@ -176,13 +340,18 @@ export async function POST(req: NextRequest) {
         accessToken,
         baseUrl: credentials.baseUrl,
         since: null,
+        updatedField,
+        selectFields,
       });
       rawMembers = full;
     } else {
       rawMembers = await fetchUpdatedMembersFromCaspio({
         accessToken,
         baseUrl: credentials.baseUrl,
-        since,
+        // If we can't filter by modified time (column missing), fall back to full pull.
+        since: updatedField ? since : null,
+        updatedField,
+        selectFields,
       });
     }
 
@@ -211,7 +380,11 @@ export async function POST(req: NextRequest) {
         const mcoRaw = String((normalized as any)?.CalAIM_MCO ?? (normalized as any)?.calAIM_MCO ?? '').trim();
         const calaimMco = mcoRaw || (normalized as any)?.CalAIM_MCO;
 
-        const modifiedRaw = raw?.Date_Modified || raw?.date_modified || raw?.last_updated;
+        const modifiedRaw =
+          (updatedField ? (raw as any)?.[updatedField] : undefined) ||
+          raw?.Date_Modified ||
+          raw?.date_modified ||
+          raw?.last_updated;
         const modifiedDate = modifiedRaw ? new Date(String(modifiedRaw)) : null;
         if (modifiedDate && !Number.isNaN(modifiedDate.getTime())) {
           if (!maxModified || modifiedDate.getTime() > maxModified.getTime()) {
