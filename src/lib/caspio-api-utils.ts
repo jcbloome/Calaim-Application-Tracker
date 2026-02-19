@@ -350,9 +350,11 @@ export function transformCaspioMember(member: CaspioMember): any {
  * Uses the same full-member dataset logic as the assignments page.
  */
 export async function fetchCaspioSocialWorkers(
-  credentials: CaspioCredentials
+  credentials: CaspioCredentials,
+  options: { includeAssignmentCounts?: boolean } = {}
 ): Promise<CaspioSocialWorker[]> {
   const accessToken = await getCaspioToken(credentials);
+  const includeAssignmentCounts = options.includeAssignmentCounts !== false;
 
   const socialWorkerSelect = [
     'SW_ID',
@@ -448,6 +450,10 @@ export async function fetchCaspioSocialWorkers(
       .filter(([email]) => !Array.from(bySwId.values()).some((s) => String(s.email || '').trim().toLowerCase() === email))
       .map(([, staff]) => staff)
   );
+
+  if (!includeAssignmentCounts) {
+    return transformedStaff;
+  }
 
   // Assignment counts are helpful but can be expensive (requires fetching full member dataset).
   // If counting fails (timeouts / data issues), return staff with 0 counts instead of failing the whole request.

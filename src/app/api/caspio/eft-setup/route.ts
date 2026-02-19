@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
-import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
+import { fetchCaspioSocialWorkers, getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { trackCaspioCall } from '@/lib/caspio-usage-tracker';
 
 export const runtime = 'nodejs';
@@ -46,13 +46,24 @@ function normalizeEftRecord(record: any) {
     return '';
   };
 
+  const staffFirst = pick(record?.User_First, record?.user_first, record?.FirstName, record?.first_name);
+  const staffLast = pick(record?.User_Last, record?.user_last, record?.LastName, record?.last_name);
+  const staffName = pick(record?.Staff_Name, record?.staff_name, `${staffFirst} ${staffLast}`.trim());
+
   const swId = pick(
+    // In `Cal_AIM_EFT_Setup` the SW identifier is often stored as User_ID2.
+    record?.User_ID2,
+    record?.user_id2,
+    record?.User_ID,
+    record?.user_id,
     record?.SW_ID,
     record?.sw_id,
     record?.Sw_Id,
     record?.Social_Worker_ID,
     record?.SocialWorkerId
   );
+
+  const county = pick(record?.County, record?.county, record?.User_County, record?.user_county);
 
   const street = pick(
     record?.Address,
@@ -72,6 +83,8 @@ function normalizeEftRecord(record: any) {
 
   return {
     swId,
+    staffName,
+    county,
     street,
     city,
     state,
@@ -89,6 +102,15 @@ export async function GET(request: NextRequest) {
 
     const credentials = getCaspioCredentialsFromEnv();
     const accessToken = await getCaspioToken(credentials);
+
+    // Source of truth: use the same social worker roster as the SW tracker (`/api/caspio-staff`).
+    const socialWorkers = await fetchCaspioSocialWorkers(credentials, { includeAssignmentCounts: false });
+    const swById = new Map<string, { swId: string; name: string; email?: string }>();
+    socialWorkers.forEach((sw) => {
+      const swId = String((sw as any)?.sw_id || '').trim();
+      if (!swId) return;
+      swById.set(swId, { swId, name: String((sw as any)?.name || `SW ${swId}`).trim(), email: String((sw as any)?.email || '').trim() || undefined });
+    });
 
     const tableName = 'Cal_AIM_EFT_Setup';
     const pageSize = 200;
@@ -122,26 +144,51 @@ export async function GET(request: NextRequest) {
       if (page.length < pageSize) break;
     }
 
-    const normalized = rows
+    const normalizedRows = rows
       .map((r) => ({ raw: r, ...normalizeEftRecord(r) }))
-      .filter((r) => !!r.swId || !!r.address);
+      .filter((r) => !!String((r as any)?.swId || '').trim());
+
+    const eftBySwId = new Map<string, any>();
+    normalizedRows.forEach((r) => {
+      const id = String((r as any)?.swId || '').trim();
+      if (!id) return;
+      // Prefer the first row with a non-empty address.
+      const existing = eftBySwId.get(id);
+      const nextHasAddress = Boolean(String((r as any)?.address || '').trim());
+      const existingHasAddress = Boolean(String(existing?.address || '').trim());
+      if (!existing || (!existingHasAddress && nextHasAddress)) {
+        eftBySwId.set(id, r);
+      }
+    });
+
+    // Return all SWs from the SW roster, joined with EFT data when present.
+    const records = Array.from(swById.values()).map((sw) => {
+      const eft = eftBySwId.get(sw.swId) || null;
+      const address = String(eft?.address || '').trim();
+      const county = String(eft?.county || '').trim();
+      return {
+        swId: sw.swId,
+        staffName: sw.name,
+        email: sw.email,
+        county,
+        address,
+        street: String(eft?.street || '').trim() || undefined,
+        city: String(eft?.city || '').trim() || undefined,
+        state: String(eft?.state || '').trim() || undefined,
+        zip: String(eft?.zip || '').trim() || undefined,
+        hasEft: Boolean(address),
+        raw: eft?.raw || null,
+      };
+    });
 
     const sampleKeys = rows.length > 0 ? Object.keys(rows[0] || {}) : [];
 
     return NextResponse.json({
       success: true,
       tableName,
-      total: normalized.length,
+      total: records.length,
       sampleKeys,
-      records: normalized.map((r) => ({
-        swId: r.swId,
-        address: r.address,
-        street: r.street,
-        city: r.city,
-        state: r.state,
-        zip: r.zip,
-        raw: r.raw,
-      })),
+      records,
     });
   } catch (error: any) {
     console.error('❌ Error fetching EFT setup:', error);

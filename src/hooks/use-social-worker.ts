@@ -61,14 +61,58 @@ export function useSocialWorker() {
         const socialWorkerDoc = await getDoc(doc(firestore, 'socialWorkers', user.uid));
         const normalizedEmail = user.email?.trim().toLowerCase();
 
+        const resolveDisplayName = async (data: any): Promise<string> => {
+          const fromData =
+            String(data?.displayName || '').trim() ||
+            String(data?.name || '').trim();
+          if (fromData) return fromData;
+
+          const fromAuth = String(user?.displayName || '').trim();
+          if (fromAuth) return fromAuth;
+
+          const email = String((data?.email || user?.email || '')).trim().toLowerCase();
+          const swId = String((data?.sw_id || data?.SW_ID || '')).trim();
+
+          // Best-effort fallback: use syncedSocialWorkers (populated from Caspio).
+          try {
+            if (email) {
+              const q1 = query(collection(firestore, 'syncedSocialWorkers'), where('email', '==', email));
+              const s1 = await getDocs(q1);
+              if (!s1.empty) {
+                const name = String((s1.docs[0].data() as any)?.name || '').trim();
+                if (name) return name;
+              }
+            }
+          } catch {
+            // ignore
+          }
+
+          try {
+            if (swId) {
+              const q2 = query(collection(firestore, 'syncedSocialWorkers'), where('sw_id', '==', swId));
+              const s2 = await getDocs(q2);
+              if (!s2.empty) {
+                const name = String((s2.docs[0].data() as any)?.name || '').trim();
+                if (name) return name;
+              }
+            }
+          } catch {
+            // ignore
+          }
+
+          return String(user?.email || data?.email || 'Social Worker').trim() || 'Social Worker';
+        };
+
         if (socialWorkerDoc.exists()) {
           const data = socialWorkerDoc.data() as SocialWorkerData;
           const isActive = !!data.isActive;
 
           if (isActive) {
+            const displayNameResolved = await resolveDisplayName(data);
             setSocialWorkerData({
               ...data,
               uid: user.uid,
+              displayName: displayNameResolved,
               createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
               lastLogin: data.lastLogin?.toDate ? data.lastLogin.toDate() : undefined
             });
@@ -95,9 +139,11 @@ export function useSocialWorker() {
           if (emailIdDoc.exists()) {
             const data = emailIdDoc.data() as SocialWorkerData;
             const isActive = !!data.isActive;
+            const displayNameResolved = await resolveDisplayName(data);
             setSocialWorkerData({
               ...data,
               uid: user.uid,
+              displayName: displayNameResolved,
               createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
               lastLogin: data.lastLogin?.toDate ? data.lastLogin.toDate() : undefined
             });
@@ -129,9 +175,11 @@ export function useSocialWorker() {
               const emailDoc = emailSnapshot.docs[0];
               const data = emailDoc.data() as SocialWorkerData;
               const isActive = !!data.isActive;
+              const displayNameResolved = await resolveDisplayName(data);
               setSocialWorkerData({
                 ...data,
                 uid: user.uid,
+                displayName: displayNameResolved,
                 createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
                 lastLogin: data.lastLogin?.toDate ? data.lastLogin.toDate() : undefined
               });

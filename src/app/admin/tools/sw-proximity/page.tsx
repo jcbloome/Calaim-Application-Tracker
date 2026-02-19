@@ -13,11 +13,15 @@ import { MapPinned, RefreshCw, Search } from 'lucide-react';
 
 type EftRecord = {
   swId: string;
+  staffName?: string;
+  email?: string;
+  county?: string;
   address: string;
   street?: string;
   city?: string;
   state?: string;
   zip?: string;
+  hasEft?: boolean;
   raw?: any;
 };
 
@@ -38,6 +42,9 @@ export default function SwProximityToolsPage() {
   const [sampleKeys, setSampleKeys] = useState<string[]>([]);
   const [syncedSw, setSyncedSw] = useState<SyncedSw[]>([]);
   const [search, setSearch] = useState('');
+  const [closestLoading, setClosestLoading] = useState(false);
+  const [closestForSwId, setClosestForSwId] = useState<string>('');
+  const [closestResult, setClosestResult] = useState<any | null>(null);
 
   const loadSyncedSocialWorkers = useCallback(async () => {
     if (!firestore) return;
@@ -70,7 +77,7 @@ export default function SwProximityToolsPage() {
       setSampleKeys(Array.isArray(data.sampleKeys) ? data.sampleKeys : []);
       toast({
         title: 'Loaded EFT setup',
-        description: `Loaded ${Array.isArray(data.records) ? data.records.length : 0} row(s) from Caspio.`,
+        description: `Loaded ${Array.isArray(data.records) ? data.records.length : 0} social worker(s) from Caspio.`,
       });
     } catch (e: any) {
       toast({
@@ -99,21 +106,52 @@ export default function SwProximityToolsPage() {
     return eftRecords.filter((r) => {
       const swId = String(r.swId || '').toLowerCase();
       const addr = String(r.address || '').toLowerCase();
+      const staffName = String(r.staffName || '').toLowerCase();
+      const email = String(r.email || '').toLowerCase();
+      const county = String(r.county || '').toLowerCase();
       const matchSw = bySwId.get(String(r.swId || '').trim()) || [];
       const matchText = `${matchSw.map((m) => `${m.name || ''} ${m.email || ''}`).join(' ')}`.toLowerCase();
-      return swId.includes(q) || addr.includes(q) || matchText.includes(q);
+      return swId.includes(q) || addr.includes(q) || staffName.includes(q) || email.includes(q) || county.includes(q) || matchText.includes(q);
     });
   }, [eftRecords, search, bySwId]);
 
-  const matchedCount = useMemo(() => {
+  const hasEftCount = useMemo(() => {
     let count = 0;
     for (const r of eftRecords) {
-      const key = String(r.swId || '').trim();
-      if (!key) continue;
-      if ((bySwId.get(key) || []).length > 0) count += 1;
+      if (String(r.address || '').trim()) count += 1;
     }
     return count;
-  }, [eftRecords, bySwId]);
+  }, [eftRecords]);
+
+  const runClosest = useCallback(
+    async (swId: string) => {
+      const id = String(swId || '').trim();
+      if (!id) return;
+      setClosestLoading(true);
+      setClosestForSwId(id);
+      setClosestResult(null);
+      try {
+        const headers: Record<string, string> = {};
+        const token = await auth?.currentUser?.getIdToken?.().catch(() => '');
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const res = await fetch(`/api/tools/closest-members?swId=${encodeURIComponent(id)}&limit=15`, { headers });
+        const data = (await res.json().catch(() => ({}))) as any;
+        if (!res.ok || !data?.success) {
+          throw new Error(data?.error || `Failed to compute closest members (HTTP ${res.status})`);
+        }
+        setClosestResult(data);
+      } catch (e: any) {
+        toast({
+          title: 'Closest members failed',
+          description: e?.message || 'Failed to compute closest members.',
+          variant: 'destructive',
+        });
+      } finally {
+        setClosestLoading(false);
+      }
+    },
+    [auth?.currentUser, toast]
+  );
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -124,7 +162,7 @@ export default function SwProximityToolsPage() {
             SW proximity prep
           </h1>
           <p className="text-muted-foreground mt-2">
-            Pull `Cal_AIM_EFT_Setup` from Caspio, normalize SW address, and match by `SW_ID`.
+            Pull the Social Worker roster from Caspio and join any `Cal_AIM_EFT_Setup` address by `SW_ID`.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -145,8 +183,8 @@ export default function SwProximityToolsPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">EFT rows</CardTitle>
-            <CardDescription>From `Cal_AIM_EFT_Setup`</CardDescription>
+            <CardTitle className="text-sm font-medium">Social workers</CardTitle>
+            <CardDescription>From the Caspio Social Worker table</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{eftRecords.length}</div>
@@ -154,20 +192,20 @@ export default function SwProximityToolsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Matched SW_IDs</CardTitle>
-            <CardDescription>Matched against `syncedSocialWorkers`</CardDescription>
+            <CardTitle className="text-sm font-medium">Has EFT address</CardTitle>
+            <CardDescription>Found in `Cal_AIM_EFT_Setup`</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{matchedCount}</div>
+            <div className="text-2xl font-bold">{hasEftCount}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Unmatched</CardTitle>
-            <CardDescription>Missing SW record or SW_ID</CardDescription>
+            <CardTitle className="text-sm font-medium">Missing EFT address</CardTitle>
+            <CardDescription>No address row found yet</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{Math.max(0, eftRecords.length - matchedCount)}</div>
+            <div className="text-2xl font-bold">{Math.max(0, eftRecords.length - hasEftCount)}</div>
           </CardContent>
         </Card>
       </div>
@@ -210,6 +248,7 @@ export default function SwProximityToolsPage() {
                     <TableHead>Matched staff</TableHead>
                     <TableHead>Address</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -217,12 +256,20 @@ export default function SwProximityToolsPage() {
                     const key = String(r.swId || '').trim();
                     const matches = key ? bySwId.get(key) || [] : [];
                     const isMatched = matches.length > 0;
+                    const hasEft = Boolean(String(r.address || '').trim());
                     return (
                       <TableRow key={`${key || 'row'}-${idx}`}>
                         <TableCell className="font-mono">{key || <span className="text-muted-foreground">—</span>}</TableCell>
                         <TableCell>
                           {matches.length === 0 ? (
-                            <span className="text-muted-foreground">—</span>
+                            <div className="space-y-0.5">
+                              <div className="text-sm font-medium">
+                                {r.staffName || <span className="text-muted-foreground">—</span>}
+                                {r.county ? <span className="ml-2 text-xs text-muted-foreground">({r.county})</span> : null}
+                              </div>
+                              {r.email ? <div className="text-xs text-muted-foreground">{r.email}</div> : null}
+                              <div className="text-xs text-muted-foreground">No Firestore match</div>
+                            </div>
                           ) : (
                             <div className="space-y-1">
                               {matches.slice(0, 2).map((m) => (
@@ -234,6 +281,9 @@ export default function SwProximityToolsPage() {
                               {matches.length > 2 ? (
                                 <div className="text-xs text-muted-foreground">+{matches.length - 2} more</div>
                               ) : null}
+                              {r.county ? (
+                                <div className="text-xs text-muted-foreground">County: {r.county}</div>
+                              ) : null}
                             </div>
                           )}
                         </TableCell>
@@ -241,7 +291,20 @@ export default function SwProximityToolsPage() {
                           <div className="text-sm">{r.address || <span className="text-muted-foreground">—</span>}</div>
                         </TableCell>
                         <TableCell>
-                          {isMatched ? <Badge className="bg-green-600">Matched</Badge> : <Badge variant="destructive">Unmatched</Badge>}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {hasEft ? <Badge className="bg-green-600">EFT OK</Badge> : <Badge variant="destructive">No EFT</Badge>}
+                            {isMatched ? <Badge variant="outline">Firestore match</Badge> : <Badge variant="outline">No Firestore match</Badge>}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!key || closestLoading || !hasEft}
+                            onClick={() => runClosest(key)}
+                          >
+                            {closestLoading && closestForSwId === key ? 'Computing…' : 'Closest'}
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );
@@ -252,6 +315,40 @@ export default function SwProximityToolsPage() {
           )}
         </CardContent>
       </Card>
+
+      {closestResult ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Closest authorized members</CardTitle>
+            <CardDescription>
+              SW_ID <span className="font-mono">{String(closestResult?.sw?.swId || '')}</span> — {String(closestResult?.sw?.address || '')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {(closestResult?.closestRcfes || []).map((r: any) => (
+                <div key={String(r.rcfeName)} className="rounded-md border p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{String(r.rcfeName)}</div>
+                      <div className="text-xs text-muted-foreground">{String(r.rcfeAddress)}</div>
+                    </div>
+                    <div className="text-right">
+                      <Badge variant="secondary">{Number(r.distanceMiles || 0).toFixed(1)} mi</Badge>
+                      <div className="text-xs text-muted-foreground mt-1">{Number(r.memberCount || 0)} members</div>
+                    </div>
+                  </div>
+                  {Array.isArray(r.sampleMembers) && r.sampleMembers.length > 0 ? (
+                    <div className="mt-2 text-sm text-muted-foreground">
+                      Sample: {r.sampleMembers.map((m: any) => String(m?.name || m?.clientId2 || '')).filter(Boolean).slice(0, 6).join(', ')}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }
