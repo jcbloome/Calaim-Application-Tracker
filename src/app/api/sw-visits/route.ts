@@ -244,7 +244,14 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const membersOnHold = members.filter((m) => isHoldValue(m?.Hold_For_Social_Worker ?? m?.Hold_for_Social_Worker)).length;
+    const membersOnHold = members.filter((m) =>
+      isHoldValue(
+        m?.Hold_For_Social_Worker ??
+          m?.Hold_for_Social_Worker ??
+          m?.Hold_For_Social_Worker_Visit ??
+          m?.Hold_for_Social_Worker_Visit
+      )
+    ).length;
 
     const assignedMembers = members.filter((member) => {
       const assigned = swMatchesMember({
@@ -266,7 +273,12 @@ export async function GET(req: NextRequest) {
       if (!assigned) return false;
 
       // Exclude members on hold for social worker visits.
-      const hold = isHoldValue(member?.Hold_For_Social_Worker ?? member?.Hold_for_Social_Worker);
+      const hold = isHoldValue(
+        member?.Hold_For_Social_Worker ??
+          member?.Hold_for_Social_Worker ??
+          member?.Hold_For_Social_Worker_Visit ??
+          member?.Hold_for_Social_Worker_Visit
+      );
       return !hold;
     });
 

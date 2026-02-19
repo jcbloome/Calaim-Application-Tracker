@@ -16,10 +16,14 @@ export async function GET(request: NextRequest) {
           data?.Hold_For_Social_Worker ??
           data?.Hold_for_Social_Worker ??
           data?.hold_for_social_worker ??
+          data?.Hold_For_Social_Worker_Visit ??
+          data?.Hold_for_Social_Worker_Visit ??
+          data?.hold_for_social_worker_visit ??
           '';
         return {
           ...data,
           Hold_For_Social_Worker: String(hold || '').trim(),
+          Hold_For_Social_Worker_Visit: String(hold || '').trim(),
         };
       });
       if (members.length === 0) {

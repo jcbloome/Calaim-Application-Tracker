@@ -53,6 +53,8 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'T2038_Auth_Email_Kaiser',
   'Social_Worker_Assigned',
   'Hold_For_Social_Worker',
+  // Newer Caspio schema uses this field for SW visit holds.
+  'Hold_For_Social_Worker_Visit',
   // Caspio column name appears to be this variant in some environments.
   'Hold_for_Social_Worker',
   'SW_ID',

@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
         Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date || member.Kaiser_Tier_Level_Received || '',
         ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || member.ILS_RCFE_Sent_For_Contract || '',
         ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || member.ILS_RCFE_Received_Contract || '',
-        Hold_For_Social_Worker: member.Hold_For_Social_Worker || '',
+        Hold_For_Social_Worker: member.Hold_For_Social_Worker || member.Hold_For_Social_Worker_Visit || '',
       }));
 
       const responseBody = {

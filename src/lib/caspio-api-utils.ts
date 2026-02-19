@@ -58,6 +58,8 @@ export interface CaspioMember {
   Social_Worker_Assigned: string;
   Kaiser_User_Assignment: string;
   Hold_For_Social_Worker: string;
+  // Newer Caspio schema uses this field for SW visit holds.
+  Hold_For_Social_Worker_Visit?: string;
   RCFE_Name: string;
   RCFE_Address: string;
   Pathway: string;
@@ -314,8 +316,13 @@ export function transformCaspioMember(member: CaspioMember): any {
     (member as any)?.Hold_For_Social_Worker ??
     (member as any)?.Hold_for_Social_Worker ??
     (member as any)?.hold_for_social_worker ??
+    (member as any)?.Hold_For_Social_Worker_Visit ??
+    (member as any)?.Hold_for_Social_Worker_Visit ??
+    (member as any)?.hold_for_social_worker_visit ??
     (member as any)?.Hold ??
     '';
+
+  const hold = String(holdRaw || '').trim();
 
   return {
     id: clientId2 || Math.random().toString(),
@@ -329,7 +336,8 @@ export function transformCaspioMember(member: CaspioMember): any {
     Social_Worker_Assigned: normalizeSocialWorkerName(member.Social_Worker_Assigned || ''),
     Staff_Assigned: member.Kaiser_User_Assignment || '',
     // Normalize hold so downstream UIs can be consistent even if Caspio values vary.
-    Hold_For_Social_Worker: String(holdRaw || '').trim(),
+    Hold_For_Social_Worker: hold,
+    Hold_For_Social_Worker_Visit: hold,
     RCFE_Name: member.RCFE_Name || '',
     RCFE_Address: member.RCFE_Address || '',
     pathway: member.Pathway || 'Unknown',
