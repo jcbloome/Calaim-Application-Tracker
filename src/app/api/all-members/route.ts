@@ -10,7 +10,18 @@ export async function GET(request: NextRequest) {
       const adminModule = await import('@/firebase-admin');
       const adminDb = adminModule.adminDb;
       const snapshot = await adminDb.collection('caspio_members_cache').limit(5000).get();
-      const members = snapshot.docs.map((doc) => doc.data());
+      const members = snapshot.docs.map((doc) => {
+        const data = doc.data() as any;
+        const hold =
+          data?.Hold_For_Social_Worker ??
+          data?.Hold_for_Social_Worker ??
+          data?.hold_for_social_worker ??
+          '';
+        return {
+          ...data,
+          Hold_For_Social_Worker: String(hold || '').trim(),
+        };
+      });
       if (members.length === 0) {
         return NextResponse.json(
           {

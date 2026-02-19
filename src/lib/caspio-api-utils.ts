@@ -309,9 +309,17 @@ export function normalizeSocialWorkerName(name: string): string {
  * Transform raw Caspio member data to application format
  */
 export function transformCaspioMember(member: CaspioMember): any {
+  const clientId2 = (member as any)?.client_ID2 ?? (member as any)?.Client_ID2 ?? (member as any)?.clientId2 ?? '';
+  const holdRaw =
+    (member as any)?.Hold_For_Social_Worker ??
+    (member as any)?.Hold_for_Social_Worker ??
+    (member as any)?.hold_for_social_worker ??
+    (member as any)?.Hold ??
+    '';
+
   return {
-    id: member.client_ID2 || Math.random().toString(),
-    Client_ID2: member.client_ID2,
+    id: clientId2 || Math.random().toString(),
+    Client_ID2: clientId2,
     memberName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
     memberFirstName: member.Senior_First || '',
     memberLastName: member.Senior_Last || '',
@@ -320,7 +328,8 @@ export function transformCaspioMember(member: CaspioMember): any {
     CalAIM_Status: member.CalAIM_Status || 'Unknown',
     Social_Worker_Assigned: normalizeSocialWorkerName(member.Social_Worker_Assigned || ''),
     Staff_Assigned: member.Kaiser_User_Assignment || '',
-    Hold_For_Social_Worker: member.Hold_For_Social_Worker || '',
+    // Normalize hold so downstream UIs can be consistent even if Caspio values vary.
+    Hold_For_Social_Worker: String(holdRaw || '').trim(),
     RCFE_Name: member.RCFE_Name || '',
     RCFE_Address: member.RCFE_Address || '',
     pathway: member.Pathway || 'Unknown',

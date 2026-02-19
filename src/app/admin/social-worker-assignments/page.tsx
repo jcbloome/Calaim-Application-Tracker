@@ -105,6 +105,12 @@ export default function SocialWorkerAssignmentsPage() {
   const [sortField, setSortField] = useState<SortField>('memberName');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
+  const isHold = (value?: string | null) => {
+    const v = String(value ?? '').trim().toLowerCase();
+    if (!v) return false;
+    return v.includes('hold') || v === '1' || v === 'true' || v === 'yes' || v === 'y' || v === 'x';
+  };
+
   // Fetch all members from API (Kaiser + Health Net + other MCOs)
   const fetchAllMembers = async () => {
     setIsLoadingMembers(true);
@@ -208,7 +214,7 @@ export default function SocialWorkerAssignmentsPage() {
       stats[swName].rcfeBreakdown[rcfe] = (stats[swName].rcfeBreakdown[rcfe] || 0) + 1;
       
       // Hold status
-      if (member.Hold_For_Social_Worker === '🔴 Hold') {
+      if (isHold(member.Hold_For_Social_Worker)) {
         stats[swName].onHoldCount++;
       }
       
@@ -282,9 +288,10 @@ export default function SocialWorkerAssignmentsPage() {
       const matchesRCFE = selectedRCFE === 'all' || 
         (member.RCFE_Name || 'No RCFE') === selectedRCFE;
       
-      const matchesHoldStatus = selectedHoldStatus === 'all' || 
-        (selectedHoldStatus === 'hold' && member.Hold_For_Social_Worker === '🔴 Hold') ||
-        (selectedHoldStatus === 'active' && member.Hold_For_Social_Worker !== '🔴 Hold');
+      const matchesHoldStatus =
+        selectedHoldStatus === 'all' ||
+        (selectedHoldStatus === 'hold' && isHold(member.Hold_For_Social_Worker)) ||
+        (selectedHoldStatus === 'active' && !isHold(member.Hold_For_Social_Worker));
       
       return matchesSearch && matchesSW && matchesMCO && matchesStatus && matchesCounty && matchesRCFE && matchesHoldStatus;
     });
@@ -706,7 +713,7 @@ export default function SocialWorkerAssignmentsPage() {
                 <div className="flex items-center gap-2">
                   <Badge variant="outline">{filteredMembers.length} of {members.length} members</Badge>
                   {(() => {
-                    const holdCount = filteredMembers.filter(m => m.Hold_For_Social_Worker === '🔴 Hold').length;
+                    const holdCount = filteredMembers.filter((m) => isHold(m.Hold_For_Social_Worker)).length;
                     return holdCount > 0 ? (
                       <Badge variant="destructive" className="flex items-center gap-1">
                         <Pause className="h-3 w-3" />
@@ -805,16 +812,19 @@ export default function SocialWorkerAssignmentsPage() {
                       </TableRow>
                     ) : (
                       filteredMembers.map((member) => (
-                        <TableRow key={member.id} className={member.Hold_For_Social_Worker === '🔴 Hold' ? 'bg-red-50 border-l-4 border-l-red-500' : ''}>
+                        <TableRow
+                          key={member.id}
+                          className={isHold(member.Hold_For_Social_Worker) ? 'bg-red-50 border-l-4 border-l-red-500' : ''}
+                        >
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
-                              {member.Hold_For_Social_Worker === '🔴 Hold' && (
+                              {isHold(member.Hold_For_Social_Worker) && (
                                 <div className="flex items-center gap-1">
                                   <Pause className="h-4 w-4 text-red-600" />
                                   <span className="text-red-600 text-xs font-semibold">HOLD</span>
                                 </div>
                               )}
-                              <span className={member.Hold_For_Social_Worker === '🔴 Hold' ? 'text-red-800' : ''}>
+                              <span className={isHold(member.Hold_For_Social_Worker) ? 'text-red-800' : ''}>
                                 {member.memberName}
                               </span>
                             </div>
@@ -857,7 +867,7 @@ export default function SocialWorkerAssignmentsPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {member.Hold_For_Social_Worker === '🔴 Hold' ? (
+                            {isHold(member.Hold_For_Social_Worker) ? (
                               <div className="flex items-center gap-2">
                                 <Badge variant="destructive" className="text-xs flex items-center gap-1">
                                   <Pause className="h-3 w-3" />

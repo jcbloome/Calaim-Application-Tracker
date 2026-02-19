@@ -53,6 +53,8 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'T2038_Auth_Email_Kaiser',
   'Social_Worker_Assigned',
   'Hold_For_Social_Worker',
+  // Caspio column name appears to be this variant in some environments.
+  'Hold_for_Social_Worker',
   'SW_ID',
   'RCFE_Registered_ID',
   'RCFE_Name',
@@ -354,7 +356,17 @@ export async function POST(req: NextRequest) {
       availableLower.size > 0 && availableLower.has(UPDATED_FIELD.toLowerCase()) ? UPDATED_FIELD : null;
 
     // If we've never synced, treat "incremental" as full.
-    const effectiveMode: SyncMode = mode === 'incremental' && !since ? 'full' : mode;
+    // Also, if our selected field set has changed since last run, force a full sync once so new fields
+    // (e.g. Hold_for_Social_Worker) get backfilled for all cached members.
+    const selectSignature = (selectFields || []).slice().sort().join('|') || 'none';
+    const lastSelectSignature = String(settings?.lastSelectSignature || '').trim();
+    // Force a one-time full backfill when:
+    // - we have a prior incremental watermark (`since`), AND
+    // - we don't have a previous signature yet (new feature rollout), OR it changed.
+    const fieldSetChanged =
+      !!since && (lastSelectSignature === '' || lastSelectSignature !== selectSignature);
+    const effectiveMode: SyncMode =
+      mode === 'incremental' && (!since || fieldSetChanged) ? 'full' : mode;
     const shouldLogPerMember = effectiveMode === 'incremental' && !!since;
 
     let rawMembers: any[] = [];
@@ -563,6 +575,7 @@ export async function POST(req: NextRequest) {
         lastRunAt: now.toISOString(),
         lastMode: effectiveMode,
         lastRunByUid: uid,
+        lastSelectSignature: selectSignature,
         lastRunSummary: {
           fetched: rawMembers.length,
           upserted,

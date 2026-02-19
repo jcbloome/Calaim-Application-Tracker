@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { 
-  fetchAllCalAIMMembers, 
-  getCaspioCredentialsFromEnv
-} from '@/lib/caspio-api-utils';
-import { 
   sendFlaggedVisitNotification,
   generateFlagReasons,
   getNotificationUrgency 
@@ -85,6 +81,46 @@ interface VisitSubmission {
   };
 }
 
+function isHoldValue(value: unknown): boolean {
+  const v = String(value ?? '').trim().toLowerCase();
+  if (!v) return false;
+  // Common variants: "Hold", "On Hold", "🔴 Hold", "HOLD", etc.
+  return v.includes('hold') || v === '1' || v === 'true' || v === 'yes' || v === 'y' || v === 'x';
+}
+
+function swMatchesMember(params: {
+  socialWorkerId: string;
+  memberSwAssigned: unknown;
+  memberStaffAssigned: unknown;
+  memberSwId: unknown;
+}): boolean {
+  const needle = String(params.socialWorkerId || '').trim().toLowerCase();
+  if (!needle) return false;
+
+  const swAssigned = String(params.memberSwAssigned ?? '').trim().toLowerCase();
+  const staffAssigned = String(params.memberStaffAssigned ?? '').trim().toLowerCase();
+  const swId = String(params.memberSwId ?? '').trim().toLowerCase();
+
+  if (swAssigned && swAssigned.includes(needle)) return true;
+  if (staffAssigned && staffAssigned.includes(needle)) return true;
+  if (swId && swId === needle) return true;
+
+  // If the identifier looks like an email, try matching on local-part fragments.
+  if (needle.includes('@')) {
+    const local = needle.split('@')[0] || '';
+    const parts = local
+      .split(/[._+\-]/g)
+      .map((p) => p.trim())
+      .filter((p) => p.length >= 3);
+
+    for (const p of parts) {
+      if (swAssigned.includes(p) || staffAssigned.includes(p)) return true;
+    }
+  }
+
+  return false;
+}
+
 // GET: Fetch SW's assigned members by RCFE
 export async function GET(req: NextRequest) {
   try {
@@ -99,42 +135,34 @@ export async function GET(req: NextRequest) {
     }
 
     console.log('🔍 Fetching assigned members for SW:', socialWorkerId);
-    
-    // Use the same robust method as other APIs
-    const credentials = getCaspioCredentialsFromEnv();
 
-    // Fetch all members and filter by social worker assignment
-    const result = await fetchAllCalAIMMembers(credentials);
-    
-    // Filter members assigned to this social worker
-    const normalizedSWId = socialWorkerId.toLowerCase();
-    
-    // Count members on hold before filtering
-    const membersOnHold = result.members.filter(member => 
-      member.Hold_For_Social_Worker === 'Hold'
-    ).length;
-    
-    const assignedMembers = result.members.filter(member => {
-      if (!member.Social_Worker_Assigned) return false;
-      
-      // Exclude members on hold for social worker visits
-      if (member.Hold_For_Social_Worker === 'Hold') {
-        console.log(`🚫 Excluding member ${member.memberName} - on hold for SW visits`);
-        return false;
-      }
-      
-      const swName = member.Social_Worker_Assigned.toLowerCase();
-      
-      // Match by social worker name from Caspio data
-      // This will match the actual social worker names stored in Caspio
-      return swName.includes(normalizedSWId) || 
-             normalizedSWId.includes(swName.split(' ')[0]) || // First name match
-             normalizedSWId.includes(swName.split(' ').pop() || ''); // Last name match
-      
-      // General matching for other social workers
-      return swName.includes(normalizedSWId) ||
-             (member.Staff_Assigned && 
-              member.Staff_Assigned.toLowerCase().includes(normalizedSWId));
+    // Prefer Firestore cache to avoid Caspio reads and schema drift.
+    const adminModule = await import('@/firebase-admin');
+    const adminDb = adminModule.adminDb;
+
+    const snapshot = await adminDb.collection('caspio_members_cache').limit(5000).get();
+    const members = snapshot.docs.map((d) => d.data() as any);
+    if (members.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Members cache is empty. Ask an admin to click "Sync from Caspio".' },
+        { status: 409 }
+      );
+    }
+
+    const membersOnHold = members.filter((m) => isHoldValue(m?.Hold_For_Social_Worker ?? m?.Hold_for_Social_Worker)).length;
+
+    const assignedMembers = members.filter((member) => {
+      const assigned = swMatchesMember({
+        socialWorkerId,
+        memberSwAssigned: member?.Social_Worker_Assigned,
+        memberStaffAssigned: member?.Staff_Assigned,
+        memberSwId: member?.SW_ID,
+      });
+      if (!assigned) return false;
+
+      // Exclude members on hold for social worker visits.
+      const hold = isHoldValue(member?.Hold_For_Social_Worker ?? member?.Hold_for_Social_Worker);
+      return !hold;
     });
 
     // Group by RCFE
@@ -150,8 +178,8 @@ export async function GET(req: NextRequest) {
       }
       
       acc[rcfeKey].members.push({
-        id: member.Client_ID2,
-        name: member.memberName,
+        id: String(member.Client_ID2 || member.client_ID2 || member.id || '').trim() || Math.random().toString(),
+        name: String(member.memberName || '').trim() || `${member.memberFirstName || ''} ${member.memberLastName || ''}`.trim(),
         room: 'Room TBD', // This would come from RCFE data if available
         rcfeId: acc[rcfeKey].id,
         rcfeName: rcfeKey,
