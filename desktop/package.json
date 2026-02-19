@@ -1,6 +1,6 @@
 {
   "name": "calaim-desktop",
-  "version": "3.0.13",
+  "version": "3.0.14",
   "private": true,
   "main": "dist/main.js",
   "scripts": {
@@ -9,11 +9,12 @@
     "dev": "npm run build && electron dist/main.js",
     "pack": "npm run build && electron-builder --dir",
     "dist:win": "npm run build && electron-builder --win",
-    "publish:win": "npm run dist:win && node -e \"const v=require('./package.json').version; const {execSync}=require('child_process'); const cmd=`gh release upload v${v} \\\"release/Connect CalAIM Desktop Setup ${v}.exe\\\" \\\"release/Connect CalAIM Desktop Setup ${v}.exe.blockmap\\\" \\\"release/latest.yml\\\" --clobber`; execSync(cmd,{stdio:'inherit'});\""
+    "publish:win": "npm run dist:win && node -e \"const v=require('./package.json').version; const {execSync}=require('child_process'); const exe=`release/Connect-CalAIM-Desktop-Setup-${v}.exe`; const blockmap=`${exe}.blockmap`; const cmd=`gh release upload v${v} \\\"${exe}\\\" \\\"${blockmap}\\\" \\\"release/latest.yml\\\" --clobber`; execSync(cmd,{stdio:'inherit'});\""
   },
   "build": {
     "appId": "com.connectionsilos.calaimdesktop",
     "productName": "Connect CalAIM Desktop",
+    "artifactName": "Connect-CalAIM-Desktop-Setup-${version}.${ext}",
     "directories": {
       "output": "release"
     },
