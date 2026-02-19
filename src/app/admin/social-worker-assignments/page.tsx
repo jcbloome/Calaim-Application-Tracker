@@ -111,6 +111,13 @@ export default function SocialWorkerAssignmentsPage() {
     return v.includes('hold') || v === '1' || v === 'true' || v === 'yes' || v === 'y' || v === 'x';
   };
 
+  const isAuthorized = (value: unknown) => {
+    const v = String(value ?? '').trim().toLowerCase();
+    if (!v) return false;
+    // Avoid matching "Not Authorized"
+    return v === 'authorized' || v.startsWith('authorized ');
+  };
+
   // Fetch all members from API (Kaiser + Health Net + other MCOs)
   const fetchAllMembers = async () => {
     setIsLoadingMembers(true);
@@ -148,11 +155,13 @@ export default function SocialWorkerAssignmentsPage() {
         throw new Error(responseData.error || 'Failed to fetch members');
       }
       
-      setMembers(responseData.members || []);
+      const allMembers = (responseData.members || []) as Member[];
+      const authorizedMembers = allMembers.filter((m) => isAuthorized((m as any)?.CalAIM_Status));
+      setMembers(authorizedMembers);
       
       toast({
         title: "Data Loaded Successfully",
-        description: `Loaded ${responseData.members?.length || 0} members`,
+        description: `Loaded ${authorizedMembers.length} authorized members (of ${allMembers.length} total)`,
       });
     } catch (error) {
       console.error('Error fetching all members:', error);
