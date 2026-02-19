@@ -185,6 +185,45 @@ function normalizeRawMember(raw: any) {
   return { clientId2, normalized };
 }
 
+function buildSwSearchKeys(member: Record<string, any>): string[] {
+  const keys = new Set<string>();
+
+  const normalize = (value: unknown) =>
+    String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const addTokens = (value: unknown) => {
+    const n = normalize(value);
+    if (!n) return;
+    for (const token of n.split(' ')) {
+      const t = token.trim();
+      if (t.length >= 3) keys.add(t);
+    }
+  };
+
+  const addEmailLocalTokens = (value: unknown) => {
+    const s = String(value ?? '').trim().toLowerCase();
+    if (!s.includes('@')) return;
+    const local = s.split('@')[0] || '';
+    for (const part of local.split(/[._+\-]/g)) {
+      const p = normalize(part);
+      if (p && p.length >= 3) keys.add(p);
+    }
+  };
+
+  addTokens(member?.Social_Worker_Assigned ?? member?.social_worker_assigned);
+  addTokens(member?.Staff_Assigned ?? member?.staff_assigned ?? member?.Kaiser_User_Assignment ?? member?.kaiser_user_assignment);
+  addTokens(member?.SW_ID ?? member?.sw_id);
+  addEmailLocalTokens(member?.Staff_Assigned ?? member?.staff_assigned ?? member?.Kaiser_User_Assignment ?? member?.kaiser_user_assignment);
+
+  // Keep it bounded so docs don't grow unexpectedly.
+  return Array.from(keys).slice(0, 30);
+}
+
 async function requireAdmin(idToken: string) {
   const adminModule = await import('@/firebase-admin');
   const adminAuth = adminModule.adminAuth;
@@ -443,13 +482,17 @@ export async function POST(req: NextRequest) {
         }
 
         const docRef = adminDb.collection(CACHE_COLLECTION).doc(clientId2);
-        const newDoc = {
+        const baseDoc = {
           ...normalized,
           ...transformed,
           Client_ID2: clientId2,
           CalAIM_Status: calaimStatus,
           CalAIM_MCO: calaimMco,
           cachedAt: now.toISOString(),
+        };
+        const newDoc = {
+          ...baseDoc,
+          sw_search_keys: buildSwSearchKeys(baseDoc),
         };
 
         prepared.push({ clientId2, docRef, newDoc });

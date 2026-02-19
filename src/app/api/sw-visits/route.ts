@@ -183,7 +183,59 @@ export async function GET(req: NextRequest) {
     const adminModule = await import('@/firebase-admin');
     const adminDb = adminModule.adminDb;
 
-    const snapshot = await adminDb.collection('caspio_members_cache').limit(5000).get();
+    const normalize = (value: unknown) =>
+      String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const pickQueryToken = (id: string): string | null => {
+      const raw = String(id || '').trim().toLowerCase();
+      if (!raw) return null;
+
+      // If SW_ID is used, prefer that exact token.
+      if (/^\d{3,}$/.test(raw)) return raw;
+
+      const tokens: string[] = [];
+      const norm = normalize(raw);
+      if (norm) tokens.push(...norm.split(' '));
+
+      if (raw.includes('@')) {
+        const local = raw.split('@')[0] || '';
+        tokens.push(...local.split(/[._+\-]/g));
+      }
+
+      const cleaned = tokens
+        .map((t) => normalize(t))
+        .filter((t) => t.length >= 3);
+
+      if (cleaned.length === 0) return null;
+      // Prefer a longer token (often last name) to reduce result size.
+      cleaned.sort((a, b) => b.length - a.length);
+      return cleaned[0] || null;
+    };
+
+    const token = pickQueryToken(socialWorkerId);
+    let snapshot: FirebaseFirestore.QuerySnapshot | null = null;
+
+    if (token) {
+      try {
+        snapshot = await adminDb
+          .collection('caspio_members_cache')
+          .where('sw_search_keys', 'array-contains', token)
+          .limit(5000)
+          .get();
+      } catch {
+        snapshot = null;
+      }
+    }
+
+    if (!snapshot || snapshot.empty) {
+      snapshot = await adminDb.collection('caspio_members_cache').limit(5000).get();
+    }
+
     const members = snapshot.docs.map((d) => d.data() as any);
     if (members.length === 0) {
       return NextResponse.json(
