@@ -84,6 +84,15 @@ type PillStatePayload = {
   actionUrl?: string;
 };
 
+type ThreadMessage = {
+  id: string;
+  message: string;
+  authorName: string;
+  senderId?: string;
+  createdAtMs: number;
+  isChat: boolean;
+};
+
 const accentClassForKind = (kind?: string) => {
   const k = String(kind || '').toLowerCase().trim();
   if (k === 'docs') return 'border-l-green-600';
@@ -118,6 +127,8 @@ export default function DesktopNotificationWindowClient() {
     followUpDateIso: string;
     threadId: string;
   } | null>(null);
+  const [threadMessages, setThreadMessages] = useState<ThreadMessage[]>([]);
+  const [threadError, setThreadError] = useState<string>('');
   const [togglingTaskStatus, setTogglingTaskStatus] = useState(false);
   const [undoClose, setUndoClose] = useState<{ noteId: string; expiresAtMs: number } | null>(null);
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false);
@@ -236,6 +247,64 @@ export default function DesktopNotificationWindowClient() {
       window.removeEventListener('offline', update);
     };
   }, []);
+
+  useEffect(() => {
+    if (!firestore) return;
+    const myUid = String(user?.uid || '').trim();
+    const threadId = String(activeTaskMeta?.threadId || '').trim();
+    const kind = String(active?.kind || '').toLowerCase();
+    if (mode !== 'panel' || !myUid || !threadId || kind === 'cs' || kind === 'docs') {
+      setThreadMessages([]);
+      setThreadError('');
+      return;
+    }
+
+    const notificationsQuery = query(
+      collection(firestore, 'staff_notifications'),
+      where('userId', '==', myUid),
+    );
+
+    const unsubscribe = onSnapshot(
+      notificationsQuery,
+      (snap) => {
+        const next: ThreadMessage[] = [];
+        snap.forEach((docItem) => {
+          const data = docItem.data() as any;
+          const docThreadId = String(data?.threadId || data?.replyToId || docItem.id).trim();
+          if (docItem.id !== threadId && docThreadId !== threadId) return;
+          const ts =
+            data?.timestamp?.toDate?.()?.getTime?.()
+            || data?.createdAt?.toDate?.()?.getTime?.()
+            || (data?.createdAt ? new Date(data.createdAt).getTime() : 0)
+            || 0;
+          const message = String(data?.message || data?.content || '').trim();
+          if (!message) return;
+          const senderId = String(data?.senderId || data?.createdBy || '').trim() || undefined;
+          const authorName =
+            String(data?.createdByName || data?.senderName || data?.authorName || 'Staff').trim() || 'Staff';
+          const type = String(data?.type || '').toLowerCase();
+          const isChat = Boolean(data?.isChatOnly) || type.includes('chat');
+          next.push({
+            id: docItem.id,
+            message,
+            authorName,
+            senderId,
+            createdAtMs: Number(ts || 0),
+            isChat,
+          });
+        });
+        next.sort((a, b) => a.createdAtMs - b.createdAtMs);
+        setThreadMessages(next);
+        setThreadError('');
+      },
+      (error) => {
+        setThreadMessages([]);
+        setThreadError(error instanceof Error ? error.message : String(error || 'Failed to load thread'));
+      }
+    );
+
+    return () => unsubscribe();
+  }, [active?.kind, activeTaskMeta?.threadId, firestore, mode, user?.uid]);
 
   useEffect(() => {
     // Reset draft when active note changes.
@@ -454,7 +523,11 @@ export default function DesktopNotificationWindowClient() {
       }
 
       // No-op safety (avoid saving a self-only reply).
-      if (recipients.size === 0 || (recipients.size === 1 && myUid && recipients.has(myUid))) {
+      const allowSelfOnlyTest = Boolean(sendToSender && senderId && myUid && senderId === myUid);
+      const hasAnyNonSelfRecipient = myUid
+        ? Array.from(recipients.keys()).some((uid) => uid !== myUid)
+        : recipients.size > 0;
+      if (!hasAnyNonSelfRecipient && !allowSelfOnlyTest) {
         setSendError('Select at least one recipient (sender or staff).');
         return;
       }
@@ -967,6 +1040,45 @@ export default function DesktopNotificationWindowClient() {
 
           {String(active?.kind || '').toLowerCase() === 'cs' ? null : (
             <div className="mt-3">
+              {threadError ? (
+                <div className="mb-2 rounded-md border bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                  Conversation unavailable. Use “Open My Notes” to view the thread.
+                </div>
+              ) : threadMessages.length > 1 ? (
+                <details className="mb-2 rounded-md border bg-white p-2" open>
+                  <summary className="cursor-pointer text-[11px] text-slate-600">
+                    Conversation ({threadMessages.length})
+                  </summary>
+                  <div className="mt-2 max-h-28 overflow-auto space-y-2">
+                    {threadMessages.map((msg) => {
+                      const isMe = Boolean(user?.uid) && msg.senderId === user?.uid;
+                      return (
+                        <div key={msg.id} className={isMe ? 'flex justify-end' : 'flex justify-start'}>
+                          <div
+                            className={`max-w-[85%] rounded-md px-2 py-1 text-[12px] whitespace-pre-wrap ${
+                              isMe ? 'bg-blue-600 text-white' : 'bg-slate-50 border'
+                            }`}
+                          >
+                            <div className="mb-0.5 flex items-center justify-between gap-2 text-[10px] opacity-80">
+                              <span className="truncate">
+                                {isMe ? 'You' : msg.authorName}
+                                {msg.isChat ? ' · Chat' : ''}
+                              </span>
+                              <span>
+                                {msg.createdAtMs
+                                  ? new Date(msg.createdAtMs).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+                                  : ''}
+                              </span>
+                            </div>
+                            <div>{msg.message}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
+              ) : null}
+
               <div className="text-xs font-medium text-slate-600 mb-1">Quick reply</div>
               <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
                 <label className="flex items-center gap-1">
