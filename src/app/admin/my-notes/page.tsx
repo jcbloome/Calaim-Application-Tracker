@@ -43,6 +43,8 @@ interface StaffNotification {
   source?: string;
   threadId?: string;
   replyToId?: string;
+  hiddenFromInbox?: boolean;
+  isChatOnly?: boolean;
   memberName?: string;
   memberId?: string;
   healthPlan?: string;
@@ -176,7 +178,9 @@ function MyNotesContent() {
             status: data.status === 'Closed' ? 'Closed' : 'Open',
             isGeneral: Boolean(data.isGeneral),
             followUpRequired: Boolean(data.followUpRequired),
-            followUpDate: data.followUpDate?.toDate?.()?.toISOString?.() || data.followUpDate || ''
+            followUpDate: data.followUpDate?.toDate?.()?.toISOString?.() || data.followUpDate || '',
+            hiddenFromInbox: Boolean(data.hiddenFromInbox),
+            isChatOnly: Boolean(data.isChatOnly),
           });
         });
 
@@ -1087,6 +1091,9 @@ function MyNotesContent() {
                 const memberLink = getMemberLink(notification);
                 const isGeneralNote = hasGeneral(notification);
                 const isPriorityNote = hasPriority(notification);
+                const isChatNote =
+                  Boolean(notification.isChatOnly)
+                  || String(notification.type || '').toLowerCase().includes('chat');
                 const priorityLabel = normalizePriorityLabel(notification.priority);
                 const displayTitle = `Re: ${notification.memberName || 'General Note'}`;
                 const threadKey = String(notification.threadId || notification.id);
@@ -1119,6 +1126,11 @@ function MyNotesContent() {
                             {isGeneralNote && (
                               <Badge variant="secondary">
                                 General
+                              </Badge>
+                            )}
+                            {isChatNote && (
+                              <Badge variant="secondary" className="bg-violet-100 text-violet-800 border border-violet-200">
+                                Chat
                               </Badge>
                             )}
                             <Badge variant="outline">

@@ -99,9 +99,10 @@ export default function DesktopNotificationWindowClient() {
   const [pillState, setPillState] = useState<PillStatePayload | null>(null);
   const [replyDraft, setReplyDraft] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
+  const [sendError, setSendError] = useState<string>('');
   const [markingRead, setMarkingRead] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
-  const [replyPriority, setReplyPriority] = useState<'General' | 'Priority'>('Priority');
+  const [replyPriority, setReplyPriority] = useState<'General' | 'Priority' | 'Chat'>('Priority');
   const [sendToSender, setSendToSender] = useState(true);
   const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
@@ -239,6 +240,7 @@ export default function DesktopNotificationWindowClient() {
   useEffect(() => {
     // Reset draft when active note changes.
     setReplyDraft('');
+    setSendError('');
     // This window only shows Priority/Urgent notes, so default replies to Priority.
     setReplyPriority('Priority');
     setSendToSender(true);
@@ -423,6 +425,7 @@ export default function DesktopNotificationWindowClient() {
     if (!message) return;
     if (!firestore) return;
     setSendingReply(true);
+    setSendError('');
     try {
       const myUid = String(user?.uid || '').trim();
       const source = String(active.source || '').toLowerCase();
@@ -451,9 +454,14 @@ export default function DesktopNotificationWindowClient() {
       }
 
       // No-op safety (avoid saving a self-only reply).
-      if (recipients.size === 0 || (recipients.size === 1 && myUid && recipients.has(myUid))) return;
+      if (recipients.size === 0 || (recipients.size === 1 && myUid && recipients.has(myUid))) {
+        setSendError('Select at least one recipient (sender or staff).');
+        return;
+      }
 
-      if (clientId2) {
+      const isChat = replyPriority === 'Chat';
+
+      if (clientId2 && !isChat) {
         // If tied to a Caspio client, write the reply into connect_tbl_clientnotes.
         await fetch('/api/client-notes', {
           method: 'POST',
@@ -473,10 +481,12 @@ export default function DesktopNotificationWindowClient() {
       const basePayload: Record<string, any> = {
         title: `Reply: ${String(active.title || 'Incoming note')}`,
         message,
-        type: 'interoffice_reply',
-        priority: replyPriority,
+        type: isChat ? 'interoffice_chat' : 'interoffice_reply',
+        // Chat should still popup, so treat it as Priority for desktop.
+        priority: isChat ? 'Priority' : (replyPriority === 'Priority' ? 'Priority' : 'General'),
         status: 'Open',
         isRead: false,
+        isChatOnly: isChat,
         createdBy: myUid,
         createdByName: myName,
         senderName: myName,
@@ -490,8 +500,11 @@ export default function DesktopNotificationWindowClient() {
         source: 'electron',
       };
 
-      if (active.memberName) basePayload.memberName = active.memberName;
-      if (active.clientId2) basePayload.clientId2 = active.clientId2;
+      // Chat should not be tied to a member/client record.
+      if (!isChat) {
+        if (active.memberName) basePayload.memberName = active.memberName;
+        if (active.clientId2) basePayload.clientId2 = active.clientId2;
+      }
 
       await Promise.all(
         Array.from(recipients.entries()).map(([uid, name]) =>
@@ -499,6 +512,7 @@ export default function DesktopNotificationWindowClient() {
             ...basePayload,
             userId: uid,
             recipientName: name,
+            // Always mark the sender's own copy read so they don't alert themselves.
             isRead: myUid && uid === myUid ? true : basePayload.isRead,
           })
         )
@@ -507,7 +521,7 @@ export default function DesktopNotificationWindowClient() {
       setReplyDraft('');
       handleMinimize();
     } catch {
-      // ignore
+      setSendError('Send failed. Please try again.');
     } finally {
       setSendingReply(false);
     }
@@ -954,7 +968,7 @@ export default function DesktopNotificationWindowClient() {
           {String(active?.kind || '').toLowerCase() === 'cs' ? null : (
             <div className="mt-3">
               <div className="text-xs font-medium text-slate-600 mb-1">Quick reply</div>
-              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+              <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
                 <label className="flex items-center gap-1">
                   <input
                     type="checkbox"
@@ -966,12 +980,18 @@ export default function DesktopNotificationWindowClient() {
                 <label className="flex items-center gap-1">
                   <span>Priority</span>
                   <select
-                    className="rounded-md border bg-white px-2 py-1"
+                    className="rounded-md border bg-white px-2 py-0.5"
                     value={replyPriority}
-                    onChange={(e) => setReplyPriority(e.target.value === 'General' ? 'General' : 'Priority')}
+                    onChange={(e) => {
+                      const value = String(e.target.value || '');
+                      if (value === 'Chat') setReplyPriority('Chat');
+                      else if (value === 'General') setReplyPriority('General');
+                      else setReplyPriority('Priority');
+                    }}
                   >
                     <option value="Priority">Priority</option>
                     <option value="General">General</option>
+                    <option value="Chat">Chat (popup, no Caspio)</option>
                   </select>
                 </label>
                 <button
@@ -1023,13 +1043,16 @@ export default function DesktopNotificationWindowClient() {
                 </div>
               ) : null}
               <textarea
-                className="w-full resize-none rounded-md border bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                rows={3}
+                className="w-full resize-none rounded-md border bg-white px-2 py-1 text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                rows={2}
                 value={replyDraft}
                 onChange={(e) => setReplyDraft(e.target.value)}
                 placeholder="Type a quick reply…"
               />
-              <div className="mt-2 flex justify-end">
+              {sendError ? (
+                <div className="mt-1 text-[11px] text-red-600">{sendError}</div>
+              ) : null}
+              <div className="mt-1 flex justify-end">
                 <button
                   type="button"
                   className="text-xs px-3 py-1.5 rounded-md border bg-white hover:bg-slate-50 disabled:opacity-40"
