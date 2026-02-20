@@ -1049,6 +1049,11 @@ export default function DesktopNotificationWindowClient() {
                   <summary className="cursor-pointer text-[11px] text-slate-600">
                     Conversation ({threadMessages.length})
                   </summary>
+                  {threadMessages.some((m) => m.isChat) ? (
+                    <div className="mt-2 rounded-md border bg-violet-50 px-2 py-1 text-[11px] text-violet-800">
+                      Chat messages are saved to My Notifications only (not to client notes / Caspio).
+                    </div>
+                  ) : null}
                   <div className="mt-2 max-h-28 overflow-auto space-y-2">
                     {threadMessages.map((msg) => {
                       const isMe = Boolean(user?.uid) && msg.senderId === user?.uid;
