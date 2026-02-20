@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, dialog, screen, shell } from 'electron';
+import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, dialog, screen, shell, clipboard } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { autoUpdater } from 'electron-updater';
@@ -18,6 +18,15 @@ let updateCheckInProgress = false;
 let updateUiState: 'idle' | 'checking' | 'upToDate' | 'downloading' | 'downloaded' | 'error' = 'idle';
 let updateUiVersion: string | null = null;
 let updateUiLastCheckedAt: number | null = null;
+
+let recentRendererErrors: Array<{
+  type: string;
+  message: string;
+  stack?: string;
+  href?: string;
+  ts: number;
+}> = [];
+let rendererErrorDialogShownAt: number = 0;
 
 type DesktopPreferences = {
   pausedByUser: boolean;
@@ -211,6 +220,65 @@ const runManualUpdateCheck = async (source: 'tray' | 'menu' | 'about' = 'tray') 
     if (updateUiState === 'checking') {
       setUpdateUi({ state: 'idle' });
     }
+  }
+};
+
+const formatRendererErrors = () => {
+  const lines: string[] = [];
+  const items = recentRendererErrors.slice(-8).reverse();
+  if (items.length === 0) {
+    lines.push('(no captured renderer errors yet)');
+  } else {
+    items.forEach((e, idx) => {
+      const when = new Date(e.ts).toLocaleString();
+      lines.push(`(${idx + 1}) [${when}] ${e.type}: ${e.message}`);
+      if (e.href) lines.push(`    URL: ${e.href}`);
+      if (e.stack) {
+        const stack = String(e.stack).split('\n').slice(0, 12).join('\n');
+        lines.push(`    Stack:\n${stack}`);
+      }
+      lines.push('');
+    });
+  }
+  return lines.join('\n');
+};
+
+const showDiagnosticsDialog = async () => {
+  const mainUrl = (() => {
+    try { return mainWindow?.webContents.getURL() || '(none)'; } catch { return '(unavailable)'; }
+  })();
+  const pillUrl = (() => {
+    try { return notificationWindow?.webContents.getURL() || '(none)'; } catch { return '(unavailable)'; }
+  })();
+  const detail = [
+    `App version: ${app.getVersion()}`,
+    `Main URL: ${mainUrl}`,
+    `Pill URL: ${pillUrl}`,
+    `Origin: ${appOrigin}`,
+    '',
+    'Recent renderer errors:',
+    formatRendererErrors(),
+  ].join('\n');
+
+  try {
+    const result = await dialog.showMessageBox({
+      type: 'info',
+      title: 'Desktop diagnostics',
+      message: 'Diagnostics (copy/paste to support)',
+      detail,
+      buttons: ['Copy to clipboard', 'OK'],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (result.response === 0) {
+      try {
+        clipboard.writeText(detail);
+      } catch {
+        // ignore
+      }
+    }
+  } catch {
+    // ignore
   }
 };
 
@@ -582,6 +650,10 @@ const buildTrayMenu = () => {
     },
     { type: 'separator' },
     {
+      label: 'Troubleshooting: Show diagnostics',
+      click: () => void showDiagnosticsDialog(),
+    },
+    {
       label: 'Refresh app (reload)',
       click: () => {
         try {
@@ -687,6 +759,24 @@ const createWindow = () => {
   };
 
   try {
+    mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+      // Don't spam dialogs; keep last few lines accessible via diagnostics.
+      try {
+        if (typeof message === 'string' && message.toLowerCase().includes('error')) {
+          recentRendererErrors.push({
+            type: 'console',
+            message: `${message} (${sourceId}:${line})`,
+            ts: Date.now(),
+            href: (() => { try { return mainWindow?.webContents.getURL(); } catch { return undefined; } })(),
+          });
+          if (recentRendererErrors.length > 25) {
+            recentRendererErrors = recentRendererErrors.slice(-25);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    });
     mainWindow.webContents.on('render-process-gone', (_event, details) => {
       safeReload(`render-process-gone: ${details?.reason || 'unknown'}`);
     });
@@ -730,6 +820,37 @@ const createWindow = () => {
     mainWindow?.hide();
   });
 };
+
+ipcMain.on('desktop:rendererError', async (_event, payload: any) => {
+  try {
+    const item = {
+      type: String(payload?.type || 'error'),
+      message: String(payload?.message || 'Renderer error'),
+      stack: payload?.stack ? String(payload.stack) : undefined,
+      href: payload?.href ? String(payload.href) : undefined,
+      ts: Number(payload?.ts || Date.now()),
+    };
+    recentRendererErrors.push(item);
+    if (recentRendererErrors.length > 25) {
+      recentRendererErrors = recentRendererErrors.slice(-25);
+    }
+
+    // Only pop a dialog at most once per 30 seconds.
+    const now = Date.now();
+    if (now - rendererErrorDialogShownAt < 30_000) return;
+    rendererErrorDialogShownAt = now;
+
+    await dialog.showMessageBox({
+      type: 'error',
+      title: 'Application error',
+      message: 'The app hit a client-side error.',
+      detail: `Open Tray → Troubleshooting → Show diagnostics to copy the error details.\n\n${item.message}`,
+      buttons: ['OK'],
+    });
+  } catch {
+    // ignore
+  }
+});
 
 const escapeHtml = (value: string) =>
   value

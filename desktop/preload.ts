@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+const sendRendererError = (payload: any) => {
+  try {
+    ipcRenderer.send('desktop:rendererError', payload);
+  } catch {
+    // ignore
+  }
+};
+
 contextBridge.exposeInMainWorld('desktopNotifications', {
   getState: () => ipcRenderer.invoke('desktop:getState'),
   setPaused: (paused: boolean) => ipcRenderer.invoke('desktop:setPaused', paused),
@@ -67,3 +75,31 @@ contextBridge.exposeInMainWorld('desktopNotifications', {
     return () => ipcRenderer.removeListener('desktop:quickReply', handler);
   }
 });
+
+// Capture client-side exceptions that show the "Application error" screen.
+try {
+  window.addEventListener('error', (event: any) => {
+    sendRendererError({
+      type: 'error',
+      message: String(event?.message || 'Unhandled error'),
+      filename: event?.filename,
+      lineno: event?.lineno,
+      colno: event?.colno,
+      stack: event?.error?.stack,
+      href: typeof location !== 'undefined' ? String(location.href) : undefined,
+      ts: Date.now(),
+    });
+  });
+  window.addEventListener('unhandledrejection', (event: any) => {
+    const reason = event?.reason;
+    sendRendererError({
+      type: 'unhandledrejection',
+      message: reason instanceof Error ? reason.message : String(reason || 'Unhandled rejection'),
+      stack: reason instanceof Error ? reason.stack : undefined,
+      href: typeof location !== 'undefined' ? String(location.href) : undefined,
+      ts: Date.now(),
+    });
+  });
+} catch {
+  // ignore
+}
