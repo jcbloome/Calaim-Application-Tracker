@@ -2,6 +2,8 @@
 # https://firebase.google.com/docs/app-hosting/configure
 # The run and build commands are not needed for the standard dev server.
 # The environment will default to using the 'dev' script in package.json.
+#
+# Rollout trigger: 2026-02-20
 
 env:
   - variable: CASPIO_BASE_URL
