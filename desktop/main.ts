@@ -103,12 +103,12 @@ if (!singleInstanceLock) {
 
 const isDev = !app.isPackaged;
 let appUrl = process.env.DESKTOP_APP_URL
-  || (isDev ? 'http://localhost:3000/admin/my-notes' : 'https://www.connectcalaim.com/admin/my-notes');
+  || (isDev ? 'http://localhost:3000/admin/my-notes' : 'https://connectcalaim.com/admin/my-notes');
 let appOrigin = (() => {
   try {
     return new URL(appUrl).origin;
   } catch {
-    return 'https://www.connectcalaim.com';
+    return 'https://connectcalaim.com';
   }
 })();
 const setAppUrl = (nextUrl: string) => {
@@ -672,6 +672,40 @@ const createWindow = () => {
       nodeIntegration: false
     }
   });
+
+  const safeReload = (reason: string) => {
+    try {
+      console.warn(`[desktop] Reloading main window (${reason})`);
+    } catch {
+      // ignore
+    }
+    try {
+      mainWindow?.webContents.reloadIgnoringCache();
+    } catch {
+      // ignore
+    }
+  };
+
+  try {
+    mainWindow.webContents.on('render-process-gone', (_event, details) => {
+      safeReload(`render-process-gone: ${details?.reason || 'unknown'}`);
+    });
+    mainWindow.webContents.on('unresponsive', () => {
+      // Don't force quit; attempt reload.
+      safeReload('unresponsive');
+    });
+    mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+      try {
+        console.warn('[desktop] did-fail-load', { errorCode, errorDescription, validatedURL });
+      } catch {
+        // ignore
+      }
+      // If a load fails (bad domain, offline, etc.), retry once via reload.
+      safeReload(`did-fail-load: ${errorCode}`);
+    });
+  } catch {
+    // ignore
+  }
 
   mainWindow.loadURL(appUrl).catch(() => {
     if (!isDev) return;
