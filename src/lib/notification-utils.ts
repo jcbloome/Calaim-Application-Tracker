@@ -1,5 +1,7 @@
 export type NotePriority = 'General' | 'Priority' | 'Urgent';
 
+export const WEB_NOTIFICATIONS_MOTHBALLED = true;
+
 const PRIORITY_ORDER: Record<NotePriority, number> = {
   Urgent: 3,
   Priority: 2,
@@ -56,12 +58,14 @@ const readLocalStorageJson = <T>(key: string): T | null => {
 };
 
 export const isWebAlertsEnabled = () => {
+  if (WEB_NOTIFICATIONS_MOTHBALLED) return false;
   const settings = readLocalStorageJson<NotificationSettings>('notificationSettings');
   const value = settings?.userControls?.webAppNotificationsEnabled;
   return value === undefined ? true : Boolean(value);
 };
 
 export const shouldSuppressWebAlerts = () => {
+  if (WEB_NOTIFICATIONS_MOTHBALLED) return true;
   if (typeof window === 'undefined') return false;
   const settings = readLocalStorageJson<NotificationSettings>('notificationSettings');
   const globalSettings = readLocalStorageJson<NotificationSettingsGlobal>('notificationSettingsGlobal');

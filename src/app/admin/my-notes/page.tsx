@@ -40,6 +40,9 @@ interface StaffNotification {
   type: string;
   title: string;
   content: string;
+  source?: string;
+  threadId?: string;
+  replyToId?: string;
   memberName?: string;
   memberId?: string;
   healthPlan?: string;
@@ -155,6 +158,9 @@ function MyNotesContent() {
             type: data.type || 'notification',
             title: data.title || 'Notification',
             content: data.message || data.content || '',
+            source: data.source || undefined,
+            threadId: data.threadId || undefined,
+            replyToId: data.replyToId || undefined,
             memberName: data.memberName || undefined,
             memberId: data.clientId2 || data.memberId || undefined,
             healthPlan: data.healthPlan || undefined,
@@ -547,7 +553,25 @@ function MyNotesContent() {
 
   const handleReplySend = async (notification: StaffNotification) => {
     if (!firestore || !user?.uid) return;
-    const replyTargetId = notification.senderId || notification.recipientId || user.uid;
+    const threadId = notification.threadId || notification.id;
+    const threadNotes = notifications
+      .filter((note) => String(note.threadId || note.id) === String(threadId))
+      .sort((a, b) => {
+        const aTime = a.createdAt?.toDate?.() || new Date(0);
+        const bTime = b.createdAt?.toDate?.() || new Date(0);
+        return aTime.getTime() - bTime.getTime();
+      });
+
+    let replyTargetId = notification.senderId || notification.recipientId || user.uid;
+    let replyTargetName = notification.authorName || user.displayName || user.email || 'Staff';
+    for (let i = threadNotes.length - 1; i >= 0; i--) {
+      const note = threadNotes[i];
+      if (note.senderId && note.senderId !== user.uid) {
+        replyTargetId = note.senderId;
+        replyTargetName = note.authorName || replyTargetName;
+        break;
+      }
+    }
     if (!replyTargetId) {
       toast({
         title: "Missing Sender",
@@ -581,10 +605,10 @@ function MyNotesContent() {
         createdByName: user.displayName || user.email || 'Staff',
         senderName: user.displayName || user.email || 'Staff',
         senderId: user.uid,
-        recipientName: notification.authorName || user.displayName || user.email || 'Staff',
+        recipientName: replyTargetName,
         timestamp: serverTimestamp(),
         replyToId: notification.id,
-        threadId: notification.id,
+        threadId,
         actionUrl: notification.actionUrl || (notification.applicationId ? `/admin/applications/${notification.applicationId}` : '/admin/my-notes')
       };
       if (notification.memberName) {
@@ -596,11 +620,42 @@ function MyNotesContent() {
       if (notification.applicationId) {
         payload.applicationId = notification.applicationId;
       }
-      await addDoc(collection(firestore, 'staff_notifications'), payload);
+
+      // If this thread is tied to a Caspio client, also write the reply into Caspio client notes.
+      if (notification.memberId) {
+        try {
+          await fetch('/api/client-notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clientId2: notification.memberId,
+              comments: message,
+              followUpStatus: priority === 'Priority' ? '🟡 Priority' : 'Open',
+              userId: user.uid,
+              actorName: user.displayName || user.email || 'Staff',
+              actorEmail: user.email || '',
+            }),
+          });
+        } catch (error) {
+          console.warn('Failed to post reply to Caspio client notes:', error);
+        }
+      }
+      const myName = user.displayName || user.email || 'Staff';
+      const myCopy: Record<string, any> = {
+        ...payload,
+        userId: user.uid,
+        recipientName: myName,
+        isRead: true,
+      };
+
+      await Promise.all([
+        addDoc(collection(firestore, 'staff_notifications'), payload),
+        replyTargetId === user.uid ? Promise.resolve() : addDoc(collection(firestore, 'staff_notifications'), myCopy),
+      ]);
 
       toast({
         title: "Reply Sent",
-        description: "Your reply was sent to the original sender.",
+        description: "Your reply was sent and saved in your notifications.",
       });
       setReplyDrafts((prev) => ({ ...prev, [notification.id]: '' }));
       setReplyPriority((prev) => ({ ...prev, [notification.id]: 'General' }));
@@ -771,8 +826,41 @@ function MyNotesContent() {
     return bTime.getTime() - aTime.getTime();
   });
 
-  const recentNotifications = showAllNotes ? sortedNotifications : sortedNotifications.slice(0, 5);
+  const threadHeadNotifications = useMemo(() => {
+    const seen = new Set<string>();
+    const heads: StaffNotification[] = [];
+    for (const note of sortedNotifications) {
+      const key = String(note.threadId || note.id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      heads.push(note);
+    }
+    return heads;
+  }, [sortedNotifications]);
+
+  const recentNotifications = showAllNotes ? threadHeadNotifications : threadHeadNotifications.slice(0, 5);
   const desktopActiveDisplay = desktopActive || suppressWebWhenDesktopActive;
+
+  const threadMap = useMemo(() => {
+    const map = new Map<string, StaffNotification[]>();
+    for (const note of notifications) {
+      const key = String(note.threadId || note.id);
+      const existing = map.get(key);
+      if (existing) {
+        existing.push(note);
+      } else {
+        map.set(key, [note]);
+      }
+    }
+    for (const [, notes] of map.entries()) {
+      notes.sort((a, b) => {
+        const aTime = a.createdAt?.toDate?.() || new Date(0);
+        const bTime = b.createdAt?.toDate?.() || new Date(0);
+        return aTime.getTime() - bTime.getTime();
+      });
+    }
+    return map;
+  }, [notifications]);
 
   const getMemberLink = (notification: StaffNotification) => {
     if (notification.applicationId) {
@@ -1001,6 +1089,8 @@ function MyNotesContent() {
                 const isPriorityNote = hasPriority(notification);
                 const priorityLabel = normalizePriorityLabel(notification.priority);
                 const displayTitle = `Re: ${notification.memberName || 'General Note'}`;
+                const threadKey = String(notification.threadId || notification.id);
+                const threadNotes = threadMap.get(threadKey) || [notification];
                 return (
                   <Card
                     key={notification.id}
@@ -1060,6 +1150,33 @@ function MyNotesContent() {
                           <p className="text-sm text-slate-900 line-clamp-2">
                             {notification.content}
                           </p>
+                          {threadNotes.length > 1 && (
+                            <details className="rounded-md border bg-muted/30 p-2">
+                              <summary className="cursor-pointer text-xs text-muted-foreground">
+                                Conversation ({threadNotes.length})
+                              </summary>
+                              <div className="mt-2 space-y-2">
+                                {threadNotes.map((note) => {
+                                  const isMe = Boolean(user?.uid) && note.senderId === user?.uid;
+                                  return (
+                                    <div key={note.id} className={isMe ? 'flex justify-end' : 'flex justify-start'}>
+                                      <div
+                                        className={`max-w-[85%] rounded-md px-3 py-2 text-sm whitespace-pre-wrap ${
+                                          isMe ? 'bg-blue-600 text-white' : 'bg-white border'
+                                        }`}
+                                      >
+                                        <div className="mb-1 flex items-center justify-between gap-2 text-[10px] opacity-80">
+                                          <span>{isMe ? 'You' : note.authorName || 'Staff'}</span>
+                                          <span>{formatTimestamp(note.createdAt)}</span>
+                                        </div>
+                                        <div>{note.content}</div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </details>
+                          )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-xs">
                           <span className="text-muted-foreground">
@@ -1192,7 +1309,7 @@ function MyNotesContent() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between text-sm text-muted-foreground">
                   <span>
-                    Showing {recentNotifications.length} of {tagFilteredNotifications.length} notification{tagFilteredNotifications.length !== 1 ? 's' : ''}
+                    Showing {recentNotifications.length} of {threadHeadNotifications.length} conversation{threadHeadNotifications.length !== 1 ? 's' : ''}
                     {searchTerm && ` matching "${searchTerm}"`}
                   </span>
                   <span>

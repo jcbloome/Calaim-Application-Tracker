@@ -9,6 +9,7 @@ import {
   collection,
   doc,
   getDocs,
+  onSnapshot,
   query,
   serverTimestamp,
   updateDoc,
@@ -101,7 +102,6 @@ export default function DesktopNotificationWindowClient() {
   const [isOnline, setIsOnline] = useState(true);
   const [replyPriority, setReplyPriority] = useState<'General' | 'Priority'>('Priority');
   const [sendToSender, setSendToSender] = useState(true);
-  const [sendCopyToMe, setSendCopyToMe] = useState(true);
   const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [staffPickerOpen, setStaffPickerOpen] = useState(false);
@@ -110,6 +110,13 @@ export default function DesktopNotificationWindowClient() {
   const [followUpDraft, setFollowUpDraft] = useState<string>('');
   const [followUpOpen, setFollowUpOpen] = useState(false);
   const [savingFollowUp, setSavingFollowUp] = useState(false);
+  const [activeTaskMeta, setActiveTaskMeta] = useState<{
+    status: string;
+    followUpRequired: boolean;
+    followUpDateIso: string;
+  } | null>(null);
+  const [togglingTaskStatus, setTogglingTaskStatus] = useState(false);
+  const [undoClose, setUndoClose] = useState<{ noteId: string; expiresAtMs: number } | null>(null);
   const lastPillPositionRef = useRef<{ x: number; y: number } | null>(null);
   const dragRef = useRef<{
     dragging: boolean;
@@ -222,7 +229,6 @@ export default function DesktopNotificationWindowClient() {
     // This window only shows Priority/Urgent notes, so default replies to Priority.
     setReplyPriority('Priority');
     setSendToSender(true);
-    setSendCopyToMe(true);
     setExtraRecipientIds(new Set());
     setStaffPickerOpen(false);
     setStaffSearch('');
@@ -419,27 +425,32 @@ export default function DesktopNotificationWindowClient() {
         recipients.set(senderId, senderName);
       }
 
-      if (sendCopyToMe && myUid) {
-        recipients.set(myUid, String(myName));
-      }
-
       for (const id of Array.from(extraRecipientIds)) {
         const name = staffList.find((s) => s.uid === id)?.name || 'Staff';
         recipients.set(id, name);
       }
 
-      // No-op safety.
-      if (recipients.size === 0) return;
+      // Always save a sent copy into My Notifications (marked read) so threads show as dialog.
+      if (myUid) {
+        recipients.set(myUid, myName);
+      }
 
-      if (source === 'caspio' && clientId2) {
-        // Caspio is source of truth: write the reply into connect_tbl_clientnotes.
+      // No-op safety (avoid saving a self-only reply).
+      if (recipients.size === 0 || (recipients.size === 1 && myUid && recipients.has(myUid))) return;
+
+      if (clientId2) {
+        // If tied to a Caspio client, write the reply into connect_tbl_clientnotes.
         await fetch('/api/client-notes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             clientId2,
             comments: message,
-            followUpStatus: '🟡 Priority',
+            followUpStatus: replyPriority === 'Priority' ? '🟡 Priority' : 'Open',
+            userId: myUid,
+            actorName: myName,
+            actorEmail: String(user?.email || ''),
+            source: source || 'electron',
           }),
         });
       }
@@ -473,6 +484,7 @@ export default function DesktopNotificationWindowClient() {
             ...basePayload,
             userId: uid,
             recipientName: name,
+            isRead: myUid && uid === myUid ? true : basePayload.isRead,
           })
         )
       );
@@ -491,7 +503,6 @@ export default function DesktopNotificationWindowClient() {
     handleMinimize,
     replyDraft,
     replyPriority,
-    sendCopyToMe,
     sendToSender,
     staffList,
     user?.displayName,
@@ -514,6 +525,7 @@ export default function DesktopNotificationWindowClient() {
       await updateDoc(doc(firestore, 'staff_notifications', String(active.noteId)), {
         followUpRequired: true,
         followUpDate,
+        status: 'Open',
         updatedAt: new Date(),
       });
       setFollowUpOpen(false);
@@ -544,8 +556,99 @@ export default function DesktopNotificationWindowClient() {
     }
   }, [active?.noteId, firestore]);
 
+  const toIso = (value: any) => {
+    try {
+      const d = value?.toDate?.() || new Date(value);
+      const ms = d?.getTime?.();
+      if (!ms || Number.isNaN(ms)) return '';
+      return new Date(ms).toISOString();
+    } catch {
+      return '';
+    }
+  };
+
+  useEffect(() => {
+    if (!firestore) return;
+    const noteId = String(active?.noteId || '').trim();
+    const kind = String(active?.kind || '').toLowerCase();
+    if (!noteId || kind === 'cs' || kind === 'docs') {
+      setActiveTaskMeta(null);
+      return;
+    }
+    const unsubscribe = onSnapshot(
+      doc(firestore, 'staff_notifications', noteId),
+      (snap) => {
+        if (!snap.exists()) {
+          setActiveTaskMeta(null);
+          return;
+        }
+        const data = snap.data() as any;
+        setActiveTaskMeta({
+          status: String(data?.status || 'Open'),
+          followUpRequired: Boolean(data?.followUpRequired),
+          followUpDateIso: toIso(data?.followUpDate),
+        });
+      },
+      () => setActiveTaskMeta(null)
+    );
+    return () => unsubscribe();
+  }, [active?.kind, active?.noteId, firestore]);
+
+  useEffect(() => {
+    if (!undoClose) return;
+    const waitMs = Math.max(0, undoClose.expiresAtMs - Date.now());
+    const t = setTimeout(() => setUndoClose(null), waitMs);
+    return () => clearTimeout(t);
+  }, [undoClose]);
+
+  const canToggleTask =
+    Boolean(active?.noteId) &&
+    String(active?.kind || '').toLowerCase() === 'note' &&
+    Boolean(activeTaskMeta?.followUpRequired || activeTaskMeta?.followUpDateIso);
+  const taskIsClosed = String(activeTaskMeta?.status || '').toLowerCase() === 'closed';
+
+  const handleToggleTaskStatus = useCallback(async () => {
+    if (!firestore) return;
+    if (!active?.noteId) return;
+    if (!canToggleTask) return;
+    setTogglingTaskStatus(true);
+    try {
+      const nextStatus = taskIsClosed ? 'Open' : 'Closed';
+      await updateDoc(doc(firestore, 'staff_notifications', String(active.noteId)), {
+        status: nextStatus,
+        updatedAt: new Date(),
+      });
+      if (nextStatus === 'Closed') {
+        setUndoClose({ noteId: String(active.noteId), expiresAtMs: Date.now() + 15000 });
+      } else {
+        setUndoClose(null);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setTogglingTaskStatus(false);
+    }
+  }, [active?.noteId, canToggleTask, firestore, taskIsClosed]);
+
+  const handleUndoClose = useCallback(async () => {
+    if (!firestore) return;
+    if (!undoClose?.noteId) return;
+    setTogglingTaskStatus(true);
+    try {
+      await updateDoc(doc(firestore, 'staff_notifications', String(undoClose.noteId)), {
+        status: 'Open',
+        updatedAt: new Date(),
+      });
+      setUndoClose(null);
+    } catch {
+      // ignore
+    } finally {
+      setTogglingTaskStatus(false);
+    }
+  }, [firestore, undoClose?.noteId]);
+
   return (
-    <div className="min-h-screen w-full bg-transparent select-none">
+    <div className="h-full w-full bg-transparent select-none">
       {count <= 0 ? null : mode === 'compact' ? (
         <button
           type="button"
@@ -559,16 +662,16 @@ export default function DesktopNotificationWindowClient() {
           }}
           aria-label="Open notifications panel"
         >
-          <div
-            className="mx-auto mt-2 w-[320px] max-w-[92vw] rounded-full border bg-white/95 shadow-lg backdrop-blur px-3 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
-            onPointerDown={handleDragPointerDown}
-            onPointerMove={handleDragPointerMove}
-            onPointerUp={handleDragPointerUp}
-          >
-            <div className="flex items-center gap-2 min-w-0">
+          <div className="w-full h-full flex items-center justify-center">
+            <div
+              className="rounded-full border bg-white/95 shadow-lg backdrop-blur px-3 py-1.5 inline-flex items-center gap-2 cursor-grab active:cursor-grabbing"
+              onPointerDown={handleDragPointerDown}
+              onPointerMove={handleDragPointerMove}
+              onPointerUp={handleDragPointerUp}
+            >
               <div className="h-2.5 w-2.5 rounded-full bg-blue-600 flex-shrink-0" />
-              <div className="text-sm font-medium text-slate-900">Incoming note</div>
-              <div className="text-[11px] text-slate-600 truncate">
+              <div className="text-sm font-medium text-slate-900 whitespace-nowrap">Incoming note</div>
+              <div className="text-[11px] text-slate-600 whitespace-nowrap">
                 {count === 1 ? '1 pending' : `${count} pending`}
               </div>
             </div>
@@ -576,6 +679,19 @@ export default function DesktopNotificationWindowClient() {
         </button>
       ) : (
         <div className={`mx-auto mt-2 w-[440px] max-w-[96vw] rounded-xl border-l-4 ${accentClassForKind(active?.kind)} border bg-white/95 shadow-xl backdrop-blur p-4`}>
+          {undoClose && Date.now() < undoClose.expiresAtMs ? (
+            <div className="mb-3 flex items-center justify-between gap-2 rounded-md border bg-slate-50 px-3 py-2 text-xs">
+              <span>Task closed.</span>
+              <button
+                type="button"
+                className="text-xs px-2 py-1 rounded-md border bg-white hover:bg-slate-50 disabled:opacity-40"
+                disabled={togglingTaskStatus}
+                onClick={handleUndoClose}
+              >
+                Undo
+              </button>
+            </div>
+          ) : null}
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-xs font-medium text-slate-500">
@@ -634,6 +750,16 @@ export default function DesktopNotificationWindowClient() {
                   onClick={() => setFollowUpOpen((v) => !v)}
                 >
                   Set Follow-up
+                </button>
+              ) : null}
+              {canToggleTask ? (
+                <button
+                  type="button"
+                  className="text-xs px-3 py-1.5 rounded-md border bg-white hover:bg-slate-50 disabled:opacity-40"
+                  disabled={togglingTaskStatus}
+                  onClick={handleToggleTaskStatus}
+                >
+                  {togglingTaskStatus ? 'Saving…' : taskIsClosed ? 'Reopen task' : 'Close task'}
                 </button>
               ) : null}
               {String(active?.kind || '').toLowerCase() === 'cs' || String(active?.kind || '').toLowerCase() === 'docs' ? null : (
@@ -697,14 +823,6 @@ export default function DesktopNotificationWindowClient() {
                     onChange={(e) => setSendToSender(e.target.checked)}
                   />
                   Send to sender
-                </label>
-                <label className="flex items-center gap-1">
-                  <input
-                    type="checkbox"
-                    checked={sendCopyToMe}
-                    onChange={(e) => setSendCopyToMe(e.target.checked)}
-                  />
-                  Copy to me
                 </label>
                 <label className="flex items-center gap-1">
                   <span>Priority</span>

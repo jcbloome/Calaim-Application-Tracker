@@ -86,9 +86,10 @@ let reviewPillCount = 0;
 let pillIndex = 0;
 let pillPosition: { x: number; y: number } | null = null;
 let pillMode: 'compact' | 'panel' = 'compact';
+let pillHiddenByUser = false;
 
 const PILL_WINDOW_SIZES = {
-  compact: { width: 420, height: 110 },
+  compact: { width: 320, height: 74 },
   panel: { width: 460, height: 340 }
 } as const;
 
@@ -654,22 +655,28 @@ const buildTrayMenu = () => {
       click: () => void showDiagnosticsDialog(),
     },
     {
+      label: pillHiddenByUser ? 'Show pill' : 'Hide pill (temporarily)',
+      click: () => {
+        pillHiddenByUser = !pillHiddenByUser;
+        if (pillHiddenByUser) {
+          closeNotificationWindow();
+        } else {
+          try {
+            if (pillSummary.count > 0) {
+              showMinimizedPill();
+            }
+          } catch {
+            // ignore
+          }
+        }
+        updateTrayMenu();
+      }
+    },
+    {
       label: 'Refresh app (reload)',
       click: () => {
         try {
           mainWindow?.webContents.reloadIgnoringCache();
-        } catch {
-          // ignore
-        }
-      }
-    },
-    {
-      label: 'Reset pill position',
-      click: () => {
-        try {
-          pillPosition = null;
-          prefsStore.set('pillPosition', null);
-          positionNotificationWindow();
         } catch {
           // ignore
         }
@@ -1358,6 +1365,10 @@ const showPanel = () => {
     closeNotificationWindow();
     return;
   }
+  if (pillHiddenByUser) {
+    closeNotificationWindow();
+    return;
+  }
   pillMode = 'panel';
   renderNotificationPill();
 };
@@ -1387,6 +1398,10 @@ const recomputeCombinedPill = () => {
 
 const showMinimizedPill = () => {
   if (pillSummary.count <= 0) {
+    closeNotificationWindow();
+    return;
+  }
+  if (pillHiddenByUser) {
     closeNotificationWindow();
     return;
   }
