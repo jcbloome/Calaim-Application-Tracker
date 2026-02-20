@@ -12,3 +12,7 @@ env:
     secret: CASPIO_CLIENT_SECRET
   - variable: CASPIO_TABLE_NAME
     secret: CASPIO_TABLE_NAME
+  - variable: CRON_SECRET
+    secret: CRON_SECRET
+    availability:
+      - RUNTIME
