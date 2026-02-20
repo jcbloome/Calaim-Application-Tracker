@@ -17,6 +17,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
+import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
 import { addDoc, collection, query, where, onSnapshot, doc, updateDoc, writeBatch, serverTimestamp, getDocs, documentId, deleteDoc } from 'firebase/firestore';
 import { logSystemNoteAction } from '@/lib/system-note-log';
 import { isPriorityOrUrgent, normalizePriorityLabel, notifyNotificationSettingsChanged } from '@/lib/notification-utils';
@@ -64,7 +65,7 @@ function MyNotesContent() {
     version: string | null;
     sha256: string | null;
   }>({ version: null, sha256: null });
-  const { user, isAdmin, loading, isUserLoading } = useAdmin();
+  const { user, isAdmin, isLoading } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
   const searchParams = useSearchParams();
@@ -82,6 +83,8 @@ function MyNotesContent() {
   const [replyPriority, setReplyPriority] = useState<Record<string, 'General' | 'Priority'>>({});
   const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
+  const staffUids = useMemo(() => staffList.map((s) => s.uid).filter(Boolean), [staffList]);
+  const { isActiveByUid: isElectronActiveByUid } = useDesktopPresenceMap(staffUids);
   const [generalNote, setGeneralNote] = useState<{
     recipientIds: string[];
     title: string;
@@ -804,7 +807,7 @@ function MyNotesContent() {
     }
   };
 
-  if (loading || isUserLoading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -815,7 +818,7 @@ function MyNotesContent() {
     );
   }
 
-  if (!user && !loading && !isUserLoading) {
+  if (!user && !isLoading) {
     return (
       <div className="container mx-auto p-6">
         <Card>
@@ -1238,6 +1241,13 @@ function MyNotesContent() {
                                 }));
                               }}
                             />
+                            {isElectronActiveByUid[staff.uid] ? (
+                              <span
+                                className="inline-block h-2 w-2 rounded-full bg-emerald-500"
+                                aria-label="Electron active"
+                                title="Electron active"
+                              />
+                            ) : null}
                             <span>{staff.name}</span>
                           </label>
                         );

@@ -6,6 +6,9 @@ declare global {
     isWithinBusinessHours: boolean;
     allowAfterHours: boolean;
     effectivePaused: boolean;
+    snoozedUntilMs?: number;
+    showNotes?: boolean;
+    showReview?: boolean;
   }
 
   interface Window {
@@ -13,6 +16,10 @@ declare global {
       __shim?: boolean;
       getState: () => Promise<DesktopNotificationState>;
       setPaused: (paused: boolean) => Promise<DesktopNotificationState>;
+      setSnooze?: (untilMs: number) => Promise<DesktopNotificationState>;
+      clearSnooze?: () => Promise<DesktopNotificationState>;
+      openStaffStatus?: () => Promise<boolean>;
+      refreshApp?: () => Promise<boolean>;
       notify: (payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) => Promise<boolean>;
       setPendingCount: (count: number) => void;
       setPillSummary?: (payload: {

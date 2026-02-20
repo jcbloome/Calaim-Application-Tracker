@@ -165,7 +165,6 @@ function AdminHeader() {
   const [hnDocCount, setHnDocCount] = useState(0);
   const [kaiserCsCount, setKaiserCsCount] = useState(0);
   const [kaiserDocCount, setKaiserDocCount] = useState(0);
-  const [hasAdminSessionCookie, setHasAdminSessionCookie] = useState(false);
   const [reviewPopupPrefs, setReviewPopupPrefs] = useState<{
     enabled: boolean;
     recipientEnabled: boolean;
@@ -226,11 +225,6 @@ function AdminHeader() {
       return 0;
     }
   };
-
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    setHasAdminSessionCookie(document.cookie.includes('calaim_admin_session='));
-  }, []);
 
   useEffect(() => {
     if (!firestore || !user?.uid) return;
@@ -989,12 +983,9 @@ function AdminHeader() {
 }
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  const { user, loading, isAdmin, isUserLoading } = useAdmin();
+  const { user, isLoading, isAdmin } = useAdmin();
   const pathname = usePathname();
   const router = useRouter();
-  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [authGraceExpired, setAuthGraceExpired] = useState(false);
-  const [hasAdminSessionCookie, setHasAdminSessionCookie] = useState(false);
   const claimsSyncRef = useRef(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; open: boolean }>({
     x: 0,
@@ -1017,23 +1008,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     console.log('🔍 Admin Layout Debug:', {
       pathname,
       isLoginPage,
-      loading,
+      isLoading,
       isAdmin,
       userEmail: user?.email,
       timestamp: new Date().toLocaleTimeString()
     });
-  }, [pathname, isLoginPage, loading, isAdmin, user?.email]);
-
-  useEffect(() => {
-    setAuthGraceExpired(false);
-    const timer = setTimeout(() => setAuthGraceExpired(true), 3000);
-    return () => clearTimeout(timer);
-  }, [pathname]);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    setHasAdminSessionCookie(document.cookie.includes('calaim_admin_session='));
-  }, [pathname]);
+  }, [pathname, isLoginPage, isLoading, isAdmin, user?.email]);
 
   useEffect(() => {
     if (!user || !isAdmin || isLoginPage) return;
@@ -1080,7 +1060,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!loading && !isUserLoading) {
+    if (!isLoading) {
       const currentSearch = typeof window !== 'undefined' ? window.location.search : '';
       const intendedPath = `${pathname}${currentSearch}`;
       const redirectParam = typeof window !== 'undefined'
@@ -1102,16 +1082,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         willRedirect: !user || (!isAdmin && !isLoginPage && !allowNonAdmin)
       });
 
-      if (!user && !isLoginPage && !hasAdminSessionCookie && authGraceExpired) {
-        if (redirectTimerRef.current) {
-          clearTimeout(redirectTimerRef.current);
-        }
-        redirectTimerRef.current = setTimeout(() => {
-          if (!user && !hasAdminSessionCookie && authGraceExpired) {
-            console.log('🚫 Redirecting to login - user not signed in');
-            router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
-          }
-        }, 1200);
+      if (!user && !isLoginPage) {
+        console.log('🚫 Redirecting to login - user not signed in');
+        router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
       } else if (!isAdmin && !isLoginPage && !allowNonAdmin) {
         console.log('🚫 Redirecting to login - user not recognized as admin');
         router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
@@ -1120,15 +1093,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         router.replace(safeRedirect);
       }
     }
-    return () => {
-      if (redirectTimerRef.current) {
-        clearTimeout(redirectTimerRef.current);
-      }
-    };
-  }, [loading, isUserLoading, isAdmin, isLoginPage, router, user, pathname, hasAdminSessionCookie, authGraceExpired]);
+  }, [isLoading, isAdmin, isLoginPage, router, user, pathname]);
 
   // Show loading spinner while checking authentication (but not for login page)
-  if (loading && !isLoginPage) {
+  if (isLoading && !isLoginPage) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">

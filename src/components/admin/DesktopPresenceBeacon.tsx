@@ -28,6 +28,13 @@ export function DesktopPresenceBeacon() {
 
     const heartbeat = async (active: boolean) => {
       try {
+        let desktopState: DesktopNotificationState | null = null;
+        try {
+          desktopState = await (window as any).desktopNotifications?.getState?.();
+        } catch {
+          desktopState = null;
+        }
+        const snoozedUntilMs = Number((desktopState as any)?.snoozedUntilMs || 0) || 0;
         await setDoc(
           ref,
           {
@@ -35,6 +42,10 @@ export function DesktopPresenceBeacon() {
             active,
             source: 'electron',
             lastSeenAt: serverTimestamp(),
+            pausedByUser: Boolean((desktopState as any)?.pausedByUser),
+            allowAfterHours: Boolean((desktopState as any)?.allowAfterHours),
+            effectivePaused: Boolean((desktopState as any)?.effectivePaused),
+            snoozedUntilMs: snoozedUntilMs || 0,
           },
           { merge: true }
         );

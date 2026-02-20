@@ -3,6 +3,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('desktopNotifications', {
   getState: () => ipcRenderer.invoke('desktop:getState'),
   setPaused: (paused: boolean) => ipcRenderer.invoke('desktop:setPaused', paused),
+  setSnooze: (untilMs: number) => ipcRenderer.invoke('desktop:setSnooze', { untilMs }),
+  clearSnooze: () => ipcRenderer.invoke('desktop:clearSnooze'),
+  openStaffStatus: () => ipcRenderer.invoke('desktop:openStaffStatus'),
+  refreshApp: () => ipcRenderer.invoke('desktop:refreshApp'),
   notify: (payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) =>
     ipcRenderer.invoke('desktop:notify', payload),
   setPendingCount: (count: number) => ipcRenderer.send('desktop:setPendingCount', count),

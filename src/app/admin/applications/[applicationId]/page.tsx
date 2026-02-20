@@ -61,6 +61,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { MultiUploadCard } from '@/components/MultiUploadCard';
 import { useAdmin } from '@/hooks/use-admin';
+import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
 import {
   Dialog,
   DialogContent,
@@ -105,6 +106,8 @@ function StaffAssignmentDropdown({
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
     const [staffFilterLabel, setStaffFilterLabel] = useState<string>('Showing all staff');
+    const staffUids = useMemo(() => staffList.map((s) => s.uid).filter(Boolean), [staffList]);
+    const { isActiveByUid } = useDesktopPresenceMap(staffUids);
 
     useEffect(() => {
         // Filter staff list based on the application's health plan.
@@ -265,7 +268,16 @@ function StaffAssignmentDropdown({
           <SelectContent>
             {staffList.map((staff) => (
               <SelectItem key={staff.uid} value={staff.uid}>
-                {staff.displayName}
+                <div className="flex items-center gap-2">
+                  {isActiveByUid[staff.uid] ? (
+                    <span
+                      className="inline-block h-2 w-2 rounded-full bg-emerald-500"
+                      aria-label="Electron active"
+                      title="Electron active"
+                    />
+                  ) : null}
+                  <span>{staff.displayName}</span>
+                </div>
               </SelectItem>
             ))}
           </SelectContent>

@@ -3,7 +3,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUser } from '@/firebase';
 import { useFirestore } from '@/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { Target } from 'lucide-react';
+import {
+  addDoc,
+  collection,
+  doc,
+  getDocs,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+  documentId
+} from 'firebase/firestore';
 
 type NotifyCardPayload = {
   id?: string;
@@ -86,9 +97,41 @@ export default function DesktopNotificationWindowClient() {
   const [pillState, setPillState] = useState<PillStatePayload | null>(null);
   const [replyDraft, setReplyDraft] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
+  const [markingRead, setMarkingRead] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [replyPriority, setReplyPriority] = useState<'General' | 'Priority'>('Priority');
+  const [sendToSender, setSendToSender] = useState(true);
+  const [sendCopyToMe, setSendCopyToMe] = useState(true);
+  const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
+  const [isLoadingStaff, setIsLoadingStaff] = useState(false);
+  const [staffPickerOpen, setStaffPickerOpen] = useState(false);
+  const [staffSearch, setStaffSearch] = useState('');
+  const [extraRecipientIds, setExtraRecipientIds] = useState<Set<string>>(new Set());
   const [followUpDraft, setFollowUpDraft] = useState<string>('');
   const [followUpOpen, setFollowUpOpen] = useState(false);
   const [savingFollowUp, setSavingFollowUp] = useState(false);
+  const lastPillPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{
+    dragging: boolean;
+    pointerId: number | null;
+    startX: number;
+    startY: number;
+    startPos: { x: number; y: number };
+    moved: boolean;
+    raf: number | null;
+    nextX: number;
+    nextY: number;
+  }>({
+    dragging: false,
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    startPos: { x: 0, y: 0 },
+    moved: false,
+    raf: null,
+    nextX: 0,
+    nextY: 0,
+  });
 
   const titleLabel = useMemo(() => {
     const c = Number(pillState?.count || 0);
@@ -142,6 +185,18 @@ export default function DesktopNotificationWindowClient() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    // Best-effort: read current pill position so dragging starts from correct baseline.
+    window.desktopNotificationPill?.getPosition?.()
+      .then((pos) => {
+        if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
+          lastPillPositionRef.current = { x: pos.x, y: pos.y };
+        }
+      })
+      .catch(() => null);
+  }, []);
+
   const mode = pillState?.mode === 'panel' ? 'panel' : 'compact';
   const count = Number(pillState?.count || 0);
   const activeIndex = Math.max(0, Number(pillState?.activeIndex || 0));
@@ -150,15 +205,142 @@ export default function DesktopNotificationWindowClient() {
   const canNext = Array.isArray(pillState?.notes) ? activeIndex < (pillState!.notes!.length - 1) : false;
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const update = () => setIsOnline(navigator.onLine);
+    update();
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+
+  useEffect(() => {
     // Reset draft when active note changes.
     setReplyDraft('');
+    // This window only shows Priority/Urgent notes, so default replies to Priority.
+    setReplyPriority('Priority');
+    setSendToSender(true);
+    setSendCopyToMe(true);
+    setExtraRecipientIds(new Set());
+    setStaffPickerOpen(false);
+    setStaffSearch('');
     setFollowUpOpen(false);
     setFollowUpDraft('');
   }, [active?.noteId, active?.senderId, active?.timestamp, active?.title]);
 
+  const loadAdminStaff = useCallback(async () => {
+    if (!firestore) return;
+    try {
+      setIsLoadingStaff(true);
+      const [adminSnap, superAdminSnap] = await Promise.all([
+        getDocs(collection(firestore, 'roles_admin')),
+        getDocs(collection(firestore, 'roles_super_admin'))
+      ]);
+      const adminIds = adminSnap.docs.map((docItem) => docItem.id);
+      const superAdminIds = superAdminSnap.docs.map((docItem) => docItem.id);
+      const allIds = Array.from(new Set([...adminIds, ...superAdminIds]));
+      if (allIds.length === 0) {
+        setStaffList([]);
+        return;
+      }
+
+      const chunks: string[][] = [];
+      for (let i = 0; i < allIds.length; i += 10) {
+        chunks.push(allIds.slice(i, i + 10));
+      }
+
+      const users: Array<{ uid: string; name: string }> = [];
+      for (const chunk of chunks) {
+        const usersSnap = await getDocs(
+          query(collection(firestore, 'users'), where(documentId(), 'in', chunk))
+        );
+        usersSnap.forEach((docItem) => {
+          const data = docItem.data() as any;
+          const name = data.firstName && data.lastName
+            ? `${data.firstName} ${data.lastName}`
+            : data.displayName || data.email || 'Unknown Staff';
+          users.push({ uid: docItem.id, name });
+        });
+      }
+
+      users.sort((a, b) => a.name.localeCompare(b.name));
+      setStaffList(users);
+    } catch {
+      setStaffList([]);
+    } finally {
+      setIsLoadingStaff(false);
+    }
+  }, [firestore]);
+
+  useEffect(() => {
+    if (!staffPickerOpen) return;
+    if (staffList.length > 0) return;
+    loadAdminStaff();
+  }, [staffPickerOpen, staffList.length, loadAdminStaff]);
+
   const handleExpand = useCallback(() => {
     try {
       window.desktopNotificationPill?.expand?.();
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleDragPointerDown = useCallback((event: React.PointerEvent) => {
+    try {
+      if (event.button !== 0) return;
+      if (!window.desktopNotificationPill?.move) return;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      const pos = lastPillPositionRef.current;
+      dragRef.current.dragging = true;
+      dragRef.current.pointerId = event.pointerId;
+      dragRef.current.startX = event.clientX;
+      dragRef.current.startY = event.clientY;
+      dragRef.current.startPos = pos || { x: 0, y: 0 };
+      dragRef.current.moved = false;
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleDragPointerMove = useCallback((event: React.PointerEvent) => {
+    try {
+      if (!dragRef.current.dragging) return;
+      if (dragRef.current.pointerId !== event.pointerId) return;
+      const dx = event.clientX - dragRef.current.startX;
+      const dy = event.clientY - dragRef.current.startY;
+      if (!dragRef.current.moved) {
+        if (Math.abs(dx) + Math.abs(dy) < 4) return;
+        dragRef.current.moved = true;
+      }
+
+      const nextX = dragRef.current.startPos.x + dx;
+      const nextY = dragRef.current.startPos.y + dy;
+      dragRef.current.nextX = nextX;
+      dragRef.current.nextY = nextY;
+
+      if (dragRef.current.raf) return;
+      dragRef.current.raf = window.requestAnimationFrame(() => {
+        dragRef.current.raf = null;
+        try {
+          window.desktopNotificationPill?.move?.(dragRef.current.nextX, dragRef.current.nextY);
+          lastPillPositionRef.current = { x: dragRef.current.nextX, y: dragRef.current.nextY };
+        } catch {
+          // ignore
+        }
+      });
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleDragPointerUp = useCallback((event: React.PointerEvent) => {
+    try {
+      if (dragRef.current.pointerId !== event.pointerId) return;
+      dragRef.current.dragging = false;
+      dragRef.current.pointerId = null;
     } catch {
       // ignore
     }
@@ -195,15 +377,59 @@ export default function DesktopNotificationWindowClient() {
     }
   }, []);
 
+  const handleMarkRead = useCallback(async () => {
+    if (!firestore) return;
+    if (!active?.noteId) return;
+    const kind = String(active?.kind || '').toLowerCase();
+    if (kind === 'cs' || kind === 'docs') return;
+    setMarkingRead(true);
+    try {
+      await updateDoc(doc(firestore, 'staff_notifications', String(active.noteId)), {
+        isRead: true,
+        updatedAt: new Date(),
+      });
+      handleMinimize();
+    } catch {
+      // ignore
+    } finally {
+      setMarkingRead(false);
+    }
+  }, [active?.kind, active?.noteId, firestore, handleMinimize]);
+
   const handleSendReply = useCallback(async () => {
     if (!active) return;
     const message = replyDraft.trim();
     if (!message) return;
+    if (!firestore) return;
     setSendingReply(true);
     try {
       const myUid = String(user?.uid || '').trim();
       const source = String(active.source || '').toLowerCase();
       const clientId2 = String(active.clientId2 || '').trim();
+      const myName = user?.displayName || user?.email || 'Staff';
+
+      const senderId = String(active.senderId || '').trim();
+      const recipients = new Map<string, string>();
+
+      if (sendToSender && senderId) {
+        const senderName =
+          staffList.find((s) => s.uid === senderId)?.name
+          || String(active.author || '').trim()
+          || 'Staff';
+        recipients.set(senderId, senderName);
+      }
+
+      if (sendCopyToMe && myUid) {
+        recipients.set(myUid, String(myName));
+      }
+
+      for (const id of Array.from(extraRecipientIds)) {
+        const name = staffList.find((s) => s.uid === id)?.name || 'Staff';
+        recipients.set(id, name);
+      }
+
+      // No-op safety.
+      if (recipients.size === 0) return;
 
       if (source === 'caspio' && clientId2) {
         // Caspio is source of truth: write the reply into connect_tbl_clientnotes.
@@ -216,23 +442,41 @@ export default function DesktopNotificationWindowClient() {
             followUpStatus: '🟡 Priority',
           }),
         });
-
-        // Also log to My Notifications for the sender (so staff has a history in the web app).
-        if (myUid) {
-          window.desktopNotificationPill?.sendReply?.({
-            noteId: active.noteId,
-            senderId: myUid,
-            message,
-          });
-        }
-      } else {
-        // Interoffice priority: use existing quick-reply bridge (writes a Firestore staff_notification).
-        window.desktopNotificationPill?.sendReply?.({
-          noteId: active.noteId,
-          senderId: active.senderId,
-          message,
-        });
       }
+
+      const basePayload: Record<string, any> = {
+        title: `Reply: ${String(active.title || 'Incoming note')}`,
+        message,
+        type: 'interoffice_reply',
+        priority: replyPriority,
+        status: 'Open',
+        isRead: false,
+        createdBy: myUid,
+        createdByName: myName,
+        senderName: myName,
+        senderId: myUid,
+        timestamp: serverTimestamp(),
+        replyToId: active.noteId || null,
+        threadId: active.noteId || null,
+        actionUrl: active.noteId
+          ? `/admin/my-notes?noteId=${encodeURIComponent(String(active.noteId))}`
+          : '/admin/my-notes',
+        source: 'electron',
+      };
+
+      if (active.memberName) basePayload.memberName = active.memberName;
+      if (active.clientId2) basePayload.clientId2 = active.clientId2;
+
+      await Promise.all(
+        Array.from(recipients.entries()).map(([uid, name]) =>
+          addDoc(collection(firestore, 'staff_notifications'), {
+            ...basePayload,
+            userId: uid,
+            recipientName: name,
+          })
+        )
+      );
+
       setReplyDraft('');
       handleMinimize();
     } catch {
@@ -240,7 +484,20 @@ export default function DesktopNotificationWindowClient() {
     } finally {
       setSendingReply(false);
     }
-  }, [active, replyDraft, handleMinimize, user?.uid]);
+  }, [
+    active,
+    extraRecipientIds,
+    firestore,
+    handleMinimize,
+    replyDraft,
+    replyPriority,
+    sendCopyToMe,
+    sendToSender,
+    staffList,
+    user?.displayName,
+    user?.email,
+    user?.uid
+  ]);
 
   const canSetFollowUp = Boolean(active) && String(active?.kind || '').toLowerCase() !== 'cs';
 
@@ -293,18 +550,28 @@ export default function DesktopNotificationWindowClient() {
         <button
           type="button"
           className="w-full h-full bg-transparent"
-          onClick={handleExpand}
+          onClick={() => {
+            if (dragRef.current.moved) {
+              dragRef.current.moved = false;
+              return;
+            }
+            handleExpand();
+          }}
           aria-label="Open notifications panel"
         >
-          <div className="mx-auto mt-2 w-[400px] max-w-[94vw] rounded-full border bg-white/95 shadow-lg backdrop-blur px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-3 w-3 rounded-full bg-blue-600" />
-              <div className="text-sm font-medium text-slate-900">Priority</div>
-              <div className="text-xs text-slate-600">
+          <div
+            className="mx-auto mt-2 w-[320px] max-w-[92vw] rounded-full border bg-white/95 shadow-lg backdrop-blur px-3 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
+            onPointerDown={handleDragPointerDown}
+            onPointerMove={handleDragPointerMove}
+            onPointerUp={handleDragPointerUp}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="h-2.5 w-2.5 rounded-full bg-blue-600 flex-shrink-0" />
+              <div className="text-sm font-medium text-slate-900">Incoming note</div>
+              <div className="text-[11px] text-slate-600 truncate">
                 {count === 1 ? '1 pending' : `${count} pending`}
               </div>
             </div>
-            <div className="text-xs text-slate-500">Click to open</div>
           </div>
         </button>
       ) : (
@@ -314,9 +581,15 @@ export default function DesktopNotificationWindowClient() {
               <div className="text-xs font-medium text-slate-500">
                 {count === 1 ? '1 priority item' : `${count} priority items`}
               </div>
-              <div className="text-base font-semibold text-slate-900">
-                {String(active?.title || pillState?.title || 'Priority')}
+              <div className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                <Target className="h-4 w-4 text-blue-700 motion-safe:animate-[pulse_2s_ease-in-out_infinite]" />
+                Incoming note
               </div>
+              {!isOnline ? (
+                <div className="mt-1 text-xs text-amber-700">
+                  Offline — updates and quick actions may be delayed.
+                </div>
+              ) : null}
               <div className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">
                 {String(active?.message || pillState?.message || '')}
               </div>
@@ -363,6 +636,16 @@ export default function DesktopNotificationWindowClient() {
                   Set Follow-up
                 </button>
               ) : null}
+              {String(active?.kind || '').toLowerCase() === 'cs' || String(active?.kind || '').toLowerCase() === 'docs' ? null : (
+                <button
+                  type="button"
+                  className="text-xs px-3 py-1.5 rounded-md border bg-white hover:bg-slate-50 disabled:opacity-40"
+                  disabled={markingRead || !active?.noteId}
+                  onClick={handleMarkRead}
+                >
+                  {markingRead ? 'Marking…' : 'Mark read'}
+                </button>
+              )}
               <button
                 type="button"
                 className="text-xs px-3 py-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800"
@@ -406,6 +689,82 @@ export default function DesktopNotificationWindowClient() {
           {String(active?.kind || '').toLowerCase() === 'cs' ? null : (
             <div className="mt-3">
               <div className="text-xs font-medium text-slate-600 mb-1">Quick reply</div>
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                <label className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={sendToSender}
+                    onChange={(e) => setSendToSender(e.target.checked)}
+                  />
+                  Send to sender
+                </label>
+                <label className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={sendCopyToMe}
+                    onChange={(e) => setSendCopyToMe(e.target.checked)}
+                  />
+                  Copy to me
+                </label>
+                <label className="flex items-center gap-1">
+                  <span>Priority</span>
+                  <select
+                    className="rounded-md border bg-white px-2 py-1"
+                    value={replyPriority}
+                    onChange={(e) => setReplyPriority(e.target.value === 'General' ? 'General' : 'Priority')}
+                  >
+                    <option value="Priority">Priority</option>
+                    <option value="General">General</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="ml-auto text-xs px-2 py-1 rounded-md border bg-white hover:bg-slate-50"
+                  onClick={() => setStaffPickerOpen((v) => !v)}
+                >
+                  {staffPickerOpen ? 'Hide staff list' : 'Add staff'}
+                </button>
+              </div>
+
+              {staffPickerOpen ? (
+                <div className="mb-2 rounded-md border bg-white p-2">
+                  <input
+                    className="w-full rounded-md border px-2 py-1 text-xs"
+                    placeholder="Search staff…"
+                    value={staffSearch}
+                    onChange={(e) => setStaffSearch(e.target.value)}
+                  />
+                  <div className="mt-2 max-h-32 overflow-auto text-xs">
+                    {isLoadingStaff ? (
+                      <div className="text-slate-500">Loading staff…</div>
+                    ) : (
+                      staffList
+                        .filter((s) => s.uid !== user?.uid)
+                        .filter((s) => s.name.toLowerCase().includes(staffSearch.toLowerCase()))
+                        .map((s) => {
+                          const checked = extraRecipientIds.has(s.uid);
+                          return (
+                            <label key={s.uid} className="flex items-center gap-2 py-1">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  setExtraRecipientIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (e.target.checked) next.add(s.uid);
+                                    else next.delete(s.uid);
+                                    return next;
+                                  });
+                                }}
+                              />
+                              <span className="text-slate-800">{s.name}</span>
+                            </label>
+                          );
+                        })
+                    )}
+                  </div>
+                </div>
+              ) : null}
               <textarea
                 className="w-full resize-none rounded-md border bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
                 rows={3}

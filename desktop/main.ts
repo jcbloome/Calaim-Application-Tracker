@@ -2,16 +2,43 @@ import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, dialog, screen, 
 import fs from 'fs';
 import path from 'path';
 import { autoUpdater } from 'electron-updater';
+import Store from 'electron-store';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let notificationWindow: BrowserWindow | null = null;
+let statusWindow: BrowserWindow | null = null;
 let notificationTimer: NodeJS.Timeout | null = null;
 let isQuitting = false;
 let notificationWindowLoaded = false;
 let updateReadyToInstall = false;
 let updateReadyVersion: string | null = null;
 let updaterConfigured = false;
+let updateCheckInProgress = false;
+let updateUiState: 'idle' | 'checking' | 'upToDate' | 'downloading' | 'downloaded' | 'error' = 'idle';
+let updateUiVersion: string | null = null;
+let updateUiLastCheckedAt: number | null = null;
+
+type DesktopPreferences = {
+  pausedByUser: boolean;
+  allowAfterHours: boolean;
+  snoozedUntilMs: number;
+  showNotes: boolean;
+  showReview: boolean;
+  pillPosition: { x: number; y: number } | null;
+};
+
+const prefsStore = new Store<DesktopPreferences>({
+  name: 'desktop-preferences',
+  defaults: {
+    pausedByUser: false,
+    allowAfterHours: true,
+    snoozedUntilMs: 0,
+    showNotes: true,
+    showReview: true,
+    pillPosition: null,
+  },
+});
 
 let pillSummary = {
   count: 0,
@@ -95,11 +122,118 @@ const setAppUrl = (nextUrl: string) => {
 const updateUrl = process.env.DESKTOP_UPDATE_URL
   || 'https://github.com/jcbloome/Calaim-Application-Tracker/releases';
 
+const setUpdateUi = (next: Partial<{
+  state: typeof updateUiState;
+  version: string | null;
+  lastCheckedAt: number | null;
+  readyToInstall: boolean;
+  readyVersion: string | null;
+}>) => {
+  if (next.state) updateUiState = next.state;
+  if (next.version !== undefined) updateUiVersion = next.version;
+  if (next.lastCheckedAt !== undefined) updateUiLastCheckedAt = next.lastCheckedAt;
+  if (next.readyToInstall !== undefined) updateReadyToInstall = next.readyToInstall;
+  if (next.readyVersion !== undefined) updateReadyVersion = next.readyVersion;
+  try {
+    updateTrayMenu();
+  } catch {
+    // ignore
+  }
+  try {
+    createAppMenu();
+  } catch {
+    // ignore
+  }
+};
+
+const showUpdaterDialog = async (payload: {
+  title: string;
+  message: string;
+  detail?: string;
+}) => {
+  try {
+    await dialog.showMessageBox({
+      type: 'info',
+      title: payload.title,
+      message: payload.message,
+      detail: payload.detail,
+      buttons: ['OK'],
+      defaultId: 0,
+    });
+  } catch {
+    // ignore
+  }
+};
+
+const runManualUpdateCheck = async (source: 'tray' | 'menu' | 'about' = 'tray') => {
+  if (isDev) {
+    await showUpdaterDialog({
+      title: 'Updates',
+      message: 'Auto-update is disabled in dev mode.',
+      detail: `Current version: ${app.getVersion()}`,
+    });
+    return;
+  }
+  if (updateCheckInProgress) return;
+  updateCheckInProgress = true;
+  setUpdateUi({ state: 'checking', lastCheckedAt: Date.now() });
+  try {
+    const result: any = await autoUpdater.checkForUpdates();
+    const nextVersion = typeof result?.updateInfo?.version === 'string' ? result.updateInfo.version : null;
+    const hasUpdate = Boolean(result?.downloadPromise);
+
+    if (!hasUpdate) {
+      setUpdateUi({ state: 'upToDate', version: null, lastCheckedAt: Date.now() });
+      await showUpdaterDialog({
+        title: 'Updates',
+        message: 'No new updates found.',
+        detail: `You are on the latest version (v${app.getVersion()}).`,
+      });
+      return;
+    }
+
+    setUpdateUi({ state: 'downloading', version: nextVersion, lastCheckedAt: Date.now() });
+    await showUpdaterDialog({
+      title: 'Updates',
+      message: nextVersion ? `Update available: v${nextVersion}` : 'Update available.',
+      detail: 'The update will download in the background. You will be prompted to restart when it is ready.',
+    });
+  } catch (error: any) {
+    setUpdateUi({ state: 'error', lastCheckedAt: Date.now() });
+    await showUpdaterDialog({
+      title: 'Updates',
+      message: 'Update check failed.',
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    updateCheckInProgress = false;
+    // If the check completed but we didn't transition to a known state, keep it idle.
+    if (updateUiState === 'checking') {
+      setUpdateUi({ state: 'idle' });
+    }
+  }
+};
+
 const notificationState = {
-  pausedByUser: false,
+  pausedByUser: Boolean(prefsStore.get('pausedByUser')),
   isWithinBusinessHours: true,
-  allowAfterHours: true,
-  effectivePaused: false
+  allowAfterHours: Boolean(prefsStore.get('allowAfterHours')),
+  effectivePaused: false,
+  snoozedUntilMs: Number(prefsStore.get('snoozedUntilMs') || 0),
+  showNotes: Boolean(prefsStore.get('showNotes')),
+  showReview: Boolean(prefsStore.get('showReview')),
+};
+
+const getUpdateSuffix = () => {
+  if (updateReadyToInstall) {
+    return updateReadyVersion ? ` (Ready v${updateReadyVersion})` : ' (Ready)';
+  }
+  if (updateUiState === 'checking') return ' (Checking…)';
+  if (updateUiState === 'upToDate') return ' (Up to date)';
+  if (updateUiState === 'downloading') return updateUiVersion ? ` (Downloading v${updateUiVersion}…)` : ' (Downloading…)';
+  if (updateUiState === 'downloaded') return updateUiVersion ? ` (Downloaded v${updateUiVersion})` : ' (Downloaded)';
+  if (updateUiState === 'error') return ' (Check failed)';
+  return '';
 };
 
 const broadcastState = () => {
@@ -197,7 +331,85 @@ const showDebugDialog = async () => {
 
 const computeEffectivePaused = () => {
   const pausedForHours = !notificationState.allowAfterHours && !notificationState.isWithinBusinessHours;
-  notificationState.effectivePaused = notificationState.pausedByUser || pausedForHours;
+  const snoozedNow = Number(notificationState.snoozedUntilMs || 0) > Date.now();
+  notificationState.effectivePaused = notificationState.pausedByUser || pausedForHours || snoozedNow;
+};
+
+const formatSnoozeLabel = (untilMs: number) => {
+  if (!untilMs || untilMs <= Date.now()) return '';
+  try {
+    return new Date(untilMs).toLocaleString();
+  } catch {
+    return '';
+  }
+};
+
+const setSnoozeUntil = (untilMs: number) => {
+  notificationState.snoozedUntilMs = Math.max(0, Number(untilMs || 0));
+  try {
+    prefsStore.set('snoozedUntilMs', notificationState.snoozedUntilMs);
+  } catch {
+    // ignore
+  }
+  computeEffectivePaused();
+  broadcastState();
+  updateTrayMenu();
+};
+
+const clearSnooze = () => {
+  setSnoozeUntil(0);
+};
+
+const setFilters = (next: Partial<{ showNotes: boolean; showReview: boolean }>) => {
+  if (next.showNotes !== undefined) {
+    notificationState.showNotes = Boolean(next.showNotes);
+    try { prefsStore.set('showNotes', notificationState.showNotes); } catch { /* ignore */ }
+  }
+  if (next.showReview !== undefined) {
+    notificationState.showReview = Boolean(next.showReview);
+    try { prefsStore.set('showReview', notificationState.showReview); } catch { /* ignore */ }
+  }
+  recomputeCombinedPill();
+  renderNotificationPill();
+  updateTrayMenu();
+  broadcastState();
+};
+
+const openStaffStatusWindow = () => {
+  try {
+    if (statusWindow && !statusWindow.isDestroyed()) {
+      statusWindow.show();
+      statusWindow.focus();
+      return;
+    }
+
+    statusWindow = new BrowserWindow({
+      width: 760,
+      height: 560,
+      show: false,
+      title: 'Staff Status Indicators',
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+
+    const url = getExternalUrl('/admin/desktop-status');
+    statusWindow.loadURL(url).catch(() => undefined);
+    statusWindow.once('ready-to-show', () => {
+      try {
+        statusWindow?.show();
+      } catch {
+        // ignore
+      }
+    });
+    statusWindow.on('closed', () => {
+      statusWindow = null;
+    });
+  } catch {
+    // ignore
+  }
 };
 
 const openInMainWindow = (route?: string) => {
@@ -247,6 +459,12 @@ const openInMainWindow = (route?: string) => {
 
 const buildTrayMenu = () => {
   const statusLabel = notificationState.effectivePaused ? 'Silent' : 'Active';
+  const updateSuffix = getUpdateSuffix();
+  const showDebugItems =
+    isDev || String(process.env.DESKTOP_SHOW_DEBUG || '').trim() === '1';
+  const snoozeUntil = Number(notificationState.snoozedUntilMs || 0);
+  const snoozeActive = snoozeUntil > Date.now();
+  const snoozeLabel = snoozeActive ? `Snoozed until: ${formatSnoozeLabel(snoozeUntil)}` : 'Not snoozed';
   const template: Array<Electron.MenuItemConstructorOptions> = [
     {
       label: 'Open Notifications',
@@ -268,6 +486,11 @@ const buildTrayMenu = () => {
       label: notificationState.allowAfterHours ? 'Disable After-Hours Alerts' : 'Enable After-Hours Alerts',
       click: () => {
         notificationState.allowAfterHours = !notificationState.allowAfterHours;
+        try {
+          prefsStore.set('allowAfterHours', notificationState.allowAfterHours);
+        } catch {
+          // ignore
+        }
         computeEffectivePaused();
         broadcastState();
         updateTrayMenu();
@@ -277,6 +500,11 @@ const buildTrayMenu = () => {
       label: notificationState.pausedByUser ? 'Resume Notifications' : 'Pause Notifications',
       click: () => {
         notificationState.pausedByUser = !notificationState.pausedByUser;
+        try {
+          prefsStore.set('pausedByUser', notificationState.pausedByUser);
+        } catch {
+          // ignore
+        }
         computeEffectivePaused();
         broadcastState();
         updateTrayMenu();
@@ -285,6 +513,48 @@ const buildTrayMenu = () => {
     {
       label: `Status: ${statusLabel}`,
       enabled: false
+    },
+    { type: 'separator' },
+    {
+      label: `Snooze: ${snoozeLabel}`,
+      enabled: false,
+    },
+    {
+      label: 'Snooze (15 minutes)',
+      click: () => setSnoozeUntil(Date.now() + 15 * 60 * 1000),
+    },
+    {
+      label: 'Snooze (1 hour)',
+      click: () => setSnoozeUntil(Date.now() + 60 * 60 * 1000),
+    },
+    {
+      label: 'Snooze (until tomorrow 8:00 AM)',
+      click: () => {
+        const now = new Date();
+        const tomorrow = new Date(now);
+        tomorrow.setDate(now.getDate() + 1);
+        tomorrow.setHours(8, 0, 0, 0);
+        setSnoozeUntil(tomorrow.getTime());
+      },
+    },
+    {
+      label: 'Clear Snooze',
+      enabled: snoozeActive,
+      click: () => clearSnooze(),
+    },
+    { type: 'separator' },
+    {
+      label: `${notificationState.showNotes ? 'Hide' : 'Show'} Priority Notes`,
+      click: () => setFilters({ showNotes: !notificationState.showNotes }),
+    },
+    {
+      label: `${notificationState.showReview ? 'Hide' : 'Show'} CS/Docs Review Alerts`,
+      click: () => setFilters({ showReview: !notificationState.showReview }),
+    },
+    { type: 'separator' },
+    {
+      label: 'Show staff status indicators',
+      click: () => openStaffStatusWindow(),
     },
     { type: 'separator' },
     {
@@ -300,35 +570,63 @@ const buildTrayMenu = () => {
           cancelId: 1
         });
         if (result.response === 0) {
-          autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
+          await runManualUpdateCheck('about');
         }
       }
     },
     {
-      label: 'Check for Updates',
+      label: `Check for Updates${updateSuffix}`,
       click: () => {
-        autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
+        void runManualUpdateCheck('tray');
       }
     },
     { type: 'separator' },
     {
-      label: 'Debug: Show state',
+      label: 'Refresh app (reload)',
       click: () => {
-        void showDebugDialog();
+        try {
+          mainWindow?.webContents.reloadIgnoringCache();
+        } catch {
+          // ignore
+        }
       }
     },
     {
-      label: 'Debug: Toggle DevTools (main)',
+      label: 'Reset pill position',
       click: () => {
-        safeToggleDevTools(mainWindow);
+        try {
+          pillPosition = null;
+          prefsStore.set('pillPosition', null);
+          positionNotificationWindow();
+        } catch {
+          // ignore
+        }
       }
     },
-    {
-      label: 'Debug: Toggle DevTools (pill)',
-      click: () => {
-        safeToggleDevTools(notificationWindow);
-      }
-    },
+    { type: 'separator' },
+    ...(showDebugItems
+      ? ([
+          {
+            label: 'Debug: Show state',
+            click: () => {
+              void showDebugDialog();
+            }
+          },
+          {
+            label: 'Debug: Toggle DevTools (main)',
+            click: () => {
+              safeToggleDevTools(mainWindow);
+            }
+          },
+          {
+            label: 'Debug: Toggle DevTools (pill)',
+            click: () => {
+              safeToggleDevTools(notificationWindow);
+            }
+          },
+          { type: 'separator' as const },
+        ] as const)
+      : []),
     ...(updateReadyToInstall
       ? ([
           {
@@ -911,8 +1209,12 @@ const showPanel = () => {
 
 const recomputeCombinedPill = () => {
   const combined: PillItem[] = [];
-  combined.push(...staffPillNotes);
-  combined.push(...reviewPillNotes);
+  if (notificationState.showNotes) {
+    combined.push(...staffPillNotes);
+  }
+  if (notificationState.showReview) {
+    combined.push(...reviewPillNotes);
+  }
 
   // Best-effort newest-first sort using Date.parse on timestamp labels.
   combined.sort((a, b) => {
@@ -923,7 +1225,9 @@ const recomputeCombinedPill = () => {
 
   pillNotes = combined;
   pillIndex = 0;
-  pillSummary.count = staffPillCount + reviewPillCount;
+  pillSummary.count =
+    (notificationState.showNotes ? staffPillCount : 0)
+    + (notificationState.showReview ? reviewPillCount : 0);
 };
 
 const showMinimizedPill = () => {
@@ -970,18 +1274,19 @@ const showAboutDialog = async () => {
     cancelId: 1
   }).then((result) => {
     if (result.response === 0) {
-      autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
+      void runManualUpdateCheck('about');
     }
   });
 };
 
 const createAppMenu = () => {
+  const updateSuffix = getUpdateSuffix();
   const template = [
     {
       label: 'Connect CalAIM',
       submenu: [
         { label: 'About Connect CalAIM', click: showAboutDialog },
-        { label: 'Check for Updates', click: () => autoUpdater.checkForUpdatesAndNotify().catch(() => undefined) },
+        { label: `Check for Updates${updateSuffix}`, click: () => void runManualUpdateCheck('menu') },
         {
           label: updateReadyVersion ? `Restart to Update (v${updateReadyVersion})` : 'Restart to Update',
           enabled: updateReadyToInstall,
@@ -1012,9 +1317,41 @@ const configureAutoUpdater = () => {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
+  autoUpdater.on('checking-for-update', () => {
+    setUpdateUi({ state: 'checking', lastCheckedAt: Date.now() });
+  });
+
+  autoUpdater.on('update-available', (info: any) => {
+    const nextVersion = typeof info?.version === 'string' ? info.version : null;
+    setUpdateUi({ state: 'downloading', version: nextVersion, lastCheckedAt: Date.now() });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    setUpdateUi({ state: 'upToDate', version: null, lastCheckedAt: Date.now() });
+  });
+
+  autoUpdater.on('download-progress', (progress: any) => {
+    const nextVersion = updateUiVersion;
+    // Keep it simple: expose "downloading" state in the tray label.
+    setUpdateUi({ state: 'downloading', version: nextVersion, lastCheckedAt: updateUiLastCheckedAt ?? Date.now() });
+    try {
+      if (typeof progress?.percent === 'number') {
+        // percent is noisy; do not spam dialogs, only keep tray label stable.
+      }
+    } catch {
+      // ignore
+    }
+  });
+
   autoUpdater.on('update-downloaded', async (info: any) => {
-    updateReadyToInstall = true;
-    updateReadyVersion = typeof info?.version === 'string' ? info.version : null;
+    const nextVersion = typeof info?.version === 'string' ? info.version : null;
+    setUpdateUi({
+      state: 'downloaded',
+      version: nextVersion,
+      lastCheckedAt: Date.now(),
+      readyToInstall: true,
+      readyVersion: nextVersion,
+    });
     try {
       updateTrayMenu();
       createAppMenu();
@@ -1051,9 +1388,10 @@ const configureAutoUpdater = () => {
     } catch {
       // ignore
     }
+    setUpdateUi({ state: 'error', lastCheckedAt: Date.now() });
   });
 
-  autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
+  autoUpdater.checkForUpdates().catch(() => undefined);
 };
 
 ipcMain.handle('desktop:getState', () => {
@@ -1063,10 +1401,39 @@ ipcMain.handle('desktop:getState', () => {
 
 ipcMain.handle('desktop:setPaused', (_event, paused: boolean) => {
   notificationState.pausedByUser = Boolean(paused);
+  try {
+    prefsStore.set('pausedByUser', notificationState.pausedByUser);
+  } catch {
+    // ignore
+  }
   computeEffectivePaused();
   broadcastState();
   updateTrayMenu();
   return { ...notificationState };
+});
+
+ipcMain.handle('desktop:setSnooze', (_event, payload: { untilMs: number }) => {
+  setSnoozeUntil(Number(payload?.untilMs || 0));
+  return { ...notificationState };
+});
+
+ipcMain.handle('desktop:clearSnooze', () => {
+  clearSnooze();
+  return { ...notificationState };
+});
+
+ipcMain.handle('desktop:openStaffStatus', () => {
+  openStaffStatusWindow();
+  return true;
+});
+
+ipcMain.handle('desktop:refreshApp', () => {
+  try {
+    mainWindow?.webContents.reloadIgnoringCache();
+  } catch {
+    // ignore
+  }
+  return true;
 });
 
 ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) => {
@@ -1159,6 +1526,11 @@ ipcMain.on('desktop:quickReply', (_event, payload: { noteId?: string; senderId?:
 
 ipcMain.on('desktop:movePill', (_event, payload: { x: number; y: number }) => {
   pillPosition = { x: payload.x, y: payload.y };
+  try {
+    prefsStore.set('pillPosition', pillPosition);
+  } catch {
+    // ignore
+  }
   if (notificationWindow) {
     notificationWindow.setPosition(Math.round(payload.x), Math.round(payload.y), false);
   }
@@ -1254,7 +1626,7 @@ ipcMain.on('desktop:setPendingCount', (_event, count: number) => {
 });
 
 ipcMain.handle('desktop:checkForUpdates', async () => {
-  await autoUpdater.checkForUpdatesAndNotify();
+  await runManualUpdateCheck('menu');
 });
 
 app.whenReady().then(() => {
