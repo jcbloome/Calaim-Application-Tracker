@@ -11,6 +11,7 @@ let statusWindow: BrowserWindow | null = null;
 let notificationTimer: NodeJS.Timeout | null = null;
 let isQuitting = false;
 let notificationWindowLoaded = false;
+let isPositioningPillWindow = false;
 let updateReadyToInstall = false;
 let updateReadyVersion: string | null = null;
 let updaterConfigured = false;
@@ -1050,6 +1051,32 @@ const ensureNotificationWindow = () => {
 
     notificationWindow.setAlwaysOnTop(true, 'screen-saver');
     notificationWindow.setVisibleOnAllWorkspaces(true);
+    // Prevent user dragging the pill window (Windows can glitch and tray may hang).
+    try {
+      notificationWindow.setMovable(false);
+    } catch {
+      // ignore
+    }
+    try {
+      notificationWindow.setMinimizable(false);
+      notificationWindow.setMaximizable(false);
+      (notificationWindow as any).setFullScreenable?.(false);
+    } catch {
+      // ignore
+    }
+    try {
+      // Block OS-initiated drag/move gestures (if supported on this platform).
+      (notificationWindow as any).on?.('will-move', (event: any) => {
+        if (isPositioningPillWindow) return;
+        try {
+          event.preventDefault();
+        } catch {
+          // ignore
+        }
+      });
+    } catch {
+      // ignore
+    }
     applyPillWindowSize();
     notificationWindow.on('closed', () => {
       notificationWindow = null;
@@ -1098,13 +1125,17 @@ const positionNotificationWindow = () => {
       workArea.y + workArea.height - windowBounds.height - 8
     );
     pillPosition = { x: clampedX, y: clampedY };
+    isPositioningPillWindow = true;
     notificationWindow.setPosition(Math.round(clampedX), Math.round(clampedY), false);
+    isPositioningPillWindow = false;
     return;
   }
   const margin = 16;
   const x = workArea.x + workArea.width - windowBounds.width - margin;
   const y = workArea.y + workArea.height - windowBounds.height - margin;
+  isPositioningPillWindow = true;
   notificationWindow.setPosition(Math.round(x), Math.round(y), false);
+  isPositioningPillWindow = false;
 };
 
 const renderNotificationPill = () => {
@@ -1889,19 +1920,14 @@ ipcMain.on('desktop:quickReply', (_event, payload: { noteId?: string; senderId?:
 });
 
 ipcMain.on('desktop:movePill', (_event, payload: { x: number; y: number }) => {
-  pillPosition = { x: payload.x, y: payload.y };
-  try {
-    prefsStore.set('pillPosition', pillPosition);
-  } catch {
-    // ignore
-  }
-  if (notificationWindow) {
-    notificationWindow.setPosition(Math.round(payload.x), Math.round(payload.y), false);
-  }
+  // Disabled: user-moving the pill can cause Windows artifacts and hang tray interactions.
+  // Keep handler as a no-op for backwards compatibility with older renderers.
+  void payload;
 });
 
 ipcMain.handle('desktop:getPillPosition', () => {
-  return pillPosition;
+  // Disabled: returning null discourages any drag-from-baseline behavior.
+  return null;
 });
 
 ipcMain.on('desktop:setPillSummary', (_event, payload: {
