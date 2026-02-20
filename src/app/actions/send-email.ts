@@ -20,7 +20,14 @@ if (!process.env.RESEND_API_KEY) {
   console.warn("RESEND_API_KEY is not set. Email functionality will be disabled.");
 }
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+let resendClient: Resend | null = null;
+function getResendClient(): Resend | null {
+  if (resendClient) return resendClient;
+  const key = String(process.env.RESEND_API_KEY || '').trim();
+  if (!key) return null;
+  resendClient = new Resend(key);
+  return resendClient;
+}
 
 interface ApplicationStatusPayload {
   to: string;
@@ -99,9 +106,8 @@ async function getBccRecipients(): Promise<string[]> {
 export const sendApplicationStatusEmail = async (payload: ApplicationStatusPayload) => {
     const { to, subject, memberName, staffName, message, status } = payload;
 
-    if (!process.env.RESEND_API_KEY) {
-        throw new Error('Resend API key is not configured.');
-    }
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
 
     const bccList = await getBccRecipients();
 
@@ -136,9 +142,8 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
 export const sendReminderEmail = async (payload: ReminderPayload) => {
     const { to, subject, referrerName, memberName, applicationId, incompleteItems, baseUrl } = payload;
 
-    if (!process.env.RESEND_API_KEY) {
-        throw new Error('Resend API key is not configured.');
-    }
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
 
     try {
         const emailHtml = await renderAsync(ReminderEmail({
@@ -171,9 +176,8 @@ export const sendReminderEmail = async (payload: ReminderPayload) => {
 export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) => {
     const { to, staffName, memberName, memberMrn, memberCounty, kaiserStatus, calaimStatus, assignedBy, nextStepsDate } = payload;
 
-    if (!process.env.RESEND_API_KEY) {
-        throw new Error('Resend API key is not configured.');
-    }
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
 
     const bccList = await getBccRecipients();
 
@@ -210,7 +214,8 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
 };
 
 export const sendNoteAssignmentEmail = async (payload: NoteAssignmentPayload) => {
-    if (!process.env.RESEND_API_KEY) {
+    const resend = getResendClient();
+    if (!resend) {
         console.warn("RESEND_API_KEY is not set. Skipping note assignment email.");
         return null;
     }
