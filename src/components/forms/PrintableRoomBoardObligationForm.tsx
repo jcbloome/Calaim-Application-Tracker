@@ -78,39 +78,22 @@ export function PrintableRoomBoardObligationForm({
           </div>
         </div>
 
-        {/* Income Information */}
-        <PrintableFormSection title="Income & Room and Board">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-                Member's current monthly income: *
-              </label>
-              <div className="flex items-center space-x-2">
-                <span className="text-lg font-semibold">$</span>
-                <div className="flex-1 h-12 border-b-2 border-gray-400 print:border-black"></div>
-                <span className="text-sm text-gray-600 print:text-black">per month</span>
-              </div>
-            </div>
-
-            <div className="mt-3 p-3 print:p-4 border print:border-black bg-gray-50 print:bg-white">
-              <p className="text-sm print:text-xs text-gray-700 print:text-black">
-                <strong>Note:</strong> Please note that proof of income (e.g, Social Security award letter or 3 month's of bank statements showing Social Security income) will need to be submitted as part of this application package. If income is above approximately $1,800, this might trigger Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See Program Information pages for more information about this.
-              </p>
-            </div>
-          </div>
-        </PrintableFormSection>
-
         {/* Payment Commitment */}
         <div className="p-3 print:p-4 border print:border-black">
           <h3 className="text-base font-semibold text-gray-900 print:text-black mb-2">
-            Commitment
+            Commitment *
           </h3>
           <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
             <div className="flex items-start gap-2">
               <div className="h-4 w-4 border border-gray-400 print:border-black mt-0.5" />
               <p>
-                Member (or authorized representative) acknowledges the "room and board" commitment for participation in
-                the CalAIM program.
+                Member/authorized representative agrees to pay the required "room and board" portion.
+              </p>
+            </div>
+            <div className="flex items-start gap-2">
+              <div className="h-4 w-4 border border-gray-400 print:border-black mt-0.5" />
+              <p>
+                Member/authorized representative does not agree to pay the required "room and board" portion.
               </p>
             </div>
           </div>

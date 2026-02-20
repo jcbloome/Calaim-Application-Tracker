@@ -639,8 +639,8 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           </p>
         </div>
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black">
-          Proof of income (annual award letter or 3 months of bank statements showing Social Security income) will need
-          to be submitted as part of this application. If income is above approximately $1,800, this might trigger
+          Proof of income (annual award letter or 3 months of bank statements showing Social Security income) is
+          required by some managed care plans. If income is above approximately $1,800, this might trigger
           Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See Program Information pages for
           more information about this.
         </div>

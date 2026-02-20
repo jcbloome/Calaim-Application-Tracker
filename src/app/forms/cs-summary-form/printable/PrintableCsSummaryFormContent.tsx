@@ -343,7 +343,7 @@ export function PrintableCsSummaryFormContent() {
                         <p>Working with CalAIM is at the discretion of the RCFEs. RCFEs, especially in more expensive areas, might not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas. Before accepting CalAIM members, RCFEs will need to know the "room and board" payment.</p>
                     </div>
                     <div className="p-3 border border-gray-300 text-xs text-gray-700 mb-2">
-                        Proof of income (annual award letter or 3 months of bank statements showing Social Security income) will need to be submitted as part of this application. If income is above approximately $1,800, this might trigger Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See Program Information pages for more information about this.
+                        Proof of income (annual award letter or 3 months of bank statements showing Social Security income) is required by some managed care plans. If income is above approximately $1,800, this might trigger Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See Program Information pages for more information about this.
                     </div>
                     <CheckboxField label="I have read and understood the financial obligation for Room and Board." />
                 </div>

@@ -79,39 +79,22 @@ export function PrintableRoomBoardObligationFormSpanish({
           </div>
         </div>
 
-        {/* Income Information */}
-        <PrintableFormSection title="Ingresos y Alojamiento y Comida">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-                Ingreso mensual actual del miembro: *
-              </label>
-              <div className="flex items-center space-x-2">
-                <span className="text-lg font-semibold">$</span>
-                <div className="flex-1 h-12 border-b-2 border-gray-400 print:border-black"></div>
-                <span className="text-sm text-gray-600 print:text-black">por mes</span>
-              </div>
-            </div>
-
-            <div className="mt-3 p-3 print:p-4 border print:border-black bg-gray-50 print:bg-white">
-              <p className="text-sm print:text-xs text-gray-700 print:text-black">
-                <strong>Nota:</strong> Tenga en cuenta que se deberá presentar comprobante de ingresos (por ejemplo, carta de adjudicación del Seguro Social o 3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social) como parte de este paquete de solicitud. Si los ingresos son superiores a aproximadamente $1,800, esto podría activar el Share of Cost de Medi-Cal que debe resolverse antes de solicitar CalAIM. Consulte las páginas de información del programa para más detalles.
-              </p>
-            </div>
-          </div>
-        </PrintableFormSection>
-
         {/* Payment Commitment */}
         <div className="p-3 print:p-4 border print:border-black">
           <h3 className="text-base font-semibold text-gray-900 print:text-black mb-2">
-            Compromiso
+            Compromiso *
           </h3>
           <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
             <div className="flex items-start gap-2">
               <div className="h-4 w-4 border border-gray-400 print:border-black mt-0.5" />
               <p>
-                El miembro (o representante autorizado) reconoce el compromiso de "alojamiento y comida" para participar
-                en el programa CalAIM.
+                El miembro/representante autorizado acepta pagar la porción requerida de "alojamiento y comida".
+              </p>
+            </div>
+            <div className="flex items-start gap-2">
+              <div className="h-4 w-4 border border-gray-400 print:border-black mt-0.5" />
+              <p>
+                El miembro/representante autorizado no está de acuerdo en pagar la porción requerida de "alojamiento y comida".
               </p>
             </div>
           </div>

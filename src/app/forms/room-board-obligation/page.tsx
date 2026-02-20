@@ -26,21 +26,11 @@ function RoomBoardObligationContent() {
   const firestore = useFirestore();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [monthlyIncome, setMonthlyIncome] = useState('');
-  const [ackRoomAndBoard, setAckRoomAndBoard] = useState(false);
+  const [roomBoardAgreement, setRoomBoardAgreement] = useState<'agree' | 'disagree' | null>(null);
   const [signerType, setSignerType] = useState<'member' | 'representative' | null>(null);
   const [signerName, setSignerName] = useState('');
   const [signerRelationship, setSignerRelationship] = useState('');
   const [signatureDate, setSignatureDate] = useState('');
-
-  const formatCurrencyInput = (value: string) => {
-    const normalized = value.replace(/[^0-9.]/g, '');
-    if (!normalized) return '';
-    const [whole, decimal] = normalized.split('.');
-    const formattedWhole = whole.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    const formattedDecimal = decimal ? `.${decimal.slice(0, 2)}` : '';
-    return `$${formattedWhole || '0'}${formattedDecimal}`;
-  };
 
   const applicationDocRef = useMemoFirebase(() => {
     if (isUserLoading || !user || !firestore || !applicationId) return null;
@@ -57,7 +47,13 @@ function RoomBoardObligationContent() {
         setSignerType(form.signerType || null);
         setSignerName(form.signerName || '');
         setSignerRelationship(form.signerRelationship || '');
-        setAckRoomAndBoard(Boolean(form.ackRoomAndBoard) || Boolean(application.ackRoomAndBoard));
+        const rawAck =
+          typeof (form as any)?.ackRoomAndBoard === 'boolean'
+            ? Boolean((form as any).ackRoomAndBoard)
+            : typeof (application as any)?.ackRoomAndBoard === 'boolean'
+              ? Boolean((application as any).ackRoomAndBoard)
+              : null;
+        setRoomBoardAgreement(rawAck === null ? null : rawAck ? 'agree' : 'disagree');
         setSignatureDate(
           form.dateCompleted
             ? new Date(form.dateCompleted.seconds * 1000).toLocaleDateString()
@@ -66,26 +62,23 @@ function RoomBoardObligationContent() {
       } else {
         setSignatureDate(new Date().toLocaleDateString());
       }
-
-      setMonthlyIncome(application.monthlyIncome || '');
     } else {
       setSignatureDate(new Date().toLocaleDateString());
     }
   }, [application]);
 
   const isFormComplete = useMemo(() => {
-    if (!monthlyIncome.trim()) return false;
-    if (!ackRoomAndBoard) return false;
+    if (!roomBoardAgreement) return false;
     if (!signerType || !signerName.trim() || !signerRelationship.trim()) return false;
     return true;
-  }, [monthlyIncome, ackRoomAndBoard, signerType, signerName, signerRelationship]);
+  }, [roomBoardAgreement, signerType, signerName, signerRelationship]);
 
   const handleSubmit = async () => {
     if (!isFormComplete) {
       toast({
         variant: 'destructive',
         title: 'Incomplete Form',
-        description: 'Please complete the income, commitment acknowledgment, and signature fields.',
+        description: 'Please complete the room and board agreement choice and signature fields.',
       });
       return;
     }
@@ -99,13 +92,15 @@ function RoomBoardObligationContent() {
 
     const existingForms = application?.forms || [];
     const formIndex = existingForms.findIndex(form => form.name === 'Room and Board Commitment');
+    const ackRoomAndBoard = roomBoardAgreement === 'agree';
 
     const newFormData: Partial<FormStatus> = {
       status: 'Completed',
       signerType,
       signerName,
       signerRelationship,
-      ackRoomAndBoard: true,
+      ackRoomAndBoard,
+      roomBoardAgreement,
       dateCompleted: Timestamp.now(),
     };
 
@@ -129,8 +124,7 @@ function RoomBoardObligationContent() {
         applicationDocRef,
         {
           forms: updatedForms,
-          monthlyIncome,
-          ackRoomAndBoard: true,
+          ackRoomAndBoard,
           lastUpdated: Timestamp.now(),
         },
         { merge: true }
@@ -215,37 +209,38 @@ function RoomBoardObligationContent() {
               </div>
 
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="monthly-income">Member's current monthly income <span className="text-destructive">*</span></Label>
-                  <Input
-                    id="monthly-income"
-                    type="text"
-                    inputMode="numeric"
-                    className="pl-3"
-                    value={monthlyIncome}
-                    onChange={(e) => setMonthlyIncome(formatCurrencyInput(e.target.value))}
-                    disabled={isReadOnly}
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    Please note that proof of income (e.g., Social Security award letter or 3 month's of bank statements showing Social Security income) will need to be submitted as part of this application package. Any income above $1,444.07 is not paid as "room and board" unless the member wants to pay more to access more expensive geographic areas or the RCFE/ARF agrees to a higher amount for a private room (since the program does not mandate private rooms). If income is above approximately $1,800, this might trigger Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See{' '}
-                    <a href="/info" className="text-primary hover:underline">
-                      Program Information
-                    </a>{' '}
-                    pages for more information about this.
-                  </p>
-                </div>
                 <div className="flex items-start space-x-3 rounded-md border p-4">
-                  <Checkbox
-                    id="ack-room-board"
-                    checked={ackRoomAndBoard}
-                    onCheckedChange={(checked) => setAckRoomAndBoard(!!checked)}
-                    disabled={isReadOnly}
-                  />
                   <div className="space-y-1 leading-none">
-                    <Label htmlFor="ack-room-board" className="text-blue-700">
-                      Member (or authorized representative) acknowledges the "room and board" commitment for participation in the CalAIM program.{' '}
-                      <span className="text-destructive">*</span>
+                    <Label className="text-sm font-medium text-slate-800">
+                      Room &amp; Board Agreement <span className="text-destructive">*</span>
                     </Label>
+                    <div className="space-y-3">
+                      <div className="flex items-start space-x-3">
+                        <Checkbox
+                          id="room-board-agree"
+                          checked={roomBoardAgreement === 'agree'}
+                          onCheckedChange={(checked) => setRoomBoardAgreement(checked ? 'agree' : null)}
+                          disabled={isReadOnly}
+                        />
+                        <Label htmlFor="room-board-agree" className="text-blue-700">
+                          Member/authorized representative <span className="font-semibold">agrees</span> to pay the required
+                          "room and board" portion.
+                        </Label>
+                      </div>
+
+                      <div className="flex items-start space-x-3">
+                        <Checkbox
+                          id="room-board-disagree"
+                          checked={roomBoardAgreement === 'disagree'}
+                          onCheckedChange={(checked) => setRoomBoardAgreement(checked ? 'disagree' : null)}
+                          disabled={isReadOnly}
+                        />
+                        <Label htmlFor="room-board-disagree" className="text-blue-700">
+                          Member/authorized representative <span className="font-semibold">does not agree</span> to pay the required
+                          "room and board" portion.
+                        </Label>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

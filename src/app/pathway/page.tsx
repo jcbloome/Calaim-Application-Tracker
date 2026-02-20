@@ -42,7 +42,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 
-const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => {
+const getPathwayRequirements = (
+  pathway: 'SNF Transition' | 'SNF Diversion',
+  healthPlan?: string | null
+) => {
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form/review', icon: FileText },
     { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, and Freedom of Choice waiver form.', type: 'online-form', href: '/forms/waivers', icon: FileText },
@@ -51,17 +54,23 @@ const getPathwayRequirements = (pathway: 'SNF Transition' | 'SNF Diversion') => 
     { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'Upload', icon: UploadCloud, href: '#' },
   ];
+
+  const normalizedHealthPlan = String(healthPlan || '').trim();
+  const filteredCommonRequirements =
+    normalizedHealthPlan === 'Health Net'
+      ? commonRequirements.filter((req) => req.id !== 'proof-of-income')
+      : commonRequirements;
   
   if (pathway === 'SNF Diversion') {
     return [
-      ...commonRequirements,
+      ...filteredCommonRequirements,
       { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: "Required for SNF Diversion. Download, have it signed by a PCP, and upload. Note: This form is not required for any Kaiser members.", type: 'Upload', icon: Printer, href: '/forms/declaration-of-eligibility/printable' },
     ];
   }
   
   // SNF Transition
   return [
-      ...commonRequirements,
+      ...filteredCommonRequirements,
       { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility.", type: 'Upload', icon: UploadCloud, href: '#' },
   ];
 };
@@ -162,7 +171,10 @@ function PathwayPageContent() {
 
   useEffect(() => {
     if (application && docRef && application.pathway && (!application.forms || application.forms.length === 0)) {
-        const pathwayRequirements = getPathwayRequirements(application.pathway as 'SNF Transition' | 'SNF Diversion');
+        const pathwayRequirements = getPathwayRequirements(
+          application.pathway as 'SNF Transition' | 'SNF Diversion',
+          application.healthPlan
+        );
         const initialForms: FormStatusType[] = pathwayRequirements.map(req => ({
             name: req.title,
             status: 'Pending',
@@ -650,7 +662,10 @@ function PathwayPageContent() {
   
   const isReadOnly = application.status === 'Completed & Submitted' || application.status === 'Approved';
 
-  const pathwayRequirements = getPathwayRequirements(application.pathway as 'SNF Transition' | 'SNF Diversion');
+  const pathwayRequirements = getPathwayRequirements(
+    application.pathway as 'SNF Transition' | 'SNF Diversion',
+    application.healthPlan
+  );
   const formStatusMap = new Map(application.forms?.map(f => [f.name, f]));
   
   const completedCount = pathwayRequirements.reduce((acc, req) => {

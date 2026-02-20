@@ -155,6 +155,7 @@ export type FormStatus = {
   signerName?: string | null;
   signerRelationship?: string | null;
   ackRoomAndBoard?: boolean;
+  roomBoardAgreement?: 'agree' | 'disagree' | null;
   ackNmoHC?: boolean;
   ackHipaa?: boolean;
   ackLiability?: boolean;

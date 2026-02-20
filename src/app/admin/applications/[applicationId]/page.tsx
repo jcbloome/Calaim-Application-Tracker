@@ -357,17 +357,24 @@ const getPathwayRequirements = (
       href: '#'
     },
   ];
+
+  // Proof of income is required for Kaiser but not required for Health Net.
+  const normalizedHealthPlan = String(healthPlan || '').trim();
+  const filteredCommonRequirements =
+    normalizedHealthPlan === 'Health Net'
+      ? commonRequirements.filter((req) => req.id !== 'proof-of-income')
+      : commonRequirements;
   
   if (pathway === 'SNF Diversion') {
     return [
-      ...commonRequirements,
+      ...filteredCommonRequirements,
       { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: 'Download the form, have it signed by a PCP, and upload it here.', type: 'Upload', icon: Printer, href: '/forms/declaration-of-eligibility/printable' },
     ];
   }
   
   // SNF Transition
   return [
-      ...commonRequirements,
+      ...filteredCommonRequirements,
       { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility.", type: 'Upload', icon: UploadCloud, href: '#' },
   ];
 };
@@ -2281,6 +2288,9 @@ function ApplicationDetailPageContent() {
     if (componentKey === 'Sent to Caspio') {
       return (application as any)?.caspioSent ? 'Completed' : 'Pending';
     }
+    if (componentKey === 'Proof of Income' && application?.healthPlan === 'Health Net') {
+      return 'Not Applicable';
+    }
     if (componentKey === 'Declaration of Eligibility' && application?.pathway !== 'SNF Diversion') {
       return 'Not Applicable';
     }
@@ -3318,6 +3328,10 @@ function ApplicationDetailPageContent() {
                   ? Boolean((application as any)?.applicationChecked)
                   : Boolean(formInfo?.acknowledged);
                 const needsReview = status === 'Completed' && !isReviewed;
+                const roomBoardAck =
+                  req.title === 'Room and Board Commitment'
+                    ? (formInfo as any)?.ackRoomAndBoard ?? (application as any)?.ackRoomAndBoard
+                    : null;
                 
                 return (
                     <Card key={req.id} className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
@@ -3330,6 +3344,11 @@ function ApplicationDetailPageContent() {
                                       New
                                     </Badge>
                                   )}
+                                  {req.title === 'Room and Board Commitment' && status === 'Completed' && roomBoardAck === false ? (
+                                    <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200 text-xs">
+                                      Does not agree
+                                    </Badge>
+                                  ) : null}
                                 </CardTitle>
                                 {status === 'Completed' && (
                                   <div className="flex items-center gap-2">

@@ -159,6 +159,15 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
                 return 'Yes, member has capacity';
         }
     }
+
+    const roomBoardAgreementLabel = (() => {
+        const forms = (application as any)?.forms || [];
+        const form = forms.find((f: any) => f?.name === 'Room and Board Commitment');
+        const ack = form?.ackRoomAndBoard ?? (application as any)?.ackRoomAndBoard;
+        if (ack === true) return 'Agrees';
+        if (ack === false) return 'Does not agree';
+        return 'Not provided';
+    })();
     
     return (
          <Dialog>
@@ -258,10 +267,10 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
 
                     <Section title="Financial Information">
                         <QuickViewField label="Income Source" value={application.incomeSource} />
-                        <QuickViewField label="Monthly Income" value={application.monthlyIncome} />
                         <QuickViewField label="Has Medi-Cal" value={application.hasMediCal ? 'Yes' : 'No'} />
                         <QuickViewField label="Medi-Cal Number" value={application.memberMediCalNum} />
                         <QuickViewField label="Share of Cost" value={application.shareOfCost} />
+                        <QuickViewField label="Room & Board Agreement" value={roomBoardAgreementLabel} />
                     </Section>
 
                     <Section title="Application Status & Tracking">
