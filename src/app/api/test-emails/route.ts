@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sendStaffAssignmentEmail } from '@/app/actions/send-email';
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+let resendClient: Resend | null = null;
+function getResendClient(): Resend | null {
+  if (resendClient) return resendClient;
+  const key = String(process.env.RESEND_API_KEY || '').trim();
+  if (!key) return null;
+  resendClient = new Resend(key);
+  return resendClient;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,6 +21,14 @@ export async function POST(request: NextRequest) {
     console.log('- NEXT_PUBLIC_APP_URL:', process.env.NEXT_PUBLIC_APP_URL || 'Not set');
 
     if (type === 'password-reset') {
+      const resend = getResendClient();
+      if (!resend) {
+        return NextResponse.json(
+          { success: false, message: 'RESEND_API_KEY is not configured' },
+          { status: 500 }
+        );
+      }
+
       // Test password reset email
       // Clean up the base URL to handle potential concatenation issues
       let baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';

@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+let resendClient: Resend | null = null;
+function getResendClient(): Resend | null {
+  if (resendClient) return resendClient;
+  const key = String(process.env.RESEND_API_KEY || '').trim();
+  if (!key) return null;
+  resendClient = new Resend(key);
+  return resendClient;
+}
 
 interface BulkEmailPayload {
   subject: string;
@@ -20,7 +27,8 @@ const chunkArray = <T,>(items: T[], size: number): T[][] => {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!process.env.RESEND_API_KEY) {
+    const resend = getResendClient();
+    if (!resend) {
       return NextResponse.json(
         { success: false, error: 'Resend API key is not configured' },
         { status: 500 }
