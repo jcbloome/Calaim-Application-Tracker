@@ -10,7 +10,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
 import { collection, doc, limit, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
-import { getPriorityRank, isPriorityOrUrgent, normalizePriorityLabel } from '@/lib/notification-utils';
+import { getPriorityRank, isPriorityOrUrgent, normalizePriorityLabel, WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
 
 interface StaffNotification {
   id: string;
@@ -38,6 +38,9 @@ interface StaffNotificationBellProps {
 }
 
 export function StaffNotificationBell({ userId, className = '', icon: Icon = Bell }: StaffNotificationBellProps) {
+  if (WEB_NOTIFICATIONS_MOTHBALLED) {
+    return null;
+  }
   const { user } = useAdmin();
   const firestore = useFirestore();
   const router = useRouter();

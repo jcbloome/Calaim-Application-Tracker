@@ -133,28 +133,6 @@ export default function DesktopNotificationWindowClient() {
   const [undoClose, setUndoClose] = useState<{ noteId: string; expiresAtMs: number } | null>(null);
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false);
   const [muteMenuOpen, setMuteMenuOpen] = useState(false);
-  const lastPillPositionRef = useRef<{ x: number; y: number } | null>(null);
-  const dragRef = useRef<{
-    dragging: boolean;
-    pointerId: number | null;
-    startX: number;
-    startY: number;
-    startPos: { x: number; y: number };
-    moved: boolean;
-    raf: number | null;
-    nextX: number;
-    nextY: number;
-  }>({
-    dragging: false,
-    pointerId: null,
-    startX: 0,
-    startY: 0,
-    startPos: { x: 0, y: 0 },
-    moved: false,
-    raf: null,
-    nextX: 0,
-    nextY: 0,
-  });
 
   const titleLabel = useMemo(() => {
     const c = Number(pillState?.count || 0);
@@ -206,18 +184,6 @@ export default function DesktopNotificationWindowClient() {
       unsubRef.current = null;
       unsubSummaryRef.current = null;
     };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    // Best-effort: read current pill position so dragging starts from correct baseline.
-    window.desktopNotificationPill?.getPosition?.()
-      .then((pos) => {
-        if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
-          lastPillPositionRef.current = { x: pos.x, y: pos.y };
-        }
-      })
-      .catch(() => null);
   }, []);
 
   const mode = pillState?.mode === 'panel' ? 'panel' : 'compact';
@@ -375,64 +341,6 @@ export default function DesktopNotificationWindowClient() {
   const handleExpand = useCallback(() => {
     try {
       window.desktopNotificationPill?.expand?.();
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const handleDragPointerDown = useCallback((event: React.PointerEvent) => {
-    try {
-      if (event.button !== 0) return;
-      if (!window.desktopNotificationPill?.move) return;
-      event.currentTarget.setPointerCapture(event.pointerId);
-      const pos = lastPillPositionRef.current;
-      dragRef.current.dragging = true;
-      dragRef.current.pointerId = event.pointerId;
-      dragRef.current.startX = event.clientX;
-      dragRef.current.startY = event.clientY;
-      dragRef.current.startPos = pos || { x: 0, y: 0 };
-      dragRef.current.moved = false;
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const handleDragPointerMove = useCallback((event: React.PointerEvent) => {
-    try {
-      if (!dragRef.current.dragging) return;
-      if (dragRef.current.pointerId !== event.pointerId) return;
-      const dx = event.clientX - dragRef.current.startX;
-      const dy = event.clientY - dragRef.current.startY;
-      if (!dragRef.current.moved) {
-        if (Math.abs(dx) + Math.abs(dy) < 4) return;
-        dragRef.current.moved = true;
-      }
-
-      const nextX = dragRef.current.startPos.x + dx;
-      const nextY = dragRef.current.startPos.y + dy;
-      dragRef.current.nextX = nextX;
-      dragRef.current.nextY = nextY;
-
-      if (dragRef.current.raf) return;
-      dragRef.current.raf = window.requestAnimationFrame(() => {
-        dragRef.current.raf = null;
-        try {
-          window.desktopNotificationPill?.move?.(dragRef.current.nextX, dragRef.current.nextY);
-          lastPillPositionRef.current = { x: dragRef.current.nextX, y: dragRef.current.nextY };
-        } catch {
-          // ignore
-        }
-      });
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const handleDragPointerUp = useCallback((event: React.PointerEvent) => {
-    try {
-      if (dragRef.current.pointerId !== event.pointerId) return;
-      dragRef.current.dragging = false;
-      dragRef.current.pointerId = null;
     } catch {
       // ignore
     }
@@ -807,20 +715,13 @@ export default function DesktopNotificationWindowClient() {
           type="button"
           className="w-full h-full bg-transparent"
           onClick={() => {
-            if (dragRef.current.moved) {
-              dragRef.current.moved = false;
-              return;
-            }
             handleExpand();
           }}
           aria-label="Open notifications panel"
         >
           <div className="w-full h-full flex items-center justify-center">
             <div
-              className="rounded-full border bg-white/95 shadow-lg backdrop-blur px-3 py-1.5 inline-flex items-center gap-2 cursor-grab active:cursor-grabbing"
-              onPointerDown={handleDragPointerDown}
-              onPointerMove={handleDragPointerMove}
-              onPointerUp={handleDragPointerUp}
+              className="rounded-full border bg-white/95 shadow-lg backdrop-blur px-3 py-1.5 inline-flex items-center gap-2"
             >
               <div className="h-2.5 w-2.5 rounded-full bg-blue-600 flex-shrink-0" />
               <div className="text-sm font-medium text-slate-900 whitespace-nowrap">Incoming note</div>

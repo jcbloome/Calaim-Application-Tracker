@@ -20,7 +20,7 @@ import { useFirestore } from '@/firebase';
 import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
 import { addDoc, collection, query, where, onSnapshot, doc, updateDoc, writeBatch, serverTimestamp, getDocs, documentId, deleteDoc } from 'firebase/firestore';
 import { logSystemNoteAction } from '@/lib/system-note-log';
-import { isPriorityOrUrgent, normalizePriorityLabel, notifyNotificationSettingsChanged } from '@/lib/notification-utils';
+import { isPriorityOrUrgent, normalizePriorityLabel, notifyNotificationSettingsChanged, WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import { DesktopPillPreviewOverlay } from '@/components/DesktopPillPreviewOverlay';
 import {
@@ -972,28 +972,30 @@ function MyNotesContent() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Web Notifications</CardTitle>
-          <CardDescription>
-            Toggle on to suppress web alerts and the header bell.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            {webAppNotificationsEnabled ? 'Web alerts are enabled' : 'Web alerts are suppressed'}
-          </div>
-          <Switch
-            checked={!webAppNotificationsEnabled}
-            onCheckedChange={(nextValue) => {
-              updateWebAppSetting(!nextValue);
-              if (nextValue) {
-                updateSuppressSetting(true);
-              }
-            }}
-          />
-        </CardContent>
-      </Card>
+      {WEB_NOTIFICATIONS_MOTHBALLED ? null : (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Web Notifications</CardTitle>
+            <CardDescription>
+              Toggle on to suppress web alerts and the header bell.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <div className="text-sm text-muted-foreground">
+              {webAppNotificationsEnabled ? 'Web alerts are enabled' : 'Web alerts are suppressed'}
+            </div>
+            <Switch
+              checked={!webAppNotificationsEnabled}
+              onCheckedChange={(nextValue) => {
+                updateWebAppSetting(!nextValue);
+                if (nextValue) {
+                  updateSuppressSetting(true);
+                }
+              }}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
