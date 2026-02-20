@@ -35,6 +35,8 @@ type DesktopPreferences = {
   showNotes: boolean;
   showReview: boolean;
   pillPosition: { x: number; y: number } | null;
+  snoozedNoteUntilById: Record<string, number>;
+  mutedSenderUntilById: Record<string, number>;
 };
 
 const prefsStore = new Store<DesktopPreferences>({
@@ -46,8 +48,81 @@ const prefsStore = new Store<DesktopPreferences>({
     showNotes: true,
     showReview: true,
     pillPosition: null,
+    snoozedNoteUntilById: {},
+    mutedSenderUntilById: {},
   },
 });
+
+const normalizeUntilMap = (raw: any): Record<string, number> => {
+  const now = Date.now();
+  const next: Record<string, number> = {};
+  try {
+    if (!raw || typeof raw !== 'object') return {};
+    for (const [key, value] of Object.entries(raw)) {
+      const id = String(key || '').trim();
+      const untilMs = Number(value || 0);
+      if (!id) continue;
+      if (!untilMs || Number.isNaN(untilMs)) continue;
+      if (untilMs <= now) continue;
+      next[id] = untilMs;
+    }
+  } catch {
+    return {};
+  }
+  return next;
+};
+
+let snoozedNoteUntilById = normalizeUntilMap(prefsStore.get('snoozedNoteUntilById'));
+let mutedSenderUntilById = normalizeUntilMap(prefsStore.get('mutedSenderUntilById'));
+let pillLastUpdatedAtMs: number = Date.now();
+
+const saveSuppressionMaps = () => {
+  try {
+    prefsStore.set('snoozedNoteUntilById', snoozedNoteUntilById);
+  } catch {
+    // ignore
+  }
+  try {
+    prefsStore.set('mutedSenderUntilById', mutedSenderUntilById);
+  } catch {
+    // ignore
+  }
+};
+
+const countActiveSuppressions = () => {
+  const now = Date.now();
+  const snoozed = Object.values(snoozedNoteUntilById).filter((v) => Number(v) > now).length;
+  const muted = Object.values(mutedSenderUntilById).filter((v) => Number(v) > now).length;
+  return { snoozed, muted };
+};
+
+const applySuppressionFilters = (notes: PillItem[]) => {
+  const now = Date.now();
+  // Prune expired entries opportunistically.
+  const nextSnoozes = normalizeUntilMap(snoozedNoteUntilById);
+  const nextMutes = normalizeUntilMap(mutedSenderUntilById);
+  const pruned = (Object.keys(nextSnoozes).length !== Object.keys(snoozedNoteUntilById).length)
+    || (Object.keys(nextMutes).length !== Object.keys(mutedSenderUntilById).length);
+  snoozedNoteUntilById = nextSnoozes;
+  mutedSenderUntilById = nextMutes;
+  if (pruned) {
+    saveSuppressionMaps();
+  }
+
+  return (notes || []).filter((note) => {
+    const noteId = String(note.noteId || '').trim();
+    if (noteId) {
+      const until = Number(snoozedNoteUntilById[noteId] || 0);
+      if (until > now) return false;
+    }
+    const senderId = String(note.senderId || '').trim();
+    if (senderId) {
+      const until = Number(mutedSenderUntilById[senderId] || 0);
+      if (until > now) return false;
+    }
+    return true;
+  });
+};
 
 let pillSummary = {
   count: 0,
@@ -534,6 +609,7 @@ const buildTrayMenu = () => {
   const snoozeUntil = Number(notificationState.snoozedUntilMs || 0);
   const snoozeActive = snoozeUntil > Date.now();
   const snoozeLabel = snoozeActive ? `Snoozed until: ${formatSnoozeLabel(snoozeUntil)}` : 'Not snoozed';
+  const suppressionCounts = countActiveSuppressions();
   const template: Array<Electron.MenuItemConstructorOptions> = [
     {
       label: 'Open Notifications',
@@ -622,6 +698,39 @@ const buildTrayMenu = () => {
     },
     { type: 'separator' },
     {
+      label: `Snoozed notes: ${suppressionCounts.snoozed}`,
+      enabled: false,
+    },
+    {
+      label: 'Clear snoozed notes',
+      enabled: suppressionCounts.snoozed > 0,
+      click: () => {
+        snoozedNoteUntilById = {};
+        saveSuppressionMaps();
+        pillLastUpdatedAtMs = Date.now();
+        recomputeCombinedPill();
+        if (pillSummary.count > 0) renderNotificationPill();
+        updateTrayMenu();
+      },
+    },
+    {
+      label: `Muted senders: ${suppressionCounts.muted}`,
+      enabled: false,
+    },
+    {
+      label: 'Clear muted senders',
+      enabled: suppressionCounts.muted > 0,
+      click: () => {
+        mutedSenderUntilById = {};
+        saveSuppressionMaps();
+        pillLastUpdatedAtMs = Date.now();
+        recomputeCombinedPill();
+        if (pillSummary.count > 0) renderNotificationPill();
+        updateTrayMenu();
+      },
+    },
+    { type: 'separator' },
+    {
       label: 'Show staff status indicators',
       click: () => openStaffStatusWindow(),
     },
@@ -677,6 +786,24 @@ const buildTrayMenu = () => {
       click: () => {
         try {
           mainWindow?.webContents.reloadIgnoringCache();
+        } catch {
+          // ignore
+        }
+      }
+    },
+    {
+      label: 'Force refresh notifications',
+      click: () => {
+        pillLastUpdatedAtMs = Date.now();
+        try {
+          mainWindow?.webContents.reloadIgnoringCache();
+        } catch {
+          // ignore
+        }
+        try {
+          if (notificationWindow) {
+            renderNotificationPill();
+          }
         } catch {
           // ignore
         }
@@ -997,6 +1124,7 @@ const renderNotificationPill = () => {
     win.webContents.send('desktop:pillState', {
       count: pillSummary.count,
       mode: pillMode,
+      updatedAtMs: pillLastUpdatedAtMs,
       activeIndex,
       activeNote,
       title: pillSummary.title,
@@ -1606,6 +1734,72 @@ ipcMain.handle('desktop:refreshApp', () => {
   return true;
 });
 
+ipcMain.handle('desktop:snoozeNote', (_event, payload: { noteId: string; untilMs: number }) => {
+  const noteId = String(payload?.noteId || '').trim();
+  const untilMs = Number(payload?.untilMs || 0);
+  if (!noteId) return false;
+  if (!untilMs || Number.isNaN(untilMs) || untilMs <= Date.now()) {
+    delete snoozedNoteUntilById[noteId];
+  } else {
+    snoozedNoteUntilById[noteId] = untilMs;
+  }
+  saveSuppressionMaps();
+  pillLastUpdatedAtMs = Date.now();
+  staffPillNotes = applySuppressionFilters(staffPillNotes);
+  staffPillCount = staffPillNotes.length;
+  recomputeCombinedPill();
+  if (pillSummary.count > 0) renderNotificationPill();
+  updateTrayMenu();
+  return true;
+});
+
+ipcMain.handle('desktop:clearSnoozeNote', (_event, payload: { noteId: string }) => {
+  const noteId = String(payload?.noteId || '').trim();
+  if (!noteId) return false;
+  delete snoozedNoteUntilById[noteId];
+  saveSuppressionMaps();
+  pillLastUpdatedAtMs = Date.now();
+  staffPillNotes = applySuppressionFilters(staffPillNotes);
+  staffPillCount = staffPillNotes.length;
+  recomputeCombinedPill();
+  if (pillSummary.count > 0) renderNotificationPill();
+  updateTrayMenu();
+  return true;
+});
+
+ipcMain.handle('desktop:muteSender', (_event, payload: { senderId: string; untilMs: number }) => {
+  const senderId = String(payload?.senderId || '').trim();
+  const untilMs = Number(payload?.untilMs || 0);
+  if (!senderId) return false;
+  if (!untilMs || Number.isNaN(untilMs) || untilMs <= Date.now()) {
+    delete mutedSenderUntilById[senderId];
+  } else {
+    mutedSenderUntilById[senderId] = untilMs;
+  }
+  saveSuppressionMaps();
+  pillLastUpdatedAtMs = Date.now();
+  staffPillNotes = applySuppressionFilters(staffPillNotes);
+  staffPillCount = staffPillNotes.length;
+  recomputeCombinedPill();
+  if (pillSummary.count > 0) renderNotificationPill();
+  updateTrayMenu();
+  return true;
+});
+
+ipcMain.handle('desktop:clearMuteSender', (_event, payload: { senderId: string }) => {
+  const senderId = String(payload?.senderId || '').trim();
+  if (!senderId) return false;
+  delete mutedSenderUntilById[senderId];
+  saveSuppressionMaps();
+  pillLastUpdatedAtMs = Date.now();
+  staffPillNotes = applySuppressionFilters(staffPillNotes);
+  staffPillCount = staffPillNotes.length;
+  recomputeCombinedPill();
+  if (pillSummary.count > 0) renderNotificationPill();
+  updateTrayMenu();
+  return true;
+});
+
 ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) => {
   computeEffectivePaused();
   if (notificationState.effectivePaused) return false;
@@ -1723,11 +1917,13 @@ ipcMain.on('desktop:setPillSummary', (_event, payload: {
   replyUrl?: string;
   actionUrl?: string;
 }) => {
-  staffPillNotes = (payload.notes || []).map((note) => ({
+  pillLastUpdatedAtMs = Date.now();
+  const normalized = (payload.notes || []).map((note) => ({
     ...note,
     kind: note.kind || 'note'
   }));
-  staffPillCount = payload.count || 0;
+  staffPillNotes = applySuppressionFilters(normalized);
+  staffPillCount = staffPillNotes.length;
   recomputeCombinedPill();
   pillSummary = {
     count: pillSummary.count,
@@ -1759,11 +1955,12 @@ ipcMain.on('desktop:setReviewPillSummary', (_event, payload: {
   openPanel?: boolean;
   notes?: PillItem[];
 }) => {
+  pillLastUpdatedAtMs = Date.now();
   reviewPillNotes = (payload.notes || []).map((note) => ({
     ...note,
     kind: note.kind || 'docs'
   }));
-  reviewPillCount = payload.count || 0;
+  reviewPillCount = reviewPillNotes.length;
   recomputeCombinedPill();
   if (pillSummary.count > 0) {
     if (payload.openPanel) {

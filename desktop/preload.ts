@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld('desktopNotifications', {
   setPaused: (paused: boolean) => ipcRenderer.invoke('desktop:setPaused', paused),
   setSnooze: (untilMs: number) => ipcRenderer.invoke('desktop:setSnooze', { untilMs }),
   clearSnooze: () => ipcRenderer.invoke('desktop:clearSnooze'),
+  snoozeNote: (noteId: string, untilMs: number) => ipcRenderer.invoke('desktop:snoozeNote', { noteId, untilMs }),
+  clearSnoozeNote: (noteId: string) => ipcRenderer.invoke('desktop:clearSnoozeNote', { noteId }),
+  muteSender: (senderId: string, untilMs: number) => ipcRenderer.invoke('desktop:muteSender', { senderId, untilMs }),
+  clearMuteSender: (senderId: string) => ipcRenderer.invoke('desktop:clearMuteSender', { senderId }),
   openStaffStatus: () => ipcRenderer.invoke('desktop:openStaffStatus'),
   refreshApp: () => ipcRenderer.invoke('desktop:refreshApp'),
   notify: (payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) =>

@@ -42,6 +42,7 @@ type NotifyCardPayload = {
 type PillStatePayload = {
   count: number;
   mode?: 'compact' | 'panel';
+  updatedAtMs?: number;
   activeIndex?: number;
   activeNote?: {
     title: string;
@@ -114,9 +115,12 @@ export default function DesktopNotificationWindowClient() {
     status: string;
     followUpRequired: boolean;
     followUpDateIso: string;
+    threadId: string;
   } | null>(null);
   const [togglingTaskStatus, setTogglingTaskStatus] = useState(false);
   const [undoClose, setUndoClose] = useState<{ noteId: string; expiresAtMs: number } | null>(null);
+  const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false);
+  const [muteMenuOpen, setMuteMenuOpen] = useState(false);
   const lastPillPositionRef = useRef<{ x: number; y: number } | null>(null);
   const dragRef = useRef<{
     dragging: boolean;
@@ -210,6 +214,15 @@ export default function DesktopNotificationWindowClient() {
   const active = pillState?.activeNote || null;
   const canPrev = activeIndex > 0;
   const canNext = Array.isArray(pillState?.notes) ? activeIndex < (pillState!.notes!.length - 1) : false;
+  const lastUpdatedLabel = useMemo(() => {
+    const ms = Number(pillState?.updatedAtMs || 0);
+    if (!ms) return '';
+    const delta = Date.now() - ms;
+    if (delta < 10_000) return 'Updated just now';
+    if (delta < 60_000) return `Updated ${Math.round(delta / 1000)}s ago`;
+    if (delta < 60 * 60_000) return `Updated ${Math.round(delta / 60_000)}m ago`;
+    return `Updated ${Math.round(delta / 3_600_000)}h ago`;
+  }, [pillState?.updatedAtMs]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -234,6 +247,8 @@ export default function DesktopNotificationWindowClient() {
     setStaffSearch('');
     setFollowUpOpen(false);
     setFollowUpDraft('');
+    setSnoozeMenuOpen(false);
+    setMuteMenuOpen(false);
   }, [active?.noteId, active?.senderId, active?.timestamp, active?.title]);
 
   const loadAdminStaff = useCallback(async () => {
@@ -468,7 +483,7 @@ export default function DesktopNotificationWindowClient() {
         senderId: myUid,
         timestamp: serverTimestamp(),
         replyToId: active.noteId || null,
-        threadId: active.noteId || null,
+        threadId: String(activeTaskMeta?.threadId || active.noteId || '').trim() || null,
         actionUrl: active.noteId
           ? `/admin/my-notes?noteId=${encodeURIComponent(String(active.noteId))}`
           : '/admin/my-notes',
@@ -583,10 +598,12 @@ export default function DesktopNotificationWindowClient() {
           return;
         }
         const data = snap.data() as any;
+        const threadId = String(data?.threadId || data?.replyToId || noteId).trim();
         setActiveTaskMeta({
           status: String(data?.status || 'Open'),
           followUpRequired: Boolean(data?.followUpRequired),
           followUpDateIso: toIso(data?.followUpDate),
+          threadId,
         });
       },
       () => setActiveTaskMeta(null)
@@ -606,6 +623,55 @@ export default function DesktopNotificationWindowClient() {
     String(active?.kind || '').toLowerCase() === 'note' &&
     Boolean(activeTaskMeta?.followUpRequired || activeTaskMeta?.followUpDateIso);
   const taskIsClosed = String(activeTaskMeta?.status || '').toLowerCase() === 'closed';
+
+  const canSnoozeThis = Boolean(active?.noteId) && String(active?.kind || '').toLowerCase() === 'note';
+  const canMuteSender = Boolean(active?.senderId) && String(active?.kind || '').toLowerCase() === 'note';
+
+  const snoozeThisNote = async (untilMs: number) => {
+    const noteId = String(active?.noteId || '').trim();
+    if (!noteId) return;
+    try {
+      await window.desktopNotifications?.snoozeNote?.(noteId, untilMs);
+      setSnoozeMenuOpen(false);
+      handleMinimize();
+    } catch {
+      // ignore
+    }
+  };
+
+  const clearSnoozeThisNote = async () => {
+    const noteId = String(active?.noteId || '').trim();
+    if (!noteId) return;
+    try {
+      await window.desktopNotifications?.clearSnoozeNote?.(noteId);
+      setSnoozeMenuOpen(false);
+    } catch {
+      // ignore
+    }
+  };
+
+  const muteThisSender = async (untilMs: number) => {
+    const senderId = String(active?.senderId || '').trim();
+    if (!senderId) return;
+    try {
+      await window.desktopNotifications?.muteSender?.(senderId, untilMs);
+      setMuteMenuOpen(false);
+      handleMinimize();
+    } catch {
+      // ignore
+    }
+  };
+
+  const clearMuteThisSender = async () => {
+    const senderId = String(active?.senderId || '').trim();
+    if (!senderId) return;
+    try {
+      await window.desktopNotifications?.clearMuteSender?.(senderId);
+      setMuteMenuOpen(false);
+    } catch {
+      // ignore
+    }
+  };
 
   const handleToggleTaskStatus = useCallback(async () => {
     if (!firestore) return;
@@ -706,6 +772,11 @@ export default function DesktopNotificationWindowClient() {
                   Offline — updates and quick actions may be delayed.
                 </div>
               ) : null}
+              {lastUpdatedLabel ? (
+                <div className="mt-1 text-xs text-slate-500">
+                  {lastUpdatedLabel}
+                </div>
+              ) : null}
               <div className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">
                 {String(active?.message || pillState?.message || '')}
               </div>
@@ -751,6 +822,74 @@ export default function DesktopNotificationWindowClient() {
                 >
                   Set Follow-up
                 </button>
+              ) : null}
+              {canSnoozeThis ? (
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="text-xs px-3 py-1.5 rounded-md border bg-white hover:bg-slate-50"
+                    onClick={() => {
+                      setSnoozeMenuOpen((v) => !v);
+                      setMuteMenuOpen(false);
+                    }}
+                  >
+                    Snooze note
+                  </button>
+                  {snoozeMenuOpen ? (
+                    <div className="absolute right-0 mt-1 w-44 rounded-md border bg-white shadow-lg p-1 z-50">
+                      <button className="w-full text-left text-xs px-2 py-1 hover:bg-slate-50 rounded" onClick={() => snoozeThisNote(Date.now() + 15 * 60 * 1000)}>
+                        15 minutes
+                      </button>
+                      <button className="w-full text-left text-xs px-2 py-1 hover:bg-slate-50 rounded" onClick={() => snoozeThisNote(Date.now() + 60 * 60 * 1000)}>
+                        1 hour
+                      </button>
+                      <button
+                        className="w-full text-left text-xs px-2 py-1 hover:bg-slate-50 rounded"
+                        onClick={() => {
+                          const now = new Date();
+                          const tomorrow = new Date(now);
+                          tomorrow.setDate(now.getDate() + 1);
+                          tomorrow.setHours(8, 0, 0, 0);
+                          void snoozeThisNote(tomorrow.getTime());
+                        }}
+                      >
+                        Until tomorrow 8am
+                      </button>
+                      <div className="my-1 border-t" />
+                      <button className="w-full text-left text-xs px-2 py-1 hover:bg-slate-50 rounded" onClick={() => void clearSnoozeThisNote()}>
+                        Clear snooze
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {canMuteSender ? (
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="text-xs px-3 py-1.5 rounded-md border bg-white hover:bg-slate-50"
+                    onClick={() => {
+                      setMuteMenuOpen((v) => !v);
+                      setSnoozeMenuOpen(false);
+                    }}
+                  >
+                    Mute sender
+                  </button>
+                  {muteMenuOpen ? (
+                    <div className="absolute right-0 mt-1 w-44 rounded-md border bg-white shadow-lg p-1 z-50">
+                      <button className="w-full text-left text-xs px-2 py-1 hover:bg-slate-50 rounded" onClick={() => void muteThisSender(Date.now() + 60 * 60 * 1000)}>
+                        1 hour
+                      </button>
+                      <button className="w-full text-left text-xs px-2 py-1 hover:bg-slate-50 rounded" onClick={() => void muteThisSender(Date.now() + 2 * 60 * 60 * 1000)}>
+                        2 hours
+                      </button>
+                      <div className="my-1 border-t" />
+                      <button className="w-full text-left text-xs px-2 py-1 hover:bg-slate-50 rounded" onClick={() => void clearMuteThisSender()}>
+                        Unmute sender
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
               {canToggleTask ? (
                 <button

@@ -18,6 +18,10 @@ declare global {
       setPaused: (paused: boolean) => Promise<DesktopNotificationState>;
       setSnooze?: (untilMs: number) => Promise<DesktopNotificationState>;
       clearSnooze?: () => Promise<DesktopNotificationState>;
+      snoozeNote?: (noteId: string, untilMs: number) => Promise<boolean>;
+      clearSnoozeNote?: (noteId: string) => Promise<boolean>;
+      muteSender?: (senderId: string, untilMs: number) => Promise<boolean>;
+      clearMuteSender?: (senderId: string) => Promise<boolean>;
       openStaffStatus?: () => Promise<boolean>;
       refreshApp?: () => Promise<boolean>;
       notify: (payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) => Promise<boolean>;
