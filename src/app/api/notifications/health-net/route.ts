@@ -4,7 +4,14 @@ import HealthNetApplicationEmail from '@/components/emails/HealthNetApplicationE
 import { renderAsync } from '@react-email/render';
 import { adminDb } from '@/firebase-admin';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+let resendClient: Resend | null = null;
+function getResendClient(): Resend | null {
+  if (resendClient) return resendClient;
+  const key = String(process.env.RESEND_API_KEY || '').trim();
+  if (!key) return null;
+  resendClient = new Resend(key);
+  return resendClient;
+}
 
 // Health Net notification recipients
 const HEALTH_NET_RECIPIENTS = [
@@ -61,12 +68,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!process.env.RESEND_API_KEY) {
+    const resend = getResendClient();
+    if (!resend) {
       console.error('❌ RESEND_API_KEY not configured');
-      return NextResponse.json(
-        { error: 'Email service not configured' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Email service not configured' }, { status: 500 });
     }
 
     const emailResults = [];
