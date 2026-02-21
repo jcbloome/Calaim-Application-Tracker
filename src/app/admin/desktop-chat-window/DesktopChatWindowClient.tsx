@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useUser, useFirestore } from '@/firebase';
-import { addDoc, collection, getDocs, onSnapshot, query, serverTimestamp, where, documentId, doc, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, getDoc, getDocs, onSnapshot, query, serverTimestamp, where, documentId, doc, updateDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -37,6 +37,8 @@ export default function DesktopChatWindowClient() {
 
   const [staffList, setStaffList] = useState<StaffMemberLite[]>([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [sendingTestIncoming, setSendingTestIncoming] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string>('');
@@ -124,10 +126,6 @@ export default function DesktopChatWindowClient() {
         getDocs(collection(firestore, 'roles_super_admin')),
       ]);
       const ids = Array.from(new Set([...adminSnap.docs.map((d) => d.id), ...superAdminSnap.docs.map((d) => d.id)]));
-      if (ids.length === 0) {
-        setStaffList([]);
-        return;
-      }
       const chunks: string[][] = [];
       for (let i = 0; i < ids.length; i += 10) chunks.push(ids.slice(i, i + 10));
 
@@ -141,6 +139,27 @@ export default function DesktopChatWindowClient() {
           users.push({ uid: docItem.id, name });
         });
       }
+
+      // Always include Jason for chat testing, even if not an admin role.
+      try {
+        const email = 'jason@carehomefinders.com';
+        const extraSnap = await getDocs(query(collection(firestore, 'users'), where('email', '==', email)));
+        extraSnap.forEach((docItem) => {
+          const data = docItem.data() as any;
+          const uid = String(docItem.id || '').trim();
+          if (!uid) return;
+          const name =
+            data.firstName && data.lastName
+              ? `${data.firstName} ${data.lastName}`.trim()
+              : String(data.displayName || data.email || email).trim();
+          if (!users.some((u) => u.uid === uid)) {
+            users.push({ uid, name });
+          }
+        });
+      } catch {
+        // ignore
+      }
+
       users.sort((a, b) => a.name.localeCompare(b.name));
       setStaffList(users);
     } finally {
@@ -151,6 +170,24 @@ export default function DesktopChatWindowClient() {
   useEffect(() => {
     void loadAdminStaff();
   }, [loadAdminStaff]);
+
+  useEffect(() => {
+    if (!firestore || !myUid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(firestore, 'roles_super_admin', myUid));
+        if (cancelled) return;
+        setIsSuperAdmin(Boolean(snap.exists()));
+      } catch {
+        if (cancelled) return;
+        setIsSuperAdmin(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore, myUid]);
 
   useEffect(() => {
     if (!firestore || !myUid) return;
@@ -220,6 +257,41 @@ export default function DesktopChatWindowClient() {
     setRecipientSearch('');
     setDraft('');
   };
+
+  const sendTestIncomingChat = useCallback(async () => {
+    if (!firestore || !myUid) return;
+    setSendingTestIncoming(true);
+    try {
+      const threadId = `chat:test-incoming:${myUid}:${Date.now()}`;
+      const payload: Record<string, any> = {
+        title: 'Chat',
+        message: 'Test incoming chat message (tray + alert verification).',
+        type: 'interoffice_chat',
+        priority: 'General',
+        status: 'Open',
+        isRead: false,
+        isChatOnly: true,
+        hiddenFromInbox: true,
+        createdBy: 'system-test',
+        createdByName: 'Test Bot',
+        senderName: 'Test Bot',
+        senderId: 'system-test',
+        timestamp: serverTimestamp(),
+        threadId,
+        actionUrl: '/admin/desktop-chat-window',
+        source: 'electron',
+        participants: [myUid],
+        participantNames: [myName, 'Test Bot'],
+      };
+      await addDoc(collection(firestore, 'staff_notifications'), {
+        ...payload,
+        userId: myUid,
+        recipientName: myName,
+      });
+    } finally {
+      setSendingTestIncoming(false);
+    }
+  }, [firestore, myName, myUid]);
 
   const handleSend = useCallback(async () => {
     if (!firestore || !myUid) return;
@@ -298,12 +370,26 @@ export default function DesktopChatWindowClient() {
           <div className="flex items-center gap-2">
             <Users className="h-5 w-5 text-slate-700" />
             <div className="font-semibold text-slate-900">Staff Chat</div>
-            <Badge variant="secondary" className="ml-2">No alerts</Badge>
+            <Badge variant="secondary" className="ml-2">Tray alerts</Badge>
           </div>
-          <Button variant="outline" size="sm" onClick={startNewChat}>
-            <MessageSquarePlus className="mr-2 h-4 w-4" />
-            New chat
-          </Button>
+          <div className="flex items-center gap-2">
+            {isSuperAdmin ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void sendTestIncomingChat()}
+                disabled={sendingTestIncoming}
+                title="Creates a simulated incoming chat message for tray testing"
+              >
+                {sendingTestIncoming ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Send test incoming
+              </Button>
+            ) : null}
+            <Button variant="outline" size="sm" onClick={startNewChat}>
+              <MessageSquarePlus className="mr-2 h-4 w-4" />
+              New chat
+            </Button>
+          </div>
         </div>
       </div>
 
