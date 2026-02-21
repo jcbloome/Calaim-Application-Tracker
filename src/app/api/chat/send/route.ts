@@ -9,6 +9,8 @@ type SendChatBody = {
 };
 
 const uniq = (values: string[]) => Array.from(new Set(values));
+const TEST_BOT_UID = 'system-test';
+const TEST_BOT_NAME = 'Test Bot';
 
 export async function POST(request: NextRequest) {
   try {
@@ -76,6 +78,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const storedParticipants = simulateIncoming ? uniq([uid, TEST_BOT_UID]) : participantUids;
+
     const resolvedThreadId =
       threadId ||
       (simulateIncoming
@@ -89,21 +93,30 @@ export async function POST(request: NextRequest) {
     const participantNames: string[] = [];
     try {
       const docs = await Promise.all(
-        participantUids.map((puid) => adminDb.collection('users').doc(puid).get().catch(() => null))
+        storedParticipants
+          .filter((puid) => puid !== TEST_BOT_UID)
+          .map((puid) => adminDb.collection('users').doc(puid).get().catch(() => null))
       );
-      docs.forEach((snap, idx) => {
-        const fallback = participantUids[idx] === uid ? (String(decoded?.name || decoded?.email || 'Staff').trim() || 'Staff') : 'Staff';
+      const nameByUid = new Map<string, string>();
+      let docIdx = 0;
+      for (const puid of storedParticipants) {
+        if (puid === TEST_BOT_UID) {
+          nameByUid.set(TEST_BOT_UID, TEST_BOT_NAME);
+          continue;
+        }
+        const snap = docs[docIdx++];
+        const fallback = puid === uid ? (String(decoded?.name || decoded?.email || 'Staff').trim() || 'Staff') : 'Staff';
         const data = snap && snap.exists ? (snap.data() as any) : null;
         const name =
           data?.firstName && data?.lastName
             ? `${data.firstName} ${data.lastName}`.trim()
             : String(data?.displayName || data?.email || '').trim();
-        participantNames.push(name || fallback);
-      });
-      // include sender name in label list if it's a test bot
-      if (simulateIncoming) {
-        participantNames.push('Test Bot');
+        nameByUid.set(puid, name || fallback);
       }
+      storedParticipants.forEach((puid) => {
+        const n = String(nameByUid.get(puid) || '').trim();
+        if (n) participantNames.push(n);
+      });
     } catch {
       // ignore
     }
@@ -126,7 +139,7 @@ export async function POST(request: NextRequest) {
       threadId: resolvedThreadId,
       actionUrl: '/admin/desktop-chat-window',
       source: 'electron',
-      participants: participantUids,
+      participants: storedParticipants,
       participantNames: participantNames.length ? participantNames : undefined,
     };
 
