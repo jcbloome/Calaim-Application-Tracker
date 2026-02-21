@@ -265,6 +265,7 @@ export default function DesktopChatWindowClient() {
     try {
       const idToken = await (user as any)?.getIdToken?.();
       if (!idToken) return;
+      const testThreadId = `chat:test-incoming:${myUid}:${Date.now()}`;
       const res = await fetch('/api/chat/send', {
         method: 'POST',
         headers: {
@@ -274,6 +275,7 @@ export default function DesktopChatWindowClient() {
         body: JSON.stringify({
           message: 'Test incoming chat message (tray + alert verification).',
           participantUids: [myUid],
+          threadId: testThreadId,
           simulateIncoming: true,
         }),
       });
@@ -298,7 +300,10 @@ export default function DesktopChatWindowClient() {
 
     const uniqueRecipients = Array.from(new Set([...baseRecipients, myUid])).filter(Boolean);
     const nonSelf = uniqueRecipients.filter((id) => id !== myUid);
-    if (nonSelf.length === 0) return;
+    if (nonSelf.length === 0) {
+      setSendError('This chat has no recipients. Click “New chat” and choose at least 1 staff member.');
+      return;
+    }
 
     const threadId = selectedThreadId || buildChatThreadId(uniqueRecipients);
 
