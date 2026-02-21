@@ -580,11 +580,6 @@ const openStaffStatusWindow = () => {
 
 const openChatWindow = () => {
   try {
-    // Optimistically clear the tray badge; chat UI should mark messages read when viewed.
-    chatPendingCount = 0;
-    updateTrayToolTip();
-    updateTrayMenu();
-
     if (chatWindow && !chatWindow.isDestroyed()) {
       chatWindow.show();
       chatWindow.focus();
@@ -597,6 +592,7 @@ const openChatWindow = () => {
       show: false,
       title: 'Staff Chat',
       webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -1961,7 +1957,17 @@ ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string
 });
 
 ipcMain.on('desktop:openNotifications', (_event, payload?: { url?: string }) => {
-  openInMainWindow(payload?.url || '/admin/my-notes');
+  const url = String(payload?.url || '/admin/my-notes');
+  // Opening chat should not dismiss the priority note pill.
+  if (url.startsWith('/admin/desktop-chat-window')) {
+    openChatWindow();
+    // Keep the pill visible; don't close the window.
+    if (notificationWindow) {
+      renderNotificationPill();
+    }
+    return;
+  }
+  openInMainWindow(url);
   closeNotificationWindow();
 });
 
