@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useUser, useFirestore } from '@/firebase';
-import { addDoc, collection, getDocs, onSnapshot, query, serverTimestamp, where, documentId } from 'firebase/firestore';
+import { addDoc, collection, getDocs, onSnapshot, query, serverTimestamp, where, documentId, doc, updateDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,6 +20,7 @@ type ChatMessage = {
   createdAtMs: number;
   participants: string[];
   participantNames: string[];
+  isRead: boolean;
 };
 
 function buildChatThreadId(participants: string[]) {
@@ -80,6 +81,38 @@ export default function DesktopChatWindowClient() {
       .slice()
       .sort((a, b) => a.createdAtMs - b.createdAtMs);
   }, [messages, selectedThreadId]);
+
+  const unreadChatCount = useMemo(() => {
+    return messages.filter((m) => !m.isRead && m.senderId !== myUid).length;
+  }, [messages, myUid]);
+
+  // Mark visible thread messages read for this user.
+  useEffect(() => {
+    if (!firestore || !myUid) return;
+    if (!selectedThreadId) return;
+    const unread = activeThreadMessages.filter((m) => !m.isRead && m.senderId !== myUid).slice(0, 50);
+    if (unread.length === 0) return;
+    void Promise.all(
+      unread.map((m) =>
+        updateDoc(doc(firestore, 'staff_notifications', m.id), {
+          isRead: true,
+          updatedAt: serverTimestamp(),
+        }).catch(() => undefined)
+      )
+    );
+  }, [activeThreadMessages, firestore, myUid, selectedThreadId]);
+
+  // If running inside Electron with the desktop bridge, keep the tray chat count updated here too.
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      if (window.desktopNotifications?.setChatPendingCount) {
+        window.desktopNotifications.setChatPendingCount(unreadChatCount);
+      }
+    } catch {
+      // ignore
+    }
+  }, [unreadChatCount]);
 
   const loadAdminStaff = useCallback(async () => {
     if (!firestore) return;
@@ -154,6 +187,7 @@ export default function DesktopChatWindowClient() {
             createdAtMs: Number(ts || 0),
             participants,
             participantNames,
+            isRead: Boolean(data?.isRead),
           });
         });
         setMessages(next);

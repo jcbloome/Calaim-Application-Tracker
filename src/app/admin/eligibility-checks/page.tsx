@@ -120,10 +120,49 @@ export default function EligibilityChecksPage() {
     }
   };
 
+  const buildResultEmailMessage = (
+    result: 'eligible' | 'not-eligible',
+    note: string,
+    check: EligibilityCheck
+  ) => {
+    const memberName = `${String(check.memberFirstName || '').trim()} ${String(check.memberLastName || '').trim()}`.trim();
+    const dob = formatDob(check.memberBirthday);
+    const plan = String(check.healthPlan || '').trim();
+    const county = String(check.county || '').trim();
+    const ref = String(check.id || '').trim();
+
+    const baseFacts = `Reference ID: ${ref}\nMember: ${memberName}${dob ? ` (DOB: ${dob})` : ''}\nHealth plan: ${plan}${county ? ` • ${county}` : ''}`;
+
+    const noteTrimmed = String(note || '').trim();
+    const noteBlock = noteTrimmed ? `\n\nNote:\n${noteTrimmed}` : '';
+
+    if (result === 'eligible') {
+      return [
+        `Eligible for CalAIM Community Supports through Connections (based on the health plan portal check).`,
+        '',
+        baseFacts,
+        '',
+        `If you would like to proceed with Connections Care Home Consultants, please reply to this email.`,
+        '',
+        `Note: We do not include portal screenshots via email.`,
+      ].join('\n') + noteBlock;
+    }
+
+    return [
+      `Not eligible for CalAIM Community Supports (based on the health plan portal check).`,
+      '',
+      baseFacts,
+      '',
+      `If you have questions, please reply to this email.`,
+      '',
+      `Note: We do not include portal screenshots via email.`,
+    ].join('\n') + noteBlock;
+  };
+
   // Form state for processing eligibility check
   const [resultForm, setResultForm] = useState({
     result: '' as 'eligible' | 'not-eligible' | '',
-    resultMessage: '',
+    resultNote: '',
     screenshot: null as File | null
   });
 
@@ -165,10 +204,10 @@ export default function EligibilityChecksPage() {
   };
 
   const handleProcessCheck = async (checkId: string) => {
-    if (!resultForm.result || !resultForm.resultMessage) {
+    if (!resultForm.result) {
       toast({
         title: "Missing Information",
-        description: "Please provide both result and message",
+        description: "Please select an eligibility result",
         variant: "destructive"
       });
       return;
@@ -180,7 +219,14 @@ export default function EligibilityChecksPage() {
       const formData = new FormData();
       formData.append('checkId', checkId);
       formData.append('result', resultForm.result);
-      formData.append('resultMessage', resultForm.resultMessage);
+      const resultMessage =
+        selectedCheck
+          ? buildResultEmailMessage(resultForm.result as 'eligible' | 'not-eligible', resultForm.resultNote, selectedCheck)
+          : '';
+      formData.append('resultMessage', resultMessage);
+      if (resultForm.resultNote.trim()) {
+        formData.append('resultNote', resultForm.resultNote.trim());
+      }
       if (resultForm.screenshot) {
         formData.append('screenshot', resultForm.screenshot);
       }
@@ -197,7 +243,7 @@ export default function EligibilityChecksPage() {
         });
         
         // Reset form and refresh data
-        setResultForm({ result: '', resultMessage: '', screenshot: null });
+        setResultForm({ result: '', resultNote: '', screenshot: null });
         setSelectedCheck(null);
         fetchEligibilityChecks();
       } else {
@@ -327,32 +373,70 @@ export default function EligibilityChecksPage() {
                 <p>No eligibility checks found</p>
               </div>
             ) : (
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {filteredChecks.map((check) => (
-                  <div
-                    key={check.id}
-                    className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                      selectedCheck?.id === check.id 
-                        ? 'border-blue-500 bg-blue-50' 
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    onClick={() => setSelectedCheck(check)}
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <h4 className="font-medium">{check.memberFirstName} {check.memberLastName}</h4>
-                        <p className="text-sm text-gray-600">
-                          {check.healthPlan} • {check.county}
-                        </p>
-                      </div>
-                      {getStatusBadge(check.status)}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      <p>Requested by: {check.requesterFirstName} {check.requesterLastName}</p>
-                      <p>Date requested: {formatRequestedDate(check.timestamp)}</p>
-                    </div>
-                  </div>
-                ))}
+              <div className="rounded-md border border-gray-200 overflow-hidden">
+                <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-slate-50 text-[11px] font-semibold text-slate-700">
+                  <div className="col-span-4">Member</div>
+                  <div className="col-span-2">Requested</div>
+                  <div className="col-span-2">Completed</div>
+                  <div className="col-span-2">Requester</div>
+                  <div className="col-span-1">Screenshot</div>
+                  <div className="col-span-1 text-right">Status</div>
+                </div>
+                <div className="max-h-96 overflow-y-auto divide-y">
+                  {filteredChecks.map((check) => {
+                    const memberName = `${check.memberFirstName} ${check.memberLastName}`.trim();
+                    const requesterName = `${check.requesterFirstName} ${check.requesterLastName}`.trim();
+                    const completedLabel =
+                      check.completedAt ? formatRequestedDate(check.completedAt) : '—';
+                    return (
+                      <button
+                        key={check.id}
+                        type="button"
+                        className={`w-full text-left px-3 py-2 transition-colors ${
+                          selectedCheck?.id === check.id ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
+                        }`}
+                        onClick={() => setSelectedCheck(check)}
+                      >
+                        <div className="grid grid-cols-12 gap-2 items-center">
+                          <div className="col-span-4 min-w-0">
+                            <div className="text-sm font-medium truncate">{memberName}</div>
+                            <div className="text-xs text-slate-600 truncate">
+                              {check.healthPlan} • {check.county}
+                            </div>
+                          </div>
+                          <div className="col-span-2 text-xs text-slate-700">
+                            {formatRequestedDate(check.timestamp)}
+                          </div>
+                          <div className="col-span-2 text-xs text-slate-700">
+                            {completedLabel}
+                          </div>
+                          <div className="col-span-2 text-xs text-slate-700 truncate" title={requesterName}>
+                            {requesterName}
+                          </div>
+                          <div className="col-span-1 text-xs">
+                            {check.screenshotUrl ? (
+                              <a
+                                href={check.screenshotUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-800 underline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                View
+                              </a>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </div>
+                          <div className="col-span-1 flex justify-end">
+                            {getStatusBadge(check.status)}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </CardContent>
@@ -460,9 +544,10 @@ export default function EligibilityChecksPage() {
                         <Label htmlFor="result">Eligibility Result *</Label>
                         <Select 
                           value={resultForm.result} 
-                          onValueChange={(value) => 
-                            setResultForm(prev => ({ ...prev, result: value as 'eligible' | 'not-eligible' }))
-                          }
+                          onValueChange={(value) => {
+                            const next = value as 'eligible' | 'not-eligible';
+                            setResultForm((prev) => ({ ...prev, result: next }));
+                          }}
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Select eligibility result" />
@@ -474,18 +559,21 @@ export default function EligibilityChecksPage() {
                         </Select>
                       </div>
 
-                      {/* Result Message */}
+                      {/* Optional note (included in email) */}
                       <div>
-                        <Label htmlFor="resultMessage">Result Message *</Label>
+                        <Label htmlFor="resultNote">Note to requester (optional)</Label>
                         <Textarea
-                          id="resultMessage"
-                          value={resultForm.resultMessage}
+                          id="resultNote"
+                          value={resultForm.resultNote}
                           onChange={(e) => 
-                            setResultForm(prev => ({ ...prev, resultMessage: e.target.value }))
+                            setResultForm(prev => ({ ...prev, resultNote: e.target.value }))
                           }
-                          placeholder="Provide details about the eligibility result..."
-                          rows={4}
+                          placeholder="Optional note to include in the email (no screenshots will be sent)..."
+                          rows={3}
                         />
+                        <p className="mt-1 text-xs text-slate-600">
+                          Screenshots are stored internally and are <span className="font-medium">not</span> included in the email.
+                        </p>
                       </div>
 
                       {/* Screenshot Upload */}
@@ -537,7 +625,7 @@ export default function EligibilityChecksPage() {
                       {/* Submit Button */}
                       <Button 
                         onClick={() => handleProcessCheck(selectedCheck.id)}
-                        disabled={isProcessing || !resultForm.result || !resultForm.resultMessage}
+                        disabled={isProcessing || !resultForm.result}
                         className="w-full"
                       >
                         {isProcessing ? (
@@ -586,12 +674,19 @@ export default function EligibilityChecksPage() {
                       {selectedCheck.screenshotUrl && (
                         <div>
                           <span className="font-medium">Screenshot:</span>
-                          <div className="mt-1">
-                            <img 
-                              src={selectedCheck.screenshotUrl} 
-                              alt="Eligibility verification screenshot"
-                              className="max-w-full h-auto border rounded"
-                            />
+                          <div className="mt-1 text-sm">
+                            <a
+                              href={selectedCheck.screenshotUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-800 underline"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                              View screenshot (internal)
+                            </a>
+                            <div className="mt-1 text-xs text-slate-600">
+                              Screenshots are stored internally and are not included in requester emails.
+                            </div>
                           </div>
                         </div>
                       )}

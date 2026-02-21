@@ -26,6 +26,7 @@ declare global {
       refreshApp?: () => Promise<boolean>;
       notify: (payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) => Promise<boolean>;
       setPendingCount: (count: number) => void;
+      setChatPendingCount?: (count: number) => void;
       setPillSummary?: (payload: {
         count: number;
         openPanel?: boolean;

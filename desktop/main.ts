@@ -36,6 +36,7 @@ type DesktopPreferences = {
   snoozedUntilMs: number;
   showNotes: boolean;
   showReview: boolean;
+  chatAlertsEnabled: boolean;
   pillPosition: { x: number; y: number } | null;
   snoozedNoteUntilById: Record<string, number>;
   mutedSenderUntilById: Record<string, number>;
@@ -49,11 +50,25 @@ const prefsStore = new Store<DesktopPreferences>({
     snoozedUntilMs: 0,
     showNotes: true,
     showReview: true,
+    chatAlertsEnabled: true,
     pillPosition: null,
     snoozedNoteUntilById: {},
     mutedSenderUntilById: {},
   },
 });
+
+let chatPendingCount = 0;
+let chatCountInitialized = false;
+let lastChatNotifyAtMs = 0;
+let chatAlertsEnabled = Boolean(prefsStore.get('chatAlertsEnabled'));
+
+const updateTrayToolTip = () => {
+  if (!tray) return;
+  const parts: string[] = [];
+  parts.push(`${pillSummary.count} pending`);
+  if (chatPendingCount > 0) parts.push(`${chatPendingCount} chat`);
+  tray.setToolTip(`Connect CalAIM Desktop (${parts.join(', ')})`);
+};
 
 const normalizeUntilMap = (raw: any): Record<string, number> => {
   const now = Date.now();
@@ -565,6 +580,11 @@ const openStaffStatusWindow = () => {
 
 const openChatWindow = () => {
   try {
+    // Optimistically clear the tray badge; chat UI should mark messages read when viewed.
+    chatPendingCount = 0;
+    updateTrayToolTip();
+    updateTrayMenu();
+
     if (chatWindow && !chatWindow.isDestroyed()) {
       chatWindow.show();
       chatWindow.focus();
@@ -654,6 +674,7 @@ const buildTrayMenu = () => {
   const snoozeActive = snoozeUntil > Date.now();
   const snoozeLabel = snoozeActive ? `Snoozed until: ${formatSnoozeLabel(snoozeUntil)}` : 'Not snoozed';
   const suppressionCounts = countActiveSuppressions();
+  const chatSuffix = chatPendingCount > 0 ? ` (${chatPendingCount})` : '';
   const template: Array<Electron.MenuItemConstructorOptions> = [
     {
       label: 'Open Notifications',
@@ -667,7 +688,7 @@ const buildTrayMenu = () => {
       }
     },
     {
-      label: 'Open Chat',
+      label: `Open Chat${chatSuffix}`,
       click: () => openChatWindow(),
     },
     { type: 'separator' },
@@ -743,6 +764,18 @@ const buildTrayMenu = () => {
     {
       label: `${notificationState.showReview ? 'Hide' : 'Show'} CS/Docs Review Alerts`,
       click: () => setFilters({ showReview: !notificationState.showReview }),
+    },
+    {
+      label: chatAlertsEnabled ? 'Disable Chat Alerts' : 'Enable Chat Alerts',
+      click: () => {
+        chatAlertsEnabled = !chatAlertsEnabled;
+        try {
+          prefsStore.set('chatAlertsEnabled', chatAlertsEnabled);
+        } catch {
+          // ignore
+        }
+        updateTrayMenu();
+      }
     },
     { type: 'separator' },
     {
@@ -1628,7 +1661,7 @@ const createTray = () => {
         ? distIcon
         : sourceIcon;
   tray = new Tray(iconPath);
-  tray.setToolTip('Connect CalAIM Desktop');
+  updateTrayToolTip();
 
   updateTrayMenu();
   tray.on('click', () => {
@@ -2050,9 +2083,7 @@ ipcMain.on('desktop:setReviewPillSummary', (_event, payload: {
 ipcMain.on('desktop:setPendingCount', (_event, count: number) => {
   staffPillCount = Number(count || 0);
   recomputeCombinedPill();
-  if (tray) {
-    tray.setToolTip(`Connect CalAIM Desktop (${pillSummary.count} pending)`);
-  }
+  updateTrayToolTip();
   // Don't auto-open the pill UI based on count alone.
   // We only show the UI when we have actual note/review payload (setPillSummary / setReviewPillSummary),
   // otherwise the panel can render empty fields ("-") if the user clicks too quickly.
@@ -2062,6 +2093,48 @@ ipcMain.on('desktop:setPendingCount', (_event, count: number) => {
   }
   if (notificationWindow) {
     renderNotificationPill();
+  }
+});
+
+ipcMain.on('desktop:setChatPendingCount', (_event, count: number) => {
+  const next = Math.max(0, Number(count || 0));
+  const prev = chatPendingCount;
+  chatPendingCount = next;
+  updateTrayToolTip();
+  updateTrayMenu();
+
+  // Avoid a notification burst on first load.
+  if (!chatCountInitialized) {
+    chatCountInitialized = true;
+    return;
+  }
+
+  if (!chatAlertsEnabled) return;
+  if (next <= prev) return;
+
+  computeEffectivePaused();
+  if (notificationState.effectivePaused) return;
+
+  const now = Date.now();
+  if (now - lastChatNotifyAtMs < 15000) return;
+  lastChatNotifyAtMs = now;
+
+  try {
+    const n = new Notification({
+      title: 'New chat message',
+      body: next === 1 ? 'You have 1 unread chat message.' : `You have ${next} unread chat messages.`,
+      silent: false,
+    });
+    n.on('click', () => {
+      try {
+        openChatWindow();
+      } catch {
+        // ignore
+      }
+    });
+    n.show();
+  } catch {
+    // ignore
   }
 });
 

@@ -124,10 +124,61 @@ export function RealTimeNotifications() {
     webAppNotificationsEnabled: true,
     suppressWebWhenDesktopActive: true
   });
+  const chatUnreadRef = useRef<{ initialized: boolean; count: number }>({ initialized: false, count: 0 });
 
   useEffect(() => {
     firestoreRef.current = firestore;
   }, [firestore]);
+
+  // Chat-only messages are handled in the dedicated chat window, but we still track an unread count
+  // for Electron tray badge purposes (no pill).
+  useEffect(() => {
+    if (!user?.uid) return;
+    if (!firestore) return;
+    if (typeof window === 'undefined') return;
+
+    const qy = query(
+      collection(firestore, 'staff_notifications'),
+      where('userId', '==', user.uid),
+      where('isChatOnly', '==', true)
+    );
+
+    const unsub = onSnapshot(
+      qy,
+      (snapshot) => {
+        let unread = 0;
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          if (Boolean(data?.isRead)) return;
+          unread += 1;
+        });
+
+        const prev = chatUnreadRef.current;
+        chatUnreadRef.current = { initialized: true, count: unread };
+
+        try {
+          // Electron: update tray chat count (handled by main process).
+          if (window.desktopNotifications?.setChatPendingCount && unread !== prev.count) {
+            window.desktopNotifications.setChatPendingCount(unread);
+          }
+        } catch {
+          // ignore
+        }
+      },
+      () => {
+        try {
+          if (window.desktopNotifications?.setChatPendingCount && chatUnreadRef.current.count !== 0) {
+            window.desktopNotifications.setChatPendingCount(0);
+          }
+        } catch {
+          // ignore
+        }
+        chatUnreadRef.current = { initialized: true, count: 0 };
+      }
+    );
+
+    return () => unsub();
+  }, [firestore, user?.uid]);
 
   // Super Admin global toggles for web in-app notifications (stored in system_settings/notifications).
   useEffect(() => {

@@ -15,6 +15,7 @@ export async function POST(request: Request) {
     const checkId = formData.get('checkId') as string;
     const result = formData.get('result') as 'eligible' | 'not-eligible';
     const resultMessage = formData.get('resultMessage') as string;
+    const resultNote = String(formData.get('resultNote') || '').trim();
     const screenshot = formData.get('screenshot') as File | null;
 
     if (!checkId || !result || !resultMessage) {
@@ -74,6 +75,10 @@ export async function POST(request: Request) {
       completedAt: admin.firestore.FieldValue.serverTimestamp(),
       processedBy: 'admin' // You could get this from auth context
     };
+
+    if (resultNote) {
+      updateData.resultNote = resultNote;
+    }
 
     if (screenshotUrl) {
       updateData.screenshotUrl = screenshotUrl;
