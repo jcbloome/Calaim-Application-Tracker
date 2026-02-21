@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState } from 'react';
 import WindowsNotification, { useWindowsNotifications } from '@/components/WindowsNotification';
+import { WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
 
 interface WindowsNotificationProps {
   keyId?: string;
@@ -51,20 +52,29 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const notificationManager = useWindowsNotifications();
+  const disabled = WEB_NOTIFICATIONS_MOTHBALLED;
+  const contextValue: NotificationContextType = disabled
+    ? {
+        showNotification: () => '',
+        removeNotification: () => undefined,
+        clearAll: () => undefined,
+      }
+    : notificationManager;
 
   return (
-    <NotificationContext.Provider value={notificationManager}>
+    <NotificationContext.Provider value={contextValue}>
       {children}
-      {/* Render notifications */}
-      <div className="fixed bottom-0 right-0 z-50 pointer-events-none">
-        <div className="space-y-2 p-4">
-          {notificationManager.notifications.map((notification) => (
-            <div key={notification.id} className="pointer-events-auto">
-              <WindowsNotification {...notification} />
-            </div>
-          ))}
+      {disabled ? null : (
+        <div className="fixed bottom-0 right-0 z-50 pointer-events-none">
+          <div className="space-y-2 p-4">
+            {notificationManager.notifications.map((notification) => (
+              <div key={notification.id} className="pointer-events-auto">
+                <WindowsNotification {...notification} />
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </NotificationContext.Provider>
   );
 }
