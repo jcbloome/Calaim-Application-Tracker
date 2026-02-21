@@ -1016,6 +1016,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const claimsSyncRef = useRef(false);
+  const adminBootstrapRef = useRef<string>('');
+  const [adminBootstrap, setAdminBootstrap] = useState<{ inProgress: boolean; failed: boolean }>({
+    inProgress: false,
+    failed: false,
+  });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; open: boolean }>({
     x: 0,
     y: 0,
@@ -1072,6 +1077,55 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     syncAdminClaims();
   }, [user, isAdmin, isLoginPage]);
 
+  // Bootstrap admin claims after login to avoid redirect loops.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isLoading) return;
+    if (!user) return;
+    if (isLoginPage) return;
+
+    const allowNonAdmin =
+      pathname?.startsWith('/admin/my-notes') ||
+      pathname === '/admin/desktop-notification-window' ||
+      pathname === '/admin/desktop-chat-window';
+
+    // If the page requires admin and we don't have admin yet, attempt to sync claims once.
+    if (isAdmin || allowNonAdmin) return;
+    const uid = String(user.uid || '').trim();
+    if (!uid) return;
+    if (adminBootstrapRef.current === uid) return;
+    adminBootstrapRef.current = uid;
+
+    setAdminBootstrap({ inProgress: true, failed: false });
+    (async () => {
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch('/api/auth/admin-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken }),
+        });
+        if (!res.ok) {
+          setAdminBootstrap({ inProgress: false, failed: true });
+          return;
+        }
+        await user.getIdToken(true);
+        // Keep the gate up briefly to avoid redirect loops while hooks observe updated claims.
+        setTimeout(() => {
+          setAdminBootstrap((prev) => (prev.inProgress ? { inProgress: false, failed: false } : prev));
+        }, 5000);
+      } catch {
+        setAdminBootstrap({ inProgress: false, failed: true });
+      }
+    })();
+  }, [isAdmin, isLoading, isLoginPage, pathname, user]);
+
+  useEffect(() => {
+    if (!adminBootstrap.inProgress) return;
+    if (!isAdmin) return;
+    setAdminBootstrap({ inProgress: false, failed: false });
+  }, [adminBootstrap.inProgress, isAdmin]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handleContextMenu = (event: MouseEvent) => {
@@ -1110,13 +1164,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         isAdmin,
         isLoginPage,
         userEmail: user?.email,
-        willRedirect: !user || (!isAdmin && !isLoginPage && !allowNonAdmin)
+        willRedirect: !user || (!isAdmin && !isLoginPage && !allowNonAdmin && !adminBootstrap.inProgress)
       });
 
       if (!user && !isLoginPage) {
         console.log('🚫 Redirecting to login - user not signed in');
         router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
       } else if (!isAdmin && !isLoginPage && !allowNonAdmin) {
+        if (adminBootstrap.inProgress) return;
         console.log('🚫 Redirecting to login - user not recognized as admin');
         router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
       } else if (isAdmin && isLoginPage) {
@@ -1124,7 +1179,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         router.replace(safeRedirect);
       }
     }
-  }, [isLoading, isAdmin, isLoginPage, router, user, pathname]);
+  }, [isLoading, isAdmin, isLoginPage, router, user, pathname, adminBootstrap.inProgress]);
 
   // Show loading spinner while checking authentication (but not for login page)
   if (isLoading && !isLoginPage) {
@@ -1133,6 +1188,17 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
           <p className="text-muted-foreground">Loading admin panel...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (adminBootstrap.inProgress && !isLoginPage) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Verifying admin access...</p>
         </div>
       </div>
     );
