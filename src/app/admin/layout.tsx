@@ -279,7 +279,12 @@ function AdminHeader() {
     if (auth) {
       await auth.signOut();
     }
-    window.location.href = '/';
+    const isRealDesktop =
+      typeof window !== 'undefined' &&
+      Boolean((window as any).desktopNotifications) &&
+      !Boolean((window as any).desktopNotifications?.__shim);
+    // In Electron, keep users in the admin flow (full-size window), not the public site.
+    window.location.href = isRealDesktop ? '/admin/login' : '/';
   };
 
   const toggleSubmenu = (label: string) => {
