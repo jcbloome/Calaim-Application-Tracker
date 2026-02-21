@@ -32,8 +32,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-    let isAdmin = isHardcodedAdminEmail(email);
-    let isSuperAdmin = false;
+    const isEmailAdmin = isHardcodedAdminEmail(email);
+    let isAdmin = isEmailAdmin;
+    // For our internal allow-list, treat as superadmin (matches app behavior and enables tray testing).
+    let isSuperAdmin = isEmailAdmin;
     if (!isAdmin) {
       const [adminDoc, superAdminDoc] = await Promise.all([
         adminDb.collection('roles_admin').doc(uid).get(),

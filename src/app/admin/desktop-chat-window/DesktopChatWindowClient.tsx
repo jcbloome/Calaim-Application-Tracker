@@ -262,9 +262,10 @@ export default function DesktopChatWindowClient() {
   const sendTestIncomingChat = useCallback(async () => {
     if (!myUid) return;
     setSendingTestIncoming(true);
+    setSendError('');
     try {
       const idToken = await (user as any)?.getIdToken?.();
-      if (!idToken) return;
+      if (!idToken) throw new Error('Not signed in');
       const testThreadId = `chat:test-incoming:${myUid}:${Date.now()}`;
       const res = await fetch('/api/chat/send', {
         method: 'POST',
@@ -283,6 +284,11 @@ export default function DesktopChatWindowClient() {
         const data = await res.json().catch(() => null);
         throw new Error(data?.error || `Request failed (${res.status})`);
       }
+      const data = await res.json().catch(() => null);
+      const returnedThreadId = String(data?.threadId || testThreadId).trim() || testThreadId;
+      setSelectedThreadId(returnedThreadId);
+    } catch (err: any) {
+      setSendError(err?.message || 'Failed to send test incoming');
     } finally {
       setSendingTestIncoming(false);
     }
