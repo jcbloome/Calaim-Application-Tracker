@@ -90,6 +90,7 @@ export default function EligibilityCheckPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedHealthPlan, setSelectedHealthPlan] = useState<string>('');
   const [selectedCounty, setSelectedCounty] = useState<string>('');
+  const [submitted, setSubmitted] = useState<{ checkId: string; email: string } | null>(null);
 
   const form = useForm<EligibilityCheckForm>({
     resolver: zodResolver(eligibilityCheckSchema),
@@ -122,6 +123,7 @@ export default function EligibilityCheckPage() {
 
   const onSubmit = async (data: EligibilityCheckForm) => {
     setIsSubmitting(true);
+    setSubmitted(null);
     
     try {
       const response = await fetch('/api/eligibility-check', {
@@ -139,6 +141,8 @@ export default function EligibilityCheckPage() {
           title: "Eligibility Check Submitted",
           description: `We'll email you the results within 1 business day. Reference ID: ${result.checkId}`,
         });
+
+        setSubmitted({ checkId: String(result.checkId || '').trim(), email: String(data.requesterEmail || '').trim() });
         
         // Reset form
         form.reset();
@@ -237,9 +241,9 @@ export default function EligibilityCheckPage() {
                     <Building className="h-4 w-4" />
                     Kaiser Permanente
                   </div>
-                  <p className="ml-6 mb-2">Active in all California counties</p>
+                  <p className="ml-6 mb-2">Connections is active in all California counties</p>
                   <p className="ml-6 text-xs text-green-800">
-                    Serves members statewide with comprehensive CalAIM Community Supports
+                    Connections serves Kaiser members statewide with CalAIM Community Supports
                   </p>
                 </div>
                 
@@ -248,9 +252,9 @@ export default function EligibilityCheckPage() {
                     <Building className="h-4 w-4" />
                     Health Net
                   </div>
-                  <p className="ml-6 mb-2">Los Angeles and Sacramento counties only</p>
+                  <p className="ml-6 mb-2">Connections is active only in Los Angeles and Sacramento counties</p>
                   <p className="ml-6 text-xs text-green-800">
-                    Limited geographic coverage - verify county before applying
+                    Limited geographic coverage — verify county before applying
                   </p>
                 </div>
                 
@@ -309,6 +313,50 @@ export default function EligibilityCheckPage() {
           </Card>
         </div>
 
+        {/* Portal Links (match Pathway links) */}
+        <div className="mb-8">
+          <Card className="border-slate-200 bg-white">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-slate-900">
+                <Shield className="h-5 w-5" />
+                Eligibility portals
+              </CardTitle>
+              <CardDescription>
+                Use these official portals to look up eligibility and take screenshots if needed.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid sm:grid-cols-3 gap-3 text-sm">
+                {[
+                  {
+                    label: 'Health Net Portal',
+                    url: 'https://sso.entrykeyid.com/as/authorization.oauth2?response_type=code&client_id=44eb17c3-cf1e-4479-a811-61d23ae8ffbd&scope=openid%20profile&state=AHTpvDa32bFDvM5ov3mwyNx0K75Gqqp4McPzc6oUgds%3D&redirect_uri=https://provider.healthnetcalifornia.com/careconnect/login/oauth2/code/pingcloud&code_challenge_method=S256&nonce=maCZdZx6F1X7mug7ZQiIcWILmxz29uLnBvZQ6mNj4LE&code_challenge=45qFtSM3GXeNCBHkpyU9vJmOwqtKUwYdcb7VJBbw6YA&app_origin=https://provider.healthnetcalifornia.com/careconnect/login/oauth2/code/pingcloud&brand=healthnet',
+                  },
+                  {
+                    label: 'Kaiser South Portal',
+                    url: 'https://healthy.kaiserpermanente.org/southern-california/community-providers/eligibility',
+                  },
+                  {
+                    label: 'Kaiser North Portal',
+                    url: 'https://healthy.kaiserpermanente.org/northern-california/community-providers/eligibility',
+                  },
+                ].map((link) => (
+                  <a
+                    key={link.label}
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50"
+                  >
+                    <span className="font-medium text-slate-800">{link.label}</span>
+                    <ExternalLink className="h-4 w-4 text-slate-500 group-hover:text-slate-700" />
+                  </a>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Eligibility Check Form */}
         <Card>
           <CardHeader>
@@ -321,6 +369,18 @@ export default function EligibilityCheckPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {submitted ? (
+              <Alert className="mb-6 border-green-200 bg-green-50">
+                <CheckCircle className="h-4 w-4 text-green-700" />
+                <AlertDescription className="text-green-900">
+                  <div className="font-semibold">Submitted successfully</div>
+                  <div className="text-sm">
+                    We sent a confirmation email to <span className="font-medium">{submitted.email}</span>. Reference ID:{' '}
+                    <span className="font-mono">{submitted.checkId}</span>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            ) : null}
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
               {/* Member Information Section */}
               <div>

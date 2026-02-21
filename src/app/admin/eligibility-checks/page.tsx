@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,18 +24,21 @@ import {
   Filter,
   Download,
   Eye,
-  Send
+  Send,
+  ExternalLink
 } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 
 interface EligibilityCheck {
   id: string;
+  memberName?: string;
   memberFirstName: string;
   memberLastName: string;
   memberBirthday: string;
   memberMrn: string;
   healthPlan: 'Kaiser' | 'Health Net';
   county: string;
+  requesterName?: string;
   requesterFirstName: string;
   requesterLastName: string;
   requesterEmail: string;
@@ -53,12 +57,29 @@ interface EligibilityCheck {
 export default function EligibilityChecksPage() {
   const { toast } = useToast();
   const { user, isAdmin } = useAdmin();
+  const searchParams = useSearchParams();
   const [checks, setChecks] = useState<EligibilityCheck[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCheck, setSelectedCheck] = useState<EligibilityCheck | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+
+  const formatDob = (value: string) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    // Stored as YYYY-MM-DD from <input type="date">; display as DD/MM/YYYY.
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+    // Fallback: attempt to parse and format.
+    const ms = Date.parse(raw);
+    if (Number.isNaN(ms)) return raw;
+    const d = new Date(ms);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = String(d.getFullYear());
+    return `${dd}/${mm}/${yyyy}`;
+  };
 
   // Form state for processing eligibility check
   const [resultForm, setResultForm] = useState({
@@ -72,6 +93,18 @@ export default function EligibilityChecksPage() {
       fetchEligibilityChecks();
     }
   }, [isAdmin]);
+
+  // Deep-link: /admin/eligibility-checks?checkId=abc
+  useEffect(() => {
+    const focusId = String(searchParams.get('checkId') || '').trim();
+    if (!focusId) return;
+    if (!checks || checks.length === 0) return;
+    if (selectedCheck?.id === focusId) return;
+    const found = checks.find((c) => c.id === focusId) || null;
+    if (found) {
+      setSelectedCheck(found);
+    }
+  }, [checks, searchParams, selectedCheck?.id]);
 
   const fetchEligibilityChecks = async () => {
     try {
@@ -164,9 +197,11 @@ export default function EligibilityChecksPage() {
 
   const filteredChecks = checks.filter(check => {
     const matchesStatus = filterStatus === 'all' || check.status === filterStatus;
+    const memberName = String(check.memberName || `${check.memberFirstName || ''} ${check.memberLastName || ''}`.trim()).trim();
+    const requesterName = String(check.requesterName || `${check.requesterFirstName || ''} ${check.requesterLastName || ''}`.trim()).trim();
     const matchesSearch = searchTerm === '' || 
-      check.memberName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      check.requesterName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      memberName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      requesterName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       check.requesterEmail.toLowerCase().includes(searchTerm.toLowerCase());
     
     return matchesStatus && matchesSearch;
@@ -318,7 +353,7 @@ export default function EligibilityChecksPage() {
                     </div>
                     <div>
                       <span className="font-medium">Birthday:</span>
-                      <p>{selectedCheck.memberBirthday}</p>
+                      <p>{formatDob(selectedCheck.memberBirthday)}</p>
                     </div>
                     <div>
                       <span className="font-medium">Health Plan:</span>
@@ -432,6 +467,33 @@ export default function EligibilityChecksPage() {
                         <p className="text-xs text-gray-600 mt-1">
                           Upload a screenshot of the eligibility verification from the health plan's system
                         </p>
+                        <div className="mt-2 flex flex-col gap-1 text-sm">
+                          {[
+                            {
+                              label: 'Health Net Portal',
+                              url: 'https://sso.entrykeyid.com/as/authorization.oauth2?response_type=code&client_id=44eb17c3-cf1e-4479-a811-61d23ae8ffbd&scope=openid%20profile&state=AHTpvDa32bFDvM5ov3mwyNx0K75Gqqp4McPzc6oUgds%3D&redirect_uri=https://provider.healthnetcalifornia.com/careconnect/login/oauth2/code/pingcloud&code_challenge_method=S256&nonce=maCZdZx6F1X7mug7ZQiIcWILmxz29uLnBvZQ6mNj4LE&code_challenge=45qFtSM3GXeNCBHkpyU9vJmOwqtKUwYdcb7VJBbw6YA&app_origin=https://provider.healthnetcalifornia.com/careconnect/login/oauth2/code/pingcloud&brand=healthnet',
+                            },
+                            {
+                              label: 'Kaiser South Portal',
+                              url: 'https://healthy.kaiserpermanente.org/southern-california/community-providers/eligibility',
+                            },
+                            {
+                              label: 'Kaiser North Portal',
+                              url: 'https://healthy.kaiserpermanente.org/northern-california/community-providers/eligibility',
+                            },
+                          ].map((link) => (
+                            <a
+                              key={link.label}
+                              href={link.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-800 underline"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              {link.label}
+                            </a>
+                          ))}
+                        </div>
                       </div>
 
                       {/* Submit Button */}

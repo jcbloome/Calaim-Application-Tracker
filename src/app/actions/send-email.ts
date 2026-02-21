@@ -11,6 +11,8 @@ import ReminderEmail from '@/components/emails/ReminderEmail';
 import StaffAssignmentEmail from '@/components/emails/StaffAssignmentEmail';
 import NoteAssignmentEmail from '@/components/emails/NoteAssignmentEmail';
 import { CsSummaryReminderEmail, getCsSummaryReminderEmailText } from '@/components/emails/CsSummaryReminderEmail';
+import EligibilityCheckConfirmationEmail from '@/components/emails/EligibilityCheckConfirmationEmail';
+import EligibilityCheckResultEmail from '@/components/emails/EligibilityCheckResultEmail';
 import * as admin from 'firebase-admin';
 
 // Note: Firebase Admin is initialized in a central file (e.g., src/ai/dev.ts).
@@ -79,6 +81,27 @@ interface CsSummaryReminderPayload {
     applicationId: string;
     confirmationUrl: string;
     supportEmail: string;
+}
+
+interface EligibilityCheckConfirmationPayload {
+    to: string;
+    requesterName: string;
+    requesterEmail: string;
+    memberName: string;
+    healthPlan: string;
+    county: string;
+    checkId: string;
+}
+
+interface EligibilityCheckResultPayload {
+    to: string;
+    requesterName: string;
+    memberName: string;
+    healthPlan: string;
+    county: string;
+    checkId: string;
+    result: 'eligible' | 'not-eligible';
+    resultMessage: string;
 }
 
 async function getBccRecipients(): Promise<string[]> {
@@ -315,6 +338,87 @@ export const sendCsSummaryReminderEmail = async (payload: CsSummaryReminderPaylo
         return data;
     } catch (error) {
         console.error('Failed to send CS Summary reminder email:', error);
+        throw error;
+    }
+};
+
+export const sendEligibilityCheckConfirmationEmail = async (payload: EligibilityCheckConfirmationPayload) => {
+    const resend = getResendClient();
+    if (!resend) {
+        console.warn("RESEND_API_KEY is not set. Skipping eligibility confirmation email.");
+        return null;
+    }
+
+    const { to, requesterName, requesterEmail, memberName, healthPlan, county, checkId } = payload;
+
+    try {
+        const emailHtml = await renderAsync(
+            EligibilityCheckConfirmationEmail({
+                requesterName,
+                requesterEmail,
+                memberName,
+                healthPlan,
+                county,
+                checkId,
+            })
+        );
+
+        const { data, error } = await resend.emails.send({
+            from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
+            to: [to],
+            subject: `CalAIM Eligibility Check Confirmation (ID: ${checkId})`,
+            html: emailHtml,
+        });
+
+        if (error) {
+            console.error('Resend Eligibility Confirmation Error:', error);
+            throw new Error(error.message);
+        }
+
+        return data;
+    } catch (error) {
+        console.error('Failed to send eligibility confirmation email:', error);
+        throw error;
+    }
+};
+
+export const sendEligibilityCheckResultEmail = async (payload: EligibilityCheckResultPayload) => {
+    const resend = getResendClient();
+    if (!resend) {
+        console.warn("RESEND_API_KEY is not set. Skipping eligibility result email.");
+        return null;
+    }
+
+    const { to, requesterName, memberName, healthPlan, county, checkId, result, resultMessage } = payload;
+
+    try {
+        const emailHtml = await renderAsync(
+            EligibilityCheckResultEmail({
+                requesterName,
+                memberName,
+                healthPlan,
+                county,
+                checkId,
+                result,
+                resultMessage,
+            })
+        );
+
+        const { data, error } = await resend.emails.send({
+            from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
+            to: [to],
+            subject: `CalAIM Eligibility Check Results (ID: ${checkId})`,
+            html: emailHtml,
+        });
+
+        if (error) {
+            console.error('Resend Eligibility Result Error:', error);
+            throw new Error(error.message);
+        }
+
+        return data;
+    } catch (error) {
+        console.error('Failed to send eligibility result email:', error);
         throw error;
     }
 };

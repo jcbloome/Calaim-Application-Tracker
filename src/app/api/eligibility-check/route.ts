@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import * as admin from 'firebase-admin';
+import { sendEligibilityCheckConfirmationEmail } from '@/app/actions/send-email';
 
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
@@ -63,6 +64,8 @@ export async function POST(request: NextRequest) {
     }
     
     const data = validationResult.data;
+    const memberName = `${String(data.memberFirstName || '').trim()} ${String(data.memberLastName || '').trim()}`.trim();
+    const requesterName = `${String(data.requesterFirstName || '').trim()} ${String(data.requesterLastName || '').trim()}`.trim();
     
     // Validate service area for Health Net
     if (data.healthPlan === 'Health Net') {
@@ -83,23 +86,88 @@ export async function POST(request: NextRequest) {
     const firestore = admin.firestore();
     const docRef = await firestore.collection('eligibilityChecks').add({
       ...data,
+      memberName,
+      requesterName,
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
       status: 'pending'
     });
     
     console.log('📋 Eligibility Check Submitted:', {
       id: docRef.id,
-      memberName: data.memberName,
+      memberName,
       healthPlan: data.healthPlan,
       county: data.county,
       requesterEmail: data.requesterEmail
     });
     
-    // Send confirmation email (placeholder)
-    await sendConfirmationEmail(data);
-    
-    // Send staff notification (placeholder)
-    await sendStaffNotification({ id: docRef.id, ...data });
+    // Send confirmation email to requester
+    try {
+      await sendEligibilityCheckConfirmationEmail({
+        to: data.requesterEmail,
+        requesterName: requesterName || 'Requester',
+        requesterEmail: data.requesterEmail,
+        memberName: memberName || 'Member',
+        healthPlan: data.healthPlan,
+        county: data.county,
+        checkId: docRef.id,
+      });
+    } catch (emailError) {
+      // Don't fail the submission if email is down.
+      console.error('📧 Eligibility confirmation email failed:', emailError);
+    }
+
+    // Notify staff recipients (Electron + My Notifications) using the same
+    // recipient list as CS Summary review alerts.
+    try {
+      const settingsSnap = await firestore.collection('system_settings').doc('review_notifications').get();
+      const settings = settingsSnap.exists ? settingsSnap.data() : null;
+      const recipients = ((settings as any)?.recipients || {}) as Record<string, any>;
+      const recipientUids: string[] = [];
+      const recipientMetaByUid = new Map<string, any>();
+
+      Object.entries(recipients).forEach(([key, raw]) => {
+        const r = raw || {};
+        if (!Boolean(r?.enabled)) return;
+        // Eligibility checks are handled by the same group as CS Summary review.
+        if (!Boolean(r?.csSummary)) return;
+        const uid = String(r?.uid || '').trim() || (!String(key).includes('@') ? String(key).trim() : '');
+        if (!uid) return;
+        if (!recipientUids.includes(uid)) recipientUids.push(uid);
+        recipientMetaByUid.set(uid, r);
+      });
+
+      if (recipientUids.length > 0) {
+        const basePayload: Record<string, any> = {
+          title: 'Eligibility Check',
+          message: `${memberName || 'Member'} — ${data.healthPlan} • ${data.county}\nRequester: ${data.requesterEmail}`,
+          type: 'eligibility_check',
+          priority: 'Priority',
+          status: 'Open',
+          isRead: false,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          source: 'portal',
+          actionUrl: `/admin/eligibility-checks?checkId=${encodeURIComponent(docRef.id)}`,
+          eligibilityCheckId: docRef.id,
+          memberName,
+          healthPlan: data.healthPlan,
+          county: data.county,
+        };
+
+        await Promise.all(
+          recipientUids.map((uid) => {
+            const meta = recipientMetaByUid.get(uid) || {};
+            const recipientName = String(meta?.name || meta?.email || 'Staff').trim() || 'Staff';
+            return firestore.collection('staff_notifications').add({
+              ...basePayload,
+              userId: uid,
+              recipientName,
+            });
+          })
+        );
+      }
+    } catch (notifyError) {
+      console.error('🔔 Eligibility staff notification failed:', notifyError);
+    }
     
     return NextResponse.json({
       success: true,
@@ -120,65 +188,6 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// Placeholder function for sending confirmation email
-async function sendConfirmationEmail(data: any) {
-  console.log('📧 Sending confirmation email to:', data.requesterEmail);
-  
-  // TODO: Implement email sending
-  // This would integrate with your email service (Resend, SendGrid, etc.)
-  
-  const emailContent = {
-    to: data.requesterEmail,
-    subject: 'CalAIM Eligibility Check - Confirmation',
-    html: `
-      <h2>Eligibility Check Submitted</h2>
-        <p>Dear ${data.requesterFirstName} ${data.requesterLastName},</p>
-      <p>We have received your CalAIM eligibility check request for:</p>
-      <ul>
-        <li><strong>Member:</strong> ${data.memberFirstName} ${data.memberLastName}</li>
-        <li><strong>Health Plan:</strong> ${data.healthPlan}</li>
-        <li><strong>County:</strong> ${data.county}</li>
-        <li><strong>Date of Birth:</strong> ${data.memberBirthday}</li>
-        <li><strong>Requester:</strong> ${data.requesterFirstName} ${data.requesterLastName}</li>
-        <li><strong>Your Relationship:</strong> ${data.relationshipToMember.replace('-', ' ')}${
-          data.relationshipToMember === 'other' && data.otherRelationshipSpecification 
-            ? ` (${data.otherRelationshipSpecification})` 
-            : ''
-        }</li>
-      </ul>
-      <p>We will email you the eligibility results within 1 business day.</p>
-      <p>Thank you for using our CalAIM eligibility check service.</p>
-      <p>Best regards,<br>CalAIM Support Team</p>
-    `
-  };
-  
-  // Simulate email sending delay
-  await new Promise(resolve => setTimeout(resolve, 100));
-  
-  return { success: true, emailContent };
-}
-
-// Placeholder function for sending staff notification
-async function sendStaffNotification(eligibilityCheck: any) {
-  console.log('🔔 Sending staff notification for eligibility check:', eligibilityCheck.id);
-  
-  // TODO: Implement staff notification
-  // This would notify staff members about the new eligibility check request
-  
-  const staffNotification = {
-    type: 'eligibility_check',
-    title: 'New Eligibility Check Request',
-    message: `New eligibility check for ${eligibilityCheck.memberName} (${eligibilityCheck.healthPlan} - ${eligibilityCheck.county})`,
-    data: eligibilityCheck,
-    timestamp: new Date().toISOString()
-  };
-  
-  // Simulate notification processing
-  await new Promise(resolve => setTimeout(resolve, 50));
-  
-  return { success: true, notification: staffNotification };
 }
 
 // GET endpoint for retrieving eligibility check status (for future use)

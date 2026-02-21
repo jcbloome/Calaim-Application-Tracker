@@ -165,6 +165,7 @@ function AdminHeader() {
   const [hnDocCount, setHnDocCount] = useState(0);
   const [kaiserCsCount, setKaiserCsCount] = useState(0);
   const [kaiserDocCount, setKaiserDocCount] = useState(0);
+  const [eligibilityPendingCount, setEligibilityPendingCount] = useState(0);
   const [reviewPopupPrefs, setReviewPopupPrefs] = useState<{
     enabled: boolean;
     recipientEnabled: boolean;
@@ -257,6 +258,22 @@ function AdminHeader() {
     );
     return () => unsubscribe();
   }, [firestore, user?.uid, user?.email]);
+
+  // Action item counter: pending Eligibility Checks
+  useEffect(() => {
+    if (!firestore) return;
+    const q = query(collection(firestore, 'eligibilityChecks'), where('status', '==', 'pending'));
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
+        setEligibilityPendingCount(snap.size || 0);
+      },
+      () => {
+        setEligibilityPendingCount(0);
+      }
+    );
+    return () => unsubscribe();
+  }, [firestore]);
 
   const handleSignOut = async () => {
     if (auth) {
@@ -699,6 +716,13 @@ function AdminHeader() {
         count: kaiserCsCount,
         dot: 'bg-blue-600',
         href: '/admin/applications?plan=kaiser&review=cs',
+      },
+      {
+        key: 'eligibility',
+        label: 'E',
+        count: eligibilityPendingCount,
+        dot: 'bg-amber-600',
+        href: '/admin/eligibility-checks',
       },
     ];
 
