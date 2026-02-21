@@ -1002,6 +1002,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   // Allow access to login page without authentication
   const isLoginPage = pathname === '/admin/login';
   const isDesktopNotificationWindow = pathname === '/admin/desktop-notification-window';
+  const isDesktopChatWindow = pathname === '/admin/desktop-chat-window';
 
   // Debug logging for admin layout
   useEffect(() => {
@@ -1073,7 +1074,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
       const allowNonAdmin =
         pathname?.startsWith('/admin/my-notes') ||
-        pathname === '/admin/desktop-notification-window';
+        pathname === '/admin/desktop-notification-window' ||
+        pathname === '/admin/desktop-chat-window';
 
       console.log('🔍 Admin Layout Auth Check:', {
         isAdmin,
@@ -1116,9 +1118,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  // Notification window should be a minimal shell (no header/sidebar/context menu).
+  // Desktop windows should be a minimal shell (no header/sidebar/context menu).
   if (isDesktopNotificationWindow) {
     return <div className="min-h-screen bg-transparent">{children}</div>;
+  }
+  if (isDesktopChatWindow) {
+    return <div className="min-h-screen bg-slate-50">{children}</div>;
   }
   
   // If loading is done and user is an admin, show the full admin layout.

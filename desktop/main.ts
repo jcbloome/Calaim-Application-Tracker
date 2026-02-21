@@ -8,6 +8,7 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let notificationWindow: BrowserWindow | null = null;
 let statusWindow: BrowserWindow | null = null;
+let chatWindow: BrowserWindow | null = null;
 let notificationTimer: NodeJS.Timeout | null = null;
 let isQuitting = false;
 let notificationWindowLoaded = false;
@@ -111,6 +112,9 @@ const applySuppressionFilters = (notes: PillItem[]) => {
   }
 
   return (notes || []).filter((note) => {
+    const rawType = String((note as any)?.type || '').toLowerCase();
+    const isChat = Boolean((note as any)?.isChatOnly) || rawType.includes('chat');
+    if (isChat) return false;
     const noteId = String(note.noteId || '').trim();
     if (noteId) {
       const until = Number(snoozedNoteUntilById[noteId] || 0);
@@ -142,6 +146,8 @@ type PillItem = {
   title: string;
   message: string;
   kind?: 'note' | 'docs' | 'cs';
+  type?: string;
+  isChatOnly?: boolean;
   source?: string;
   clientId2?: string;
   author?: string;
@@ -557,6 +563,43 @@ const openStaffStatusWindow = () => {
   }
 };
 
+const openChatWindow = () => {
+  try {
+    if (chatWindow && !chatWindow.isDestroyed()) {
+      chatWindow.show();
+      chatWindow.focus();
+      return;
+    }
+
+    chatWindow = new BrowserWindow({
+      width: 980,
+      height: 720,
+      show: false,
+      title: 'Staff Chat',
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+
+    const url = getExternalUrl('/admin/desktop-chat-window');
+    chatWindow.loadURL(url).catch(() => undefined);
+    chatWindow.once('ready-to-show', () => {
+      try {
+        chatWindow?.show();
+      } catch {
+        // ignore
+      }
+    });
+    chatWindow.on('closed', () => {
+      chatWindow = null;
+    });
+  } catch {
+    // ignore
+  }
+};
+
 const openInMainWindow = (route?: string) => {
   const target = getExternalUrl(route || '/admin/my-notes');
   try {
@@ -622,6 +665,10 @@ const buildTrayMenu = () => {
           // ignore
         }
       }
+    },
+    {
+      label: 'Open Chat',
+      click: () => openChatWindow(),
     },
     { type: 'separator' },
     {

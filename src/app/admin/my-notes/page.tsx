@@ -758,6 +758,23 @@ function MyNotesContent() {
     .split(',')
     .map((tag) => tag.trim().toLowerCase())
     .filter(Boolean);
+  const chatMode = searchParams.get('chat') === '1';
+
+  const isChatNotification = useCallback((notification: StaffNotification) => {
+    if (Boolean(notification.isChatOnly)) return true;
+    const originType = String(notification.type || '').toLowerCase();
+    if (originType.includes('chat')) return true;
+    return false;
+  }, []);
+
+  const viewNotifications = useMemo(() => {
+    const base = notifications || [];
+    if (chatMode) {
+      return base.filter((n) => isChatNotification(n));
+    }
+    // Default: keep notifications "pure" (exclude chat-only threads and hidden inbox items).
+    return base.filter((n) => !isChatNotification(n) && !Boolean(n.hiddenFromInbox));
+  }, [chatMode, isChatNotification, notifications]);
 
   const isInterofficeNotification = (notification: StaffNotification) => {
     const originType = String(notification.type || '').toLowerCase();
@@ -765,7 +782,7 @@ function MyNotesContent() {
   };
 
   // Filter notifications based on search term
-  const filteredNotifications = notifications.filter(notification => {
+  const filteredNotifications = viewNotifications.filter(notification => {
     if (!searchTerm) return true;
 
     const searchLower = searchTerm.toLowerCase();
@@ -847,7 +864,7 @@ function MyNotesContent() {
 
   const threadMap = useMemo(() => {
     const map = new Map<string, StaffNotification[]>();
-    for (const note of notifications) {
+    for (const note of viewNotifications) {
       const key = String(note.threadId || note.id);
       const existing = map.get(key);
       if (existing) {
@@ -864,7 +881,7 @@ function MyNotesContent() {
       });
     }
     return map;
-  }, [notifications]);
+  }, [viewNotifications]);
 
   const getMemberLink = (notification: StaffNotification) => {
     if (notification.applicationId) {

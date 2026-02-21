@@ -90,7 +90,6 @@ type ThreadMessage = {
   authorName: string;
   senderId?: string;
   createdAtMs: number;
-  isChat: boolean;
 };
 
 const accentClassForKind = (kind?: string) => {
@@ -111,7 +110,7 @@ export default function DesktopNotificationWindowClient() {
   const [sendError, setSendError] = useState<string>('');
   const [markingRead, setMarkingRead] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
-  const [replyPriority, setReplyPriority] = useState<'General' | 'Priority' | 'Chat'>('Priority');
+  const [replyPriority, setReplyPriority] = useState<'General' | 'Priority'>('Priority');
   const [sendToSender, setSendToSender] = useState(true);
   const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
@@ -250,13 +249,13 @@ export default function DesktopNotificationWindowClient() {
             String(data?.createdByName || data?.senderName || data?.authorName || 'Staff').trim() || 'Staff';
           const type = String(data?.type || '').toLowerCase();
           const isChat = Boolean(data?.isChatOnly) || type.includes('chat');
+          if (isChat) return;
           next.push({
             id: docItem.id,
             message,
             authorName,
             senderId,
             createdAtMs: Number(ts || 0),
-            isChat,
           });
         });
         next.sort((a, b) => a.createdAtMs - b.createdAtMs);
@@ -440,9 +439,7 @@ export default function DesktopNotificationWindowClient() {
         return;
       }
 
-      const isChat = replyPriority === 'Chat';
-
-      if (clientId2 && !isChat) {
+      if (clientId2) {
         // If tied to a Caspio client, write the reply into connect_tbl_clientnotes.
         await fetch('/api/client-notes', {
           method: 'POST',
@@ -462,12 +459,10 @@ export default function DesktopNotificationWindowClient() {
       const basePayload: Record<string, any> = {
         title: `Reply: ${String(active.title || 'Incoming note')}`,
         message,
-        type: isChat ? 'interoffice_chat' : 'interoffice_reply',
-        // Chat should still popup, so treat it as Priority for desktop.
-        priority: isChat ? 'Priority' : (replyPriority === 'Priority' ? 'Priority' : 'General'),
+        type: 'interoffice_reply',
+        priority: replyPriority === 'Priority' ? 'Priority' : 'General',
         status: 'Open',
         isRead: false,
-        isChatOnly: isChat,
         createdBy: myUid,
         createdByName: myName,
         senderName: myName,
@@ -481,11 +476,8 @@ export default function DesktopNotificationWindowClient() {
         source: 'electron',
       };
 
-      // Chat should not be tied to a member/client record.
-      if (!isChat) {
-        if (active.memberName) basePayload.memberName = active.memberName;
-        if (active.clientId2) basePayload.clientId2 = active.clientId2;
-      }
+      if (active.memberName) basePayload.memberName = active.memberName;
+      if (active.clientId2) basePayload.clientId2 = active.clientId2;
 
       await Promise.all(
         Array.from(recipients.entries()).map(([uid, name]) =>
@@ -950,11 +942,6 @@ export default function DesktopNotificationWindowClient() {
                   <summary className="cursor-pointer text-[11px] text-slate-600">
                     Conversation ({threadMessages.length})
                   </summary>
-                  {threadMessages.some((m) => m.isChat) ? (
-                    <div className="mt-2 rounded-md border bg-violet-50 px-2 py-1 text-[11px] text-violet-800">
-                      Chat messages are saved to My Notifications only (not to client notes / Caspio).
-                    </div>
-                  ) : null}
                   <div className="mt-2 max-h-28 overflow-auto space-y-2">
                     {threadMessages.map((msg) => {
                       const isMe = Boolean(user?.uid) && msg.senderId === user?.uid;
@@ -968,7 +955,6 @@ export default function DesktopNotificationWindowClient() {
                             <div className="mb-0.5 flex items-center justify-between gap-2 text-[10px] opacity-80">
                               <span className="truncate">
                                 {isMe ? 'You' : msg.authorName}
-                                {msg.isChat ? ' · Chat' : ''}
                               </span>
                               <span>
                                 {msg.createdAtMs
@@ -1002,14 +988,12 @@ export default function DesktopNotificationWindowClient() {
                     value={replyPriority}
                     onChange={(e) => {
                       const value = String(e.target.value || '');
-                      if (value === 'Chat') setReplyPriority('Chat');
-                      else if (value === 'General') setReplyPriority('General');
+                      if (value === 'General') setReplyPriority('General');
                       else setReplyPriority('Priority');
                     }}
                   >
                     <option value="Priority">Priority</option>
                     <option value="General">General</option>
-                    <option value="Chat">Chat (popup, no Caspio)</option>
                   </select>
                 </label>
                 <button
