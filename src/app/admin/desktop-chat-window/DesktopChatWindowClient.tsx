@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useUser, useFirestore } from '@/firebase';
-import { addDoc, collection, getDoc, getDocs, onSnapshot, query, serverTimestamp, where, documentId, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDoc, getDocs, onSnapshot, query, serverTimestamp, where, documentId, doc, updateDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -50,6 +50,7 @@ export default function DesktopChatWindowClient() {
 
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
 
   const filteredStaff = useMemo(() => {
     const q = recipientSearch.trim().toLowerCase();
@@ -259,44 +260,37 @@ export default function DesktopChatWindowClient() {
   };
 
   const sendTestIncomingChat = useCallback(async () => {
-    if (!firestore || !myUid) return;
+    if (!myUid) return;
     setSendingTestIncoming(true);
     try {
-      const threadId = `chat:test-incoming:${myUid}:${Date.now()}`;
-      const payload: Record<string, any> = {
-        title: 'Chat',
-        message: 'Test incoming chat message (tray + alert verification).',
-        type: 'interoffice_chat',
-        priority: 'General',
-        status: 'Open',
-        isRead: false,
-        isChatOnly: true,
-        hiddenFromInbox: true,
-        createdBy: 'system-test',
-        createdByName: 'Test Bot',
-        senderName: 'Test Bot',
-        senderId: 'system-test',
-        timestamp: serverTimestamp(),
-        threadId,
-        actionUrl: '/admin/desktop-chat-window',
-        source: 'electron',
-        participants: [myUid],
-        participantNames: [myName, 'Test Bot'],
-      };
-      await addDoc(collection(firestore, 'staff_notifications'), {
-        ...payload,
-        userId: myUid,
-        recipientName: myName,
+      const idToken = await (user as any)?.getIdToken?.();
+      if (!idToken) return;
+      const res = await fetch('/api/chat/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          message: 'Test incoming chat message (tray + alert verification).',
+          participantUids: [myUid],
+          simulateIncoming: true,
+        }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `Request failed (${res.status})`);
+      }
     } finally {
       setSendingTestIncoming(false);
     }
-  }, [firestore, myName, myUid]);
+  }, [myUid, user]);
 
   const handleSend = useCallback(async () => {
-    if (!firestore || !myUid) return;
+    if (!myUid) return;
     const message = draft.trim();
     if (!message) return;
+    setSendError('');
 
     const baseRecipients = selectedThreadId
       ? (selectedParticipants || []).filter(Boolean)
@@ -306,55 +300,39 @@ export default function DesktopChatWindowClient() {
     const nonSelf = uniqueRecipients.filter((id) => id !== myUid);
     if (nonSelf.length === 0) return;
 
-    const participantNames = uniqueRecipients.map((uid) => {
-      if (uid === myUid) return myName;
-      return staffList.find((s) => s.uid === uid)?.name || 'Staff';
-    });
-
     const threadId = selectedThreadId || buildChatThreadId(uniqueRecipients);
 
     setSending(true);
     try {
-      const basePayload: Record<string, any> = {
-        title: 'Chat',
-        message,
-        type: 'interoffice_chat',
-        priority: 'General',
-        status: 'Open',
-        isRead: false,
-        isChatOnly: true,
-        hiddenFromInbox: true,
-        createdBy: myUid,
-        createdByName: myName,
-        senderName: myName,
-        senderId: myUid,
-        timestamp: serverTimestamp(),
-        threadId,
-        actionUrl: '/admin/desktop-chat-window',
-        source: 'electron',
-        participants: uniqueRecipients,
-        participantNames,
-      };
-
-      await Promise.all(
-        uniqueRecipients.map((uid) => {
-          const recipientName = uid === myUid ? myName : (staffList.find((s) => s.uid === uid)?.name || 'Staff');
-          return addDoc(collection(firestore, 'staff_notifications'), {
-            ...basePayload,
-            userId: uid,
-            recipientName,
-            isRead: uid === myUid ? true : basePayload.isRead,
-          });
-        })
-      );
+      const idToken = await (user as any)?.getIdToken?.();
+      if (!idToken) throw new Error('Not signed in');
+      const res = await fetch('/api/chat/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          message,
+          participantUids: uniqueRecipients,
+          threadId,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || `Request failed (${res.status})`);
+      }
 
       setDraft('');
       setSelectedThreadId(threadId);
       setRecipientIds(new Set());
+      setSendError('');
+    } catch (err: any) {
+      setSendError(err?.message || 'Failed to send');
     } finally {
       setSending(false);
     }
-  }, [draft, firestore, myName, myUid, recipientIds, selectedParticipants, selectedThreadId, staffList]);
+  }, [draft, myUid, recipientIds, selectedParticipants, selectedThreadId, user]);
 
   const headerTitle = useMemo(() => {
     if (!selectedThreadId) return 'New chat';
@@ -498,6 +476,11 @@ export default function DesktopChatWindowClient() {
           )}
 
           <div className="border-t p-3">
+            {sendError ? (
+              <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
+                {sendError}
+              </div>
+            ) : null}
             <div className="flex gap-2">
               <Textarea
                 value={draft}
