@@ -65,6 +65,31 @@ export default function EligibilityChecksPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const toDateSafe = (value: any): Date | null => {
+    if (!value) return null;
+    try {
+      if (typeof value?.toDate === 'function') {
+        const d = value.toDate();
+        return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
+      }
+      const seconds =
+        typeof value?._seconds === 'number'
+          ? value._seconds
+          : typeof value?.seconds === 'number'
+            ? value.seconds
+            : null;
+      if (typeof seconds === 'number' && Number.isFinite(seconds)) {
+        const d = new Date(seconds * 1000);
+        return !Number.isNaN(d.getTime()) ? d : null;
+      }
+      const ms = Date.parse(String(value));
+      if (!Number.isNaN(ms)) return new Date(ms);
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
   const formatDob = (value: string) => {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -79,6 +104,20 @@ export default function EligibilityChecksPage() {
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const yyyy = String(d.getFullYear());
     return `${mm}/${dd}/${yyyy}`;
+  };
+
+  const formatRequestedDate = (value: any) => {
+    const d = toDateSafe(value);
+    if (!d) return 'Date not available';
+    try {
+      return new Intl.DateTimeFormat('en-US', {
+        month: '2-digit',
+        day: '2-digit',
+        year: 'numeric',
+      }).format(d);
+    } catch {
+      return d.toLocaleDateString();
+    }
   };
 
   // Form state for processing eligibility check
@@ -310,12 +349,7 @@ export default function EligibilityChecksPage() {
                     </div>
                     <div className="text-xs text-gray-500">
                       <p>Requested by: {check.requesterFirstName} {check.requesterLastName}</p>
-                      <p>
-                        {check.timestamp?.toDate ? 
-                          check.timestamp.toDate().toLocaleDateString() : 
-                          'Date not available'
-                        }
-                      </p>
+                      <p>Date requested: {formatRequestedDate(check.timestamp)}</p>
                     </div>
                   </div>
                 ))}
@@ -354,6 +388,10 @@ export default function EligibilityChecksPage() {
                     <div>
                       <span className="font-medium">Birthday:</span>
                       <p>{formatDob(selectedCheck.memberBirthday)}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium">Date requested:</span>
+                      <p>{formatRequestedDate(selectedCheck.timestamp)}</p>
                     </div>
                     <div>
                       <span className="font-medium">Health Plan:</span>
