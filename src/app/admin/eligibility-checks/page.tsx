@@ -68,9 +68,9 @@ export default function EligibilityChecksPage() {
   const formatDob = (value: string) => {
     const raw = String(value || '').trim();
     if (!raw) return '';
-    // Stored as YYYY-MM-DD from <input type="date">; display as DD/MM/YYYY.
+    // Stored as YYYY-MM-DD from <input type="date">; display as MM/DD/YYYY.
     const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+    if (m) return `${m[2]}/${m[3]}/${m[1]}`;
     // Fallback: attempt to parse and format.
     const ms = Date.parse(raw);
     if (Number.isNaN(ms)) return raw;
@@ -78,7 +78,7 @@ export default function EligibilityChecksPage() {
     const dd = String(d.getDate()).padStart(2, '0');
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const yyyy = String(d.getFullYear());
-    return `${dd}/${mm}/${yyyy}`;
+    return `${mm}/${dd}/${yyyy}`;
   };
 
   // Form state for processing eligibility check
