@@ -705,13 +705,22 @@ export default function DesktopNotificationWindowClient() {
                 {(active?.memberName || pillState?.memberName) ? `  •  About: ${active?.memberName || pillState?.memberName}` : null}
               </div>
             </div>
-            <button
-              type="button"
-              className="text-xs px-2 py-1 rounded-md border hover:bg-slate-50"
-              onClick={handleMinimize}
-            >
-              Minimize
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="text-xs px-2 py-1 rounded-md border hover:bg-slate-50"
+                onClick={handleOpenChat}
+              >
+                Open Chat
+              </button>
+              <button
+                type="button"
+                className="text-xs px-2 py-1 rounded-md border hover:bg-slate-50"
+                onClick={handleMinimize}
+              >
+                Minimize
+              </button>
+            </div>
           </div>
 
           <div className="mt-3 flex items-center justify-between gap-2">
@@ -873,29 +882,6 @@ export default function DesktopNotificationWindowClient() {
 
           {String(active?.kind || '').toLowerCase() === 'cs' ? null : (
             <div className="mt-3">
-              <div className="mb-2 rounded-md border bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-semibold text-slate-800">Notes (client record)</div>
-                    <div className="mt-0.5 text-slate-700">
-                      Use this for notes/replies that belong in <span className="font-medium">My Notes</span> (and client
-                      records when applicable). For general staff chat, use{' '}
-                      <button type="button" className="underline font-medium hover:text-slate-900" onClick={handleOpenChat}>
-                        Chat
-                      </button>
-                      .
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="shrink-0 text-[11px] px-2 py-1 rounded-md border bg-white hover:bg-slate-50"
-                    onClick={handleOpenChat}
-                  >
-                    Open Chat
-                  </button>
-                </div>
-              </div>
-
               <div className="text-xs font-medium text-slate-600 mb-1">Quick reply</div>
               <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
                 <label className="flex items-center gap-1">
