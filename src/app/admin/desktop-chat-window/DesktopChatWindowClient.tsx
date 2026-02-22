@@ -39,6 +39,7 @@ export default function DesktopChatWindowClient() {
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [sendingTestIncoming, setSendingTestIncoming] = useState(false);
+  const [sendingTestSelf, setSendingTestSelf] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string>('');
@@ -294,6 +295,41 @@ export default function DesktopChatWindowClient() {
     }
   }, [myUid, user]);
 
+  const sendTestToSelf = useCallback(async () => {
+    if (!myUid) return;
+    setSendingTestSelf(true);
+    setSendError('');
+    try {
+      const idToken = await (user as any)?.getIdToken?.();
+      if (!idToken) throw new Error('Not signed in');
+      const testThreadId = `chat:test-self:${myUid}:${Date.now()}`;
+      const res = await fetch('/api/chat/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          message: 'Test self chat message (tray + alert verification).',
+          participantUids: [myUid],
+          threadId: testThreadId,
+          allowSelf: true,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `Request failed (${res.status})`);
+      }
+      const data = await res.json().catch(() => null);
+      const returnedThreadId = String(data?.threadId || testThreadId).trim() || testThreadId;
+      setSelectedThreadId(returnedThreadId);
+    } catch (err: any) {
+      setSendError(err?.message || 'Failed to send test to self');
+    } finally {
+      setSendingTestSelf(false);
+    }
+  }, [myUid, user]);
+
   const handleSend = useCallback(async () => {
     if (!myUid) return;
     const message = draft.trim();
@@ -363,16 +399,28 @@ export default function DesktopChatWindowClient() {
           </div>
           <div className="flex items-center gap-2">
             {isSuperAdmin ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void sendTestIncomingChat()}
-                disabled={sendingTestIncoming}
-                title="Creates a simulated incoming chat message for tray testing"
-              >
-                {sendingTestIncoming ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Send test incoming
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void sendTestIncomingChat()}
+                  disabled={sendingTestIncoming}
+                  title="Creates a simulated incoming chat message for tray testing"
+                >
+                  {sendingTestIncoming ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Send test incoming
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void sendTestToSelf()}
+                  disabled={sendingTestSelf}
+                  title="Creates an unread self-chat message to verify tray popups"
+                >
+                  {sendingTestSelf ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Send test to self
+                </Button>
+              </>
             ) : null}
             <Button variant="outline" size="sm" onClick={startNewChat}>
               <MessageSquarePlus className="mr-2 h-4 w-4" />

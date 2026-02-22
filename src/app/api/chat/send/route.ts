@@ -6,6 +6,7 @@ type SendChatBody = {
   participantUids: string[];
   threadId?: string;
   simulateIncoming?: boolean;
+  allowSelf?: boolean;
 };
 
 const uniq = (values: string[]) => Array.from(new Set(values));
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => null)) as SendChatBody | null;
     const message = String(body?.message || '').trim();
     const simulateIncoming = Boolean(body?.simulateIncoming);
+    const allowSelf = Boolean(body?.allowSelf);
     const rawParticipants = Array.isArray(body?.participantUids) ? body!.participantUids : [];
     const participantUids = uniq(rawParticipants.map((x) => String(x || '').trim()).filter(Boolean));
     const threadId = String(body?.threadId || '').trim();
@@ -67,16 +69,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    if (!simulateIncoming) {
-      if (participantUids.length < 2 || !participantUids.includes(uid)) {
-        return NextResponse.json({ error: 'participantUids must include sender and at least 1 recipient' }, { status: 400 });
-      }
-    } else {
+    if (simulateIncoming) {
       if (!isSuperAdmin) {
         return NextResponse.json({ error: 'Super admin access required' }, { status: 403 });
       }
       if (participantUids.length !== 1 || participantUids[0] !== uid) {
         return NextResponse.json({ error: 'simulateIncoming expects participantUids = [currentUserUid]' }, { status: 400 });
+      }
+    } else if (allowSelf) {
+      if (!isSuperAdmin) {
+        return NextResponse.json({ error: 'Super admin access required' }, { status: 403 });
+      }
+      if (participantUids.length !== 1 || participantUids[0] !== uid) {
+        return NextResponse.json({ error: 'allowSelf expects participantUids = [currentUserUid]' }, { status: 400 });
+      }
+    } else {
+      if (participantUids.length < 2 || !participantUids.includes(uid)) {
+        return NextResponse.json({ error: 'participantUids must include sender and at least 1 recipient' }, { status: 400 });
       }
     }
 
@@ -86,6 +95,8 @@ export async function POST(request: NextRequest) {
       threadId ||
       (simulateIncoming
         ? `chat:test-incoming:${uid}`
+        : allowSelf
+          ? `chat:test-self:${uid}`
         : `chat:${participantUids.slice().sort().join(':')}`);
 
     const senderUid = simulateIncoming ? 'system-test' : uid;
@@ -145,14 +156,15 @@ export async function POST(request: NextRequest) {
       participantNames: participantNames.length ? participantNames : undefined,
     };
 
-    const recipients = simulateIncoming ? [uid] : participantUids;
+    const recipients = (simulateIncoming || allowSelf) ? [uid] : participantUids;
     const writes = recipients.map((recipientUid) => {
       const isSenderCopy = recipientUid === uid && !simulateIncoming;
       return adminDb.collection('staff_notifications').add({
         ...basePayload,
         userId: recipientUid,
         recipientName: recipientUid === uid ? (String(decoded?.name || decoded?.email || 'Staff').trim() || 'Staff') : 'Staff',
-        isRead: simulateIncoming ? false : isSenderCopy ? true : false,
+        // For self-test messages we want an unread entry to verify tray alerts.
+        isRead: simulateIncoming ? false : allowSelf ? false : isSenderCopy ? true : false,
       });
     });
 
