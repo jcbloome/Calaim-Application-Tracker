@@ -29,6 +29,7 @@ interface Member {
   Hold_For_Social_Worker: string;
   RCFE_Name: string;
   RCFE_Address: string;
+  Authorization_Start_Date_T2038?: string;
   pathway: string;
   last_updated: string;
 }
@@ -293,6 +294,7 @@ export default function SocialWorkerAssignmentsPage() {
   const [selectedCounty, setSelectedCounty] = useState('all');
   const [selectedRCFE, setSelectedRCFE] = useState('all');
   const [selectedHoldStatus, setSelectedHoldStatus] = useState('all');
+  const [selectedSwAssignmentDue, setSelectedSwAssignmentDue] = useState<'all' | 'due' | 'other'>('all');
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [selectedSWForModal, setSelectedSWForModal] = useState<SocialWorkerStats | null>(null);
   
@@ -324,6 +326,65 @@ export default function SocialWorkerAssignmentsPage() {
     // Avoid matching "Not Authorized"
     return v === 'authorized' || v.startsWith('authorized ');
   };
+
+  const parseCaspioDateToLocalDate = (raw: any): Date | null => {
+    if (!raw) return null;
+    if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw;
+    const s = String(raw).trim();
+    if (!s) return null;
+
+    // First try native parsing (handles ISO strings well).
+    const d1 = new Date(s);
+    if (!Number.isNaN(d1.getTime())) return d1;
+
+    // Try M/D/YYYY (common in Caspio exports).
+    const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+.*)?$/);
+    if (mdy) {
+      const m = Number(mdy[1]);
+      const d = Number(mdy[2]);
+      const y = Number(mdy[3]);
+      if (m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 1900) {
+        const dt = new Date(y, m - 1, d);
+        if (!Number.isNaN(dt.getTime())) return dt;
+      }
+    }
+
+    // Try YYYY-MM-DD
+    const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+.*)?$/);
+    if (ymd) {
+      const y = Number(ymd[1]);
+      const m = Number(ymd[2]);
+      const d = Number(ymd[3]);
+      if (m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 1900) {
+        const dt = new Date(y, m - 1, d);
+        if (!Number.isNaN(dt.getTime())) return dt;
+      }
+    }
+
+    return null;
+  };
+
+  const isUnassignedSw = (member: Member) => {
+    const v = String(member.Social_Worker_Assigned || '').trim();
+    return !v || v.toLowerCase() === 'unassigned';
+  };
+
+  const isDueForSwAssignment = (member: Member) => {
+    if (!isUnassignedSw(member)) return false;
+    const start = parseCaspioDateToLocalDate(member.Authorization_Start_Date_T2038);
+    if (!start) return false;
+    const due = new Date(start);
+    due.setHours(0, 0, 0, 0);
+    due.setMonth(due.getMonth() + 1);
+    if (Number.isNaN(due.getTime())) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today.getTime() >= due.getTime();
+  };
+
+  const dueSwAssignmentCount = useMemo(() => {
+    return members.filter(isDueForSwAssignment).length;
+  }, [members]);
 
   // Fetch all members from API (Kaiser + Health Net + other MCOs)
   const fetchAllMembers = async () => {
@@ -612,8 +673,13 @@ export default function SocialWorkerAssignmentsPage() {
         selectedHoldStatus === 'all' ||
         (selectedHoldStatus === 'hold' && isHold(member.Hold_For_Social_Worker)) ||
         (selectedHoldStatus === 'active' && !isHold(member.Hold_For_Social_Worker));
+
+      const matchesSwDue =
+        selectedSwAssignmentDue === 'all' ||
+        (selectedSwAssignmentDue === 'due' && isDueForSwAssignment(member)) ||
+        (selectedSwAssignmentDue === 'other' && !isDueForSwAssignment(member));
       
-      return matchesSearch && matchesSW && matchesMCO && matchesStatus && matchesCounty && matchesRCFE && matchesHoldStatus;
+      return matchesSearch && matchesSW && matchesMCO && matchesStatus && matchesCounty && matchesRCFE && matchesHoldStatus && matchesSwDue;
     });
 
     // Then sort
@@ -665,7 +731,7 @@ export default function SocialWorkerAssignmentsPage() {
 
       return 0;
     });
-  }, [members, searchTerm, selectedSocialWorker, selectedMCO, selectedStatus, selectedCounty, selectedRCFE, selectedHoldStatus, sortField, sortDirection]);
+  }, [members, searchTerm, selectedSocialWorker, selectedMCO, selectedStatus, selectedCounty, selectedRCFE, selectedHoldStatus, selectedSwAssignmentDue, sortField, sortDirection]);
 
   if (isLoading) {
     return (
@@ -877,7 +943,7 @@ export default function SocialWorkerAssignmentsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-8 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Search</label>
                   <div className="relative">
@@ -999,6 +1065,20 @@ export default function SocialWorkerAssignmentsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Needs SW assignment</label>
+                  <Select value={selectedSwAssignmentDue} onValueChange={(v) => setSelectedSwAssignmentDue(v as any)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="due">Due (T2038 + 1 month) ({dueSwAssignmentCount})</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 
                 <div className="flex items-end">
                   <Button 
@@ -1011,6 +1091,7 @@ export default function SocialWorkerAssignmentsPage() {
                       setSelectedCounty('all');
                       setSelectedRCFE('all');
                       setSelectedHoldStatus('all');
+                      setSelectedSwAssignmentDue('all');
                     }}
                     className="w-full"
                   >
