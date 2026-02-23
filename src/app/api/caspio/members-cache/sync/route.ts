@@ -58,6 +58,11 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   // Caspio column name appears to be this variant in some environments.
   'Hold_for_Social_Worker',
   'SW_ID',
+  // Authorization tracking (used to suspend SW visits after auth ends for Kaiser).
+  'Authorization_Start_Date_T2038',
+  'Authorization_End_Date_T2038',
+  'Authorization_Start_Date_H2022',
+  'Authorization_End_Date_H2022',
   'RCFE_Registered_ID',
   'RCFE_Name',
   'RCFE_Address',

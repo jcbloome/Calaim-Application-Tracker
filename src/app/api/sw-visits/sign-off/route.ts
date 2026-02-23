@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
+    const authHeader = request.headers.get('authorization') || '';
+    const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+    const idToken = tokenMatch?.[1] ? String(tokenMatch[1]).trim() : '';
+    if (!idToken) {
+      return NextResponse.json({ success: false, error: 'Missing Authorization Bearer token' }, { status: 401 });
+    }
+
     const signOffData = await request.json();
     
     console.log('📋 SW Visit Sign-Off Submission:', {
@@ -31,33 +38,77 @@ export async function POST(request: NextRequest) {
 
     const locationVerified = !!signOffData.signOffData?.geolocation;
 
-    // Here you would typically:
-    // 1. Save the sign-off record to Firestore
-    // 2. Update the visit records with sign-off confirmation
-    // 3. Generate compliance reports
-    // 4. Send notifications to supervisors if any visits were flagged
-    
-    const signOffRecord = {
-      id: `signoff-${Date.now()}`,
-      rcfeId: signOffData.rcfeId,
-      rcfeName: signOffData.rcfeName,
-      socialWorkerId: signOffData.socialWorkerId,
-      visitDate: new Date().toISOString().split('T')[0],
+    const adminModule = await import('@/firebase-admin');
+    const admin = adminModule.default;
+    const adminAuth = adminModule.adminAuth;
+    const adminDb = adminModule.adminDb;
+
+    const decoded = await adminAuth.verifyIdToken(idToken);
+    const uid = String(decoded?.uid || '').trim();
+    const email = String(decoded?.email || '').trim().toLowerCase();
+    if (!uid || !email) {
+      return NextResponse.json({ success: false, error: 'Invalid token' }, { status: 401 });
+    }
+
+    const claimDay = String(signOffData?.claimDay || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+    const signedAtIso = String(signOffData?.signOffData?.signedAt || '').trim() || new Date().toISOString();
+
+    const visitIds: string[] = Array.isArray(signOffData?.completedVisits)
+      ? signOffData.completedVisits
+          .map((v: any) => String(v?.visitId || v?.id || '').trim())
+          .filter(Boolean)
+      : [];
+    if (visitIds.length === 0) {
+      return NextResponse.json({ success: false, error: 'No valid visit IDs to sign off' }, { status: 400 });
+    }
+
+    const recordRef = adminDb.collection('sw_signoff_records').doc();
+    const record = {
+      id: recordRef.id,
+      rcfeId: String(signOffData.rcfeId),
+      rcfeName: String(signOffData.rcfeName || ''),
+      socialWorkerId: String(signOffData.socialWorkerId || ''),
+      socialWorkerUid: String(signOffData.socialWorkerUid || uid),
+      socialWorkerEmail: String(signOffData.socialWorkerEmail || email).toLowerCase(),
+      socialWorkerName: String(signOffData.socialWorkerName || ''),
+      claimDay,
+      visitIds,
       completedVisits: signOffData.completedVisits,
+      invoice: signOffData.invoice || null,
       rcfeStaff: {
-        name: signOffData.signOffData.rcfeStaffName,
-        title: signOffData.signOffData.rcfeStaffTitle,
-        signature: signOffData.signOffData.signature,
-        signedAt: signOffData.signOffData.signedAt,
-        geolocation: signOffData.signOffData.geolocation
+        name: String(signOffData.signOffData.rcfeStaffName || ''),
+        title: String(signOffData.signOffData.rcfeStaffTitle || ''),
+        signature: String(signOffData.signOffData.signature || ''),
+        signedAt: signedAtIso,
+        geolocation: signOffData.signOffData.geolocation || null,
+        locationVerified,
       },
-      submittedAt: signOffData.submittedAt,
-      status: 'completed',
-      flaggedVisits: signOffData.completedVisits.filter((visit: any) => visit.flagged).length
+      submittedAt: String(signOffData.submittedAt || new Date().toISOString()),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
-    // Simulate saving to database
-    console.log('💾 Sign-off record created:', signOffRecord);
+    await recordRef.set(record, { merge: true });
+
+    // Mark visits as signed-off so admin reports can show completion.
+    const batch = adminDb.batch();
+    for (const visitId of visitIds.slice(0, 500)) {
+      const visitRef = adminDb.collection('sw_visit_records').doc(visitId);
+      batch.set(
+        visitRef,
+        {
+          signedOff: true,
+          signedOffAt: signedAtIso,
+          signOffId: recordRef.id,
+          rcfeStaffName: String(signOffData.signOffData.rcfeStaffName || ''),
+          rcfeStaffTitle: String(signOffData.signOffData.rcfeStaffTitle || ''),
+          claimDay,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+    await batch.commit();
 
     // Check for flagged visits and send notifications
     const flaggedVisits = signOffData.completedVisits.filter((visit: any) => visit.flagged);
@@ -74,7 +125,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: `Sign-off completed successfully for ${signOffData.completedVisits.length} visits`,
-      signOffId: signOffRecord.id,
+      signOffId: recordRef.id,
       flaggedVisits: flaggedVisits.length,
       locationVerified,
       data: {

@@ -335,6 +335,11 @@ export function transformCaspioMember(member: CaspioMember): any {
     CalAIM_Status: member.CalAIM_Status || 'Unknown',
     Social_Worker_Assigned: normalizeSocialWorkerName(member.Social_Worker_Assigned || ''),
     Staff_Assigned: member.Kaiser_User_Assignment || '',
+    // Authorization fields (needed to suspend SW visits when auth ends; especially Kaiser T2038).
+    Authorization_Start_Date_T2038: (member as any)?.Authorization_Start_Date_T2038 || '',
+    Authorization_End_Date_T2038: (member as any)?.Authorization_End_Date_T2038 || '',
+    Authorization_Start_Date_H2022: (member as any)?.Authorization_Start_Date_H2022 || '',
+    Authorization_End_Date_H2022: (member as any)?.Authorization_End_Date_H2022 || '',
     // Normalize hold so downstream UIs can be consistent even if Caspio values vary.
     Hold_For_Social_Worker: hold,
     Hold_For_Social_Worker_Visit: hold,

@@ -88,6 +88,66 @@ function isHoldValue(value: unknown): boolean {
   return v.includes('hold') || v === '1' || v === 'true' || v === 'yes' || v === 'y' || v === 'x';
 }
 
+function parseCaspioDateToLocalDate(value: unknown): Date | null {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+
+  // Common Caspio-ish formats: "YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss", "MM/DD/YYYY"
+  const isoLike = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoLike) {
+    const y = Number(isoLike[1]);
+    const m = Number(isoLike[2]);
+    const d = Number(isoLike[3]);
+    if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
+      return new Date(y, m - 1, d, 0, 0, 0, 0);
+    }
+  }
+
+  const usLike = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (usLike) {
+    const m = Number(usLike[1]);
+    const d = Number(usLike[2]);
+    const y = Number(usLike[3]);
+    if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
+      return new Date(y, m - 1, d, 0, 0, 0, 0);
+    }
+  }
+
+  const dt = new Date(raw);
+  if (Number.isNaN(dt.getTime())) return null;
+  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 0, 0, 0, 0);
+}
+
+function isKaiserMember(member: any): boolean {
+  const planRaw =
+    member?.CalAIM_MCO ??
+    member?.CalAIM_MCP ??
+    member?.Health_Plan ??
+    member?.healthPlan ??
+    member?.health_plan ??
+    '';
+  const plan = String(planRaw ?? '').trim().toLowerCase();
+  return plan.includes('kaiser');
+}
+
+function isAuthExpiredForSwVisits(member: any): { expired: boolean; endDate: Date | null } {
+  // Kaiser does not pay for SW visits past initial authorizations.
+  if (!isKaiserMember(member)) return { expired: false, endDate: null };
+
+  const endRaw =
+    member?.Authorization_End_Date_T2038 ??
+    member?.authorization_end_date_t2038 ??
+    member?.Auth_End_Date_T2038 ??
+    member?.authEndDateT2038 ??
+    '';
+  const endDate = parseCaspioDateToLocalDate(endRaw);
+  if (!endDate) return { expired: false, endDate: null };
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  return { expired: endDate.getTime() < todayStart.getTime(), endDate };
+}
+
 function swMatchesMember(params: {
   socialWorkerId: string;
   memberSwAssigned: unknown;
@@ -368,7 +428,7 @@ export async function GET(req: NextRequest) {
       isAuthorized(member?.CalAIM_Status ?? member?.calaim_status ?? member?.CalAIMStatus ?? member?.calaimStatus)
     );
 
-    const membersOnHold = assignedAuthorized.filter((member) =>
+    const suspendedHoldCount = assignedAuthorized.filter((member) =>
       isHoldValue(
         member?.Hold_For_Social_Worker ??
           member?.Hold_for_Social_Worker ??
@@ -377,6 +437,20 @@ export async function GET(req: NextRequest) {
       )
     ).length;
 
+    const suspendedAuthExpiredCount = assignedAuthorized.filter((member) => isAuthExpiredForSwVisits(member).expired)
+      .length;
+
+    const suspendedAnyCount = assignedAuthorized.filter((member) => {
+      const hold = isHoldValue(
+        member?.Hold_For_Social_Worker ??
+          member?.Hold_for_Social_Worker ??
+          member?.Hold_For_Social_Worker_Visit ??
+          member?.Hold_for_Social_Worker_Visit
+      );
+      const expired = isAuthExpiredForSwVisits(member).expired;
+      return hold || expired;
+    }).length;
+
     const assignedMembers = assignedAuthorized.filter((member) => {
       const hold = isHoldValue(
         member?.Hold_For_Social_Worker ??
@@ -384,7 +458,8 @@ export async function GET(req: NextRequest) {
           member?.Hold_For_Social_Worker_Visit ??
           member?.Hold_for_Social_Worker_Visit
       );
-      return !hold;
+      const expired = isAuthExpiredForSwVisits(member).expired;
+      return !hold && !expired;
     });
 
     // Group by RCFE
@@ -418,8 +493,10 @@ export async function GET(req: NextRequest) {
     }));
 
     console.log(`✅ Found ${assignedMembers.length} assigned members across ${rcfeList.length} RCFEs`);
-    if (membersOnHold > 0) {
-      console.log(`🚫 ${membersOnHold} members excluded due to SW visit hold status`);
+    if (suspendedAnyCount > 0) {
+      console.log(
+        `🚫 ${suspendedAnyCount} members excluded (hold=${suspendedHoldCount}, authExpired=${suspendedAuthExpiredCount})`
+      );
     }
 
     // Expose cache freshness for the SW portal UI (so they can confirm they are working off a recent sync).
@@ -446,7 +523,11 @@ export async function GET(req: NextRequest) {
       rcfeList,
       totalMembers: assignedMembers.length,
       totalRCFEs: rcfeList.length,
-      membersOnHold,
+      // Backwards-compatible field name used by SW portal UI; now includes authorization-expired Kaiser members too.
+      membersOnHold: suspendedAnyCount,
+      membersSuspended: suspendedAnyCount,
+      membersSuspendedHold: suspendedHoldCount,
+      membersSuspendedAuthExpired: suspendedAuthExpiredCount,
       cacheStatus,
       // Extra diagnostics (safe for SW portal UI / admin debugging).
       totalAssignedAuthorized: assignedAuthorized.length,
@@ -490,6 +571,7 @@ export async function POST(req: NextRequest) {
     // Enforce portal rules:
     // - Monthly SW visit questionnaires are for Authorized members only.
     // - If the member is on Hold for SW visits, the questionnaire cannot be submitted.
+    // - For Kaiser, suspend SW visits after `Authorization_End_Date_T2038`.
     try {
       const isAuthorized = (value: unknown) => {
         const v = String(value ?? '').trim().toLowerCase();
@@ -520,6 +602,18 @@ export async function POST(req: NextRequest) {
             {
               success: false,
               error: 'This member is currently on hold for SW visits and cannot be submitted.',
+            },
+            { status: 403 }
+          );
+        }
+
+        const authExpiry = isAuthExpiredForSwVisits(member);
+        if (authExpiry.expired) {
+          const endLabel = authExpiry.endDate ? authExpiry.endDate.toLocaleDateString() : 'the authorization end date';
+          return NextResponse.json(
+            {
+              success: false,
+              error: `This member's Kaiser authorization ended on ${endLabel}. SW visits are suspended after the authorization end date.`,
             },
             { status: 403 }
           );
