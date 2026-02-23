@@ -13,6 +13,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useAutoTrackPortalAccess } from '@/hooks/use-sw-login-tracking';
 import { useAuth } from '@/firebase';
+import { clearStoredSwLoginDay, getTodayLocalDayKey, msUntilNextLocalMidnight, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   MapPin, 
   Star, 
@@ -205,6 +207,28 @@ export default function SWVisitVerification() {
     if (!selectedRCFE?.id) return [];
     return completedVisits.filter((v) => v.rcfeId === selectedRCFE.id);
   }, [completedVisits, selectedRCFE?.id]);
+
+  const [selectedSignoffVisitIds, setSelectedSignoffVisitIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (currentStep !== 'sign-off') return;
+    // Default to selecting all completed visits for this RCFE.
+    setSelectedSignoffVisitIds((prev) => {
+      const all = completedVisitsForSelectedRcfe.map((v) => String(v.visitId || '').trim()).filter(Boolean);
+      if (all.length === 0) return [];
+      // If the previous selection is for the same set, keep it.
+      const prevSet = new Set(prev.map((x) => String(x).trim()).filter(Boolean));
+      const allSet = new Set(all);
+      const isSubset = prev.length > 0 && prev.every((id) => allSet.has(id));
+      if (isSubset) return prev.filter((id) => allSet.has(id));
+      return all;
+    });
+  }, [completedVisitsForSelectedRcfe, currentStep]);
+
+  const selectedVisitsForSignoff = useMemo(() => {
+    const set = new Set(selectedSignoffVisitIds.map((x) => String(x).trim()).filter(Boolean));
+    return completedVisitsForSelectedRcfe.filter((v) => set.has(String(v.visitId || '').trim()));
+  }, [completedVisitsForSelectedRcfe, selectedSignoffVisitIds]);
 
   const getMemberKey = useCallback((member: any) => {
     const key = String(member?.id || member?.name || '').trim();
@@ -547,7 +571,7 @@ export default function SWVisitVerification() {
     }
   });
 
-  const handleSignOut = async () => {
+  const handleSignOut = useCallback(async (target: string = '/sw-login') => {
     try {
       if (auth) await auth.signOut();
     } catch {
@@ -558,8 +582,29 @@ export default function SWVisitVerification() {
     } catch {
       // ignore
     }
-    router.push('/sw-login');
-  };
+    router.push(target);
+  }, [auth, router]);
+
+  // Daily SW login enforcement: force re-login on a new day (and at midnight).
+  useEffect(() => {
+    if (!isSocialWorker) return;
+    const today = getTodayLocalDayKey();
+    const stored = readStoredSwLoginDay();
+    if (!stored) {
+      writeStoredSwLoginDay(today);
+    } else if (stored !== today) {
+      clearStoredSwLoginDay();
+      void handleSignOut('/sw-login?reason=daily');
+      return;
+    }
+
+    const timeoutMs = msUntilNextLocalMidnight() + 1000;
+    const t = window.setTimeout(() => {
+      clearStoredSwLoginDay();
+      void handleSignOut('/sw-login?reason=daily');
+    }, timeoutMs);
+    return () => window.clearTimeout(t);
+  }, [handleSignOut, isSocialWorker]);
 
   // Calculate total score and flags
   const calculateScore = () => {
@@ -1945,41 +1990,83 @@ export default function SWVisitVerification() {
                   <CheckCircle className="h-5 w-5 text-green-600" />
                   Completed Visits ({completedVisitsForSelectedRcfe.length})
                 </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Select the members included in this sign-off. Leave unchecked if you will return later to visit/sign off more members at this RCFE.
+                </p>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
                   {completedVisitsForSelectedRcfe.length === 0 ? (
                     <p className="text-muted-foreground">No visits completed yet. Please complete member questionnaires first.</p>
                   ) : (
-                    completedVisitsForSelectedRcfe.map((visit, index) => (
-                      <div key={visit.visitId} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <CheckCircle className="h-5 w-5 text-green-600" />
-                          <div>
-                            <p className="font-medium">{visit.memberName}</p>
-                            <p className="text-sm text-muted-foreground">
-                              Completed at {new Date(visit.completedAt).toLocaleTimeString()}
-                            </p>
-                          </div>
+                    <>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="text-sm text-muted-foreground">
+                          Selected for sign-off: <span className="font-semibold text-slate-900">{selectedVisitsForSignoff.length}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          {visit.flagged && (
-                            <Badge variant="destructive" className="text-xs">
-                              <Flag className="h-3 w-3 mr-1" />
-                              Flagged
-                            </Badge>
-                          )}
-                          <Badge variant="secondary">Verified</Badge>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setSelectedSignoffVisitIds(
+                                completedVisitsForSelectedRcfe.map((v) => String(v.visitId || '').trim()).filter(Boolean)
+                              )
+                            }
+                          >
+                            Select all
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => setSelectedSignoffVisitIds([])}>
+                            Clear
+                          </Button>
                         </div>
                       </div>
-                    ))
+                      {completedVisitsForSelectedRcfe.map((visit) => {
+                        const vid = String(visit.visitId || '').trim();
+                        const checked = selectedSignoffVisitIds.includes(vid);
+                        return (
+                          <div key={visit.visitId} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div className="flex items-center gap-3">
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(next) => {
+                                  const want = Boolean(next);
+                                  setSelectedSignoffVisitIds((prev) => {
+                                    const set = new Set(prev);
+                                    if (want) set.add(vid);
+                                    else set.delete(vid);
+                                    return Array.from(set);
+                                  });
+                                }}
+                              />
+                              <div>
+                                <p className="font-medium">{visit.memberName}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  Completed at {new Date(visit.completedAt).toLocaleTimeString()}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {visit.flagged && (
+                                <Badge variant="destructive" className="text-xs">
+                                  <Flag className="h-3 w-3 mr-1" />
+                                  Flagged
+                                </Badge>
+                              )}
+                              <Badge variant="secondary">Verified</Badge>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </>
                   )}
                 </div>
               </CardContent>
             </Card>
 
             {/* RCFE Staff Sign-Off */}
-            {completedVisitsForSelectedRcfe.length > 0 && (
+            {selectedVisitsForSignoff.length > 0 && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -1987,7 +2074,7 @@ export default function SWVisitVerification() {
                     RCFE Staff Verification
                   </CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    An RCFE staff member must verify that all listed members were visited by the social worker.
+                    An RCFE staff member must verify that all selected members were visited by the social worker.
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -2197,7 +2284,7 @@ export default function SWVisitVerification() {
                             {(() => {
                               const dates = Array.from(
                                 new Set(
-                                  (completedVisitsForSelectedRcfe || [])
+                                  (selectedVisitsForSignoff || [])
                                     .map((v) => new Date(v.completedAt).toLocaleDateString())
                                     .filter(Boolean)
                                 )
@@ -2212,11 +2299,11 @@ export default function SWVisitVerification() {
                         <div className="rounded-md border bg-white p-3">
                           <div className="text-[11px] font-medium text-slate-500">Member(s) visited</div>
                           <div className="mt-1 text-sm text-slate-900">
-                            {(completedVisitsForSelectedRcfe || []).length === 0 ? (
+                            {(selectedVisitsForSignoff || []).length === 0 ? (
                               <span className="text-slate-500">—</span>
                             ) : (
                               <ul className="list-disc pl-5 space-y-0.5">
-                                {completedVisitsForSelectedRcfe.map((v) => (
+                                {selectedVisitsForSignoff.map((v) => (
                                   <li key={v.visitId}>{v.memberName}</li>
                                 ))}
                               </ul>
@@ -2253,20 +2340,20 @@ export default function SWVisitVerification() {
                             <div className="rounded-md border bg-slate-50 px-3 py-2">
                               <div className="text-[11px] text-slate-600">Member visit fees</div>
                               <div className="text-sm font-semibold text-slate-900">
-                                {completedVisitsForSelectedRcfe.length} × ${VISIT_FEE_RATE} = ${completedVisitsForSelectedRcfe.length * VISIT_FEE_RATE}
+                                {selectedVisitsForSignoff.length} × ${VISIT_FEE_RATE} = ${selectedVisitsForSignoff.length * VISIT_FEE_RATE}
                               </div>
                             </div>
                             <div className="rounded-md border bg-slate-50 px-3 py-2">
                               <div className="text-[11px] text-slate-600">Daily gas allowance</div>
                               <div className="text-sm font-semibold text-slate-900">
-                                ${completedVisitsForSelectedRcfe.length > 0 ? DAILY_GAS_AMOUNT : 0}
+                                ${selectedVisitsForSignoff.length > 0 ? DAILY_GAS_AMOUNT : 0}
                               </div>
                               <div className="text-[11px] text-slate-600">Once per day across all homes</div>
                             </div>
                             <div className="rounded-md border bg-slate-50 px-3 py-2">
                               <div className="text-[11px] text-slate-600">Daily total (gas counted once)</div>
                               <div className="text-sm font-semibold text-slate-900">
-                                ${completedVisitsForSelectedRcfe.length * VISIT_FEE_RATE + (completedVisitsForSelectedRcfe.length > 0 ? DAILY_GAS_AMOUNT : 0)}
+                                ${selectedVisitsForSignoff.length * VISIT_FEE_RATE + (selectedVisitsForSignoff.length > 0 ? DAILY_GAS_AMOUNT : 0)}
                               </div>
                             </div>
                           </div>
@@ -2282,8 +2369,19 @@ export default function SWVisitVerification() {
                         onClick={async () => {
                           setIsLoading(true);
                           try {
-                            const rcfeVisits = completedVisitsForSelectedRcfe.slice();
-                            const claimDay = String(rcfeVisits?.[0]?.claimDay || questionnaire.visitDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+                            const rcfeVisits = selectedVisitsForSignoff.slice();
+                            if (rcfeVisits.length === 0) {
+                              toast({
+                                title: 'Select at least 1 member',
+                                description: 'Choose which completed members are included in this sign-off.',
+                                variant: 'destructive',
+                              });
+                              return;
+                            }
+
+                            const claimDay =
+                              String(rcfeVisits?.[0]?.claimDay || questionnaire.visitDate || '').slice(0, 10) ||
+                              new Date().toISOString().slice(0, 10);
                             const visitCount = rcfeVisits.length;
                             const visitFees = visitCount * VISIT_FEE_RATE;
                             const gasAmount = visitCount > 0 ? DAILY_GAS_AMOUNT : 0;
@@ -2335,7 +2433,12 @@ export default function SWVisitVerification() {
                                 [selectedRCFE.id]: {
                                   signedAt: String(signOffData.signedAt || new Date().toISOString()),
                                   staffName: String(signOffData.rcfeStaffName || '').trim(),
-                                  memberIds: rcfeVisits.map((v) => String(v.memberId || '').trim()).filter(Boolean),
+                                  memberIds: Array.from(
+                                    new Set([
+                                      ...((prev[selectedRCFE.id]?.memberIds || []) as string[]),
+                                      ...rcfeVisits.map((v) => String(v.memberId || '').trim()).filter(Boolean),
+                                    ])
+                                  ),
                                   claimDay,
                                   visitCount,
                                   visitFees,
@@ -2344,8 +2447,15 @@ export default function SWVisitVerification() {
                                 },
                               }));
 
-                              // Remove only this home's pending sign-off visits (keeps progress for other homes)
-                              setCompletedVisits((prev) => prev.filter((v) => v.rcfeId !== selectedRCFE.id));
+                              // Remove only the selected visits (keeps other completed members at this RCFE for later)
+                              const signedVisitIds = new Set(rcfeVisits.map((v) => String(v.visitId || '').trim()).filter(Boolean));
+                              setCompletedVisits((prev) =>
+                                prev.filter((v) => {
+                                  if (String(v.rcfeId || '').trim() !== String(selectedRCFE.id || '').trim()) return true;
+                                  const vid = String(v.visitId || '').trim();
+                                  return !signedVisitIds.has(vid);
+                                })
+                              );
                               setSignOffData({
                                 rcfeStaffName: '',
                                 rcfeStaffTitle: '',
@@ -2373,7 +2483,7 @@ export default function SWVisitVerification() {
                         disabled={isLoading}
                       >
                         <Send className="h-4 w-4 mr-2" />
-                        {isLoading ? 'Submitting...' : `Submit Final Sign-Off (${completedVisitsForSelectedRcfe.length} visits)`}
+                        {isLoading ? 'Submitting...' : `Submit Final Sign-Off (${selectedVisitsForSignoff.length} visits)`}
                       </Button>
                     </div>
                   )}

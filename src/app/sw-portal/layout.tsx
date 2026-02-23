@@ -1,6 +1,6 @@
 'use client';
 
-import React, { ReactNode, useEffect, useState } from 'react';
+import React, { ReactNode, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSocialWorker } from '@/hooks/use-social-worker';
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Image from 'next/image';
+import { clearStoredSwLoginDay, getTodayLocalDayKey, msUntilNextLocalMidnight, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
 
 const swNavLinks = [
   { 
@@ -48,7 +49,7 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const [isRedirecting, setIsRedirecting] = useState(false);
 
-  const handleSignOut = async () => {
+  const handleSignOut = useCallback(async (target: string = '/sw-login') => {
     if (auth) {
       await auth.signOut();
     }
@@ -57,8 +58,8 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     }
-    router.push('/sw-login');
-  };
+    router.push(target);
+  }, [auth, router]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -67,6 +68,31 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
       router.push('/sw-login');
     }
   }, [isLoading, isSocialWorker, pathname, router]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isSocialWorker) return;
+    if (pathname === '/sw-login' || pathname === '/sw-reset-password') return;
+
+    const today = getTodayLocalDayKey();
+    const stored = readStoredSwLoginDay();
+    if (!stored) {
+      writeStoredSwLoginDay(today);
+    } else if (stored !== today) {
+      // New day → require fresh login.
+      clearStoredSwLoginDay();
+      void handleSignOut('/sw-login?reason=daily');
+      return;
+    }
+
+    const timeoutMs = msUntilNextLocalMidnight() + 1000;
+    const t = window.setTimeout(() => {
+      clearStoredSwLoginDay();
+      void handleSignOut('/sw-login?reason=daily');
+    }, timeoutMs);
+
+    return () => window.clearTimeout(t);
+  }, [handleSignOut, isLoading, isSocialWorker, pathname]);
 
   // Show loading while checking social worker status or redirecting
   if (isLoading || isRedirecting) {

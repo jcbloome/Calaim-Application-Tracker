@@ -14,9 +14,12 @@ import { useSocialWorker } from '@/hooks/use-social-worker';
 import { Loader2, UserCheck, AlertCircle, Eye, EyeOff, Lock } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { clearStoredSwLoginDay, getTodayLocalDayKey, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
 
 export default function SWLoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const { isSocialWorker, isLoading: swLoading, status: swStatus } = useSocialWorker();
   
@@ -30,9 +33,34 @@ export default function SWLoginPage() {
   // Redirect if already logged in as social worker
   useEffect(() => {
     if (!swLoading && isSocialWorker) {
+      const today = getTodayLocalDayKey();
+      const stored = readStoredSwLoginDay();
+      if (!stored) {
+        // Allow the current session for today (first run after rollout).
+        writeStoredSwLoginDay(today);
+        router.push('/sw-visit-verification');
+        return;
+      }
+      if (stored !== today) {
+        // Force re-login on a new day.
+        clearStoredSwLoginDay();
+        auth.signOut().catch(() => null);
+        fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
+        return;
+      }
       router.push('/sw-visit-verification');
     }
   }, [isSocialWorker, swLoading, router]);
+
+  useEffect(() => {
+    const reason = String(searchParams?.get('reason') || '').trim().toLowerCase();
+    if (reason === 'daily') {
+      toast({
+        title: 'Daily sign-in required',
+        description: 'For security, Social Workers must sign in again each day.',
+      });
+    }
+  }, [searchParams, toast]);
 
   useEffect(() => {
     if (!loginAttempted || swLoading) return;
@@ -93,6 +121,9 @@ export default function SWLoginPage() {
 
       // Force refresh to pick up custom claims.
       await userCredential.user.getIdToken(true);
+
+      // Record daily login marker (forces a fresh sign-in each day).
+      writeStoredSwLoginDay(getTodayLocalDayKey());
       
       setLoginAttempted(true);
       
