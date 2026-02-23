@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { useAuth } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
-import { shouldSuppressWebAlerts } from '@/lib/notification-utils';
+import { shouldSuppressWebAlerts, WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
+import { isRealDesktop } from '@/lib/is-real-desktop';
 
 interface PushNotificationManagerProps {
   onTokenReceived?: (token: string) => void;
@@ -13,6 +14,10 @@ interface PushNotificationManagerProps {
 const shouldSuppressBrowserNotifications = () => shouldSuppressWebAlerts();
 
 export default function PushNotificationManager({ onTokenReceived }: PushNotificationManagerProps) {
+  if (WEB_NOTIFICATIONS_MOTHBALLED || isRealDesktop()) {
+    // Electron is the single notification system. Also, web notifications are mothballed.
+    return null;
+  }
   const [isSupported, setIsSupported] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>('default');
   const [fcmToken, setFcmToken] = useState<string | null>(null);

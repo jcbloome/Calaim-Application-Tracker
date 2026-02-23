@@ -2,6 +2,8 @@
 
 import { useState, useCallback } from 'react';
 import { SystemTrayNotificationProps } from '@/components/SystemTrayNotification';
+import { WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
+import { isRealDesktop } from '@/lib/is-real-desktop';
 
 export interface NotificationOptions {
   type: 'success' | 'error' | 'warning' | 'info';
@@ -20,6 +22,9 @@ export const useSystemNotifications = () => {
   const [notifications, setNotifications] = useState<SystemTrayNotificationProps[]>([]);
 
   const addNotification = useCallback((options: NotificationOptions) => {
+    if (WEB_NOTIFICATIONS_MOTHBALLED || isRealDesktop()) {
+      return '';
+    }
     const id = `notification-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
     const notification: SystemTrayNotificationProps = {
@@ -157,6 +162,7 @@ export const useSystemNotifications = () => {
 
   // Request notification permission
   const requestPermission = useCallback(async () => {
+    if (WEB_NOTIFICATIONS_MOTHBALLED || isRealDesktop()) return false;
     if ('Notification' in window && Notification.permission === 'default') {
       try {
         const permission = await Notification.requestPermission();

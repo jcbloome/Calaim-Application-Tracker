@@ -1,9 +1,15 @@
 'use client';
 
 import { useEffect } from 'react';
+import { isRealDesktop } from '@/lib/is-real-desktop';
+import { WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
 
 export default function PWAServiceWorker() {
   useEffect(() => {
+    if (isRealDesktop()) {
+      // Electron manages updates/notifications; don't register SW inside the desktop shell.
+      return;
+    }
     if (typeof window !== 'undefined') {
       const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       if (process.env.NODE_ENV !== 'production' || isLocalhost) {
@@ -32,7 +38,7 @@ export default function PWAServiceWorker() {
                   console.log('🔄 New version of the app is available');
                   
                   // Optionally show update notification
-                  if ('Notification' in window && Notification.permission === 'granted') {
+                  if (!WEB_NOTIFICATIONS_MOTHBALLED && 'Notification' in window && Notification.permission === 'granted') {
                     new Notification('📱 App Update Available', {
                       body: 'A new version of CalAIM Tracker is ready. Refresh to update.',
                       icon: '/favicon.ico',

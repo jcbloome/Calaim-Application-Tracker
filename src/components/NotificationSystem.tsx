@@ -8,7 +8,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { normalizePriorityLabel, shouldSuppressWebAlerts } from '@/lib/notification-utils';
+import { normalizePriorityLabel, shouldSuppressWebAlerts, WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
+import { isRealDesktop } from '@/lib/is-real-desktop';
 
 // Types
 interface Notification {
@@ -38,6 +39,10 @@ const normalizePriorityLevel = (value: string) => {
 };
 
 export default function NotificationSystem({ userId, className = '' }: NotificationSystemProps) {
+  if (WEB_NOTIFICATIONS_MOTHBALLED || isRealDesktop()) {
+    // Electron is the single notification system. Also, web notifications are mothballed.
+    return null;
+  }
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
