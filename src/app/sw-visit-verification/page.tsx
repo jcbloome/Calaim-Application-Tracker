@@ -482,6 +482,32 @@ export default function SWVisitVerification() {
     [isSocialWorker, isLoading, toast, user]
   );
 
+  const requestAssignmentsRefresh = useCallback(async () => {
+    try {
+      const idToken = await (user as any)?.getIdToken?.();
+      if (!idToken) throw new Error('Not signed in');
+      const res = await fetch('/api/sw-visits/request-refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Request failed (${res.status})`);
+      }
+      toast({
+        title: 'Refresh requested',
+        description: `Admins have been notified to refresh assignments cache.`,
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Could not request refresh',
+        description: e?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    }
+  }, [toast, user]);
+
   // Fetch assigned RCFEs when component mounts
   useEffect(() => {
     fetchAssignedRCFEs({ quiet: true });
@@ -1205,6 +1231,32 @@ export default function SWVisitVerification() {
                 <Building className="h-5 w-5" />
                 Select RCFE to Visit
               </CardTitle>
+              <div className={`mt-2 rounded-lg border p-3 ${cacheFreshness.isStale ? 'border-amber-200 bg-amber-50' : 'bg-white'}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-medium text-slate-700">Assignments cache</div>
+                    <div className="text-xs text-muted-foreground">
+                      Last update:{' '}
+                      {cacheFreshness.lastUpdate ? cacheFreshness.lastUpdate.toLocaleString() : 'Unknown'}
+                      {cacheFreshness.ageMinutes != null ? ` • ~${cacheFreshness.ageMinutes} min ago` : ''}
+                      {cacheFreshness.isStale ? ' • stale' : ''}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => fetchAssignedRCFEs()} disabled={isLoadingRCFEs}>
+                      {isLoadingRCFEs ? 'Refreshing…' : 'Refresh'}
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => void requestAssignmentsRefresh()}>
+                      Request refresh
+                    </Button>
+                  </div>
+                </div>
+                {cacheFreshness.isStale ? (
+                  <div className="mt-2 text-xs text-amber-700">
+                    If assignments look outdated, click Refresh. If it still looks wrong, use “Request refresh” to notify admins to run the Caspio sync.
+                  </div>
+                ) : null}
+              </div>
               {membersOnHold > 0 && (
                 <div className="flex items-center gap-2 text-amber-600 text-sm">
                   <AlertTriangle className="h-4 w-4" />
@@ -1265,7 +1317,22 @@ export default function SWVisitVerification() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between mb-2">
-                <Button variant="ghost" size="sm" onClick={() => setCurrentStep('select-rcfe')}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (completedVisitsForSelectedRcfe.length > 0) {
+                      const ok =
+                        typeof window !== 'undefined'
+                          ? window.confirm(
+                              `You have ${completedVisitsForSelectedRcfe.length} completed visit(s) at this RCFE that still need sign-off.\n\nDo you want to leave anyway?`
+                            )
+                          : true;
+                      if (!ok) return;
+                    }
+                    setCurrentStep('select-rcfe');
+                  }}
+                >
                   <ArrowLeft className="h-4 w-4 mr-1" />
                   Back
                 </Button>
@@ -1290,6 +1357,44 @@ export default function SWVisitVerification() {
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
+              {completedVisitsForSelectedRcfe.length > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-amber-900">Pending sign-off at this RCFE</div>
+                      <div className="mt-0.5 text-xs text-amber-800/80">
+                        Completed visits that still need RCFE staff verification
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700"
+                      onClick={() => setCurrentStep('sign-off')}
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Go to sign-off
+                    </Button>
+                  </div>
+                  <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {completedVisitsForSelectedRcfe.slice().reverse().slice(0, 6).map((v) => (
+                      <li key={v.visitId} className="flex items-center justify-between rounded-md border bg-white px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-amber-600" />
+                          <div className="text-sm font-medium text-slate-900">{v.memberName}</div>
+                        </div>
+                        <div className="text-xs text-slate-600">{new Date(v.completedAt).toLocaleTimeString()}</div>
+                      </li>
+                    ))}
+                  </ul>
+                  {completedVisitsForSelectedRcfe.length > 6 ? (
+                    <div className="mt-2 text-xs text-amber-900/80">
+                      + {completedVisitsForSelectedRcfe.length - 6} more
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
               {completedVisitsForSelectedRcfe.length > 0 && (
                 <div className="rounded-lg border bg-green-50 p-4">
                   <div className="flex items-start justify-between gap-3">

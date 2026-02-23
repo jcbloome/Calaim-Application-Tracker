@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
         visitRef,
         {
           signedOff: true,
+          status: 'signed_off',
           signedOffAt: signedAtIso,
           signOffId: recordRef.id,
           rcfeStaffName: String(signOffData.signOffData.rcfeStaffName || ''),

@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   FileBarChart,
   Calendar,
@@ -30,6 +31,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
+import { useAuth } from '@/firebase';
 
 interface VisitRecord {
   id: string;
@@ -79,6 +81,8 @@ interface SignOffRecord {
   signedAt: string;
   geolocationVerified: boolean;
   flaggedVisits: number;
+  memberNames?: string[];
+  visitIds?: string[];
 }
 
 interface LoginEvent {
@@ -93,6 +97,7 @@ interface LoginEvent {
 }
 
 export default function SWVisitTrackingPage(): React.JSX.Element {
+  const auth = useAuth();
   const [visitRecords, setVisitRecords] = useState<VisitRecord[]>([]);
   const [signOffRecords, setSignOffRecords] = useState<SignOffRecord[]>([]);
   const [loginEvents, setLoginEvents] = useState<LoginEvent[]>([]);
@@ -105,6 +110,19 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
   const [expandedSignoffId, setExpandedSignoffId] = useState<string | null>(null);
   const [claimDatesByVisit, setClaimDatesByVisit] = useState<Record<string, { submittedAt?: string; paidAt?: string }>>({});
   const [geoResolvedByVisit, setGeoResolvedByVisit] = useState<Record<string, { address?: string; status: 'idle' | 'loading' | 'error' }>>({});
+
+  const [selectedVisitIds, setSelectedVisitIds] = useState<string[]>([]);
+  const [overrideStaffName, setOverrideStaffName] = useState('');
+  const [overrideStaffTitle, setOverrideStaffTitle] = useState('');
+  const [overrideReason, setOverrideReason] = useState('');
+  const [isOverriding, setIsOverriding] = useState(false);
+
+  const selectedVisits = useMemo(() => {
+    const set = new Set(selectedVisitIds);
+    return visitRecords.filter((v) => set.has(v.visitId));
+  }, [selectedVisitIds, visitRecords]);
+
+  const selectedRcfes = useMemo(() => Array.from(new Set(selectedVisits.map((v) => v.rcfeName).filter(Boolean))), [selectedVisits]);
 
   useEffect(() => {
     loadTrackingData();
@@ -151,7 +169,7 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
           signedOff: Boolean(v?.signedOff),
           geolocationVerified: Boolean(v?.geolocationVerified),
           questionnaireAnswers: Array.isArray(v?.questionnaireAnswers) ? v.questionnaireAnswers : [],
-          status: (v?.status as VisitRecord['status']) || (v?.flagged ? 'flagged' : 'pending_signoff'),
+          status: (v?.status as VisitRecord['status']) || (v?.signedOff ? 'signed_off' : v?.flagged ? 'flagged' : 'pending_signoff'),
           claimSubmitted: Boolean(v?.claimSubmitted),
           claimMonth: String(v?.claimMonth || ''),
           claimPaid: Boolean(v?.claimPaid),
@@ -163,8 +181,46 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
         setVisitRecords([]);
       }
 
-      // Sign-off records are not yet persisted; keep empty until wired
-      setSignOffRecords([]);
+      // Load sign-off records (Firestore-backed)
+      const signoffsResponse = await fetch(`/api/sw-visits/signoffs?days=${encodeURIComponent(days)}`);
+      if (signoffsResponse.ok) {
+        const signoffsData = await signoffsResponse.json().catch(() => ({}));
+        const raw = Array.isArray((signoffsData as any)?.signoffs) ? (signoffsData as any).signoffs : [];
+        const normalized = raw.map((s: any) => {
+          const claimDay = String(s?.claimDay || '').slice(0, 10) || '';
+          const completedVisitsArr = Array.isArray(s?.completedVisits) ? s.completedVisits : [];
+          const flaggedVisits = completedVisitsArr.filter((v: any) => Boolean(v?.flagged)).length;
+          const memberNames = Array.from(
+            new Set(
+              completedVisitsArr
+                .map((v: any) => String(v?.memberName || '').trim())
+                .filter(Boolean)
+            )
+          );
+          const staffName = String(s?.rcfeStaff?.name || s?.rcfeStaffName || '').trim();
+          const staffTitle = String(s?.rcfeStaff?.title || s?.rcfeStaffTitle || '').trim();
+          const signedAt = String(s?.rcfeStaff?.signedAt || s?.signedAt || s?.submittedAt || '').trim();
+          const geoVerified = Boolean(s?.rcfeStaff?.locationVerified || s?.geolocationVerified);
+          const visitIds = Array.isArray(s?.visitIds) ? s.visitIds.map((v: any) => String(v || '').trim()).filter(Boolean) : [];
+          return {
+            id: String(s?.id || ''),
+            rcfeName: String(s?.rcfeName || ''),
+            socialWorkerName: String(s?.socialWorkerName || s?.socialWorkerId || s?.socialWorkerEmail || ''),
+            visitDate: claimDay,
+            completedVisits: Array.isArray(s?.visitIds) ? s.visitIds.length : completedVisitsArr.length,
+            rcfeStaffName: staffName,
+            rcfeStaffTitle: staffTitle,
+            signedAt,
+            geolocationVerified: geoVerified,
+            flaggedVisits,
+            memberNames,
+            visitIds,
+          } as SignOffRecord;
+        }) as SignOffRecord[];
+        setSignOffRecords(normalized);
+      } else {
+        setSignOffRecords([]);
+      }
     } catch (error) {
       console.error('Error loading tracking data:', error);
     } finally {
@@ -186,6 +242,70 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
     
     return matchesSearch && matchesStatus && matchesDate;
   });
+
+  const filteredSignoffs = signOffRecords.filter((s) => {
+    if (!searchTerm) return true;
+    const q = searchTerm.toLowerCase();
+    const members = Array.isArray(s.memberNames) ? s.memberNames.join(' ') : '';
+    return (
+      String(s.rcfeName || '').toLowerCase().includes(q) ||
+      String(s.socialWorkerName || '').toLowerCase().includes(q) ||
+      String(s.rcfeStaffName || '').toLowerCase().includes(q) ||
+      String(members).toLowerCase().includes(q)
+    );
+  });
+
+  const toggleSelectedVisit = (visitId: string, checked: boolean) => {
+    setSelectedVisitIds((prev) => {
+      const set = new Set(prev);
+      if (checked) set.add(visitId);
+      else set.delete(visitId);
+      return Array.from(set);
+    });
+  };
+
+  const clearSelectedVisits = () => setSelectedVisitIds([]);
+
+  const submitAdminOverride = async () => {
+    if (selectedVisitIds.length === 0) return;
+    if (!auth?.currentUser) {
+      alert('Not signed in');
+      return;
+    }
+    if (selectedRcfes.length > 1) {
+      alert('Please select visits from only one RCFE at a time.');
+      return;
+    }
+    setIsOverriding(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/sw-visits/override-signoff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          visitIds: selectedVisitIds,
+          rcfeStaffName: overrideStaffName,
+          rcfeStaffTitle: overrideStaffTitle,
+          reason: overrideReason,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Override failed (${res.status})`);
+      }
+
+      clearSelectedVisits();
+      setOverrideReason('');
+      // Refresh list
+      await loadTrackingData();
+      alert('Override sign-off saved.');
+    } catch (e: any) {
+      console.error(e);
+      alert(e?.message || 'Failed to override sign-off.');
+    } finally {
+      setIsOverriding(false);
+    }
+  };
 
 
   const getStatusBadge = (status: string, flagged: boolean) => {
@@ -429,11 +549,70 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
+              {selectedVisitIds.length > 0 && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-blue-900">Admin override sign-off</div>
+                      <div className="mt-0.5 text-xs text-blue-800/80">
+                        Selected visits: {selectedVisitIds.length}
+                        {selectedRcfes.length === 1 ? ` • RCFE: ${selectedRcfes[0]}` : ''}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" size="sm" variant="outline" onClick={clearSelectedVisits} disabled={isOverriding}>
+                        Clear selection
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-blue-600 hover:bg-blue-700"
+                        onClick={submitAdminOverride}
+                        disabled={isOverriding || selectedRcfes.length !== 1}
+                      >
+                        {isOverriding ? 'Saving…' : 'Mark signed off'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {selectedRcfes.length !== 1 ? (
+                    <div className="text-sm text-blue-900">
+                      Please select visits from only one RCFE at a time.
+                    </div>
+                  ) : null}
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <div>
+                      <Label>RCFE staff name (optional)</Label>
+                      <Input value={overrideStaffName} onChange={(e) => setOverrideStaffName(e.target.value)} placeholder="Defaults to admin name" />
+                    </div>
+                    <div>
+                      <Label>RCFE staff title (optional)</Label>
+                      <Input value={overrideStaffTitle} onChange={(e) => setOverrideStaffTitle(e.target.value)} placeholder="Defaults to Admin" />
+                    </div>
+                    <div>
+                      <Label>Reason (optional)</Label>
+                      <Input value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="Why admin override?" />
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-blue-900/80">
+                    This creates a sign-off record and sets the selected visit records to <span className="font-semibold">signed_off</span>.
+                  </div>
+                </div>
+              )}
+
               {filteredVisits.map((visit) => (
                 <div key={visit.id} className="border rounded-lg p-4 space-y-3">
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
                       <div className="flex items-center gap-3">
+                        {visit.signedOff ? null : visit.status === 'pending_signoff' ? (
+                          <Checkbox
+                            checked={selectedVisitIds.includes(visit.visitId)}
+                            onCheckedChange={(next) => toggleSelectedVisit(visit.visitId, Boolean(next))}
+                          />
+                        ) : null}
                         <h3 className="font-semibold">{visit.memberName}</h3>
                         {getStatusBadge(visit.status, visit.flagged)}
                         {getScoreBadge(visit.totalScore)}
@@ -699,11 +878,11 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
       {activeTab === 'signoffs' && (
         <Card>
           <CardHeader>
-            <CardTitle>Sign-Off Records ({signOffRecords.length})</CardTitle>
+            <CardTitle>Sign-Off Records ({filteredSignoffs.length})</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {signOffRecords.map((signoff) => (
+              {filteredSignoffs.map((signoff) => (
                 <div key={signoff.id} className="border rounded-lg p-4 space-y-3">
                   <div className="flex items-start justify-between">
                     <div className="space-y-2">
@@ -770,14 +949,31 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                         <span className="text-muted-foreground">Flagged Visits:</span>
                         <span className="ml-2 font-medium text-red-600">{signoff.flaggedVisits}</span>
                       </div>
+                      {Array.isArray(signoff.memberNames) && signoff.memberNames.length > 0 ? (
+                        <div>
+                          <span className="text-muted-foreground">Members:</span>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {signoff.memberNames.slice(0, 12).map((m) => (
+                              <Badge key={m} variant="secondary" className="font-normal">
+                                {m}
+                              </Badge>
+                            ))}
+                            {signoff.memberNames.length > 12 ? (
+                              <Badge variant="secondary" className="font-normal">
+                                +{signoff.memberNames.length - 12} more
+                              </Badge>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </div>
               ))}
               
-              {signOffRecords.length === 0 && (
+              {filteredSignoffs.length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
-                  No sign-off records found.
+                  No sign-off records found matching your criteria.
                 </div>
               )}
             </div>
