@@ -56,6 +56,8 @@ interface ClaimSubmission {
   reviewedAt?: Date;
   reviewedBy?: string;
   reviewNotes?: string;
+  paidAt?: Date;
+  paidBy?: string;
 }
 
 interface ClaimSummary {
@@ -71,7 +73,7 @@ interface ClaimSummary {
 
 export default function SWClaimsManagementPage() {
   const firestore = useFirestore();
-  const { isSuperAdmin } = useAdmin();
+  const { isSuperAdmin, user: adminUser } = useAdmin();
   const { toast } = useToast();
   
   const [claims, setClaims] = useState<ClaimSubmission[]>([]);
@@ -118,7 +120,8 @@ export default function SWClaimsManagementPage() {
           ...data,
           claimDate: data.claimDate.toDate(),
           submittedAt: data.submittedAt?.toDate(),
-          reviewedAt: data.reviewedAt?.toDate()
+          reviewedAt: data.reviewedAt?.toDate(),
+          paidAt: data.paidAt?.toDate(),
         };
       }) as ClaimSubmission[];
       
@@ -183,16 +186,20 @@ export default function SWClaimsManagementPage() {
     
     try {
       const claimRef = doc(firestore, 'sw-claims', claimId);
+      const actorLabel =
+        String(adminUser?.displayName || adminUser?.email || '').trim()
+        || 'Admin';
       const updates: any = {
         status: newStatus,
         reviewedAt: new Date(),
-        reviewedBy: 'Admin', // In production, use actual admin name
+        reviewedBy: actorLabel,
         reviewNotes: reviewNotes || ''
       };
 
       if (newStatus === 'paid') {
         updates.paidAt = serverTimestamp();
         updates.claimPaid = true;
+        updates.paidBy = actorLabel;
       }
 
       await updateDoc(claimRef, updates);
@@ -229,7 +236,15 @@ export default function SWClaimsManagementPage() {
       // Update local state
       setClaims(claims.map(claim => 
         claim.id === claimId 
-          ? { ...claim, status: newStatus as any, reviewedAt: new Date(), reviewNotes }
+          ? {
+              ...claim,
+              status: newStatus as any,
+              reviewedAt: new Date(),
+              reviewedBy: actorLabel,
+              reviewNotes,
+              paidAt: newStatus === 'paid' ? new Date() : claim.paidAt,
+              paidBy: newStatus === 'paid' ? actorLabel : claim.paidBy,
+            }
           : claim
       ));
 
@@ -542,29 +557,62 @@ export default function SWClaimsManagementPage() {
                                 </div>
                               </div>
 
-                              {/* Member Visits */}
+                              {/* Line items (payables) */}
                               <div>
-                                <h4 className="font-semibold mb-3">Member Visits ({selectedClaim.memberVisits.length})</h4>
-                                <div className="space-y-2">
-                                  {selectedClaim.memberVisits.map((visit) => (
-                                    <div key={visit.id} className="border rounded-lg p-3">
-                                      <div className="flex justify-between items-start">
-                                        <div>
-                                          <div className="font-medium">{visit.memberName}</div>
-                                          <div className="text-sm text-muted-foreground">
-                                            <div className="flex items-center gap-1">
-                                              <MapPin className="h-3 w-3" />
-                                              {visit.rcfeName}
-                                            </div>
-                                            {visit.rcfeAddress && <div>{visit.rcfeAddress}</div>}
-                                            <div>Time: {visit.visitTime}</div>
-                                            {visit.notes && <div>Notes: {visit.notes}</div>}
-                                          </div>
-                                        </div>
-                                        <Badge>$45</Badge>
-                                      </div>
-                                    </div>
-                                  ))}
+                                <h4 className="font-semibold mb-3">Line items</h4>
+                                <div className="rounded-lg border overflow-hidden">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Date visited</TableHead>
+                                        <TableHead>Member</TableHead>
+                                        <TableHead>Home</TableHead>
+                                        <TableHead>Time</TableHead>
+                                        <TableHead>Notes</TableHead>
+                                        <TableHead className="text-right">Amount</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {selectedClaim.memberVisits.map((visit) => (
+                                        <TableRow key={visit.id}>
+                                          <TableCell className="whitespace-nowrap">
+                                            {format(visit.visitDate, 'MM/dd/yyyy')}
+                                          </TableCell>
+                                          <TableCell className="font-medium">{visit.memberName}</TableCell>
+                                          <TableCell className="min-w-[220px]">
+                                            <div className="font-medium">{visit.rcfeName}</div>
+                                            <div className="text-xs text-muted-foreground">{visit.rcfeAddress}</div>
+                                          </TableCell>
+                                          <TableCell className="whitespace-nowrap">{visit.visitTime || '—'}</TableCell>
+                                          <TableCell className="text-sm text-muted-foreground">
+                                            {visit.notes ? visit.notes : '—'}
+                                          </TableCell>
+                                          <TableCell className="text-right font-medium">$45.00</TableCell>
+                                        </TableRow>
+                                      ))}
+
+                                      <TableRow>
+                                        <TableCell colSpan={5} className="text-sm text-muted-foreground">
+                                          Gas reimbursement
+                                        </TableCell>
+                                        <TableCell className="text-right font-medium">
+                                          ${Number(selectedClaim.gasReimbursement || 0).toFixed(2)}
+                                        </TableCell>
+                                      </TableRow>
+
+                                      <TableRow>
+                                        <TableCell colSpan={5} className="text-sm font-semibold">
+                                          Total
+                                        </TableCell>
+                                        <TableCell className="text-right text-sm font-semibold">
+                                          ${Number(selectedClaim.totalAmount || 0).toFixed(2)}
+                                        </TableCell>
+                                      </TableRow>
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                                <div className="mt-2 text-xs text-muted-foreground">
+                                  Visits: {selectedClaim.memberVisits.length} × $45 = ${Number(selectedClaim.totalMemberVisitFees || 0).toFixed(2)}
                                 </div>
                               </div>
 
@@ -606,6 +654,12 @@ export default function SWClaimsManagementPage() {
                                   </Button>
                                 )}
                               </div>
+                              {selectedClaim.status === 'paid' ? (
+                                <div className="pt-3 text-sm text-muted-foreground">
+                                  Paid{selectedClaim.paidAt ? ` on ${format(selectedClaim.paidAt, 'MMM d, yyyy h:mm a')}` : ''}{' '}
+                                  {selectedClaim.paidBy ? `by ${selectedClaim.paidBy}` : ''}
+                                </div>
+                              ) : null}
                             </div>
                           )}
                         </DialogContent>
