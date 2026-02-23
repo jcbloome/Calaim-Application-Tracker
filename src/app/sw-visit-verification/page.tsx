@@ -206,6 +206,28 @@ export default function SWVisitVerification() {
     return completedVisits.filter((v) => v.rcfeId === selectedRCFE.id);
   }, [completedVisits, selectedRCFE?.id]);
 
+  const getMemberKey = useCallback((member: any) => {
+    const key = String(member?.id || member?.name || '').trim();
+    return key;
+  }, []);
+
+  const nextMemberAtSelectedRcfe = useMemo(() => {
+    if (!selectedRCFE?.id) return null;
+    const visited = new Set<string>(Array.isArray(visitedByRcfeId[selectedRCFE.id]) ? visitedByRcfeId[selectedRCFE.id] : []);
+    const signed = new Set<string>(
+      Array.isArray(signedOffByRcfeId[selectedRCFE.id]?.memberIds) ? signedOffByRcfeId[selectedRCFE.id].memberIds : []
+    );
+    const members = Array.isArray(selectedRCFE?.members) ? selectedRCFE.members : [];
+    for (const m of members) {
+      const k = getMemberKey(m);
+      if (!k) continue;
+      if (signed.has(k)) continue;
+      if (visited.has(k)) continue;
+      return m as any;
+    }
+    return null;
+  }, [getMemberKey, selectedRCFE, signedOffByRcfeId, visitedByRcfeId]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const swKey = String((user as any)?.uid || '').trim();
@@ -1223,11 +1245,52 @@ export default function SWVisitVerification() {
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
+              {completedVisitsForSelectedRcfe.length > 0 && (
+                <div className="rounded-lg border bg-green-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-green-900">Completed at this home today</div>
+                      <div className="mt-0.5 text-xs text-green-800/80">
+                        {completedVisitsForSelectedRcfe.length} member{completedVisitsForSelectedRcfe.length !== 1 ? 's' : ''} done
+                      </div>
+                    </div>
+                    {nextMemberAtSelectedRcfe ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700"
+                        onClick={() => handleMemberSelect(nextMemberAtSelectedRcfe as any)}
+                      >
+                        <ArrowRight className="h-4 w-4 mr-2" />
+                        Next member
+                      </Button>
+                    ) : null}
+                  </div>
+                  <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {completedVisitsForSelectedRcfe.slice().reverse().slice(0, 6).map((v) => (
+                      <li key={v.visitId} className="flex items-center justify-between rounded-md border bg-white px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <div className="text-sm font-medium text-slate-900">{v.memberName}</div>
+                        </div>
+                        <div className="text-xs text-slate-600">{new Date(v.completedAt).toLocaleTimeString()}</div>
+                      </li>
+                    ))}
+                  </ul>
+                  {completedVisitsForSelectedRcfe.length > 6 ? (
+                    <div className="mt-2 text-xs text-slate-600">
+                      + {completedVisitsForSelectedRcfe.length - 6} more
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
               {selectedRCFE.members.map((member, memberIndex) => {
                 const memberKey = member.id || member.name;
                 const draft = memberKey ? draftsByMember[memberKey] : null;
-                const visited = Boolean(visitedByRcfeId[selectedRCFE.id]?.includes(member.id));
-                const signed = Boolean(signedOffByRcfeId[selectedRCFE.id]?.memberIds?.includes(member.id));
+                const memberKeyNorm = String(memberKey || '').trim();
+                const visited = memberKeyNorm ? Boolean(visitedByRcfeId[selectedRCFE.id]?.includes(memberKeyNorm)) : false;
+                const signed = memberKeyNorm ? Boolean(signedOffByRcfeId[selectedRCFE.id]?.memberIds?.includes(memberKeyNorm)) : false;
                 return (
                   <div
                     key={memberKey || `member-${memberIndex}-${Date.now()}`}
@@ -2338,6 +2401,41 @@ export default function SWVisitVerification() {
                 <CardTitle className="text-center">What would you like to do next?</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {completedVisitsForSelectedRcfe.length > 0 && (
+                  <div className="rounded-lg border bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">Completed members at {selectedRCFE?.name}</div>
+                        <div className="mt-0.5 text-xs text-slate-600">
+                          {completedVisitsForSelectedRcfe.length} completed • ready for sign-off when you’re done at this home
+                        </div>
+                      </div>
+                      {nextMemberAtSelectedRcfe ? (
+                        <Button type="button" size="sm" onClick={() => handleMemberSelect(nextMemberAtSelectedRcfe as any)}>
+                          <ArrowRight className="h-4 w-4 mr-2" />
+                          Next member
+                        </Button>
+                      ) : (
+                        <Badge className="bg-green-600 hover:bg-green-600">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Home complete
+                        </Badge>
+                      )}
+                    </div>
+                    <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {completedVisitsForSelectedRcfe.slice().reverse().slice(0, 8).map((v) => (
+                        <li key={v.visitId} className="flex items-center justify-between rounded-md border bg-slate-50 px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <div className="text-sm font-medium text-slate-900">{v.memberName}</div>
+                          </div>
+                          <div className="text-xs text-slate-600">{new Date(v.completedAt).toLocaleTimeString()}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Continue at Same RCFE */}
                   <Button
@@ -2347,7 +2445,7 @@ export default function SWVisitVerification() {
                   >
                     <User className="h-8 w-8 text-blue-600" />
                     <div className="text-center">
-                      <div className="font-semibold">Visit Another Member</div>
+                      <div className="font-semibold">{nextMemberAtSelectedRcfe ? 'Continue to Next Member' : 'Visit Another Member'}</div>
                       <div className="text-sm text-muted-foreground">
                         Continue at {selectedRCFE?.name}
                       </div>
@@ -2376,7 +2474,7 @@ export default function SWVisitVerification() {
                 </div>
 
                 {/* Sign-Off Option (if visits completed) */}
-                {completedVisits.length > 0 && (
+                {completedVisitsForSelectedRcfe.length > 0 && (
                   <div className="pt-4 border-t">
                     <Button
                       onClick={() => setCurrentStep('sign-off')}
@@ -2387,7 +2485,7 @@ export default function SWVisitVerification() {
                         <div className="text-center">
                           <div className="font-semibold">Complete Sign-Off</div>
                           <div className="text-sm opacity-90">
-                            {completedVisits.length} visit{completedVisits.length !== 1 ? 's' : ''} ready for verification
+                            {completedVisitsForSelectedRcfe.length} visit{completedVisitsForSelectedRcfe.length !== 1 ? 's' : ''} ready for verification at this home
                           </div>
                         </div>
                       </div>

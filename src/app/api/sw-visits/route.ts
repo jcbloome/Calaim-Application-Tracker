@@ -638,6 +638,51 @@ export async function POST(req: NextRequest) {
     const claimKey = (claimDay || submittedAtIso.slice(0, 10)).replace(/-/g, '');
     const claimSwKey = socialWorkerUid || socialWorkerEmail || String(visitData.socialWorkerId || '').trim() || 'unknown';
     const claimId = `swClaim_${claimSwKey}_${claimKey}`;
+    const visitMonth = claimMonth;
+
+    // Enforce one visit per member per month (even if visits aren't exactly 1 month apart).
+    // Uses a lock doc to avoid composite-index queries and ensure concurrency safety.
+    try {
+      const lockKey = `${String(visitData.memberId)}_${visitMonth}`;
+      const lockRef = adminDb.collection('sw_member_monthly_visits').doc(lockKey);
+      await adminDb.runTransaction(async (tx) => {
+        const lockSnap = await tx.get(lockRef);
+        if (lockSnap.exists) {
+          const existing = lockSnap.data() as any;
+          const existingVisitId = String(existing?.visitId || '').trim();
+          if (existingVisitId && existingVisitId !== String(visitData.visitId || '').trim()) {
+            throw new Error('MONTHLY_MEMBER_VISIT_ALREADY_COMPLETED');
+          }
+          return;
+        }
+        tx.set(
+          lockRef,
+          {
+            memberId: String(visitData.memberId),
+            visitMonth,
+            visitId: String(visitData.visitId),
+            socialWorkerUid,
+            socialWorkerEmail,
+            socialWorkerName,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      });
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (msg.includes('MONTHLY_MEMBER_VISIT_ALREADY_COMPLETED')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Only one member visit per month is allowed for the same member. This member already has a completed visit for this month.',
+          },
+          { status: 409 }
+        );
+      }
+      // For transient transaction errors, fall through (best-effort); admin can review duplicates.
+    }
 
     // Check if visit should trigger notifications
     const shouldNotify = visitData.visitSummary.flagged || 
@@ -702,6 +747,7 @@ export async function POST(req: NextRequest) {
       rcfeName: visitData.rcfeName,
       rcfeAddress: visitData.rcfeAddress,
       visitDate: visitData.visitDate,
+      visitMonth,
       completedAt: submittedAtIso,
       submittedAt: submittedAtIso,
       submittedAtTs,
