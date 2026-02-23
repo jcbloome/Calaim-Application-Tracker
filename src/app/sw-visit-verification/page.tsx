@@ -1917,6 +1917,98 @@ export default function SWVisitVerification() {
                     </div>
                   </div>
 
+                  {/* Visit Invoice / Receipt */}
+                  {signOffData.signature ? (
+                    <div className="rounded-lg border bg-slate-50 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-900">Visit invoice / sign-off receipt</div>
+                          <div className="mt-0.5 text-xs text-slate-600">
+                            For RCFE records and billing verification. (This is not emailed.)
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            try {
+                              if (typeof window !== 'undefined') window.print();
+                            } catch {
+                              // ignore
+                            }
+                          }}
+                        >
+                          Print
+                        </Button>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div className="rounded-md border bg-white p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Home / RCFE</div>
+                          <div className="mt-0.5 text-sm font-medium text-slate-900">{selectedRCFE.name}</div>
+                          <div className="mt-0.5 text-xs text-slate-600">{selectedRCFE.address}</div>
+                        </div>
+
+                        <div className="rounded-md border bg-white p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Visit date</div>
+                          <div className="mt-0.5 text-sm text-slate-900">
+                            {(() => {
+                              const dates = Array.from(
+                                new Set(
+                                  (completedVisits || [])
+                                    .map((v) => new Date(v.completedAt).toLocaleDateString())
+                                    .filter(Boolean)
+                                )
+                              );
+                              if (dates.length === 0) return '—';
+                              if (dates.length === 1) return dates[0];
+                              return `${dates[0]} – ${dates[dates.length - 1]}`;
+                            })()}
+                          </div>
+                        </div>
+
+                        <div className="rounded-md border bg-white p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Member(s) visited</div>
+                          <div className="mt-1 text-sm text-slate-900">
+                            {(completedVisits || []).length === 0 ? (
+                              <span className="text-slate-500">—</span>
+                            ) : (
+                              <ul className="list-disc pl-5 space-y-0.5">
+                                {completedVisits.map((v) => (
+                                  <li key={v.visitId}>{v.memberName}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="rounded-md border bg-white p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Social worker</div>
+                          <div className="mt-0.5 text-sm text-slate-900">
+                            {String(user?.displayName || user?.email || user?.uid || '').trim() || '—'}
+                          </div>
+                        </div>
+
+                        <div className="rounded-md border bg-white p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Signed by</div>
+                          <div className="mt-0.5 text-sm text-slate-900">{signOffData.rcfeStaffName || '—'}</div>
+                          <div className="mt-0.5 text-xs text-slate-600">{signOffData.rcfeStaffTitle || ''}</div>
+                        </div>
+
+                        <div className="rounded-md border bg-white p-3">
+                          <div className="text-[11px] font-medium text-slate-500">Sign-off time</div>
+                          <div className="mt-0.5 text-sm text-slate-900">
+                            {signOffData.signedAt ? new Date(signOffData.signedAt).toLocaleString() : '—'}
+                          </div>
+                          <div className="mt-0.5 text-xs text-slate-600">
+                            {signOffData.locationVerified ? 'Location verified' : 'Location not verified'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
                   {/* Submit Sign-Off */}
                   {signOffData.signature && (
                     <div className="pt-4 border-t">
