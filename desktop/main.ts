@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, dialog, screen, shell, clipboard } from 'electron';
+import { app, BrowserWindow, Tray, Menu, Notification, ipcMain, dialog, screen, shell, clipboard, nativeImage } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { autoUpdater } from 'electron-updater';
@@ -62,12 +62,67 @@ let chatCountInitialized = false;
 let lastChatNotifyAtMs = 0;
 let chatAlertsEnabled = Boolean(prefsStore.get('chatAlertsEnabled'));
 
+let trayDefaultIconPath: string | null = null;
+let trayUsingChatIcon = false;
+let cachedChatTrayIcon: Electron.NativeImage | null = null;
+let cachedChatNotifyIcon: Electron.NativeImage | null = null;
+
+const makeSvgDataUrl = (svg: string) =>
+  `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
+
+const getChatSvg = (accentHex = '#7c3aed') => `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <circle cx="32" cy="32" r="30" fill="${accentHex}"/>
+  <path d="M20 22h24a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H32l-8 8v-8h-4a6 6 0 0 1-6-6V28a6 6 0 0 1 6-6z" fill="#ffffff"/>
+</svg>`;
+
+const getChatTrayIcon = () => {
+  if (cachedChatTrayIcon) return cachedChatTrayIcon;
+  try {
+    const img = nativeImage.createFromDataURL(makeSvgDataUrl(getChatSvg('#7c3aed')));
+    cachedChatTrayIcon = process.platform === 'win32'
+      ? img.resize({ width: 16, height: 16 })
+      : img;
+    return cachedChatTrayIcon;
+  } catch {
+    cachedChatTrayIcon = nativeImage.createEmpty();
+    return cachedChatTrayIcon;
+  }
+};
+
+const getChatNotifyIcon = () => {
+  if (cachedChatNotifyIcon) return cachedChatNotifyIcon;
+  try {
+    const img = nativeImage.createFromDataURL(makeSvgDataUrl(getChatSvg('#7c3aed')));
+    cachedChatNotifyIcon = process.platform === 'win32'
+      ? img.resize({ width: 64, height: 64 })
+      : img;
+    return cachedChatNotifyIcon;
+  } catch {
+    cachedChatNotifyIcon = nativeImage.createEmpty();
+    return cachedChatNotifyIcon;
+  }
+};
+
+const updateTrayIcon = () => {
+  if (!tray || !trayDefaultIconPath) return;
+  const shouldUseChat = chatPendingCount > 0;
+  if (trayUsingChatIcon === shouldUseChat) return;
+  trayUsingChatIcon = shouldUseChat;
+  try {
+    tray.setImage(shouldUseChat ? getChatTrayIcon() : trayDefaultIconPath);
+  } catch {
+    // ignore
+  }
+};
+
 const updateTrayToolTip = () => {
   if (!tray) return;
   const parts: string[] = [];
   parts.push(`${pillSummary.count} pending`);
   if (chatPendingCount > 0) parts.push(`${chatPendingCount} chat`);
   tray.setToolTip(`Connect CalAIM Desktop (${parts.join(', ')})`);
+  updateTrayIcon();
 };
 
 const normalizeUntilMap = (raw: any): Record<string, number> => {
@@ -684,7 +739,7 @@ const buildTrayMenu = () => {
       }
     },
     {
-      label: `Open Chat${chatSuffix}`,
+      label: `Open Chat 💬${chatSuffix}`,
       click: () => openChatWindow(),
     },
     { type: 'separator' },
@@ -1656,6 +1711,7 @@ const createTray = () => {
       : fs.existsSync(distIcon)
         ? distIcon
         : sourceIcon;
+  trayDefaultIconPath = iconPath;
   tray = new Tray(iconPath);
   updateTrayToolTip();
 
@@ -2127,8 +2183,9 @@ ipcMain.on('desktop:setChatPendingCount', (_event, count: number) => {
 
   try {
     const n = new Notification({
-      title: 'New chat message',
+      title: '💬 New chat message',
       body: next === 1 ? 'You have 1 unread chat message.' : `You have ${next} unread chat messages.`,
+      icon: getChatNotifyIcon(),
       silent: false,
     });
     n.on('click', () => {
