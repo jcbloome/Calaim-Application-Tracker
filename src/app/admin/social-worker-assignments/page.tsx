@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,8 +11,9 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Users, UserPlus, Search, Filter, ArrowUpDown, ChevronUp, ChevronDown, Pause, Play } from 'lucide-react';
+import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Users, UserPlus, Search, Filter, ArrowUpDown, ChevronUp, ChevronDown, Pause, Play, MapPinned, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { loadGoogleMaps } from '@/lib/google-maps-loader';
 
 interface Member {
   id: string;
@@ -43,6 +44,78 @@ interface SocialWorkerStats {
   onHoldCount: number;
   activeCount: number;
 }
+
+type GeoLatLng = { lat: number; lng: number; formattedAddress: string; cached: boolean };
+
+type GeoAssignedRcfe = {
+  rcfeName: string;
+  rcfeAddress: string;
+  memberCount: number;
+  distanceMiles: number;
+  county: string | null;
+  city: string | null;
+  geo: GeoLatLng | null;
+  membersSample: Array<{ clientId2: string; memberName: string; memberCounty?: string; memberCity?: string }>;
+};
+
+type GeoSw = {
+  sw_id: string;
+  name: string;
+  email?: string;
+  address?: string;
+  geo: GeoLatLng | null;
+  currentAssignedCount: number;
+  suggestedMemberCount: number;
+  remainingCapacity: number;
+  countyBreakdown: Record<string, number>;
+  cityBreakdown: Record<string, number>;
+  assignedRcfes: GeoAssignedRcfe[];
+};
+
+type GeoMemberAssignmentRow = {
+  clientId2: string;
+  memberName: string;
+  memberCounty: string | null;
+  memberCity: string | null;
+  rcfeName: string;
+  rcfeAddress: string;
+  rcfeCounty: string | null;
+  rcfeCity: string | null;
+  suggestedSwId: string;
+  suggestedSwName: string;
+  suggestedSwEmail: string | null;
+  distanceMiles: number;
+};
+
+type GeoSuggestResponse = {
+  success: boolean;
+  capacityPerSw: number;
+  maxRcfes: number;
+  maxMiles: number | null;
+  includeHolds: boolean;
+  stats: {
+    swTotal: number;
+    swWithGeo: number;
+    rcfeTotal: number;
+    rcfeGeocoded: number;
+    assignedRcfes: number;
+    overflowRcfes: number;
+    assignedMembers: number;
+    overflowMembers: number;
+    missingSwAddresses: number;
+    swGeocodeFailed: number;
+  };
+  sw: GeoSw[];
+  memberAssignments: GeoMemberAssignmentRow[];
+  overflow: Array<{
+    rcfeName: string;
+    rcfeAddress: string;
+    memberCount: number;
+    county: string | null;
+    city: string | null;
+    reason: string;
+  }>;
+};
 
 // Sortable column header component
 function SortableHeader({ 
@@ -83,6 +156,130 @@ function SortableHeader({
   );
 }
 
+function GeoAssignmentMap(props: { sw: GeoSw[]; selectedSwId: string; className?: string }) {
+  const { sw, selectedSwId, className } = props;
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
+  const linesRef = useRef<any[]>([]);
+  const [mapError, setMapError] = useState<string | null>(null);
+
+  const selected = useMemo(() => sw.find((s) => s.sw_id === selectedSwId) || null, [sw, selectedSwId]);
+
+  const clearOverlays = () => {
+    markersRef.current.forEach((m) => m.setMap(null));
+    markersRef.current = [];
+    linesRef.current.forEach((l) => l.setMap(null));
+    linesRef.current = [];
+  };
+
+  useEffect(() => {
+    const init = async () => {
+      if (!mapRef.current) return;
+      try {
+        await loadGoogleMaps();
+        if (!mapRef.current) return;
+        const map = new window.google.maps.Map(mapRef.current, {
+          center: { lat: 36.7783, lng: -119.4179 },
+          zoom: 6,
+          mapTypeControl: true,
+          streetViewControl: false,
+          fullscreenControl: true,
+        });
+        mapInstanceRef.current = map;
+      } catch (e: any) {
+        setMapError(e?.message || 'Failed to load Google Maps.');
+      }
+    };
+    init();
+  }, []);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    clearOverlays();
+
+    const bounds = new window.google.maps.LatLngBounds();
+
+    // SW markers
+    sw.forEach((s) => {
+      if (!s.geo) return;
+      const isSelected = selectedSwId && s.sw_id === selectedSwId;
+      const marker = new window.google.maps.Marker({
+        map,
+        position: { lat: s.geo.lat, lng: s.geo.lng },
+        title: `${s.name} (${s.sw_id})`,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: isSelected ? 8 : 6,
+          fillColor: isSelected ? '#1d4ed8' : '#2563eb',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+        },
+      });
+      markersRef.current.push(marker);
+      bounds.extend(marker.getPosition());
+    });
+
+    // Selected SW assigned RCFE markers + lines
+    if (selected?.geo) {
+      selected.assignedRcfes.forEach((r) => {
+        if (!r.geo) return;
+        const marker = new window.google.maps.Marker({
+          map,
+          position: { lat: r.geo.lat, lng: r.geo.lng },
+          title: `${r.rcfeName} • ${r.memberCount} member(s) • ${r.distanceMiles} mi`,
+          icon: {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 5,
+            fillColor: '#16a34a',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2,
+          },
+        });
+        markersRef.current.push(marker);
+        bounds.extend(marker.getPosition());
+
+        const line = new window.google.maps.Polyline({
+          map,
+          path: [
+            { lat: selected.geo!.lat, lng: selected.geo!.lng },
+            { lat: r.geo.lat, lng: r.geo.lng },
+          ],
+          geodesic: true,
+          strokeOpacity: 0.65,
+          strokeWeight: 2,
+        });
+        linesRef.current.push(line);
+      });
+    }
+
+    // Fit bounds if we have points
+    try {
+      map.fitBounds(bounds);
+      const listener = window.google.maps.event.addListenerOnce(map, 'bounds_changed', () => {
+        const z = map.getZoom();
+        if (typeof z === 'number' && z > 11) map.setZoom(11);
+      });
+      return () => window.google.maps.event.removeListener(listener);
+    } catch {
+      // ignore
+    }
+  }, [sw, selectedSwId, selected]);
+
+  if (mapError) {
+    return (
+      <div className={className}>
+        <div className="rounded-lg border p-4 text-sm text-muted-foreground">{mapError}</div>
+      </div>
+    );
+  }
+
+  return <div ref={mapRef} className={className || 'h-[460px] w-full rounded-lg border'} />;
+}
+
 export default function SocialWorkerAssignmentsPage() {
   const { isAdmin, isLoading } = useAdmin();
   const { toast } = useToast();
@@ -99,6 +296,16 @@ export default function SocialWorkerAssignmentsPage() {
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [selectedSWForModal, setSelectedSWForModal] = useState<SocialWorkerStats | null>(null);
   
+  // Geo assignment tool state (suggest/export only)
+  const [geoCapacityPerSw, setGeoCapacityPerSw] = useState('30');
+  const [geoMaxRcfes, setGeoMaxRcfes] = useState('800');
+  const [geoMaxMiles, setGeoMaxMiles] = useState('');
+  const [geoIncludeHolds, setGeoIncludeHolds] = useState(false);
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoData, setGeoData] = useState<GeoSuggestResponse | null>(null);
+  const [geoError, setGeoError] = useState<string | null>(null);
+  const [geoSelectedSwId, setGeoSelectedSwId] = useState('');
+
   // Sorting state
   type SortField = 'memberName' | 'Client_ID2' | 'CalAIM_MCO' | 'memberCounty' | 'CalAIM_Status' | 'Social_Worker_Assigned' | 'RCFE_Name' | 'Hold_For_Social_Worker';
   type SortDirection = 'asc' | 'desc';
@@ -174,6 +381,110 @@ export default function SocialWorkerAssignmentsPage() {
       setIsLoadingMembers(false);
     }
   };
+
+  const runGeoSuggest = useCallback(async () => {
+    setGeoLoading(true);
+    setGeoError(null);
+    try {
+      if (!auth?.currentUser) throw new Error('You must be signed in.');
+      const idToken = await auth.currentUser.getIdToken();
+
+      const capacityPerSw = Math.floor(Number(geoCapacityPerSw || 30));
+      const maxRcfes = Math.floor(Number(geoMaxRcfes || 800));
+      const maxMiles =
+        geoMaxMiles.trim() === '' ? null : Number.isFinite(Number(geoMaxMiles)) ? Number(geoMaxMiles) : null;
+
+      const res = await fetch('/api/tools/sw-geo-assign/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          capacityPerSw,
+          maxRcfes,
+          maxMiles,
+          includeHolds: geoIncludeHolds,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Geo suggestion failed (HTTP ${res.status})`);
+      }
+      const typed = data as GeoSuggestResponse;
+      setGeoData(typed);
+      const first = typed.sw.find((s) => !!s.geo)?.sw_id || '';
+      setGeoSelectedSwId((prev) => prev || first);
+      toast({
+        title: 'Geo suggestions ready',
+        description: `Assigned ${typed.stats.assignedMembers} member(s); overflow ${typed.stats.overflowMembers}.`,
+      });
+    } catch (e: any) {
+      console.error(e);
+      setGeoError(e?.message || 'Failed to compute geo suggestions.');
+      toast({
+        title: 'Geo suggestions failed',
+        description: e?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setGeoLoading(false);
+    }
+  }, [auth?.currentUser, geoCapacityPerSw, geoMaxRcfes, geoMaxMiles, geoIncludeHolds, toast]);
+
+  const downloadGeoCsv = useCallback(() => {
+    if (!geoData?.memberAssignments?.length) return;
+
+    const escape = (value: any) => {
+      const s = String(value ?? '');
+      if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+
+    const header = [
+      'Client_ID2',
+      'Member',
+      'Member_City',
+      'Member_County',
+      'RCFE_Name',
+      'RCFE_Address',
+      'RCFE_City',
+      'RCFE_County',
+      'Suggested_SW_ID',
+      'Suggested_SW_Name',
+      'Suggested_SW_Email',
+      'Distance_Miles',
+    ];
+
+    const lines = [
+      header.join(','),
+      ...geoData.memberAssignments.map((r) =>
+        [
+          r.clientId2,
+          r.memberName,
+          r.memberCity || '',
+          r.memberCounty || '',
+          r.rcfeName,
+          r.rcfeAddress,
+          r.rcfeCity || '',
+          r.rcfeCounty || '',
+          r.suggestedSwId,
+          r.suggestedSwName,
+          r.suggestedSwEmail || '',
+          r.distanceMiles,
+        ]
+          .map(escape)
+          .join(',')
+      ),
+    ];
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sw_geo_suggestions_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [geoData]);
 
   // Disabled automatic loading - only sync when user clicks "Sync from Caspio" button
   // useEffect(() => {
@@ -405,6 +716,7 @@ export default function SocialWorkerAssignmentsPage() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="assignments">Member Assignments</TabsTrigger>
           <TabsTrigger value="workload">Workload Analysis</TabsTrigger>
+          <TabsTrigger value="geo">Geo Assignment</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -986,6 +1298,295 @@ export default function SocialWorkerAssignmentsPage() {
                   </div>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="geo" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MapPinned className="h-5 w-5" />
+                Geo assignment suggestions
+              </CardTitle>
+              <CardDescription>
+                Suggest member assignments by proximity to SW base addresses (from <span className="font-mono">connect_tbl_usersregistration</span>), capped by capacity. Export only (no Caspio updates).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <div className="text-sm font-medium mb-1">Capacity per SW</div>
+                  <Input value={geoCapacityPerSw} onChange={(e) => setGeoCapacityPerSw(e.target.value)} placeholder="30" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium mb-1">Max RCFEs to consider</div>
+                  <Input value={geoMaxRcfes} onChange={(e) => setGeoMaxRcfes(e.target.value)} placeholder="800" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium mb-1">Max miles (optional)</div>
+                  <Input value={geoMaxMiles} onChange={(e) => setGeoMaxMiles(e.target.value)} placeholder="e.g. 35" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium mb-1">Include holds</div>
+                  <Select value={geoIncludeHolds ? 'yes' : 'no'} onValueChange={(v) => setGeoIncludeHolds(v === 'yes')}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="no">No (recommended)</SelectItem>
+                      <SelectItem value="yes">Yes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button onClick={runGeoSuggest} disabled={geoLoading}>
+                  <RefreshCw className={`mr-2 h-4 w-4 ${geoLoading ? 'animate-spin' : ''}`} />
+                  Compute suggestions
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={downloadGeoCsv}
+                  disabled={!geoData?.memberAssignments?.length}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Download CSV
+                </Button>
+              </div>
+
+              {geoError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                  {geoError}
+                </div>
+              ) : null}
+
+              {geoData ? (
+                <div className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-4">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Assigned</CardTitle>
+                        <CardDescription>Members assigned by algorithm</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">{geoData.stats.assignedMembers}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {geoData.stats.assignedRcfes} RCFEs
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Overflow</CardTitle>
+                        <CardDescription>No capacity / no geo</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">{geoData.stats.overflowMembers}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {geoData.stats.overflowRcfes} RCFEs
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">SW geocoded</CardTitle>
+                        <CardDescription>Has base lat/lng</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">{geoData.stats.swWithGeo}</div>
+                        <div className="text-xs text-muted-foreground">of {geoData.stats.swTotal}</div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">RCFE geocoded</CardTitle>
+                        <CardDescription>Has facility lat/lng</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">{geoData.stats.rcfeGeocoded}</div>
+                        <div className="text-xs text-muted-foreground">of {geoData.stats.rcfeTotal}</div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                    <Card className="lg:col-span-2">
+                      <CardHeader>
+                        <CardTitle className="text-base">Social workers</CardTitle>
+                        <CardDescription>Click to focus map and see breakdown</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="max-h-[520px] overflow-auto rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>SW</TableHead>
+                                <TableHead className="text-right">Current</TableHead>
+                                <TableHead className="text-right">Suggested</TableHead>
+                                <TableHead className="text-right">Remaining</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {geoData.sw
+                                .slice()
+                                .sort((a, b) => (b.suggestedMemberCount || 0) - (a.suggestedMemberCount || 0))
+                                .map((s) => (
+                                  <TableRow
+                                    key={s.sw_id}
+                                    className={`cursor-pointer ${geoSelectedSwId === s.sw_id ? 'bg-muted/40' : ''}`}
+                                    onClick={() => setGeoSelectedSwId(s.sw_id)}
+                                  >
+                                    <TableCell>
+                                      <div className="font-medium">{s.name}</div>
+                                      <div className="text-xs text-muted-foreground">
+                                        SW_ID {s.sw_id} {s.geo ? '• geo' : '• no-geo'}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="text-right">{s.currentAssignedCount}</TableCell>
+                                    <TableCell className="text-right">{s.suggestedMemberCount}</TableCell>
+                                    <TableCell className="text-right">
+                                      <Badge variant={s.remainingCapacity < 0 ? 'destructive' : 'secondary'}>
+                                        {s.remainingCapacity}
+                                      </Badge>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="lg:col-span-3">
+                      <CardHeader>
+                        <CardTitle className="text-base">Map + focused SW</CardTitle>
+                        <CardDescription>
+                          Blue = SW bases. Green = focused SW assigned RCFEs.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <GeoAssignmentMap sw={geoData.sw} selectedSwId={geoSelectedSwId} className="h-[420px] w-full rounded-lg border" />
+
+                        {geoSelectedSwId ? (() => {
+                          const focused = geoData.sw.find((s) => s.sw_id === geoSelectedSwId) || null;
+                          if (!focused) return null;
+                          const top = (obj: Record<string, number>) =>
+                            Object.entries(obj).sort(([, a], [, b]) => b - a).slice(0, 6);
+                          return (
+                            <div className="space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <div className="font-semibold">{focused.name}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    SW_ID {focused.sw_id} • Suggested {focused.suggestedMemberCount} • Remaining {focused.remainingCapacity}
+                                  </div>
+                                  {focused.address ? (
+                                    <div className="text-xs text-muted-foreground mt-1">
+                                      Base: {focused.address}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                  <div className="text-sm font-medium mb-1">Top counties</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {top(focused.countyBreakdown).map(([k, v]) => (
+                                      <Badge key={k} variant="secondary" className="font-normal">{k}: {v}</Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-sm font-medium mb-1">Top cities</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {top(focused.cityBreakdown).map(([k, v]) => (
+                                      <Badge key={k} variant="secondary" className="font-normal">{k}: {v}</Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="rounded-md border">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>RCFE</TableHead>
+                                      <TableHead className="text-right">Members</TableHead>
+                                      <TableHead className="text-right">Miles</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {focused.assignedRcfes.slice(0, 50).map((r) => (
+                                      <TableRow key={`${focused.sw_id}:${r.rcfeName}`}>
+                                        <TableCell>
+                                          <div className="font-medium">{r.rcfeName}</div>
+                                          <div className="text-xs text-muted-foreground">{r.rcfeAddress}</div>
+                                        </TableCell>
+                                        <TableCell className="text-right">{r.memberCount}</TableCell>
+                                        <TableCell className="text-right">{r.distanceMiles}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                    {focused.assignedRcfes.length === 0 ? (
+                                      <TableRow>
+                                        <TableCell colSpan={3} className="text-sm text-muted-foreground">
+                                          No assigned RCFEs (missing geo or capacity).
+                                        </TableCell>
+                                      </TableRow>
+                                    ) : null}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </div>
+                          );
+                        })() : (
+                          <div className="text-sm text-muted-foreground">Select a Social Worker on the left.</div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {geoData.overflow?.length ? (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Overflow RCFEs (top 200)</CardTitle>
+                        <CardDescription>Could not be assigned due to capacity, missing geo, or max miles constraint.</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="max-h-[420px] overflow-auto rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>RCFE</TableHead>
+                                <TableHead className="text-right">Members</TableHead>
+                                <TableHead>Reason</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {geoData.overflow.map((r) => (
+                                <TableRow key={`${r.rcfeName}:${r.rcfeAddress}`}>
+                                  <TableCell>
+                                    <div className="font-medium">{r.rcfeName}</div>
+                                    <div className="text-xs text-muted-foreground">{r.rcfeAddress}</div>
+                                  </TableCell>
+                                  <TableCell className="text-right">{r.memberCount}</TableCell>
+                                  <TableCell className="text-sm">{r.reason}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  Click “Compute suggestions” to generate proximity-based assignment recommendations.
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
