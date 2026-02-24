@@ -195,7 +195,7 @@ export default function DesktopStatusPage() {
             Staff status indicators
           </CardTitle>
           <CardDescription>
-            Shows which staff have Electron active, paused, or snoozed.
+            Shows which staff have Electron active, silent (paused/snoozed), or closed.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -227,15 +227,15 @@ export default function DesktopStatusPage() {
                   const lastSeen = p?.lastSeenAtMs ? new Date(p.lastSeenAtMs).toLocaleString() : '—';
                   const activeNow = Boolean(p?.active) && (!p?.lastSeenAtMs || (now - p.lastSeenAtMs <= ACTIVE_WINDOW_MS));
                   const snoozedNow = Boolean(p?.snoozedUntilMs && p.snoozedUntilMs > now);
-                  const pausedNow = Boolean(p?.pausedByUser);
+                  const silentNow = Boolean(p?.effectivePaused);
                   const statusLabel =
                     snoozedNow ? `Snoozed until ${new Date(p!.snoozedUntilMs).toLocaleString()}`
-                      : pausedNow ? 'Paused'
+                      : silentNow ? 'Silent'
                         : activeNow ? 'Active'
-                          : 'Offline';
+                          : 'Closed';
                   const dotClass =
                     snoozedNow ? 'bg-amber-400'
-                      : pausedNow ? 'bg-slate-400'
+                      : silentNow ? 'bg-slate-400'
                         : activeNow ? 'bg-emerald-500'
                           : 'bg-slate-300';
 
