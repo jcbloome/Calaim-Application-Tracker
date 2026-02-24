@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useUser, useFirestore } from '@/firebase';
-import { collection, getDoc, getDocs, onSnapshot, query, serverTimestamp, where, documentId, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDoc, getDocs, limit, onSnapshot, query, serverTimestamp, where, documentId, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -40,6 +40,7 @@ export default function DesktopChatWindowClient() {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [sendingTestIncoming, setSendingTestIncoming] = useState(false);
   const [sendingTestSelf, setSendingTestSelf] = useState(false);
+  const [clearingChat, setClearingChat] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string>('');
@@ -89,6 +90,33 @@ export default function DesktopChatWindowClient() {
   const unreadChatCount = useMemo(() => {
     return messages.filter((m) => !m.isRead && m.senderId !== myUid).length;
   }, [messages, myUid]);
+
+  const clearChatFromPill = useCallback(async () => {
+    if (!firestore) return;
+    if (!myUid) return;
+    if (clearingChat) return;
+    setClearingChat(true);
+    try {
+      const qy = query(
+        collection(firestore, 'staff_notifications'),
+        where('userId', '==', myUid),
+        where('isChatOnly', '==', true),
+        where('isRead', '==', false),
+        limit(250)
+      );
+      const snap = await getDocs(qy);
+      if (snap.empty) return;
+      const batch = writeBatch(firestore);
+      snap.docs.forEach((d) => {
+        batch.update(d.ref, { isRead: true, updatedAt: serverTimestamp() });
+      });
+      await batch.commit();
+    } catch {
+      // ignore
+    } finally {
+      setClearingChat(false);
+    }
+  }, [clearingChat, firestore, myUid]);
 
   // Mark visible thread messages read for this user.
   useEffect(() => {
@@ -421,6 +449,18 @@ export default function DesktopChatWindowClient() {
                   Send test to self
                 </Button>
               </>
+            ) : null}
+            {unreadChatCount > 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void clearChatFromPill()}
+                disabled={clearingChat}
+                title="Marks all unread chat alerts as read so they disappear from the tray pill"
+              >
+                {clearingChat ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Clear chat alerts ({unreadChatCount})
+              </Button>
             ) : null}
             <Button variant="outline" size="sm" onClick={startNewChat}>
               <MessageSquarePlus className="mr-2 h-4 w-4" />

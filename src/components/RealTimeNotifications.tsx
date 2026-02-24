@@ -160,6 +160,7 @@ export function RealTimeNotifications() {
     }>
   >([]);
   const desktopChatOpenPanelRef = useRef(false);
+  const desktopOpenPanelHoldUntilMsRef = useRef(0);
 
   const emitDesktopPill = useCallback((params?: { openPanel?: boolean }) => {
     try {
@@ -274,6 +275,9 @@ export function RealTimeNotifications() {
         desktopChatPillRef.current = unreadNotes.slice(0, 8);
         if (prev.initialized && unread > prev.count) {
           desktopChatOpenPanelRef.current = true;
+          // Prevent other pill emissions (e.g. note polling) from immediately collapsing the panel.
+          // The desktop app will auto-minimize after it expands.
+          desktopOpenPanelHoldUntilMsRef.current = Date.now() + 4000;
         }
         emitDesktopPill();
       },
@@ -287,6 +291,7 @@ export function RealTimeNotifications() {
         }
         chatUnreadRef.current = { initialized: true, count: 0 };
         desktopChatPillRef.current = [];
+        desktopOpenPanelHoldUntilMsRef.current = 0;
         emitDesktopPill();
       }
     );
@@ -858,7 +863,8 @@ export function RealTimeNotifications() {
             const desktopIsRecent =
               Boolean(desktopLatest?.timestamp) &&
               Date.now() - desktopLatest.timestamp.getTime() <= recentThresholdMs;
-            const openPanel = Boolean(hasNewPriority || hasNewUrgent || desktopIsRecent);
+            const holdOpen = Date.now() < desktopOpenPanelHoldUntilMsRef.current;
+            const openPanel = Boolean(hasNewPriority || hasNewUrgent || desktopIsRecent || holdOpen);
 
             desktopPriorityPillRef.current = desktopPending.map((note) => ({
               kind: 'note',
