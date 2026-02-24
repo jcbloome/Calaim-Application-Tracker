@@ -1646,6 +1646,14 @@ const showPanel = () => {
 };
 
 const recomputeCombinedPill = () => {
+  // Preserve the user's current selection across frequent updates.
+  // Without this, any incoming pill update would reset navigation back to index 0.
+  const prevActive = pillNotes.length > 0 ? pillNotes[Math.max(0, Math.min(pillIndex, pillNotes.length - 1))] : null;
+  const prevKey = prevActive
+    ? String(prevActive.noteId || '') ||
+      `${String(prevActive.kind || '')}|${String(prevActive.timestamp || '')}|${String(prevActive.title || '')}`
+    : '';
+
   const combined: PillItem[] = [];
   if (notificationState.showNotes) {
     combined.push(...staffPillNotes);
@@ -1662,7 +1670,23 @@ const recomputeCombinedPill = () => {
   });
 
   pillNotes = combined;
-  pillIndex = 0;
+  if (pillNotes.length === 0) {
+    pillIndex = 0;
+  } else if (prevKey) {
+    const nextIndex = pillNotes.findIndex((n) => {
+      const k =
+        String(n.noteId || '') ||
+        `${String(n.kind || '')}|${String(n.timestamp || '')}|${String(n.title || '')}`;
+      return k === prevKey;
+    });
+    if (nextIndex >= 0) {
+      pillIndex = nextIndex;
+    } else {
+      pillIndex = Math.max(0, Math.min(pillIndex, pillNotes.length - 1));
+    }
+  } else {
+    pillIndex = Math.max(0, Math.min(pillIndex, pillNotes.length - 1));
+  }
   pillSummary.count =
     (notificationState.showNotes ? staffPillCount : 0)
     + (notificationState.showReview ? reviewPillCount : 0);
