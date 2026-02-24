@@ -82,6 +82,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } 
 import { collection, collectionGroup, doc, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { CaspioUsageAlert } from '@/components/admin/CaspioUsageAlert';
 import { DesktopPresenceBeacon } from '@/components/admin/DesktopPresenceBeacon';
+import { isPriorityOrUrgent } from '@/lib/notification-utils';
 
 const adminNavLinks = [
   { 
@@ -168,6 +169,9 @@ function AdminHeader() {
   const [kaiserCsCount, setKaiserCsCount] = useState(0);
   const [kaiserDocCount, setKaiserDocCount] = useState(0);
   const [eligibilityPendingCount, setEligibilityPendingCount] = useState(0);
+  const [priorityNotesCount, setPriorityNotesCount] = useState(0);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const [csIsNewFlag, setCsIsNewFlag] = useState(false);
   const [reviewPopupPrefs, setReviewPopupPrefs] = useState<{
     enabled: boolean;
     recipientEnabled: boolean;
@@ -279,6 +283,43 @@ function AdminHeader() {
     );
     return () => unsubscribe();
   }, [firestore]);
+
+  // Keep Action items counts aligned with the Electron pill summary (Chat + Priority Notes).
+  useEffect(() => {
+    if (!firestore || !user?.uid) return;
+    const qy = query(
+      collection(firestore, 'staff_notifications'),
+      where('userId', '==', user.uid),
+      limit(500)
+    );
+    const unsub = onSnapshot(
+      qy,
+      (snap) => {
+        let nextPriority = 0;
+        let nextChat = 0;
+        snap.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          const isRead = Boolean(data?.isRead);
+          const status = String(data?.status || 'Open').toLowerCase();
+          if (status === 'closed') return;
+          if (Boolean(data?.isChatOnly)) {
+            if (!isRead) nextChat += 1;
+            return;
+          }
+          if (!isRead && isPriorityOrUrgent(data?.priority)) {
+            nextPriority += 1;
+          }
+        });
+        setPriorityNotesCount(nextPriority);
+        setChatUnreadCount(nextChat);
+      },
+      () => {
+        setPriorityNotesCount(0);
+        setChatUnreadCount(0);
+      }
+    );
+    return () => unsub();
+  }, [firestore, user?.uid]);
 
   const handleSignOut = async () => {
     if (auth) {
@@ -509,6 +550,7 @@ function AdminHeader() {
         allowCsDesktop &&
         csSummaryCount > 0 &&
         (csSummaryCount > prev.cs.count || csLatestMs > prev.cs.latestMs);
+      setCsIsNewFlag(csIsNew);
       reviewNotifyRef.current = {
         initialized: true,
         docs: prev.docs,
@@ -853,6 +895,41 @@ function AdminHeader() {
     );
   };
 
+  const renderPillAlignedBadges = () => {
+    const allowReviewForMe = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled);
+    const showCs = allowReviewForMe && Boolean(reviewPopupPrefs.allowCs) && newCsSummaryCount > 0;
+    const showDocs = allowReviewForMe && Boolean(reviewPopupPrefs.allowDocs) && newUploadCount > 0;
+    const csLabel = showCs
+      ? (newCsSummaryCount === 1 && csIsNewFlag ? 'CS(!)' : `CS(${newCsSummaryCount})`)
+      : null;
+    const dLabel = showDocs ? `D(${newUploadCount})` : null;
+    const chatLabel = chatUnreadCount > 0 ? `Chat(${chatUnreadCount})` : null;
+    const notesLabel = priorityNotesCount > 0 ? `Notes(${priorityNotesCount})` : null;
+
+    const items: Array<{ key: string; label: string; href: string; dot: string }> = [];
+    if (chatLabel) items.push({ key: 'chat', label: chatLabel, href: '/admin/desktop-chat-window', dot: 'bg-purple-600' });
+    if (csLabel) items.push({ key: 'cs', label: csLabel, href: '/admin/applications?review=cs', dot: 'bg-orange-500' });
+    if (dLabel) items.push({ key: 'docs', label: dLabel, href: '/admin/applications?review=docs', dot: 'bg-green-600' });
+    if (notesLabel) items.push({ key: 'notes', label: notesLabel, href: '/admin/my-notes', dot: 'bg-blue-600' });
+
+    if (items.length === 0) return null;
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        {items.map((item) => (
+          <Link
+            key={item.key}
+            href={item.href}
+            className="inline-flex items-center gap-2 rounded-full border border-border px-2.5 py-1 hover:bg-accent"
+            title="Open related action items"
+          >
+            <span className={`h-2 w-2 rounded-full ${item.dot}`} />
+            <span className="font-semibold text-foreground">{item.label}</span>
+          </Link>
+        ))}
+      </div>
+    );
+  };
+
   // Filter navigation based on user role
   let combinedNavLinks = adminNavLinks;
   
@@ -1088,11 +1165,7 @@ function AdminHeader() {
               Action items:
             </span>
             <div className="flex items-center gap-2">
-              <StaffNotificationBell
-                userId={user?.uid}
-                icon={MessageSquareText}
-                className="text-blue-600 hover:text-blue-700"
-              />
+              {renderPillAlignedBadges()}
               <Link href="/admin/tasks?range=daily">
                 <Button
                   variant="ghost"
