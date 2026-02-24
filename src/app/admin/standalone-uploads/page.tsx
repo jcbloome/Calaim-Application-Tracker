@@ -23,6 +23,7 @@ type StandaloneUpload = {
   memberName: string;
   memberBirthdate: string;
   healthPlan?: string;
+  medicalRecordNumber?: string | null;
   mediCalNumber?: string | null;
   kaiserMrn?: string | null;
 };
@@ -59,6 +60,7 @@ export default function StandaloneUploadsPage() {
             memberName: toLabel(r.memberName),
             memberBirthdate: toLabel(r.memberBirthdate),
             healthPlan: toLabel(r.healthPlan) || undefined,
+            medicalRecordNumber: r.medicalRecordNumber ?? r.kaiserMrn ?? r.mediCalNumber ?? null,
             mediCalNumber: r.mediCalNumber ?? null,
             kaiserMrn: r.kaiserMrn ?? null,
           }))
@@ -89,6 +91,7 @@ export default function StandaloneUploadsPage() {
         toLabel(r.documentType).toLowerCase().includes(s) ||
         toLabel(r.uploaderName).toLowerCase().includes(s) ||
         toLabel(r.uploaderEmail).toLowerCase().includes(s) ||
+        toLabel(r.medicalRecordNumber).toLowerCase().includes(s) ||
         toLabel(r.mediCalNumber).toLowerCase().includes(s) ||
         toLabel(r.kaiserMrn).toLowerCase().includes(s);
 
@@ -146,7 +149,11 @@ export default function StandaloneUploadsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <Input placeholder="Search member, uploader, MRN, Medi-Cal…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input
+              placeholder="Search member, uploader, medical record #…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
             <Select value={plan} onValueChange={(v) => setPlan(v as any)}>
               <SelectTrigger><SelectValue placeholder="All plans" /></SelectTrigger>
               <SelectContent>
@@ -173,7 +180,7 @@ export default function StandaloneUploadsPage() {
                   <TableHead>Member</TableHead>
                   <TableHead>DOB</TableHead>
                   <TableHead>Plan</TableHead>
-                  <TableHead>IDs</TableHead>
+                  <TableHead>Medical record #</TableHead>
                   <TableHead>Document</TableHead>
                   <TableHead>Files</TableHead>
                   <TableHead>Uploader</TableHead>
@@ -208,8 +215,7 @@ export default function StandaloneUploadsPage() {
                           <TableCell>{r.memberBirthdate}</TableCell>
                           <TableCell>{r.healthPlan || 'Other/Unknown'}</TableCell>
                           <TableCell className="text-xs">
-                            <div>Medi-Cal: {r.mediCalNumber || '—'}</div>
-                            <div>MRN: {r.kaiserMrn || '—'}</div>
+                            <div>{r.medicalRecordNumber || '—'}</div>
                           </TableCell>
                           <TableCell>{r.documentType}</TableCell>
                           <TableCell className="text-xs">

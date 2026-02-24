@@ -74,8 +74,7 @@ export default function PrintablePackagePage() {
     const [memberName, setMemberName] = useState('');
     const [memberBirthdate, setMemberBirthdate] = useState(''); // YYYY-MM-DD
     const [healthPlan, setHealthPlan] = useState<'Kaiser' | 'Health Net' | 'Other/Unknown'>('Other/Unknown');
-    const [mediCalNumber, setMediCalNumber] = useState('');
-    const [kaiserMrn, setKaiserMrn] = useState('');
+    const [medicalRecordNumber, setMedicalRecordNumber] = useState('');
 
     const sanitizePathSegment = (value: string) => {
         // Keep Storage paths safe and predictable (avoid accidental folder traversal).
@@ -190,8 +189,7 @@ export default function PrintablePackagePage() {
                             name: memberName.trim(),
                             birthdate: memberBirthdate,
                             healthPlan,
-                            mediCalNumber: mediCalNumber.trim(),
-                            kaiserMrn: kaiserMrn.trim(),
+                            medicalRecordNumber: medicalRecordNumber.trim(),
                         },
                         documentType,
                         files: results.map((r) => ({
@@ -224,8 +222,7 @@ export default function PrintablePackagePage() {
             setMemberName('');
             setMemberBirthdate('');
             setHealthPlan('Other/Unknown');
-            setMediCalNumber('');
-            setKaiserMrn('');
+            setMedicalRecordNumber('');
 
         } catch (error: any) {
             console.error('Upload error:', error);
@@ -423,27 +420,15 @@ export default function PrintablePackagePage() {
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
-                                        <Label htmlFor="medical-number">Medi-Cal Number</Label>
+                                        <Label htmlFor="medical-record-number">Medical Record Number</Label>
                                         <Input
-                                            id="medical-number"
-                                            placeholder="Medi-Cal #"
-                                            value={mediCalNumber}
-                                            onChange={(e) => setMediCalNumber(e.target.value)}
+                                            id="medical-record-number"
+                                            placeholder="MRN / Medi-Cal #"
+                                            value={medicalRecordNumber}
+                                            onChange={(e) => setMedicalRecordNumber(e.target.value)}
                                         />
                                         <p className="text-xs text-muted-foreground mt-1">
-                                            Health Net: MRN is typically the same as Medi-Cal #.
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <Label htmlFor="kaiser-mrn">Kaiser MRN</Label>
-                                        <Input
-                                            id="kaiser-mrn"
-                                            placeholder="MRN (Kaiser only)"
-                                            value={kaiserMrn}
-                                            onChange={(e) => setKaiserMrn(e.target.value)}
-                                        />
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                            Kaiser: MRN is different than Medi-Cal #.
+                                            Health Net: this is typically the same as the Medi-Cal #. Kaiser: enter the Kaiser MRN.
                                         </p>
                                     </div>
                                 </div>

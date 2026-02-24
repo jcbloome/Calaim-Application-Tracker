@@ -10,6 +10,7 @@ type SubmitBody = {
     name?: string;
     birthdate?: string; // YYYY-MM-DD
     healthPlan?: string;
+    medicalRecordNumber?: string;
     mediCalNumber?: string;
     kaiserMrn?: string;
   };
@@ -68,8 +69,18 @@ export async function POST(request: NextRequest) {
     const uploaderName = clean(`${uploaderFirst} ${uploaderLast}`.trim(), 140) || uploaderEmail || 'User';
 
     const healthPlan = clean(body?.member?.healthPlan, 40) || 'Other/Unknown';
-    const mediCalNumber = clean(body?.member?.mediCalNumber, 80);
-    const kaiserMrn = clean(body?.member?.kaiserMrn, 80);
+    const medicalRecordNumberRaw = clean(body?.member?.medicalRecordNumber, 80);
+    const mediCalNumberRaw = clean(body?.member?.mediCalNumber, 80);
+    const kaiserMrnRaw = clean(body?.member?.kaiserMrn, 80);
+    const medicalRecordNumber = medicalRecordNumberRaw || kaiserMrnRaw || mediCalNumberRaw;
+
+    const planLower = healthPlan.toLowerCase();
+    const mediCalNumber =
+      mediCalNumberRaw ||
+      (medicalRecordNumber && planLower.includes('health net') ? medicalRecordNumber : '');
+    const kaiserMrn =
+      kaiserMrnRaw ||
+      (medicalRecordNumber && planLower.includes('kaiser') ? medicalRecordNumber : '');
 
     const ref = await adminDb.collection('standalone_upload_submissions').add({
       status: 'pending',
@@ -82,6 +93,7 @@ export async function POST(request: NextRequest) {
       memberName,
       memberBirthdate: birthdate,
       healthPlan,
+      medicalRecordNumber: medicalRecordNumber || null,
       mediCalNumber: mediCalNumber || null,
       kaiserMrn: kaiserMrn || null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
