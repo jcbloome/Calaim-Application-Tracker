@@ -13,13 +13,44 @@ type SessionType = 'admin' | 'user';
  * Prevents crossover between admin and user authentication states
  * Prevents admin users from accessing the user side
  */
-export function useSessionIsolation(currentSessionType: SessionType) {
+export function useSessionIsolation(currentSessionType: SessionType, options?: { disabled?: boolean }) {
   const auth = useAuth();
   const firestore = useFirestore();
   const pathname = usePathname();
   const router = useRouter();
+  const disabled = Boolean(options?.disabled);
+
+  const safeLocalStorageGet = (key: string) => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  };
+  const safeLocalStorageSet = (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // ignore
+    }
+  };
+  const safeLocalStorageRemove = (key: string) => {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // ignore
+    }
+  };
+  const safeSessionStorageClear = () => {
+    try {
+      sessionStorage.clear();
+    } catch {
+      // ignore
+    }
+  };
 
   useEffect(() => {
+    if (disabled) return;
     if (!auth || !firestore) return;
 
     const checkIfUserIsAdmin = async (userEmail: string, userId: string): Promise<boolean> => {
@@ -50,7 +81,7 @@ export function useSessionIsolation(currentSessionType: SessionType) {
       const isUserPath = !isAdminPath && pathname !== '/' && pathname !== '/login' && pathname !== '/signup';
 
       // Store the intended session type in localStorage
-      const storedSessionType = localStorage.getItem('calaim_session_type');
+      const storedSessionType = safeLocalStorageGet('calaim_session_type');
       const newSessionType = isAdminPath ? 'admin' : 'user';
 
       // If user is logged in and trying to access user side, check if they're an admin
@@ -59,9 +90,9 @@ export function useSessionIsolation(currentSessionType: SessionType) {
 
         if (isAdmin) {
           // Clear session data and sign out without forcing admin login.
-          localStorage.removeItem('calaim_session_type');
-          localStorage.removeItem('calaim_admin_context');
-          sessionStorage.clear();
+          safeLocalStorageRemove('calaim_session_type');
+          safeLocalStorageRemove('calaim_admin_context');
+          safeSessionStorageClear();
 
           await auth.signOut();
           return;
@@ -73,15 +104,15 @@ export function useSessionIsolation(currentSessionType: SessionType) {
         // If user is switching from admin -> user, don't force a second login.
         // Clear admin-only context and record the new session type.
         if (newSessionType === 'user') {
-          localStorage.setItem('calaim_session_type', 'user');
-          localStorage.removeItem('calaim_admin_context');
+          safeLocalStorageSet('calaim_session_type', 'user');
+          safeLocalStorageRemove('calaim_admin_context');
           return;
         }
 
         // Switching into admin mode still requires an explicit admin login.
-        localStorage.removeItem('calaim_session_type');
-        localStorage.removeItem('calaim_admin_context');
-        sessionStorage.clear();
+        safeLocalStorageRemove('calaim_session_type');
+        safeLocalStorageRemove('calaim_admin_context');
+        safeSessionStorageClear();
 
         await auth.signOut();
         router.push('/admin/login');
@@ -90,17 +121,17 @@ export function useSessionIsolation(currentSessionType: SessionType) {
 
       // Set the current session type
       if (auth.currentUser && (isAdminPath || isUserPath)) {
-        localStorage.setItem('calaim_session_type', newSessionType);
+        safeLocalStorageSet('calaim_session_type', newSessionType);
       }
     };
 
     handleSessionIsolation();
-  }, [auth, firestore, pathname, router, currentSessionType]);
+  }, [auth, firestore, pathname, router, currentSessionType, disabled]);
 
   // Utility functions for session management
   const switchToAdminMode = async () => {
     if (auth?.currentUser) {
-      localStorage.removeItem('calaim_session_type');
+      safeLocalStorageRemove('calaim_session_type');
       await auth.signOut();
     }
     router.push('/admin/login');
@@ -108,14 +139,14 @@ export function useSessionIsolation(currentSessionType: SessionType) {
 
   const switchToUserMode = async () => {
     if (auth?.currentUser) {
-      localStorage.removeItem('calaim_session_type');
+      safeLocalStorageRemove('calaim_session_type');
       await auth.signOut();
     }
     router.push('/');
   };
 
   const getCurrentSessionType = (): SessionType | null => {
-    return localStorage.getItem('calaim_session_type') as SessionType | null;
+    return safeLocalStorageGet('calaim_session_type') as SessionType | null;
   };
 
   return {
