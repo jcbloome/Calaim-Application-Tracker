@@ -197,6 +197,25 @@ export default function DesktopNotificationWindowClient() {
   const activeKind = String(active?.kind || '').toLowerCase();
   const isChat = activeKind === 'chat';
   const incomingLabel = incomingLabelForKind(active?.kind);
+  const breakdownLabel = useMemo(() => {
+    const notes = Array.isArray(pillState?.notes) ? pillState!.notes! : [];
+    if (notes.length === 0) return '';
+    const counts: Record<string, number> = { cs: 0, note: 0, chat: 0, docs: 0 };
+    notes.forEach((n: any) => {
+      const k = String(n?.kind || 'note').toLowerCase().trim();
+      if (k === 'cs') counts.cs += 1;
+      else if (k === 'chat') counts.chat += 1;
+      else if (k === 'docs') counts.docs += 1;
+      else counts.note += 1;
+    });
+    const parts: string[] = [];
+    if (counts.cs) parts.push(`CS (${counts.cs})`);
+    if (counts.note) parts.push(`Notes (${counts.note})`);
+    if (counts.chat) parts.push(`Chat (${counts.chat})`);
+    if (counts.docs) parts.push(`Docs (${counts.docs})`);
+    return parts.join(' • ');
+  }, [pillState?.notes]);
+  const countLabel = breakdownLabel || (count === 1 ? '1 pending' : `${count} pending`);
   const canPrev = activeIndex > 0;
   const canNext = Array.isArray(pillState?.notes) ? activeIndex < (pillState!.notes!.length - 1) : false;
   const lastUpdatedLabel = useMemo(() => {
@@ -656,7 +675,7 @@ export default function DesktopNotificationWindowClient() {
               <div className={`h-2.5 w-2.5 rounded-full ${dotClassForKind(active?.kind)} flex-shrink-0`} />
               <div className="text-sm font-medium text-slate-900 whitespace-nowrap">{incomingLabel}</div>
               <div className="text-[11px] text-slate-600 whitespace-nowrap">
-                {count === 1 ? '1 pending' : `${count} pending`}
+                {countLabel}
               </div>
             </div>
           </div>
@@ -679,7 +698,7 @@ export default function DesktopNotificationWindowClient() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-xs font-medium text-slate-500">
-                {count === 1 ? '1 priority item' : `${count} priority items`}
+                {breakdownLabel || (count === 1 ? '1 pending item' : `${count} pending items`)}
               </div>
               <div className="text-base font-semibold text-slate-900 flex items-center gap-2">
                 {isChat ? (
