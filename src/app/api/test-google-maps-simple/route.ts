@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   try {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    const apiKey = process.env.GOOGLE_GEOCODING_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
     
     if (!apiKey) {
       return NextResponse.json({
@@ -30,6 +30,7 @@ export async function GET() {
       success: response.ok && data.status === 'OK',
       status: response.status,
       apiResponse: data,
+      keySource: process.env.GOOGLE_GEOCODING_API_KEY ? 'GOOGLE_GEOCODING_API_KEY' : 'NEXT_PUBLIC_GOOGLE_MAPS_API_KEY',
       apiKey: apiKey.substring(0, 10) + '...',
       testUrl: testUrl.replace(apiKey, 'API_KEY_HIDDEN')
     });

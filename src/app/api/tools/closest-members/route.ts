@@ -3,6 +3,7 @@ import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { trackCaspioCall } from '@/lib/caspio-usage-tracker';
 import { geocodeWithCache, haversineMiles } from '@/lib/geo/geocode-cache';
+import { normalizeRcfeNameForAssignment } from '@/lib/rcfe-utils';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -103,7 +104,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing swId' }, { status: 400 });
     }
 
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+    const apiKey = process.env.GOOGLE_GEOCODING_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
     if (!apiKey) {
       return NextResponse.json({ success: false, error: 'Google Maps API key not configured' }, { status: 500 });
     }
@@ -163,7 +164,9 @@ export async function GET(request: NextRequest) {
       { rcfeName: string; rcfeAddress: string; members: Array<{ clientId2: string; name: string; county?: string; city?: string }> }
     >();
     members.forEach((m) => {
-      const rcfeName = String(m?.RCFE_Name || '').trim();
+      const rcfeNameRaw = String(m?.RCFE_Name || '').trim();
+      const rcfeName = normalizeRcfeNameForAssignment(rcfeNameRaw);
+      // Only consider members with a real RCFE selected (exclude placeholders like "CalAIM_Use...").
       if (!rcfeName) return;
       const clientId2 = String(m?.Client_ID2 || m?.clientId2 || m?.client_ID2 || m?.client_ID2 || '').trim();
       const name = String(m?.memberName || '').trim() || `${String(m?.memberFirstName || '').trim()} ${String(m?.memberLastName || '').trim()}`.trim();

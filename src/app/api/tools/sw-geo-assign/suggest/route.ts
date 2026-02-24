@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { fetchCaspioSocialWorkers, getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { trackCaspioCall } from '@/lib/caspio-usage-tracker';
-import { geocodeWithCache, haversineMiles } from '@/lib/geo/geocode-cache';
+import { geocodeWithCacheDetailed, haversineMiles } from '@/lib/geo/geocode-cache';
+import { normalizeRcfeNameForAssignment } from '@/lib/rcfe-utils';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -114,7 +115,7 @@ async function fetchRcfeAddressByName(params: { accessToken: string; baseUrl: st
       const state = String(r?.RCFE_State || 'CA').trim();
       const zip = String(r?.RCFE_Zip || '').trim();
       const county = String(r?.RCFE_County || '').trim();
-      const addr = [street, city, state, zip].filter(Boolean).join(', ');
+      const addr = [street, city, state].filter(Boolean).join(', ') + (zip ? ` ${zip}` : '');
       if (name && addr && !map.has(name)) map.set(name, { address: addr, city: city || undefined, county: county || undefined });
     });
     if (rows.length < pageSize) break;
@@ -136,7 +137,7 @@ export async function POST(request: NextRequest) {
     const maxMiles = maxMilesRaw != null && Number.isFinite(maxMilesRaw) ? Math.max(1, maxMilesRaw) : null;
     const includeHolds = Boolean(body.includeHolds);
 
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+    const apiKey = process.env.GOOGLE_GEOCODING_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
     if (!apiKey) {
       return NextResponse.json({ success: false, error: 'Google Maps API key not configured' }, { status: 500 });
     }
@@ -188,8 +189,13 @@ export async function POST(request: NextRequest) {
     // Geocode SW bases
     const swWithGeo = await asyncPool(5, swBases, async (sw) => {
       if (!sw.address) return sw;
-      const geo = await geocodeWithCache({ adminDb, address: sw.address, apiKey });
-      return { ...sw, geo };
+      const r = await geocodeWithCacheDetailed({ adminDb, address: sw.address, apiKey });
+      const geo = r.geo;
+      return {
+        ...sw,
+        geo,
+        ...(r.error ? { geocodeError: r.error } : {}),
+      } as any;
     });
 
     // Load members from Firestore cache
@@ -214,7 +220,9 @@ export async function POST(request: NextRequest) {
 
     const groups = new Map<string, RcfeGroup>();
     for (const m of filteredMembers) {
-      const rcfeName = String(m?.RCFE_Name || '').trim();
+      const rcfeNameRaw = String(m?.RCFE_Name || '').trim();
+      const rcfeName = normalizeRcfeNameForAssignment(rcfeNameRaw);
+      // Only consider members that have a real RCFE selected (exclude placeholders like "CalAIM_Use...").
       if (!rcfeName) continue;
       const clientId2 = String(m?.Client_ID2 || m?.clientId2 || '').trim();
       const memberName =
@@ -254,9 +262,14 @@ export async function POST(request: NextRequest) {
       .sort((a, b) => b.memberCount - a.memberCount)
       .slice(0, maxRcfes);
 
-    const rcfeWithGeo = await asyncPool(10, rcfeGroups, async (g) => {
-      const geo = await geocodeWithCache({ adminDb, address: g.rcfeAddress, apiKey });
-      return { ...g, geo };
+    const rcfeWithGeo = await asyncPool(5, rcfeGroups, async (g) => {
+      const r = await geocodeWithCacheDetailed({ adminDb, address: g.rcfeAddress, apiKey });
+      const geo = r.geo;
+      return {
+        ...g,
+        geo,
+        ...(r.error ? { geocodeError: r.error } : {}),
+      } as any;
     });
 
     const swCandidates = swWithGeo.filter((sw) => !!sw.geo && !!sw.sw_id);
@@ -269,7 +282,10 @@ export async function POST(request: NextRequest) {
 
     for (const g of rcfeWithGeo) {
       if (!g.geo) {
-        overflow.push({ ...g, reason: 'RCFE geocode failed' });
+        const err = (g as any)?.geocodeError as any;
+        const status = String(err?.status || '').trim();
+        const msg = String(err?.errorMessage || '').trim();
+        overflow.push({ ...g, reason: status ? `RCFE geocode failed (${status}${msg ? `: ${msg}` : ''})` : 'RCFE geocode failed' });
         continue;
       }
 

@@ -60,7 +60,7 @@ function normalizeRow(record: any): SwAddressRow | null {
   const zip = pick(record?.Zip, record?.zip, record?.Zip_Code, record?.Postal_Code);
   const email = pick(record?.Email, record?.email, record?.Email_Address, record?.email_address);
 
-  const address = [street, city, state, zip].map((p) => String(p || '').trim()).filter(Boolean).join(', ');
+  const address = [street, city, state].map((p) => String(p || '').trim()).filter(Boolean).join(', ') + (zip ? ` ${zip}` : '');
 
   return {
     sw_id: String(sw_id).trim(),

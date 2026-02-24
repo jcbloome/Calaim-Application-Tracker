@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
+import { normalizeRcfeNameForAssignment } from '@/lib/rcfe-utils';
 
 export async function GET(request: NextRequest) {
   try {
@@ -68,10 +69,12 @@ export async function GET(request: NextRequest) {
 
     // Group members by RCFE facility
     const rcfeFacilities = new Map();
-    const members = membersData.Result || [];
+    const members = (membersData.Result || []) as any[];
 
     members.forEach((member: any) => {
-      const rcfeName = member.RCFE_Name || 'Unknown RCFE';
+      const rcfeName = normalizeRcfeNameForAssignment(member.RCFE_Name);
+      // Do not include placeholder RCFE names (e.g. "CalAIM_Use...") in assignments.
+      if (!rcfeName) return;
       const rcfeAddress = member.RCFE_Address || 'Address not available';
       
       if (!rcfeFacilities.has(rcfeName)) {
@@ -105,11 +108,11 @@ export async function GET(request: NextRequest) {
       success: true,
       socialWorker: {
         email: email,
-        assignedMembers: members.length,
+        assignedMembers: facilities.reduce((sum: number, f: any) => sum + (Array.isArray(f.members) ? f.members.length : 0), 0),
         rcfeFacilities: facilities.length
       },
       facilities: facilities,
-      totalMembers: members.length
+      totalMembers: facilities.reduce((sum: number, f: any) => sum + (Array.isArray(f.members) ? f.members.length : 0), 0)
     });
 
   } catch (error: any) {

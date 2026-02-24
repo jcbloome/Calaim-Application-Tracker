@@ -78,9 +78,19 @@ export default function AdminLoginClient() {
         Boolean((window as any).desktopNotifications) &&
         !Boolean((window as any).desktopNotifications?.__shim);
 
-      // In Electron we want logins to persist across app restarts, so use local persistence.
-      // In normal web browsers, keep session persistence to avoid shared-computer surprises.
-      await setPersistence(auth, isRealDesktop ? browserLocalPersistence : browserSessionPersistence);
+      // Persistence notes:
+      // - Some browsers/environments block session storage in a way that causes auth to drop on navigation.
+      // - To avoid redirect loops back to the login page, fall back to local persistence if session persistence fails.
+      if (isRealDesktop) {
+        await setPersistence(auth, browserLocalPersistence);
+      } else {
+        try {
+          await setPersistence(auth, browserSessionPersistence);
+        } catch (persistenceError) {
+          console.warn('⚠️ Admin login: session persistence failed, falling back to local persistence', persistenceError);
+          await setPersistence(auth, browserLocalPersistence);
+        }
+      }
 
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
 
@@ -102,6 +112,19 @@ export default function AdminLoginClient() {
 
       // Force refresh to pick up custom claims (admin)
       await userCredential.user.getIdToken(true);
+
+      // Wait briefly for auth state to be observable in the app before redirecting.
+      // This prevents immediate bounces back to /admin/login in environments with delayed persistence.
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Sign-in did not complete. Please try again.')), 6000);
+        const unsubscribe = auth.onAuthStateChanged((u) => {
+          if (u) {
+            clearTimeout(timeout);
+            unsubscribe();
+            resolve();
+          }
+        });
+      });
 
       await trackLogin(firestore, userCredential.user, 'Admin');
 

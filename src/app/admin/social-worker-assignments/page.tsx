@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Users, UserPlus, Search, Filter, ArrowUpDown, ChevronUp, ChevronDown, Pause, Play, MapPinned, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { loadGoogleMaps } from '@/lib/google-maps-loader';
+import { normalizeRcfeNameForAssignment } from '@/lib/rcfe-utils';
 
 interface Member {
   id: string;
@@ -371,6 +372,8 @@ export default function SocialWorkerAssignmentsPage() {
 
   const isDueForSwAssignment = (member: Member) => {
     if (!isUnassignedSw(member)) return false;
+    // We only assign SWs once a real RCFE has been selected (exclude placeholders like "CalAIM_Use...").
+    if (!normalizeRcfeNameForAssignment(member.RCFE_Name)) return false;
     const start = parseCaspioDateToLocalDate(member.Authorization_Start_Date_T2038);
     if (!start) return false;
     const due = new Date(start);
@@ -591,7 +594,7 @@ export default function SocialWorkerAssignmentsPage() {
       stats[swName].countyBreakdown[county] = (stats[swName].countyBreakdown[county] || 0) + 1;
       
       // RCFE breakdown
-      const rcfe = member.RCFE_Name || 'No RCFE';
+      const rcfe = normalizeRcfeNameForAssignment(member.RCFE_Name) || 'No RCFE';
       stats[swName].rcfeBreakdown[rcfe] = (stats[swName].rcfeBreakdown[rcfe] || 0) + 1;
       
       // Hold status
@@ -632,7 +635,7 @@ export default function SocialWorkerAssignmentsPage() {
   }, [members]);
 
   const allRCFEs = useMemo(() => {
-    return [...new Set(members.map(m => m.RCFE_Name || 'No RCFE'))].sort();
+    return [...new Set(members.map((m) => normalizeRcfeNameForAssignment(m.RCFE_Name) || 'No RCFE'))].sort();
   }, [members]);
 
   // Handle column sorting
@@ -667,7 +670,7 @@ export default function SocialWorkerAssignmentsPage() {
         (member.memberCounty || 'Unknown') === selectedCounty;
       
       const matchesRCFE = selectedRCFE === 'all' || 
-        (member.RCFE_Name || 'No RCFE') === selectedRCFE;
+        (normalizeRcfeNameForAssignment(member.RCFE_Name) || 'No RCFE') === selectedRCFE;
       
       const matchesHoldStatus =
         selectedHoldStatus === 'all' ||
@@ -713,8 +716,8 @@ export default function SocialWorkerAssignmentsPage() {
           bValue = b.Social_Worker_Assigned || 'Unassigned';
           break;
         case 'RCFE_Name':
-          aValue = a.RCFE_Name || 'No RCFE';
-          bValue = b.RCFE_Name || 'No RCFE';
+          aValue = normalizeRcfeNameForAssignment(a.RCFE_Name) || 'No RCFE';
+          bValue = normalizeRcfeNameForAssignment(b.RCFE_Name) || 'No RCFE';
           break;
         case 'Hold_For_Social_Worker':
           aValue = a.Hold_For_Social_Worker || 'No';
@@ -1269,14 +1272,14 @@ export default function SocialWorkerAssignmentsPage() {
                           </TableCell>
                           <TableCell>
                             <div className="text-xs">
-                              {member.RCFE_Name ? (
+                              {normalizeRcfeNameForAssignment(member.RCFE_Name) ? (
                                 <div>
-                                  <div className="font-medium">{member.RCFE_Name}</div>
+                                  <div className="font-medium">{normalizeRcfeNameForAssignment(member.RCFE_Name)}</div>
                                   <div className="text-muted-foreground">{member.RCFE_Address}</div>
                                 </div>
                               ) : (
                                 <Badge variant="outline" className="text-xs">
-                                  No RCFE
+                                  No RCFE selected
                                 </Badge>
                               )}
                             </div>
