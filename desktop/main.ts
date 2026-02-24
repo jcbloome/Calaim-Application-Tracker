@@ -39,7 +39,6 @@ type DesktopPreferences = {
   chatAlertsEnabled: boolean;
   pillPosition: { x: number; y: number } | null;
   snoozedNoteUntilById: Record<string, number>;
-  mutedSenderUntilById: Record<string, number>;
 };
 
 const prefsStore = new Store<DesktopPreferences>({
@@ -53,7 +52,6 @@ const prefsStore = new Store<DesktopPreferences>({
     chatAlertsEnabled: true,
     pillPosition: null,
     snoozedNoteUntilById: {},
-    mutedSenderUntilById: {},
   },
 });
 
@@ -106,6 +104,18 @@ const getChatNotifyIcon = () => {
 
 const updateTrayIcon = () => {
   if (!tray || !trayDefaultIconPath) return;
+  // Windows tray icons are extremely picky; our dynamically-generated SVG chat icon
+  // can render as an invisible/blank icon in the notification area. Keep the real
+  // app icon in the tray on Windows, and surface chat via tooltip/menu + native toast.
+  if (process.platform === 'win32') {
+    trayUsingChatIcon = false;
+    try {
+      tray.setImage(trayDefaultIconPath);
+    } catch {
+      // ignore
+    }
+    return;
+  }
   const shouldUseChat = chatPendingCount > 0;
   if (trayUsingChatIcon === shouldUseChat) return;
   trayUsingChatIcon = shouldUseChat;
@@ -145,7 +155,6 @@ const normalizeUntilMap = (raw: any): Record<string, number> => {
 };
 
 let snoozedNoteUntilById = normalizeUntilMap(prefsStore.get('snoozedNoteUntilById'));
-let mutedSenderUntilById = normalizeUntilMap(prefsStore.get('mutedSenderUntilById'));
 let pillLastUpdatedAtMs: number = Date.now();
 
 const saveSuppressionMaps = () => {
@@ -154,29 +163,20 @@ const saveSuppressionMaps = () => {
   } catch {
     // ignore
   }
-  try {
-    prefsStore.set('mutedSenderUntilById', mutedSenderUntilById);
-  } catch {
-    // ignore
-  }
 };
 
 const countActiveSuppressions = () => {
   const now = Date.now();
   const snoozed = Object.values(snoozedNoteUntilById).filter((v) => Number(v) > now).length;
-  const muted = Object.values(mutedSenderUntilById).filter((v) => Number(v) > now).length;
-  return { snoozed, muted };
+  return { snoozed };
 };
 
 const applySuppressionFilters = (notes: PillItem[]) => {
   const now = Date.now();
   // Prune expired entries opportunistically.
   const nextSnoozes = normalizeUntilMap(snoozedNoteUntilById);
-  const nextMutes = normalizeUntilMap(mutedSenderUntilById);
-  const pruned = (Object.keys(nextSnoozes).length !== Object.keys(snoozedNoteUntilById).length)
-    || (Object.keys(nextMutes).length !== Object.keys(mutedSenderUntilById).length);
+  const pruned = (Object.keys(nextSnoozes).length !== Object.keys(snoozedNoteUntilById).length);
   snoozedNoteUntilById = nextSnoozes;
-  mutedSenderUntilById = nextMutes;
   if (pruned) {
     saveSuppressionMaps();
   }
@@ -184,15 +184,13 @@ const applySuppressionFilters = (notes: PillItem[]) => {
   return (notes || []).filter((note) => {
     const rawType = String((note as any)?.type || '').toLowerCase();
     const isChat = Boolean((note as any)?.isChatOnly) || rawType.includes('chat');
-    if (isChat) return false;
+    if (isChat) {
+      // Chat can be shown in the pill (same notification system), but is user-togglable.
+      return Boolean(chatAlertsEnabled);
+    }
     const noteId = String(note.noteId || '').trim();
     if (noteId) {
       const until = Number(snoozedNoteUntilById[noteId] || 0);
-      if (until > now) return false;
-    }
-    const senderId = String(note.senderId || '').trim();
-    if (senderId) {
-      const until = Number(mutedSenderUntilById[senderId] || 0);
       if (until > now) return false;
     }
     return true;
@@ -838,22 +836,6 @@ const buildTrayMenu = () => {
       enabled: suppressionCounts.snoozed > 0,
       click: () => {
         snoozedNoteUntilById = {};
-        saveSuppressionMaps();
-        pillLastUpdatedAtMs = Date.now();
-        recomputeCombinedPill();
-        if (pillSummary.count > 0) renderNotificationPill();
-        updateTrayMenu();
-      },
-    },
-    {
-      label: `Muted senders: ${suppressionCounts.muted}`,
-      enabled: false,
-    },
-    {
-      label: 'Clear muted senders',
-      enabled: suppressionCounts.muted > 0,
-      click: () => {
-        mutedSenderUntilById = {};
         saveSuppressionMaps();
         pillLastUpdatedAtMs = Date.now();
         recomputeCombinedPill();
@@ -1930,38 +1912,6 @@ ipcMain.handle('desktop:clearSnoozeNote', (_event, payload: { noteId: string }) 
   return true;
 });
 
-ipcMain.handle('desktop:muteSender', (_event, payload: { senderId: string; untilMs: number }) => {
-  const senderId = String(payload?.senderId || '').trim();
-  const untilMs = Number(payload?.untilMs || 0);
-  if (!senderId) return false;
-  if (!untilMs || Number.isNaN(untilMs) || untilMs <= Date.now()) {
-    delete mutedSenderUntilById[senderId];
-  } else {
-    mutedSenderUntilById[senderId] = untilMs;
-  }
-  saveSuppressionMaps();
-  pillLastUpdatedAtMs = Date.now();
-  staffPillNotes = applySuppressionFilters(staffPillNotes);
-  staffPillCount = staffPillNotes.length;
-  recomputeCombinedPill();
-  if (pillSummary.count > 0) renderNotificationPill();
-  updateTrayMenu();
-  return true;
-});
-
-ipcMain.handle('desktop:clearMuteSender', (_event, payload: { senderId: string }) => {
-  const senderId = String(payload?.senderId || '').trim();
-  if (!senderId) return false;
-  delete mutedSenderUntilById[senderId];
-  saveSuppressionMaps();
-  pillLastUpdatedAtMs = Date.now();
-  staffPillNotes = applySuppressionFilters(staffPillNotes);
-  staffPillCount = staffPillNotes.length;
-  recomputeCombinedPill();
-  if (pillSummary.count > 0) renderNotificationPill();
-  updateTrayMenu();
-  return true;
-});
 
 ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) => {
   computeEffectivePaused();
@@ -2165,40 +2115,9 @@ ipcMain.on('desktop:setChatPendingCount', (_event, count: number) => {
   updateTrayToolTip();
   updateTrayMenu();
 
-  // Avoid a notification burst on first load.
-  if (!chatCountInitialized) {
-    chatCountInitialized = true;
-    return;
-  }
-
-  if (!chatAlertsEnabled) return;
-  if (next <= prev) return;
-
-  computeEffectivePaused();
-  if (notificationState.effectivePaused) return;
-
-  const now = Date.now();
-  if (now - lastChatNotifyAtMs < 15000) return;
-  lastChatNotifyAtMs = now;
-
-  try {
-    const n = new Notification({
-      title: '💬 New chat message',
-      body: next === 1 ? 'You have 1 unread chat message.' : `You have ${next} unread chat messages.`,
-      icon: getChatNotifyIcon(),
-      silent: false,
-    });
-    n.on('click', () => {
-      try {
-        openChatWindow();
-      } catch {
-        // ignore
-      }
-    });
-    n.show();
-  } catch {
-    // ignore
-  }
+  // Chat alerts are now delivered via the same pill UI (with a distinct color/label),
+  // so we do not also emit a separate native system notification here.
+  void prev;
 });
 
 ipcMain.handle('desktop:checkForUpdates', async () => {

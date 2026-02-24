@@ -125,13 +125,85 @@ export function RealTimeNotifications() {
     suppressWebWhenDesktopActive: true
   });
   const chatUnreadRef = useRef<{ initialized: boolean; count: number }>({ initialized: false, count: 0 });
+  const desktopPriorityPillRef = useRef<
+    Array<{
+      kind?: 'note' | 'docs' | 'cs' | 'chat';
+      source?: string;
+      clientId2?: string;
+      title: string;
+      message: string;
+      author?: string;
+      recipientName?: string;
+      memberName?: string;
+      timestamp?: string;
+      noteId?: string;
+      senderId?: string;
+      replyUrl?: string;
+      actionUrl?: string;
+      isChatOnly?: boolean;
+      type?: string;
+    }>
+  >([]);
+  const desktopChatPillRef = useRef<
+    Array<{
+      kind?: 'note' | 'docs' | 'cs' | 'chat';
+      title: string;
+      message: string;
+      author?: string;
+      recipientName?: string;
+      timestamp?: string;
+      noteId?: string;
+      senderId?: string;
+      actionUrl?: string;
+      isChatOnly?: boolean;
+      type?: string;
+    }>
+  >([]);
+  const desktopChatOpenPanelRef = useRef(false);
+
+  const emitDesktopPill = useCallback((params?: { openPanel?: boolean }) => {
+    try {
+      if (typeof window === 'undefined') return;
+      if (!window.desktopNotifications?.setPillSummary) return;
+      const priorityNotes = desktopPriorityPillRef.current || [];
+      const chatNotes = desktopChatPillRef.current || [];
+      const combined = [...chatNotes, ...priorityNotes];
+      const count = combined.length;
+      const openPanel = Boolean(params?.openPanel) || Boolean(desktopChatOpenPanelRef.current);
+      if (desktopChatOpenPanelRef.current) {
+        desktopChatOpenPanelRef.current = false;
+      }
+
+      const title =
+        chatNotes.length > 0 && priorityNotes.length === 0
+          ? 'Unread chat'
+          : count === 1
+            ? 'Priority item'
+            : 'Priority items';
+      const message =
+        chatNotes.length > 0 && priorityNotes.length === 0
+          ? (count === 1 ? '1 unread chat message' : `${count} unread chat messages`)
+          : (count === 1 ? '1 priority item pending' : `${count} priority items pending`);
+
+      window.desktopNotifications.setPillSummary({
+        count,
+        openPanel,
+        notes: combined as any,
+        title,
+        message,
+        actionUrl: chatNotes.length > 0 ? '/admin/desktop-chat-window' : '/admin/my-notes',
+      });
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     firestoreRef.current = firestore;
   }, [firestore]);
 
   // Chat-only messages are handled in the dedicated chat window, but we still track an unread count
-  // for Electron tray badge purposes (no pill).
+  // for Electron tray badge purposes. We also surface chat through the same Electron pill UI.
   useEffect(() => {
     if (!user?.uid) return;
     if (!firestore) return;
@@ -147,10 +219,42 @@ export function RealTimeNotifications() {
       qy,
       (snapshot) => {
         let unread = 0;
+        const unreadNotes: Array<{
+          kind: 'chat';
+          title: string;
+          message: string;
+          author?: string;
+          recipientName?: string;
+          timestamp?: string;
+          noteId?: string;
+          senderId?: string;
+          actionUrl?: string;
+          isChatOnly: boolean;
+          type: string;
+        }> = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data() as any;
           if (Boolean(data?.isRead)) return;
           unread += 1;
+          const ts: any = data?.timestamp;
+          const dt: Date =
+            ts?.toDate?.() ||
+            (data?.createdAt?.toDate?.() as any) ||
+            (data?.createdAt ? new Date(data.createdAt) : null) ||
+            new Date();
+          unreadNotes.push({
+            kind: 'chat',
+            title: 'Chat',
+            message: sanitizeNoteMessage(data?.message) || '',
+            author: sanitizeFieldLabel(data?.senderName) || undefined,
+            recipientName: user?.displayName || user?.email || 'Staff',
+            timestamp: dt?.toLocaleString?.() || undefined,
+            noteId: docSnap.id,
+            senderId: String(data?.senderId || '').trim() || undefined,
+            actionUrl: String(data?.actionUrl || '/admin/desktop-chat-window').trim() || '/admin/desktop-chat-window',
+            isChatOnly: true,
+            type: 'interoffice_chat',
+          });
         });
 
         const prev = chatUnreadRef.current;
@@ -164,6 +268,14 @@ export function RealTimeNotifications() {
         } catch {
           // ignore
         }
+
+        // Desktop pill: show latest unread chat items (most recent first).
+        unreadNotes.sort((a, b) => Date.parse(String(b.timestamp || '')) - Date.parse(String(a.timestamp || '')));
+        desktopChatPillRef.current = unreadNotes.slice(0, 8);
+        if (prev.initialized && unread > prev.count) {
+          desktopChatOpenPanelRef.current = true;
+        }
+        emitDesktopPill();
       },
       () => {
         try {
@@ -174,11 +286,13 @@ export function RealTimeNotifications() {
           // ignore
         }
         chatUnreadRef.current = { initialized: true, count: 0 };
+        desktopChatPillRef.current = [];
+        emitDesktopPill();
       }
     );
 
     return () => unsub();
-  }, [firestore, user?.uid]);
+  }, [emitDesktopPill, firestore, user?.email, user?.displayName, user?.uid]);
 
   // Super Admin global toggles for web in-app notifications (stored in system_settings/notifications).
   useEffect(() => {
@@ -746,35 +860,25 @@ export function RealTimeNotifications() {
               Date.now() - desktopLatest.timestamp.getTime() <= recentThresholdMs;
             const openPanel = Boolean(hasNewPriority || hasNewUrgent || desktopIsRecent);
 
-            window.desktopNotifications.setPillSummary({
-              count: desktopCount,
-              openPanel,
-              notes: desktopPending.map((note) => ({
-                kind: 'note',
-                source: note.source,
-                clientId2: note.clientId2,
-                title: sanitizeFieldLabel(note.title) || desktopTitle,
-                message: sanitizeNoteMessage(note.message) || sanitizeFieldLabel(note.message) || '',
-                author: sanitizeFieldLabel(note.senderName) || undefined,
-                recipientName: recipientLabel,
-                memberName: sanitizeFieldLabel(note.memberName) || undefined,
-                timestamp: note.timestamp?.toLocaleString?.() || undefined,
-                noteId: note.id,
-                senderId: note.senderId,
-                replyUrl: note.id
-                  ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}`
-                  : undefined,
-                actionUrl: note.id ? `/admin/my-notes?noteId=${encodeURIComponent(note.id)}` : '/admin/my-notes'
-              })),
-              title: desktopTitle,
-              message: desktopMessage,
-              author: desktopHighlight ? sanitizeFieldLabel(desktopHighlight.senderName) || highlightSender : highlightSender,
+            desktopPriorityPillRef.current = desktopPending.map((note) => ({
+              kind: 'note',
+              source: note.source,
+              clientId2: note.clientId2,
+              title: sanitizeFieldLabel(note.title) || desktopTitle,
+              message: sanitizeNoteMessage(note.message) || sanitizeFieldLabel(note.message) || '',
+              author: sanitizeFieldLabel(note.senderName) || undefined,
               recipientName: recipientLabel,
-              memberName: desktopHighlight ? sanitizeFieldLabel(desktopHighlight.memberName) || '' : '',
-              timestamp: desktopHighlight?.timestamp ? desktopHighlight.timestamp.toLocaleString?.() : undefined,
-              replyUrl: desktopHighlight?.id ? `/admin/my-notes?replyTo=${encodeURIComponent(desktopHighlight.id)}` : undefined,
-              actionUrl: '/admin/my-notes'
-            });
+              memberName: sanitizeFieldLabel(note.memberName) || undefined,
+              timestamp: note.timestamp?.toLocaleString?.() || undefined,
+              noteId: note.id,
+              senderId: note.senderId,
+              replyUrl: note.id
+                ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}`
+                : undefined,
+              actionUrl: note.id ? `/admin/my-notes?noteId=${encodeURIComponent(note.id)}` : '/admin/my-notes',
+            }));
+
+            emitDesktopPill({ openPanel });
           }
 
           if (shouldShowWebToast) {

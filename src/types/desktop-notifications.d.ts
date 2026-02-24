@@ -20,8 +20,6 @@ declare global {
       clearSnooze?: () => Promise<DesktopNotificationState>;
       snoozeNote?: (noteId: string, untilMs: number) => Promise<boolean>;
       clearSnoozeNote?: (noteId: string) => Promise<boolean>;
-      muteSender?: (senderId: string, untilMs: number) => Promise<boolean>;
-      clearMuteSender?: (senderId: string) => Promise<boolean>;
       openStaffStatus?: () => Promise<boolean>;
       refreshApp?: () => Promise<boolean>;
       notify: (payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) => Promise<boolean>;
@@ -33,7 +31,7 @@ declare global {
         notes?: Array<{
           title: string;
           message: string;
-          kind?: 'note' | 'docs' | 'cs';
+          kind?: 'note' | 'docs' | 'cs' | 'chat';
           source?: string;
           clientId2?: string;
           author?: string;
@@ -60,7 +58,7 @@ declare global {
         notes?: Array<{
           title: string;
           message: string;
-          kind?: 'note' | 'docs' | 'cs';
+          kind?: 'note' | 'docs' | 'cs' | 'chat';
           memberName?: string;
           timestamp?: string;
           actionUrl?: string;

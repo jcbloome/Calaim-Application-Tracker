@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUser } from '@/firebase';
 import { useFirestore } from '@/firebase';
-import { Target } from 'lucide-react';
+import { MessageSquareText, Target } from 'lucide-react';
 import {
   addDoc,
   collection,
@@ -47,7 +47,7 @@ type PillStatePayload = {
   activeNote?: {
     title: string;
     message: string;
-    kind?: 'note' | 'docs' | 'cs';
+    kind?: 'note' | 'docs' | 'cs' | 'chat';
     source?: string;
     clientId2?: string;
     author?: string;
@@ -62,7 +62,7 @@ type PillStatePayload = {
   notes?: Array<{
     title: string;
     message: string;
-    kind?: 'note' | 'docs' | 'cs';
+    kind?: 'note' | 'docs' | 'cs' | 'chat';
     source?: string;
     clientId2?: string;
     author?: string;
@@ -88,6 +88,7 @@ const accentClassForKind = (kind?: string) => {
   const k = String(kind || '').toLowerCase().trim();
   if (k === 'docs') return 'border-l-green-600';
   if (k === 'cs') return 'border-l-orange-500';
+  if (k === 'chat') return 'border-l-purple-600';
   return 'border-l-blue-600';
 };
 
@@ -121,7 +122,6 @@ export default function DesktopNotificationWindowClient() {
   const [togglingTaskStatus, setTogglingTaskStatus] = useState(false);
   const [undoClose, setUndoClose] = useState<{ noteId: string; expiresAtMs: number } | null>(null);
   const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false);
-  const [muteMenuOpen, setMuteMenuOpen] = useState(false);
 
   const titleLabel = useMemo(() => {
     const c = Number(pillState?.count || 0);
@@ -179,6 +179,8 @@ export default function DesktopNotificationWindowClient() {
   const count = Number(pillState?.count || 0);
   const activeIndex = Math.max(0, Number(pillState?.activeIndex || 0));
   const active = pillState?.activeNote || null;
+  const activeKind = String(active?.kind || '').toLowerCase();
+  const isChat = activeKind === 'chat';
   const canPrev = activeIndex > 0;
   const canNext = Array.isArray(pillState?.notes) ? activeIndex < (pillState!.notes!.length - 1) : false;
   const lastUpdatedLabel = useMemo(() => {
@@ -216,7 +218,6 @@ export default function DesktopNotificationWindowClient() {
     setFollowUpOpen(false);
     setFollowUpDraft('');
     setSnoozeMenuOpen(false);
-    setMuteMenuOpen(false);
   }, [active?.noteId, active?.senderId, active?.timestamp, active?.title]);
 
   const loadAdminStaff = useCallback(async () => {
@@ -287,11 +288,15 @@ export default function DesktopNotificationWindowClient() {
 
   const handleOpen = useCallback(() => {
     const isCs = String(active?.kind || '').toLowerCase() === 'cs';
-    const url = isCs
-      ? String(active?.actionUrl || pillState?.actionUrl || '/admin/my-notes')
-      : (active?.noteId
-          ? `/admin/my-notes?noteId=${encodeURIComponent(String(active.noteId))}`
-          : '/admin/my-notes');
+    const kind = String(active?.kind || '').toLowerCase();
+    const url =
+      kind === 'chat'
+        ? String(active?.actionUrl || '/admin/desktop-chat-window')
+        : isCs
+          ? String(active?.actionUrl || pillState?.actionUrl || '/admin/my-notes')
+          : (active?.noteId
+              ? `/admin/my-notes?noteId=${encodeURIComponent(String(active.noteId))}`
+              : '/admin/my-notes');
     if (!url) return;
     try {
       window.desktopNotificationPill?.open?.(url);
@@ -452,7 +457,7 @@ export default function DesktopNotificationWindowClient() {
     user?.uid
   ]);
 
-  const canSetFollowUp = Boolean(active) && String(active?.kind || '').toLowerCase() !== 'cs';
+  const canSetFollowUp = Boolean(active) && String(active?.kind || '').toLowerCase() !== 'cs' && String(active?.kind || '').toLowerCase() !== 'chat';
 
   const handleSaveFollowUp = useCallback(async () => {
     if (!firestore) return;
@@ -552,7 +557,6 @@ export default function DesktopNotificationWindowClient() {
   const taskIsClosed = String(activeTaskMeta?.status || '').toLowerCase() === 'closed';
 
   const canSnoozeThis = Boolean(active?.noteId) && String(active?.kind || '').toLowerCase() === 'note';
-  const canMuteSender = Boolean(active?.senderId) && String(active?.kind || '').toLowerCase() === 'note';
 
   const snoozeThisNote = async (untilMs: number) => {
     const noteId = String(active?.noteId || '').trim();
@@ -572,29 +576,6 @@ export default function DesktopNotificationWindowClient() {
     try {
       await window.desktopNotifications?.clearSnoozeNote?.(noteId);
       setSnoozeMenuOpen(false);
-    } catch {
-      // ignore
-    }
-  };
-
-  const muteThisSender = async (untilMs: number) => {
-    const senderId = String(active?.senderId || '').trim();
-    if (!senderId) return;
-    try {
-      await window.desktopNotifications?.muteSender?.(senderId, untilMs);
-      setMuteMenuOpen(false);
-      handleMinimize();
-    } catch {
-      // ignore
-    }
-  };
-
-  const clearMuteThisSender = async () => {
-    const senderId = String(active?.senderId || '').trim();
-    if (!senderId) return;
-    try {
-      await window.desktopNotifications?.clearMuteSender?.(senderId);
-      setMuteMenuOpen(false);
     } catch {
       // ignore
     }
@@ -655,8 +636,8 @@ export default function DesktopNotificationWindowClient() {
             <div
               className="rounded-full border bg-white/95 shadow-lg backdrop-blur px-3 py-1.5 inline-flex items-center gap-2"
             >
-              <div className="h-2.5 w-2.5 rounded-full bg-blue-600 flex-shrink-0" />
-              <div className="text-sm font-medium text-slate-900 whitespace-nowrap">Incoming note</div>
+              <div className={`h-2.5 w-2.5 rounded-full ${isChat ? 'bg-purple-600' : 'bg-blue-600'} flex-shrink-0`} />
+              <div className="text-sm font-medium text-slate-900 whitespace-nowrap">{isChat ? 'Incoming chat' : 'Incoming note'}</div>
               <div className="text-[11px] text-slate-600 whitespace-nowrap">
                 {count === 1 ? '1 pending' : `${count} pending`}
               </div>
@@ -684,8 +665,12 @@ export default function DesktopNotificationWindowClient() {
                 {count === 1 ? '1 priority item' : `${count} priority items`}
               </div>
               <div className="text-base font-semibold text-slate-900 flex items-center gap-2">
-                <Target className="h-4 w-4 text-blue-700 motion-safe:animate-[pulse_2s_ease-in-out_infinite]" />
-                Incoming note
+                {isChat ? (
+                  <MessageSquareText className="h-4 w-4 text-purple-700 motion-safe:animate-[pulse_2s_ease-in-out_infinite]" />
+                ) : (
+                  <Target className="h-4 w-4 text-blue-700 motion-safe:animate-[pulse_2s_ease-in-out_infinite]" />
+                )}
+                {isChat ? 'Incoming chat' : 'Incoming note'}
               </div>
               {!isOnline ? (
                 <div className="mt-1 text-xs text-amber-700">
@@ -759,7 +744,6 @@ export default function DesktopNotificationWindowClient() {
                     className="text-xs px-3 py-1.5 rounded-md border bg-white hover:bg-slate-50"
                     onClick={() => {
                       setSnoozeMenuOpen((v) => !v);
-                      setMuteMenuOpen(false);
                     }}
                   >
                     Snooze note
@@ -792,34 +776,6 @@ export default function DesktopNotificationWindowClient() {
                   ) : null}
                 </div>
               ) : null}
-              {canMuteSender ? (
-                <div className="relative">
-                  <button
-                    type="button"
-                    className="text-xs px-3 py-1.5 rounded-md border bg-white hover:bg-slate-50"
-                    onClick={() => {
-                      setMuteMenuOpen((v) => !v);
-                      setSnoozeMenuOpen(false);
-                    }}
-                  >
-                    Mute sender
-                  </button>
-                  {muteMenuOpen ? (
-                    <div className="absolute right-0 mt-1 w-44 rounded-md border bg-white shadow-lg p-1 z-50">
-                      <button className="w-full text-left text-xs px-2 py-1 hover:bg-slate-50 rounded" onClick={() => void muteThisSender(Date.now() + 60 * 60 * 1000)}>
-                        1 hour
-                      </button>
-                      <button className="w-full text-left text-xs px-2 py-1 hover:bg-slate-50 rounded" onClick={() => void muteThisSender(Date.now() + 2 * 60 * 60 * 1000)}>
-                        2 hours
-                      </button>
-                      <div className="my-1 border-t" />
-                      <button className="w-full text-left text-xs px-2 py-1 hover:bg-slate-50 rounded" onClick={() => void clearMuteThisSender()}>
-                        Unmute sender
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
               {canToggleTask ? (
                 <button
                   type="button"
@@ -845,7 +801,11 @@ export default function DesktopNotificationWindowClient() {
                 className="text-xs px-3 py-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800"
                 onClick={handleOpen}
               >
-                {String(active?.kind || '').toLowerCase() === 'cs' ? 'Open Pathway' : 'Open My Notes'}
+                {String(active?.kind || '').toLowerCase() === 'chat'
+                  ? 'Open Chat'
+                  : String(active?.kind || '').toLowerCase() === 'cs'
+                    ? 'Open Pathway'
+                    : 'Open My Notes'}
               </button>
             </div>
           </div>
@@ -880,7 +840,7 @@ export default function DesktopNotificationWindowClient() {
             </div>
           ) : null}
 
-          {String(active?.kind || '').toLowerCase() === 'cs' ? null : (
+          {String(active?.kind || '').toLowerCase() === 'cs' || String(active?.kind || '').toLowerCase() === 'chat' ? null : (
             <div className="mt-3">
               <div className="text-xs font-medium text-slate-600 mb-1">Quick reply</div>
               <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
