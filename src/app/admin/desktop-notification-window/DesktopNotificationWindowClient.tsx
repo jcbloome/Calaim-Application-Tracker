@@ -92,6 +92,21 @@ const accentClassForKind = (kind?: string) => {
   return 'border-l-blue-600';
 };
 
+const dotClassForKind = (kind?: string) => {
+  const k = String(kind || '').toLowerCase().trim();
+  if (k === 'docs') return 'bg-green-600';
+  if (k === 'cs') return 'bg-orange-500';
+  if (k === 'chat') return 'bg-purple-600';
+  return 'bg-blue-600';
+};
+
+const incomingLabelForKind = (kind?: string) => {
+  const k = String(kind || '').toLowerCase().trim();
+  if (k === 'cs') return 'Incoming CS Summary';
+  if (k === 'chat') return 'Incoming chat';
+  return 'Incoming member note';
+};
+
 export default function DesktopNotificationWindowClient() {
   const { user } = useUser();
   const firestore = useFirestore();
@@ -181,6 +196,7 @@ export default function DesktopNotificationWindowClient() {
   const active = pillState?.activeNote || null;
   const activeKind = String(active?.kind || '').toLowerCase();
   const isChat = activeKind === 'chat';
+  const incomingLabel = incomingLabelForKind(active?.kind);
   const canPrev = activeIndex > 0;
   const canNext = Array.isArray(pillState?.notes) ? activeIndex < (pillState!.notes!.length - 1) : false;
   const lastUpdatedLabel = useMemo(() => {
@@ -557,6 +573,7 @@ export default function DesktopNotificationWindowClient() {
   const taskIsClosed = String(activeTaskMeta?.status || '').toLowerCase() === 'closed';
 
   const canSnoozeThis = Boolean(active?.noteId) && String(active?.kind || '').toLowerCase() === 'note';
+  const canQuickReply = Boolean(active?.noteId) && String(active?.kind || '').toLowerCase() === 'note';
 
   const snoozeThisNote = async (untilMs: number) => {
     const noteId = String(active?.noteId || '').trim();
@@ -636,8 +653,8 @@ export default function DesktopNotificationWindowClient() {
             <div
               className="rounded-full border bg-white/95 shadow-lg backdrop-blur px-3 py-1.5 inline-flex items-center gap-2"
             >
-              <div className={`h-2.5 w-2.5 rounded-full ${isChat ? 'bg-purple-600' : 'bg-blue-600'} flex-shrink-0`} />
-              <div className="text-sm font-medium text-slate-900 whitespace-nowrap">{isChat ? 'Incoming chat' : 'Incoming note'}</div>
+              <div className={`h-2.5 w-2.5 rounded-full ${dotClassForKind(active?.kind)} flex-shrink-0`} />
+              <div className="text-sm font-medium text-slate-900 whitespace-nowrap">{incomingLabel}</div>
               <div className="text-[11px] text-slate-600 whitespace-nowrap">
                 {count === 1 ? '1 pending' : `${count} pending`}
               </div>
@@ -670,7 +687,7 @@ export default function DesktopNotificationWindowClient() {
                 ) : (
                   <Target className="h-4 w-4 text-blue-700 motion-safe:animate-[pulse_2s_ease-in-out_infinite]" />
                 )}
-                {isChat ? 'Incoming chat' : 'Incoming note'}
+                {incomingLabel}
               </div>
               {!isOnline ? (
                 <div className="mt-1 text-xs text-amber-700">
@@ -840,7 +857,7 @@ export default function DesktopNotificationWindowClient() {
             </div>
           ) : null}
 
-          {String(active?.kind || '').toLowerCase() === 'cs' || String(active?.kind || '').toLowerCase() === 'chat' ? null : (
+          {canQuickReply ? (
             <div className="mt-3">
               <div className="text-xs font-medium text-slate-600 mb-1">Quick reply</div>
               <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
@@ -936,7 +953,7 @@ export default function DesktopNotificationWindowClient() {
                 </button>
               </div>
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>

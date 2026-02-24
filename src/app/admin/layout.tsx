@@ -182,6 +182,7 @@ function AdminHeader() {
     docs: { count: number; latestMs: number };
     cs: { count: number; latestMs: number };
   }>({ initialized: false, docs: { count: 0, latestMs: 0 }, cs: { count: 0, latestMs: 0 } });
+  const desktopReviewClearedRef = useRef(false);
 
   // Throttle doc-upload popups so staff isn't spammed by multiple files.
   // Deliver at most once per window; aggregate by application.
@@ -492,7 +493,8 @@ function AdminHeader() {
 
       // Trigger in-app web popup when counts/timestamps advance.
       // (Only for recipients explicitly enabled in system settings.)
-      const allowDocs = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowDocs);
+      // Documents are high volume/noisy; keep them as action items only (no popup/pill).
+      const allowDocs = false;
       const allowCs = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowCs);
 
       // CS summary popups are low volume; fire immediately.
@@ -532,6 +534,7 @@ function AdminHeader() {
                 actionUrl: primaryUrl,
               })),
             });
+            desktopReviewClearedRef.current = true;
           }
         } catch {
           // ignore
@@ -560,6 +563,21 @@ function AdminHeader() {
             window.location.href = primaryUrl;
           }
         });
+      }
+
+      // If docs review was previously shown, clear it on desktop once (unless CS is present).
+      // This keeps document uploads as action items without surfacing in the Electron pill.
+      try {
+        const isRealDesktop =
+          typeof window !== 'undefined' &&
+          Boolean((window as any).desktopNotifications) &&
+          !Boolean((window as any).desktopNotifications?.__shim);
+        if (isRealDesktop && !desktopReviewClearedRef.current && csSummaryCount <= 0) {
+          window.desktopNotifications?.setReviewPillSummary?.({ count: 0, openPanel: false, notes: [] });
+          desktopReviewClearedRef.current = true;
+        }
+      } catch {
+        // ignore
       }
 
       // Docs popups can be noisy; throttle and batch per application.
@@ -623,34 +641,8 @@ function AdminHeader() {
             const primaryUrl = appCount === 1 ? items[0]?.url : '/admin/applications?review=docs';
             const fromLabel = appCount === 1 ? (items[0]?.uploader || 'User') : 'Multiple';
 
-            // Also notify the Electron desktop review pill (for enabled recipients).
-            try {
-              const isRealDesktop =
-                typeof window !== 'undefined' &&
-                Boolean((window as any).desktopNotifications) &&
-                !Boolean((window as any).desktopNotifications?.__shim);
-              if (isRealDesktop) {
-                window.desktopNotifications?.setReviewPillSummary?.({
-                  count: totalUploads,
-                  openPanel: true,
-                  notes: items.map((it) => {
-                    const labels = Array.from(it.labels || []);
-                    const first = labels[0] || 'Documents';
-                    const extra = labels.length > 1 ? ` (+${labels.length - 1} more)` : '';
-                    return {
-                      title: 'Documents received',
-                      message: `${it.memberName} — ${first}${extra}`,
-                      kind: 'docs',
-                      memberName: '',
-                      timestamp: it.latestMs ? new Date(it.latestMs).toLocaleString() : undefined,
-                      actionUrl: primaryUrl,
-                    };
-                  }),
-                });
-              }
-            } catch {
-              // ignore
-            }
+            // Do NOT trigger the Electron review pill for non-CS document uploads.
+            // Documents can be high volume/noisy; keep them as action items only.
 
             showNotification({
               keyId: 'review-docs-batch',
