@@ -1,15 +1,35 @@
 'use client';
 
 import { useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { isRealDesktop } from '@/lib/is-real-desktop';
 import { WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
 
 export default function PWAServiceWorker() {
+  const pathname = usePathname() || '/';
+
   useEffect(() => {
     if (isRealDesktop()) {
       // Electron manages updates/notifications; don't register SW inside the desktop shell.
       return;
     }
+
+    // Admin/SW experiences are sensitive to stale cached JS chunks after deploys.
+    // Avoid registering a SW on these routes; proactively unregister if one exists.
+    const disableOnThisRoute =
+      pathname.startsWith('/admin') ||
+      pathname.startsWith('/sw-portal') ||
+      pathname.startsWith('/sw-login') ||
+      pathname.startsWith('/sw-visit-verification');
+    if (disableOnThisRoute) {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          registrations.forEach((registration) => registration.unregister());
+        });
+      }
+      return;
+    }
+
     if (typeof window !== 'undefined') {
       const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       if (process.env.NODE_ENV !== 'production' || isLocalhost) {
@@ -54,7 +74,7 @@ export default function PWAServiceWorker() {
           console.error('❌ Service Worker registration failed:', error);
         });
     }
-  }, []);
+  }, [pathname]);
 
   return null; // This component doesn't render anything
 }

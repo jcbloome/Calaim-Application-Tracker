@@ -7,6 +7,7 @@ import {
   setPersistence,
   browserSessionPersistence,
   browserLocalPersistence,
+  onAuthStateChanged,
   type User
 } from 'firebase/auth';
 import type { AuthError } from 'firebase/auth';
@@ -117,7 +118,7 @@ export default function AdminLoginClient() {
       // This prevents immediate bounces back to /admin/login in environments with delayed persistence.
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Sign-in did not complete. Please try again.')), 6000);
-        const unsubscribe = auth.onAuthStateChanged((u) => {
+        const unsubscribe = onAuthStateChanged(auth, (u) => {
           if (u) {
             clearTimeout(timeout);
             unsubscribe();
