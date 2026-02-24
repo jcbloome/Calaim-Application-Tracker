@@ -874,10 +874,6 @@ const buildTrayMenu = () => {
     },
     { type: 'separator' },
     {
-      label: 'Troubleshooting: Show diagnostics',
-      click: () => void showDiagnosticsDialog(),
-    },
-    {
       label: pillHiddenByUser ? 'Show pill' : 'Hide pill (temporarily)',
       click: () => {
         pillHiddenByUser = !pillHiddenByUser;
@@ -931,6 +927,10 @@ const buildTrayMenu = () => {
             click: () => {
               void showDebugDialog();
             }
+          },
+          {
+            label: 'Debug: Show diagnostics',
+            click: () => void showDiagnosticsDialog(),
           },
           {
             label: 'Debug: Toggle DevTools (main)',
@@ -1092,7 +1092,7 @@ ipcMain.on('desktop:rendererError', async (_event, payload: any) => {
       type: 'error',
       title: 'Application error',
       message: 'The app hit a client-side error.',
-      detail: `Open Tray → Troubleshooting → Show diagnostics to copy the error details.\n\n${item.message}`,
+      detail: `You can copy error details from the diagnostics screen.\n\n${item.message}`,
       buttons: ['OK'],
     });
   } catch {
