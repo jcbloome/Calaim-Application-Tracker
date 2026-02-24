@@ -69,6 +69,22 @@ export default function PrintablePackagePage() {
     const [files, setFiles] = useState<FileList | null>(null);
     const [documentType, setDocumentType] = useState<string>('');
     const [uploadProgress, setUploadProgress] = useState(0);
+    const [uploaderFirstName, setUploaderFirstName] = useState('');
+    const [uploaderLastName, setUploaderLastName] = useState('');
+    const [memberName, setMemberName] = useState('');
+    const [memberBirthdate, setMemberBirthdate] = useState(''); // YYYY-MM-DD
+    const [healthPlan, setHealthPlan] = useState<'Kaiser' | 'Health Net' | 'Other/Unknown'>('Other/Unknown');
+    const [mediCalNumber, setMediCalNumber] = useState('');
+    const [kaiserMrn, setKaiserMrn] = useState('');
+
+    const sanitizePathSegment = (value: string) => {
+        // Keep Storage paths safe and predictable (avoid accidental folder traversal).
+        return String(value || '')
+            .trim()
+            .replace(/[\\\/]+/g, '-') // no slashes
+            .replace(/\s+/g, ' ')
+            .slice(0, 120);
+    };
 
     const handleUpload = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -87,6 +103,15 @@ export default function PrintablePackagePage() {
                 variant: 'destructive',
                 title: 'Document type required',
                 description: 'Please select the type of document you are uploading.',
+            });
+            return;
+        }
+
+        if (!memberBirthdate) {
+            toast({
+                variant: 'destructive',
+                title: 'Member birthdate required',
+                description: "Please enter the member's birthdate.",
             });
             return;
         }
@@ -115,10 +140,13 @@ export default function PrintablePackagePage() {
         try {
             const uploadPromises = Array.from(files).map((file, index) => {
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const storagePath = `standalone_uploads/${user.uid}/${documentType}/${timestamp}_${file.name}`;
+                // Storage rules allow user uploads only under `user_uploads/{uid}/...`
+                const safeDocType = sanitizePathSegment(documentType);
+                const safeFileName = sanitizePathSegment(file.name);
+                const storagePath = `user_uploads/${user.uid}/standalone/${safeDocType}/${timestamp}_${safeFileName}`;
                 const storageRef = ref(storage, storagePath);
 
-                return new Promise<{fileName: string, downloadURL: string}>((resolve, reject) => {
+                return new Promise<{fileName: string, downloadURL: string, storagePath: string}>((resolve, reject) => {
                     const uploadTask = uploadBytesResumable(storageRef, file);
 
                     uploadTask.on('state_changed',
@@ -134,7 +162,7 @@ export default function PrintablePackagePage() {
                         async () => {
                             try {
                                 const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                                resolve({ fileName: file.name, downloadURL });
+                                resolve({ fileName: file.name, downloadURL, storagePath: uploadTask.snapshot.ref.fullPath });
                             } catch (error) {
                                 reject(error);
                             }
@@ -145,6 +173,41 @@ export default function PrintablePackagePage() {
 
             const results = await Promise.all(uploadPromises);
             const fileNames = results.map(r => r.fileName).join(', ');
+
+            // Create a pending intake record for admins to process (and for action-item counts / Electron alerts).
+            try {
+                const idToken = await user.getIdToken();
+                const submissionRes = await fetch('/api/standalone-uploads/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        idToken,
+                        uploader: {
+                            firstName: uploaderFirstName.trim(),
+                            lastName: uploaderLastName.trim(),
+                        },
+                        member: {
+                            name: memberName.trim(),
+                            birthdate: memberBirthdate,
+                            healthPlan,
+                            mediCalNumber: mediCalNumber.trim(),
+                            kaiserMrn: kaiserMrn.trim(),
+                        },
+                        documentType,
+                        files: results.map((r) => ({
+                            fileName: r.fileName,
+                            downloadURL: r.downloadURL,
+                            storagePath: r.storagePath,
+                        })),
+                    }),
+                });
+                const submissionData = await submissionRes.json().catch(() => ({} as any));
+                if (!submissionRes.ok || !submissionData?.success) {
+                    console.warn('Standalone upload submission failed:', submissionData);
+                }
+            } catch (err) {
+                console.warn('Standalone upload submission failed:', err);
+            }
             
             toast({
                 title: 'Upload Successful',
@@ -153,11 +216,16 @@ export default function PrintablePackagePage() {
             });
 
             // Reset form
-            const form = e.target as HTMLFormElement;
-            form.reset();
             setFiles(null);
             setDocumentType('');
             setUploadProgress(0);
+            setUploaderFirstName('');
+            setUploaderLastName('');
+            setMemberName('');
+            setMemberBirthdate('');
+            setHealthPlan('Other/Unknown');
+            setMediCalNumber('');
+            setKaiserMrn('');
 
         } catch (error: any) {
             console.error('Upload error:', error);
@@ -302,16 +370,82 @@ export default function PrintablePackagePage() {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <Label htmlFor="uploader-first-name">Your First Name</Label>
-                                        <Input id="uploader-first-name" required />
+                                        <Input
+                                            id="uploader-first-name"
+                                            required
+                                            value={uploaderFirstName}
+                                            onChange={(e) => setUploaderFirstName(e.target.value)}
+                                        />
                                     </div>
                                     <div>
                                         <Label htmlFor="uploader-last-name">Your Last Name</Label>
-                                        <Input id="uploader-last-name" required />
+                                        <Input
+                                            id="uploader-last-name"
+                                            required
+                                            value={uploaderLastName}
+                                            onChange={(e) => setUploaderLastName(e.target.value)}
+                                        />
                                     </div>
                                 </div>
                                 <div>
                                     <Label htmlFor="member-name">Member's Full Name</Label>
-                                    <Input id="member-name" required />
+                                    <Input
+                                        id="member-name"
+                                        required
+                                        value={memberName}
+                                        onChange={(e) => setMemberName(e.target.value)}
+                                    />
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <Label htmlFor="member-birthdate">Member Birthdate</Label>
+                                        <Input
+                                            id="member-birthdate"
+                                            type="date"
+                                            required
+                                            value={memberBirthdate}
+                                            onChange={(e) => setMemberBirthdate(e.target.value)}
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label htmlFor="health-plan">Health Plan</Label>
+                                        <Select value={healthPlan} onValueChange={(v) => setHealthPlan(v as any)}>
+                                            <SelectTrigger id="health-plan">
+                                                <SelectValue placeholder="Select health plan..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="Kaiser">Kaiser</SelectItem>
+                                                <SelectItem value="Health Net">Health Net</SelectItem>
+                                                <SelectItem value="Other/Unknown">Other/Unknown</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <Label htmlFor="medical-number">Medi-Cal Number</Label>
+                                        <Input
+                                            id="medical-number"
+                                            placeholder="Medi-Cal #"
+                                            value={mediCalNumber}
+                                            onChange={(e) => setMediCalNumber(e.target.value)}
+                                        />
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                            Health Net: MRN is typically the same as Medi-Cal #.
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <Label htmlFor="kaiser-mrn">Kaiser MRN</Label>
+                                        <Input
+                                            id="kaiser-mrn"
+                                            placeholder="MRN (Kaiser only)"
+                                            value={kaiserMrn}
+                                            onChange={(e) => setKaiserMrn(e.target.value)}
+                                        />
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                            Kaiser: MRN is different than Medi-Cal #.
+                                        </p>
+                                    </div>
                                 </div>
                                 <div>
                                     <Label htmlFor="document-type">Name of Document</Label>

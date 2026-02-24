@@ -51,7 +51,8 @@ import {
   Users,
   RotateCcw,
   UserCheck,
-  FileBarChart
+  FileBarChart,
+  UploadCloud
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -78,7 +79,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { collection, collectionGroup, doc, getDocs, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
+import { collection, collectionGroup, doc, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { CaspioUsageAlert } from '@/components/admin/CaspioUsageAlert';
 import { DesktopPresenceBeacon } from '@/components/admin/DesktopPresenceBeacon';
 
@@ -92,6 +93,7 @@ const adminNavLinks = [
       { href: '/admin/applications', label: 'All Applications', icon: FolderKanban },
       { href: '/admin/incomplete-cs-summary', label: 'Incomplete CS Summary', icon: FileText },
       { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },
+      { href: '/admin/standalone-uploads', label: 'Standalone Upload Intake', icon: UploadCloud },
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
@@ -309,11 +311,18 @@ function AdminHeader() {
     if (!firestore || !user?.uid) return;
     const userAppsQuery = collectionGroup(firestore, 'applications');
     const adminAppsQuery = collection(firestore, 'applications');
+    const standaloneUploadsQuery = query(
+      collection(firestore, 'standalone_upload_submissions'),
+      where('status', '==', 'pending'),
+      limit(500)
+    );
 
     let userApps: any[] = [];
     let adminApps: any[] = [];
+    let standaloneUploads: any[] = [];
     let unsubUserApps: (() => void) | undefined;
     let unsubAdminApps: (() => void) | undefined;
+    let unsubStandaloneUploads: (() => void) | undefined;
     let isActive = true;
 
     const computeCount = () => {
@@ -425,6 +434,52 @@ function AdminHeader() {
           if (current.uploader !== docAuthor) current.uploader = 'Multiple';
           docsByApp.set(appKey, current);
         });
+      });
+
+      // Standalone uploads (not yet attached to an application).
+      standaloneUploads.forEach((u: any) => {
+        const memberName = String(u?.memberName || '').trim() || 'Unknown Member';
+        const plan = String(u?.healthPlan || '').toLowerCase();
+        const isKaiser = plan.includes('kaiser');
+        const isHn = plan.includes('health net');
+        const url = `/admin/standalone-uploads?focus=${encodeURIComponent(String(u?.id || ''))}`;
+        const docType = String(u?.documentType || '').trim();
+        const docTypeLower = docType.toLowerCase();
+        const isCs = docTypeLower.includes('cs') && docTypeLower.includes('summary');
+
+        const ms = Math.max(toMs(u?.createdAt), toMs(u?.updatedAt), toMs(u?.timestamp));
+        const author = String(u?.uploaderName || u?.uploaderEmail || '').trim() || 'User';
+
+        if (isCs) {
+          csSummaryCount += 1;
+          if (isKaiser) nextKaiserCs += 1;
+          else if (isHn) nextHnCs += 1;
+          csLatestMs = Math.max(csLatestMs, ms);
+          csNotes.push({ message: memberName, timestampMs: ms, url, author });
+          return;
+        }
+
+        uploadCount += 1;
+        if (isKaiser) nextKaiserDocs += 1;
+        else if (isHn) nextHnDocs += 1;
+        docsLatestMs = Math.max(docsLatestMs, ms);
+        const label = docType || 'Document';
+        docNotes.push({ message: `${memberName} — ${label}`, timestampMs: ms, url, author });
+
+        const key = `standalone-${String(u?.id || '')}`;
+        const current = docsByApp.get(key) || {
+          appId: key,
+          url,
+          memberName,
+          uploader: author,
+          labels: new Set<string>(),
+          count: 0,
+          latestMs: 0,
+        };
+        current.count += 1;
+        current.latestMs = Math.max(current.latestMs, ms);
+        if (label) current.labels.add(label);
+        docsByApp.set(key, current);
       });
 
       
@@ -568,6 +623,35 @@ function AdminHeader() {
             const primaryUrl = appCount === 1 ? items[0]?.url : '/admin/applications?review=docs';
             const fromLabel = appCount === 1 ? (items[0]?.uploader || 'User') : 'Multiple';
 
+            // Also notify the Electron desktop review pill (for enabled recipients).
+            try {
+              const isRealDesktop =
+                typeof window !== 'undefined' &&
+                Boolean((window as any).desktopNotifications) &&
+                !Boolean((window as any).desktopNotifications?.__shim);
+              if (isRealDesktop) {
+                window.desktopNotifications?.setReviewPillSummary?.({
+                  count: totalUploads,
+                  openPanel: true,
+                  notes: items.map((it) => {
+                    const labels = Array.from(it.labels || []);
+                    const first = labels[0] || 'Documents';
+                    const extra = labels.length > 1 ? ` (+${labels.length - 1} more)` : '';
+                    return {
+                      title: 'Documents received',
+                      message: `${it.memberName} — ${first}${extra}`,
+                      kind: 'docs',
+                      memberName: '',
+                      timestamp: it.latestMs ? new Date(it.latestMs).toLocaleString() : undefined,
+                      actionUrl: primaryUrl,
+                    };
+                  }),
+                });
+              }
+            } catch {
+              // ignore
+            }
+
             showNotification({
               keyId: 'review-docs-batch',
               type: 'success',
@@ -624,10 +708,16 @@ function AdminHeader() {
       computeCount();
     });
 
+    unsubStandaloneUploads = onSnapshot(standaloneUploadsQuery, (snapshot) => {
+      standaloneUploads = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      computeCount();
+    });
+
     return () => {
       isActive = false;
       unsubUserApps?.();
       unsubAdminApps?.();
+      unsubStandaloneUploads?.();
     };
   }, [firestore, user?.uid, reviewPopupPrefs.enabled, reviewPopupPrefs.recipientEnabled, reviewPopupPrefs.allowDocs, reviewPopupPrefs.allowCs, showNotification]);
 
