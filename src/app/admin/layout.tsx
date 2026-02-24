@@ -182,7 +182,9 @@ function AdminHeader() {
     docs: { count: number; latestMs: number };
     cs: { count: number; latestMs: number };
   }>({ initialized: false, docs: { count: 0, latestMs: 0 }, cs: { count: 0, latestMs: 0 } });
-  const desktopReviewClearedRef = useRef(false);
+  // Track whether we have ever set the review pill on desktop for this session.
+  // This is used only to avoid sending redundant payloads during steady state.
+  const desktopReviewInitializedRef = useRef(false);
 
   // Throttle doc-upload popups so staff isn't spammed by multiple files.
   // Deliver at most once per window; aggregate by application.
@@ -491,55 +493,87 @@ function AdminHeader() {
       setKaiserCsCount(nextKaiserCs);
       setKaiserDocCount(nextKaiserDocs);
 
-      // Trigger in-app web popup when counts/timestamps advance.
-      // (Only for recipients explicitly enabled in system settings.)
-      // Documents are high volume/noisy; keep them as action items only (no popup/pill).
-      const allowDocs = false;
-      const allowCs = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowCs);
+      // Review notifications (CS + documents) are only for recipients explicitly enabled in system settings.
+      // - CS: can auto-expand (low volume).
+      // - Docs: show in pill, but DO NOT auto-expand (high volume/noisy).
+      const allowDocsDesktop = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowDocs);
+      const allowCsDesktop = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowCs);
+
+      // Web popups for document uploads are intentionally disabled (too noisy).
+      const allowDocsPopup = false;
+      const allowCsPopup = allowCsDesktop;
 
       // CS summary popups are low volume; fire immediately.
       const prev = reviewNotifyRef.current;
-      const csIsNew = allowCs && csSummaryCount > 0 && (csSummaryCount > prev.cs.count || csLatestMs > prev.cs.latestMs);
+      const csIsNew =
+        allowCsDesktop &&
+        csSummaryCount > 0 &&
+        (csSummaryCount > prev.cs.count || csLatestMs > prev.cs.latestMs);
       reviewNotifyRef.current = {
         initialized: true,
         docs: prev.docs,
-        cs: allowCs ? { count: csSummaryCount, latestMs: csLatestMs } : prev.cs,
+        cs: allowCsDesktop ? { count: csSummaryCount, latestMs: csLatestMs } : prev.cs,
       };
 
-      if (csIsNew) {
+      // Always keep the Electron review pill summary updated (CS + Docs),
+      // but only auto-expand on newly-arrived CS (docs never auto-expand).
+      try {
+        const isRealDesktop =
+          typeof window !== 'undefined' &&
+          Boolean((window as any).desktopNotifications) &&
+          !Boolean((window as any).desktopNotifications?.__shim);
+        if (isRealDesktop) {
+          const csItems = allowCsDesktop
+            ? csNotes
+                .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
+                .slice(0, 6)
+                .map((n) => ({
+                  title: 'CS Summary received',
+                  message: n.message,
+                  kind: 'cs',
+                  isNew: Boolean(csIsNew),
+                  memberName: '',
+                  timestamp: n.timestampMs ? new Date(n.timestampMs).toLocaleString() : undefined,
+                  actionUrl: n.url || '/admin/applications?review=cs',
+                }))
+            : [];
+          const docItems = allowDocsDesktop
+            ? docNotes
+                .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
+                .slice(0, 6)
+                .map((d) => ({
+                  title: 'Documents received',
+                  message: d.message,
+                  kind: 'docs',
+                  memberName: '',
+                  timestamp: d.timestampMs ? new Date(d.timestampMs).toLocaleString() : undefined,
+                  actionUrl: d.url || '/admin/applications?review=docs',
+                }))
+            : [];
+          const reviewCount = (allowCsDesktop ? csSummaryCount : 0) + (allowDocsDesktop ? uploadCount : 0);
+          const notes = [...csItems, ...docItems];
+          const shouldSend = reviewCount > 0 || desktopReviewInitializedRef.current;
+          if (shouldSend) {
+            window.desktopNotifications?.setReviewPillSummary?.({
+              count: reviewCount,
+              // Auto-expand only when CS is newly received.
+              openPanel: Boolean(csIsNew),
+              notes,
+            });
+            desktopReviewInitializedRef.current = true;
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      if (csIsNew && allowCsPopup) {
         const actionUrl = '/admin/applications?review=cs';
         const items = csNotes
           .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
           .slice(0, 6);
         const primaryUrl = items.length === 1 ? items[0].url : actionUrl;
         const fromLabel = items.length === 1 ? items[0].author : 'Multiple';
-
-        // Also notify the Electron desktop pill (for enabled recipients) so staff can be alerted
-        // even when the main window is hidden.
-        try {
-          const isRealDesktop =
-            typeof window !== 'undefined' &&
-            Boolean((window as any).desktopNotifications) &&
-            !Boolean((window as any).desktopNotifications?.__shim);
-          if (isRealDesktop) {
-            window.desktopNotifications?.setReviewPillSummary?.({
-              count: csSummaryCount,
-              openPanel: true,
-              notes: items.map((n) => ({
-                title: 'CS Summary received',
-                message: n.message,
-                kind: 'cs',
-                memberName: '',
-                timestamp: n.timestampMs ? new Date(n.timestampMs).toLocaleString() : undefined,
-                actionUrl: primaryUrl,
-              })),
-            });
-            desktopReviewClearedRef.current = true;
-          }
-        } catch {
-          // ignore
-        }
-
         showNotification({
           keyId: 'review-cs-summary',
           type: 'task',
@@ -565,23 +599,8 @@ function AdminHeader() {
         });
       }
 
-      // If docs review was previously shown, clear it on desktop once (unless CS is present).
-      // This keeps document uploads as action items without surfacing in the Electron pill.
-      try {
-        const isRealDesktop =
-          typeof window !== 'undefined' &&
-          Boolean((window as any).desktopNotifications) &&
-          !Boolean((window as any).desktopNotifications?.__shim);
-        if (isRealDesktop && !desktopReviewClearedRef.current && csSummaryCount <= 0) {
-          window.desktopNotifications?.setReviewPillSummary?.({ count: 0, openPanel: false, notes: [] });
-          desktopReviewClearedRef.current = true;
-        }
-      } catch {
-        // ignore
-      }
-
       // Docs popups can be noisy; throttle and batch per application.
-      if (allowDocs) {
+      if (allowDocsPopup) {
         const prevByApp = docsByAppRef.current;
         const newlyChanged: string[] = [];
         docsByApp.forEach((nextVal, key) => {

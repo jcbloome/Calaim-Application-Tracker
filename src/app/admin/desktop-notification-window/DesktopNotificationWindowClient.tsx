@@ -103,6 +103,7 @@ const dotClassForKind = (kind?: string) => {
 const incomingLabelForKind = (kind?: string) => {
   const k = String(kind || '').toLowerCase().trim();
   if (k === 'cs') return 'Incoming CS Summary';
+  if (k === 'docs') return 'Incoming document';
   if (k === 'chat') return 'Incoming chat';
   return 'Incoming member note';
 };
@@ -201,18 +202,23 @@ export default function DesktopNotificationWindowClient() {
     const notes = Array.isArray(pillState?.notes) ? pillState!.notes! : [];
     if (notes.length === 0) return '';
     const counts: Record<string, number> = { cs: 0, note: 0, chat: 0, docs: 0 };
+    let csHasNew = false;
     notes.forEach((n: any) => {
       const k = String(n?.kind || 'note').toLowerCase().trim();
       if (k === 'cs') counts.cs += 1;
       else if (k === 'chat') counts.chat += 1;
       else if (k === 'docs') counts.docs += 1;
       else counts.note += 1;
+      if (k === 'cs' && Boolean(n?.isNew)) csHasNew = true;
     });
     const parts: string[] = [];
-    if (counts.cs) parts.push(`CS (${counts.cs})`);
-    if (counts.note) parts.push(`Notes (${counts.note})`);
-    if (counts.chat) parts.push(`Chat (${counts.chat})`);
-    if (counts.docs) parts.push(`Docs (${counts.docs})`);
+    if (counts.chat) parts.push(`Chat(${counts.chat})`);
+    if (counts.cs) {
+      // Show CS(!) when there is exactly one newly-arrived CS summary.
+      parts.push(counts.cs === 1 && csHasNew ? 'CS(!)' : `CS(${counts.cs})`);
+    }
+    if (counts.docs) parts.push(`D(${counts.docs})`);
+    if (counts.note) parts.push(`Notes(${counts.note})`);
     return parts.join(' • ');
   }, [pillState?.notes]);
   const countLabel = breakdownLabel || (count === 1 ? '1 pending' : `${count} pending`);
@@ -322,23 +328,24 @@ export default function DesktopNotificationWindowClient() {
   }, []);
 
   const handleOpen = useCallback(() => {
-    const isCs = String(active?.kind || '').toLowerCase() === 'cs';
     const kind = String(active?.kind || '').toLowerCase();
     const url =
       kind === 'chat'
         ? String(active?.actionUrl || '/admin/desktop-chat-window')
-        : isCs
-          ? String(active?.actionUrl || pillState?.actionUrl || '/admin/my-notes')
-          : (active?.noteId
-              ? `/admin/my-notes?noteId=${encodeURIComponent(String(active.noteId))}`
-              : '/admin/my-notes');
+        : kind === 'cs'
+          ? String(active?.actionUrl || pillState?.actionUrl || '/admin/applications?review=cs')
+          : kind === 'docs'
+            ? String(active?.actionUrl || pillState?.actionUrl || '/admin/applications?review=docs')
+            : (active?.noteId
+                ? `/admin/my-notes?noteId=${encodeURIComponent(String(active.noteId))}`
+                : '/admin/my-notes');
     if (!url) return;
     try {
       window.desktopNotificationPill?.open?.(url);
     } catch {
       // ignore
     }
-  }, [active?.actionUrl, pillState?.actionUrl]);
+  }, [active?.actionUrl, active?.kind, active?.noteId, pillState?.actionUrl]);
 
   const handleNavigate = useCallback((delta: number) => {
     try {
@@ -840,8 +847,10 @@ export default function DesktopNotificationWindowClient() {
                 {String(active?.kind || '').toLowerCase() === 'chat'
                   ? 'Open Chat'
                   : String(active?.kind || '').toLowerCase() === 'cs'
-                    ? 'Open Pathway'
-                    : 'Open My Notes'}
+                    ? 'Open CS review'
+                    : String(active?.kind || '').toLowerCase() === 'docs'
+                      ? 'Open docs review'
+                      : 'Open My Notes'}
               </button>
             </div>
           </div>
