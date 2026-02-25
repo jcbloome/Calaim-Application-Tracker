@@ -27,7 +27,7 @@ const swNavLinks = [
   },
   {
     href: '/sw-portal/monthly-visits',
-    label: 'Monthly Visits',
+    label: 'Visits',
     icon: ListChecks
   },
   { 

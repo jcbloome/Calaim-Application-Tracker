@@ -25,7 +25,6 @@ import {
   Building,
   Phone,
   Flag,
-  Save,
   Send,
   ArrowLeft,
   ArrowRight,
@@ -72,6 +71,9 @@ interface MemberVisitQuestionnaire {
   
   memberConcerns: {
     hasConcerns: boolean | null;
+    nonResponsive?: boolean;
+    nonResponsiveReason?: string;
+    nonResponsiveDetails?: string;
     concernTypes: {
       medical: boolean;
       staff: boolean;
@@ -257,32 +259,10 @@ export default function SWVisitVerification() {
     const swKey = String((user as any)?.uid || '').trim();
     if (!swKey) return;
     const key = `sw-visit-progress:${swKey}:${exportMonth}`;
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      const nextVisited = parsed?.visitedByRcfeId && typeof parsed.visitedByRcfeId === 'object' ? parsed.visitedByRcfeId : null;
-      const nextSigned = parsed?.signedOffByRcfeId && typeof parsed.signedOffByRcfeId === 'object' ? parsed.signedOffByRcfeId : null;
-      if (nextVisited) setVisitedByRcfeId(nextVisited);
-      if (nextSigned) setSignedOffByRcfeId(nextSigned);
-    } catch {
-      // ignore
-    }
+    // No persisted save-progress; questionnaire is short and intentionally ephemeral.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [(user as any)?.uid, exportMonth]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const swKey = String((user as any)?.uid || '').trim();
-    if (!swKey) return;
-    const key = `sw-visit-progress:${swKey}:${exportMonth}`;
-    try {
-      localStorage.setItem(key, JSON.stringify({ visitedByRcfeId, signedOffByRcfeId }));
-    } catch {
-      // ignore
-    }
-  }, [exportMonth, signedOffByRcfeId, visitedByRcfeId, user]);
-  
   // Sign-off data
   const [signOffData, setSignOffData] = useState({
     rcfeStaffName: '',
@@ -303,11 +283,6 @@ export default function SWVisitVerification() {
     lastMode?: string | null;
   } | null>(null);
   const [confirmFreshWithin15, setConfirmFreshWithin15] = useState(false);
-  const [draftsByMember, setDraftsByMember] = useState<Record<string, {
-    questionnaire: MemberVisitQuestionnaire;
-    questionStep: number;
-    savedAt: string;
-  }>>({});
 
   const downloadMonthlyVisitsCsv = useCallback(async () => {
     if (!user) return;
@@ -389,26 +364,6 @@ export default function SWVisitVerification() {
       setIsExportingMonth(false);
     }
   }, [exportMonth, toast, user]);
-
-  const getDraftKey = (memberId: string, socialWorkerId: string) =>
-    `sw-visit-draft:${socialWorkerId}:${memberId}`;
-
-  const loadDraftForMember = (memberId: string, socialWorkerId: string) => {
-    try {
-      const stored = localStorage.getItem(getDraftKey(memberId, socialWorkerId));
-      if (!stored) return null;
-      const parsed = JSON.parse(stored);
-      if (!parsed?.questionnaire || !parsed?.questionStep) return null;
-      return parsed as {
-        questionnaire: MemberVisitQuestionnaire;
-        questionStep: number;
-        savedAt: string;
-      };
-    } catch (error) {
-      console.warn('Failed to load visit draft:', error);
-      return null;
-    }
-  };
 
   // Update socialWorkerId when user data becomes available
   useEffect(() => {
@@ -512,24 +467,6 @@ export default function SWVisitVerification() {
   useEffect(() => {
     fetchAssignedRCFEs({ quiet: true });
   }, [fetchAssignedRCFEs]);
-
-  useEffect(() => {
-    if (!selectedRCFE) {
-      setDraftsByMember({});
-      return;
-    }
-    const socialWorkerId = user?.email || user?.displayName || user?.uid || 'unknown';
-    const nextDrafts: Record<string, { questionnaire: MemberVisitQuestionnaire; questionStep: number; savedAt: string }> = {};
-    selectedRCFE.members.forEach((member) => {
-      const memberKey = member.id || member.name;
-      if (!memberKey) return;
-      const draft = loadDraftForMember(memberKey, socialWorkerId);
-      if (draft) {
-        nextDrafts[memberKey] = draft;
-      }
-    });
-    setDraftsByMember(nextDrafts);
-  }, [selectedRCFE, user]);
   
   // Initialize questionnaire data
   const [questionnaire, setQuestionnaire] = useState<MemberVisitQuestionnaire>({
@@ -567,6 +504,9 @@ export default function SWVisitVerification() {
     
     memberConcerns: {
       hasConcerns: null,
+      nonResponsive: false,
+      nonResponsiveReason: '',
+      nonResponsiveDetails: '',
       concernTypes: {
         medical: false,
         staff: false,
@@ -634,16 +574,22 @@ export default function SWVisitVerification() {
 
   // Calculate total score and flags
   const calculateScore = () => {
-    const wellbeingScore = questionnaire.memberWellbeing.physicalHealth + 
-                          questionnaire.memberWellbeing.mentalHealth + 
-                          questionnaire.memberWellbeing.socialEngagement + 
-                          questionnaire.memberWellbeing.overallMood;
+    // If the member is non-responsive, exclude member-based ratings from scoring/flagging.
+    const nonResponsive = Boolean(questionnaire.memberConcerns?.nonResponsive);
+    const wellbeingScore = nonResponsive
+      ? 0
+      : questionnaire.memberWellbeing.physicalHealth +
+        questionnaire.memberWellbeing.mentalHealth +
+        questionnaire.memberWellbeing.socialEngagement +
+        questionnaire.memberWellbeing.overallMood;
     
-    const satisfactionScore = questionnaire.careSatisfaction.staffAttentiveness +
-                             questionnaire.careSatisfaction.mealQuality +
-                             questionnaire.careSatisfaction.cleanlinessOfRoom +
-                             questionnaire.careSatisfaction.activitiesPrograms +
-                             questionnaire.careSatisfaction.overallSatisfaction;
+    const satisfactionScore = nonResponsive
+      ? 0
+      : questionnaire.careSatisfaction.staffAttentiveness +
+        questionnaire.careSatisfaction.mealQuality +
+        questionnaire.careSatisfaction.cleanlinessOfRoom +
+        questionnaire.careSatisfaction.activitiesPrograms +
+        questionnaire.careSatisfaction.overallSatisfaction;
     
     const rcfeScore = questionnaire.rcfeAssessment.facilityCondition +
                      questionnaire.rcfeAssessment.staffProfessionalism +
@@ -652,13 +598,17 @@ export default function SWVisitVerification() {
                      questionnaire.rcfeAssessment.overallRating;
     
     const totalScore = wellbeingScore + satisfactionScore + rcfeScore;
+    const maxScore = nonResponsive ? 25 : 75;
+    const lowScoreThreshold = Math.round(maxScore * 0.4); // 40%
     
     // Auto-flag conditions
-    const flagged = totalScore < 30 || // Less than 40% of total possible (75)
+    const flagged = totalScore < lowScoreThreshold ||
                    questionnaire.memberConcerns.urgencyLevel === 'critical' ||
                    questionnaire.memberConcerns.concernTypes.safety ||
                    questionnaire.rcfeAssessment.overallRating <= 2 ||
-                   questionnaire.careSatisfaction.overallSatisfaction <= 2;
+                   (!nonResponsive &&
+                     questionnaire.careSatisfaction.overallSatisfaction > 0 &&
+                     questionnaire.careSatisfaction.overallSatisfaction <= 2);
     
     setQuestionnaire(prev => ({
       ...prev,
@@ -679,28 +629,10 @@ export default function SWVisitVerification() {
     setCurrentStep('select-member');
   };
 
-  const handleMemberSelect = (member: Member, mode: 'auto' | 'resume' | 'new' = 'auto') => {
+  const handleMemberSelect = (member: Member) => {
     setSelectedMember(member);
     const socialWorkerId = user?.email || user?.displayName || user?.uid || 'Billy Buckhalter';
     const memberKey = member.id || member.name;
-    const draft = memberKey ? loadDraftForMember(memberKey, socialWorkerId) : null;
-
-    if (draft && mode !== 'new') {
-      console.log('🔄 Resuming saved visit draft:', { memberKey, memberName: member.name });
-      setQuestionnaire({
-        ...draft.questionnaire,
-        visitId: draft.questionnaire.visitId || `visit-${Date.now()}`,
-        memberId: memberKey,
-        memberName: member.name,
-        socialWorkerId,
-        rcfeId: member.rcfeId,
-        rcfeName: member.rcfeName,
-        rcfeAddress: member.rcfeAddress
-      });
-      setQuestionStep(draft.questionStep || 1);
-      setCurrentStep('questionnaire');
-      return;
-    }
 
     const memberId = memberKey || `member-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     console.log('🔍 Member selected:', { 
@@ -727,24 +659,12 @@ export default function SWVisitVerification() {
     if (!selectedMember) return;
 
     const confirmed = typeof window !== 'undefined'
-      ? window.confirm('Restart this questionnaire? This will clear all answers (and any saved draft) for this member.')
+      ? window.confirm('Restart this questionnaire? This will clear all answers for this member.')
       : false;
     if (!confirmed) return;
 
     const socialWorkerId = user?.email || user?.displayName || user?.uid || questionnaire.socialWorkerId || 'unknown';
     const memberKey = selectedMember.id || selectedMember.name || questionnaire.memberId;
-    if (memberKey) {
-      try {
-        localStorage.removeItem(getDraftKey(memberKey, socialWorkerId));
-      } catch {
-        // ignore
-      }
-      setDraftsByMember((prev) => {
-        const next = { ...prev };
-        delete next[memberKey];
-        return next;
-      });
-    }
 
     setQuestionnaire({
       visitId: `visit-${Date.now()}`,
@@ -777,6 +697,9 @@ export default function SWVisitVerification() {
       },
       memberConcerns: {
         hasConcerns: null,
+        nonResponsive: false,
+        nonResponsiveReason: '',
+        nonResponsiveDetails: '',
         concernTypes: {
           medical: false,
           staff: false,
@@ -813,22 +736,25 @@ export default function SWVisitVerification() {
 
   // Form validation functions
   const validateCurrentQuestion = () => {
+    const nonResponsive = Boolean(questionnaire.memberConcerns?.nonResponsive);
     switch (questionStep) {
       case 1: // Meeting Location
         return questionnaire.meetingLocation.location.trim() !== '';
       case 2: // Member Wellbeing
+        if (nonResponsive) return true;
         return questionnaire.memberWellbeing.physicalHealth > 0 && 
                questionnaire.memberWellbeing.mentalHealth > 0 &&
                questionnaire.memberWellbeing.socialEngagement > 0 &&
                questionnaire.memberWellbeing.overallMood > 0;
       case 3: // Care Satisfaction
+        if (nonResponsive) return true;
         return questionnaire.careSatisfaction.staffAttentiveness > 0 &&
                questionnaire.careSatisfaction.mealQuality > 0 &&
                questionnaire.careSatisfaction.cleanlinessOfRoom > 0 &&
                questionnaire.careSatisfaction.activitiesPrograms > 0 &&
                questionnaire.careSatisfaction.overallSatisfaction > 0;
       case 4: // Member Concerns
-        return questionnaire.memberConcerns.hasConcerns !== null;
+        return nonResponsive ? true : questionnaire.memberConcerns.hasConcerns !== null;
       case 5: // RCFE Assessment
         return questionnaire.rcfeAssessment.facilityCondition > 0 &&
                questionnaire.rcfeAssessment.staffProfessionalism > 0 &&
@@ -843,15 +769,16 @@ export default function SWVisitVerification() {
   };
 
   const getValidationMessage = () => {
+    const nonResponsive = Boolean(questionnaire.memberConcerns?.nonResponsive);
     switch (questionStep) {
       case 1:
         return "Please select where you met the member";
       case 2:
-        return "Please rate all aspects of member wellbeing";
+        return nonResponsive ? "Member is marked non-responsive (ratings optional)" : "Please rate all aspects of member wellbeing";
       case 3:
-        return "Please rate all aspects of care satisfaction";
+        return nonResponsive ? "Member is marked non-responsive (ratings optional)" : "Please rate all aspects of care satisfaction";
       case 4:
-        return "Please indicate if the member has concerns";
+        return nonResponsive ? "Member is marked non-responsive (concerns optional)" : "Please indicate if the member has concerns";
       case 5:
         return "Please rate all aspects of the RCFE";
       case 6:
@@ -882,84 +809,52 @@ export default function SWVisitVerification() {
     }
   };
 
-  const saveProgress = () => {
-    const socialWorkerId = questionnaire.socialWorkerId || user?.email || user?.uid || 'unknown';
-    const memberKey = questionnaire.memberId || selectedMember?.id || selectedMember?.name;
-    if (!memberKey) {
-      toast({
-        title: "Unable to Save",
-        description: "Select a member before saving progress.",
-        variant: "destructive"
-      });
-      return;
-    }
-    localStorage.setItem(
-      getDraftKey(memberKey, socialWorkerId),
-      JSON.stringify({
-        questionnaire,
-        questionStep,
-        savedAt: new Date().toISOString()
-      })
-    );
-    setDraftsByMember((prev) => ({
-      ...prev,
-      [memberKey]: {
-        questionnaire,
-        questionStep,
-        savedAt: new Date().toISOString()
-      }
-    }));
-    toast({
-      title: "Progress Saved",
-      description: "Your visit questionnaire has been saved.",
-    });
-  };
-
   const validateCompleteForm = () => {
     // Check all required fields are completed
     const errors = [];
+    const nonResponsive = Boolean(questionnaire.memberConcerns?.nonResponsive);
     
     if (!questionnaire.meetingLocation.location.trim()) {
       errors.push("Meeting location is required");
     }
     
-    if (questionnaire.memberWellbeing.physicalHealth === 0) {
+    if (!nonResponsive && questionnaire.memberWellbeing.physicalHealth === 0) {
       errors.push("Physical health rating is required");
     }
     
-    if (questionnaire.memberWellbeing.mentalHealth === 0) {
+    if (!nonResponsive && questionnaire.memberWellbeing.mentalHealth === 0) {
       errors.push("Mental health rating is required");
     }
     
-    if (questionnaire.memberWellbeing.socialEngagement === 0) {
+    if (!nonResponsive && questionnaire.memberWellbeing.socialEngagement === 0) {
       errors.push("Social engagement rating is required");
     }
     
-    if (questionnaire.memberWellbeing.overallMood === 0) {
+    if (!nonResponsive && questionnaire.memberWellbeing.overallMood === 0) {
       errors.push("Overall mood rating is required");
     }
     
-    if (questionnaire.careSatisfaction.staffAttentiveness === 0) {
+    if (!nonResponsive && questionnaire.careSatisfaction.staffAttentiveness === 0) {
       errors.push("Staff attentiveness rating is required");
     }
     
-    if (questionnaire.careSatisfaction.mealQuality === 0) {
+    if (!nonResponsive && questionnaire.careSatisfaction.mealQuality === 0) {
       errors.push("Meal quality rating is required");
     }
     
-    if (questionnaire.careSatisfaction.cleanlinessOfRoom === 0) {
+    if (!nonResponsive && questionnaire.careSatisfaction.cleanlinessOfRoom === 0) {
       errors.push("Cleanliness of room rating is required");
     }
     
-    if (questionnaire.careSatisfaction.activitiesPrograms === 0) {
+    if (!nonResponsive && questionnaire.careSatisfaction.activitiesPrograms === 0) {
       errors.push("Activities & programs rating is required");
     }
     
-    if (questionnaire.careSatisfaction.overallSatisfaction === 0) {
+    if (!nonResponsive && questionnaire.careSatisfaction.overallSatisfaction === 0) {
       errors.push("Overall satisfaction rating is required");
     }
     
-    if (questionnaire.memberConcerns.hasConcerns === null) {
+    if (!nonResponsive && questionnaire.memberConcerns.hasConcerns === null) {
       errors.push("Member concerns indication is required");
     }
     
@@ -1107,18 +1002,6 @@ export default function SWVisitVerification() {
         if (existing.includes(memberId)) return prev;
         return { ...prev, [rcfeId]: [...existing, memberId] };
       });
-
-      // Clear saved progress
-      const draftMemberKey = questionnaire.memberId || selectedMember?.id || selectedMember?.name;
-      const draftSocialWorkerId = questionnaire.socialWorkerId || user?.email || user?.uid || 'unknown';
-      if (draftMemberKey) {
-        localStorage.removeItem(getDraftKey(draftMemberKey, draftSocialWorkerId));
-        setDraftsByMember((prev) => {
-          const next = { ...prev };
-          delete next[draftMemberKey];
-          return next;
-        });
-      }
       
       // Show comprehensive success message
       toast({
@@ -1212,12 +1095,6 @@ export default function SWVisitVerification() {
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
-            {currentStep === 'questionnaire' && (
-              <Button variant="outline" size="sm" onClick={saveProgress}>
-                <Save className="h-4 w-4 mr-2" />
-                Save Progress
-              </Button>
-            )}
           </div>
         </div>
       </div>
@@ -1437,7 +1314,6 @@ export default function SWVisitVerification() {
 
               {selectedRCFE.members.map((member, memberIndex) => {
                 const memberKey = member.id || member.name;
-                const draft = memberKey ? draftsByMember[memberKey] : null;
                 const memberKeyNorm = String(memberKey || '').trim();
                 const visited = memberKeyNorm ? Boolean(visitedByRcfeId[selectedRCFE.id]?.includes(memberKeyNorm)) : false;
                 const signed = memberKeyNorm ? Boolean(signedOffByRcfeId[selectedRCFE.id]?.memberIds?.includes(memberKeyNorm)) : false;
@@ -1451,9 +1327,6 @@ export default function SWVisitVerification() {
                       <div>
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold">{member.name}</h3>
-                          {draft && (
-                            <Badge variant="secondary">Saved draft</Badge>
-                          )}
                           {signed ? (
                             <Badge className="bg-green-600 hover:bg-green-600">
                               <CheckCircle className="h-3 w-3 mr-1" />
@@ -1472,36 +1345,8 @@ export default function SWVisitVerification() {
                             Last visit: {new Date(member.lastVisitDate).toLocaleDateString()}
                           </p>
                         )}
-                        {draft?.savedAt && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Draft saved: {new Date(draft.savedAt).toLocaleString()}
-                          </p>
-                        )}
                       </div>
                       <div className="flex items-center gap-2">
-                        {draft && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleMemberSelect(member, 'resume');
-                              }}
-                            >
-                              Resume
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleMemberSelect(member, 'new');
-                              }}
-                            >
-                              Start New
-                            </Button>
-                          </>
-                        )}
                         <ArrowRight className="h-5 w-5 text-gray-400" />
                       </div>
                     </div>
@@ -1612,6 +1457,74 @@ export default function SWVisitVerification() {
                   <CardTitle>2. How is the member doing? <span className="text-red-500">*</span></CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  <div className="rounded-lg border bg-slate-50 p-4">
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        checked={Boolean(questionnaire.memberConcerns?.nonResponsive)}
+                        onCheckedChange={(v) => {
+                          const next = Boolean(v);
+                          setQuestionnaire((prev) => ({
+                            ...prev,
+                            memberConcerns: {
+                              ...prev.memberConcerns,
+                              nonResponsive: next,
+                              nonResponsiveReason: next ? (prev.memberConcerns?.nonResponsiveReason || '') : '',
+                              nonResponsiveDetails: next ? (prev.memberConcerns?.nonResponsiveDetails || '') : '',
+                            },
+                          }));
+                        }}
+                      />
+                      <div className="space-y-1">
+                        <div className="text-sm font-semibold text-slate-900">Member is non-responsive</div>
+                        <div className="text-xs text-muted-foreground">
+                          If the member can’t participate, you can still complete the visit. Ratings become optional.
+                        </div>
+                      </div>
+                    </div>
+
+                    {Boolean(questionnaire.memberConcerns?.nonResponsive) ? (
+                      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <div className="text-xs font-medium text-slate-700">Reason</div>
+                          <Select
+                            value={String(questionnaire.memberConcerns?.nonResponsiveReason || '')}
+                            onValueChange={(value) =>
+                              setQuestionnaire((prev) => ({
+                                ...prev,
+                                memberConcerns: { ...prev.memberConcerns, nonResponsiveReason: value },
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select a reason" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="sleeping">Sleeping</SelectItem>
+                              <SelectItem value="dementia">Dementia / cognitive impairment</SelectItem>
+                              <SelectItem value="refused">Refused to answer</SelectItem>
+                              <SelectItem value="medical">In medical distress</SelectItem>
+                              <SelectItem value="language">Language barrier</SelectItem>
+                              <SelectItem value="other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="text-xs font-medium text-slate-700">Details (optional)</div>
+                          <Input
+                            placeholder="Add details if helpful"
+                            value={String(questionnaire.memberConcerns?.nonResponsiveDetails || '')}
+                            onChange={(e) =>
+                              setQuestionnaire((prev) => ({
+                                ...prev,
+                                memberConcerns: { ...prev.memberConcerns, nonResponsiveDetails: e.target.value },
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
                   <StarRating
                     label="Physical Health"
                     value={questionnaire.memberWellbeing.physicalHealth}

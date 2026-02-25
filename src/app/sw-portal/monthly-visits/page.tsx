@@ -30,6 +30,10 @@ type MonthlyRow = {
   visitId: string;
   flagged: boolean;
   signedOff: boolean;
+  claimId?: string;
+  claimStatus?: string;
+  claimSubmitted?: boolean;
+  claimPaid?: boolean;
   dailyVisitCount: number;
   dailyVisitFees: number;
   dailyGas: number;
@@ -94,6 +98,20 @@ export default function SWMonthlyVisitsPage() {
       if (day) s.add(day);
     });
     return s;
+  }, [rows]);
+
+  const claimsById = useMemo(() => {
+    const m = new Map<string, { count: number; memberNames: string[] }>();
+    rows.forEach((r) => {
+      const claimId = String((r as any)?.claimId || '').trim();
+      if (!claimId) return;
+      const cur = m.get(claimId) || { count: 0, memberNames: [] };
+      cur.count += 1;
+      const mn = String(r.memberName || '').trim();
+      if (mn) cur.memberNames.push(mn);
+      m.set(claimId, cur);
+    });
+    return m;
   }, [rows]);
 
   const invoiceTotals = useMemo(() => {
@@ -331,8 +349,8 @@ export default function SWMonthlyVisitsPage() {
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Monthly Visits</h1>
-          <p className="text-muted-foreground">Track completed members, pending visits, and monthly invoice totals.</p>
+          <h1 className="text-2xl font-bold">Visits</h1>
+          <p className="text-muted-foreground">View your visits by month and submit claims for completed visits.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="w-full sm:w-[180px]">
@@ -399,6 +417,99 @@ export default function SWMonthlyVisitsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Completed visits (this month)</CardTitle>
+          <CardDescription>
+            One visit per member per month is allowed. Each row shows the member visit, RCFE, and the linked daily claim status.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {rows.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No completed visits found for {month}.</div>
+          ) : (
+            <div className="rounded-lg border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[44px]">Submit</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Member</TableHead>
+                    <TableHead>RCFE</TableHead>
+                    <TableHead>Claim</TableHead>
+                    <TableHead>Signed off</TableHead>
+                    <TableHead>Flagged</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((r) => {
+                    const claimId = String((r as any)?.claimId || '').trim();
+                    const claimStatus = String((r as any)?.claimStatus || 'draft').trim().toLowerCase();
+                    const isPaid = Boolean((r as any)?.claimPaid) || claimStatus === 'paid';
+                    const isSubmitted = Boolean((r as any)?.claimSubmitted) || claimStatus === 'submitted' || claimStatus === 'approved';
+                    const canSubmit = Boolean(claimId) && !isPaid && !isSubmitted && claimStatus === 'draft';
+                    const checked = Boolean(claimId && selectedDraftClaimIds[claimId]);
+                    const claimInfo = claimId ? claimsById.get(claimId) : null;
+                    const claimMembers = claimInfo?.memberNames || [];
+                    const claimMembersLabel =
+                      claimMembers.length <= 1
+                        ? ''
+                        : `Includes: ${claimMembers.slice(0, 2).join(', ')}${claimMembers.length > 2 ? ` +${claimMembers.length - 2} more` : ''}`;
+
+                    return (
+                      <TableRow key={r.visitId || `${r.memberId}-${r.date}-${r.rcfeName}`}>
+                        <TableCell>
+                          <Checkbox
+                            disabled={!canSubmit}
+                            checked={checked}
+                            onCheckedChange={(v) => {
+                              if (!claimId) return;
+                              setSelectedDraftClaimIds((prev) => ({ ...prev, [claimId]: Boolean(v) }));
+                            }}
+                            title={
+                              !claimId
+                                ? 'No linked claim found'
+                                : isPaid
+                                  ? 'Already paid'
+                                  : isSubmitted
+                                    ? 'Already submitted'
+                                    : claimMembersLabel || 'Select to submit the linked daily claim'
+                            }
+                          />
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{r.date || '—'}</TableCell>
+                        <TableCell className="font-medium">{r.memberName || '—'}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{r.rcfeName || '—'}</TableCell>
+                        <TableCell>
+                          {isPaid ? (
+                            <Badge className="bg-green-600 hover:bg-green-600">Paid</Badge>
+                          ) : isSubmitted ? (
+                            <Badge className="bg-blue-600 hover:bg-blue-600">Submitted</Badge>
+                          ) : (
+                            <Badge variant="secondary">Draft</Badge>
+                          )}
+                          {claimMembersLabel ? (
+                            <div className="text-xs text-muted-foreground mt-1" title={claimMembers.join('\n')}>
+                              {claimMembersLabel}
+                            </div>
+                          ) : null}
+                        </TableCell>
+                        <TableCell>
+                          {r.signedOff ? <Badge className="bg-emerald-600 hover:bg-emerald-600">Yes</Badge> : <Badge variant="outline">No</Badge>}
+                        </TableCell>
+                        <TableCell>
+                          {r.flagged ? <Badge className="bg-amber-500 hover:bg-amber-500">Flagged</Badge> : <Badge variant="outline">No</Badge>}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
