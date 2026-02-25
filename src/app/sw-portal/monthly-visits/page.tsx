@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { Loader2, Download, Printer, CheckCircle, AlertTriangle } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { format } from 'date-fns';
 
 type AssignedMember = {
@@ -180,6 +180,20 @@ export default function SWMonthlyVisitsPage() {
     setSelectedDraftClaimIds(map);
   };
 
+  const fetchClaims = useCallback(async () => {
+    if (!firestore || !user?.email) return;
+    const q1 = query(collection(firestore, 'sw-claims'), where('socialWorkerEmail', '==', user.email));
+    const snap = await getDocs(q1);
+    const next: ClaimSubmission[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+    // Avoid requiring a composite Firestore index by sorting client-side.
+    const sortKey = (c: any) => {
+      const s = c?.submittedAt?.toDate ? c.submittedAt.toDate().getTime() : (c?.submittedAt instanceof Date ? c.submittedAt.getTime() : 0);
+      const d = c?.claimDate?.toDate ? c.claimDate.toDate().getTime() : (c?.claimDate instanceof Date ? c.claimDate.getTime() : 0);
+      return s || d || 0;
+    };
+    setClaims([...next].sort((a, b) => sortKey(b) - sortKey(a)));
+  }, [firestore, user?.email]);
+
   const submitSelectedDraftClaims = useCallback(async () => {
     if (!auth?.currentUser) {
       toast({ title: 'Please sign in again', description: 'No active session found.', variant: 'destructive' });
@@ -255,14 +269,6 @@ export default function SWMonthlyVisitsPage() {
     setRows(Array.isArray(data?.rows) ? data.rows : []);
     setDuplicates(Array.isArray(data?.duplicates) ? data.duplicates : []);
   }, [auth?.currentUser, month]);
-
-  const fetchClaims = useCallback(async () => {
-    if (!firestore || !user?.email) return;
-    const q1 = query(collection(firestore, 'sw-claims'), where('socialWorkerEmail', '==', user.email), orderBy('submittedAt', 'desc'));
-    const snap = await getDocs(q1);
-    const next: ClaimSubmission[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-    setClaims(next);
-  }, [firestore, user?.email]);
 
   const loadAll = useCallback(async () => {
     if (!isSocialWorker || swLoading) return;

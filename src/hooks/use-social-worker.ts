@@ -227,7 +227,15 @@ export function useSocialWorker() {
 
   // Helper functions to check specific permissions
   const hasPermission = (permission: keyof SocialWorkerData['permissions']): boolean => {
-    return socialWorkerData?.permissions?.[permission] || false;
+    // If we already determined the user is a social worker (e.g., via token claim),
+    // but we don't have a loaded Firestore doc yet, default-allow permissions for
+    // backward compatibility instead of hard-blocking.
+    if (!socialWorkerData) return Boolean(isSocialWorker);
+    const value = (socialWorkerData.permissions as any)?.[permission];
+    // Default allow when the permission field is missing (backward compat).
+    // Explicit false should still block access.
+    if (value === undefined || value === null) return true;
+    return Boolean(value);
   };
 
   const canAccessVisitVerification = (): boolean => {

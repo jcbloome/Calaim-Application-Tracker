@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -28,7 +30,8 @@ import {
   Download,
   RefreshCw,
   AlertCircle,
-  TrendingUp
+  TrendingUp,
+  Trash2
 } from 'lucide-react';
 
 interface MemberVisit {
@@ -83,6 +86,13 @@ export default function SWClaimsManagementPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [socialWorkerFilter, setSocialWorkerFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState(format(new Date(), 'yyyy-MM'));
+  const [selectedClaimIds, setSelectedClaimIds] = useState<Record<string, boolean>>({});
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTargetIds, setDeleteTargetIds] = useState<string[]>([]);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [duplicateMemberName, setDuplicateMemberName] = useState('');
+  const [duplicateMonth, setDuplicateMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [summary, setSummary] = useState<ClaimSummary>({
     totalClaims: 0,
     totalAmount: 0,
@@ -101,6 +111,12 @@ export default function SWClaimsManagementPage() {
   useEffect(() => {
     applyFilters();
   }, [claims, statusFilter, socialWorkerFilter, monthFilter]);
+
+  useEffect(() => {
+    setDuplicateMonth(monthFilter);
+  }, [monthFilter]);
+
+  const normalizeName = (s: string) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
   const loadClaims = async () => {
     if (!firestore) return;
@@ -166,6 +182,128 @@ export default function SWClaimsManagementPage() {
     setFilteredClaims(filtered);
   };
 
+  const selectedIds = Object.keys(selectedClaimIds).filter((k) => selectedClaimIds[k]);
+  const allFilteredSelected = filteredClaims.length > 0 && selectedIds.length === filteredClaims.length;
+
+  const toggleAllFiltered = (next: boolean) => {
+    if (!next) {
+      setSelectedClaimIds({});
+      return;
+    }
+    const map: Record<string, boolean> = {};
+    filteredClaims.forEach((c) => {
+      map[c.id] = true;
+    });
+    setSelectedClaimIds(map);
+  };
+
+  const openDelete = (ids: string[]) => {
+    const unique = Array.from(new Set(ids.map((x) => String(x || '').trim()).filter(Boolean)));
+    setDeleteTargetIds(unique);
+    setDeleteReason('');
+    setDeleteDialogOpen(true);
+  };
+
+  const deleteClaims = async () => {
+    if (isDeleting) return;
+    if (deleteTargetIds.length === 0) return;
+    const reason = String(deleteReason || '').trim();
+    if (!reason) {
+      toast({ variant: 'destructive', title: 'Reason required', description: 'Please enter a reason for deleting these claims.' });
+      return;
+    }
+    if (!adminUser) {
+      toast({ variant: 'destructive', title: 'Not signed in', description: 'Please sign in again.' });
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const idToken = await adminUser.getIdToken();
+      const res = await fetch('/api/admin/sw-claims/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ claimIds: deleteTargetIds, reason }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !(data as any)?.success) {
+        throw new Error((data as any)?.error || 'Failed to delete claims');
+      }
+
+      const deleted: string[] = Array.isArray((data as any)?.deleted) ? (data as any).deleted : [];
+      const remaining = claims.filter((c) => !deleted.includes(c.id));
+      setClaims(remaining);
+      calculateSummary(remaining);
+
+      setSelectedClaimIds((prev) => {
+        const next = { ...prev };
+        deleted.forEach((id) => {
+          delete next[id];
+        });
+        return next;
+      });
+
+      toast({
+        title: 'Claims deleted',
+        description: deleted.length === 1 ? 'Deleted 1 claim.' : `Deleted ${deleted.length} claims.`,
+      });
+      setDeleteDialogOpen(false);
+      setDeleteTargetIds([]);
+      setDeleteReason('');
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Delete failed', description: e?.message || 'Could not delete claims.' });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const selectDuplicateClaims = () => {
+    const memberNeedle = normalizeName(duplicateMemberName);
+    if (!memberNeedle) {
+      toast({ variant: 'destructive', title: 'Member name required', description: 'Enter a member name to select duplicates.' });
+      return;
+    }
+    const targetMonth = String(duplicateMonth || '').trim();
+    if (!targetMonth) {
+      toast({ variant: 'destructive', title: 'Month required', description: 'Select a month (YYYY-MM).' });
+      return;
+    }
+
+    const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const matches = claims.filter((c) => {
+      const inMonth = monthKey(c.claimDate) === targetMonth;
+      if (!inMonth) return false;
+      return (c.memberVisits || []).some((v) => normalizeName(v.memberName) === memberNeedle);
+    });
+
+    if (matches.length <= 1) {
+      toast({ title: 'No duplicates found', description: `Found ${matches.length} claim(s) for that member in ${targetMonth}.` });
+      return;
+    }
+
+    // Keep newest (submittedAt if present, else claimDate), select the rest.
+    const sortKey = (c: ClaimSubmission) => {
+      const s = c.submittedAt instanceof Date ? c.submittedAt.getTime() : 0;
+      const d = c.claimDate instanceof Date ? c.claimDate.getTime() : 0;
+      return s || d || 0;
+    };
+    const sorted = [...matches].sort((a, b) => sortKey(b) - sortKey(a));
+    const toDelete = sorted.slice(1).map((c) => c.id);
+
+    setSelectedClaimIds((prev) => {
+      const next = { ...prev };
+      toDelete.forEach((id) => {
+        next[id] = true;
+      });
+      return next;
+    });
+
+    toast({
+      title: 'Duplicates selected',
+      description: `Selected ${toDelete.length} duplicate claim(s) for deletion (kept the newest).`,
+    });
+  };
+
   const calculateSummary = (claimsData: ClaimSubmission[]) => {
     const summary: ClaimSummary = {
       totalClaims: claimsData.length,
@@ -179,6 +317,22 @@ export default function SWClaimsManagementPage() {
     };
     
     setSummary(summary);
+  };
+
+  const renderDraftVisitDetails = (claim: ClaimSubmission) => {
+    if (claim.status !== 'draft') return null;
+    const visits = Array.isArray(claim.memberVisits) ? claim.memberVisits : [];
+    if (visits.length === 0) return null;
+    const first = visits[0];
+    const extra = Math.max(0, visits.length - 1);
+    return (
+      <div className="mt-1 text-xs text-muted-foreground">
+        <div className="truncate">
+          {first.memberName} • {first.rcfeName} • {format(first.visitDate, 'MM/dd/yyyy')}
+          {extra > 0 ? ` (+${extra} more)` : ''}
+        </div>
+      </div>
+    );
   };
 
   const updateClaimStatus = async (claimId: string, newStatus: string, reviewNotes?: string) => {
@@ -359,6 +513,40 @@ export default function SWClaimsManagementPage() {
         </div>
       </div>
 
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Delete claim(s)</DialogTitle>
+            <DialogDescription>
+              This permanently deletes the claim document and logs an audit record. A reason is required.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm">
+              Deleting <span className="font-semibold">{deleteTargetIds.length}</span> claim(s).
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Reason</div>
+              <Textarea
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="Example: Duplicate claim for same member/month; keeping newest."
+                rows={4}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={isDeleting}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={() => void deleteClaims()} disabled={isDeleting || deleteTargetIds.length === 0}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                {isDeleting ? 'Deleting…' : 'Delete'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
@@ -466,6 +654,37 @@ export default function SWClaimsManagementPage() {
               />
             </div>
           </div>
+
+          <div className="mt-6 rounded-lg border p-4">
+            <div className="text-sm font-semibold mb-3">Duplicate cleanup (member + month)</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+              <div>
+                <div className="text-sm font-medium">Member name (exact)</div>
+                <Input value={duplicateMemberName} onChange={(e) => setDuplicateMemberName(e.target.value)} placeholder="Forrest Kendrick" />
+              </div>
+              <div>
+                <div className="text-sm font-medium">Month</div>
+                <Input type="month" value={duplicateMonth} onChange={(e) => setDuplicateMonth(e.target.value)} />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={selectDuplicateClaims}>
+                  Select duplicates
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => openDelete(selectedIds)}
+                  disabled={selectedIds.length === 0}
+                  title={selectedIds.length === 0 ? 'Select claims in the table first' : 'Delete selected claims'}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete selected ({selectedIds.length})
+                </Button>
+              </div>
+            </div>
+            <div className="mt-2 text-xs text-muted-foreground">
+              Tip: click “Select duplicates” then enter a delete reason and confirm.
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -485,6 +704,9 @@ export default function SWClaimsManagementPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[44px]">
+                    <Checkbox checked={allFilteredSelected} onCheckedChange={(v) => toggleAllFiltered(Boolean(v))} />
+                  </TableHead>
                   <TableHead>Social Worker</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Visits</TableHead>
@@ -499,6 +721,12 @@ export default function SWClaimsManagementPage() {
                 {filteredClaims.map((claim) => (
                   <TableRow key={claim.id}>
                     <TableCell>
+                      <Checkbox
+                        checked={Boolean(selectedClaimIds[claim.id])}
+                        onCheckedChange={(v) => setSelectedClaimIds((prev) => ({ ...prev, [claim.id]: Boolean(v) }))}
+                      />
+                    </TableCell>
+                    <TableCell>
                       <div>
                         <div className="font-medium">{claim.socialWorkerName}</div>
                         <div className="text-sm text-muted-foreground">{claim.socialWorkerEmail}</div>
@@ -507,6 +735,7 @@ export default function SWClaimsManagementPage() {
                     <TableCell>{format(claim.claimDate, 'MMM d, yyyy')}</TableCell>
                     <TableCell>
                       {claim.memberVisits.length} visits (${claim.totalMemberVisitFees})
+                      {renderDraftVisitDetails(claim)}
                     </TableCell>
                     <TableCell>${claim.gasReimbursement}</TableCell>
                     <TableCell className="font-semibold">${claim.totalAmount}</TableCell>
@@ -515,6 +744,7 @@ export default function SWClaimsManagementPage() {
                       {claim.submittedAt ? format(claim.submittedAt, 'MMM d, yyyy') : '-'}
                     </TableCell>
                     <TableCell>
+                      <div className="flex flex-wrap gap-2">
                       <Dialog>
                         <DialogTrigger asChild>
                           <Button 
@@ -664,6 +894,16 @@ export default function SWClaimsManagementPage() {
                           )}
                         </DialogContent>
                       </Dialog>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => openDelete([claim.id])}
+                        title="Delete claim (requires reason)"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
