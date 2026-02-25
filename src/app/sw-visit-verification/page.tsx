@@ -15,6 +15,7 @@ import { useAutoTrackPortalAccess } from '@/hooks/use-sw-login-tracking';
 import { useAuth } from '@/firebase';
 import { clearStoredSwLoginDay, getTodayLocalDayKey, msUntilNextLocalMidnight, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
 import { Checkbox } from '@/components/ui/checkbox';
+import { SWTopNav } from '@/components/sw/SWTopNav';
 import { 
   MapPin, 
   Star, 
@@ -1070,7 +1071,7 @@ export default function SWVisitVerification() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
             <User className="h-6 w-6 text-blue-600" />
             <div>
@@ -1080,6 +1081,7 @@ export default function SWVisitVerification() {
               </p>
             </div>
           </div>
+          <SWTopNav className="justify-start md:justify-end" />
           <div className="flex items-center gap-2">
             <Button asChild variant="outline" size="sm">
               <Link href="/sw-portal">

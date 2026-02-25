@@ -16,6 +16,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { clearStoredSwLoginDay, getTodayLocalDayKey, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
+import { SWTopNav } from '@/components/sw/SWTopNav';
 
 export default function SWLoginPage() {
   const router = useRouter();
@@ -166,8 +167,29 @@ export default function SWLoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="w-full max-w-md space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="bg-white/80 backdrop-blur border-b">
+        <div className="container mx-auto px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <Link href="/" className="flex items-center gap-3">
+            <Image
+              src="/calaimlogopdf.png"
+              alt="Connect CalAIM Logo"
+              width={240}
+              height={67}
+              className="w-40 h-auto object-contain"
+              priority
+            />
+            <div className="hidden sm:block">
+              <div className="text-sm font-semibold text-gray-900">Social Worker Portal</div>
+              <div className="text-xs text-muted-foreground">Navigation menu</div>
+            </div>
+          </Link>
+          <SWTopNav className="justify-start md:justify-end" />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-6">
         {/* Logo */}
         <div className="text-center">
           <Image
@@ -288,6 +310,7 @@ export default function SWLoginPage() {
         <div className="text-center text-xs text-gray-500">
           <p>© 2026 Connect CalAIM. All rights reserved.</p>
           <p className="mt-1">Social Worker Portal - Secure Access</p>
+        </div>
         </div>
       </div>
     </div>
