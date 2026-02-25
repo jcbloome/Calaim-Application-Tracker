@@ -1,13 +1,20 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useFirestore } from '@/firebase';
 import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { format, parseISO } from 'date-fns';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Trash2 } from 'lucide-react';
+import { useAdmin } from '@/hooks/use-admin';
+import { useToast } from '@/hooks/use-toast';
 
 type VisitLine = {
   id: string;
@@ -32,6 +39,8 @@ interface ClaimRow {
 
 export default function SwClaimsTrackingPage(): React.JSX.Element {
   const firestore = useFirestore();
+  const { isSuperAdmin, user: adminUser } = useAdmin();
+  const { toast } = useToast();
   const [claims, setClaims] = useState<ClaimRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [swNameByEmail, setSwNameByEmail] = useState<Record<string, string>>({});
@@ -39,6 +48,11 @@ export default function SwClaimsTrackingPage(): React.JSX.Element {
   const [claimMonthFilter, setClaimMonthFilter] = useState('all');
   const [claimWorkerFilter, setClaimWorkerFilter] = useState('all');
   const [claimPaidFilter, setClaimPaidFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
+
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string>('');
+  const [deleteReason, setDeleteReason] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -185,6 +199,53 @@ export default function SwClaimsTrackingPage(): React.JSX.Element {
     }
   };
 
+  const openDelete = useCallback((claimId: string) => {
+    setDeleteTargetId(String(claimId || '').trim());
+    setDeleteReason('');
+    setDeleteDialogOpen(true);
+  }, []);
+
+  const deleteClaim = useCallback(async () => {
+    if (!isSuperAdmin) return;
+    const claimId = String(deleteTargetId || '').trim();
+    const reason = String(deleteReason || '').trim();
+    if (!claimId) return;
+    if (!reason) {
+      toast({ variant: 'destructive', title: 'Reason required', description: 'Enter a reason for deleting this claim.' });
+      return;
+    }
+    if (!adminUser) {
+      toast({ variant: 'destructive', title: 'Not signed in', description: 'Please sign in again.' });
+      return;
+    }
+    if (isDeleting) return;
+
+    setIsDeleting(true);
+    try {
+      const idToken = await adminUser.getIdToken();
+      const res = await fetch('/api/admin/sw-claims/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ claimIds: [claimId], reason }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !(data as any)?.success) {
+        throw new Error((data as any)?.error || 'Failed to delete claim');
+      }
+
+      const deleted: string[] = Array.isArray((data as any)?.deleted) ? (data as any).deleted : [];
+      if (deleted.includes(claimId)) {
+        setClaims((prev) => prev.filter((c) => c.id !== claimId));
+      }
+      toast({ title: 'Claim deleted', description: 'The claim was deleted and logged for audit.' });
+      setDeleteDialogOpen(false);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Delete failed', description: e?.message || 'Could not delete claim.' });
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [adminUser, deleteReason, deleteTargetId, isDeleting, isSuperAdmin, toast]);
+
   return (
     <div className="container mx-auto px-4 py-8 space-y-6">
       <div>
@@ -192,7 +253,48 @@ export default function SwClaimsTrackingPage(): React.JSX.Element {
         <p className="text-muted-foreground mt-2">
           Track submitted claims by month and social worker.
         </p>
+        {isSuperAdmin ? (
+          <div className="mt-3">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/admin/sw-claims-management">Open SW Claims Management (bulk delete)</Link>
+            </Button>
+          </div>
+        ) : null}
       </div>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Delete claim</DialogTitle>
+            <DialogDescription>
+              This permanently deletes the claim and logs an audit record. A reason is required.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm">
+              Claim ID: <span className="font-mono text-xs">{deleteTargetId || '—'}</span>
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Reason</div>
+              <Textarea
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="Example: Duplicate for same member/month; keeping newest."
+                rows={4}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={isDeleting}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={() => void deleteClaim()} disabled={isDeleting || !deleteTargetId}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                {isDeleting ? 'Deleting…' : 'Delete'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Card>
         <CardHeader>
@@ -264,12 +366,13 @@ export default function SwClaimsTrackingPage(): React.JSX.Element {
                   <TableHead>Status</TableHead>
                   <TableHead>Submitted</TableHead>
                   <TableHead>Paid</TableHead>
+                  {isSuperAdmin ? <TableHead>Actions</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredClaims.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-6 text-center text-muted-foreground">
+                    <TableCell colSpan={isSuperAdmin ? 10 : 9} className="py-6 text-center text-muted-foreground">
                       No claims found
                     </TableCell>
                   </TableRow>
@@ -317,6 +420,14 @@ export default function SwClaimsTrackingPage(): React.JSX.Element {
                             <Badge variant="outline">Unpaid</Badge>
                           )}
                         </TableCell>
+                        {isSuperAdmin ? (
+                          <TableCell>
+                            <Button variant="destructive" size="sm" onClick={() => openDelete(claim.id)}>
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </Button>
+                          </TableCell>
+                        ) : null}
                       </TableRow>
                     );
                   })

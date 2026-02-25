@@ -438,32 +438,6 @@ export default function SWVisitVerification() {
     [isSocialWorker, isLoading, toast, user]
   );
 
-  const requestAssignmentsRefresh = useCallback(async () => {
-    try {
-      const idToken = await (user as any)?.getIdToken?.();
-      if (!idToken) throw new Error('Not signed in');
-      const res = await fetch('/api/sw-visits/request-refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({}),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || `Request failed (${res.status})`);
-      }
-      toast({
-        title: 'Refresh requested',
-        description: `Admins have been notified to refresh assignments cache.`,
-      });
-    } catch (e: any) {
-      toast({
-        title: 'Could not request refresh',
-        description: e?.message || 'Please try again.',
-        variant: 'destructive',
-      });
-    }
-  }, [toast, user]);
-
   // Fetch assigned RCFEs when component mounts
   useEffect(() => {
     fetchAssignedRCFEs({ quiet: true });
@@ -1125,14 +1099,11 @@ export default function SWVisitVerification() {
                     <Button type="button" variant="outline" size="sm" onClick={() => fetchAssignedRCFEs()} disabled={isLoadingRCFEs}>
                       {isLoadingRCFEs ? 'Refreshing…' : 'Refresh'}
                     </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => void requestAssignmentsRefresh()}>
-                      Request refresh
-                    </Button>
                   </div>
                 </div>
                 {cacheFreshness.isStale ? (
                   <div className="mt-2 text-xs text-amber-700">
-                    If assignments look outdated, click Refresh. If it still looks wrong, use “Request refresh” to notify admins to run the Caspio sync.
+                    If assignments look outdated, click Refresh.
                   </div>
                 ) : null}
               </div>

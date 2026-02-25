@@ -1192,6 +1192,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const claimsSyncRef = useRef(false);
   const adminBootstrapRef = useRef<string>('');
   const adminBootstrapStartedAtRef = useRef<number>(0);
+  const adminRedirectGraceRef = useRef<{ uid: string; startedAt: number }>({ uid: '', startedAt: 0 });
   const [adminBootstrap, setAdminBootstrap] = useState<{ inProgress: boolean; failed: boolean }>({
     inProgress: false,
     failed: false,
@@ -1224,6 +1225,22 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       timestamp: new Date().toLocaleTimeString()
     });
   }, [pathname, isLoginPage, isLoading, isAdmin, user?.email]);
+
+  // Redirect grace: right after login/navigation, allow a brief window for persistence + claims
+  // to settle before we redirect back to /admin/login.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isLoading) return;
+    if (isLoginPage) return;
+    const uid = String(user?.uid || '').trim();
+    if (!uid) {
+      adminRedirectGraceRef.current = { uid: '', startedAt: 0 };
+      return;
+    }
+    if (adminRedirectGraceRef.current.uid !== uid) {
+      adminRedirectGraceRef.current = { uid, startedAt: Date.now() };
+    }
+  }, [isLoading, isLoginPage, user?.uid]);
 
   useEffect(() => {
     if (!user || !isAdmin || isLoginPage) return;
@@ -1341,11 +1358,20 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       const bootstrapGraceActive =
         Boolean(user?.uid) && bootstrapUid === String(user.uid) && bootstrapAgeMs > 0 && bootstrapAgeMs < 9000;
 
+      const redirectGraceAgeMs = adminRedirectGraceRef.current.startedAt ? Date.now() - adminRedirectGraceRef.current.startedAt : 0;
+      const redirectGraceActive =
+        Boolean(user?.uid) &&
+        adminRedirectGraceRef.current.uid === String(user.uid) &&
+        redirectGraceAgeMs >= 0 &&
+        redirectGraceAgeMs < 12000;
+
       console.log('🔍 Admin Layout Auth Check:', {
         isAdmin,
         isLoginPage,
         userEmail: user?.email,
-        willRedirect: !user || (!isAdmin && !isLoginPage && !allowNonAdmin && !adminBootstrap.inProgress && !bootstrapGraceActive)
+        willRedirect:
+          !user ||
+          (!isAdmin && !isLoginPage && !allowNonAdmin && !adminBootstrap.inProgress && !bootstrapGraceActive && !redirectGraceActive)
       });
 
       if (!user && !isLoginPage) {
@@ -1354,7 +1380,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       } else if (!isAdmin && !isLoginPage && !allowNonAdmin) {
         // Important: bootstrap state updates don't apply until the next render.
         // Use a short grace period keyed to the current UID to avoid immediate redirect loops right after login.
-        if (adminBootstrap.inProgress || bootstrapGraceActive) return;
+        if (adminBootstrap.inProgress || bootstrapGraceActive || redirectGraceActive) return;
         console.log('🚫 Redirecting to login - user not recognized as admin');
         router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
       } else if (isAdmin && isLoginPage) {
