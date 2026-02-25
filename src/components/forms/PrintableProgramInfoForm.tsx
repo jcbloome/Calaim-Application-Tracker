@@ -147,6 +147,101 @@ export function PrintableProgramInfoForm({
             to community living.
           </p>
         </div>
+
+        <div className="mt-4 p-4 print:p-4 bg-slate-50 print:bg-white border print:border-black">
+          <h3 className="text-lg font-semibold text-gray-900 print:text-black">
+            Eliminating Medi-Cal Share of Cost: The Key to CalAIM
+          </h3>
+          <div className="mt-3 space-y-3 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+            <p>
+              If you have Medi-Cal with a Share of Cost, you may be missing out on life-changing benefits. Programs like
+              CalAIM (which provides care coordination and placement in residential care homes) generally require members
+              to have <strong>Full-Scope, $0 Share of Cost</strong> Medi-Cal.
+            </p>
+            <p>
+              For many seniors and disabled individuals, a monthly income above <strong>$1,856</strong> (the 2026 limit)
+              triggers a high Share of Cost. However, California’s <strong>250% Working Disabled Program (WDP)</strong>{' '}
+              offers a legal way to eliminate that cost and keep more of your money.
+            </p>
+          </div>
+
+          <h4 className="mt-4 font-semibold text-gray-900 print:text-black">
+            How the 250% Working Disabled Program Works
+          </h4>
+          <ul className="mt-2 list-disc pl-5 space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
+            <li>
+              <strong>The WDP allows you to have a much higher income</strong>—up to <strong>$3,260</strong> per month—
+              with a <strong>$0 monthly premium</strong> and <strong>$0 Share of Cost</strong>.
+            </li>
+            <li>
+              <strong>Broad definition of “work”</strong>: You do not need a traditional full-time job. “Working” can
+              include part-time tasks like pet sitting, consulting for a neighbor, or even recycling. There are no minimum
+              hours required.
+            </li>
+            <li>
+              <strong>Income protection</strong>: Most disability-related income (like SSDI or private disability) is not
+              counted toward the limit. Even if your SSDI converted to Social Security Retirement, it may still be exempt.
+            </li>
+            <li>
+              <strong>CalAIM ready</strong>: Once your Share of Cost is $0, you immediately qualify for CalAIM services,
+              including Enhanced Care Management and Community Supports for care home placement.
+            </li>
+          </ul>
+
+          <h4 className="mt-4 font-semibold text-gray-900 print:text-black">Who to Contact for Help</h4>
+          <p className="mt-2 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+            Navigating Medi-Cal rules is complex. We recommend contacting these free, state-funded organizations to help
+            you transition to a $0 Share of Cost:
+          </p>
+
+          <div className="mt-3 space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
+            <div>
+              <div className="font-semibold text-gray-900 print:text-black">
+                1. HICAP (Health Insurance Counseling &amp; Advocacy Program)
+              </div>
+              <div>HICAP provides free, unbiased counseling on Medicare and Medi-Cal. They are experts at the Working Disabled Program.</div>
+              <div>
+                <strong>Phone:</strong>{' '}
+                <a className="text-blue-600 print:text-black hover:underline" href="tel:18004340222">1-800-434-0222</a>
+              </div>
+              <div>
+                <strong>Website:</strong>{' '}
+                <a className="text-blue-600 print:text-black hover:underline" href="https://aging.ca.gov/hicap" target="_blank" rel="noopener noreferrer">
+                  aging.ca.gov/hicap
+                </a>
+              </div>
+            </div>
+
+            <div>
+              <div className="font-semibold text-gray-900 print:text-black">2. Health Consumer Alliance (HCA)</div>
+              <div>The HCA offers free legal assistance for Californians struggling with Medi-Cal eligibility or high Share of Cost.</div>
+              <div>
+                <strong>Phone:</strong>{' '}
+                <a className="text-blue-600 print:text-black hover:underline" href="tel:18888043536">1-888-804-3536</a>
+              </div>
+              <div>
+                <strong>Website:</strong>{' '}
+                <a className="text-blue-600 print:text-black hover:underline" href="https://healthconsumer.org" target="_blank" rel="noopener noreferrer">
+                  healthconsumer.org
+                </a>
+              </div>
+            </div>
+
+            <div>
+              <div className="font-semibold text-gray-900 print:text-black">3. Your Local County Social Services (DPSS)</div>
+              <div>
+                To officially switch programs, you must contact your local county eligibility worker. Ask them specifically for an{' '}
+                <strong>“evaluation for the 250% Working Disabled Program.”</strong>
+              </div>
+              <div>
+                <strong>Online Portal:</strong>{' '}
+                <a className="text-blue-600 print:text-black hover:underline" href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">
+                  BenefitsCal.com
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Benefitscal.com */}

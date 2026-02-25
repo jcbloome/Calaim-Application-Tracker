@@ -1191,6 +1191,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const claimsSyncRef = useRef(false);
   const adminBootstrapRef = useRef<string>('');
+  const adminBootstrapStartedAtRef = useRef<number>(0);
   const [adminBootstrap, setAdminBootstrap] = useState<{ inProgress: boolean; failed: boolean }>({
     inProgress: false,
     failed: false,
@@ -1269,6 +1270,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     if (!uid) return;
     if (adminBootstrapRef.current === uid) return;
     adminBootstrapRef.current = uid;
+    adminBootstrapStartedAtRef.current = Date.now();
 
     setAdminBootstrap({ inProgress: true, failed: false });
     (async () => {
@@ -1334,18 +1336,25 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         pathname === '/admin/desktop-notification-window' ||
         pathname === '/admin/desktop-chat-window';
 
+      const bootstrapUid = String(adminBootstrapRef.current || '');
+      const bootstrapAgeMs = adminBootstrapStartedAtRef.current ? Date.now() - adminBootstrapStartedAtRef.current : 0;
+      const bootstrapGraceActive =
+        Boolean(user?.uid) && bootstrapUid === String(user.uid) && bootstrapAgeMs > 0 && bootstrapAgeMs < 9000;
+
       console.log('🔍 Admin Layout Auth Check:', {
         isAdmin,
         isLoginPage,
         userEmail: user?.email,
-        willRedirect: !user || (!isAdmin && !isLoginPage && !allowNonAdmin && !adminBootstrap.inProgress)
+        willRedirect: !user || (!isAdmin && !isLoginPage && !allowNonAdmin && !adminBootstrap.inProgress && !bootstrapGraceActive)
       });
 
       if (!user && !isLoginPage) {
         console.log('🚫 Redirecting to login - user not signed in');
         router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
       } else if (!isAdmin && !isLoginPage && !allowNonAdmin) {
-        if (adminBootstrap.inProgress) return;
+        // Important: bootstrap state updates don't apply until the next render.
+        // Use a short grace period keyed to the current UID to avoid immediate redirect loops right after login.
+        if (adminBootstrap.inProgress || bootstrapGraceActive) return;
         console.log('🚫 Redirecting to login - user not recognized as admin');
         router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
       } else if (isAdmin && isLoginPage) {

@@ -628,10 +628,29 @@ export async function POST(req: NextRequest) {
 
     const socialWorkerUid = String(visitData.socialWorkerUid || '').trim() || null;
     const socialWorkerEmail = String(visitData.socialWorkerEmail || '').trim().toLowerCase() || null;
-    const socialWorkerName = String(visitData.socialWorkerName || '').trim()
+    let socialWorkerName = String(visitData.socialWorkerName || '').trim()
       || String(visitData.socialWorkerId || '').trim()
       || socialWorkerEmail
       || 'Social Worker';
+
+    // If we only have an email (or an email-like value), try to resolve a friendly name
+    // from the Caspio-synced social worker directory.
+    try {
+      const looksLikeEmail = (value: string) => value.includes('@') && value.includes('.');
+      if (socialWorkerEmail && looksLikeEmail(socialWorkerName)) {
+        const snap = await adminDb
+          .collection('syncedSocialWorkers')
+          .where('email', '==', socialWorkerEmail)
+          .limit(1)
+          .get();
+        if (!snap.empty) {
+          const n = String((snap.docs[0].data() as any)?.name || '').trim();
+          if (n) socialWorkerName = n;
+        }
+      }
+    } catch {
+      // ignore best-effort name resolution
+    }
 
     const claimDay = String(visitData.visitDate || submittedAtIso.slice(0, 10)).slice(0, 10);
     const claimMonth = claimDay.slice(0, 7);

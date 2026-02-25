@@ -6,12 +6,20 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useFirestore } from '@/firebase';
-import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
-import { format } from 'date-fns';
+import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
+import { format, parseISO } from 'date-fns';
+
+type VisitLine = {
+  id: string;
+  memberName: string;
+  rcfeName: string;
+  visitDate?: any;
+};
 
 interface ClaimRow {
   id: string;
   socialWorkerName: string;
+  socialWorkerEmail?: string;
   claimMonth?: string;
   claimDate: Date;
   visitCount: number;
@@ -19,12 +27,14 @@ interface ClaimRow {
   status: string;
   submittedAt?: Date;
   paidAt?: Date;
+  memberVisits?: VisitLine[];
 }
 
 export default function SwClaimsTrackingPage(): React.JSX.Element {
   const firestore = useFirestore();
   const [claims, setClaims] = useState<ClaimRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [swNameByEmail, setSwNameByEmail] = useState<Record<string, string>>({});
 
   const [claimMonthFilter, setClaimMonthFilter] = useState('all');
   const [claimWorkerFilter, setClaimWorkerFilter] = useState('all');
@@ -48,6 +58,7 @@ export default function SwClaimsTrackingPage(): React.JSX.Element {
           return {
             id: doc.id,
             socialWorkerName: String(d?.socialWorkerName || d?.socialWorkerEmail || 'Social Worker'),
+            socialWorkerEmail: String(d?.socialWorkerEmail || '').trim().toLowerCase() || undefined,
             claimMonth,
             claimDate,
             visitCount,
@@ -55,6 +66,7 @@ export default function SwClaimsTrackingPage(): React.JSX.Element {
             status: String(d?.status || 'draft'),
             submittedAt,
             paidAt,
+            memberVisits: Array.isArray(d?.memberVisits) ? d.memberVisits : [],
           };
         });
         if (mounted) setClaims(rows);
@@ -78,13 +90,22 @@ export default function SwClaimsTrackingPage(): React.JSX.Element {
     () => Array.from(new Set(claims.map((claim) => claim.claimMonth).filter(Boolean))) as string[],
     [claims]
   );
-  const claimWorkers = useMemo(
-    () => Array.from(new Set(claims.map((claim) => claim.socialWorkerName))),
-    [claims]
-  );
+  const resolveSwLabel = (c: ClaimRow) => {
+    const email = String(c.socialWorkerEmail || '').trim().toLowerCase();
+    const raw = String(c.socialWorkerName || '').trim();
+    const mapped = email ? String(swNameByEmail[email] || '').trim() : '';
+    return mapped || raw || email || 'Social Worker';
+  };
+
+  const claimsWithLabels = useMemo(() => {
+    return claims.map((c) => ({ ...c, socialWorkerName: resolveSwLabel(c) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claims, swNameByEmail]);
+
+  const claimWorkers = useMemo(() => Array.from(new Set(claimsWithLabels.map((claim) => claim.socialWorkerName))), [claimsWithLabels]);
 
   const filteredClaims = useMemo(() => {
-    return claims.filter((claim) => {
+    return claimsWithLabels.filter((claim) => {
       if (claimMonthFilter !== 'all' && claim.claimMonth !== claimMonthFilter) return false;
       if (claimWorkerFilter !== 'all' && claim.socialWorkerName !== claimWorkerFilter) return false;
       const isPaid = claim.status === 'paid';
@@ -92,7 +113,77 @@ export default function SwClaimsTrackingPage(): React.JSX.Element {
       if (claimPaidFilter === 'unpaid' && isPaid) return false;
       return true;
     });
-  }, [claims, claimMonthFilter, claimWorkerFilter, claimPaidFilter]);
+  }, [claimsWithLabels, claimMonthFilter, claimWorkerFilter, claimPaidFilter]);
+
+  useEffect(() => {
+    // Best-effort: resolve SW display names from the synced directory when claim docs only have emails.
+    if (!firestore) return;
+    const looksLikeEmail = (value: string) => value.includes('@') && value.includes('.');
+    const emailsToResolve = Array.from(
+      new Set(
+        claims
+          .map((c) => String(c.socialWorkerEmail || '').trim().toLowerCase())
+          .filter(Boolean)
+      )
+    ).filter((email) => {
+      const has = Boolean(swNameByEmail[email]);
+      if (has) return false;
+      const anyClaim = claims.find((c) => String(c.socialWorkerEmail || '').trim().toLowerCase() === email);
+      const raw = anyClaim ? String(anyClaim.socialWorkerName || '').trim() : '';
+      return looksLikeEmail(raw);
+    });
+    if (emailsToResolve.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const pairs = await Promise.all(
+          emailsToResolve.slice(0, 80).map(async (email) => {
+            try {
+              const qy = query(collection(firestore, 'syncedSocialWorkers'), where('email', '==', email), limit(1));
+              const snap = await getDocs(qy);
+              if (snap.empty) return null;
+              const name = String((snap.docs[0].data() as any)?.name || '').trim();
+              return name ? ({ email, name } as const) : null;
+            } catch {
+              return null;
+            }
+          })
+        );
+        const next: Record<string, string> = {};
+        pairs.filter(Boolean).forEach((p) => {
+          next[(p as any).email] = (p as any).name;
+        });
+        if (!cancelled && Object.keys(next).length > 0) {
+          setSwNameByEmail((prev) => ({ ...prev, ...next }));
+        }
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [claims, firestore, swNameByEmail]);
+
+  const formatVisitDate = (value: any): string => {
+    try {
+      if (!value) return '';
+      const d: Date =
+        typeof value?.toDate === 'function'
+          ? value.toDate()
+          : typeof value === 'string'
+            ? parseISO(value)
+            : value instanceof Date
+              ? value
+              : new Date(value);
+      if (!d || Number.isNaN(d.getTime())) return '';
+      return format(d, 'MMM d, yyyy');
+    } catch {
+      return '';
+    }
+  };
 
   return (
     <div className="container mx-auto px-4 py-8 space-y-6">
@@ -167,6 +258,7 @@ export default function SwClaimsTrackingPage(): React.JSX.Element {
                   <TableHead>Claim Month</TableHead>
                   <TableHead>Claim Date</TableHead>
                   <TableHead>Social Worker</TableHead>
+                  <TableHead>Member / RCFE / Visit date</TableHead>
                   <TableHead className="text-right">Visits</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Status</TableHead>
@@ -177,18 +269,41 @@ export default function SwClaimsTrackingPage(): React.JSX.Element {
               <TableBody>
                 {filteredClaims.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="py-6 text-center text-muted-foreground">
                       No claims found
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredClaims.map((claim) => {
                     const isPaid = claim.status === 'paid';
+                    const visits = Array.isArray(claim.memberVisits) ? claim.memberVisits : [];
+                    const lines = visits
+                      .map((v) => {
+                        const dateLabel = formatVisitDate((v as any)?.visitDate) || String((v as any)?.visitDate || '').slice(0, 10);
+                        const memberName = String((v as any)?.memberName || '').trim();
+                        const rcfeName = String((v as any)?.rcfeName || '').trim();
+                        return `${dateLabel || '—'} • ${memberName || '—'} • ${rcfeName || '—'}`.trim();
+                      })
+                      .filter(Boolean);
                     return (
                       <TableRow key={claim.id}>
                         <TableCell>{claim.claimMonth || '—'}</TableCell>
                         <TableCell>{format(claim.claimDate, 'MMM d, yyyy')}</TableCell>
                         <TableCell>{claim.socialWorkerName}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {lines.length === 0 ? (
+                            <span>—</span>
+                          ) : (
+                            <div className="space-y-1" title={lines.join('\n')}>
+                              {lines.slice(0, 3).map((line, idx) => (
+                                <div key={`${claim.id}-v-${idx}`} className="whitespace-nowrap">
+                                  {line}
+                                </div>
+                              ))}
+                              {lines.length > 3 ? <div className="whitespace-nowrap">+{lines.length - 3} more…</div> : null}
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">{claim.visitCount}</TableCell>
                         <TableCell className="text-right font-semibold">${claim.totalAmount}</TableCell>
                         <TableCell>

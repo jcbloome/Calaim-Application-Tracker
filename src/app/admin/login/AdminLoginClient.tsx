@@ -114,6 +114,22 @@ export default function AdminLoginClient() {
       // Force refresh to pick up custom claims (admin)
       await userCredential.user.getIdToken(true);
 
+      // Ensure the freshly-set admin claim is actually visible before redirecting.
+      // Without this, the admin layout guard can briefly see a non-admin token and bounce back to /admin/login.
+      const claimDeadlineMs = Date.now() + 8000;
+      while (Date.now() < claimDeadlineMs) {
+        try {
+          const tokenResult = await userCredential.user.getIdTokenResult();
+          const claims = (tokenResult?.claims || {}) as Record<string, any>;
+          if (Boolean(claims.admin) || Boolean(claims.superAdmin)) break;
+        } catch {
+          // ignore and retry
+        }
+        // Nudge token refresh + give Firebase a moment to propagate custom claims.
+        await userCredential.user.getIdToken(true);
+        await new Promise((r) => setTimeout(r, 600));
+      }
+
       // Wait briefly for auth state to be observable in the app before redirecting.
       // This prevents immediate bounces back to /admin/login in environments with delayed persistence.
       await new Promise<void>((resolve, reject) => {

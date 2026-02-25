@@ -56,6 +56,64 @@ export function PrintableProgramInfo() {
               <p><strong>SOC Threshold Information:</strong> Share of Cost is usually triggered if a member receives more than <strong>$1,800/month</strong>, although this number can vary by county and by particular circumstances. Members in SNFs may not show a SOC since the facility receives most of their income, but this may change when transitioning to community living.</p>
             </div>
 
+            <SubTitle>Eliminating Medi-Cal Share of Cost: The Key to CalAIM</SubTitle>
+            <p>
+              If you have Medi-Cal with a Share of Cost, you may be missing out on life-changing benefits. Programs like CalAIM (which provides care
+              coordination and placement in residential care homes) generally require members to have <strong>Full-Scope, $0 Share of Cost</strong>{' '}
+              Medi-Cal.
+            </p>
+            <p>
+              For many seniors and disabled individuals, a monthly income above <strong>$1,856</strong> (the 2026 limit) triggers a high Share of Cost.
+              However, California’s <strong>250% Working Disabled Program (WDP)</strong> offers a legal way to eliminate that cost and keep more of your
+              money.
+            </p>
+
+            <SubTitle>How the 250% Working Disabled Program Works</SubTitle>
+            <ul className="list-disc pl-5 space-y-2">
+              <li>
+                <strong>The WDP allows you to have a much higher income</strong>—up to <strong>$3,260</strong> per month—with a <strong>$0 monthly
+                premium</strong> and <strong>$0 Share of Cost</strong>.
+              </li>
+              <li>
+                <strong>Broad Definition of "Work":</strong> You do not need a traditional full-time job. "Working" can include part-time tasks like pet
+                sitting, consulting for a neighbor, or even recycling. There are no minimum hours required.
+              </li>
+              <li>
+                <strong>Income Protection:</strong> Most disability-related income (like SSDI or private disability) is not counted toward the limit. Even
+                if your SSDI converted to Social Security Retirement, it may still be exempt.
+              </li>
+              <li>
+                <strong>CalAIM Ready:</strong> Once your Share of Cost is $0, you immediately qualify for CalAIM services, including Enhanced Care
+                Management and Community Supports for care home placement.
+              </li>
+            </ul>
+
+            <SubTitle>Who to Contact for Help</SubTitle>
+            <p>
+              Navigating Medi-Cal rules is complex. We recommend contacting these free, state-funded organizations to help you transition to a $0 Share
+              of Cost:
+            </p>
+            <ol className="list-decimal pl-5 space-y-4">
+              <li>
+                <strong>HICAP (Health Insurance Counseling &amp; Advocacy Program)</strong><br />
+                HICAP provides free, unbiased counseling on Medicare and Medi-Cal. They are experts at the Working Disabled Program.<br />
+                <strong>Phone:</strong> <a href="tel:18004340222">1-800-434-0222</a><br />
+                <strong>Website:</strong> <a href="https://aging.ca.gov/hicap" target="_blank" rel="noopener noreferrer">aging.ca.gov/hicap</a>
+              </li>
+              <li>
+                <strong>Health Consumer Alliance (HCA)</strong><br />
+                The HCA offers free legal assistance for Californians struggling with Medi-Cal eligibility or high Share of Cost.<br />
+                <strong>Phone:</strong> <a href="tel:18888043536">1-888-804-3536</a><br />
+                <strong>Website:</strong> <a href="https://healthconsumer.org" target="_blank" rel="noopener noreferrer">healthconsumer.org</a>
+              </li>
+              <li>
+                <strong>Your Local County Social Services (DPSS)</strong><br />
+                To officially switch programs, you must contact your local county eligibility worker. Ask them specifically for an{' '}
+                <strong>"evaluation for the 250% Working Disabled Program."</strong><br />
+                <strong>Online Portal:</strong> <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">BenefitsCal.com</a>
+              </li>
+            </ol>
+
             <SectionTitle>Benefitscal.com</SectionTitle>
             <p>A one stop shop to apply and review Medi-Cal benefits including possible share of cost information and to add for the member an authorized representative/power of attorney.</p>
             <p>Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">www.benefitscal.com</a> for current SOC verification and more information.</p>

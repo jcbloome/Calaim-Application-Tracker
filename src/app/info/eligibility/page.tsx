@@ -56,7 +56,91 @@ const infoSections = [
         "A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay.",
         "This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.",
         "Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.",
-        <>Read more about eliminating share of cost at the <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">California Advocates for Nursing Home Reform (CANHR)</a>.</>
+        <>Read more about eliminating share of cost at the <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">California Advocates for Nursing Home Reform (CANHR)</a>.</>,
+        <div key="soc-wdp" className="mt-4 not-prose rounded-lg border border-border bg-slate-50 p-4">
+          <div className="text-base font-semibold text-gray-900">
+            Eliminating Medi-Cal Share of Cost: The Key to CalAIM
+          </div>
+          <div className="mt-2 space-y-3 text-sm text-gray-700 leading-relaxed">
+            <p>
+              If you have Medi-Cal with a Share of Cost, you may be missing out on life-changing benefits. Programs like CalAIM
+              (which provides care coordination and placement in residential care homes) generally require members to have{' '}
+              <span className="font-semibold">Full-Scope, $0 Share of Cost</span> Medi-Cal.
+            </p>
+            <p>
+              For many seniors and disabled individuals, a monthly income above <span className="font-semibold">$1,856</span> (the 2026 limit)
+              triggers a high Share of Cost. However, California’s <span className="font-semibold">250% Working Disabled Program (WDP)</span> offers
+              a legal way to eliminate that cost and keep more of your money.
+            </p>
+          </div>
+
+          <div className="mt-4 font-semibold text-gray-900">How the 250% Working Disabled Program Works</div>
+          <ul className="mt-2 list-disc pl-5 space-y-2 text-sm text-gray-700">
+            <li>
+              <span className="font-semibold">Higher income allowed</span>: up to <span className="font-semibold">$3,260</span> per month with a{' '}
+              <span className="font-semibold">$0 monthly premium</span> and <span className="font-semibold">$0 Share of Cost</span>.
+            </li>
+            <li>
+              <span className="font-semibold">Broad definition of “work”</span>: no traditional full-time job required. “Working” can include
+              part-time tasks like pet sitting, consulting for a neighbor, or even recycling. No minimum hours required.
+            </li>
+            <li>
+              <span className="font-semibold">Income protection</span>: most disability-related income (like SSDI or private disability) is not
+              counted toward the limit. Even if SSDI converted to Social Security Retirement, it may still be exempt.
+            </li>
+            <li>
+              <span className="font-semibold">CalAIM ready</span>: once Share of Cost is $0, you can qualify for CalAIM services, including Enhanced
+              Care Management and Community Supports for care home placement.
+            </li>
+          </ul>
+
+          <div className="mt-4 font-semibold text-gray-900">Who to Contact for Help</div>
+          <div className="mt-2 space-y-3 text-sm text-gray-700 leading-relaxed">
+            <div>
+              <div className="font-semibold text-gray-900">1. HICAP (Health Insurance Counseling &amp; Advocacy Program)</div>
+              <div>Free, unbiased counseling on Medicare and Medi-Cal. Experts at the Working Disabled Program.</div>
+              <div>
+                <span className="font-semibold">Phone:</span>{' '}
+                <a className="text-primary hover:underline" href="tel:18004340222">1-800-434-0222</a>
+              </div>
+              <div>
+                <span className="font-semibold">Website:</span>{' '}
+                <a className="text-primary hover:underline" href="https://aging.ca.gov/hicap" target="_blank" rel="noopener noreferrer">
+                  aging.ca.gov/hicap
+                </a>
+              </div>
+            </div>
+
+            <div>
+              <div className="font-semibold text-gray-900">2. Health Consumer Alliance (HCA)</div>
+              <div>Free legal assistance for Californians struggling with Medi-Cal eligibility or high Share of Cost.</div>
+              <div>
+                <span className="font-semibold">Phone:</span>{' '}
+                <a className="text-primary hover:underline" href="tel:18888043536">1-888-804-3536</a>
+              </div>
+              <div>
+                <span className="font-semibold">Website:</span>{' '}
+                <a className="text-primary hover:underline" href="https://healthconsumer.org" target="_blank" rel="noopener noreferrer">
+                  healthconsumer.org
+                </a>
+              </div>
+            </div>
+
+            <div>
+              <div className="font-semibold text-gray-900">3. Your Local County Social Services (DPSS)</div>
+              <div>
+                To officially switch programs, contact your local county eligibility worker and ask for an{' '}
+                <span className="font-semibold">“evaluation for the 250% Working Disabled Program.”</span>
+              </div>
+              <div>
+                <span className="font-semibold">Online Portal:</span>{' '}
+                <a className="text-primary hover:underline" href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">
+                  BenefitsCal.com
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>,
     ],
   },
   {
