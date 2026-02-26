@@ -4,6 +4,74 @@ import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+async function maybeAutoSubmitClaimsAfterSignOff(params: {
+  adminDb: any;
+  admin: any;
+  visitIds: string[];
+  signOffId: string;
+}) {
+  const { adminDb, admin, visitIds, signOffId } = params;
+  if (!Array.isArray(visitIds) || visitIds.length === 0) return;
+
+  const visitRefs = visitIds.slice(0, 500).map((id) => adminDb.collection('sw_visit_records').doc(String(id)));
+  const visitSnaps = await adminDb.getAll(...visitRefs);
+  const claimIds = Array.from(
+    new Set(
+      visitSnaps
+        .map((s: any) => (s?.exists ? String((s.data() as any)?.claimId || '').trim() : ''))
+        .filter(Boolean)
+    )
+  );
+  if (claimIds.length === 0) return;
+
+  for (const claimId of claimIds.slice(0, 25)) {
+    const claimRef = adminDb.collection('sw-claims').doc(String(claimId));
+    const claimSnap = await claimRef.get();
+    if (!claimSnap.exists) continue;
+
+    const claim = claimSnap.data() as any;
+    const status = String(claim?.status || 'draft').toLowerCase();
+    if (status !== 'draft') continue;
+
+    const claimVisitIds: string[] = Array.isArray(claim?.visitIds) ? claim.visitIds.map((v: any) => String(v || '').trim()).filter(Boolean) : [];
+    if (claimVisitIds.length === 0) continue;
+
+    const claimVisitRefs = claimVisitIds.slice(0, 500).map((id) => adminDb.collection('sw_visit_records').doc(String(id)));
+    const claimVisitSnaps = await adminDb.getAll(...claimVisitRefs);
+    const allSignedOff = claimVisitSnaps.every((s: any) => s?.exists && Boolean((s.data() as any)?.signedOff));
+    if (!allSignedOff) continue;
+
+    const now = admin.firestore.Timestamp.now();
+    await claimRef.set(
+      {
+        status: 'submitted',
+        submittedAt: now,
+        submittedSource: 'admin_override_sign_off',
+        submittedBySignOffId: signOffId,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    const batch = adminDb.batch();
+    claimVisitIds.slice(0, 500).forEach((visitId) => {
+      const visitRef = adminDb.collection('sw_visit_records').doc(String(visitId));
+      batch.set(
+        visitRef,
+        {
+          claimId,
+          claimStatus: 'submitted',
+          claimSubmitted: true,
+          claimSubmittedAt: now,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    });
+    await batch.commit();
+  }
+}
+
 async function requireAdmin(params: { idToken: string }) {
   const adminModule = await import('@/firebase-admin');
   const adminAuth = adminModule.adminAuth;
@@ -180,6 +248,18 @@ export async function POST(req: NextRequest) {
         );
       }
       await batch.commit();
+
+      // Auto-submit the claim once all visits for that daily claim are signed off.
+      try {
+        await maybeAutoSubmitClaimsAfterSignOff({
+          adminDb,
+          admin,
+          visitIds: rcfeVisits.map((v) => String(v?.visitId || v?.id || '').trim()).filter(Boolean),
+          signOffId: recordRef.id,
+        });
+      } catch (e) {
+        console.warn('⚠️ Auto-submit claims after admin override sign-off failed (best-effort):', e);
+      }
 
       results.push({ rcfeId, signOffId: recordRef.id, visitCount: rcfeVisits.length });
     }

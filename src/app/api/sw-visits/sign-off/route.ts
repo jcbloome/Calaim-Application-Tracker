@@ -1,5 +1,77 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+async function maybeAutoSubmitClaimsAfterSignOff(params: {
+  adminDb: any;
+  admin: any;
+  visitIds: string[];
+  signOffId: string;
+}) {
+  const { adminDb, admin, visitIds, signOffId } = params;
+
+  if (!Array.isArray(visitIds) || visitIds.length === 0) return;
+
+  // Determine which claim(s) these visits belong to.
+  const visitRefs = visitIds.slice(0, 500).map((id) => adminDb.collection('sw_visit_records').doc(String(id)));
+  const visitSnaps = await adminDb.getAll(...visitRefs);
+
+  const claimIds = Array.from(
+    new Set(
+      visitSnaps
+        .map((s: any) => (s?.exists ? String((s.data() as any)?.claimId || '').trim() : ''))
+        .filter(Boolean)
+    )
+  );
+  if (claimIds.length === 0) return;
+
+  for (const claimId of claimIds.slice(0, 25)) {
+    const claimRef = adminDb.collection('sw-claims').doc(String(claimId));
+    const claimSnap = await claimRef.get();
+    if (!claimSnap.exists) continue;
+
+    const claim = claimSnap.data() as any;
+    const status = String(claim?.status || 'draft').toLowerCase();
+    if (status !== 'draft') continue;
+
+    const claimVisitIds: string[] = Array.isArray(claim?.visitIds) ? claim.visitIds.map((v: any) => String(v || '').trim()).filter(Boolean) : [];
+    if (claimVisitIds.length === 0) continue;
+
+    // Only auto-submit when ALL visits on that claim are signed off.
+    const claimVisitRefs = claimVisitIds.slice(0, 500).map((id) => adminDb.collection('sw_visit_records').doc(String(id)));
+    const claimVisitSnaps = await adminDb.getAll(...claimVisitRefs);
+    const allSignedOff = claimVisitSnaps.every((s: any) => s?.exists && Boolean((s.data() as any)?.signedOff));
+    if (!allSignedOff) continue;
+
+    const now = admin.firestore.Timestamp.now();
+    await claimRef.set(
+      {
+        status: 'submitted',
+        submittedAt: now,
+        submittedSource: 'sign_off',
+        submittedBySignOffId: signOffId,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    const batch = adminDb.batch();
+    claimVisitIds.slice(0, 500).forEach((visitId) => {
+      const visitRef = adminDb.collection('sw_visit_records').doc(String(visitId));
+      batch.set(
+        visitRef,
+        {
+          claimId,
+          claimStatus: 'submitted',
+          claimSubmitted: true,
+          claimSubmittedAt: now,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    });
+    await batch.commit();
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization') || '';
@@ -110,6 +182,18 @@ export async function POST(request: NextRequest) {
       );
     }
     await batch.commit();
+
+    // Auto-submit the SW claim once all visits on that daily claim are signed off.
+    try {
+      await maybeAutoSubmitClaimsAfterSignOff({
+        adminDb,
+        admin,
+        visitIds,
+        signOffId: recordRef.id,
+      });
+    } catch (e) {
+      console.warn('⚠️ Auto-submit claims after sign-off failed (best-effort):', e);
+    }
 
     // Check for flagged visits and send notifications
     const flaggedVisits = signOffData.completedVisits.filter((visit: any) => visit.flagged);
