@@ -20,28 +20,35 @@ async function requireAdmin(params: { idToken: string }) {
 
   const hasAdminClaim = Boolean((decoded as any)?.admin);
   const hasSuperAdminClaim = Boolean((decoded as any)?.superAdmin);
-  if (hasAdminClaim || hasSuperAdminClaim) {
-    return { ok: true as const, uid, email, name, adminDb, isSuperAdmin: hasSuperAdminClaim };
-  }
+  let isAdmin = hasAdminClaim || hasSuperAdminClaim;
+  let isSuperAdmin = hasSuperAdminClaim;
 
+  // Email allow-list always wins.
   if (isHardcodedAdminEmail(email)) {
-    return { ok: true as const, uid, email, name, adminDb, isSuperAdmin: true };
+    isAdmin = true;
+    isSuperAdmin = true;
   }
 
-  const [adminRole, superAdminRole] = await Promise.all([
-    adminDb.collection('roles_admin').doc(uid).get(),
-    adminDb.collection('roles_super_admin').doc(uid).get(),
-  ]);
-
-  let isAdmin = adminRole.exists || superAdminRole.exists;
-  let isSuperAdmin = superAdminRole.exists;
-  if (!isAdmin && email) {
-    const [emailAdminRole, emailSuperAdminRole] = await Promise.all([
-      adminDb.collection('roles_admin').doc(email).get(),
-      adminDb.collection('roles_super_admin').doc(email).get(),
+  // Even if the token only has `admin` (not `superAdmin`), upgrade to superadmin
+  // when the Firestore role indicates it. This avoids false 403s for true superadmins.
+  if (!isAdmin || !isSuperAdmin) {
+    const [adminRole, superAdminRole] = await Promise.all([
+      adminDb.collection('roles_admin').doc(uid).get(),
+      adminDb.collection('roles_super_admin').doc(uid).get(),
     ]);
-    isAdmin = emailAdminRole.exists || emailSuperAdminRole.exists;
-    isSuperAdmin = emailSuperAdminRole.exists;
+
+    isAdmin = isAdmin || adminRole.exists || superAdminRole.exists;
+    isSuperAdmin = isSuperAdmin || superAdminRole.exists;
+
+    // Backward-compat: some roles were stored by email instead of UID.
+    if (email && (!isAdmin || !isSuperAdmin)) {
+      const [emailAdminRole, emailSuperAdminRole] = await Promise.all([
+        adminDb.collection('roles_admin').doc(email).get(),
+        adminDb.collection('roles_super_admin').doc(email).get(),
+      ]);
+      isAdmin = isAdmin || emailAdminRole.exists || emailSuperAdminRole.exists;
+      isSuperAdmin = isSuperAdmin || emailSuperAdminRole.exists;
+    }
   }
 
   if (!isAdmin) {

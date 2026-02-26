@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
-import { collection, query, orderBy, getDocs, doc, updateDoc, where, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, doc, updateDoc, where, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { 
   DollarSign, 
@@ -28,7 +28,6 @@ import {
   Calendar,
   Filter,
   Download,
-  RefreshCw,
   AlertCircle,
   TrendingUp,
   Trash2
@@ -105,8 +104,60 @@ export default function SWClaimsManagementPage() {
   });
 
   useEffect(() => {
-    loadClaims();
-  }, []);
+    if (!firestore) return;
+
+    setIsLoading(true);
+    const claimsQuery = query(collection(firestore, 'sw-claims'), orderBy('claimDate', 'desc'), limit(2000));
+    const unsub = onSnapshot(
+      claimsQuery,
+      (snap) => {
+        const loadedClaims: ClaimSubmission[] = snap.docs.map((docSnap) => {
+          const data: any = docSnap.data();
+          const toDate = (value: any): Date | undefined => {
+            try {
+              if (!value) return undefined;
+              if (typeof value?.toDate === 'function') return value.toDate();
+              if (value instanceof Date) return value;
+              const d = new Date(value);
+              return Number.isNaN(d.getTime()) ? undefined : d;
+            } catch {
+              return undefined;
+            }
+          };
+
+          const memberVisitsRaw: any[] = Array.isArray(data?.memberVisits) ? data.memberVisits : [];
+          const memberVisits: MemberVisit[] = memberVisitsRaw.map((v: any) => ({
+            ...v,
+            visitDate: (toDate(v?.visitDate) || new Date()) as any,
+          }));
+
+          const claimDate = toDate(data?.claimDate) || new Date();
+          return {
+            id: docSnap.id,
+            ...data,
+            claimDate,
+            submittedAt: toDate(data?.submittedAt),
+            reviewedAt: toDate(data?.reviewedAt),
+            paidAt: toDate(data?.paidAt),
+            memberVisits,
+          } as ClaimSubmission;
+        });
+
+        setClaims(loadedClaims);
+        calculateSummary(loadedClaims);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error('Error loading claims:', error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Failed to load claims' });
+        setClaims([]);
+        calculateSummary([]);
+        setIsLoading(false);
+      }
+    );
+
+    return () => unsub();
+  }, [firestore, toast]);
 
   useEffect(() => {
     applyFilters();
@@ -118,42 +169,26 @@ export default function SWClaimsManagementPage() {
 
   const normalizeName = (s: string) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
-  const loadClaims = async () => {
-    if (!firestore) return;
-    
-    setIsLoading(true);
-    try {
-      const claimsQuery = query(
-        collection(firestore, 'sw-claims'),
-        orderBy('submittedAt', 'desc')
-      );
-      
-      const querySnapshot = await getDocs(claimsQuery);
-      const loadedClaims: ClaimSubmission[] = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          claimDate: data.claimDate.toDate(),
-          submittedAt: data.submittedAt?.toDate(),
-          reviewedAt: data.reviewedAt?.toDate(),
-          paidAt: data.paidAt?.toDate(),
-        };
-      }) as ClaimSubmission[];
-      
-      setClaims(loadedClaims);
-      calculateSummary(loadedClaims);
-    } catch (error) {
-      console.error('Error loading claims:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to load claims'
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const deleteTargetSummaries = useMemo(() => {
+    const byId = new Map<string, ClaimSubmission>();
+    claims.forEach((c) => byId.set(c.id, c));
+    const toLine = (claim: ClaimSubmission) => {
+      const sw = String(claim.socialWorkerName || claim.socialWorkerEmail || 'Social Worker').trim();
+      const claimDate = claim.claimDate ? format(claim.claimDate, 'MMM d, yyyy') : '—';
+      const firstVisit = Array.isArray(claim.memberVisits) ? claim.memberVisits[0] : null;
+      const visitLine = firstVisit
+        ? `${format(firstVisit.visitDate, 'MM/dd/yyyy')} • ${String(firstVisit.memberName || '—').trim()} • ${String(firstVisit.rcfeName || '—').trim()}`
+        : '—';
+      const extra = Math.max(0, (claim.memberVisits?.length || 0) - 1);
+      return `${sw} • ${claimDate} • ${visitLine}${extra > 0 ? ` (+${extra} more)` : ''}`;
+    };
+    return deleteTargetIds
+      .map((id) => {
+        const claim = byId.get(id);
+        return claim ? ({ id, line: toLine(claim) } as const) : ({ id, line: 'Claim not loaded in UI' } as const);
+      })
+      .filter(Boolean);
+  }, [claims, deleteTargetIds]);
 
   const applyFilters = () => {
     let filtered = [...claims];
@@ -498,14 +533,10 @@ export default function SWClaimsManagementPage() {
         <div>
           <h1 className="text-3xl font-bold">SW Claims Management</h1>
           <p className="text-muted-foreground">
-            Manage and review social worker claims submissions
+            Manage and review social worker claims submissions (auto-updates in real time).
           </p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={loadClaims} variant="outline">
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
           <Button onClick={exportToCsv} variant="outline">
             <Download className="mr-2 h-4 w-4" />
             Export CSV
@@ -525,6 +556,23 @@ export default function SWClaimsManagementPage() {
             <div className="text-sm">
               Deleting <span className="font-semibold">{deleteTargetIds.length}</span> claim(s).
             </div>
+            {deleteTargetSummaries.length > 0 ? (
+              <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
+                <div className="font-medium text-foreground mb-1">Selected claim(s)</div>
+                <div className="space-y-1" title={deleteTargetSummaries.map((x) => `${x.id}: ${x.line}`).join('\n')}>
+                  {deleteTargetSummaries.slice(0, 6).map((x) => (
+                    <div key={`del-sum-${x.id}`} className="whitespace-nowrap">
+                      <span className="font-mono text-[10px] text-muted-foreground">{x.id}</span>
+                      <span className="mx-2">—</span>
+                      {x.line}
+                    </div>
+                  ))}
+                  {deleteTargetSummaries.length > 6 ? (
+                    <div className="whitespace-nowrap">+{deleteTargetSummaries.length - 6} more…</div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             <div className="space-y-2">
               <div className="text-sm font-medium">Reason</div>
               <Textarea
