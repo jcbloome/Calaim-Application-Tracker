@@ -119,6 +119,7 @@ const adminNavLinks = [
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
       { href: '/admin/social-worker-assignments', label: 'Social Worker Assignments', icon: UserPlus },
+      { href: '/admin/sw-roster', label: 'SW Weekly Roster', icon: Printer },
       { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },
       { href: '/admin/sw-visit-tracking', label: 'SW Visit Tracking System', icon: FileBarChart },
       { href: '/admin/sw-claims-tracking', label: 'SW Claims Tracking', icon: FileBarChart },
@@ -928,6 +929,20 @@ function AdminHeader() {
     );
   };
 
+  const isHrefActive = (href?: string | null) => {
+    const h = String(href || '').trim();
+    if (!h) return false;
+    // Special-case: '/admin' should only be active on the dashboard root,
+    // not for every admin route.
+    if (h === '/admin') return pathname === '/admin';
+    return pathname === h || pathname.startsWith(`${h}/`);
+  };
+
+  const isSubmenuActive = (navItem: any) => {
+    const items = Array.isArray(navItem?.submenuItems) ? navItem.submenuItems : [];
+    return items.some((it: any) => !it?.isDivider && isHrefActive(it?.href));
+  };
+
   // Filter navigation based on user role
   let combinedNavLinks = adminNavLinks;
   
@@ -970,7 +985,7 @@ function AdminHeader() {
                           className={cn(
                             navigationMenuTriggerStyle(),
                             "flex items-center gap-2 text-sm font-medium transition-colors hover:text-primary focus:text-primary focus:outline-none disabled:pointer-events-none disabled:opacity-50 data-[active]:bg-accent/50 data-[state=open]:bg-accent/50",
-                            pathname.startsWith(navItem.submenuItems?.[0]?.href || '') && "bg-accent text-accent-foreground"
+                            isSubmenuActive(navItem) && "bg-accent text-accent-foreground"
                           )}
                         >
                           <navItem.icon className="h-4 w-4" />
@@ -993,7 +1008,7 @@ function AdminHeader() {
                                 href={item.href}
                                 className={cn(
                                   "flex items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground",
-                                  pathname === item.href && "bg-accent text-accent-foreground font-medium"
+                                  isHrefActive(item.href) && "bg-accent text-accent-foreground font-medium"
                                 )}
                               >
                                 <item.icon className="h-4 w-4" />
@@ -1120,7 +1135,7 @@ function AdminHeader() {
                                     href={item.href}
                                     className={cn(
                                       "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground",
-                                      pathname === item.href && "bg-accent text-accent-foreground font-medium"
+                                      isHrefActive(item.href) && "bg-accent text-accent-foreground font-medium"
                                     )}
                                   >
                                     <item.icon className="h-4 w-4" />

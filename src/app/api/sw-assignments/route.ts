@@ -1,6 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { normalizeRcfeNameForAssignment } from '@/lib/rcfe-utils';
+
+function isNewAssignmentForEmail(member: any, email: string) {
+  const requested = String(email || '').trim().toLowerCase();
+  if (!requested) return false;
+
+  const changedTo = String(member?.assignmentChangedTo || '').trim().toLowerCase();
+  if (changedTo && changedTo !== requested) return false;
+
+  const changedAtRaw = member?.assignmentChangedAt;
+  if (!changedAtRaw) return false;
+  const changedAt = new Date(String(changedAtRaw));
+  if (Number.isNaN(changedAt.getTime())) return false;
+
+  const ageMs = Date.now() - changedAt.getTime();
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  return ageMs >= 0 && ageMs <= sevenDaysMs;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,89 +30,87 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`🔍 [SW-ASSIGNMENTS] Fetching assignments for SW: ${email}`);
+    console.log(`🔍 [SW-ASSIGNMENTS] Fetching assignments for SW (cache): ${email}`);
 
-    const credentials = getCaspioCredentialsFromEnv();
+    // Read from Firestore cache instead of hitting Caspio directly.
+    const adminModule = await import('@/firebase-admin');
+    const adminAuth = adminModule.adminAuth;
+    const adminDb = adminModule.adminDb;
 
-    console.log('🔧 [SW-ASSIGNMENTS] Environment check:', {
-      hasBaseUrl: true,
-      hasClientId: true,
-      hasClientSecret: true,
-      baseUrl: credentials.baseUrl ? `${credentials.baseUrl.substring(0, 20)}...` : 'undefined'
-    });
-
-    // Get OAuth token
-    console.log('🔐 [SW-ASSIGNMENTS] Getting Caspio OAuth token...');
-    const accessToken = await getCaspioToken(credentials);
-    console.log('✅ [SW-ASSIGNMENTS] Got Caspio access token');
-
-    // Query members assigned to this social worker
-    // Look for members where Social_Worker_Assigned or Kaiser_User_Assignment matches the email
-    const query = `Social_Worker_Assigned='${email}' OR Kaiser_User_Assignment='${email}'`;
-    const membersUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(query)}`;
-
-    console.log('📊 [SW-ASSIGNMENTS] Fetching assigned members...');
-    const membersResponse = await fetch(membersUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!membersResponse.ok) {
-      const errorText = await membersResponse.text();
-      console.error('❌ [SW-ASSIGNMENTS] Members fetch error:', {
-        status: membersResponse.status,
-        statusText: membersResponse.statusText,
-        error: errorText,
-        url: membersUrl
-      });
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Failed to fetch members from Caspio',
-        debug: {
-          status: membersResponse.status,
-          statusText: membersResponse.statusText,
-          error: errorText,
-          url: membersUrl
-        }
-      }, { status: 500 });
+    const authHeader = request.headers.get('authorization') || request.headers.get('Authorization') || '';
+    const token = authHeader.toLowerCase().startsWith('bearer ')
+      ? authHeader.slice('bearer '.length).trim()
+      : '';
+    if (!token) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const membersData = await membersResponse.json();
-    console.log(`✅ [SW-ASSIGNMENTS] Found ${membersData.Result?.length || 0} assigned members`);
+    const decoded = await adminAuth.verifyIdToken(token).catch(() => null as any);
+    const tokenEmail = String(decoded?.email || '').trim().toLowerCase();
+    const requestedEmail = String(email || '').trim().toLowerCase();
+    if (!tokenEmail || !requestedEmail) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    if (tokenEmail !== requestedEmail) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
+    const cache = adminDb.collection('caspio_members_cache');
+    const [swSnap, kaiserSnap] = await Promise.all([
+      cache.where('Social_Worker_Assigned', '==', requestedEmail).limit(5000).get().catch(() => null as any),
+      cache.where('Kaiser_User_Assignment', '==', requestedEmail).limit(5000).get().catch(() => null as any),
+    ]);
+
+    const byId = new Map<string, any>();
+    const addSnap = (snap: any) => {
+      if (!snap?.docs) return;
+      snap.docs.forEach((d: any) => {
+        if (!d?.id) return;
+        byId.set(String(d.id), d.data?.() ? d.data() : d.data);
+      });
+    };
+    addSnap(swSnap);
+    addSnap(kaiserSnap);
+
+    const members = Array.from(byId.entries()).map(([id, data]) => ({ id, ...(data || {}) }));
+    console.log(`✅ [SW-ASSIGNMENTS] Found ${members.length} assigned members (cache)`);
 
     // Group members by RCFE facility
     const rcfeFacilities = new Map();
-    const members = (membersData.Result || []) as any[];
 
     members.forEach((member: any) => {
       const rcfeName = normalizeRcfeNameForAssignment(member.RCFE_Name);
       // Do not include placeholder RCFE names (e.g. "CalAIM_Use...") in assignments.
       if (!rcfeName) return;
-      const rcfeAddress = member.RCFE_Address || 'Address not available';
+      const addressLine = String(member.RCFE_Address || '').trim();
+      const city = String(member.RCFE_City || member.RCFE_City2 || member.MemberCity || member.Member_City || '').trim();
+      const state = String(member.RCFE_State || '').trim();
+      const zip = String(member.RCFE_Zip || '').trim();
+      const rcfeAddress = [addressLine, [city, state].filter(Boolean).join(', '), zip].filter(Boolean).join(' ').trim()
+        || 'Address not available';
       
       if (!rcfeFacilities.has(rcfeName)) {
         rcfeFacilities.set(rcfeName, {
           id: rcfeName.toLowerCase().replace(/\s+/g, '-'),
           name: rcfeName,
           address: rcfeAddress,
-          city: member.Member_City || 'Unknown',
-          county: member.Member_County || 'Los Angeles',
+          city: city || 'Unknown',
+          county: String(member.RCFE_County || member.Member_County || '').trim() || 'Unknown',
           members: []
         });
       }
 
       rcfeFacilities.get(rcfeName).members.push({
-        id: member.client_ID2 || member.id || Math.random().toString(),
+        id: member.Client_ID2 || member.client_ID2 || member.id || Math.random().toString(),
         name: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
         roomNumber: member.Room_Number || undefined,
         careLevel: member.Care_Level || 'Medium',
         lastVisit: member.Last_Visit_Date || undefined,
         nextVisit: member.Next_Visit_Date || undefined,
         status: member.CalAIM_Status === 'Authorized' ? 'Active' : 'Inactive',
-        notes: member.Visit_Notes || undefined
+        notes: member.Visit_Notes || undefined,
+        isNewAssignment: isNewAssignmentForEmail(member, requestedEmail),
+        assignmentChangedAt: member?.assignmentChangedAt || null,
       });
     });
 

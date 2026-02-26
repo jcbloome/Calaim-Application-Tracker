@@ -97,7 +97,10 @@ export default function SWVisitVerificationPage() {
     
     setLoading(true);
     try {
-      const response = await fetch(`/api/sw-assignments?email=${encodeURIComponent(user.email)}`);
+      const idToken = await user.getIdToken();
+      const response = await fetch(`/api/sw-assignments?email=${encodeURIComponent(user.email)}`, {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch SW assignments');
       }
@@ -177,7 +180,10 @@ export default function SWVisitVerificationPage() {
     setSyncing(true);
     try {
       // Fetch RCFE facilities and members assigned to this social worker
-      const response = await fetch(`/api/sw-assignments?email=${encodeURIComponent(user?.email || '')}`);
+      const idToken = user ? await user.getIdToken() : '';
+      const response = await fetch(`/api/sw-assignments?email=${encodeURIComponent(user?.email || '')}`, {
+        headers: idToken ? { authorization: `Bearer ${idToken}` } : undefined,
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch assignments from Caspio');
       }

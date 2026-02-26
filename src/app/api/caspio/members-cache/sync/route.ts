@@ -526,6 +526,12 @@ export async function POST(req: NextRequest) {
         const existingSnaps = await adminDb.getAll(...prepared.map((p) => p.docRef));
 
         const activityDocs: Array<Record<string, any>> = [];
+        const assignmentChangeUpdates: Array<{
+          docRef: FirebaseFirestore.DocumentReference;
+          from: string;
+          to: string;
+          field: string;
+        }> = [];
         for (let idx = 0; idx < prepared.length; idx += 1) {
           const p = prepared[idx];
           const snap = existingSnaps[idx];
@@ -537,6 +543,7 @@ export async function POST(req: NextRequest) {
             'CalAIM_Status',
             'pathway',
             'Social_Worker_Assigned',
+            'Kaiser_User_Assignment',
             'Staff_Assigned',
             'Hold_For_Social_Worker',
             'RCFE_Name',
@@ -556,7 +563,16 @@ export async function POST(req: NextRequest) {
           if (changes.length === 0) continue;
 
           const pickPrimaryKey = () => {
-            const order = ['Kaiser_Status', 'CalAIM_Status', 'pathway', 'Hold_For_Social_Worker', 'Social_Worker_Assigned', 'Staff_Assigned', 'RCFE_Name'];
+            const order = [
+              'Kaiser_Status',
+              'CalAIM_Status',
+              'pathway',
+              'Hold_For_Social_Worker',
+              'Social_Worker_Assigned',
+              'Kaiser_User_Assignment',
+              'Staff_Assigned',
+              'RCFE_Name',
+            ];
             for (const k of order) {
               if (changes.some((c) => c.key === k)) return k;
             }
@@ -572,6 +588,7 @@ export async function POST(req: NextRequest) {
             pathway: 'pathway_change',
             Hold_For_Social_Worker: 'status_change',
             Social_Worker_Assigned: 'assignment_change',
+            Kaiser_User_Assignment: 'assignment_change',
             Staff_Assigned: 'assignment_change',
             RCFE_Name: 'form_update',
           };
@@ -582,6 +599,7 @@ export async function POST(req: NextRequest) {
             pathway: 'pathway',
             Hold_For_Social_Worker: 'assignment',
             Social_Worker_Assigned: 'assignment',
+            Kaiser_User_Assignment: 'assignment',
             Staff_Assigned: 'assignment',
             RCFE_Name: 'application',
           };
@@ -624,6 +642,40 @@ export async function POST(req: NextRequest) {
             timestamp: new Date().toISOString(),
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           });
+
+          // Mark "new assignment" metadata for roster UI.
+          // This is used to show a new icon next to newly assigned members.
+          const swChange = changes.find((c) => c.key === 'Social_Worker_Assigned' || c.key === 'Kaiser_User_Assignment');
+          if (swChange) {
+            assignmentChangeUpdates.push({
+              docRef: p.docRef,
+              from: String(swChange.oldStr || '').trim(),
+              to: String(swChange.newStr || '').trim(),
+              field: String(swChange.key || '').trim(),
+            });
+          }
+        }
+
+        // Persist assignment change metadata back to the cache docs.
+        // Keep it separate from activity logs so we don't exceed write limits.
+        if (assignmentChangeUpdates.length > 0) {
+          for (let j = 0; j < assignmentChangeUpdates.length; j += 400) {
+            const chunk = assignmentChangeUpdates.slice(j, j + 400);
+            const ub = adminDb.batch();
+            chunk.forEach((u) => {
+              ub.set(
+                u.docRef,
+                {
+                  assignmentChangedAt: now.toISOString(),
+                  assignmentChangedFrom: u.from || null,
+                  assignmentChangedTo: u.to || null,
+                  assignmentChangedField: u.field || null,
+                },
+                { merge: true }
+              );
+            });
+            await ub.commit();
+          }
         }
 
         // Write activities in batches under Firestore limits.

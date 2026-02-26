@@ -13,6 +13,7 @@ import {
   UserCheck,
   FileBarChart,
   ListChecks,
+  Printer,
   Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,11 @@ const swNavLinks = [
     href: '/sw-portal/visit-verification', 
     label: 'Visit Verification', 
     icon: ClipboardCheck 
+  },
+  {
+    href: '/sw-portal/roster',
+    label: 'Roster',
+    icon: Printer
   },
   {
     href: '/sw-portal/monthly-visits',

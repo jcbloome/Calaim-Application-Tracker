@@ -49,10 +49,11 @@ async function triggerMembersCacheSync(params: { mode: "incremental" | "full" })
   }
 }
 
-// Every 15 minutes: incremental sync for SW portal freshness.
+// Weekly (Sunday night): incremental sync for SW roster freshness.
 export const syncCaspioMembersCacheIncremental = onSchedule(
   {
-    schedule: "*/15 * * * *",
+    // Sunday 11:05 PM PT
+    schedule: "5 23 * * 0",
     timeZone: "America/Los_Angeles",
     secrets: [cronSecret],
   },
@@ -63,10 +64,11 @@ export const syncCaspioMembersCacheIncremental = onSchedule(
   }
 );
 
-// Nightly: full sync as a safety net/backfill.
+// Weekly (Sunday night): full sync as a safety net/backfill.
 export const syncCaspioMembersCacheFull = onSchedule(
   {
-    schedule: "35 2 * * *",
+    // Sunday 11:35 PM PT
+    schedule: "35 23 * * 0",
     timeZone: "America/Los_Angeles",
     secrets: [cronSecret],
   },
