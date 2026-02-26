@@ -903,11 +903,9 @@ function AdminHeader() {
       ? (newCsSummaryCount === 1 && csIsNewFlag ? 'CS(!)' : `CS(${newCsSummaryCount})`)
       : null;
     const dLabel = showDocs ? `D(${newUploadCount})` : null;
-    const chatLabel = chatUnreadCount > 0 ? `Chat(${chatUnreadCount})` : null;
     const notesLabel = priorityNotesCount > 0 ? `Notes(${priorityNotesCount})` : null;
 
     const items: Array<{ key: string; label: string; href: string; dot: string }> = [];
-    if (chatLabel) items.push({ key: 'chat', label: chatLabel, href: '/admin/desktop-chat-window', dot: 'bg-purple-600' });
     if (csLabel) items.push({ key: 'cs', label: csLabel, href: '/admin/applications?review=cs', dot: 'bg-orange-500' });
     if (dLabel) items.push({ key: 'docs', label: dLabel, href: '/admin/applications?review=docs', dot: 'bg-green-600' });
     if (notesLabel) items.push({ key: 'notes', label: notesLabel, href: '/admin/my-notes', dot: 'bg-blue-600' });
