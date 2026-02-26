@@ -30,6 +30,7 @@ export default function SWLoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [loginAttempted, setLoginAttempted] = useState(false);
+  const [verifyDeadlineMs, setVerifyDeadlineMs] = useState<number | null>(null);
 
   // Redirect if already logged in as social worker
   useEffect(() => {
@@ -72,6 +73,11 @@ export default function SWLoginPage() {
       return;
     }
 
+    // Give custom claims + SW doc a moment to propagate after sign-in.
+    // Without this, we can incorrectly show "not enabled" and sign the user out.
+    const deadline = verifyDeadlineMs ?? 0;
+    if (deadline && Date.now() < deadline) return;
+
     let message = 'Access denied. You are not authorized to access the Social Worker portal.';
     if (swStatus === 'inactive') {
       message = 'Your Social Worker account is inactive. Please contact your administrator to enable access.';
@@ -84,7 +90,7 @@ export default function SWLoginPage() {
     setError(message);
     setIsLoading(false);
     auth.signOut().catch(() => null);
-  }, [loginAttempted, swLoading, isSocialWorker, swStatus]);
+  }, [loginAttempted, swLoading, isSocialWorker, swStatus, verifyDeadlineMs]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,6 +128,22 @@ export default function SWLoginPage() {
 
       // Force refresh to pick up custom claims.
       await userCredential.user.getIdToken(true);
+
+      // Wait briefly for the socialWorker claim to become visible.
+      // This avoids a redirect loop / false "not enabled" error right after login.
+      const deadline = Date.now() + 10_000;
+      setVerifyDeadlineMs(deadline);
+      while (Date.now() < deadline) {
+        try {
+          const tokenResult = await userCredential.user.getIdTokenResult();
+          const claims = (tokenResult?.claims || {}) as Record<string, any>;
+          if (Boolean(claims.socialWorker)) break;
+        } catch {
+          // ignore and retry
+        }
+        await userCredential.user.getIdToken(true);
+        await new Promise((r) => setTimeout(r, 600));
+      }
 
       // Record daily login marker (forces a fresh sign-in each day).
       writeStoredSwLoginDay(getTodayLocalDayKey());
