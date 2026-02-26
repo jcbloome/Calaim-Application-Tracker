@@ -43,15 +43,16 @@ export function useSocialWorker() {
       }
 
       try {
-        // Fast-path: trust token claim if present (set by `/api/auth/sw-session`).
+        // Fast-path: trust token claim if present (set by `/api/auth/sw-session`),
+        // but still try to load/resolve a friendly display name from Firestore/Caspio sync.
+        let claimedSocialWorker = false;
         try {
           const tokenResult = await user.getIdTokenResult();
           const claims = (tokenResult?.claims || {}) as Record<string, any>;
           if (Boolean(claims.socialWorker)) {
+            claimedSocialWorker = true;
             setIsSocialWorker(true);
             setStatus('active');
-            setIsLoading(false);
-            return;
           }
         } catch (claimError) {
           console.warn('⚠️ useSocialWorker: Failed to read token claims', claimError);
@@ -208,9 +209,29 @@ export function useSocialWorker() {
             }
           }
         } else {
-          setIsSocialWorker(false);
-          setSocialWorkerData(null);
-          setStatus('not-found');
+          if (claimedSocialWorker) {
+            const displayNameResolved = await resolveDisplayName({ email: normalizedEmail || user.email });
+            setSocialWorkerData({
+              uid: user.uid,
+              email: normalizedEmail || String(user.email || '').trim(),
+              displayName: displayNameResolved,
+              role: 'social_worker',
+              isActive: true,
+              createdAt: new Date(),
+              createdBy: 'system',
+              permissions: {
+                visitVerification: true,
+                memberQuestionnaire: true,
+                claimsSubmission: true
+              }
+            });
+            setIsSocialWorker(true);
+            setStatus('active');
+          } else {
+            setIsSocialWorker(false);
+            setSocialWorkerData(null);
+            setStatus('not-found');
+          }
         }
       } catch (error) {
         console.error('Error checking social worker status:', error);

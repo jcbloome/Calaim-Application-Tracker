@@ -5,55 +5,28 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useAuth } from '@/firebase';
-import { cn } from '@/lib/utils';
 import {
-  ClipboardCheck,
-  DollarSign,
   LogOut,
-  UserCheck,
-  FileBarChart,
-  ListChecks,
-  Printer,
   Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Image from 'next/image';
 import { clearStoredSwLoginDay, getTodayLocalDayKey, msUntilNextLocalMidnight, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
-
-const swNavLinks = [
-  { 
-    href: '/sw-portal/visit-verification', 
-    label: 'Visit Verification', 
-    icon: ClipboardCheck 
-  },
-  {
-    href: '/sw-portal/roster',
-    label: 'Roster',
-    icon: Printer
-  },
-  {
-    href: '/sw-portal/monthly-visits',
-    label: 'Visits',
-    icon: ListChecks
-  },
-  { 
-    href: '/sw-portal/sign-off', 
-    label: 'Sign Off', 
-    icon: FileBarChart 
-  },
-  { 
-    href: '/sw-portal/submit-claims', 
-    label: 'Submit Claims', 
-    icon: DollarSign 
-  }
-];
+import { SWTopNav } from '@/components/sw/SWTopNav';
 
 export default function SWPortalLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, isSocialWorker, isLoading } = useSocialWorker();
+  const { user, socialWorkerData, isSocialWorker, isLoading } = useSocialWorker();
   const auth = useAuth();
   const [isRedirecting, setIsRedirecting] = useState(false);
+
+  const swName = String(
+    (socialWorkerData as any)?.displayName ||
+      (user as any)?.displayName ||
+      (user as any)?.email ||
+      'Social Worker'
+  ).trim() || 'Social Worker';
 
   const handleSignOut = useCallback(async (target: string = '/sw-login') => {
     if (auth) {
@@ -121,55 +94,34 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
     <div className="flex flex-col min-h-screen bg-slate-50/50">
       {/* Header */}
       <div className="bg-card border-b sticky top-0 z-40">
-        <div className="container mx-auto flex items-center justify-between h-16 px-4 sm:px-6">
-          <div className="flex items-center gap-6">
+        <div className="container mx-auto px-4 py-2 sm:px-6">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-4 min-w-0">
             <Link href="/sw-portal" className="shrink-0">
               <Image
                 src="/calaimlogopdf.png"
                 alt="Connect CalAIM Logo"
                 width={240}
                 height={67}
-                className="w-48 h-auto object-contain"
+                className="w-44 sm:w-48 h-auto object-contain"
                 priority
               />
             </Link>
+            </div>
 
-            {/* Navigation */}
-            <nav className="hidden md:flex gap-1">
-              {swNavLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors",
-                    pathname === link.href
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  )}
-                >
-                  <link.icon className="h-4 w-4" />
-                  {link.label}
-                </Link>
-              ))}
-            </nav>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold text-foreground truncate">
+                {swName}
+              </div>
+              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign Out
+              </Button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 text-sm">
-              <UserCheck className="h-4 w-4 text-primary" />
-              <div className="leading-tight">
-                <div className="font-medium text-foreground">
-                  {String((user as any)?.displayName || (user as any)?.email || 'Social Worker')}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {String((user as any)?.email || 'Social Worker Portal')}
-                </div>
-              </div>
-            </div>
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
-              <LogOut className="h-4 w-4 mr-2" />
-              Sign Out
-            </Button>
+          <div className="pt-1">
+            <SWTopNav className="w-full" />
           </div>
         </div>
       </div>

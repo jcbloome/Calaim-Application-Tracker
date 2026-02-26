@@ -26,6 +26,7 @@ type ClaimDoc = {
   visitCount?: number;
   visitIds?: string[];
   memberVisits?: any[];
+  signoffById?: Record<string, any>;
 };
 
 const VISIT_FEE_RATE = 45;
@@ -132,6 +133,25 @@ export default function SubmitClaimsPage() {
           Number(c.visitCount || 0) ||
           (Array.isArray(c.visitIds) ? c.visitIds.length : 0) ||
           visits.length;
+
+        const visitIds = Array.isArray(c.visitIds) ? c.visitIds.map((v) => String(v || '').trim()).filter(Boolean) : [];
+        const signoffs = c.signoffById && typeof c.signoffById === 'object' ? Object.values(c.signoffById) : [];
+        const signedVisitIds = new Set<string>();
+        const signerLabels: string[] = [];
+        signoffs.forEach((s: any) => {
+          const name = String(s?.signedByName || '').trim();
+          const rcfe = String(s?.rcfeName || '').trim();
+          if (name) signerLabels.push(rcfe ? `${name} (${rcfe})` : name);
+          const vids = Array.isArray(s?.visitIds) ? s.visitIds : [];
+          vids.forEach((id: any) => {
+            const t = String(id || '').trim();
+            if (t) signedVisitIds.add(t);
+          });
+        });
+        const readyToSubmit = visitIds.length > 0 && visitIds.every((id) => signedVisitIds.has(id));
+        const signedOffByLabel =
+          signerLabels.length === 0 ? '—' : signerLabels.length === 1 ? signerLabels[0] : `${signerLabels[0]} (+${signerLabels.length - 1} more)`;
+
         return {
           id: String(c.id || ''),
           claimDate: toDate(c.claimDate),
@@ -141,6 +161,8 @@ export default function SubmitClaimsPage() {
           visitCount,
           totalAmount: Number(c.totalAmount || 0),
           status: String(c.status || 'draft'),
+          readyToSubmit,
+          signedOffByLabel,
         };
       })
       .filter((r) => Boolean(r.id))
@@ -157,7 +179,7 @@ export default function SubmitClaimsPage() {
     }
     const map: Record<string, boolean> = {};
     draftRows.forEach((c) => {
-      map[c.id] = true;
+      if (c.readyToSubmit) map[c.id] = true;
     });
     setSelectedDraftClaimIds(map);
   };
@@ -283,7 +305,9 @@ export default function SubmitClaimsPage() {
             <CheckCircle className="h-5 w-5" />
             Draft claims (select to submit)
           </CardTitle>
-          <CardDescription>These drafts were created from your completed visit questionnaires.</CardDescription>
+          <CardDescription>
+            These drafts were created from your completed visit questionnaires. You can submit once the RCFE staff/admin has signed off.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {isLoadingClaims ? (
@@ -304,6 +328,7 @@ export default function SubmitClaimsPage() {
                     <TableHead>Date visited</TableHead>
                     <TableHead>Member</TableHead>
                     <TableHead>Home (RCFE)</TableHead>
+                    <TableHead>Signed off by</TableHead>
                     <TableHead className="text-right">Visits</TableHead>
                     <TableHead>Total</TableHead>
                     <TableHead>Status</TableHead>
@@ -312,20 +337,31 @@ export default function SubmitClaimsPage() {
                 <TableBody>
                   {draftRows.map((r) => {
                     const checked = Boolean(selectedDraftClaimIds[r.id]);
+                    const disabled = !r.readyToSubmit;
                     return (
-                      <TableRow key={r.id}>
+                      <TableRow key={r.id} className={disabled ? 'opacity-60' : undefined}>
                         <TableCell>
-                          <Checkbox checked={checked} onCheckedChange={(v) => setSelectedDraftClaimIds((p) => ({ ...p, [r.id]: Boolean(v) }))} />
+                          <Checkbox
+                            checked={checked}
+                            disabled={disabled}
+                            onCheckedChange={(v) => setSelectedDraftClaimIds((p) => ({ ...p, [r.id]: Boolean(v) }))}
+                          />
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           {r.visitDate ? format(r.visitDate, 'MM/dd/yyyy') : r.claimDate ? format(r.claimDate, 'MM/dd/yyyy') : '—'}
                         </TableCell>
                         <TableCell className="font-medium">{r.memberLabel}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{r.rcfeLabel}</TableCell>
+                        <TableCell className="text-sm">
+                          {r.signedOffByLabel}
+                          {!r.readyToSubmit ? (
+                            <div className="text-[11px] text-muted-foreground">Waiting for RCFE sign-off</div>
+                          ) : null}
+                        </TableCell>
                         <TableCell className="text-right">{r.visitCount}</TableCell>
                         <TableCell className="font-semibold">{money(r.totalAmount)}</TableCell>
                         <TableCell>
-                          <Badge variant="secondary">{r.status}</Badge>
+                          <Badge variant={r.readyToSubmit ? 'secondary' : 'outline'}>{r.readyToSubmit ? 'ready' : 'pending sign-off'}</Badge>
                         </TableCell>
                       </TableRow>
                     );

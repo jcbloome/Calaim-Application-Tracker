@@ -466,10 +466,14 @@ export async function GET(req: NextRequest) {
     const rcfeGroups = assignedMembers.reduce((acc, member) => {
       const rcfeKey = member.RCFE_Name || 'Unknown RCFE';
       if (!acc[rcfeKey]) {
+        const city = String(member.RCFE_City || member.MemberCity || member.Member_City || '').trim() || null;
+        const zip = String(member.RCFE_Zip || '').trim() || null;
         acc[rcfeKey] = {
           id: `rcfe-${rcfeKey.toLowerCase().replace(/\s+/g, '-')}`,
           name: rcfeKey,
           address: member.RCFE_Address || 'Address not available',
+          city,
+          zip,
           members: []
         };
       }

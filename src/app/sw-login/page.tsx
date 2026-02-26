@@ -16,7 +16,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { clearStoredSwLoginDay, getTodayLocalDayKey, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
-import { SWTopNav } from '@/components/sw/SWTopNav';
+
 
 export default function SWLoginPage() {
   const router = useRouter();
@@ -40,7 +40,7 @@ export default function SWLoginPage() {
       if (!stored) {
         // Allow the current session for today (first run after rollout).
         writeStoredSwLoginDay(today);
-        router.push('/sw-visit-verification');
+        router.push('/sw-portal');
         return;
       }
       if (stored !== today) {
@@ -50,7 +50,7 @@ export default function SWLoginPage() {
         fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
         return;
       }
-      router.push('/sw-visit-verification');
+      router.push('/sw-portal');
     }
   }, [isSocialWorker, swLoading, router]);
 
@@ -203,10 +203,9 @@ export default function SWLoginPage() {
             />
             <div className="hidden sm:block">
               <div className="text-sm font-semibold text-gray-900">Social Worker Portal</div>
-              <div className="text-xs text-muted-foreground">Navigation menu</div>
+              <div className="text-xs text-muted-foreground">Sign in</div>
             </div>
           </Link>
-          <SWTopNav className="justify-start md:justify-end" />
         </div>
       </div>
 

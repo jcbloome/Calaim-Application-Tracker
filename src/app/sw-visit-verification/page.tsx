@@ -161,7 +161,7 @@ const StarRating: React.FC<{
 };
 
 export default function SWVisitVerification() {
-  const { user, isSocialWorker } = useSocialWorker();
+  const { user, socialWorkerData, isSocialWorker } = useSocialWorker();
   const { toast } = useToast();
   const auth = useAuth();
   const router = useRouter();
@@ -1027,12 +1027,6 @@ export default function SWVisitVerification() {
                     Social Worker Login
                   </Link>
                 </Button>
-                <Button asChild variant="outline" className="w-full">
-                  <Link href="/admin/login">
-                    <ArrowLeft className="h-4 w-4 mr-2" />
-                    Admin Login
-                  </Link>
-                </Button>
               </div>
             </div>
           </div>
@@ -1041,36 +1035,37 @@ export default function SWVisitVerification() {
     );
   }
 
+  const swName = String(
+    (socialWorkerData as any)?.displayName ||
+      (user as any)?.displayName ||
+      (user as any)?.email ||
+      'Social Worker'
+  ).trim() || 'Social Worker';
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <User className="h-6 w-6 text-blue-600" />
-            <div>
-              <h1 className="text-lg font-semibold">SW Visit Verification</h1>
-              <p className="text-sm text-muted-foreground">
-                {String((user as any)?.displayName || (user as any)?.email || 'Social Worker')}
-              </p>
+          <div className="flex items-center gap-3 min-w-0">
+            <h1 className="text-lg font-semibold shrink-0">Visit Verification</h1>
+            <div className="hidden md:block flex-1 min-w-0">
+              <SWTopNav className="w-full" />
             </div>
           </div>
-          <SWTopNav className="justify-start md:justify-end" />
-          <div className="flex items-center gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link href="/sw-portal">
-                <Home className="h-4 w-4 mr-2" />
-                Main Menu
-              </Link>
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => void downloadMonthlyVisitsCsv()} disabled={isExportingMonth}>
-              <Download className={`h-4 w-4 mr-2 ${isExportingMonth ? 'animate-pulse' : ''}`} />
-              {isExportingMonth ? 'Exporting…' : `Download ${exportMonth}`}
-            </Button>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold text-foreground truncate">
+              {swName}
+            </div>
             <Button variant="outline" size="sm" onClick={handleSignOut}>
               <LogOut className="h-4 w-4 mr-2" />
-              Logout
+              Sign Out
             </Button>
+          </div>
+
+          <div className="md:hidden">
+            <SWTopNav className="w-full" />
           </div>
         </div>
       </div>

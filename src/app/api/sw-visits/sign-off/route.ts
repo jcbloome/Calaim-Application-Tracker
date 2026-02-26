@@ -1,19 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-async function maybeAutoSubmitClaimsAfterSignOff(params: {
+async function attachSignoffToClaims(params: {
   adminDb: any;
   admin: any;
   visitIds: string[];
-  signOffId: string;
+  signOffRecord: any;
 }) {
-  const { adminDb, admin, visitIds, signOffId } = params;
-
+  const { adminDb, admin, visitIds, signOffRecord } = params;
   if (!Array.isArray(visitIds) || visitIds.length === 0) return;
 
-  // Determine which claim(s) these visits belong to.
   const visitRefs = visitIds.slice(0, 500).map((id) => adminDb.collection('sw_visit_records').doc(String(id)));
   const visitSnaps = await adminDb.getAll(...visitRefs);
-
   const claimIds = Array.from(
     new Set(
       visitSnaps
@@ -23,52 +20,42 @@ async function maybeAutoSubmitClaimsAfterSignOff(params: {
   );
   if (claimIds.length === 0) return;
 
+  const signOffId = String(signOffRecord?.id || '').trim();
+  if (!signOffId) return;
+
+  const summary = {
+    signOffId,
+    rcfeId: String(signOffRecord?.rcfeId || '').trim(),
+    rcfeName: String(signOffRecord?.rcfeName || '').trim(),
+    claimDay: String(signOffRecord?.claimDay || '').trim(),
+    visitIds: Array.isArray(signOffRecord?.visitIds) ? signOffRecord.visitIds : [],
+    memberNames: Array.isArray(signOffRecord?.completedVisits)
+      ? Array.from(
+          new Set(
+            signOffRecord.completedVisits
+              .map((v: any) => String(v?.memberName || '').trim())
+              .filter(Boolean)
+          )
+        )
+      : [],
+    signedByName: String(signOffRecord?.rcfeStaff?.name || '').trim(),
+    signedByTitle: String(signOffRecord?.rcfeStaff?.title || '').trim(),
+    signedAt: String(signOffRecord?.rcfeStaff?.signedAt || '').trim(),
+    locationVerified: Boolean(signOffRecord?.rcfeStaff?.locationVerified),
+    updatedAtIso: new Date().toISOString(),
+  };
+
   for (const claimId of claimIds.slice(0, 25)) {
     const claimRef = adminDb.collection('sw-claims').doc(String(claimId));
-    const claimSnap = await claimRef.get();
-    if (!claimSnap.exists) continue;
-
-    const claim = claimSnap.data() as any;
-    const status = String(claim?.status || 'draft').toLowerCase();
-    if (status !== 'draft') continue;
-
-    const claimVisitIds: string[] = Array.isArray(claim?.visitIds) ? claim.visitIds.map((v: any) => String(v || '').trim()).filter(Boolean) : [];
-    if (claimVisitIds.length === 0) continue;
-
-    // Only auto-submit when ALL visits on that claim are signed off.
-    const claimVisitRefs = claimVisitIds.slice(0, 500).map((id) => adminDb.collection('sw_visit_records').doc(String(id)));
-    const claimVisitSnaps = await adminDb.getAll(...claimVisitRefs);
-    const allSignedOff = claimVisitSnaps.every((s: any) => s?.exists && Boolean((s.data() as any)?.signedOff));
-    if (!allSignedOff) continue;
-
-    const now = admin.firestore.Timestamp.now();
     await claimRef.set(
       {
-        status: 'submitted',
-        submittedAt: now,
-        submittedSource: 'sign_off',
-        submittedBySignOffId: signOffId,
+        signoffById: {
+          [signOffId]: summary,
+        },
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
-
-    const batch = adminDb.batch();
-    claimVisitIds.slice(0, 500).forEach((visitId) => {
-      const visitRef = adminDb.collection('sw_visit_records').doc(String(visitId));
-      batch.set(
-        visitRef,
-        {
-          claimId,
-          claimStatus: 'submitted',
-          claimSubmitted: true,
-          claimSubmittedAt: now,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-    });
-    await batch.commit();
   }
 }
 
@@ -183,16 +170,16 @@ export async function POST(request: NextRequest) {
     }
     await batch.commit();
 
-    // Auto-submit the SW claim once all visits on that daily claim are signed off.
+    // Keep a log on the claim(s) so SWs can review sign-offs before manually submitting.
     try {
-      await maybeAutoSubmitClaimsAfterSignOff({
+      await attachSignoffToClaims({
         adminDb,
         admin,
         visitIds,
-        signOffId: recordRef.id,
+        signOffRecord: record,
       });
     } catch (e) {
-      console.warn('⚠️ Auto-submit claims after sign-off failed (best-effort):', e);
+      console.warn('⚠️ Attaching sign-off summary to claims failed (best-effort):', e);
     }
 
     // Check for flagged visits and send notifications
