@@ -40,16 +40,15 @@ export default function SWRosterPage() {
       setError(null);
 
       try {
-        const idToken = await user.getIdToken();
-        const res = await fetch(`/api/sw-assignments?email=${encodeURIComponent(user.email)}`, {
-          headers: { authorization: `Bearer ${idToken}` },
-        });
+        // Use the SW assignments endpoint that resolves SW_ID/name from cache.
+        // This is more reliable than exact-email matching in Caspio fields.
+        const res = await fetch(`/api/sw-visits?socialWorkerId=${encodeURIComponent(user.email)}`);
         const data = await res.json().catch(() => ({} as any));
         if (!res.ok || !data?.success) {
           throw new Error(data?.error || `Failed to load roster (HTTP ${res.status})`);
         }
 
-        const nextFacilities = Array.isArray(data?.facilities) ? (data.facilities as RosterFacility[]) : [];
+        const nextFacilities = Array.isArray(data?.rcfeList) ? (data.rcfeList as RosterFacility[]) : [];
         if (!cancelled) setFacilities(nextFacilities);
       } catch (e: any) {
         if (!cancelled) setError(e?.message || 'Failed to load roster.');
