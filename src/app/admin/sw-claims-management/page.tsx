@@ -82,7 +82,7 @@ export default function SWClaimsManagementPage() {
   const [filteredClaims, setFilteredClaims] = useState<ClaimSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedClaim, setSelectedClaim] = useState<ClaimSubmission | null>(null);
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'submitted' | 'approved' | 'paid' | 'rejected'>('submitted');
   const [socialWorkerFilter, setSocialWorkerFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedClaimIds, setSelectedClaimIds] = useState<Record<string, boolean>>({});
@@ -92,6 +92,7 @@ export default function SWClaimsManagementPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [duplicateMemberName, setDuplicateMemberName] = useState('');
   const [duplicateMonth, setDuplicateMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [adminActionNote, setAdminActionNote] = useState('');
   const [summary, setSummary] = useState<ClaimSummary>({
     totalClaims: 0,
     totalAmount: 0,
@@ -166,6 +167,10 @@ export default function SWClaimsManagementPage() {
   useEffect(() => {
     setDuplicateMonth(monthFilter);
   }, [monthFilter]);
+
+  useEffect(() => {
+    setAdminActionNote(String(selectedClaim?.reviewNotes || '').trim());
+  }, [selectedClaim?.id]);
 
   const normalizeName = (s: string) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -378,12 +383,21 @@ export default function SWClaimsManagementPage() {
       const actorLabel =
         String(adminUser?.displayName || adminUser?.email || '').trim()
         || 'Admin';
+      const notes = String(reviewNotes || '').trim();
       const updates: any = {
         status: newStatus,
-        reviewedAt: new Date(),
-        reviewedBy: actorLabel,
-        reviewNotes: reviewNotes || ''
+        updatedAt: serverTimestamp(),
+        reviewNotes: notes,
       };
+
+      if (newStatus === 'submitted') {
+        updates.submittedAt = serverTimestamp();
+        updates.submittedBy = actorLabel;
+        updates.submittedByAdmin = true;
+      } else if (newStatus === 'approved' || newStatus === 'rejected' || newStatus === 'paid') {
+        updates.reviewedAt = serverTimestamp();
+        updates.reviewedBy = actorLabel;
+      }
 
       if (newStatus === 'paid') {
         updates.paidAt = serverTimestamp();
@@ -393,8 +407,8 @@ export default function SWClaimsManagementPage() {
 
       await updateDoc(claimRef, updates);
 
-      // When paid, propagate paid fields to linked visit records
-      if (newStatus === 'paid') {
+      // Propagate claim status to linked visit records
+      if (newStatus === 'paid' || newStatus === 'submitted') {
         const claim = claims.find((c) => c.id === claimId) as any;
         const visitIdsFromDoc: string[] = Array.isArray(claim?.visitIds) ? claim.visitIds : [];
         const visitIdsFromMemberVisits: string[] = Array.isArray(claim?.memberVisits)
@@ -410,9 +424,13 @@ export default function SWClaimsManagementPage() {
               visitRef,
               {
                 claimId,
-                claimPaid: true,
-                claimPaidAt: serverTimestamp(),
-                claimStatus: 'paid',
+                claimStatus: newStatus,
+                ...(newStatus === 'submitted'
+                  ? { claimSubmitted: true, claimSubmittedAt: serverTimestamp() }
+                  : {}),
+                ...(newStatus === 'paid'
+                  ? { claimPaid: true, claimPaidAt: serverTimestamp() }
+                  : {}),
                 updatedAt: serverTimestamp(),
               },
               { merge: true }
@@ -421,21 +439,6 @@ export default function SWClaimsManagementPage() {
           await batch.commit();
         }
       }
-
-      // Update local state
-      setClaims(claims.map(claim => 
-        claim.id === claimId 
-          ? {
-              ...claim,
-              status: newStatus as any,
-              reviewedAt: new Date(),
-              reviewedBy: actorLabel,
-              reviewNotes,
-              paidAt: newStatus === 'paid' ? new Date() : claim.paidAt,
-              paidBy: newStatus === 'paid' ? actorLabel : claim.paidBy,
-            }
-          : claim
-      ));
 
       toast({
         title: 'Status Updated',
@@ -662,16 +665,17 @@ export default function SWClaimsManagementPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="text-sm font-medium">Status</label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="submitted">Submitted</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="submitted">Submitted (action needed)</SelectItem>
+                  <SelectItem value="approved">Approved (ready to pay)</SelectItem>
                   <SelectItem value="paid">Paid</SelectItem>
                   <SelectItem value="rejected">Rejected</SelectItem>
+                  <SelectItem value="draft">Draft (not submitted by SW)</SelectItem>
+                  <SelectItem value="all">All (includes drafts)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -903,34 +907,74 @@ export default function SWClaimsManagementPage() {
                               )}
 
                               {/* Action Buttons */}
-                              <div className="flex gap-2 pt-4 border-t">
-                                {selectedClaim.status === 'submitted' && (
-                                  <>
-                                    <Button 
-                                      onClick={() => updateClaimStatus(selectedClaim.id, 'approved')}
-                                      className="bg-green-600 hover:bg-green-700"
+                              <div className="pt-4 border-t space-y-3">
+                                <div className="text-sm text-muted-foreground">
+                                  {selectedClaim.status === 'draft' ? (
+                                    <div>
+                                      This claim is <span className="font-semibold text-foreground">Draft</span>. The Social Worker has not submitted it yet.
+                                      <div className="mt-1 text-xs">
+                                        Next step: Social Worker goes to <span className="font-semibold text-foreground">SW Portal → Submit Claims</span>, selects the draft claim, and submits it.
+                                      </div>
+                                    </div>
+                                  ) : selectedClaim.status === 'submitted' ? (
+                                    <div>
+                                      This claim is <span className="font-semibold text-foreground">Submitted</span>. Approve (or Reject) to proceed.
+                                    </div>
+                                  ) : selectedClaim.status === 'approved' ? (
+                                    <div>
+                                      This claim is <span className="font-semibold text-foreground">Approved</span>. Mark it as Paid once payment is sent.
+                                    </div>
+                                  ) : selectedClaim.status === 'paid' ? (
+                                    <div>
+                                      This claim is <span className="font-semibold text-foreground">Paid</span>.
+                                    </div>
+                                  ) : selectedClaim.status === 'rejected' ? (
+                                    <div>
+                                      This claim is <span className="font-semibold text-foreground">Rejected</span>.
+                                    </div>
+                                  ) : null}
+                                </div>
+
+                                <div className="space-y-2">
+                                  <div className="text-sm font-medium">Admin note (optional)</div>
+                                  <Textarea
+                                    value={adminActionNote}
+                                    onChange={(e) => setAdminActionNote(e.target.value)}
+                                    placeholder="Optional: reason for approval/rejection, payment note, or override explanation."
+                                    rows={3}
+                                  />
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  {selectedClaim.status === 'submitted' ? (
+                                    <>
+                                      <Button
+                                        onClick={() => updateClaimStatus(selectedClaim.id, 'approved', adminActionNote)}
+                                        className="bg-green-600 hover:bg-green-700"
+                                      >
+                                        <CheckCircle className="mr-2 h-4 w-4" />
+                                        Approve
+                                      </Button>
+                                      <Button
+                                        onClick={() => updateClaimStatus(selectedClaim.id, 'rejected', adminActionNote)}
+                                        variant="destructive"
+                                      >
+                                        <XCircle className="mr-2 h-4 w-4" />
+                                        Reject
+                                      </Button>
+                                    </>
+                                  ) : null}
+
+                                  {selectedClaim.status === 'approved' ? (
+                                    <Button
+                                      onClick={() => updateClaimStatus(selectedClaim.id, 'paid', adminActionNote)}
+                                      className="bg-green-800 hover:bg-green-900"
                                     >
-                                      <CheckCircle className="mr-2 h-4 w-4" />
-                                      Approve
+                                      <DollarSign className="mr-2 h-4 w-4" />
+                                      Mark as Paid
                                     </Button>
-                                    <Button 
-                                      onClick={() => updateClaimStatus(selectedClaim.id, 'rejected')}
-                                      variant="destructive"
-                                    >
-                                      <XCircle className="mr-2 h-4 w-4" />
-                                      Reject
-                                    </Button>
-                                  </>
-                                )}
-                                {selectedClaim.status === 'approved' && (
-                                  <Button 
-                                    onClick={() => updateClaimStatus(selectedClaim.id, 'paid')}
-                                    className="bg-green-800 hover:bg-green-900"
-                                  >
-                                    <DollarSign className="mr-2 h-4 w-4" />
-                                    Mark as Paid
-                                  </Button>
-                                )}
+                                  ) : null}
+                                </div>
                               </div>
                               {selectedClaim.status === 'paid' ? (
                                 <div className="pt-3 text-sm text-muted-foreground">
