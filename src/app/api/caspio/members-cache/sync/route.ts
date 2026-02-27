@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 type SyncMode = 'incremental' | 'full';
 
 const MEMBERS_TABLE = 'CalAIM_tbl_Members';
+const RCFE_TABLE = 'CalAIM_tbl_New_RCFE_Registration';
 const CACHE_COLLECTION = 'caspio_members_cache';
 const SETTINGS_COLLECTION = 'admin-settings';
 const SETTINGS_DOC_ID = 'caspio-members-sync';
@@ -70,6 +71,9 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'RCFE_State',
   'RCFE_Zip',
   'RCFE_County',
+  // RCFE admin contact (joined from CalAIM_tbl_New_RCFE_Registration during sync)
+  'RCFE_Administrator',
+  'RCFE_Administrator_Phone',
   'Pathway',
   'Next_Step_Due_Date',
   'workflow_step',
@@ -231,6 +235,52 @@ function buildSwSearchKeys(member: Record<string, any>): string[] {
   return Array.from(keys).slice(0, 30);
 }
 
+async function fetchRcfeAdminContactMap(params: { accessToken: string; baseUrl: string }) {
+  const { accessToken, baseUrl } = params;
+
+  const restBaseUrl = baseUrl.replace(/\/$/, '').endsWith('/rest/v2')
+    ? baseUrl.replace(/\/$/, '')
+    : `${baseUrl.replace(/\/$/, '')}/rest/v2`;
+
+  const pageSize = 250;
+  const maxPages = 20;
+  const selectFields = ['RCFE_Registered_ID', 'RCFE_Name', 'RCFE_Administrator', 'RCFE_Administrator_Phone'].join(',');
+
+  const byRegisteredId = new Map<string, { name: string; phone: string }>();
+  const byName = new Map<string, { name: string; phone: string }>();
+
+  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+    const url = `${restBaseUrl}/tables/${encodeURIComponent(RCFE_TABLE)}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}&q.select=${encodeURIComponent(
+      selectFields
+    )}`;
+
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+      cache: 'no-store',
+    });
+    if (!res.ok) break;
+    const data = (await res.json().catch(() => ({}))) as any;
+    const rows = Array.isArray(data?.Result) ? data.Result : [];
+    if (rows.length === 0) break;
+
+    rows.forEach((r: any) => {
+      const rid = String(r?.RCFE_Registered_ID || r?.ID || r?.id || '').trim();
+      const rcfeName = String(r?.RCFE_Name || r?.Name || '').trim();
+      const adminName = String(r?.RCFE_Administrator || '').trim();
+      const adminPhone = String(r?.RCFE_Administrator_Phone || '').trim();
+      if (!adminName && !adminPhone) return;
+      const payload = { name: adminName, phone: adminPhone };
+      if (rid && !byRegisteredId.has(rid)) byRegisteredId.set(rid, payload);
+      if (rcfeName && !byName.has(rcfeName)) byName.set(rcfeName, payload);
+    });
+
+    if (rows.length < pageSize) break;
+  }
+
+  return { byRegisteredId, byName };
+}
+
 async function requireAdmin(idToken: string) {
   const adminModule = await import('@/firebase-admin');
   const adminAuth = adminModule.adminAuth;
@@ -388,6 +438,17 @@ export async function POST(req: NextRequest) {
     const credentials = getCaspioCredentialsFromEnv();
     const accessToken = await getCaspioToken(credentials);
 
+    // Load RCFE admin contacts once per sync (best-effort).
+    let rcfeAdminByRegisteredId: Map<string, { name: string; phone: string }> | null = null;
+    let rcfeAdminByName: Map<string, { name: string; phone: string }> | null = null;
+    try {
+      const maps = await fetchRcfeAdminContactMap({ accessToken, baseUrl: credentials.baseUrl });
+      rcfeAdminByRegisteredId = maps.byRegisteredId;
+      rcfeAdminByName = maps.byName;
+    } catch (e) {
+      console.warn('⚠️ Could not load RCFE admin contact map (best-effort):', e);
+    }
+
     // Determine which columns exist in Caspio so we don't request invalid ones.
     let availableFields = await getCachedCaspioTableFields({ adminDb, tableName: MEMBERS_TABLE });
     // If we have a cached schema but it appears stale (missing critical fields we rely on),
@@ -509,6 +570,27 @@ export async function POST(req: NextRequest) {
           CalAIM_MCO: calaimMco,
           cachedAt: now.toISOString(),
         };
+
+        // Join RCFE admin contact into the member cache doc (best-effort).
+        // We prefer matching by RCFE_Registered_ID; fall back to RCFE_Name if needed.
+        try {
+          const existingAdmin = String((baseDoc as any)?.RCFE_Administrator || '').trim();
+          const existingPhone = String((baseDoc as any)?.RCFE_Administrator_Phone || '').trim();
+          if ((!existingAdmin || !existingPhone) && (rcfeAdminByRegisteredId || rcfeAdminByName)) {
+            const rid = String((baseDoc as any)?.RCFE_Registered_ID || '').trim();
+            const rn = String((baseDoc as any)?.RCFE_Name || '').trim();
+            const hit =
+              (rid && rcfeAdminByRegisteredId?.get(rid)) ||
+              (rn && rcfeAdminByName?.get(rn)) ||
+              null;
+            if (hit) {
+              if (!existingAdmin && hit.name) (baseDoc as any).RCFE_Administrator = hit.name;
+              if (!existingPhone && hit.phone) (baseDoc as any).RCFE_Administrator_Phone = hit.phone;
+            }
+          }
+        } catch {
+          // ignore
+        }
         const newDoc = {
           ...baseDoc,
           sw_search_keys: buildSwSearchKeys(baseDoc),

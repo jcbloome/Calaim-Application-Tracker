@@ -10,16 +10,8 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Loader2, Download, Printer, CheckCircle, AlertTriangle } from 'lucide-react';
-import { Checkbox } from '@/components/ui/checkbox';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { format } from 'date-fns';
-
-type AssignedMember = {
-  id: string;
-  name: string;
-  rcfeName: string;
-  rcfeAddress: string;
-};
 
 type MonthlyRow = {
   date: string;
@@ -65,12 +57,9 @@ export default function SWMonthlyVisitsPage() {
 
   const [month, setMonth] = useState<string>(() => monthKey(new Date()));
   const [isLoading, setIsLoading] = useState(false);
-  const [assignedMembers, setAssignedMembers] = useState<AssignedMember[]>([]);
   const [rows, setRows] = useState<MonthlyRow[]>([]);
   const [duplicates, setDuplicates] = useState<DuplicateInfo[]>([]);
   const [claims, setClaims] = useState<ClaimSubmission[]>([]);
-  const [selectedDraftClaimIds, setSelectedDraftClaimIds] = useState<Record<string, boolean>>({});
-  const [submittingDrafts, setSubmittingDrafts] = useState(false);
 
   const completedMemberKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -82,14 +71,6 @@ export default function SWMonthlyVisitsPage() {
   }, [rows]);
 
   const completedCount = completedMemberKeys.size;
-  const pendingMembers = useMemo(
-    () =>
-      assignedMembers.filter((m) => {
-        const k = String(m.id || m.name || '').trim().toLowerCase();
-        return k ? !completedMemberKeys.has(k) : true;
-      }),
-    [assignedMembers, completedMemberKeys]
-  );
 
   const completedDays = useMemo(() => {
     const s = new Set<string>();
@@ -135,51 +116,6 @@ export default function SWMonthlyVisitsPage() {
     return { inMonth, submitted, draft, submittedTotal: sum(submitted), draftTotal: sum(draft) };
   }, [claims, month]);
 
-  const draftClaimsForMonth = useMemo(() => {
-    const toDate = (value: any): Date | null => {
-      try {
-        if (!value) return null;
-        if (typeof value?.toDate === 'function') return value.toDate();
-        if (value instanceof Date) return value;
-        const d = new Date(value);
-        return Number.isNaN(d.getTime()) ? null : d;
-      } catch {
-        return null;
-      }
-    };
-    return claimsForMonth.draft
-      .map((c: any) => {
-        const claimDate = toDate(c?.claimDate);
-        const visitCount = Number(c?.visitCount || (Array.isArray(c?.visitIds) ? c.visitIds.length : c?.memberVisits?.length || 0) || 0);
-        const totalAmount = Number(c?.totalAmount || 0);
-        return {
-          id: String(c?.id || ''),
-          claimDate,
-          claimMonth: String(c?.claimMonth || ''),
-          visitCount,
-          totalAmount,
-          memberVisits: Array.isArray(c?.memberVisits) ? c.memberVisits : [],
-        };
-      })
-      .filter((c) => Boolean(c.id))
-      .sort((a, b) => (b.claimDate?.getTime?.() || 0) - (a.claimDate?.getTime?.() || 0));
-  }, [claimsForMonth.draft]);
-
-  const selectedDraftIds = useMemo(() => Object.keys(selectedDraftClaimIds).filter((k) => selectedDraftClaimIds[k]), [selectedDraftClaimIds]);
-  const allDraftSelected = useMemo(() => draftClaimsForMonth.length > 0 && selectedDraftIds.length === draftClaimsForMonth.length, [draftClaimsForMonth.length, selectedDraftIds.length]);
-
-  const toggleAllDrafts = (next: boolean) => {
-    if (!next) {
-      setSelectedDraftClaimIds({});
-      return;
-    }
-    const map: Record<string, boolean> = {};
-    draftClaimsForMonth.forEach((c) => {
-      map[c.id] = true;
-    });
-    setSelectedDraftClaimIds(map);
-  };
-
   const fetchClaims = useCallback(async () => {
     if (!firestore || !user?.email) return;
     const q1 = query(collection(firestore, 'sw-claims'), where('socialWorkerEmail', '==', user.email));
@@ -193,66 +129,6 @@ export default function SWMonthlyVisitsPage() {
     };
     setClaims([...next].sort((a, b) => sortKey(b) - sortKey(a)));
   }, [firestore, user?.email]);
-
-  const submitSelectedDraftClaims = useCallback(async () => {
-    if (!auth?.currentUser) {
-      toast({ title: 'Please sign in again', description: 'No active session found.', variant: 'destructive' });
-      return;
-    }
-    if (submittingDrafts) return;
-    const ids = selectedDraftIds;
-    if (ids.length === 0) {
-      toast({ title: 'Nothing selected', description: 'Select at least one draft claim to submit.' });
-      return;
-    }
-    setSubmittingDrafts(true);
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      let okCount = 0;
-      for (const claimId of ids) {
-        const res = await fetch('/api/sw-claims/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken, claimId }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !(data as any)?.success) {
-          throw new Error((data as any)?.error || `Failed to submit claim ${claimId}`);
-        }
-        okCount += 1;
-      }
-      toast({ title: 'Claims submitted', description: `Submitted ${okCount} claim(s).` });
-      setSelectedDraftClaimIds({});
-      await fetchClaims();
-    } catch (e: any) {
-      toast({ title: 'Submission failed', description: e?.message || 'Could not submit selected claims.', variant: 'destructive' });
-    } finally {
-      setSubmittingDrafts(false);
-    }
-  }, [auth?.currentUser, fetchClaims, selectedDraftIds, submittingDrafts, toast]);
-
-  const remainingVisitFees = pendingMembers.length * VISIT_FEE_RATE;
-
-  const fetchAssignedMembers = useCallback(async () => {
-    const swId = user?.email || user?.displayName || user?.uid;
-    const res = await fetch(`/api/sw-visits?socialWorkerId=${encodeURIComponent(String(swId || ''))}`);
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.success) {
-      throw new Error(data?.error || 'Failed to load assignments');
-    }
-    const list: AssignedMember[] = [];
-    (data?.rcfeList || []).forEach((rcfe: any) => {
-      (rcfe?.members || []).forEach((m: any) => {
-        list.push({
-          id: String(m?.id || m?.name || '').trim(),
-          name: String(m?.name || '').trim(),
-          rcfeName: String(m?.rcfeName || rcfe?.name || '').trim(),
-          rcfeAddress: String(m?.rcfeAddress || rcfe?.address || '').trim(),
-        });
-      });
-    });
-    setAssignedMembers(list);
-  }, [user]);
 
   const fetchMonthlyRows = useCallback(async () => {
     if (!auth?.currentUser) return;
@@ -274,7 +150,7 @@ export default function SWMonthlyVisitsPage() {
     if (!isSocialWorker || swLoading) return;
     setIsLoading(true);
     try {
-      await Promise.all([fetchAssignedMembers(), fetchMonthlyRows(), fetchClaims()]);
+      await Promise.all([fetchMonthlyRows(), fetchClaims()]);
     } catch (e: any) {
       toast({
         title: 'Could not load monthly visits',
@@ -284,7 +160,7 @@ export default function SWMonthlyVisitsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [fetchAssignedMembers, fetchClaims, fetchMonthlyRows, isSocialWorker, swLoading, toast]);
+  }, [fetchClaims, fetchMonthlyRows, isSocialWorker, swLoading, toast]);
 
   useEffect(() => {
     void loadAll();
@@ -356,7 +232,7 @@ export default function SWMonthlyVisitsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Visits</h1>
-          <p className="text-muted-foreground">View your visits by month and submit claims for completed visits.</p>
+          <p className="text-muted-foreground">View your visits by month.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="w-full sm:w-[180px]">
@@ -383,17 +259,6 @@ export default function SWMonthlyVisitsPage() {
           <CardContent>
             <div className="text-2xl font-bold">{completedCount}</div>
             <div className="text-xs text-muted-foreground">1 visit per member per month</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Pending members</CardTitle>
-            <CardDescription>Assigned minus completed</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{pendingMembers.length}</div>
-            <div className="text-xs text-muted-foreground">Remaining visit fees: ${remainingVisitFees}</div>
           </CardContent>
         </Card>
 
@@ -440,7 +305,6 @@ export default function SWMonthlyVisitsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[44px]">Submit</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Member</TableHead>
                     <TableHead>RCFE</TableHead>
@@ -455,8 +319,6 @@ export default function SWMonthlyVisitsPage() {
                     const claimStatus = String((r as any)?.claimStatus || 'draft').trim().toLowerCase();
                     const isPaid = Boolean((r as any)?.claimPaid) || claimStatus === 'paid';
                     const isSubmitted = Boolean((r as any)?.claimSubmitted) || claimStatus === 'submitted' || claimStatus === 'approved';
-                    const canSubmit = Boolean(claimId) && !isPaid && !isSubmitted && claimStatus === 'draft';
-                    const checked = Boolean(claimId && selectedDraftClaimIds[claimId]);
                     const claimInfo = claimId ? claimsById.get(claimId) : null;
                     const claimMembers = claimInfo?.memberNames || [];
                     const claimMembersLabel =
@@ -466,25 +328,6 @@ export default function SWMonthlyVisitsPage() {
 
                     return (
                       <TableRow key={r.visitId || `${r.memberId}-${r.date}-${r.rcfeName}`}>
-                        <TableCell>
-                          <Checkbox
-                            disabled={!canSubmit}
-                            checked={checked}
-                            onCheckedChange={(v) => {
-                              if (!claimId) return;
-                              setSelectedDraftClaimIds((prev) => ({ ...prev, [claimId]: Boolean(v) }));
-                            }}
-                            title={
-                              !claimId
-                                ? 'No linked claim found'
-                                : isPaid
-                                  ? 'Already paid'
-                                  : isSubmitted
-                                    ? 'Already submitted'
-                                    : claimMembersLabel || 'Select to submit the linked daily claim'
-                            }
-                          />
-                        </TableCell>
                         <TableCell className="whitespace-nowrap">{r.date || '—'}</TableCell>
                         <TableCell className="font-medium">{r.memberName || '—'}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{r.rcfeName || '—'}</TableCell>
@@ -519,76 +362,6 @@ export default function SWMonthlyVisitsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Submit draft claims (select first)</CardTitle>
-          <CardDescription>
-            After visits are completed, daily draft claims are created automatically. Select the claim(s) you want to submit for this month.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {draftClaimsForMonth.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No draft claims found for {month}.</div>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={allDraftSelected} onCheckedChange={(v) => toggleAllDrafts(Boolean(v))} />
-                  <span>Select all drafts</span>
-                </div>
-                <Button onClick={() => void submitSelectedDraftClaims()} disabled={selectedDraftIds.length === 0 || submittingDrafts}>
-                  {submittingDrafts ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                  Submit selected ({selectedDraftIds.length})
-                </Button>
-              </div>
-
-              <div className="rounded-lg border overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[44px]"></TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Visits</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead>Includes</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {draftClaimsForMonth.map((c) => {
-                      const dateLabel = c.claimDate ? format(c.claimDate, 'MMM d, yyyy') : c.claimMonth || month;
-                      const includes = (Array.isArray(c.memberVisits) ? c.memberVisits : [])
-                        .map((v: any) => String(v?.memberName || '').trim())
-                        .filter(Boolean);
-                      const includesLabel =
-                        includes.length === 0 ? '—' : includes.length <= 2 ? includes.join(', ') : `${includes.slice(0, 2).join(', ')} +${includes.length - 2} more`;
-                      const checked = Boolean(selectedDraftClaimIds[c.id]);
-                      return (
-                        <TableRow key={c.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={checked}
-                              onCheckedChange={(v) =>
-                                setSelectedDraftClaimIds((prev) => ({ ...prev, [c.id]: Boolean(v) }))
-                              }
-                            />
-                          </TableCell>
-                          <TableCell className="font-medium">{dateLabel}</TableCell>
-                          <TableCell className="text-right">{c.visitCount}</TableCell>
-                          <TableCell className="text-right font-semibold">${Number(c.totalAmount || 0).toFixed(2)}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground" title={includes.join('\n')}>
-                            {includesLabel}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       {duplicates.length > 0 ? (
         <Card className="border-amber-200">
           <CardHeader>
@@ -613,64 +386,6 @@ export default function SWMonthlyVisitsPage() {
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Assigned members</CardTitle>
-          <CardDescription>
-            Completed members show a checkmark. Visits do not have to be exactly 1 month apart — but only one per member per month is allowed.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-10">
-              <Loader2 className="h-6 w-6 animate-spin" />
-            </div>
-          ) : (
-            <div className="rounded-lg border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Member</TableHead>
-                    <TableHead>RCFE</TableHead>
-                    <TableHead>Address</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {assignedMembers.map((m) => {
-                    const k = String(m.id || m.name || '').trim().toLowerCase();
-                    const done = k ? completedMemberKeys.has(k) : false;
-                    return (
-                      <TableRow key={`${m.id}-${m.name}-${m.rcfeName}`}>
-                        <TableCell className="whitespace-nowrap">
-                          {done ? (
-                            <Badge className="bg-green-600 hover:bg-green-600">
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Completed
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline">Pending</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="font-medium">{m.name || '—'}</TableCell>
-                        <TableCell>{m.rcfeName || '—'}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{m.rcfeAddress || '—'}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  {assignedMembers.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                        No assigned members found.
-                      </TableCell>
-                    </TableRow>
-                  ) : null}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }

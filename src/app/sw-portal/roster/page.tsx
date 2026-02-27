@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Loader2, Printer, Search, Building2, MapPin, Users, Sparkles, RefreshCw, Download } from 'lucide-react';
+import { Loader2, Printer, Search, Building2, MapPin, Users, Sparkles, RefreshCw } from 'lucide-react';
 
 type RosterMember = {
   id: string;
@@ -112,56 +112,13 @@ export default function SWRosterPage() {
     return { facilityCount, memberCount };
   }, [facilities]);
 
-  const downloadCsv = useCallback(() => {
-    const rows: Array<Record<string, string>> = [];
-
-    facilities.forEach((f) => {
-      const members = Array.isArray(f.members) ? f.members : [];
-      if (members.length === 0) {
-        rows.push({
-          rcfeName: String(f.name || ''),
-          rcfeAddress: String(f.address || ''),
-          rcfeCity: String(f.city || ''),
-          rcfeZip: String(f.zip || ''),
-          memberName: '',
-        });
-        return;
-      }
-      members.forEach((m) => {
-        rows.push({
-          rcfeName: String(f.name || ''),
-          rcfeAddress: String(f.address || ''),
-          rcfeCity: String(f.city || ''),
-          rcfeZip: String(f.zip || ''),
-          memberName: String(m?.name || ''),
-        });
-      });
-    });
-
-    const headers = ['rcfeName', 'rcfeAddress', 'rcfeCity', 'rcfeZip', 'memberName'] as const;
-    const escape = (value: string) => {
-      const raw = String(value ?? '');
-      if (raw.includes('"')) return `"${raw.replace(/"/g, '""')}"`;
-      if (raw.includes(',') || raw.includes('\n') || raw.includes('\r')) return `"${raw}"`;
-      return raw;
-    };
-
-    const csv = [
-      headers.join(','),
-      ...rows.map((r) => headers.map((h) => escape(String(r[h] ?? ''))).join(',')),
-    ].join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const day = new Date().toISOString().slice(0, 10);
-    a.href = url;
-    a.download = `weekly_roster_${day}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }, [facilities]);
+  const formatAddressLine = useCallback((f: { address?: string; city?: string; zip?: string }) => {
+    const addr = String(f?.address || '').trim();
+    const city = String(f?.city || '').trim();
+    const zip = String(f?.zip || '').trim();
+    const tail = [city, zip].filter(Boolean).join(' ');
+    return [addr, tail].filter(Boolean).join(', ');
+  }, []);
 
   if (isLoading) {
     return (
@@ -193,7 +150,7 @@ export default function SWRosterPage() {
         <div>
           <h1 className="text-3xl font-bold">Weekly Roster</h1>
           <p className="text-muted-foreground">
-            Members assigned to each home (RCFE) with addresses. Designed for quick reference and printing.
+            A compact, PDF-friendly list of members assigned to each home (RCFE).
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge variant="secondary" className="gap-1">
@@ -214,19 +171,9 @@ export default function SWRosterPage() {
             <RefreshCw className="h-4 w-4 mr-2" />
             {loading ? 'Refreshing…' : 'Refresh list'}
           </Button>
-          <Button
-            className="w-full sm:w-auto"
-            variant="outline"
-            onClick={downloadCsv}
-            disabled={loading || facilities.length === 0}
-            title={facilities.length === 0 ? 'Load the roster first' : 'Download CSV'}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Download
-          </Button>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => window.print()}>
             <Printer className="h-4 w-4 mr-2" />
-            Print
+            Print / Save PDF
           </Button>
         </div>
       </div>
@@ -281,23 +228,38 @@ export default function SWRosterPage() {
           </Card>
         ) : null}
 
+        {/* Print-only: always render the compact list for clean PDF output */}
+        <div className="hidden print:block space-y-4">
+          <div className="text-center">
+            <div className="text-xl font-bold">Weekly Roster</div>
+            {lastSync ? <div className="text-xs text-muted-foreground">Cache last updated: {lastSync}</div> : null}
+          </div>
+          {filteredFacilities.map((f) => (
+            <div key={`print-${f.id}`} className="break-inside-avoid">
+              <div className="font-semibold">{f.name}</div>
+              <div className="text-xs text-muted-foreground">{formatAddressLine(f) || '—'}</div>
+              <div className="mt-2 columns-2 gap-6 text-sm">
+                {(f.members || []).map((m) => (
+                  <div key={`print-${f.id}-${m.id}`} className="break-inside-avoid py-0.5">
+                    {m.name}
+                    {m.isNewAssignment ? ' (NEW)' : ''}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Screen: card view (always) */}
         {filteredFacilities.map((f) => (
-          <Card key={f.id} className="break-inside-avoid">
+          <Card key={f.id} className="break-inside-avoid print:hidden">
             <CardHeader className="pb-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-1">
                   <CardTitle className="text-lg">{f.name}</CardTitle>
                   <CardDescription className="flex items-start gap-2">
                     <MapPin className="h-4 w-4 mt-0.5" />
-                    <span>
-                      {f.address}
-                      {f.city || f.zip ? (
-                        <span className="text-muted-foreground">
-                          {' '}
-                          • {[String(f.city || '').trim(), String(f.zip || '').trim()].filter(Boolean).join(' ')}
-                        </span>
-                      ) : null}
-                    </span>
+                    <span>{formatAddressLine(f) || f.address}</span>
                   </CardDescription>
                 </div>
                 <Badge variant="secondary">{(f.members || []).length} member(s)</Badge>

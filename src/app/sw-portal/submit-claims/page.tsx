@@ -13,7 +13,7 @@ import { useAuth, useFirestore } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { format } from 'date-fns';
-import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle, Loader2, Trash2 } from 'lucide-react';
 
 type ClaimDoc = {
   id: string;
@@ -64,6 +64,7 @@ export default function SubmitClaimsPage() {
   const [claims, setClaims] = useState<ClaimDoc[]>([]);
   const [selectedDraftClaimIds, setSelectedDraftClaimIds] = useState<Record<string, boolean>>({});
   const [submittingDrafts, setSubmittingDrafts] = useState(false);
+  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
 
   const swEmail = String((user as any)?.email || '').trim();
 
@@ -136,6 +137,7 @@ export default function SubmitClaimsPage() {
 
         const visitIds = Array.isArray(c.visitIds) ? c.visitIds.map((v) => String(v || '').trim()).filter(Boolean) : [];
         const signoffs = c.signoffById && typeof c.signoffById === 'object' ? Object.values(c.signoffById) : [];
+        const hasAnySignoff = signoffs.length > 0;
         const signedVisitIds = new Set<string>();
         const signerLabels: string[] = [];
         signoffs.forEach((s: any) => {
@@ -163,6 +165,7 @@ export default function SubmitClaimsPage() {
           status: String(c.status || 'draft'),
           readyToSubmit,
           signedOffByLabel,
+          canDelete: !hasAnySignoff,
         };
       })
       .filter((r) => Boolean(r.id))
@@ -221,6 +224,51 @@ export default function SubmitClaimsPage() {
       setSubmittingDrafts(false);
     }
   }, [auth, fetchClaims, selectedDraftIds, submittingDrafts, toast]);
+
+  const deleteDraftClaim = useCallback(
+    async (claimId: string) => {
+      if (!auth?.currentUser) {
+        toast({ title: 'Please sign in again', description: 'No active session found.', variant: 'destructive' });
+        return;
+      }
+      if (!claimId) return;
+      if (deletingDraftId) return;
+
+      const ok =
+        typeof window !== 'undefined'
+          ? window.confirm(
+              'Delete this draft claim and all of its draft visit questionnaires?\n\nThis cannot be undone. You can re-enter the questionnaire(s) afterward.'
+            )
+          : true;
+      if (!ok) return;
+
+      setDeletingDraftId(claimId);
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const res = await fetch('/api/sw-claims/delete-draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken, claimId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !(data as any)?.success) {
+          throw new Error((data as any)?.error || `Failed to delete draft claim ${claimId}`);
+        }
+        toast({ title: 'Draft deleted', description: 'You can now start over and re-enter the questionnaire(s).' });
+        setSelectedDraftClaimIds((prev) => {
+          const next = { ...prev };
+          delete next[claimId];
+          return next;
+        });
+        await fetchClaims();
+      } catch (e: any) {
+        toast({ title: 'Delete failed', description: e?.message || 'Could not delete the draft.', variant: 'destructive' });
+      } finally {
+        setDeletingDraftId(null);
+      }
+    },
+    [auth?.currentUser, deletingDraftId, fetchClaims, toast]
+  );
 
   if (swLoading) {
     return (
@@ -333,12 +381,14 @@ export default function SubmitClaimsPage() {
                     <TableHead className="text-right">Visits</TableHead>
                     <TableHead>Total</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {draftRows.map((r) => {
                     const checked = Boolean(selectedDraftClaimIds[r.id]);
                     const disabled = !r.readyToSubmit;
+                    const canDelete = Boolean((r as any)?.canDelete);
                     return (
                       <TableRow key={r.id} className={disabled ? 'opacity-60' : undefined}>
                         <TableCell>
@@ -363,6 +413,20 @@ export default function SubmitClaimsPage() {
                         <TableCell className="font-semibold">{money(r.totalAmount)}</TableCell>
                         <TableCell>
                           <Badge variant={r.readyToSubmit ? 'secondary' : 'outline'}>{r.readyToSubmit ? 'ready' : 'pending sign-off'}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            disabled={!canDelete || deletingDraftId === r.id}
+                            title={!canDelete ? 'This draft has a sign-off attached and cannot be deleted.' : 'Delete draft (start over)'}
+                            onClick={() => void deleteDraftClaim(r.id)}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );

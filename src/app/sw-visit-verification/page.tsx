@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -46,6 +47,7 @@ interface MemberVisitQuestionnaire {
   rcfeName: string;
   rcfeAddress: string;
   visitDate: string;
+  memberRoomNumber: string;
   
   meetingLocation: {
     location: string;
@@ -108,7 +110,7 @@ interface MemberVisitQuestionnaire {
 interface Member {
   id: string;
   name: string;
-  room: string;
+  room?: string;
   rcfeId: string;
   rcfeName: string;
   rcfeAddress: string;
@@ -119,9 +121,26 @@ interface RCFE {
   id: string;
   name: string;
   address: string;
+  city?: string | null;
+  zip?: string | null;
+  administrator?: string | null;
+  administratorPhone?: string | null;
   memberCount: number;
   members: Member[];
 }
+
+type MonthVisitStatus = {
+  visitId: string;
+  memberId: string;
+  memberName: string;
+  rcfeId: string;
+  rcfeName: string;
+  signedOff: boolean;
+  claimStatus: string;
+  claimSubmitted: boolean;
+  claimPaid: boolean;
+  claimId?: string;
+};
 
 // Star Rating Component
 const StarRating: React.FC<{
@@ -284,6 +303,9 @@ export default function SWVisitVerification() {
     lastMode?: string | null;
   } | null>(null);
   const [confirmFreshWithin15, setConfirmFreshWithin15] = useState(false);
+  const [monthStatuses, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
+  const [loadingMonthStatuses, setLoadingMonthStatuses] = useState(false);
+  const [editingVisitId, setEditingVisitId] = useState<string | null>(null);
 
   const downloadMonthlyVisitsCsv = useCallback(async () => {
     if (!user) return;
@@ -438,11 +460,6 @@ export default function SWVisitVerification() {
     [isSocialWorker, isLoading, toast, user]
   );
 
-  // Fetch assigned RCFEs when component mounts
-  useEffect(() => {
-    fetchAssignedRCFEs({ quiet: true });
-  }, [fetchAssignedRCFEs]);
-  
   // Initialize questionnaire data
   const [questionnaire, setQuestionnaire] = useState<MemberVisitQuestionnaire>({
     visitId: '',
@@ -453,6 +470,7 @@ export default function SWVisitVerification() {
     rcfeName: '',
     rcfeAddress: '',
     visitDate: new Date().toISOString().split('T')[0],
+    memberRoomNumber: '',
     
     meetingLocation: {
       location: '',
@@ -604,6 +622,38 @@ export default function SWVisitVerification() {
     setCurrentStep('select-member');
   };
 
+  const openExistingVisitForEdit = useCallback(
+    async (visitId: string) => {
+      if (!user) return;
+      const idToken = await (user as any)?.getIdToken?.();
+      if (!idToken) {
+        toast({ title: 'Please sign in again', description: 'No active session found.', variant: 'destructive' });
+        return;
+      }
+      const res = await fetch(`/api/sw-visits/visit?visitId=${encodeURIComponent(visitId)}`, {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to load visit (${res.status})`);
+      }
+      const visit = data?.visit || {};
+      const raw = (visit as any)?.raw || null;
+      if (!raw) throw new Error('Visit does not have editable questionnaire data.');
+      setEditingVisitId(visitId);
+      setQuestionnaire((prev) => ({
+        ...prev,
+        ...(raw as any),
+        visitId,
+        visitDate: String((raw as any)?.visitDate || visit?.visitDate || prev.visitDate || '').slice(0, 10) || prev.visitDate,
+        memberRoomNumber: String((raw as any)?.memberRoomNumber || visit?.memberRoomNumber || '').trim(),
+      }));
+      setQuestionStep(1);
+      setCurrentStep('questionnaire');
+    },
+    [toast, user]
+  );
+
   const handleMemberSelect = (member: Member) => {
     setSelectedMember(member);
     const socialWorkerId = user?.email || user?.displayName || user?.uid || 'Billy Buckhalter';
@@ -616,7 +666,25 @@ export default function SWVisitVerification() {
       memberName: member.name 
     });
     
-    setQuestionnaire(prev => ({
+    const status = memberId ? monthStatuses[memberId] : undefined;
+    const statusClaim = String(status?.claimStatus || '').trim().toLowerCase();
+    const alreadySubmitted = Boolean(status?.claimSubmitted) || ['submitted', 'approved', 'paid', 'rejected'].includes(statusClaim);
+    if (status?.visitId) {
+      // If already submitted/paid, block edits; otherwise open in edit mode.
+      if (alreadySubmitted || Boolean(status?.claimPaid) || statusClaim === 'paid') {
+        toast({
+          title: 'Already submitted for this month',
+          description: 'A claim has already been submitted for this member this month. You cannot submit another claim for the same member in the same month.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      void openExistingVisitForEdit(status.visitId);
+      return;
+    }
+
+    setEditingVisitId(null);
+    setQuestionnaire((prev) => ({
       ...prev,
       visitId: `visit-${Date.now()}`,
       memberId,
@@ -624,7 +692,8 @@ export default function SWVisitVerification() {
       socialWorkerId,
       rcfeId: member.rcfeId,
       rcfeName: member.rcfeName,
-      rcfeAddress: member.rcfeAddress
+      rcfeAddress: member.rcfeAddress,
+      memberRoomNumber: '',
     }));
     setQuestionStep(1);
     setCurrentStep('questionnaire');
@@ -641,6 +710,7 @@ export default function SWVisitVerification() {
     const socialWorkerId = user?.email || user?.displayName || user?.uid || questionnaire.socialWorkerId || 'unknown';
     const memberKey = selectedMember.id || selectedMember.name || questionnaire.memberId;
 
+    setEditingVisitId(null);
     setQuestionnaire({
       visitId: `visit-${Date.now()}`,
       memberId: memberKey || `member-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -650,6 +720,7 @@ export default function SWVisitVerification() {
       rcfeName: selectedMember.rcfeName,
       rcfeAddress: selectedMember.rcfeAddress,
       visitDate: new Date().toISOString().split('T')[0],
+      memberRoomNumber: '',
       meetingLocation: {
         location: '',
         otherLocation: '',
@@ -702,6 +773,62 @@ export default function SWVisitVerification() {
         flagged: false,
       },
     });
+
+  const currentMonthKey = useMemo(() => {
+    const d = String(questionnaire.visitDate || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d.slice(0, 7);
+    return new Date().toISOString().slice(0, 7);
+  }, [questionnaire.visitDate]);
+
+  const refreshMonthStatuses = useCallback(async () => {
+    if (!user) return;
+    setLoadingMonthStatuses(true);
+    try {
+      const idToken = await (user as any)?.getIdToken?.();
+      if (!idToken) throw new Error('Not signed in');
+      const res = await fetch('/api/sw-visits/monthly-export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ month: currentMonthKey, dedupeByMemberMonth: true }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load statuses (${res.status})`);
+      const rows: any[] = Array.isArray(data?.rows) ? data.rows : [];
+      const map: Record<string, MonthVisitStatus> = {};
+      rows.forEach((r) => {
+        const memberId = String(r?.memberId || '').trim();
+        if (!memberId) return;
+        map[memberId] = {
+          visitId: String(r?.visitId || '').trim(),
+          memberId,
+          memberName: String(r?.memberName || '').trim(),
+          rcfeId: '', // filled client-side from selection when needed
+          rcfeName: String(r?.rcfeName || '').trim(),
+          signedOff: Boolean(r?.signedOff),
+          claimStatus: String(r?.claimStatus || 'draft').trim(),
+          claimSubmitted: Boolean(r?.claimSubmitted),
+          claimPaid: Boolean(r?.claimPaid),
+          claimId: String(r?.claimId || '').trim() || undefined,
+        };
+      });
+      setMonthStatuses(map);
+    } catch (e: any) {
+      console.warn('⚠️ Could not load month statuses:', e);
+    } finally {
+      setLoadingMonthStatuses(false);
+    }
+  }, [currentMonthKey, user]);
+
+  useEffect(() => {
+    if (!isSocialWorker) return;
+    // Best-effort: load month statuses on mount/when month changes.
+    void refreshMonthStatuses();
+  }, [isSocialWorker, refreshMonthStatuses]);
+
+  // Auto-load assignments on mount (Refresh remains available).
+  useEffect(() => {
+    fetchAssignedRCFEs({ quiet: true });
+  }, [fetchAssignedRCFEs]);
     setQuestionStep(1);
     toast({
       title: 'Questionnaire restarted',
@@ -714,7 +841,7 @@ export default function SWVisitVerification() {
     const nonResponsive = Boolean(questionnaire.memberConcerns?.nonResponsive);
     switch (questionStep) {
       case 1: // Meeting Location
-        return questionnaire.meetingLocation.location.trim() !== '';
+        return questionnaire.meetingLocation.location.trim() !== '' && questionnaire.memberRoomNumber.trim() !== '';
       case 2: // Member Wellbeing
         if (nonResponsive) return true;
         return questionnaire.memberWellbeing.physicalHealth > 0 && 
@@ -747,7 +874,7 @@ export default function SWVisitVerification() {
     const nonResponsive = Boolean(questionnaire.memberConcerns?.nonResponsive);
     switch (questionStep) {
       case 1:
-        return "Please select where you met the member";
+        return "Please enter the member's room number and select where you met the member";
       case 2:
         return nonResponsive ? "Member is marked non-responsive (ratings optional)" : "Please rate all aspects of member wellbeing";
       case 3:
@@ -789,6 +916,10 @@ export default function SWVisitVerification() {
     const errors = [];
     const nonResponsive = Boolean(questionnaire.memberConcerns?.nonResponsive);
     
+    if (!questionnaire.memberRoomNumber.trim()) {
+      errors.push("Member room number is required");
+    }
+
     if (!questionnaire.meetingLocation.location.trim()) {
       errors.push("Meeting location is required");
     }
@@ -942,12 +1073,17 @@ export default function SWVisitVerification() {
         throw new Error(`Missing required fields: ${!submitData.visitId ? 'visitId ' : ''}${!submitData.memberId ? 'memberId ' : ''}${!submitData.socialWorkerId ? 'socialWorkerId' : ''}`);
       }
 
-      const response = await fetch('/api/sw-visits', {
+      const isEditing = Boolean(editingVisitId) && String(editingVisitId) === String(submitData.visitId);
+      const idToken = await (user as any)?.getIdToken?.();
+      if (!idToken) throw new Error('Not signed in');
+
+      const response = await fetch(isEditing ? '/api/sw-visits/update' : '/api/sw-visits', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(isEditing ? { authorization: `Bearer ${idToken}` } : {}),
         },
-        body: JSON.stringify(submitData)
+        body: JSON.stringify(isEditing ? { visitId: submitData.visitId, visitData: submitData } : submitData)
       });
 
       const result = await response.json();
@@ -956,35 +1092,42 @@ export default function SWVisitVerification() {
         throw new Error(result.error || 'Submission failed');
       }
 
-      // Add to completed visits first
-      setCompletedVisits(prev => [...prev, {
-        memberId: questionnaire.memberId,
-        memberName: questionnaire.memberName,
-        visitId: questionnaire.visitId,
-        rcfeId: questionnaire.rcfeId,
-        rcfeName: questionnaire.rcfeName,
-        claimDay: String(questionnaire.visitDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
-        completedAt: new Date().toISOString(),
-        flagged: result.flagged || questionnaire.visitSummary.flagged
-      }]);
+      // Refresh month statuses so member list reflects updated state.
+      void refreshMonthStatuses();
 
-      // Track visited member for checkmarks
-      setVisitedByRcfeId((prev) => {
-        const rcfeId = String(questionnaire.rcfeId || '').trim();
-        const memberId = String(questionnaire.memberId || '').trim();
-        if (!rcfeId || !memberId) return prev;
-        const existing = Array.isArray(prev[rcfeId]) ? prev[rcfeId] : [];
-        if (existing.includes(memberId)) return prev;
-        return { ...prev, [rcfeId]: [...existing, memberId] };
-      });
+      if (!isEditing) {
+        // Add to completed visits first
+        setCompletedVisits(prev => [...prev, {
+          memberId: questionnaire.memberId,
+          memberName: questionnaire.memberName,
+          visitId: questionnaire.visitId,
+          rcfeId: questionnaire.rcfeId,
+          rcfeName: questionnaire.rcfeName,
+          claimDay: String(questionnaire.visitDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
+          completedAt: new Date().toISOString(),
+          flagged: result.flagged || questionnaire.visitSummary.flagged
+        }]);
+
+        // Track visited member for checkmarks (today-only UX)
+        setVisitedByRcfeId((prev) => {
+          const rcfeId = String(questionnaire.rcfeId || '').trim();
+          const memberId = String(questionnaire.memberId || '').trim();
+          if (!rcfeId || !memberId) return prev;
+          const existing = Array.isArray(prev[rcfeId]) ? prev[rcfeId] : [];
+          if (existing.includes(memberId)) return prev;
+          return { ...prev, [rcfeId]: [...existing, memberId] };
+        });
+      }
       
       // Show comprehensive success message
       toast({
-        title: "✅ Visit Successfully Submitted!",
-        description: result.flagged 
-          ? `${questionnaire.memberName}'s visit has been recorded and flagged for review. John Amber and Jason Bloome have been notified.`
-          : `${questionnaire.memberName}'s visit has been successfully recorded. You can continue with more visits or proceed to sign-off.`,
-        variant: result.flagged ? "destructive" : "default",
+        title: isEditing ? "✅ Questionnaire Updated" : "✅ Visit Successfully Submitted!",
+        description: isEditing
+          ? `${questionnaire.memberName}'s questionnaire has been updated.`
+          : result.flagged 
+            ? `${questionnaire.memberName}'s visit has been recorded and flagged for review. John Amber and Jason Bloome have been notified.`
+            : `${questionnaire.memberName}'s visit has been successfully recorded. You can continue with more visits or proceed to sign-off.`,
+        variant: (!isEditing && result.flagged) ? "destructive" : "default",
         duration: 5000 // Show longer for important message
       });
 
@@ -992,8 +1135,13 @@ export default function SWVisitVerification() {
         console.log('📋 Next actions:', result.nextActions);
       }
       
-      // Go to visit completed step with navigation options
-      setCurrentStep('visit-completed');
+      // Go to visit completed step with navigation options (or back to member list when editing).
+      if (isEditing) {
+        setEditingVisitId(null);
+        setCurrentStep('select-member');
+      } else {
+        setCurrentStep('visit-completed');
+      }
       
     } catch (error: any) {
       console.error('Submission error:', error);
@@ -1045,26 +1193,34 @@ export default function SWVisitVerification() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            <h1 className="text-lg font-semibold shrink-0">Visit Verification</h1>
-            <div className="hidden md:block flex-1 min-w-0">
-              <SWTopNav className="w-full" />
+      <div className="bg-card border-b sticky top-0 z-40">
+        <div className="container mx-auto px-4 py-2 sm:px-6">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-4 min-w-0">
+              <Link href="/sw-portal" className="shrink-0">
+                <Image
+                  src="/calaimlogopdf.png"
+                  alt="Connect CalAIM Logo"
+                  width={240}
+                  height={67}
+                  className="w-44 sm:w-48 h-auto object-contain"
+                  priority
+                />
+              </Link>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm font-semibold text-foreground truncate">
+                {swName}
+              </div>
+              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign Out
+              </Button>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-sm font-semibold text-foreground truncate">
-              {swName}
-            </div>
-            <Button variant="outline" size="sm" onClick={handleSignOut}>
-              <LogOut className="h-4 w-4 mr-2" />
-              Sign Out
-            </Button>
-          </div>
-
-          <div className="md:hidden">
+          <div className="pt-1">
             <SWTopNav className="w-full" />
           </div>
         </div>
@@ -1135,8 +1291,29 @@ export default function SWVisitVerification() {
                       <h3 className="font-semibold">{rcfe.name}</h3>
                       <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                         <MapPin className="h-4 w-4" />
-                        {rcfe.address}
+                        {String(
+                          [String(rcfe.address || '').trim(), [String(rcfe.city || '').trim(), String(rcfe.zip || '').trim()].filter(Boolean).join(' ')]
+                            .map((s) => String(s || '').trim())
+                            .filter(Boolean)
+                            .join(', ')
+                        )}
                       </p>
+                      {(rcfe.administrator || rcfe.administratorPhone) ? (
+                        <p className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
+                          <Phone className="h-4 w-4" />
+                          <span className="min-w-0">
+                            {rcfe.administrator ? <span className="font-medium text-foreground">{rcfe.administrator}</span> : null}
+                            {rcfe.administratorPhone ? (
+                              <>
+                                {rcfe.administrator ? <span className="text-muted-foreground"> • </span> : null}
+                                <a className="hover:underline" href={`tel:${String(rcfe.administratorPhone).replace(/[^\d+]/g, '')}`}>
+                                  {rcfe.administratorPhone}
+                                </a>
+                              </>
+                            ) : null}
+                          </span>
+                        </p>
+                      ) : null}
                       <div className="flex items-center gap-2 mt-2">
                         <Badge variant="secondary">
                           {rcfe.memberCount} members
@@ -1189,11 +1366,15 @@ export default function SWVisitVerification() {
                 )}
               </div>
               <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
                 Select Member to Visit
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                {selectedRCFE.name} - {selectedRCFE.address}
+                {selectedRCFE.name} - {String(
+                  [String(selectedRCFE.address || '').trim(), [String(selectedRCFE.city || '').trim(), String(selectedRCFE.zip || '').trim()].filter(Boolean).join(' ')]
+                    .map((s) => String(s || '').trim())
+                    .filter(Boolean)
+                    .join(', ')
+                )}
                 {completedVisitsForSelectedRcfe.length > 0 && (
                   <span className="ml-2 text-green-600 font-medium">
                     • {completedVisitsForSelectedRcfe.length} visit{completedVisitsForSelectedRcfe.length !== 1 ? 's' : ''} completed
@@ -1285,16 +1466,31 @@ export default function SWVisitVerification() {
                 const memberKeyNorm = String(memberKey || '').trim();
                 const visited = memberKeyNorm ? Boolean(visitedByRcfeId[selectedRCFE.id]?.includes(memberKeyNorm)) : false;
                 const signed = memberKeyNorm ? Boolean(signedOffByRcfeId[selectedRCFE.id]?.memberIds?.includes(memberKeyNorm)) : false;
+                const monthStatus = memberKeyNorm ? monthStatuses[memberKeyNorm] : undefined;
+                const claimStatus = String(monthStatus?.claimStatus || '').trim().toLowerCase();
+                const isPaid = Boolean(monthStatus?.claimPaid) || claimStatus === 'paid';
+                const isSubmitted = Boolean(monthStatus?.claimSubmitted) || ['submitted', 'approved', 'rejected'].includes(claimStatus);
+                const hasVisitThisMonth = Boolean(monthStatus?.visitId);
+                const needsSignOff = hasVisitThisMonth && !Boolean(monthStatus?.signedOff) && !isSubmitted && !isPaid;
                 return (
                   <div
                     key={memberKey || `member-${memberIndex}-${Date.now()}`}
-                    className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                    className={`border rounded-lg p-4 transition-colors ${hasVisitThisMonth ? 'bg-slate-50' : 'hover:bg-gray-50 cursor-pointer'}`}
                     onClick={() => handleMemberSelect(member)}
                   >
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold">{member.name}</h3>
+                          {isPaid ? (
+                            <Badge className="bg-emerald-600 hover:bg-emerald-600">Paid</Badge>
+                          ) : isSubmitted ? (
+                            <Badge className="bg-blue-600 hover:bg-blue-600">Submitted</Badge>
+                          ) : needsSignOff ? (
+                            <Badge className="bg-amber-500 hover:bg-amber-500">Needs sign-off</Badge>
+                          ) : monthStatus?.signedOff ? (
+                            <Badge className="bg-green-600 hover:bg-green-600">Signed off</Badge>
+                          ) : null}
                           {signed ? (
                             <Badge className="bg-green-600 hover:bg-green-600">
                               <CheckCircle className="h-3 w-3 mr-1" />
@@ -1307,12 +1503,16 @@ export default function SWVisitVerification() {
                             </Badge>
                           ) : null}
                         </div>
-                        <p className="text-sm text-muted-foreground">{member.room}</p>
                         {member.lastVisitDate && (
                           <p className="text-xs text-muted-foreground mt-1">
                             Last visit: {new Date(member.lastVisitDate).toLocaleDateString()}
                           </p>
                         )}
+                        {hasVisitThisMonth ? (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Already completed this month. {isSubmitted || isPaid ? 'No additional claim allowed.' : 'Tap to edit questionnaire.'}
+                          </p>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2">
                         <ArrowRight className="h-5 w-5 text-gray-400" />
@@ -1335,7 +1535,7 @@ export default function SWVisitVerification() {
                   <div>
                     <h2 className="font-semibold">{selectedMember.name}</h2>
                     <p className="text-sm text-muted-foreground">
-                      {selectedRCFE?.name} - {selectedMember.room}
+                      {selectedRCFE?.name}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1370,6 +1570,18 @@ export default function SWVisitVerification() {
                   <CardTitle>1. Where did you meet the member? <span className="text-red-500">*</span></CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">
+                      Member room number <span className="text-red-500">*</span>
+                    </div>
+                    <Input
+                      value={questionnaire.memberRoomNumber}
+                      onChange={(e) => setQuestionnaire((prev) => ({ ...prev, memberRoomNumber: e.target.value }))}
+                      placeholder="e.g., 12A"
+                    />
+                    <div className="text-xs text-muted-foreground">Ask RCFE staff if needed.</div>
+                  </div>
+
                   <div className="space-y-3">
                     {[
                       { value: 'member_room', label: "Member's Room" },
@@ -2586,6 +2798,18 @@ export default function SWVisitVerification() {
                         </div>
                       </div>
                     </Button>
+                    <div className="mt-3 text-center text-sm text-muted-foreground">
+                      Have all members been visited at this RCFE?{' '}
+                      <Link
+                        className="font-medium text-primary hover:underline"
+                        href={`/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(
+                          new Date().toISOString().slice(0, 10)
+                        )}`}
+                      >
+                        Go to Sign Off Page
+                      </Link>
+                      .
+                    </div>
                   </div>
                 )}
 

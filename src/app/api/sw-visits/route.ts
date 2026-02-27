@@ -17,6 +17,7 @@ interface VisitSubmission {
   rcfeName: string;
   rcfeAddress: string;
   visitDate: string;
+  memberRoomNumber?: string;
   
   meetingLocation: {
     location: string;
@@ -468,12 +469,18 @@ export async function GET(req: NextRequest) {
       if (!acc[rcfeKey]) {
         const city = String(member.RCFE_City || member.MemberCity || member.Member_City || '').trim() || null;
         const zip = String(member.RCFE_Zip || '').trim() || null;
+        const administrator =
+          String(member.RCFE_Administrator || member.rcfeAdministrator || '').trim() || null;
+        const administratorPhone =
+          String(member.RCFE_Administrator_Phone || member.rcfeAdministratorPhone || '').trim() || null;
         acc[rcfeKey] = {
           id: `rcfe-${rcfeKey.toLowerCase().replace(/\s+/g, '-')}`,
           name: rcfeKey,
           address: member.RCFE_Address || 'Address not available',
           city,
           zip,
+          administrator,
+          administratorPhone,
           members: []
         };
       }
@@ -766,6 +773,7 @@ export async function POST(req: NextRequest) {
       socialWorkerName,
       memberId: visitData.memberId,
       memberName: visitData.memberName,
+      memberRoomNumber: String((visitData as any)?.memberRoomNumber || '').trim() || null,
       rcfeId: visitData.rcfeId,
       rcfeName: visitData.rcfeName,
       rcfeAddress: visitData.rcfeAddress,
@@ -814,6 +822,7 @@ export async function POST(req: NextRequest) {
             {
               id: visitData.visitId,
               memberName: visitData.memberName,
+              memberRoomNumber: String((visitData as any)?.memberRoomNumber || '').trim() || '',
               rcfeName: visitData.rcfeName,
               rcfeAddress: visitData.rcfeAddress,
               visitDate: claimDay,

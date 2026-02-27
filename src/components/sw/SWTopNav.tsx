@@ -8,7 +8,7 @@ import { ClipboardCheck, ListChecks, FileBarChart, DollarSign, Users, Home } fro
 
 const links = [
   { href: '/sw-portal', label: 'Menu', icon: Home },
-  { href: '/sw-visit-verification', label: 'Visit Verification', icon: ClipboardCheck },
+  { href: '/sw-visit-verification', label: 'Monthly Questionnaire', icon: ClipboardCheck },
   { href: '/sw-portal/roster', label: 'Assigned Members', icon: Users },
   { href: '/sw-portal/monthly-visits', label: 'Visits', icon: ListChecks },
   { href: '/sw-portal/sign-off', label: 'Sign Off', icon: FileBarChart },

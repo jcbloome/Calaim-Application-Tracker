@@ -20,9 +20,9 @@ export default function SWPortalPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ClipboardCheck className="h-5 w-5" />
-              Visit Verification
+              Monthly Questionnaire
             </CardTitle>
-            <CardDescription>Verify assigned RCFE visits</CardDescription>
+            <CardDescription>Complete monthly member visit questionnaires</CardDescription>
           </CardHeader>
           <CardContent>
             <Button asChild className="w-full">
