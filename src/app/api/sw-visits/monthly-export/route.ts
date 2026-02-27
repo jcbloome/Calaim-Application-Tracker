@@ -68,7 +68,14 @@ export async function POST(request: NextRequest) {
 
     const visits = snap.docs
       .map((d) => d.data() as any)
-      .filter((v) => String(v?.socialWorkerEmail || '').trim().toLowerCase() === email);
+      .filter((v) => String(v?.socialWorkerEmail || '').trim().toLowerCase() === email)
+      // By default, only include submitted/finalized visits in exports and status checks.
+      // Draft questionnaires should not appear as "completed visits" in the monthly views.
+      .filter((v) => {
+        if (rawMode) return true;
+        const status = String(v?.status || '').trim().toLowerCase();
+        return status !== 'draft';
+      });
 
     const normalizeKey = (v: any) =>
       String(v ?? '')

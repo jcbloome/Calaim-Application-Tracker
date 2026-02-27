@@ -27,8 +27,8 @@ type CandidateVisit = {
   visitId: string;
   memberId?: string;
   memberName: string;
+  memberRoomNumber?: string;
   flagged?: boolean;
-  completedAt?: string;
 };
 
 const todayKeyUtc = () => new Date().toISOString().slice(0, 10);
@@ -103,7 +103,7 @@ export default function SWSignOffPage() {
     try {
       const idToken = await auth.currentUser.getIdToken();
       const res = await fetch(
-        `/api/sw-visits/sign-off/candidates?rcfeId=${encodeURIComponent(rcfeId)}&claimDay=${encodeURIComponent(claimDay)}`,
+        `/api/sw-visits/draft-candidates?rcfeId=${encodeURIComponent(rcfeId)}&claimDay=${encodeURIComponent(claimDay)}`,
         { headers: { authorization: `Bearer ${idToken}` } }
       );
       const data = await res.json().catch(() => ({} as any));
@@ -171,46 +171,28 @@ export default function SWSignOffPage() {
       const idToken = await auth.currentUser.getIdToken();
       const payload = {
         rcfeId,
-        rcfeName: String(selectedRcfe?.name || '').trim(),
-        socialWorkerId: swEmail || swUid,
-        socialWorkerUid: swUid,
-        socialWorkerEmail: swEmail,
-        socialWorkerName: swName,
         claimDay,
-        completedVisits: selectedVisits.map((v) => ({
-          visitId: String(v.visitId || '').trim(),
-          memberName: String(v.memberName || '').trim(),
-          flagged: Boolean(v.flagged),
-          rcfeId,
-          rcfeName: String(selectedRcfe?.name || '').trim(),
-          rcfeAddress: String(selectedRcfe?.address || '').trim(),
-        })),
-        invoice: {
-          visitFeeRate: 45,
-          gasAmount: selectedVisits.length > 0 ? 20 : 0,
-          visitCount: selectedVisits.length,
-          totalAmount: invoiceTotals.total,
-        },
-        signOffData: {
-          rcfeStaffName: staffName.trim(),
-          rcfeStaffTitle: staffTitle.trim(),
-          signature: signature.trim(),
-          signedAt,
-          geolocation,
-          locationVerified: Boolean(geolocation),
-        },
-        submittedAt: new Date().toISOString(),
+        selectedVisitIds: selectedVisits.map((v) => String(v.visitId || '').trim()).filter(Boolean),
+        staffName: staffName.trim(),
+        staffTitle: staffTitle.trim(),
+        signature: signature.trim(),
+        signedAt,
+        geolocation,
+        socialWorkerName: swName,
       };
 
-      const res = await fetch('/api/sw-visits/sign-off', {
+      const res = await fetch('/api/sw-visits/rcfe-signoff-submit', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({} as any));
-      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to submit sign-off (HTTP ${res.status})`);
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to submit (HTTP ${res.status})`);
 
-      toast({ title: 'Sign-off complete', description: `Signed off ${selectedVisits.length} member(s).` });
+      toast({
+        title: 'Submitted',
+        description: `Submitted ${selectedVisits.length} questionnaire(s) and the claim.`,
+      });
 
       setStaffName('');
       setStaffTitle('');
@@ -219,8 +201,8 @@ export default function SWSignOffPage() {
       setGeolocation(null);
       await loadCandidates();
     } catch (e: any) {
-      setError(e?.message || 'Failed to submit sign-off.');
-      toast({ title: 'Sign-off failed', description: e?.message || 'Please try again.', variant: 'destructive' });
+      setError(e?.message || 'Failed to submit.');
+      toast({ title: 'Submission failed', description: e?.message || 'Please try again.', variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
@@ -252,7 +234,7 @@ export default function SWSignOffPage() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Sign Off</h1>
-          <p className="text-muted-foreground">RCFE staff checks visited members and signs electronically.</p>
+          <p className="text-muted-foreground">RCFE staff reviews the member list and signs to submit questionnaires and the claim.</p>
         </div>
         <Button className="w-full sm:w-auto" variant="outline" onClick={() => void loadCandidates()} disabled={loadingVisits || !rcfeId}>
           <RefreshCw className="h-4 w-4 mr-2" />
@@ -306,7 +288,7 @@ export default function SWSignOffPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Members to sign off</CardTitle>
-          <CardDescription>RCFE staff should check each member name being signed off.</CardDescription>
+          <CardDescription>RCFE staff should check each member name. Then sign and submit.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {loadingVisits ? (
@@ -315,7 +297,7 @@ export default function SWSignOffPage() {
               Loading…
             </div>
           ) : visits.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No unsigned visits found for this RCFE on {claimDay}.</div>
+            <div className="text-sm text-muted-foreground">No saved drafts found for this RCFE on {claimDay}.</div>
           ) : (
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -360,6 +342,9 @@ export default function SWSignOffPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <div className="font-medium">{v.memberName || 'Member'}</div>
+                          {v.memberRoomNumber ? (
+                            <Badge variant="secondary">Room {String(v.memberRoomNumber).trim()}</Badge>
+                          ) : null}
                           {v.flagged ? (
                             <Badge variant="destructive" className="gap-1">
                               <AlertTriangle className="h-3.5 w-3.5" />
@@ -367,9 +352,7 @@ export default function SWSignOffPage() {
                             </Badge>
                           ) : null}
                         </div>
-                        {v.completedAt ? (
-                          <div className="text-xs text-muted-foreground">Completed: {new Date(v.completedAt).toLocaleString()}</div>
-                        ) : null}
+                        <div className="text-xs text-muted-foreground">Draft saved</div>
                       </div>
                     </label>
                   );
@@ -383,9 +366,12 @@ export default function SWSignOffPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">RCFE staff signature</CardTitle>
-          <CardDescription>Staff verifies the Social Worker visited the selected members.</CardDescription>
+          <CardDescription>Staff verifies the Social Worker is at this location to visit the selected members.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-900">
+            <span className="font-medium">Attestation:</span> I acknowledge that {swName} is at this location to visit the below members.
+          </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="staffName">Staff name</Label>
@@ -433,7 +419,7 @@ export default function SWSignOffPage() {
 
           <Button className="w-full" size="lg" disabled={!canSubmit} onClick={() => void submitSignOff()}>
             <Send className="h-4 w-4 mr-2" />
-            {submitting ? 'Submitting…' : `Submit Sign-Off (${selectedVisits.length})`}
+            {submitting ? 'Submitting…' : `Submit questionnaires & claim (${selectedVisits.length})`}
           </Button>
         </CardContent>
       </Card>

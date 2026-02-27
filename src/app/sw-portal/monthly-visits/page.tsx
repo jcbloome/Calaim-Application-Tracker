@@ -293,7 +293,7 @@ export default function SWMonthlyVisitsPage() {
         <CardHeader>
           <CardTitle>Completed visits (this month)</CardTitle>
           <CardDescription>
-            One visit per member per month is allowed. Each row shows the member visit, RCFE, and the linked daily claim status.
+            One visit per member per month is allowed. Each row shows the member visit, RCFE, and the linked claim status.
           </CardDescription>
         </CardHeader>
         <CardContent>

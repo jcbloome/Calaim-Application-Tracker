@@ -306,6 +306,53 @@ export default function SWVisitVerification() {
   const [monthStatuses, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
   const [loadingMonthStatuses, setLoadingMonthStatuses] = useState(false);
   const [editingVisitId, setEditingVisitId] = useState<string | null>(null);
+  const [draftVisitsByMemberId, setDraftVisitsByMemberId] = useState<
+    Record<string, { visitId: string; flagged: boolean }>
+  >({});
+  const [loadingDraftVisits, setLoadingDraftVisits] = useState(false);
+
+  const claimDayKey = useMemo(() => {
+    const d = String(questionnaire.visitDate || '').trim().slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+    return new Date().toISOString().slice(0, 10);
+  }, [questionnaire.visitDate]);
+
+  const refreshDraftVisits = useCallback(async () => {
+    if (!user || !isSocialWorker || !selectedRCFE?.id) {
+      setDraftVisitsByMemberId({});
+      return;
+    }
+    setLoadingDraftVisits(true);
+    try {
+      const idToken = await (user as any)?.getIdToken?.();
+      if (!idToken) throw new Error('Not signed in');
+      const res = await fetch(
+        `/api/sw-visits/draft-candidates?rcfeId=${encodeURIComponent(String(selectedRCFE.id))}&claimDay=${encodeURIComponent(
+          claimDayKey
+        )}`,
+        { headers: { authorization: `Bearer ${idToken}` } }
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        setDraftVisitsByMemberId({});
+        return;
+      }
+      const rows: any[] = Array.isArray(data?.visits) ? data.visits : [];
+      const map: Record<string, { visitId: string; flagged: boolean }> = {};
+      rows.forEach((r) => {
+        const memberId = String(r?.memberId || '').trim();
+        const visitId = String(r?.visitId || '').trim();
+        if (!memberId || !visitId) return;
+        map[memberId] = { visitId, flagged: Boolean(r?.flagged) };
+      });
+      setDraftVisitsByMemberId(map);
+    } catch (e) {
+      console.warn('⚠️ Could not load draft visits (best-effort):', e);
+      setDraftVisitsByMemberId({});
+    } finally {
+      setLoadingDraftVisits(false);
+    }
+  }, [claimDayKey, isSocialWorker, selectedRCFE?.id, user]);
 
   const downloadMonthlyVisitsCsv = useCallback(async () => {
     if (!user) return;
@@ -683,6 +730,12 @@ export default function SWVisitVerification() {
       return;
     }
 
+    const draft = memberId ? draftVisitsByMemberId[memberId] : undefined;
+    if (draft?.visitId) {
+      void openExistingVisitForEdit(draft.visitId);
+      return;
+    }
+
     setEditingVisitId(null);
     setQuestionnaire((prev) => ({
       ...prev,
@@ -824,6 +877,12 @@ export default function SWVisitVerification() {
     // Best-effort: load month statuses on mount/when month changes.
     void refreshMonthStatuses();
   }, [isSocialWorker, refreshMonthStatuses]);
+
+  useEffect(() => {
+    if (!isSocialWorker) return;
+    if (!selectedRCFE?.id) return;
+    void refreshDraftVisits();
+  }, [isSocialWorker, refreshDraftVisits, selectedRCFE?.id]);
 
   // Auto-load assignments on mount (Refresh remains available).
   useEffect(() => {
@@ -1008,7 +1067,7 @@ export default function SWVisitVerification() {
     if (cacheFreshness.isStale && !confirmFreshWithin15) {
       toast({
         title: "Please confirm data freshness",
-        description: "Your assignments cache is older than 15 minutes. Refresh assignments, then confirm before submitting the visit.",
+        description: "Your assignments cache is older than 15 minutes. Refresh assignments, then confirm before saving the draft.",
         variant: "destructive"
       });
       return;
@@ -1051,7 +1110,7 @@ export default function SWVisitVerification() {
         }
       }
 
-      // Submit to API
+      // Save draft to API (no claim yet)
       const submitData = {
         ...questionnaire,
         socialWorkerUid: user?.uid || null,
@@ -1077,13 +1136,13 @@ export default function SWVisitVerification() {
       const idToken = await (user as any)?.getIdToken?.();
       if (!idToken) throw new Error('Not signed in');
 
-      const response = await fetch(isEditing ? '/api/sw-visits/update' : '/api/sw-visits', {
+      const response = await fetch('/api/sw-visits/draft', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(isEditing ? { authorization: `Bearer ${idToken}` } : {}),
+          authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify(isEditing ? { visitId: submitData.visitId, visitData: submitData } : submitData)
+        body: JSON.stringify(submitData)
       });
 
       const result = await response.json();
@@ -1092,8 +1151,9 @@ export default function SWVisitVerification() {
         throw new Error(result.error || 'Submission failed');
       }
 
-      // Refresh month statuses so member list reflects updated state.
+      // Best-effort: refresh statuses and draft list.
       void refreshMonthStatuses();
+      void refreshDraftVisits();
 
       if (!isEditing) {
         // Add to completed visits first
@@ -1105,7 +1165,7 @@ export default function SWVisitVerification() {
           rcfeName: questionnaire.rcfeName,
           claimDay: String(questionnaire.visitDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
           completedAt: new Date().toISOString(),
-          flagged: result.flagged || questionnaire.visitSummary.flagged
+          flagged: questionnaire.visitSummary.flagged
         }]);
 
         // Track visited member for checkmarks (today-only UX)
@@ -1121,13 +1181,11 @@ export default function SWVisitVerification() {
       
       // Show comprehensive success message
       toast({
-        title: isEditing ? "✅ Questionnaire Updated" : "✅ Visit Successfully Submitted!",
+        title: isEditing ? "✅ Draft Updated" : "✅ Draft Saved",
         description: isEditing
-          ? `${questionnaire.memberName}'s questionnaire has been updated.`
-          : result.flagged 
-            ? `${questionnaire.memberName}'s visit has been recorded and flagged for review. John Amber and Jason Bloome have been notified.`
-            : `${questionnaire.memberName}'s visit has been successfully recorded. You can continue with more visits or proceed to sign-off.`,
-        variant: (!isEditing && result.flagged) ? "destructive" : "default",
+          ? `${questionnaire.memberName}'s questionnaire draft has been updated.`
+          : `${questionnaire.memberName}'s questionnaire draft has been saved. When you’re done at this RCFE, go to Sign Off & Submit to submit questionnaires and the claim.`,
+        variant: "default",
         duration: 5000 // Show longer for important message
       });
 
@@ -1359,9 +1417,18 @@ export default function SWVisitVerification() {
                   Back
                 </Button>
                 {completedVisitsForSelectedRcfe.length > 0 && (
-                  <Button onClick={() => setCurrentStep('sign-off')} className="bg-green-600 hover:bg-green-700">
+                  <Button
+                    onClick={() =>
+                      router.push(
+                        `/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(
+                          claimDayKey
+                        )}`
+                      )
+                    }
+                    className="bg-green-600 hover:bg-green-700"
+                  >
                     <CheckCircle className="h-4 w-4 mr-2" />
-                    Sign-Off ({completedVisitsForSelectedRcfe.length})
+                    Sign Off & Submit ({completedVisitsForSelectedRcfe.length})
                   </Button>
                 )}
               </div>
@@ -1387,16 +1454,22 @@ export default function SWVisitVerification() {
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold text-amber-900">Pending sign-off at this RCFE</div>
+                      <div className="text-sm font-semibold text-amber-900">Drafts saved at this RCFE</div>
                       <div className="mt-0.5 text-xs text-amber-800/80">
-                        Completed visits that still need RCFE staff verification
+                        Ready for RCFE staff attestation and final submission when you’re done at this home
                       </div>
                     </div>
                     <Button
                       type="button"
                       size="sm"
                       className="bg-green-600 hover:bg-green-700"
-                      onClick={() => setCurrentStep('sign-off')}
+                      onClick={() =>
+                        router.push(
+                          `/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(
+                            claimDayKey
+                          )}`
+                        )
+                      }
                     >
                       <CheckCircle className="h-4 w-4 mr-2" />
                       Go to sign-off
@@ -1425,7 +1498,7 @@ export default function SWVisitVerification() {
                 <div className="rounded-lg border bg-green-50 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold text-green-900">Completed at this home today</div>
+                      <div className="text-sm font-semibold text-green-900">Drafts saved at this home</div>
                       <div className="mt-0.5 text-xs text-green-800/80">
                         {completedVisitsForSelectedRcfe.length} member{completedVisitsForSelectedRcfe.length !== 1 ? 's' : ''} done
                       </div>
@@ -1472,10 +1545,14 @@ export default function SWVisitVerification() {
                 const isSubmitted = Boolean(monthStatus?.claimSubmitted) || ['submitted', 'approved', 'rejected'].includes(claimStatus);
                 const hasVisitThisMonth = Boolean(monthStatus?.visitId);
                 const needsSignOff = hasVisitThisMonth && !Boolean(monthStatus?.signedOff) && !isSubmitted && !isPaid;
+                const draftStatus = memberKeyNorm ? draftVisitsByMemberId[memberKeyNorm] : undefined;
+                const hasDraftToday = Boolean(draftStatus?.visitId) && !hasVisitThisMonth;
                 return (
                   <div
                     key={memberKey || `member-${memberIndex}-${Date.now()}`}
-                    className={`border rounded-lg p-4 transition-colors ${hasVisitThisMonth ? 'bg-slate-50' : 'hover:bg-gray-50 cursor-pointer'}`}
+                    className={`border rounded-lg p-4 transition-colors cursor-pointer hover:bg-gray-50 ${
+                      hasVisitThisMonth || hasDraftToday ? 'bg-slate-50' : ''
+                    }`}
                     onClick={() => handleMemberSelect(member)}
                   >
                     <div className="flex items-center justify-between">
@@ -1490,6 +1567,10 @@ export default function SWVisitVerification() {
                             <Badge className="bg-amber-500 hover:bg-amber-500">Needs sign-off</Badge>
                           ) : monthStatus?.signedOff ? (
                             <Badge className="bg-green-600 hover:bg-green-600">Signed off</Badge>
+                          ) : hasDraftToday ? (
+                            <Badge variant="outline" className="border-slate-300 text-slate-700">
+                              Draft saved
+                            </Badge>
                           ) : null}
                           {signed ? (
                             <Badge className="bg-green-600 hover:bg-green-600">
@@ -1511,6 +1592,10 @@ export default function SWVisitVerification() {
                         {hasVisitThisMonth ? (
                           <p className="text-xs text-muted-foreground mt-1">
                             Already completed this month. {isSubmitted || isPaid ? 'No additional claim allowed.' : 'Tap to edit questionnaire.'}
+                          </p>
+                        ) : hasDraftToday ? (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Draft saved for this home/day. Tap to edit, or go to Sign Off & Submit when you’re ready.
                           </p>
                         ) : null}
                       </div>
@@ -2697,9 +2782,9 @@ export default function SWVisitVerification() {
             <div className="text-center space-y-4">
               <div className="bg-green-50 border border-green-200 rounded-lg p-6">
                 <CheckCircle className="h-16 w-16 text-green-600 mx-auto mb-4" />
-                <h2 className="text-2xl font-bold text-green-800 mb-2">Visit Successfully Submitted!</h2>
+                <h2 className="text-2xl font-bold text-green-800 mb-2">Draft Saved</h2>
                 <p className="text-green-700">
-                  Your visit questionnaire has been recorded and is ready for sign-off.
+                  Your questionnaire draft has been saved. When you’re done at this RCFE, have staff check the list and sign off to submit questionnaires and the claim.
                 </p>
               </div>
             </div>
@@ -2713,9 +2798,9 @@ export default function SWVisitVerification() {
                   <div className="rounded-lg border bg-white p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-sm font-semibold text-slate-900">Completed members at {selectedRCFE?.name}</div>
+                        <div className="text-sm font-semibold text-slate-900">Drafts saved at {selectedRCFE?.name}</div>
                         <div className="mt-0.5 text-xs text-slate-600">
-                          {completedVisitsForSelectedRcfe.length} completed • ready for sign-off when you’re done at this home
+                          {completedVisitsForSelectedRcfe.length} draft{completedVisitsForSelectedRcfe.length !== 1 ? 's' : ''} • ready for staff sign-off when you’re done at this home
                         </div>
                       </div>
                       {nextMemberAtSelectedRcfe ? (
@@ -2785,15 +2870,21 @@ export default function SWVisitVerification() {
                 {completedVisitsForSelectedRcfe.length > 0 && (
                   <div className="pt-4 border-t">
                     <Button
-                      onClick={() => setCurrentStep('sign-off')}
+                      onClick={() =>
+                        router.push(
+                          `/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(
+                            claimDayKey
+                          )}`
+                        )
+                      }
                       className="w-full h-auto p-4 bg-green-600 hover:bg-green-700"
                     >
                       <div className="flex items-center justify-center space-x-3">
                         <CheckCircle className="h-6 w-6" />
                         <div className="text-center">
-                          <div className="font-semibold">Complete Sign-Off</div>
+                          <div className="font-semibold">Sign Off & Submit</div>
                           <div className="text-sm opacity-90">
-                            {completedVisitsForSelectedRcfe.length} visit{completedVisitsForSelectedRcfe.length !== 1 ? 's' : ''} ready for verification at this home
+                            {completedVisitsForSelectedRcfe.length} draft{completedVisitsForSelectedRcfe.length !== 1 ? 's' : ''} ready at this home
                           </div>
                         </div>
                       </div>
@@ -2803,7 +2894,7 @@ export default function SWVisitVerification() {
                       <Link
                         className="font-medium text-primary hover:underline"
                         href={`/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(
-                          new Date().toISOString().slice(0, 10)
+                          claimDayKey
                         )}`}
                       >
                         Go to Sign Off Page
