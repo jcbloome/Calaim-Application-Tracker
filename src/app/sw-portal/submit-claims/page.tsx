@@ -318,8 +318,9 @@ export default function SubmitClaimsPage() {
           ) : draftRows.length === 0 ? (
             <div className="text-sm text-muted-foreground">No draft claims found for {month}.</div>
           ) : (
-            <div className="rounded-lg border overflow-hidden">
-              <Table>
+            <div className="rounded-lg border overflow-x-auto">
+              <div className="min-w-[980px]">
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[44px]">
@@ -367,7 +368,8 @@ export default function SubmitClaimsPage() {
                     );
                   })}
                 </TableBody>
-              </Table>
+                </Table>
+              </div>
             </div>
           )}
 
@@ -394,8 +396,9 @@ export default function SubmitClaimsPage() {
           ) : claimsForMonth.submitted.length === 0 ? (
             <div className="text-sm text-muted-foreground">No submitted claims found for {month}.</div>
           ) : (
-            <div className="rounded-lg border overflow-hidden">
-              <Table>
+            <div className="rounded-lg border overflow-x-auto">
+              <div className="min-w-[560px]">
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
@@ -429,7 +432,8 @@ export default function SubmitClaimsPage() {
                     );
                   })}
                 </TableBody>
-              </Table>
+                </Table>
+              </div>
             </div>
           )}
         </CardContent>

@@ -209,12 +209,13 @@ export default function SWRosterPage() {
             ) : null}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => void refreshRoster()} disabled={loading}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <Button className="w-full sm:w-auto" variant="outline" onClick={() => void refreshRoster()} disabled={loading}>
             <RefreshCw className="h-4 w-4 mr-2" />
             {loading ? 'Refreshing…' : 'Refresh list'}
           </Button>
           <Button
+            className="w-full sm:w-auto"
             variant="outline"
             onClick={downloadCsv}
             disabled={loading || facilities.length === 0}
@@ -223,7 +224,7 @@ export default function SWRosterPage() {
             <Download className="h-4 w-4 mr-2" />
             Download
           </Button>
-          <Button variant="outline" onClick={() => window.print()}>
+          <Button className="w-full sm:w-auto" variant="outline" onClick={() => window.print()}>
             <Printer className="h-4 w-4 mr-2" />
             Print
           </Button>

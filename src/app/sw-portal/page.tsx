@@ -26,7 +26,7 @@ export default function SWPortalPage() {
           </CardHeader>
           <CardContent>
             <Button asChild className="w-full">
-              <Link href="/sw-portal/visit-verification">Start</Link>
+              <Link href="/sw-visit-verification">Start</Link>
             </Button>
           </CardContent>
         </Card>

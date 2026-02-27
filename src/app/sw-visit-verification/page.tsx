@@ -1054,7 +1054,7 @@ export default function SWVisitVerification() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm font-semibold text-foreground truncate">
               {swName}
             </div>

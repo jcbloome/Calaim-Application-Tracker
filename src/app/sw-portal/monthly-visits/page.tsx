@@ -435,7 +435,8 @@ export default function SWMonthlyVisitsPage() {
           {rows.length === 0 ? (
             <div className="text-sm text-muted-foreground">No completed visits found for {month}.</div>
           ) : (
-            <div className="rounded-lg border overflow-hidden">
+          <div className="rounded-lg border overflow-x-auto">
+            <div className="min-w-[920px]">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -512,6 +513,7 @@ export default function SWMonthlyVisitsPage() {
                   })}
                 </TableBody>
               </Table>
+            </div>
             </div>
           )}
         </CardContent>

@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
-import { Loader2, UserCheck, AlertCircle, Eye, EyeOff, Lock } from 'lucide-react';
+import { Loader2, AlertCircle, Eye, EyeOff, Lock } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -201,40 +201,16 @@ export default function SWLoginPage() {
               className="w-40 h-auto object-contain"
               priority
             />
-            <div className="hidden sm:block">
-              <div className="text-sm font-semibold text-gray-900">Social Worker Portal</div>
-              <div className="text-xs text-muted-foreground">Sign in</div>
-            </div>
           </Link>
         </div>
       </div>
 
       <div className="flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-6">
-        {/* Logo */}
-        <div className="text-center">
-          <Image
-            src="/calaimlogopdf.png"
-            alt="Connect CalAIM Logo"
-            width={240}
-            height={67}
-            className="w-48 h-auto object-contain mx-auto mb-4"
-            priority
-          />
-          <h1 className="text-2xl font-bold text-gray-900">Social Worker Portal</h1>
-          <p className="text-gray-600 mt-2">Sign in to access your dashboard</p>
-        </div>
-
         {/* Login Form */}
         <Card className="shadow-lg">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-xl flex items-center gap-2">
-              <UserCheck className="h-5 w-5 text-primary" />
-              Sign In
-            </CardTitle>
-            <CardDescription>
-              Enter your credentials to access the Social Worker portal
-            </CardDescription>
+            <CardTitle className="text-base leading-snug sm:text-xl">Hello Social Worker. Please sign in</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
@@ -302,8 +278,7 @@ export default function SWLoginPage() {
                   </>
                 ) : (
                   <>
-                    <UserCheck className="mr-2 h-4 w-4" />
-                    Sign In
+                    Login
                   </>
                 )}
               </Button>
@@ -321,7 +296,13 @@ export default function SWLoginPage() {
               </div>
               <div className="text-center text-sm text-gray-600">
                 <p>Need help accessing your account?</p>
-                <p className="mt-1">Contact your administrator for assistance.</p>
+                <p className="mt-1">
+                  Contact{' '}
+                  <a className="text-primary hover:underline" href="mailto:john@carehomefinders.com">
+                    john@carehomefinders.com
+                  </a>
+                  .
+                </p>
               </div>
             </div>
           </CardContent>
