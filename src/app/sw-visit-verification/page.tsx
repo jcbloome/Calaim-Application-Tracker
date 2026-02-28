@@ -1478,7 +1478,7 @@ export default function SWVisitVerification() {
                         <p className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
                           <Phone className="h-4 w-4" />
                           <span className="min-w-0">
-                            {rcfe.administrator ? <span className="font-medium text-foreground">{rcfe.administrator}</span> : null}
+                            {rcfe.administrator ? <span>Admin: {rcfe.administrator}</span> : null}
                             {rcfe.administratorPhone ? (
                               <>
                                 {rcfe.administrator ? <span className="text-muted-foreground"> • </span> : null}
