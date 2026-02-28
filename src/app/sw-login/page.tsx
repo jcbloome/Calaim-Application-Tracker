@@ -10,49 +10,57 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/firebase';
-import { useSocialWorker } from '@/hooks/use-social-worker';
 import { Loader2, AlertCircle, Eye, EyeOff, Lock } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { clearStoredSwLoginDay, getTodayLocalDayKey, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
+import { useAuthState } from 'react-firebase-hooks/auth';
 
 
 export default function SWLoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const { isSocialWorker, isLoading: swLoading, status: swStatus } = useSocialWorker();
+  const [currentUser, authLoading] = useAuthState(auth);
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [loginAttempted, setLoginAttempted] = useState(false);
-  const [verifyDeadlineMs, setVerifyDeadlineMs] = useState<number | null>(null);
 
-  // Redirect if already logged in as social worker
+  // If already signed in and has SW claim, redirect to portal.
+  // On first visit while logged out, we skip any SW verification and just show the form.
   useEffect(() => {
-    if (!swLoading && isSocialWorker) {
+    if (authLoading) return;
+    if (!currentUser) return;
+
+    const run = async () => {
       const today = getTodayLocalDayKey();
       const stored = readStoredSwLoginDay();
-      if (!stored) {
-        // Allow the current session for today (first run after rollout).
-        writeStoredSwLoginDay(today);
-        router.push('/sw-portal');
-        return;
-      }
-      if (stored !== today) {
+      if (stored && stored !== today) {
         // Force re-login on a new day.
         clearStoredSwLoginDay();
-        auth.signOut().catch(() => null);
+        await auth.signOut().catch(() => null);
         fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
         return;
       }
-      router.push('/sw-portal');
-    }
-  }, [isSocialWorker, swLoading, router]);
+
+      try {
+        const tokenResult = await currentUser.getIdTokenResult();
+        const claims = (tokenResult?.claims || {}) as Record<string, any>;
+        if (Boolean(claims.socialWorker)) {
+          if (!stored) writeStoredSwLoginDay(today);
+          router.push('/sw-portal');
+        }
+      } catch {
+        // best-effort only
+      }
+    };
+
+    void run();
+  }, [authLoading, currentUser, router]);
 
   useEffect(() => {
     const reason = String(searchParams?.get('reason') || '').trim().toLowerCase();
@@ -63,34 +71,6 @@ export default function SWLoginPage() {
       });
     }
   }, [searchParams, toast]);
-
-  useEffect(() => {
-    if (!loginAttempted || swLoading) return;
-
-    if (isSocialWorker) {
-      setIsLoading(false);
-      setError('');
-      return;
-    }
-
-    // Give custom claims + SW doc a moment to propagate after sign-in.
-    // Without this, we can incorrectly show "not enabled" and sign the user out.
-    const deadline = verifyDeadlineMs ?? 0;
-    if (deadline && Date.now() < deadline) return;
-
-    let message = 'Access denied. You are not authorized to access the Social Worker portal.';
-    if (swStatus === 'inactive') {
-      message = 'Your Social Worker account is inactive. Please contact your administrator to enable access.';
-    } else if (swStatus === 'not-found') {
-      message = 'This email is not enabled for Social Worker access. Please contact your administrator.';
-    } else if (swStatus === 'error') {
-      message = 'We could not verify your Social Worker access. Please try again or contact support.';
-    }
-
-    setError(message);
-    setIsLoading(false);
-    auth.signOut().catch(() => null);
-  }, [loginAttempted, swLoading, isSocialWorker, swStatus, verifyDeadlineMs]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,12 +112,15 @@ export default function SWLoginPage() {
       // Wait briefly for the socialWorker claim to become visible.
       // This avoids a redirect loop / false "not enabled" error right after login.
       const deadline = Date.now() + 10_000;
-      setVerifyDeadlineMs(deadline);
+      let hasSwClaim = false;
       while (Date.now() < deadline) {
         try {
           const tokenResult = await userCredential.user.getIdTokenResult();
           const claims = (tokenResult?.claims || {}) as Record<string, any>;
-          if (Boolean(claims.socialWorker)) break;
+          if (Boolean(claims.socialWorker)) {
+            hasSwClaim = true;
+            break;
+          }
         } catch {
           // ignore and retry
         }
@@ -145,16 +128,22 @@ export default function SWLoginPage() {
         await new Promise((r) => setTimeout(r, 600));
       }
 
+      if (!hasSwClaim) {
+        await auth.signOut().catch(() => null);
+        setError('This email is not enabled for Social Worker access. Please contact your administrator.');
+        setIsLoading(false);
+        return;
+      }
+
       // Record daily login marker (forces a fresh sign-in each day).
       writeStoredSwLoginDay(getTodayLocalDayKey());
-      
-      setLoginAttempted(true);
       
       toast({
         title: 'Login Successful',
         description: 'Welcome to the Social Worker Portal'
       });
 
+      router.push('/sw-portal');
     } catch (error: any) {
       console.error('Login error:', error);
       
@@ -170,23 +159,10 @@ export default function SWLoginPage() {
         errorMessage = 'Too many failed attempts. Please try again later.';
       }
       
-      setLoginAttempted(false);
       setError(errorMessage);
       setIsLoading(false);
     }
   };
-
-  // Show loading while checking social worker status
-  if (swLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-muted-foreground">Checking authentication...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
