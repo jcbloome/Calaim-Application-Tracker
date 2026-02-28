@@ -446,7 +446,7 @@ export default function SWSignOffPage() {
                     <MapPin className="h-3.5 w-3.5" />
                     Location captured
                   </span>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs text-muted-foreground break-words whitespace-normal">
                     {geoAddress ? (
                       <>Address: {geoAddress}</>
                     ) : loadingGeoAddress ? (
