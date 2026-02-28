@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,6 +35,7 @@ const todayKeyUtc = () => new Date().toISOString().slice(0, 10);
 
 export default function SWSignOffPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const auth = useAuth();
   const { toast } = useToast();
   const { user, socialWorkerData, isSocialWorker, isLoading: swLoading } = useSocialWorker();
@@ -229,7 +230,7 @@ export default function SWSignOffPage() {
 
       toast({
         title: 'Submitted',
-        description: `Submitted ${selectedVisits.length} questionnaire(s) and the claim.`,
+        description: `Submitted ${selectedVisits.length} questionnaire(s) and the claim. Returning to Visit Verification…`,
       });
 
       setStaffName('');
@@ -238,6 +239,12 @@ export default function SWSignOffPage() {
       setSignedAt(new Date().toISOString());
       setGeolocation(null);
       await loadCandidates();
+
+      // After a successful submission, the next action is usually to select another RCFE/member.
+      // Route back to Visit Verification so the SW can continue their workflow.
+      setTimeout(() => {
+        router.push('/sw-visit-verification');
+      }, 400);
     } catch (e: any) {
       setError(e?.message || 'Failed to submit.');
       toast({ title: 'Submission failed', description: e?.message || 'Please try again.', variant: 'destructive' });
