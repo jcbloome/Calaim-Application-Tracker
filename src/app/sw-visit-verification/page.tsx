@@ -334,9 +334,27 @@ export default function SWVisitVerification() {
   }, [completedVisitsForSelectedRcfe, selectedSignoffVisitIds]);
 
   const getMemberKey = useCallback((member: any) => {
-    const key = String(member?.id || member?.name || '').trim();
-    return key;
+    const id = String(member?.id || '').trim();
+    if (id) return id;
+    const name = String(member?.name || '').trim();
+    const room = String(member?.room || '').trim();
+    const composite = `${name}${room ? `|${room}` : ''}`.trim();
+    return composite;
   }, []);
+
+  const membersAtSelectedRcfe = useMemo(() => {
+    const members = Array.isArray(selectedRCFE?.members) ? selectedRCFE.members : [];
+    const seen = new Set<string>();
+    const out: Member[] = [];
+    for (const m of members) {
+      const key = getMemberKey(m);
+      if (!key) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(m);
+    }
+    return out;
+  }, [getMemberKey, selectedRCFE?.members]);
 
   const nextMemberAtSelectedRcfe = useMemo(() => {
     if (!selectedRCFE?.id) return null;
@@ -344,8 +362,7 @@ export default function SWVisitVerification() {
     const signed = new Set<string>(
       Array.isArray(signedOffByRcfeId[selectedRCFE.id]?.memberIds) ? signedOffByRcfeId[selectedRCFE.id].memberIds : []
     );
-    const members = Array.isArray(selectedRCFE?.members) ? selectedRCFE.members : [];
-    for (const m of members) {
+    for (const m of membersAtSelectedRcfe) {
       const k = getMemberKey(m);
       if (!k) continue;
       if (signed.has(k)) continue;
@@ -353,7 +370,7 @@ export default function SWVisitVerification() {
       return m as any;
     }
     return null;
-  }, [getMemberKey, selectedRCFE, signedOffByRcfeId, visitedByRcfeId]);
+  }, [getMemberKey, membersAtSelectedRcfe, selectedRCFE, signedOffByRcfeId, visitedByRcfeId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -861,6 +878,13 @@ export default function SWVisitVerification() {
         flagged: false,
       },
     });
+    setQuestionStep(1);
+    setCurrentStep('questionnaire');
+    toast({
+      title: 'Questionnaire restarted',
+      description: 'All answers have been cleared. You are back on Question 1.',
+    });
+  };
 
   const currentMonthKey = useMemo(() => {
     const d = String(questionnaire.visitDate || '').trim();
@@ -923,12 +947,6 @@ export default function SWVisitVerification() {
   useEffect(() => {
     fetchAssignedRCFEs({ quiet: true });
   }, [fetchAssignedRCFEs]);
-    setQuestionStep(1);
-    toast({
-      title: 'Questionnaire restarted',
-      description: 'All answers have been cleared. You are back on Question 1.',
-    });
-  };
 
   const deleteCurrentDraft = useCallback(async () => {
     if (!user) return;
@@ -1051,6 +1069,9 @@ export default function SWVisitVerification() {
                questionnaire.careSatisfaction.activitiesPrograms > 0 &&
                questionnaire.careSatisfaction.overallSatisfaction > 0;
       case 4: // Member Concerns
+        if (questionnaire.memberConcerns.hasConcerns === true) {
+          return String(questionnaire.memberConcerns.detailedConcerns || '').trim().length > 0;
+        }
         return nonResponsive ? true : questionnaire.memberConcerns.hasConcerns !== null;
       case 5: // RCFE Assessment
         return questionnaire.rcfeAssessment.facilityCondition > 0 &&
@@ -1075,6 +1096,7 @@ export default function SWVisitVerification() {
       case 3:
         return nonResponsive ? "Member is marked non-responsive (ratings optional)" : "Please rate all aspects of care satisfaction";
       case 4:
+        if (questionnaire.memberConcerns.hasConcerns === true) return "Please describe the member's concerns";
         return nonResponsive ? "Member is marked non-responsive (concerns optional)" : "Please indicate if the member has concerns";
       case 5:
         return "Please rate all aspects of the RCFE";
@@ -1157,6 +1179,10 @@ export default function SWVisitVerification() {
     
     if (!nonResponsive && questionnaire.memberConcerns.hasConcerns === null) {
       errors.push("Member concerns indication is required");
+    }
+
+    if (questionnaire.memberConcerns.hasConcerns === true && !String(questionnaire.memberConcerns.detailedConcerns || '').trim()) {
+      errors.push("Please provide a detailed description of member concerns");
     }
     
     if (questionnaire.rcfeAssessment.facilityCondition === 0) {
@@ -1290,15 +1316,23 @@ export default function SWVisitVerification() {
         throw new Error(result.error || 'Submission failed');
       }
 
+      const savedVisitId = String(result?.visitId || submitData.visitId || '').trim();
+      const didReuseExistingDraft = Boolean(savedVisitId) && savedVisitId !== String(submitData.visitId || '').trim();
+      if (savedVisitId && savedVisitId !== questionnaire.visitId) {
+        setQuestionnaire((prev) => ({ ...prev, visitId: savedVisitId }));
+      }
+
       // Best-effort: refresh draft list.
       void refreshDraftVisits();
 
-      if (!isEditing) {
+      const treatAsEditing = isEditing || didReuseExistingDraft;
+
+      if (!treatAsEditing) {
         // Add to completed visits first
         setCompletedVisits(prev => [...prev, {
           memberId: questionnaire.memberId,
           memberName: questionnaire.memberName,
-          visitId: questionnaire.visitId,
+          visitId: savedVisitId || questionnaire.visitId,
           rcfeId: questionnaire.rcfeId,
           rcfeName: questionnaire.rcfeName,
           claimDay: String(questionnaire.visitDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
@@ -1319,8 +1353,8 @@ export default function SWVisitVerification() {
       
       // Show comprehensive success message
       toast({
-        title: isEditing ? "✅ Draft Updated" : "✅ Draft Saved",
-        description: isEditing
+        title: treatAsEditing ? "✅ Draft Updated" : "✅ Draft Saved",
+        description: treatAsEditing
           ? `${questionnaire.memberName}'s questionnaire draft has been updated.`
           : `${questionnaire.memberName}'s questionnaire draft has been saved. When you’re done at this RCFE, go to Sign Off & Submit to submit questionnaires and the claim.`,
         variant: "default",
@@ -1332,7 +1366,7 @@ export default function SWVisitVerification() {
       }
       
       // Go to visit completed step with navigation options (or back to member list when editing).
-      if (isEditing) {
+      if (treatAsEditing) {
         setEditingVisitId(null);
         setCurrentStep('select-member');
       } else {
@@ -1668,9 +1702,8 @@ export default function SWVisitVerification() {
                 </div>
               )}
 
-              {selectedRCFE.members.map((member, memberIndex) => {
-                const memberKey = member.id || member.name;
-                const memberKeyNorm = String(memberKey || '').trim();
+              {membersAtSelectedRcfe.map((member, memberIndex) => {
+                const memberKeyNorm = getMemberKey(member);
                 const visited = memberKeyNorm ? Boolean(visitedByRcfeId[selectedRCFE.id]?.includes(memberKeyNorm)) : false;
                 const signed = memberKeyNorm ? Boolean(signedOffByRcfeId[selectedRCFE.id]?.memberIds?.includes(memberKeyNorm)) : false;
                 const monthStatus = memberKeyNorm ? monthStatuses[memberKeyNorm] : undefined;
@@ -1683,7 +1716,7 @@ export default function SWVisitVerification() {
                 const hasDraftToday = Boolean(draftStatus?.visitId) && !hasVisitThisMonth;
                 return (
                   <div
-                    key={memberKey || `member-${memberIndex}-${Date.now()}`}
+                    key={memberKeyNorm || `${String(member?.name || 'member')}-${memberIndex}`}
                     className={`border rounded-lg p-4 transition-colors cursor-pointer hover:bg-gray-50 ${
                       hasVisitThisMonth || hasDraftToday ? 'bg-slate-50' : ''
                     }`}
@@ -2056,6 +2089,12 @@ export default function SWVisitVerification() {
                   <CardTitle>4. Do they have concerns they'd like to share? <span className="text-red-500">*</span></CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {questionnaire.memberConcerns.hasConcerns === true &&
+                  !String(questionnaire.memberConcerns.detailedConcerns || '').trim() ? (
+                    <div className="text-sm text-red-600">
+                      Detailed description is required when the member has concerns.
+                    </div>
+                  ) : null}
                   <div className="space-y-3">
                     <label className="flex items-center space-x-3">
                       <input
@@ -2155,14 +2194,25 @@ export default function SWVisitVerification() {
                         </Select>
                       </div>
                       
-                      <Textarea
-                        placeholder="Detailed description of concerns..."
-                        value={questionnaire.memberConcerns.detailedConcerns}
-                        onChange={(e) => setQuestionnaire(prev => ({
-                          ...prev,
-                          memberConcerns: { ...prev.memberConcerns, detailedConcerns: e.target.value }
-                        }))}
-                      />
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">
+                          Detailed description of concerns <span className="text-red-500">*</span>
+                        </div>
+                        <Textarea
+                          placeholder="Detailed description of concerns..."
+                          value={questionnaire.memberConcerns.detailedConcerns}
+                          onChange={(e) => setQuestionnaire(prev => ({
+                            ...prev,
+                            memberConcerns: { ...prev.memberConcerns, detailedConcerns: e.target.value }
+                          }))}
+                          className={
+                            questionnaire.memberConcerns.hasConcerns === true &&
+                            !String(questionnaire.memberConcerns.detailedConcerns || '').trim()
+                              ? 'border-red-300 focus-visible:ring-red-300'
+                              : undefined
+                          }
+                        />
+                      </div>
                       
                       <label className="flex items-center space-x-3">
                         <input

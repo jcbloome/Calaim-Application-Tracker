@@ -91,8 +91,8 @@ export async function POST(req: NextRequest) {
     }
 
     const visitData = (await req.json().catch(() => ({}))) as any;
-    const visitId = String(visitData?.visitId || '').trim();
-    if (!visitId) {
+    const requestedVisitId = String(visitData?.visitId || '').trim();
+    if (!requestedVisitId) {
       return NextResponse.json({ success: false, error: 'visitId is required' }, { status: 400 });
     }
 
@@ -114,6 +114,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid token' }, { status: 401 });
     }
 
+    const memberId = String(visitData?.memberId || '').trim();
+    const rcfeId = String(visitData?.rcfeId || '').trim();
+
     // Enforce portal rules (same as submit): Authorized, not on Hold, and (for Kaiser) not past auth end.
     try {
       const isAuthorized = (value: unknown) => {
@@ -121,7 +124,6 @@ export async function POST(req: NextRequest) {
         if (!v) return false;
         return v === 'authorized' || v.startsWith('authorized ');
       };
-      const memberId = String(visitData?.memberId || '').trim();
       if (memberId) {
         const memberSnap = await adminDb.collection('caspio_members_cache').doc(memberId).get();
         const member = memberSnap.exists ? (memberSnap.data() as any) : null;
@@ -181,8 +183,68 @@ export async function POST(req: NextRequest) {
       // ignore
     }
 
-    const ref = adminDb.collection('sw_visit_records').doc(visitId);
-    const existingSnap = await ref.get();
+    const toMs = (value: any): number => {
+      if (!value) return 0;
+      if (typeof value?.toMillis === 'function') return Number(value.toMillis()) || 0;
+      const seconds = typeof value?.seconds === 'number' ? value.seconds : undefined;
+      if (typeof seconds === 'number' && Number.isFinite(seconds)) return Math.floor(seconds * 1000);
+      const asDate = new Date(String(value));
+      const ms = asDate.getTime();
+      return Number.isFinite(ms) ? ms : 0;
+    };
+
+    let effectiveVisitId = requestedVisitId;
+    let ref = adminDb.collection('sw_visit_records').doc(effectiveVisitId);
+    let existingSnap = await ref.get();
+
+    // Enforce "one draft per member per day" by reusing an existing draft (best-effort; avoids composite indexes).
+    if (!existingSnap.exists && memberId && rcfeId && claimDay) {
+      try {
+        const snap = await adminDb
+          .collection('sw_visit_records')
+          .where('socialWorkerEmail', '==', email)
+          .limit(2000)
+          .get();
+
+        const sameKeyDrafts = snap.docs
+          .map((d) => (d.data() as any) || {})
+          .filter((v: any) => {
+            const vStatus = String(v?.status || '').trim().toLowerCase();
+            if (vStatus !== 'draft') return false;
+            if (Boolean(v?.signedOff)) return false;
+            if (String(v?.rcfeId || '').trim() !== rcfeId) return false;
+            if (String(v?.memberId || '').trim() !== memberId) return false;
+            const day = toDayKey(v?.claimDay || v?.visitDate || v?.completedAt || v?.submittedAt);
+            return day === claimDay;
+          })
+          .map((v: any) => ({
+            visitId: String(v?.visitId || v?.id || '').trim(),
+            updatedMs: Math.max(toMs(v?.updatedAt), toMs(v?.createdAt)),
+          }))
+          .filter((v: any) => Boolean(v.visitId));
+
+        if (sameKeyDrafts.length > 0) {
+          sameKeyDrafts.sort((a, b) => Number(b.updatedMs || 0) - Number(a.updatedMs || 0));
+          const canonical = String(sameKeyDrafts[0].visitId || '').trim();
+          if (canonical) {
+            effectiveVisitId = canonical;
+            ref = adminDb.collection('sw_visit_records').doc(effectiveVisitId);
+            existingSnap = await ref.get();
+
+            // Best-effort cleanup of older duplicates.
+            const toDelete = sameKeyDrafts.slice(1).map((x) => String(x.visitId || '').trim()).filter(Boolean);
+            if (toDelete.length > 0) {
+              const batch = adminDb.batch();
+              toDelete.forEach((id) => batch.delete(adminDb.collection('sw_visit_records').doc(id)));
+              await batch.commit().catch(() => null);
+            }
+          }
+        }
+      } catch {
+        // best-effort only
+      }
+    }
+
     if (existingSnap.exists) {
       const existing = existingSnap.data() as any;
       const owner = String(existing?.socialWorkerEmail || '').trim().toLowerCase();
@@ -212,17 +274,17 @@ export async function POST(req: NextRequest) {
     const totalScore = Number(visitData?.visitSummary?.totalScore || 0);
 
     const payload: Record<string, any> = {
-      id: visitId,
-      visitId,
+      id: effectiveVisitId,
+      visitId: effectiveVisitId,
       status: 'draft',
       socialWorkerUid: uid,
       socialWorkerEmail: email,
       socialWorkerName,
       socialWorkerId: String(visitData?.socialWorkerId || email || '').trim() || email,
-      memberId: String(visitData?.memberId || '').trim(),
+      memberId,
       memberName: String(visitData?.memberName || '').trim(),
       memberRoomNumber: String(visitData?.memberRoomNumber || '').trim() || null,
-      rcfeId: String(visitData?.rcfeId || '').trim(),
+      rcfeId,
       rcfeName: String(visitData?.rcfeName || '').trim(),
       rcfeAddress: String(visitData?.rcfeAddress || '').trim(),
       visitDate: claimDay,
@@ -230,7 +292,7 @@ export async function POST(req: NextRequest) {
       visitMonth,
       flagged,
       totalScore,
-      raw: visitData,
+      raw: { ...visitData, visitId: effectiveVisitId },
       signedOff: false,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
@@ -241,7 +303,7 @@ export async function POST(req: NextRequest) {
 
     await ref.set(payload, { merge: true });
 
-    return NextResponse.json({ success: true, visitId, status: 'draft', claimDay, visitMonth });
+    return NextResponse.json({ success: true, visitId: effectiveVisitId, status: 'draft', claimDay, visitMonth });
   } catch (error: any) {
     console.error('❌ Error saving SW visit draft:', error);
     return NextResponse.json(

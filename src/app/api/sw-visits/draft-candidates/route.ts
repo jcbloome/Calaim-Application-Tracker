@@ -54,6 +54,16 @@ export async function GET(req: NextRequest) {
       .limit(2000)
       .get();
 
+    const toMs = (value: any): number => {
+      if (!value) return 0;
+      if (typeof value?.toMillis === 'function') return Number(value.toMillis()) || 0;
+      const seconds = typeof value?.seconds === 'number' ? value.seconds : undefined;
+      if (typeof seconds === 'number' && Number.isFinite(seconds)) return Math.floor(seconds * 1000);
+      const asDate = new Date(String(value));
+      const ms = asDate.getTime();
+      return Number.isFinite(ms) ? ms : 0;
+    };
+
     const matches = snap.docs
       .map((d) => (d.data() as any) || {})
       .filter((v: any) => {
@@ -75,11 +85,28 @@ export async function GET(req: NextRequest) {
         flagged: Boolean(v?.flagged),
         status: String(v?.status || '').trim(),
         updatedAt: String(v?.updatedAt || '').trim(),
+        _updatedAtMs: Math.max(toMs(v?.updatedAt), toMs(v?.createdAt)),
       }))
       .filter((v: any) => Boolean(v.visitId));
 
-    const rcfeName = matches[0]?.rcfeName || '';
-    const rcfeAddress = matches[0]?.rcfeAddress || '';
+    // De-dupe: one candidate per member (keep most recently updated).
+    const dedupedMap = new Map<string, any>();
+    for (const v of matches) {
+      const memberKey =
+        String(v?.memberId || '').trim() ||
+        `${String(v?.memberName || '').trim().toLowerCase()}|${String(v?.memberRoomNumber || '').trim().toLowerCase()}`;
+      if (!memberKey) continue;
+      const prev = dedupedMap.get(memberKey);
+      if (!prev || Number(v?._updatedAtMs || 0) >= Number(prev?._updatedAtMs || 0)) {
+        dedupedMap.set(memberKey, v);
+      }
+    }
+    const deduped = Array.from(dedupedMap.values())
+      .sort((a, b) => Number(b?._updatedAtMs || 0) - Number(a?._updatedAtMs || 0))
+      .map(({ _updatedAtMs, ...rest }) => rest);
+
+    const rcfeName = deduped[0]?.rcfeName || '';
+    const rcfeAddress = deduped[0]?.rcfeAddress || '';
 
     return NextResponse.json({
       success: true,
@@ -87,8 +114,8 @@ export async function GET(req: NextRequest) {
       claimDay,
       rcfeName,
       rcfeAddress,
-      visits: matches,
-      total: matches.length,
+      visits: deduped,
+      total: deduped.length,
     });
   } catch (error: any) {
     console.error('❌ Error fetching draft candidates:', error);
