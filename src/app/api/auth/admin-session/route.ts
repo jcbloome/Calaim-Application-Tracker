@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     }
 
     let isAdmin = isHardcodedAdminEmail(email);
-    let isSuperAdmin = false;
+    let isSuperAdmin = isAdmin;
 
     if (!isAdmin) {
       const [adminDoc, superAdminDoc] = await Promise.all([

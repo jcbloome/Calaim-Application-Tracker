@@ -57,6 +57,30 @@ export default function AdminLoginClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const safeLocalStorageSet = (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // ignore
+    }
+  };
+
+  const safeLocalStorageRemove = (key: string) => {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // ignore
+    }
+  };
+
+  const safeSessionStorageClear = () => {
+    try {
+      sessionStorage.clear();
+    } catch {
+      // ignore
+    }
+  };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -73,6 +97,10 @@ export default function AdminLoginClient() {
       if (auth.currentUser) {
         await auth.signOut();
       }
+      // Clear any user-side session marker so session isolation doesn't immediately sign us out after redirect.
+      safeLocalStorageRemove('calaim_session_type');
+      safeLocalStorageRemove('calaim_admin_context');
+      safeSessionStorageClear();
 
       const isRealDesktop =
         typeof window !== 'undefined' &&
@@ -149,6 +177,9 @@ export default function AdminLoginClient() {
         title: 'Sign In Successful!',
         description: 'Redirecting to admin panel...',
       });
+
+      // Mark the current session as admin so `useSessionIsolation` doesn't force logout on /admin routes.
+      safeLocalStorageSet('calaim_session_type', 'admin');
 
       const redirectTo = searchParams.get('redirect');
       const safeRedirect = redirectTo && redirectTo.startsWith('/')
