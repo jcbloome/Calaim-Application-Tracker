@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   FileBarChart,
   Calendar,
@@ -18,16 +19,12 @@ import {
   CheckCircle,
   Clock,
   Download,
-  Filter,
   Search,
   Eye,
   Flag,
   Users,
   BarChart3,
   TrendingUp,
-  LogIn,
-  Monitor,
-  Smartphone,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
@@ -71,79 +68,130 @@ interface VisitRecord {
   };
 }
 
-interface SignOffRecord {
-  id: string;
-  rcfeName: string;
-  socialWorkerName: string;
-  visitDate: string;
-  completedVisits: number;
-  rcfeStaffName: string;
-  rcfeStaffTitle: string;
-  signedAt: string;
-  geolocationVerified: boolean;
-  flaggedVisits: number;
-  memberNames?: string[];
-  visitIds?: string[];
-}
-
-interface LoginEvent {
-  id: string;
-  socialWorkerId: string;
-  socialWorkerName: string;
-  loginTime: string;
-  userAgent: string;
-  ipAddress: string;
-  sessionId: string;
-  portalSection: 'login' | 'portal-home' | 'visit-verification' | 'assignments';
-}
-
 export default function SWVisitTrackingPage(): React.JSX.Element {
   const auth = useAuth();
   const [visitRecords, setVisitRecords] = useState<VisitRecord[]>([]);
-  const [signOffRecords, setSignOffRecords] = useState<SignOffRecord[]>([]);
-  const [loginEvents, setLoginEvents] = useState<LoginEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'visits' | 'signoffs' | 'analytics' | 'logins'>('visits');
+  const [activeTab, setActiveTab] = useState<'visits' | 'analytics'>('visits');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [expandedVisitId, setExpandedVisitId] = useState<string | null>(null);
-  const [expandedSignoffId, setExpandedSignoffId] = useState<string | null>(null);
   const [claimDatesByVisit, setClaimDatesByVisit] = useState<Record<string, { submittedAt?: string; paidAt?: string }>>({});
   const [geoResolvedByVisit, setGeoResolvedByVisit] = useState<Record<string, { address?: string; status: 'idle' | 'loading' | 'error' }>>({});
   const [deletingVisitId, setDeletingVisitId] = useState<string | null>(null);
   const [deleteReasonByVisitId, setDeleteReasonByVisitId] = useState<Record<string, string>>({});
   const [showRawByVisitId, setShowRawByVisitId] = useState<Record<string, boolean>>({});
-
-  const [selectedVisitIds, setSelectedVisitIds] = useState<string[]>([]);
-  const [overrideStaffName, setOverrideStaffName] = useState('');
-  const [overrideStaffTitle, setOverrideStaffTitle] = useState('');
-  const [overrideReason, setOverrideReason] = useState('');
-  const [isOverriding, setIsOverriding] = useState(false);
-
-  const selectedVisits = useMemo(() => {
-    const set = new Set(selectedVisitIds);
-    return visitRecords.filter((v) => set.has(v.visitId));
-  }, [selectedVisitIds, visitRecords]);
-
-  const selectedRcfes = useMemo(() => Array.from(new Set(selectedVisits.map((v) => v.rcfeName).filter(Boolean))), [selectedVisits]);
+  const [analyticsMonth, setAnalyticsMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
+  const [swMonthlySummary, setSwMonthlySummary] = useState<null | {
+    month: string;
+    rows: Array<{
+      key: string;
+      socialWorkerName: string;
+      assignedTotal: number;
+      assignedActive: number;
+      onHold: number;
+      completed: number;
+      outstanding: number;
+      claimsCount?: number;
+      claimsTotalAmount?: number;
+    }>;
+  }>(null);
+  const [loadingSwSummary, setLoadingSwSummary] = useState(false);
+  const [swSummaryError, setSwSummaryError] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailTitle, setDetailTitle] = useState<string>('');
+  const [detailMembers, setDetailMembers] = useState<Array<{ memberId: string; memberName: string; rcfeName?: string; rcfeAddress?: string }>>([]);
 
   useEffect(() => {
     loadTrackingData();
   }, [dateFilter]);
 
+  useEffect(() => {
+    const load = async () => {
+      if (activeTab !== 'analytics') return;
+      if (!auth?.currentUser) return;
+      if (!/^\d{4}-\d{2}$/.test(String(analyticsMonth || ''))) return;
+      setLoadingSwSummary(true);
+      setSwSummaryError(null);
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const res = await fetch(`/api/admin/sw-visits/sw-monthly-summary?month=${encodeURIComponent(analyticsMonth)}`, {
+          headers: { authorization: `Bearer ${idToken}` },
+        });
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok || !data?.success) throw new Error(data?.error || `Failed (${res.status})`);
+        setSwMonthlySummary({ month: String(data.month || analyticsMonth), rows: Array.isArray(data.rows) ? data.rows : [] });
+      } catch (e: any) {
+        setSwMonthlySummary(null);
+        setSwSummaryError(e?.message || 'Failed to load summary');
+      } finally {
+        setLoadingSwSummary(false);
+      }
+    };
+    void load();
+  }, [activeTab, analyticsMonth, auth]);
+
+  const monthOptions = (() => {
+    const months: string[] = [];
+    const d = new Date();
+    d.setDate(1);
+    for (let i = 0; i < 18; i += 1) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      months.push(`${y}-${m}`);
+      d.setMonth(d.getMonth() - 1);
+    }
+    return months;
+  })();
+
+  const formatMoney = (value: number) => {
+    const n = Number(value || 0) || 0;
+    return n.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+  };
+
+  const openSwDetail = async (params: { swKey: string; swName: string; kind: 'assigned' | 'completed' | 'outstanding' }) => {
+    if (!auth?.currentUser) return;
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setDetailError(null);
+    setDetailMembers([]);
+    setDetailTitle(
+      `${params.kind === 'assigned' ? 'Assigned members' : params.kind === 'completed' ? 'Completed members' : 'Outstanding members'} • ${params.swName} • ${analyticsMonth}`
+    );
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch(
+        `/api/admin/sw-visits/sw-monthly-detail?month=${encodeURIComponent(analyticsMonth)}&swKey=${encodeURIComponent(params.swKey)}`,
+        { headers: { authorization: `Bearer ${idToken}` } }
+      );
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed (${res.status})`);
+      const list =
+        params.kind === 'assigned'
+          ? (Array.isArray(data.assignedActive) ? data.assignedActive : [])
+          : params.kind === 'completed'
+            ? (Array.isArray(data.completed) ? data.completed : [])
+            : (Array.isArray(data.outstanding) ? data.outstanding : []);
+      const normalized = list.map((m: any) => ({
+        memberId: String(m?.memberId || '').trim(),
+        memberName: String(m?.memberName || '').trim() || 'Unknown member',
+        rcfeName: String(m?.rcfeName || '').trim() || undefined,
+        rcfeAddress: String(m?.rcfeAddress || '').trim() || undefined,
+      })).filter((m: any) => m.memberId || m.memberName);
+      setDetailMembers(normalized);
+    } catch (e: any) {
+      setDetailError(e?.message || 'Failed to load members');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   const loadTrackingData = async () => {
     setLoading(true);
     try {
-      // Fetch real login events
-      const loginResponse = await fetch(
-        `/api/sw-visits/login-tracking?days=${dateFilter === 'all' ? '30' : dateFilter}`
-      );
-      if (loginResponse.ok) {
-        const loginData = await loginResponse.json();
-        setLoginEvents(loginData.events || []);
-      }
-
       // Load real visit records (Firestore-backed)
       const days = dateFilter === 'all' ? '30' : dateFilter;
       const visitsResponse = await fetch(`/api/sw-visits/records?days=${encodeURIComponent(days)}`);
@@ -185,47 +233,6 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
       } else {
         setVisitRecords([]);
       }
-
-      // Load sign-off records (Firestore-backed)
-      const signoffsResponse = await fetch(`/api/sw-visits/signoffs?days=${encodeURIComponent(days)}`);
-      if (signoffsResponse.ok) {
-        const signoffsData = await signoffsResponse.json().catch(() => ({}));
-        const raw = Array.isArray((signoffsData as any)?.signoffs) ? (signoffsData as any).signoffs : [];
-        const normalized = raw.map((s: any) => {
-          const claimDay = String(s?.claimDay || '').slice(0, 10) || '';
-          const completedVisitsArr = Array.isArray(s?.completedVisits) ? s.completedVisits : [];
-          const flaggedVisits = completedVisitsArr.filter((v: any) => Boolean(v?.flagged)).length;
-          const memberNames = Array.from(
-            new Set(
-              completedVisitsArr
-                .map((v: any) => String(v?.memberName || '').trim())
-                .filter(Boolean)
-            )
-          );
-          const staffName = String(s?.rcfeStaff?.name || s?.rcfeStaffName || '').trim();
-          const staffTitle = String(s?.rcfeStaff?.title || s?.rcfeStaffTitle || '').trim();
-          const signedAt = String(s?.rcfeStaff?.signedAt || s?.signedAt || s?.submittedAt || '').trim();
-          const geoVerified = Boolean(s?.rcfeStaff?.locationVerified || s?.geolocationVerified);
-          const visitIds = Array.isArray(s?.visitIds) ? s.visitIds.map((v: any) => String(v || '').trim()).filter(Boolean) : [];
-          return {
-            id: String(s?.id || ''),
-            rcfeName: String(s?.rcfeName || ''),
-            socialWorkerName: String(s?.socialWorkerName || s?.socialWorkerId || s?.socialWorkerEmail || ''),
-            visitDate: claimDay,
-            completedVisits: Array.isArray(s?.visitIds) ? s.visitIds.length : completedVisitsArr.length,
-            rcfeStaffName: staffName,
-            rcfeStaffTitle: staffTitle,
-            signedAt,
-            geolocationVerified: geoVerified,
-            flaggedVisits,
-            memberNames,
-            visitIds,
-          } as SignOffRecord;
-        }) as SignOffRecord[];
-        setSignOffRecords(normalized);
-      } else {
-        setSignOffRecords([]);
-      }
     } catch (error) {
       console.error('Error loading tracking data:', error);
     } finally {
@@ -247,71 +254,6 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
     
     return matchesSearch && matchesStatus && matchesDate;
   });
-
-  const filteredSignoffs = signOffRecords.filter((s) => {
-    if (!searchTerm) return true;
-    const q = searchTerm.toLowerCase();
-    const members = Array.isArray(s.memberNames) ? s.memberNames.join(' ') : '';
-    return (
-      String(s.rcfeName || '').toLowerCase().includes(q) ||
-      String(s.socialWorkerName || '').toLowerCase().includes(q) ||
-      String(s.rcfeStaffName || '').toLowerCase().includes(q) ||
-      String(members).toLowerCase().includes(q)
-    );
-  });
-
-  const toggleSelectedVisit = (visitId: string, checked: boolean) => {
-    setSelectedVisitIds((prev) => {
-      const set = new Set(prev);
-      if (checked) set.add(visitId);
-      else set.delete(visitId);
-      return Array.from(set);
-    });
-  };
-
-  const clearSelectedVisits = () => setSelectedVisitIds([]);
-
-  const submitAdminOverride = async () => {
-    if (selectedVisitIds.length === 0) return;
-    if (!auth?.currentUser) {
-      alert('Not signed in');
-      return;
-    }
-    if (selectedRcfes.length > 1) {
-      alert('Please select visits from only one RCFE at a time.');
-      return;
-    }
-    setIsOverriding(true);
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      const res = await fetch('/api/admin/sw-visits/override-signoff', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({
-          visitIds: selectedVisitIds,
-          rcfeStaffName: overrideStaffName,
-          rcfeStaffTitle: overrideStaffTitle,
-          reason: overrideReason,
-        }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || `Override failed (${res.status})`);
-      }
-
-      clearSelectedVisits();
-      setOverrideReason('');
-      // Refresh list
-      await loadTrackingData();
-      alert('Override sign-off saved.');
-    } catch (e: any) {
-      console.error(e);
-      alert(e?.message || 'Failed to override sign-off.');
-    } finally {
-      setIsOverriding(false);
-    }
-  };
-
 
   const getStatusBadge = (status: string, flagged: boolean) => {
     if (flagged) {
@@ -335,39 +277,6 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
     if (score >= 50) return <Badge className="bg-blue-600">Good ({score})</Badge>;
     if (score >= 40) return <Badge className="bg-yellow-600">Fair ({score})</Badge>;
     return <Badge variant="destructive">Needs Attention ({score})</Badge>;
-  };
-
-  const compactFromRaw = (visit: any) => {
-    const raw = (visit as any)?.raw || null;
-    const nonResponsive = Boolean(raw?.memberConcerns?.nonResponsive);
-    const meetingLocation = String(raw?.meetingLocation?.location || '').trim();
-    const otherLocation = String(raw?.meetingLocation?.otherLocation || '').trim();
-    const meetingLabel = meetingLocation === 'other' && otherLocation ? `Other: ${otherLocation}` : meetingLocation || '—';
-
-    const urgency = String(raw?.memberConcerns?.urgencyLevel || '').trim() || '—';
-    const actionRequired = Boolean(raw?.memberConcerns?.actionRequired);
-    const concerns = String(raw?.memberConcerns?.detailedConcerns || '').trim();
-    const rcfeNotes = String(raw?.rcfeAssessment?.notes || '').trim();
-    const flagForReview = Boolean(raw?.rcfeAssessment?.flagForReview);
-
-    const wellbeing = raw?.memberWellbeing || {};
-    const satisfaction = raw?.careSatisfaction || {};
-    const rcfe = raw?.rcfeAssessment || {};
-
-    return {
-      hasRaw: Boolean(raw),
-      nonResponsive,
-      meetingLabel,
-      urgency,
-      actionRequired,
-      concerns,
-      flagForReview,
-      rcfeNotes,
-      wellbeing,
-      satisfaction,
-      rcfe,
-      memberSignoff: raw?.memberSignoff || null,
-    };
   };
 
   const deleteVisit = async (visit: VisitRecord) => {
@@ -485,7 +394,7 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -509,30 +418,6 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
             </div>
           </CardContent>
         </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Clock className="h-8 w-8 text-yellow-600" />
-              <div>
-                <p className="text-2xl font-bold">{visitRecords.filter(v => v.status === 'pending_signoff').length}</p>
-                <p className="text-sm text-muted-foreground">Pending Sign-Off</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Users className="h-8 w-8 text-blue-600" />
-              <div>
-                <p className="text-2xl font-bold">{signOffRecords.length}</p>
-                <p className="text-sm text-muted-foreground">Sign-Off Records</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Tab Navigation */}
@@ -545,26 +430,11 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
           Visit Records
         </Button>
         <Button
-          variant={activeTab === 'signoffs' ? 'default' : 'ghost'}
-          size="sm"
-          onClick={() => setActiveTab('signoffs')}
-        >
-          Sign-Off Records
-        </Button>
-        <Button
           variant={activeTab === 'analytics' ? 'default' : 'ghost'}
           size="sm"
           onClick={() => setActiveTab('analytics')}
         >
           Analytics
-        </Button>
-        <Button
-          variant={activeTab === 'logins' ? 'default' : 'ghost'}
-          size="sm"
-          onClick={() => setActiveTab('logins')}
-        >
-          <LogIn className="h-4 w-4 mr-1" />
-          Login Tracking
         </Button>
       </div>
 
@@ -618,79 +488,19 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {selectedVisitIds.length > 0 && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-blue-900">Admin override sign-off</div>
-                      <div className="mt-0.5 text-xs text-blue-800/80">
-                        Selected visits: {selectedVisitIds.length}
-                        {selectedRcfes.length === 1 ? ` • RCFE: ${selectedRcfes[0]}` : ''}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button type="button" size="sm" variant="outline" onClick={clearSelectedVisits} disabled={isOverriding}>
-                        Clear selection
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="bg-blue-600 hover:bg-blue-700"
-                        onClick={submitAdminOverride}
-                        disabled={isOverriding || selectedRcfes.length !== 1}
-                      >
-                        {isOverriding ? 'Saving…' : 'Mark signed off'}
-                      </Button>
-                    </div>
-                  </div>
-
-                  {selectedRcfes.length !== 1 ? (
-                    <div className="text-sm text-blue-900">
-                      Please select visits from only one RCFE at a time.
-                    </div>
-                  ) : null}
-
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <div>
-                      <Label>RCFE staff name (optional)</Label>
-                      <Input value={overrideStaffName} onChange={(e) => setOverrideStaffName(e.target.value)} placeholder="Defaults to admin name" />
-                    </div>
-                    <div>
-                      <Label>RCFE staff title (optional)</Label>
-                      <Input value={overrideStaffTitle} onChange={(e) => setOverrideStaffTitle(e.target.value)} placeholder="Defaults to Admin" />
-                    </div>
-                    <div>
-                      <Label>Reason (optional)</Label>
-                      <Input value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="Why admin override?" />
-                    </div>
-                  </div>
-
-                  <div className="text-xs text-blue-900/80">
-                    This creates a sign-off record and sets the selected visit records to <span className="font-semibold">signed_off</span>.
-                  </div>
-                </div>
-              )}
-
               {filteredVisits.map((visit) => (
                 <div key={visit.id} className="border rounded-lg p-4 space-y-3">
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
                       <div className="flex items-center gap-3">
-                        {visit.signedOff ? null : visit.status === 'pending_signoff' ? (
-                          <Checkbox
-                            checked={selectedVisitIds.includes(visit.visitId)}
-                            onCheckedChange={(next) => toggleSelectedVisit(visit.visitId, Boolean(next))}
-                          />
-                        ) : null}
                         <h3 className="font-semibold">{visit.memberName}</h3>
+                        <Badge variant="secondary" className="font-normal">
+                          SW: {visit.socialWorkerName}
+                        </Badge>
                         {getStatusBadge(visit.status, visit.flagged)}
                         {getScoreBadge(visit.totalScore)}
                       </div>
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <User className="h-4 w-4" />
-                          {visit.socialWorkerName}
-                        </span>
                         <span className="flex items-center gap-1">
                           <Building className="h-4 w-4" />
                           {visit.rcfeName}
@@ -717,6 +527,61 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                       )}
                     </Button>
                   </div>
+
+                  {(() => {
+                    const answers = Array.isArray(visit.questionnaireAnswers) ? visit.questionnaireAnswers : [];
+                    const summary = answers.slice(0, 10);
+                    const ratings = visit.starRatings || {};
+                    const hasAnyRating =
+                      typeof ratings.care === 'number' ||
+                      typeof ratings.safety === 'number' ||
+                      typeof ratings.communication === 'number' ||
+                      typeof ratings.overall === 'number';
+
+                    return (
+                      <div className="rounded-lg border bg-muted/20 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-xs font-semibold text-muted-foreground uppercase">Questionnaire summary</div>
+                          <Badge variant="outline">{summary.length} / {answers.length}</Badge>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+                          {[
+                            { label: 'Care', value: (ratings as any).care },
+                            { label: 'Safety', value: (ratings as any).safety },
+                            { label: 'Communication', value: (ratings as any).communication },
+                            { label: 'Overall', value: (ratings as any).overall },
+                          ].map((r) => (
+                            <div key={r.label} className="rounded border bg-white px-2 py-1.5 text-sm">
+                              <div className="text-muted-foreground">{r.label}</div>
+                              <div className="font-semibold">{typeof r.value === 'number' ? `${r.value} / 5` : '—'}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {!hasAnyRating ? (
+                          <div className="mt-2 text-xs text-muted-foreground">Star ratings not available for this visit.</div>
+                        ) : null}
+
+                        {summary.length > 0 ? (
+                          <div className="mt-3 space-y-2 text-sm">
+                            {summary.map((qa, index) => (
+                              <div key={`${visit.visitId}-summary-qa-${index}`} className="rounded border bg-white p-2">
+                                <div className="text-muted-foreground">{qa.question}</div>
+                                <div className="font-medium whitespace-pre-wrap">{qa.answer || '—'}</div>
+                              </div>
+                            ))}
+                            {answers.length > summary.length ? (
+                              <div className="text-xs text-muted-foreground">
+                                +{answers.length - summary.length} more answer(s). Use “View Details” to see all.
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div className="mt-2 text-sm text-muted-foreground">No questionnaire answers found.</div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   
                   {visit.flagged && (
                     <div className="bg-red-50 border border-red-200 rounded p-3">
@@ -735,18 +600,15 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                   {expandedVisitId === visit.id && (
                     <div className="space-y-4">
                       {(() => {
-                        const compact = compactFromRaw(visit as any);
                         const readyForClaim = Boolean(visit.signedOff) && !Boolean(visit.claimSubmitted) && !Boolean(visit.claimPaid);
                         const alreadyClaimed = Boolean(visit.claimSubmitted) || Boolean(visit.claimPaid);
+                        const answers = Array.isArray(visit.questionnaireAnswers) ? visit.questionnaireAnswers : [];
                         return (
                           <div className="rounded-lg border bg-white p-4 space-y-4">
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                              <div className="space-y-1">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="space-y-2">
                                 <div className="text-sm font-semibold">Processing status</div>
-                                <div className="text-xs text-muted-foreground">
-                                  Claim submission is gated by RCFE staff sign-off.
-                                </div>
-                                <div className="mt-1 flex flex-wrap gap-2">
+                                <div className="flex flex-wrap gap-2">
                                   {readyForClaim ? (
                                     <Badge className="bg-emerald-600 hover:bg-emerald-600">Ready for claim processing</Badge>
                                   ) : alreadyClaimed ? (
@@ -758,10 +620,8 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                                   )}
                                 </div>
                               </div>
-                            </div>
 
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                              <div className="space-y-1.5">
+                              <div className="w-full sm:max-w-[360px] space-y-2">
                                 <Label>Delete (requires permission)</Label>
                                 <div className="flex flex-col gap-2">
                                   <Input
@@ -785,52 +645,20 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                             </div>
 
                             <div className="rounded-lg border bg-muted/30 p-3">
-                              <div className="text-sm font-semibold">Questionnaire (compact)</div>
-                              {!compact.hasRaw ? (
-                                <div className="text-sm text-muted-foreground mt-1">No raw questionnaire payload found.</div>
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-sm font-semibold">Questionnaire (full)</div>
+                                <Badge variant="outline">{answers.length} answer(s)</Badge>
+                              </div>
+                              {answers.length === 0 ? (
+                                <div className="text-sm text-muted-foreground mt-2">No questionnaire answers found.</div>
                               ) : (
-                                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3 text-sm">
-                                  <div>
-                                    <div className="text-muted-foreground">Room</div>
-                                    <div className="font-medium">{visit.memberRoomNumber || '—'}</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-muted-foreground">Met at</div>
-                                    <div className="font-medium">{compact.meetingLabel}</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-muted-foreground">Member responsiveness</div>
-                                    <div className="font-medium">{compact.nonResponsive ? 'Non-responsive' : 'Responsive'}</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-muted-foreground">Concerns urgency</div>
-                                    <div className="font-medium">{compact.urgency}</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-muted-foreground">Action required</div>
-                                    <div className="font-medium">{compact.actionRequired ? 'Yes' : 'No'}</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-muted-foreground">RCFE flagged</div>
-                                    <div className="font-medium">{compact.flagForReview ? 'Yes' : 'No'}</div>
-                                  </div>
-                                  <div className="md:col-span-3">
-                                    <div className="text-muted-foreground">Member concerns</div>
-                                    <div className="font-medium whitespace-pre-wrap">{compact.concerns || '—'}</div>
-                                  </div>
-                                  <div className="md:col-span-3">
-                                    <div className="text-muted-foreground">RCFE notes</div>
-                                    <div className="font-medium whitespace-pre-wrap">{compact.rcfeNotes || '—'}</div>
-                                  </div>
-                                  {compact.memberSignoff?.acknowledged ? (
-                                    <div className="md:col-span-3">
-                                      <div className="text-muted-foreground">Member sign-off</div>
-                                      <div className="font-medium">
-                                        {String(compact.memberSignoff?.signatureName || '').trim() || '—'}
-                                        {compact.memberSignoff?.signedAt ? ` • ${String(compact.memberSignoff.signedAt).trim()}` : ''}
-                                      </div>
+                                <div className="mt-3 space-y-2 text-sm">
+                                  {answers.map((qa, index) => (
+                                    <div key={`${visit.visitId}-qa-${index}`} className="rounded border bg-white p-2">
+                                      <div className="text-muted-foreground">{qa.question}</div>
+                                      <div className="font-medium whitespace-pre-wrap">{qa.answer || '—'}</div>
                                     </div>
-                                  ) : null}
+                                  ))}
                                 </div>
                               )}
                             </div>
@@ -907,7 +735,7 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                       {visit.geolocationVerified && (
                         <span className="flex items-center gap-1 text-green-600">
                           <MapPin className="h-4 w-4" />
-                          Location Verified
+                          Location Verified: {visit.rcfeName}
                         </span>
                       )}
                       {visit.signedOff && (
@@ -930,340 +758,220 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
           </CardContent>
         </Card>
       )}
-
-
-      {activeTab === 'signoffs' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Sign-Off Records ({filteredSignoffs.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {filteredSignoffs.map((signoff) => (
-                <div key={signoff.id} className="border rounded-lg p-4 space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-2">
-                      <h3 className="font-semibold">{signoff.rcfeName}</h3>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Social Worker:</span>
-                          <span className="ml-2 font-medium">{signoff.socialWorkerName}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">RCFE Staff:</span>
-                          <span className="ml-2 font-medium">{signoff.rcfeStaffName} ({signoff.rcfeStaffTitle})</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Visits Signed:</span>
-                          <span className="ml-2 font-medium">{signoff.completedVisits}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Flagged Visits:</span>
-                          <span className="ml-2 font-medium text-red-600">{signoff.flaggedVisits}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setExpandedSignoffId((prev) => (prev === signoff.id ? null : signoff.id))
-                      }
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      {expandedSignoffId === signoff.id ? 'Hide Sign-Off' : 'View Sign-Off'}
-                      {expandedSignoffId === signoff.id ? (
-                        <ChevronUp className="h-4 w-4 ml-2" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 ml-2" />
-                      )}
-                    </Button>
-                  </div>
-                  
-                  <div className="flex items-center justify-between text-sm border-t pt-3">
-                    <span className="text-muted-foreground">
-                      Signed: {new Date(signoff.signedAt).toLocaleString()}
-                    </span>
-                    {signoff.geolocationVerified && (
-                      <span className="flex items-center gap-1 text-green-600">
-                        <MapPin className="h-4 w-4" />
-                        Location Verified
-                      </span>
-                    )}
-                  </div>
-
-                  {expandedSignoffId === signoff.id && (
-                    <div className="border rounded-lg p-3 bg-muted/40 text-sm space-y-2">
-                      <div>
-                        <span className="text-muted-foreground">RCFE Staff Title:</span>
-                        <span className="ml-2 font-medium">{signoff.rcfeStaffTitle}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Completed Visits:</span>
-                        <span className="ml-2 font-medium">{signoff.completedVisits}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Flagged Visits:</span>
-                        <span className="ml-2 font-medium text-red-600">{signoff.flaggedVisits}</span>
-                      </div>
-                      {Array.isArray(signoff.memberNames) && signoff.memberNames.length > 0 ? (
-                        <div>
-                          <span className="text-muted-foreground">Members:</span>
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {signoff.memberNames.slice(0, 12).map((m) => (
-                              <Badge key={m} variant="secondary" className="font-normal">
-                                {m}
-                              </Badge>
-                            ))}
-                            {signoff.memberNames.length > 12 ? (
-                              <Badge variant="secondary" className="font-normal">
-                                +{signoff.memberNames.length - 12} more
-                              </Badge>
-                            ) : null}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
-              ))}
-              
-              {filteredSignoffs.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  No sign-off records found matching your criteria.
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      
 
       {activeTab === 'analytics' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                Visit Quality Scores
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span>Excellent (60+)</span>
-                  <Badge className="bg-green-600">{visitRecords.filter(v => v.totalScore >= 60).length}</Badge>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span>Good (50-59)</span>
-                  <Badge className="bg-blue-600">{visitRecords.filter(v => v.totalScore >= 50 && v.totalScore < 60).length}</Badge>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span>Fair (40-49)</span>
-                  <Badge className="bg-yellow-600">{visitRecords.filter(v => v.totalScore >= 40 && v.totalScore < 50).length}</Badge>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span>Needs Attention (&lt;40)</span>
-                  <Badge variant="destructive">{visitRecords.filter(v => v.totalScore < 40).length}</Badge>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5" />
-                Compliance Metrics
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span>Geolocation Verified</span>
-                  <Badge className="bg-green-600">
-                    {Math.round((visitRecords.filter(v => v.geolocationVerified).length / visitRecords.length) * 100)}%
-                  </Badge>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span>Signed Off</span>
-                  <Badge className="bg-blue-600">
-                    {Math.round((visitRecords.filter(v => v.signedOff).length / visitRecords.length) * 100)}%
-                  </Badge>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span>Flagged for Review</span>
-                  <Badge variant="destructive">
-                    {Math.round((visitRecords.filter(v => v.flagged).length / visitRecords.length) * 100)}%
-                  </Badge>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Login Tracking Tab */}
-      {activeTab === 'logins' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Logins</p>
-                    <p className="text-2xl font-bold">{loginEvents.length}</p>
-                  </div>
-                  <LogIn className="h-8 w-8 text-blue-600" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Unique Users</p>
-                    <p className="text-2xl font-bold">
-                      {[...new Set(loginEvents.map(e => e.socialWorkerId))].length}
-                    </p>
-                  </div>
-                  <Users className="h-8 w-8 text-green-600" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Portal Access</p>
-                    <p className="text-2xl font-bold">
-                      {loginEvents.filter(e => e.portalSection === 'portal-home').length}
-                    </p>
-                  </div>
-                  <Monitor className="h-8 w-8 text-purple-600" />
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Visit Tool Access</p>
-                    <p className="text-2xl font-bold">
-                      {loginEvents.filter(e => e.portalSection === 'visit-verification').length}
-                    </p>
-                  </div>
-                  <Activity className="h-8 w-8 text-orange-600" />
-                </div>
-              </CardContent>
-            </Card>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="text-sm font-semibold">Monthly social worker summary</div>
+              <div className="text-xs text-muted-foreground">
+                Members assigned come from Caspio cache. Completed counts include signed-off visits in this month.
+              </div>
+            </div>
+            <div className="w-full sm:w-[220px] space-y-1.5">
+              <Label>Month</Label>
+              <Select value={analyticsMonth} onValueChange={setAnalyticsMonth}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select month" />
+                </SelectTrigger>
+                <SelectContent>
+                  {monthOptions.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <LogIn className="h-5 w-5" />
-                Recent Portal Access ({loginEvents.length} events)
+                <Users className="h-5 w-5" />
+                Social workers
               </CardTitle>
+              <CardDescription>
+                Assigned vs completed for {swMonthlySummary?.month || analyticsMonth}.
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {loginEvents.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <LogIn className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No login events recorded yet</p>
-                    <p className="text-sm">Login tracking will appear here as social workers access the portal</p>
-                  </div>
-                ) : (
-                  loginEvents.slice(0, 20).map((event) => (
-                    <div key={event.sessionId} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex items-center space-x-4">
-                        <div className="bg-blue-100 rounded-full p-2">
-                          {event.portalSection === 'login' && <LogIn className="h-4 w-4 text-blue-600" />}
-                          {event.portalSection === 'portal-home' && <Monitor className="h-4 w-4 text-blue-600" />}
-                          {event.portalSection === 'visit-verification' && <Activity className="h-4 w-4 text-blue-600" />}
-                          {event.portalSection === 'assignments' && <Users className="h-4 w-4 text-blue-600" />}
-                        </div>
-                        <div>
-                          <p className="font-medium">{event.socialWorkerName}</p>
-                          <p className="text-sm text-muted-foreground">
-                            Accessed: {event.portalSection.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium">
-                          {new Date(event.loginTime).toLocaleDateString()}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(event.loginTime).toLocaleTimeString()}
-                        </p>
-                        <div className="flex items-center gap-1 mt-1">
-                          <MapPin className="h-3 w-3 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">
-                            {event.ipAddress}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+              {loadingSwSummary ? (
+                <div className="text-sm text-muted-foreground">Loading summary…</div>
+              ) : swSummaryError ? (
+                <div className="text-sm text-red-600">{swSummaryError}</div>
+              ) : (swMonthlySummary?.rows?.length || 0) === 0 ? (
+                <div className="text-sm text-muted-foreground">No social worker summary rows found.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left border-b">
+                        <th className="py-2 pr-4">Social worker</th>
+                        <th className="py-2 pr-4">Assigned</th>
+                        <th className="py-2 pr-4">Completed</th>
+                        <th className="py-2 pr-4">Outstanding</th>
+                        <th className="py-2 pr-4">On hold</th>
+                        <th className="py-2 pr-4">Claims total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {swMonthlySummary!.rows.map((r) => (
+                        <tr key={r.key} className="border-b last:border-b-0">
+                          <td className="py-2 pr-4 font-medium">{r.socialWorkerName}</td>
+                          <td className="py-2 pr-4">
+                            <button
+                              type="button"
+                              className="underline underline-offset-2"
+                              onClick={() => void openSwDetail({ swKey: r.key, swName: r.socialWorkerName, kind: 'assigned' })}
+                            >
+                              {r.assignedActive}
+                            </button>
+                            {r.assignedTotal !== r.assignedActive ? (
+                              <span className="text-xs text-muted-foreground"> / {r.assignedTotal}</span>
+                            ) : null}
+                          </td>
+                          <td className="py-2 pr-4">
+                            <button
+                              type="button"
+                              className="underline underline-offset-2"
+                              onClick={() => void openSwDetail({ swKey: r.key, swName: r.socialWorkerName, kind: 'completed' })}
+                            >
+                              {r.completed}
+                            </button>
+                          </td>
+                          <td className="py-2 pr-4">
+                            <button
+                              type="button"
+                              onClick={() => void openSwDetail({ swKey: r.key, swName: r.socialWorkerName, kind: 'outstanding' })}
+                              className="inline-flex"
+                            >
+                              {r.outstanding > 0 ? (
+                                <Badge variant="destructive">{r.outstanding}</Badge>
+                              ) : (
+                                <Badge className="bg-emerald-600 hover:bg-emerald-600">0</Badge>
+                              )}
+                            </button>
+                          </td>
+                          <td className="py-2 pr-4">{r.onHold}</td>
+                          <td className="py-2 pr-4">
+                            <div className="font-medium">{formatMoney(Number(r.claimsTotalAmount || 0))}</div>
+                            <div className="text-xs text-muted-foreground">{Number(r.claimsCount || 0)} claim(s)</div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {loginEvents.length > 0 && (
+          <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>{detailTitle}</DialogTitle>
+                <DialogDescription>
+                  Click a member name to copy it.
+                </DialogDescription>
+              </DialogHeader>
+              {detailLoading ? (
+                <div className="text-sm text-muted-foreground">Loading…</div>
+              ) : detailError ? (
+                <div className="text-sm text-red-600">{detailError}</div>
+              ) : detailMembers.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No members found.</div>
+              ) : (
+                <ScrollArea className="h-[420px] pr-3">
+                  <div className="space-y-2">
+                    {detailMembers.map((m) => (
+                      <button
+                        key={`${m.memberId}-${m.memberName}`}
+                        type="button"
+                        onClick={() => {
+                          try {
+                            navigator.clipboard.writeText(m.memberName);
+                          } catch {
+                            // ignore
+                          }
+                        }}
+                        className="w-full text-left rounded border bg-white p-2 hover:bg-muted/20"
+                      >
+                        <div className="font-medium">{m.memberName}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {m.rcfeName ? m.rcfeName : ''}
+                          {m.rcfeAddress ? ` • ${m.rcfeAddress}` : ''}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </DialogContent>
+          </Dialog>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
-                <CardTitle>Access Patterns</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  Visit Quality Scores
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <h4 className="font-medium mb-3">Most Active Social Workers</h4>
-                    <div className="space-y-2">
-                      {Object.entries(
-                        loginEvents.reduce((acc, event) => {
-                          acc[event.socialWorkerName] = (acc[event.socialWorkerName] || 0) + 1;
-                          return acc;
-                        }, {} as Record<string, number>)
-                      )
-                      .sort(([,a], [,b]) => b - a)
-                      .slice(0, 5)
-                      .map(([name, count]) => (
-                        <div key={name} className="flex justify-between items-center">
-                          <span className="text-sm">{name}</span>
-                          <Badge variant="secondary">{count} logins</Badge>
-                        </div>
-                      ))}
-                    </div>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span>Excellent (60+)</span>
+                    <Badge className="bg-green-600">{visitRecords.filter(v => v.totalScore >= 60).length}</Badge>
                   </div>
-                  
-                  <div>
-                    <h4 className="font-medium mb-3">Portal Section Usage</h4>
-                    <div className="space-y-2">
-                      {Object.entries(
-                        loginEvents.reduce((acc, event) => {
-                          const section = event.portalSection.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase());
-                          acc[section] = (acc[section] || 0) + 1;
-                          return acc;
-                        }, {} as Record<string, number>)
-                      )
-                      .sort(([,a], [,b]) => b - a)
-                      .map(([section, count]) => (
-                        <div key={section} className="flex justify-between items-center">
-                          <span className="text-sm">{section}</span>
-                          <Badge variant="outline">{count} accesses</Badge>
-                        </div>
-                      ))}
-                    </div>
+                  <div className="flex justify-between items-center">
+                    <span>Good (50-59)</span>
+                    <Badge className="bg-blue-600">{visitRecords.filter(v => v.totalScore >= 50 && v.totalScore < 60).length}</Badge>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Fair (40-49)</span>
+                    <Badge className="bg-yellow-600">{visitRecords.filter(v => v.totalScore >= 40 && v.totalScore < 50).length}</Badge>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Needs Attention (&lt;40)</span>
+                    <Badge variant="destructive">{visitRecords.filter(v => v.totalScore < 40).length}</Badge>
                   </div>
                 </div>
               </CardContent>
             </Card>
-          )}
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Compliance Metrics
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span>Geolocation Verified</span>
+                    <Badge className="bg-green-600">
+                      {visitRecords.length ? Math.round((visitRecords.filter(v => v.geolocationVerified).length / visitRecords.length) * 100) : 0}%
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Signed Off</span>
+                    <Badge className="bg-blue-600">
+                      {visitRecords.length ? Math.round((visitRecords.filter(v => v.signedOff).length / visitRecords.length) * 100) : 0}%
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Flagged for Review</span>
+                    <Badge variant="destructive">
+                      {visitRecords.length ? Math.round((visitRecords.filter(v => v.flagged).length / visitRecords.length) * 100) : 0}%
+                    </Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
     </div>

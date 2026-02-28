@@ -338,7 +338,7 @@ export default function SubmitClaimsPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Submitted total (month)</CardTitle>
-            <CardDescription>Submitted / approved / paid</CardDescription>
+            <CardDescription>Submitted / reviewed / needs correction / ready for payment / paid</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{money(claimsForMonth.submittedTotal)}</div>
@@ -479,17 +479,30 @@ export default function SubmitClaimsPage() {
                     const badgeVariant =
                       status === 'paid'
                         ? 'default'
-                        : status === 'approved'
-                          ? 'secondary'
-                          : status === 'rejected'
-                            ? 'destructive'
-                            : 'outline';
+                        : status === 'needs_correction'
+                          ? 'destructive'
+                          : status === 'ready_for_payment' || status === 'approved'
+                            ? 'secondary'
+                            : status === 'reviewed'
+                              ? 'secondary'
+                              : status === 'rejected'
+                                ? 'destructive'
+                                : 'outline';
+                    const label = status ? status.replace(/_/g, ' ') : 'submitted';
+                    const correctionReason = String((c as any)?.correctionReason || '').trim();
                     return (
                       <TableRow key={c.id}>
                         <TableCell className="whitespace-nowrap">{claimDate ? format(claimDate, 'MMM d, yyyy') : '—'}</TableCell>
                         <TableCell className="font-semibold">{money(c.totalAmount)}</TableCell>
                         <TableCell>
-                          <Badge variant={badgeVariant as any}>{String(c.status || 'submitted')}</Badge>
+                          <div className="space-y-1">
+                            <Badge variant={badgeVariant as any}>{label}</Badge>
+                            {status === 'needs_correction' && correctionReason ? (
+                              <div className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                                Admin note: {correctionReason}
+                              </div>
+                            ) : null}
+                          </div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap">{submittedAt ? format(submittedAt, 'MMM d, yyyy') : '—'}</TableCell>
                       </TableRow>

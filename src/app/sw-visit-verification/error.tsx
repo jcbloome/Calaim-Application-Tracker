@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import Image from 'next/image';
 import { SWTopNav } from '@/components/sw/SWTopNav';
 
 export default function SWVisitVerificationError({
@@ -45,8 +46,15 @@ export default function SWVisitVerificationError({
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="bg-white/80 backdrop-blur border-b">
         <div className="container mx-auto px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <Link href="/" className="text-sm font-semibold text-gray-900">
-            Connect CalAIM
+          <Link href="/sw-portal" className="shrink-0">
+            <Image
+              src="/calaimlogopdf.png"
+              alt="Connect CalAIM Logo"
+              width={240}
+              height={67}
+              className="w-36 sm:w-44 h-auto object-contain"
+              priority
+            />
           </Link>
           <SWTopNav className="justify-start md:justify-end" />
         </div>

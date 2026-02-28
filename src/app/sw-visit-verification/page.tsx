@@ -199,6 +199,81 @@ export default function SWVisitVerification() {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [questionStep, setQuestionStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Initialize questionnaire data
+  const [questionnaire, setQuestionnaire] = useState<MemberVisitQuestionnaire>({
+    visitId: '',
+    memberId: '',
+    memberName: '',
+    socialWorkerId: 'Billy Buckhalter', // Default for testing
+    rcfeId: '',
+    rcfeName: '',
+    rcfeAddress: '',
+    visitDate: new Date().toISOString().split('T')[0],
+    memberRoomNumber: '',
+    memberSignoff: {
+      acknowledged: false,
+      signatureName: '',
+      signedAt: '',
+    },
+
+    meetingLocation: {
+      location: '',
+      otherLocation: '',
+      notes: ''
+    },
+
+    memberWellbeing: {
+      physicalHealth: 0,
+      mentalHealth: 0,
+      socialEngagement: 0,
+      overallMood: 0,
+      notes: ''
+    },
+
+    careSatisfaction: {
+      staffAttentiveness: 0,
+      mealQuality: 0,
+      cleanlinessOfRoom: 0,
+      activitiesPrograms: 0,
+      overallSatisfaction: 0,
+      notes: ''
+    },
+
+    memberConcerns: {
+      hasConcerns: null,
+      nonResponsive: false,
+      nonResponsiveReason: '',
+      nonResponsiveDetails: '',
+      concernTypes: {
+        medical: false,
+        staff: false,
+        safety: false,
+        food: false,
+        social: false,
+        financial: false,
+        other: false
+      },
+      urgencyLevel: 'low',
+      detailedConcerns: '',
+      actionRequired: false
+    },
+
+    rcfeAssessment: {
+      facilityCondition: 0,
+      staffProfessionalism: 0,
+      safetyCompliance: 0,
+      careQuality: 0,
+      overallRating: 0,
+      notes: '',
+      flagForReview: false
+    },
+
+    visitSummary: {
+      totalScore: 0,
+      flagged: false
+    }
+  });
   
   // Track completed visits for sign-off
   const [completedVisits, setCompletedVisits] = useState<Array<{
@@ -512,81 +587,6 @@ export default function SWVisitVerification() {
     },
     [isSocialWorker, isLoading, toast, user]
   );
-
-  // Initialize questionnaire data
-  const [questionnaire, setQuestionnaire] = useState<MemberVisitQuestionnaire>({
-    visitId: '',
-    memberId: '',
-    memberName: '',
-    socialWorkerId: 'Billy Buckhalter', // Default for testing
-    rcfeId: '',
-    rcfeName: '',
-    rcfeAddress: '',
-    visitDate: new Date().toISOString().split('T')[0],
-    memberRoomNumber: '',
-    memberSignoff: {
-      acknowledged: false,
-      signatureName: '',
-      signedAt: '',
-    },
-    
-    meetingLocation: {
-      location: '',
-      otherLocation: '',
-      notes: ''
-    },
-    
-    memberWellbeing: {
-      physicalHealth: 0,
-      mentalHealth: 0,
-      socialEngagement: 0,
-      overallMood: 0,
-      notes: ''
-    },
-    
-    careSatisfaction: {
-      staffAttentiveness: 0,
-      mealQuality: 0,
-      cleanlinessOfRoom: 0,
-      activitiesPrograms: 0,
-      overallSatisfaction: 0,
-      notes: ''
-    },
-    
-    memberConcerns: {
-      hasConcerns: null,
-      nonResponsive: false,
-      nonResponsiveReason: '',
-      nonResponsiveDetails: '',
-      concernTypes: {
-        medical: false,
-        staff: false,
-        safety: false,
-        food: false,
-        social: false,
-        financial: false,
-        other: false
-      },
-      urgencyLevel: 'low',
-      detailedConcerns: '',
-      actionRequired: false
-    },
-    
-    rcfeAssessment: {
-      facilityCondition: 0,
-      staffProfessionalism: 0,
-      safetyCompliance: 0,
-      careQuality: 0,
-      overallRating: 0,
-      notes: '',
-      flagForReview: false
-    },
-    
-    visitSummary: {
-      totalScore: 0,
-      flagged: false
-    }
-  });
 
   const handleSignOut = useCallback(async (target: string = '/sw-login') => {
     try {

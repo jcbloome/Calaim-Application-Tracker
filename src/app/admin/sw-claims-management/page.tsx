@@ -48,16 +48,23 @@ interface ClaimSubmission {
   socialWorkerEmail: string;
   socialWorkerName: string;
   claimDate: Date;
+  visitIds?: string[];
   memberVisits: MemberVisit[];
   gasReimbursement: number;
   totalMemberVisitFees: number;
   totalAmount: number;
   notes?: string;
-  status: 'draft' | 'submitted' | 'approved' | 'paid' | 'rejected';
+  status: 'draft' | 'submitted' | 'needs_correction' | 'reviewed' | 'ready_for_payment' | 'approved' | 'paid' | 'rejected';
+  hasFlaggedVisits?: boolean;
   submittedAt?: Date;
   reviewedAt?: Date;
   reviewedBy?: string;
   reviewNotes?: string;
+  correctionReason?: string;
+  correctionRequestedAt?: Date;
+  correctionRequestedBy?: string;
+  readyForPaymentAt?: Date;
+  readyForPaymentBy?: string;
   paidAt?: Date;
   paidBy?: string;
 }
@@ -67,8 +74,10 @@ interface ClaimSummary {
   totalAmount: number;
   pendingClaims: number;
   pendingAmount: number;
-  approvedClaims: number;
-  approvedAmount: number;
+  needsCorrectionClaims: number;
+  needsCorrectionAmount: number;
+  readyClaims: number;
+  readyAmount: number;
   paidClaims: number;
   paidAmount: number;
 }
@@ -82,7 +91,12 @@ export default function SWClaimsManagementPage() {
   const [filteredClaims, setFilteredClaims] = useState<ClaimSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedClaim, setSelectedClaim] = useState<ClaimSubmission | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'submitted' | 'approved' | 'paid' | 'rejected'>('submitted');
+  const [selectedClaimVisits, setSelectedClaimVisits] = useState<any[]>([]);
+  const [loadingSelectedClaimVisits, setLoadingSelectedClaimVisits] = useState(false);
+  const [selectedClaimVisitsError, setSelectedClaimVisitsError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<
+    'all' | 'draft' | 'submitted' | 'needs_correction' | 'reviewed' | 'ready_for_payment' | 'approved' | 'paid' | 'rejected'
+  >('submitted');
   const [socialWorkerFilter, setSocialWorkerFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedClaimIds, setSelectedClaimIds] = useState<Record<string, boolean>>({});
@@ -98,8 +112,10 @@ export default function SWClaimsManagementPage() {
     totalAmount: 0,
     pendingClaims: 0,
     pendingAmount: 0,
-    approvedClaims: 0,
-    approvedAmount: 0,
+    needsCorrectionClaims: 0,
+    needsCorrectionAmount: 0,
+    readyClaims: 0,
+    readyAmount: 0,
     paidClaims: 0,
     paidAmount: 0
   });
@@ -172,7 +188,141 @@ export default function SWClaimsManagementPage() {
     setAdminActionNote(String(selectedClaim?.reviewNotes || '').trim());
   }, [selectedClaim?.id]);
 
+  useEffect(() => {
+    const claim = selectedClaim;
+    if (!claim || !adminUser) {
+      setSelectedClaimVisits([]);
+      setSelectedClaimVisitsError(null);
+      setLoadingSelectedClaimVisits(false);
+      return;
+    }
+
+    const visitIdsFromDoc: string[] = Array.isArray((claim as any)?.visitIds) ? ((claim as any).visitIds as any) : [];
+    const visitIdsFromMemberVisits: string[] = Array.isArray((claim as any)?.memberVisits)
+      ? (claim as any).memberVisits
+          .map((v: any) => String(v?.id || v?.visitId || '').trim())
+          .filter(Boolean)
+      : [];
+    const visitIds = Array.from(new Set([...visitIdsFromDoc, ...visitIdsFromMemberVisits])).slice(0, 500);
+
+    if (visitIds.length === 0) {
+      setSelectedClaimVisits([]);
+      setSelectedClaimVisitsError(null);
+      setLoadingSelectedClaimVisits(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingSelectedClaimVisits(true);
+    setSelectedClaimVisitsError(null);
+    setSelectedClaimVisits([]);
+
+    (async () => {
+      try {
+        const idToken = await adminUser.getIdToken();
+        const res = await fetch('/api/admin/sw-visits/by-ids', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ visitIds }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !(data as any)?.success) {
+          throw new Error((data as any)?.error || 'Failed to load visit questionnaires');
+        }
+        const visits = Array.isArray((data as any)?.visits) ? (data as any).visits : [];
+        if (!cancelled) setSelectedClaimVisits(visits);
+      } catch (e: any) {
+        if (!cancelled) setSelectedClaimVisitsError(e?.message || 'Failed to load visit questionnaires');
+      } finally {
+        if (!cancelled) setLoadingSelectedClaimVisits(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClaim?.id, adminUser]);
+
   const normalizeName = (s: string) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+  const renderQuestionnaireBlock = (visit: any) => {
+    const raw = (visit as any)?.raw || {};
+    const score = (v: any) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const yesNo = (v: any) => (v === true ? 'Yes' : v === false ? 'No' : '—');
+
+    const memberConcerns = raw?.memberConcerns || {};
+    const rcfeAssessment = raw?.rcfeAssessment || {};
+    const wellbeing = raw?.memberWellbeing || raw?.memberWellBeing || {};
+    const satisfaction = raw?.careSatisfaction || raw?.careSatifaction || {};
+    const summary = raw?.visitSummary || {};
+
+    const qa: Array<{ label: string; value: any }> = [
+      { label: 'Visit date', value: String(raw?.visitDate || (visit as any)?.visitDate || '').trim() || '—' },
+      { label: 'Meeting location', value: String(raw?.meetingLocation || '').trim() || '—' },
+      { label: 'Room number', value: String(raw?.memberRoomNumber || (visit as any)?.memberRoomNumber || '').trim() || '—' },
+      { label: 'Member concerns?', value: yesNo(memberConcerns?.hasConcerns) },
+      { label: 'Urgency', value: String(memberConcerns?.urgencyLevel || '').trim() || '—' },
+      { label: 'Action required?', value: yesNo(memberConcerns?.actionRequired) },
+      { label: 'Concern details', value: String(memberConcerns?.detailedConcerns || '').trim() || '—' },
+      { label: 'RCFE issues / notes', value: String(rcfeAssessment?.notes || '').trim() || '—' },
+      { label: 'Flag for review?', value: yesNo(rcfeAssessment?.flagForReview) },
+      { label: 'Visit summary', value: String(raw?.visitNarrative || raw?.visitSummaryText || summary?.visitSummaryText || summary?.notes || '').trim() || '—' },
+    ];
+
+    const stars: Array<{ label: string; value: number | null }> = [
+      { label: 'Care', value: score(satisfaction?.careQualityScore ?? raw?.careQualityScore) },
+      { label: 'Safety', value: score(wellbeing?.safetyScore ?? raw?.safetyScore) },
+      { label: 'Communication', value: score(satisfaction?.communicationScore ?? raw?.communicationScore) },
+      { label: 'Overall', value: score(summary?.overallScore ?? raw?.overallScore) },
+    ];
+
+    const totalScore = Number((visit as any)?.totalScore || summary?.totalScore || 0) || 0;
+    const flagged = Boolean((visit as any)?.flagged || summary?.flagged);
+    const flagReasons = Array.isArray((visit as any)?.flagReasons) ? (visit as any).flagReasons : [];
+
+    return (
+      <div className="rounded-lg border p-4 space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="font-semibold">{String((visit as any)?.memberName || 'Member')}</div>
+          <Badge variant="outline">{String((visit as any)?.rcfeName || 'RCFE')}</Badge>
+          {flagged ? <Badge className="bg-amber-500 hover:bg-amber-500">Flagged</Badge> : <Badge variant="secondary">Not flagged</Badge>}
+          <Badge variant="outline">Total score: {totalScore}</Badge>
+        </div>
+
+        {flagged && flagReasons.length > 0 ? (
+          <div className="text-sm">
+            <div className="font-medium mb-1">Flag reasons</div>
+            <ul className="list-disc pl-5 text-muted-foreground">
+              {flagReasons.slice(0, 10).map((r: any, idx: number) => (
+                <li key={idx}>{String(r || '').trim() || '—'}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {stars.map((s) => (
+            <div key={s.label} className="rounded border px-3 py-2 text-sm">
+              <div className="text-xs text-muted-foreground">{s.label}</div>
+              <div className="font-semibold">{s.value ?? '—'}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {qa.map((item) => (
+            <div key={item.label} className="rounded border px-3 py-2 text-sm">
+              <div className="text-xs text-muted-foreground">{item.label}</div>
+              <div className="whitespace-pre-wrap break-words">{String(item.value ?? '—')}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   const deleteTargetSummaries = useMemo(() => {
     const byId = new Map<string, ClaimSubmission>();
@@ -350,8 +500,10 @@ export default function SWClaimsManagementPage() {
       totalAmount: claimsData.reduce((sum, claim) => sum + claim.totalAmount, 0),
       pendingClaims: claimsData.filter(c => c.status === 'submitted').length,
       pendingAmount: claimsData.filter(c => c.status === 'submitted').reduce((sum, claim) => sum + claim.totalAmount, 0),
-      approvedClaims: claimsData.filter(c => c.status === 'approved').length,
-      approvedAmount: claimsData.filter(c => c.status === 'approved').reduce((sum, claim) => sum + claim.totalAmount, 0),
+      needsCorrectionClaims: claimsData.filter(c => c.status === 'needs_correction').length,
+      needsCorrectionAmount: claimsData.filter(c => c.status === 'needs_correction').reduce((sum, claim) => sum + claim.totalAmount, 0),
+      readyClaims: claimsData.filter(c => c.status === 'ready_for_payment' || c.status === 'approved').length,
+      readyAmount: claimsData.filter(c => c.status === 'ready_for_payment' || c.status === 'approved').reduce((sum, claim) => sum + claim.totalAmount, 0),
       paidClaims: claimsData.filter(c => c.status === 'paid').length,
       paidAmount: claimsData.filter(c => c.status === 'paid').reduce((sum, claim) => sum + claim.totalAmount, 0)
     };
@@ -375,7 +527,7 @@ export default function SWClaimsManagementPage() {
     );
   };
 
-  const updateClaimStatus = async (claimId: string, newStatus: string, reviewNotes?: string) => {
+  const updateClaimStatus = async (claimId: string, newStatus: ClaimSubmission['status'], reviewNotes?: string) => {
     if (!firestore) return;
     
     try {
@@ -384,6 +536,16 @@ export default function SWClaimsManagementPage() {
         String(adminUser?.displayName || adminUser?.email || '').trim()
         || 'Admin';
       const notes = String(reviewNotes || '').trim();
+
+      if (newStatus === 'needs_correction' && !notes) {
+        toast({
+          variant: 'destructive',
+          title: 'Reason required',
+          description: 'Enter a correction reason in Admin note before marking Needs correction.',
+        });
+        return;
+      }
+
       const updates: any = {
         status: newStatus,
         updatedAt: serverTimestamp(),
@@ -394,9 +556,32 @@ export default function SWClaimsManagementPage() {
         updates.submittedAt = serverTimestamp();
         updates.submittedBy = actorLabel;
         updates.submittedByAdmin = true;
-      } else if (newStatus === 'approved' || newStatus === 'rejected' || newStatus === 'paid') {
+      } else if (
+        newStatus === 'reviewed' ||
+        newStatus === 'needs_correction' ||
+        newStatus === 'ready_for_payment' ||
+        newStatus === 'approved' ||
+        newStatus === 'rejected' ||
+        newStatus === 'paid'
+      ) {
         updates.reviewedAt = serverTimestamp();
         updates.reviewedBy = actorLabel;
+      }
+
+      if (newStatus === 'needs_correction') {
+        updates.correctionReason = notes;
+        updates.correctionRequestedAt = serverTimestamp();
+        updates.correctionRequestedBy = actorLabel;
+      } else if (newStatus === 'reviewed' || newStatus === 'ready_for_payment' || newStatus === 'paid') {
+        // Clear correction state when moving forward.
+        updates.correctionReason = null;
+        updates.correctionRequestedAt = null;
+        updates.correctionRequestedBy = null;
+      }
+
+      if (newStatus === 'ready_for_payment') {
+        updates.readyForPaymentAt = serverTimestamp();
+        updates.readyForPaymentBy = actorLabel;
       }
 
       if (newStatus === 'paid') {
@@ -408,7 +593,7 @@ export default function SWClaimsManagementPage() {
       await updateDoc(claimRef, updates);
 
       // Propagate claim status to linked visit records
-      if (newStatus === 'paid' || newStatus === 'submitted') {
+      if (newStatus !== 'draft') {
         const claim = claims.find((c) => c.id === claimId) as any;
         const visitIdsFromDoc: string[] = Array.isArray(claim?.visitIds) ? claim.visitIds : [];
         const visitIdsFromMemberVisits: string[] = Array.isArray(claim?.memberVisits)
@@ -425,12 +610,8 @@ export default function SWClaimsManagementPage() {
               {
                 claimId,
                 claimStatus: newStatus,
-                ...(newStatus === 'submitted'
-                  ? { claimSubmitted: true, claimSubmittedAt: serverTimestamp() }
-                  : {}),
-                ...(newStatus === 'paid'
-                  ? { claimPaid: true, claimPaidAt: serverTimestamp() }
-                  : {}),
+                claimSubmitted: true,
+                ...(newStatus === 'paid' ? { claimPaid: true, claimPaidAt: serverTimestamp() } : {}),
                 updatedAt: serverTimestamp(),
               },
               { merge: true }
@@ -442,7 +623,7 @@ export default function SWClaimsManagementPage() {
 
       toast({
         title: 'Status Updated',
-        description: `Claim status changed to ${newStatus}`
+        description: `Claim status changed to ${String(newStatus).replace(/_/g, ' ')}`
       });
       
       setSelectedClaim(null);
@@ -459,6 +640,9 @@ export default function SWClaimsManagementPage() {
   const getStatusBadge = (status: string) => {
     const variants = {
       'submitted': 'outline',
+      'needs_correction': 'destructive',
+      'reviewed': 'secondary',
+      'ready_for_payment': 'secondary',
       'approved': 'secondary',
       'paid': 'default',
       'rejected': 'destructive',
@@ -467,6 +651,9 @@ export default function SWClaimsManagementPage() {
 
     const colors = {
       'submitted': 'text-blue-700',
+      'needs_correction': 'text-red-700',
+      'reviewed': 'text-slate-700',
+      'ready_for_payment': 'text-green-700',
       'approved': 'text-green-700',
       'paid': 'text-green-800',
       'rejected': 'text-red-700',
@@ -475,7 +662,7 @@ export default function SWClaimsManagementPage() {
 
     return (
       <Badge variant={variants[status as keyof typeof variants]} className={colors[status as keyof typeof colors]}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+        {String(status || '').replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())}
       </Badge>
     );
   };
@@ -599,7 +786,7 @@ export default function SWClaimsManagementPage() {
       </Dialog>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Claims</CardTitle>
@@ -628,13 +815,26 @@ export default function SWClaimsManagementPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Approved</CardTitle>
+            <CardTitle className="text-sm font-medium">Needs Correction</CardTitle>
+            <XCircle className="h-4 w-4 text-red-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">{summary.needsCorrectionClaims}</div>
+            <p className="text-xs text-muted-foreground">
+              ${summary.needsCorrectionAmount.toLocaleString()} needs correction
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Ready for Payment</CardTitle>
             <CheckCircle className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{summary.approvedClaims}</div>
+            <div className="text-2xl font-bold text-green-600">{summary.readyClaims}</div>
             <p className="text-xs text-muted-foreground">
-              ${summary.approvedAmount.toLocaleString()} approved
+              ${summary.readyAmount.toLocaleString()} ready
             </p>
           </CardContent>
         </Card>
@@ -671,7 +871,9 @@ export default function SWClaimsManagementPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="submitted">Submitted (action needed)</SelectItem>
-                  <SelectItem value="approved">Approved (ready to pay)</SelectItem>
+                  <SelectItem value="needs_correction">Needs correction</SelectItem>
+                  <SelectItem value="reviewed">Reviewed</SelectItem>
+                  <SelectItem value="ready_for_payment">Ready for payment</SelectItem>
                   <SelectItem value="paid">Paid</SelectItem>
                   <SelectItem value="rejected">Rejected</SelectItem>
                   <SelectItem value="draft">Draft (not submitted by SW)</SelectItem>
@@ -898,6 +1100,30 @@ export default function SWClaimsManagementPage() {
                                 </div>
                               </div>
 
+                              {/* Questionnaires */}
+                              <div>
+                                <h4 className="font-semibold mb-3">Questionnaires (from visit records)</h4>
+                                {loadingSelectedClaimVisits ? (
+                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Loading questionnaires…
+                                  </div>
+                                ) : selectedClaimVisitsError ? (
+                                  <Alert variant="destructive">
+                                    <AlertTitle>Unable to load questionnaires</AlertTitle>
+                                    <AlertDescription>{selectedClaimVisitsError}</AlertDescription>
+                                  </Alert>
+                                ) : selectedClaimVisits.length === 0 ? (
+                                  <div className="text-sm text-muted-foreground">No visit records found for this claim.</div>
+                                ) : (
+                                  <div className="space-y-4">
+                                    {selectedClaimVisits.map((v: any) => (
+                                      <div key={String(v?.visitId || v?.id || '')}>{renderQuestionnaireBlock(v)}</div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
                               {/* Notes */}
                               {selectedClaim.notes && (
                                 <div>
@@ -918,11 +1144,19 @@ export default function SWClaimsManagementPage() {
                                     </div>
                                   ) : selectedClaim.status === 'submitted' ? (
                                     <div>
-                                      This claim is <span className="font-semibold text-foreground">Submitted</span>. Approve (or Reject) to proceed.
+                                      This claim is <span className="font-semibold text-foreground">Submitted</span>. Review it, then either request correction or approve for payment processing.
                                     </div>
-                                  ) : selectedClaim.status === 'approved' ? (
+                                  ) : selectedClaim.status === 'needs_correction' ? (
                                     <div>
-                                      This claim is <span className="font-semibold text-foreground">Approved</span>. Mark it as Paid once payment is sent.
+                                      This claim is <span className="font-semibold text-foreground">Needs correction</span>. The Social Worker should revise and resubmit based on your note.
+                                    </div>
+                                  ) : selectedClaim.status === 'reviewed' ? (
+                                    <div>
+                                      This claim is <span className="font-semibold text-foreground">Reviewed</span>. Approve for payment processing when ready.
+                                    </div>
+                                  ) : selectedClaim.status === 'ready_for_payment' || selectedClaim.status === 'approved' ? (
+                                    <div>
+                                      This claim is <span className="font-semibold text-foreground">Ready for payment</span>. Mark it as Paid once payment is sent.
                                     </div>
                                   ) : selectedClaim.status === 'paid' ? (
                                     <div>
@@ -949,29 +1183,55 @@ export default function SWClaimsManagementPage() {
                                   {selectedClaim.status === 'submitted' ? (
                                     <>
                                       <Button
-                                        onClick={() => updateClaimStatus(selectedClaim.id, 'approved', adminActionNote)}
-                                        className="bg-green-600 hover:bg-green-700"
+                                        onClick={() => updateClaimStatus(selectedClaim.id, 'reviewed', adminActionNote)}
+                                        className="bg-slate-800 hover:bg-slate-900"
                                       >
                                         <CheckCircle className="mr-2 h-4 w-4" />
-                                        Approve
+                                        Mark reviewed
                                       </Button>
                                       <Button
-                                        onClick={() => updateClaimStatus(selectedClaim.id, 'rejected', adminActionNote)}
+                                        onClick={() => updateClaimStatus(selectedClaim.id, 'needs_correction', adminActionNote)}
                                         variant="destructive"
                                       >
                                         <XCircle className="mr-2 h-4 w-4" />
-                                        Reject
+                                        Needs correction
+                                      </Button>
+                                      <Button
+                                        onClick={() => updateClaimStatus(selectedClaim.id, 'ready_for_payment', adminActionNote)}
+                                        className="bg-green-600 hover:bg-green-700"
+                                      >
+                                        <CheckCircle className="mr-2 h-4 w-4" />
+                                        Approve for payment
                                       </Button>
                                     </>
                                   ) : null}
 
-                                  {selectedClaim.status === 'approved' ? (
+                                  {selectedClaim.status === 'reviewed' || selectedClaim.status === 'needs_correction' ? (
+                                    <Button
+                                      onClick={() => updateClaimStatus(selectedClaim.id, 'ready_for_payment', adminActionNote)}
+                                      className="bg-green-600 hover:bg-green-700"
+                                    >
+                                      <CheckCircle className="mr-2 h-4 w-4" />
+                                      Approve for payment
+                                    </Button>
+                                  ) : null}
+
+                                  {selectedClaim.status === 'ready_for_payment' || selectedClaim.status === 'approved' ? (
                                     <Button
                                       onClick={() => updateClaimStatus(selectedClaim.id, 'paid', adminActionNote)}
                                       className="bg-green-800 hover:bg-green-900"
                                     >
                                       <DollarSign className="mr-2 h-4 w-4" />
                                       Mark as Paid
+                                    </Button>
+                                  ) : null}
+
+                                  {selectedClaim.status === 'paid' ? (
+                                    <Button
+                                      variant="outline"
+                                      onClick={() => updateClaimStatus(selectedClaim.id, 'ready_for_payment', adminActionNote)}
+                                    >
+                                      Mark as Unpaid
                                     </Button>
                                   ) : null}
                                 </div>

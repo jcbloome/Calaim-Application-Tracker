@@ -317,7 +317,13 @@ export default function SWMonthlyVisitsPage() {
                     const claimId = String((r as any)?.claimId || '').trim();
                     const claimStatus = String((r as any)?.claimStatus || 'draft').trim().toLowerCase();
                     const isPaid = Boolean((r as any)?.claimPaid) || claimStatus === 'paid';
-                    const isSubmitted = Boolean((r as any)?.claimSubmitted) || claimStatus === 'submitted' || claimStatus === 'approved';
+                    const isSubmitted =
+                      Boolean((r as any)?.claimSubmitted) ||
+                      claimStatus === 'submitted' ||
+                      claimStatus === 'reviewed' ||
+                      claimStatus === 'needs_correction' ||
+                      claimStatus === 'ready_for_payment' ||
+                      claimStatus === 'approved';
                     const claimInfo = claimId ? claimsById.get(claimId) : null;
                     const claimMembers = claimInfo?.memberNames || [];
                     const claimMembersLabel =
@@ -333,6 +339,12 @@ export default function SWMonthlyVisitsPage() {
                         <TableCell>
                           {isPaid ? (
                             <Badge className="bg-green-600 hover:bg-green-600">Paid</Badge>
+                          ) : claimStatus === 'needs_correction' ? (
+                            <Badge className="bg-rose-600 hover:bg-rose-600">Needs correction</Badge>
+                          ) : claimStatus === 'ready_for_payment' || claimStatus === 'approved' ? (
+                            <Badge className="bg-emerald-700 hover:bg-emerald-700">Ready for payment</Badge>
+                          ) : claimStatus === 'reviewed' ? (
+                            <Badge className="bg-slate-700 hover:bg-slate-700">Reviewed</Badge>
                           ) : isSubmitted ? (
                             <Badge className="bg-blue-600 hover:bg-blue-600">Submitted</Badge>
                           ) : (

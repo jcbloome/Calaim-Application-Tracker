@@ -238,7 +238,9 @@ export default function SWSignOffPage() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Sign Off</h1>
-          <p className="text-muted-foreground">RCFE staff reviews the member list and signs to submit questionnaires and the claim.</p>
+          <p className="text-muted-foreground">
+            RCFE staff acknowledges the Social Worker is present at the facility. This does not confirm each member was visited.
+          </p>
         </div>
         <Button className="w-full sm:w-auto" variant="outline" onClick={() => void loadCandidates()} disabled={loadingVisits || !rcfeId}>
           <RefreshCw className="h-4 w-4 mr-2" />
@@ -291,8 +293,10 @@ export default function SWSignOffPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Members to sign off</CardTitle>
-          <CardDescription>RCFE staff should check each member name. Then sign and submit.</CardDescription>
+          <CardTitle className="text-base">Members listed (today)</CardTitle>
+          <CardDescription>
+            Optional: staff can check members listed for the day. This is for reference only.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {loadingVisits ? (
@@ -370,11 +374,13 @@ export default function SWSignOffPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">RCFE staff signature</CardTitle>
-          <CardDescription>Staff verifies the Social Worker is at this location to visit the selected members.</CardDescription>
+          <CardDescription>
+            Staff acknowledges the Social Worker is present at this facility on this date. This does not confirm individual member visits.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-900">
-            <span className="font-medium">Attestation:</span> I acknowledge that {swName} is at this location to visit the below members.
+            <span className="font-medium">Attestation:</span> I acknowledge that {swName} is present at this facility today.
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">

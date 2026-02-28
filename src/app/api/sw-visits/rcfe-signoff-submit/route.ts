@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
       flagged: Boolean(v?.flagged || v?.raw?.visitSummary?.flagged),
     }));
 
-    const attestationText = `I acknowledge that ${socialWorkerName} is at this location to visit the below members.`;
+    const attestationText = `I acknowledge that ${socialWorkerName} is present at this facility today. This does not confirm individual member visits.`;
 
     const signOffRef = adminDb.collection('sw_signoff_records').doc();
     const signOffId = signOffRef.id;
@@ -232,6 +232,16 @@ export async function POST(req: NextRequest) {
           updatedAtIso: nowIso,
         };
 
+        const hasFlaggedVisits = visits.some((v) => {
+          const raw = (v?.raw || {}) as any;
+          return (
+            Boolean(raw?.visitSummary?.flagged) ||
+            raw?.memberConcerns?.urgencyLevel === 'critical' ||
+            Boolean(raw?.memberConcerns?.actionRequired) ||
+            Boolean(raw?.rcfeAssessment?.flagForReview)
+          );
+        });
+
         tx.set(
           claimRef,
           {
@@ -263,6 +273,9 @@ export async function POST(req: NextRequest) {
               notes: '',
             })),
             status: 'submitted',
+            reviewStatus: 'pending',
+            paymentStatus: 'unpaid',
+            hasFlaggedVisits,
             submittedAt: nowTs,
             signoffById: {
               [signOffId]: signoffSummary,
