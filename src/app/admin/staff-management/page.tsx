@@ -5,7 +5,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Loader2, Users, Bell, Save, ShieldCheck, Mail, UserPlus, RotateCcw } from 'lucide-react';
+import { Loader2, Users, Bell, Save, ShieldCheck, Mail, UserPlus, RotateCcw, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
@@ -49,6 +49,7 @@ export default function StaffManagementPage() {
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
     const [notificationRecipients, setNotificationRecipients] = useState<string[]>([]);
     const [ilsNotePermissions, setIlsNotePermissions] = useState<string[]>([]);
+    const [swVisitDeletePermissions, setSwVisitDeletePermissions] = useState<string[]>([]);
     const [isSavingNotifications, setIsSavingNotifications] = useState(false);
     const [newStaffFirstName, setNewStaffFirstName] = useState('');
     const [newStaffLastName, setNewStaffLastName] = useState('');
@@ -255,6 +256,7 @@ export default function StaffManagementPage() {
 
         setNotificationRecipients((prev) => normalizeIdList(prev));
         setIlsNotePermissions((prev) => normalizeIdList(prev));
+        setSwVisitDeletePermissions((prev) => normalizeIdList(prev));
 
         // reviewRecipients map
         setReviewRecipients((prev) => {
@@ -302,6 +304,7 @@ export default function StaffManagementPage() {
                 setNotificationRecipientsHadField(rawRecipientUids !== undefined);
                 setNotificationRecipients(Array.isArray(rawRecipientUids) ? rawRecipientUids : []);
                 setIlsNotePermissions(data?.ilsNotePermissions || []);
+                setSwVisitDeletePermissions((data as any)?.swVisitDeletePermissions || []);
                 setWebAppNotificationsEnabled(Boolean((data as any)?.webAppNotificationsEnabled ?? true));
                 setSuppressWebWhenDesktopActive(Boolean((data as any)?.suppressWebWhenDesktopActive ?? true));
             } else {
@@ -465,6 +468,13 @@ export default function StaffManagementPage() {
         queueAutoSave();
     };
 
+    const handleSwVisitDeleteToggle = (uid: string, checked: boolean) => {
+        setSwVisitDeletePermissions(prev =>
+            checked ? [...prev, uid] : prev.filter(id => id !== uid)
+        );
+        queueAutoSave();
+    };
+
     const handleSaveNotifications = async (options?: { silentSuccess?: boolean }) => {
         if (!firestore) return;
         setIsSavingNotifications(true);
@@ -473,6 +483,7 @@ export default function StaffManagementPage() {
             const notificationsData = {
                 recipientUids: notificationRecipients,
                 ilsNotePermissions: ilsNotePermissions,
+                swVisitDeletePermissions: swVisitDeletePermissions,
                 webAppNotificationsEnabled: Boolean(webAppNotificationsEnabled),
                 suppressWebWhenDesktopActive: Boolean(suppressWebWhenDesktopActive),
             };
@@ -954,6 +965,18 @@ export default function StaffManagementPage() {
                                                 checked={ilsNotePermissions.includes(staff.uid)} 
                                                 onCheckedChange={(checked) => handleIlsNoteToggle(staff.uid, !!checked)} 
                                                 aria-label={`Toggle ILS note permissions for ${staff.email}`} 
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <Trash2 className={`h-4 w-4 ${swVisitDeletePermissions.includes(staff.uid) ? 'text-red-600' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`sw-visit-delete-${staff.uid}`} className="text-sm font-medium">SW visit delete</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`sw-visit-delete-${staff.uid}`}
+                                                checked={swVisitDeletePermissions.includes(staff.uid)}
+                                                onCheckedChange={(checked) => handleSwVisitDeleteToggle(staff.uid, !!checked)}
+                                                aria-label={`Toggle SW visit delete permissions for ${staff.email}`}
                                             />
                                         </div>
                                         {/* Incoming forms review notifications (Doc uploads / CS Summary) */}

@@ -38,6 +38,7 @@ interface VisitRecord {
   visitId: string;
   socialWorkerName: string;
   memberName: string;
+  memberRoomNumber?: string;
   rcfeName: string;
   rcfeAddress: string;
   visitDate: string;
@@ -110,6 +111,9 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
   const [expandedSignoffId, setExpandedSignoffId] = useState<string | null>(null);
   const [claimDatesByVisit, setClaimDatesByVisit] = useState<Record<string, { submittedAt?: string; paidAt?: string }>>({});
   const [geoResolvedByVisit, setGeoResolvedByVisit] = useState<Record<string, { address?: string; status: 'idle' | 'loading' | 'error' }>>({});
+  const [deletingVisitId, setDeletingVisitId] = useState<string | null>(null);
+  const [deleteReasonByVisitId, setDeleteReasonByVisitId] = useState<Record<string, string>>({});
+  const [showRawByVisitId, setShowRawByVisitId] = useState<Record<string, boolean>>({});
 
   const [selectedVisitIds, setSelectedVisitIds] = useState<string[]>([]);
   const [overrideStaffName, setOverrideStaffName] = useState('');
@@ -159,6 +163,7 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
           visitId: String(v?.visitId || v?.id || ''),
           socialWorkerName: String(v?.socialWorkerName || v?.socialWorkerId || ''),
           memberName: String(v?.memberName || ''),
+          memberRoomNumber: String(v?.memberRoomNumber || v?.raw?.memberRoomNumber || '').trim() || undefined,
           rcfeName: String(v?.rcfeName || ''),
           rcfeAddress: String(v?.rcfeAddress || ''),
           visitDate: String(v?.visitDate || ''),
@@ -330,6 +335,70 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
     if (score >= 50) return <Badge className="bg-blue-600">Good ({score})</Badge>;
     if (score >= 40) return <Badge className="bg-yellow-600">Fair ({score})</Badge>;
     return <Badge variant="destructive">Needs Attention ({score})</Badge>;
+  };
+
+  const compactFromRaw = (visit: any) => {
+    const raw = (visit as any)?.raw || null;
+    const nonResponsive = Boolean(raw?.memberConcerns?.nonResponsive);
+    const meetingLocation = String(raw?.meetingLocation?.location || '').trim();
+    const otherLocation = String(raw?.meetingLocation?.otherLocation || '').trim();
+    const meetingLabel = meetingLocation === 'other' && otherLocation ? `Other: ${otherLocation}` : meetingLocation || '—';
+
+    const urgency = String(raw?.memberConcerns?.urgencyLevel || '').trim() || '—';
+    const actionRequired = Boolean(raw?.memberConcerns?.actionRequired);
+    const concerns = String(raw?.memberConcerns?.detailedConcerns || '').trim();
+    const rcfeNotes = String(raw?.rcfeAssessment?.notes || '').trim();
+    const flagForReview = Boolean(raw?.rcfeAssessment?.flagForReview);
+
+    const wellbeing = raw?.memberWellbeing || {};
+    const satisfaction = raw?.careSatisfaction || {};
+    const rcfe = raw?.rcfeAssessment || {};
+
+    return {
+      hasRaw: Boolean(raw),
+      nonResponsive,
+      meetingLabel,
+      urgency,
+      actionRequired,
+      concerns,
+      flagForReview,
+      rcfeNotes,
+      wellbeing,
+      satisfaction,
+      rcfe,
+      memberSignoff: raw?.memberSignoff || null,
+    };
+  };
+
+  const deleteVisit = async (visit: VisitRecord) => {
+    if (!auth?.currentUser) return;
+    const reason = String(deleteReasonByVisitId[visit.visitId] || '').trim();
+    if (!reason) {
+      alert('Delete reason is required.');
+      return;
+    }
+    const ok = typeof window !== 'undefined'
+      ? window.confirm(`Delete this questionnaire visit record?\n\nMember: ${visit.memberName}\nSW: ${visit.socialWorkerName}\nDate: ${visit.visitDate}\n\nThis cannot be undone.`)
+      : false;
+    if (!ok) return;
+
+    setDeletingVisitId(visit.visitId);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/sw-visits/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ visitId: visit.visitId, reason }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed (${res.status})`);
+      setDeleteReasonByVisitId((prev) => ({ ...prev, [visit.visitId]: '' }));
+      await loadTrackingData();
+    } catch (e: any) {
+      alert(e?.message || 'Failed to delete visit.');
+    } finally {
+      setDeletingVisitId(null);
+    }
   };
 
   const getResolvedGeoAddress = (visit: VisitRecord) => {
@@ -665,6 +734,126 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
 
                   {expandedVisitId === visit.id && (
                     <div className="space-y-4">
+                      {(() => {
+                        const compact = compactFromRaw(visit as any);
+                        const readyForClaim = Boolean(visit.signedOff) && !Boolean(visit.claimSubmitted) && !Boolean(visit.claimPaid);
+                        const alreadyClaimed = Boolean(visit.claimSubmitted) || Boolean(visit.claimPaid);
+                        return (
+                          <div className="rounded-lg border bg-white p-4 space-y-4">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="space-y-1">
+                                <div className="text-sm font-semibold">Processing status</div>
+                                <div className="text-xs text-muted-foreground">
+                                  Claim submission is gated by RCFE staff sign-off.
+                                </div>
+                                <div className="mt-1 flex flex-wrap gap-2">
+                                  {readyForClaim ? (
+                                    <Badge className="bg-emerald-600 hover:bg-emerald-600">Ready for claim processing</Badge>
+                                  ) : alreadyClaimed ? (
+                                    <Badge variant="secondary">Claim already submitted/paid</Badge>
+                                  ) : visit.signedOff ? (
+                                    <Badge variant="secondary">Signed off (awaiting claim processing)</Badge>
+                                  ) : (
+                                    <Badge variant="secondary">Awaiting RCFE sign-off</Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                              <div className="space-y-1.5">
+                                <Label>Delete (requires permission)</Label>
+                                <div className="flex flex-col gap-2">
+                                  <Input
+                                    value={deleteReasonByVisitId[visit.visitId] ?? ''}
+                                    onChange={(e) =>
+                                      setDeleteReasonByVisitId((prev) => ({ ...prev, [visit.visitId]: e.target.value }))
+                                    }
+                                    placeholder="Reason required to delete"
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => void deleteVisit(visit)}
+                                    disabled={deletingVisitId === visit.visitId}
+                                  >
+                                    {deletingVisitId === visit.visitId ? 'Deleting…' : 'Delete visit'}
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-lg border bg-muted/30 p-3">
+                              <div className="text-sm font-semibold">Questionnaire (compact)</div>
+                              {!compact.hasRaw ? (
+                                <div className="text-sm text-muted-foreground mt-1">No raw questionnaire payload found.</div>
+                              ) : (
+                                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3 text-sm">
+                                  <div>
+                                    <div className="text-muted-foreground">Room</div>
+                                    <div className="font-medium">{visit.memberRoomNumber || '—'}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground">Met at</div>
+                                    <div className="font-medium">{compact.meetingLabel}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground">Member responsiveness</div>
+                                    <div className="font-medium">{compact.nonResponsive ? 'Non-responsive' : 'Responsive'}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground">Concerns urgency</div>
+                                    <div className="font-medium">{compact.urgency}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground">Action required</div>
+                                    <div className="font-medium">{compact.actionRequired ? 'Yes' : 'No'}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground">RCFE flagged</div>
+                                    <div className="font-medium">{compact.flagForReview ? 'Yes' : 'No'}</div>
+                                  </div>
+                                  <div className="md:col-span-3">
+                                    <div className="text-muted-foreground">Member concerns</div>
+                                    <div className="font-medium whitespace-pre-wrap">{compact.concerns || '—'}</div>
+                                  </div>
+                                  <div className="md:col-span-3">
+                                    <div className="text-muted-foreground">RCFE notes</div>
+                                    <div className="font-medium whitespace-pre-wrap">{compact.rcfeNotes || '—'}</div>
+                                  </div>
+                                  {compact.memberSignoff?.acknowledged ? (
+                                    <div className="md:col-span-3">
+                                      <div className="text-muted-foreground">Member sign-off</div>
+                                      <div className="font-medium">
+                                        {String(compact.memberSignoff?.signatureName || '').trim() || '—'}
+                                        {compact.memberSignoff?.signedAt ? ` • ${String(compact.memberSignoff.signedAt).trim()}` : ''}
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              )}
+                            </div>
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setShowRawByVisitId((prev) => ({ ...prev, [visit.visitId]: !Boolean(prev[visit.visitId]) }))
+                              }
+                            >
+                              {showRawByVisitId[visit.visitId] ? 'Hide raw payload' : 'Show raw payload'}
+                            </Button>
+                            {showRawByVisitId[visit.visitId] ? (
+                              <pre className="max-h-[360px] overflow-auto rounded-md border bg-black/90 p-3 text-xs text-white">
+                                {JSON.stringify((visit as any)?.raw ?? null, null, 2)}
+                              </pre>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
+
                       <div className="border rounded-lg p-3 bg-muted/40">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                           <div>
@@ -706,138 +895,6 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                             </ul>
                           </div>
                         )}
-                      </div>
-                      <div className="border rounded-lg bg-white">
-                        <div className="border-b px-4 py-2 text-sm font-semibold">
-                          Visit Summary (Full Report)
-                        </div>
-                        <div className="space-y-5 p-4 text-sm">
-                          <div>
-                            <div className="text-xs uppercase text-muted-foreground mb-2">Visit Details</div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              <div>
-                                <span className="text-muted-foreground">Visited Member:</span>
-                                <span className="ml-2 font-medium">{visit.memberName}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Visited Location:</span>
-                                <span className="ml-2 font-medium">{visit.rcfeName}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Address:</span>
-                                <span className="ml-2 font-medium">{visit.rcfeAddress}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Where in facility:</span>
-                                <span className="ml-2 font-medium">{visit.visitLocationDetails || 'Not specified'}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Geolocation:</span>
-                                <span className="ml-2 font-medium">
-                                  {visit.geolocationVerified ? 'Verified' : 'Not Verified'}
-                                  {visit.geolocationLabel ? ` • ${visit.geolocationLabel}` : ''}
-                                </span>
-                              </div>
-                            <div>
-                              <span className="text-muted-foreground">Geolocation Address:</span>
-                              <span className="ml-2 font-medium">
-                                {getResolvedGeoAddress(visit) || (geoResolvedByVisit[visit.id]?.status === 'loading' ? 'Resolving...' : 'Not available')}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Address Match:</span>
-                              <span className="ml-2 font-medium">
-                                {getGeoMatchStatus(visit)}
-                              </span>
-                            </div>
-                              <div>
-                                <span className="text-muted-foreground">Sign-Off Person:</span>
-                                <span className="ml-2 font-medium">
-                                  {visit.signedOff ? `${visit.rcfeStaffName || 'Staff'}${visit.rcfeStaffTitle ? ` (${visit.rcfeStaffTitle})` : ''}` : 'Pending'}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Sign-Off Date:</span>
-                                <span className="ml-2 font-medium">
-                                  {visit.signOffDate ? new Date(visit.signOffDate).toLocaleString() : 'Pending'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div>
-                            <div className="text-xs uppercase text-muted-foreground mb-2">Star Ratings</div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                              {[
-                                { label: 'Care', value: visit.starRatings?.care },
-                                { label: 'Safety', value: visit.starRatings?.safety },
-                                { label: 'Communication', value: visit.starRatings?.communication },
-                                { label: 'Overall', value: visit.starRatings?.overall }
-                              ].map((rating) => (
-                                <div key={rating.label} className="rounded border p-2">
-                                  <div className="text-muted-foreground">{rating.label}</div>
-                                  <div className="font-semibold">{rating.value ?? '—'} / 5</div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div>
-                            <div className="text-xs uppercase text-muted-foreground mb-2">Questionnaire Answers</div>
-                            <div className="space-y-2">
-                              {visit.questionnaireAnswers.map((qa, index) => (
-                                <div key={`${visit.id}-qa-${index}`} className="rounded border p-2">
-                                  <div className="text-muted-foreground">{qa.question}</div>
-                                  <div className="font-medium">{qa.answer}</div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div>
-                            <div className="text-xs uppercase text-muted-foreground mb-2">Claims & Payment</div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              <div>
-                                <span className="text-muted-foreground">Claim Submitted:</span>
-                                <span className="ml-2 font-medium">{visit.claimSubmitted ? 'Yes' : 'No'}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Claim Status:</span>
-                                <span className="ml-2 font-medium">
-                                  {visit.claimSubmitted ? (visit.claimPaid ? 'Paid' : 'Unpaid') : 'N/A'}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">Claim Submitted Date:</span>
-                                <Input
-                                  type="date"
-                                  value={claimDatesByVisit[visit.id]?.submittedAt ?? visit.claimSubmittedAt ?? ''}
-                                  onChange={(event) =>
-                                    setClaimDatesByVisit((prev) => ({
-                                      ...prev,
-                                      [visit.id]: { ...prev[visit.id], submittedAt: event.target.value }
-                                    }))
-                                  }
-                                  className="h-8 w-40"
-                                />
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">Claim Paid Date:</span>
-                                <Input
-                                  type="date"
-                                  value={claimDatesByVisit[visit.id]?.paidAt ?? visit.claimPaidAt ?? ''}
-                                  onChange={(event) =>
-                                    setClaimDatesByVisit((prev) => ({
-                                      ...prev,
-                                      [visit.id]: { ...prev[visit.id], paidAt: event.target.value }
-                                    }))
-                                  }
-                                  className="h-8 w-40"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
                       </div>
                     </div>
                   )}
