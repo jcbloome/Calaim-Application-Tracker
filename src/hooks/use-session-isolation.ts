@@ -6,12 +6,12 @@ import { usePathname, useRouter } from 'next/navigation';
 import { doc, getDoc } from 'firebase/firestore';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 
-type SessionType = 'admin' | 'user';
+type SessionType = 'admin' | 'user' | 'sw';
 
 /**
- * Hook to enforce session isolation between admin and user sides
- * Prevents crossover between admin and user authentication states
- * Prevents admin users from accessing the user side
+ * Hook to enforce session isolation between admin, user, and social worker portals.
+ * - Prevents crossover between authentication states across portals.
+ * - Prevents admin users from accessing non-admin portals.
  */
 export function useSessionIsolation(currentSessionType: SessionType, options?: { disabled?: boolean }) {
   const auth = useAuth();
@@ -78,14 +78,29 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
 
     const handleSessionIsolation = async () => {
       const isAdminPath = pathname.startsWith('/admin');
-      const isUserPath = !isAdminPath && pathname !== '/' && pathname !== '/login' && pathname !== '/signup';
+      const isSwPath =
+        pathname === '/sw-login' ||
+        pathname.startsWith('/sw-portal') ||
+        pathname.startsWith('/sw-visit-verification') ||
+        pathname.startsWith('/sw-reset-password') ||
+        pathname.startsWith('/swvisit');
+
+      // Any authenticated, non-admin portal path (excluding public landing/login pages).
+      const isNonAdminAuthedPath =
+        !isAdminPath &&
+        !isSwPath &&
+        pathname !== '/' &&
+        pathname !== '/login' &&
+        pathname !== '/signup' &&
+        pathname !== '/reset-password';
 
       // Store the intended session type in localStorage
       const storedSessionType = safeLocalStorageGet('calaim_session_type');
-      const newSessionType = isAdminPath ? 'admin' : 'user';
+      const newSessionType: SessionType = isAdminPath ? 'admin' : isSwPath ? 'sw' : 'user';
 
-      // If user is logged in and trying to access user side, check if they're an admin
-      if (auth.currentUser && isUserPath) {
+      // If user is logged in and trying to access a non-admin portal, check if they're an admin.
+      // Admins should not be allowed to browse user/SW portal pages while authenticated.
+      if (auth.currentUser && (isNonAdminAuthedPath || isSwPath)) {
         const isAdmin = await checkIfUserIsAdmin(auth.currentUser.email || '', auth.currentUser.uid);
 
         if (isAdmin) {
@@ -99,28 +114,30 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
         }
       }
 
-      // If switching between admin and user sides, force logout
+      // If switching between portals, force logout (fresh login required),
+      // except for admin -> user which is allowed for assist-mode flows.
       if (storedSessionType && storedSessionType !== newSessionType && auth.currentUser) {
         // If user is switching from admin -> user, don't force a second login.
         // Clear admin-only context and record the new session type.
-        if (newSessionType === 'user') {
+        if (storedSessionType === 'admin' && newSessionType === 'user') {
           safeLocalStorageSet('calaim_session_type', 'user');
           safeLocalStorageRemove('calaim_admin_context');
           return;
         }
 
-        // Switching into admin mode still requires an explicit admin login.
+        // Switching into admin/SW mode still requires an explicit login.
         safeLocalStorageRemove('calaim_session_type');
         safeLocalStorageRemove('calaim_admin_context');
         safeSessionStorageClear();
 
         await auth.signOut();
-        router.push('/admin/login');
+        if (newSessionType === 'admin') router.push('/admin/login');
+        if (newSessionType === 'sw') router.push('/sw-login');
         return;
       }
 
       // Set the current session type
-      if (auth.currentUser && (isAdminPath || isUserPath)) {
+      if (auth.currentUser && (isAdminPath || isSwPath || isNonAdminAuthedPath)) {
         safeLocalStorageSet('calaim_session_type', newSessionType);
       }
     };

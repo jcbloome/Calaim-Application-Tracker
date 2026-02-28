@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
 import { Button } from '@/components/ui/button';
@@ -9,15 +9,34 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { doc, onSnapshot, query, collection, where, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  collectionGroup,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  onSnapshot,
+  query,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 type StandaloneUpload = {
   id: string;
   status: string;
   createdAt?: any;
   documentType: string;
-  files: Array<{ fileName: string; downloadURL: string }>;
+  files: Array<{ fileName: string; downloadURL: string; storagePath?: string }>;
   uploaderName?: string;
   uploaderEmail?: string;
   memberName: string;
@@ -30,8 +49,27 @@ type StandaloneUpload = {
 
 const toLabel = (value: any) => String(value ?? '').trim();
 
+type MemberSearchResult = {
+  clientId2: string;
+  firstName: string;
+  lastName: string;
+  healthPlan: string;
+  status: string;
+};
+
+type ApplicationCandidate = {
+  applicationId: string;
+  userId: string | null;
+  memberName: string;
+  memberMrn: string;
+  healthPlan?: string;
+  status?: string;
+  lastUpdatedMs?: number;
+  source: 'admin' | 'user';
+};
+
 export default function StandaloneUploadsPage() {
-  const { isAdmin, isLoading } = useAdmin();
+  const { isAdmin, isLoading, user } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
 
@@ -40,6 +78,19 @@ export default function StandaloneUploadsPage() {
   const [plan, setPlan] = useState<'all' | 'kaiser' | 'health-net' | 'other'>('all');
   const [docType, setDocType] = useState<'all' | 'cs' | 'docs'>('all');
   const [processingId, setProcessingId] = useState<string>('');
+
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const [assignRow, setAssignRow] = useState<StandaloneUpload | null>(null);
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memberResults, setMemberResults] = useState<MemberSearchResult[]>([]);
+  const [memberLoading, setMemberLoading] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<MemberSearchResult | null>(null);
+  const [selectedMemberMrn, setSelectedMemberMrn] = useState<string>('');
+  const [appsLoading, setAppsLoading] = useState(false);
+  const [apps, setApps] = useState<ApplicationCandidate[]>([]);
+  const [selectedAppKey, setSelectedAppKey] = useState<string>('');
+  const [assignedOpenUrl, setAssignedOpenUrl] = useState<string>('');
 
   useEffect(() => {
     if (!firestore || !isAdmin) return;
@@ -117,6 +168,195 @@ export default function StandaloneUploadsPage() {
     }
   };
 
+  const openAssign = useCallback((row: StandaloneUpload) => {
+    setAssignRow(row);
+    setAssignOpen(true);
+    setAssigning(false);
+    setAssignedOpenUrl('');
+    setMemberSearch(row?.memberName || '');
+    setMemberResults([]);
+    setSelectedMember(null);
+    setSelectedMemberMrn('');
+    setApps([]);
+    setSelectedAppKey('');
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!assignOpen) return;
+      const q = memberSearch.trim();
+      if (!q) {
+        setMemberResults([]);
+        return;
+      }
+      // `/api/members` supports last-name prefix search.
+      const lastNamePrefix = q.split(/\s+/).filter(Boolean).slice(-1)[0] || q;
+      if (lastNamePrefix.length < 2) {
+        setMemberResults([]);
+        return;
+      }
+
+      setMemberLoading(true);
+      try {
+        const url = `/api/members?search=${encodeURIComponent(lastNamePrefix)}&limit=25&offset=0`;
+        const res = await fetch(url, { method: 'GET' });
+        const data = (await res.json().catch(() => ({}))) as any;
+        const members = Array.isArray(data?.members) ? data.members : [];
+        const results: MemberSearchResult[] = members
+          .map((m: any) => ({
+            clientId2: toLabel(m?.clientId2),
+            firstName: toLabel(m?.firstName),
+            lastName: toLabel(m?.lastName),
+            healthPlan: toLabel(m?.healthPlan),
+            status: toLabel(m?.status),
+          }))
+          .filter((m: any) => Boolean(m.clientId2 && (m.firstName || m.lastName)));
+
+        if (!cancelled) setMemberResults(results);
+      } catch {
+        if (!cancelled) setMemberResults([]);
+      } finally {
+        if (!cancelled) setMemberLoading(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [assignOpen, memberSearch]);
+
+  const loadApplicationsForMember = useCallback(
+    async (member: MemberSearchResult) => {
+      if (!firestore) return;
+      setApps([]);
+      setSelectedAppKey('');
+      setAssignedOpenUrl('');
+      setSelectedMember(member);
+
+      setAppsLoading(true);
+      try {
+        const memberSnap = await getDoc(doc(firestore, 'caspio_members_cache', member.clientId2));
+        const cache = memberSnap.exists() ? (memberSnap.data() as any) : null;
+        const mrn = toLabel(cache?.MRN || cache?.memberMrn || cache?.Member_MRN || '');
+        setSelectedMemberMrn(mrn);
+
+        if (!mrn) {
+          setApps([]);
+          return;
+        }
+
+        const normalizedMrn = mrn.trim();
+        const [userAppsSnap, adminAppsSnap] = await Promise.all([
+          getDocs(query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', normalizedMrn), limit(25))),
+          getDocs(query(collection(firestore, 'applications'), where('memberMrn', '==', normalizedMrn), limit(25))),
+        ]);
+
+        const toCandidate = (d: any, source: 'user' | 'admin'): ApplicationCandidate => {
+          const data = d.data() as any;
+          const userId = source === 'user' ? (d.ref?.parent?.parent?.id ? String(d.ref.parent.parent.id) : null) : null;
+          const memberName = `${toLabel(data?.memberFirstName)} ${toLabel(data?.memberLastName)}`.trim() || 'Unknown Member';
+          const lastUpdatedMs =
+            data?.lastUpdated?.toMillis?.() ||
+            data?.lastUpdated?.toDate?.()?.getTime?.() ||
+            data?.updatedAt?.toMillis?.() ||
+            0;
+          return {
+            applicationId: String(d.id),
+            userId,
+            memberName,
+            memberMrn: toLabel(data?.memberMrn),
+            healthPlan: toLabel(data?.healthPlan) || undefined,
+            status: toLabel(data?.status) || undefined,
+            lastUpdatedMs: Number(lastUpdatedMs) || 0,
+            source,
+          };
+        };
+
+        const combined: ApplicationCandidate[] = [
+          ...userAppsSnap.docs.map((d) => toCandidate(d, 'user')),
+          ...adminAppsSnap.docs.map((d) => toCandidate(d, 'admin')),
+        ];
+
+        const dedup = new Map<string, ApplicationCandidate>();
+        combined.forEach((a) => {
+          const key = `${a.source}:${a.userId || 'admin'}:${a.applicationId}`;
+          dedup.set(key, a);
+        });
+        const list = Array.from(dedup.values()).sort((a, b) => (b.lastUpdatedMs || 0) - (a.lastUpdatedMs || 0));
+        setApps(list);
+      } catch {
+        setApps([]);
+      } finally {
+        setAppsLoading(false);
+      }
+    },
+    [firestore]
+  );
+
+  const assignToApplication = useCallback(
+    async (mode: 'existing' | 'new') => {
+      if (!assignRow) return;
+      if (!user) {
+        toast({ title: 'Not signed in', description: 'Please sign in again.', variant: 'destructive' });
+        return;
+      }
+      if (assigning) return;
+
+      const selectedApp =
+        mode === 'existing' ? apps.find((a) => `${a.source}:${a.userId || 'admin'}:${a.applicationId}` === selectedAppKey) : null;
+
+      if (mode === 'existing' && !selectedApp) {
+        toast({ title: 'Select an application', description: 'Pick an existing application to assign into.', variant: 'destructive' });
+        return;
+      }
+
+      setAssigning(true);
+      setAssignedOpenUrl('');
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch('/api/admin/standalone-uploads/assign', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            uploadId: assignRow.id,
+            mode,
+            target:
+              mode === 'existing'
+                ? {
+                    applicationId: selectedApp?.applicationId,
+                    userId: selectedApp?.userId,
+                  }
+                : {},
+            member: selectedMember
+              ? {
+                  clientId2: selectedMember.clientId2,
+                  mrn: selectedMemberMrn || undefined,
+                  firstName: selectedMember.firstName,
+                  lastName: selectedMember.lastName,
+                  healthPlan: selectedMember.healthPlan,
+                }
+              : {},
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as any;
+        if (!res.ok || !data?.success) {
+          throw new Error(toLabel(data?.error) || 'Failed to assign upload');
+        }
+        setAssignedOpenUrl(toLabel(data?.openUrl));
+        toast({ title: 'Assigned', description: 'Upload was linked into the application and removed from pending intake.' });
+      } catch (e: any) {
+        toast({ title: 'Assignment failed', description: e?.message || 'Could not assign upload', variant: 'destructive' });
+      } finally {
+        setAssigning(false);
+      }
+    },
+    [assignRow, user, assigning, apps, selectedAppKey, selectedMember, selectedMemberMrn, toast]
+  );
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -144,7 +384,7 @@ export default function StandaloneUploadsPage() {
         <CardHeader>
           <CardTitle>Standalone Upload Intake</CardTitle>
           <CardDescription>
-            Documents uploaded outside a specific application (often CS Summary). Use this list to download and re-enter into a new application.
+            Documents uploaded outside a specific application (often CS Summary). Assign them into an existing or new CS Summary application so staff can process them in the portal.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -235,14 +475,19 @@ export default function StandaloneUploadsPage() {
                             {r.uploaderEmail ? <div className="text-muted-foreground">{r.uploaderEmail}</div> : null}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={processingId === r.id}
-                              onClick={() => void markProcessed(r.id)}
-                            >
-                              {processingId === r.id ? 'Saving…' : 'Mark processed'}
-                            </Button>
+                            <div className="flex items-center justify-end gap-2">
+                              <Button size="sm" disabled={processingId === r.id} onClick={() => openAssign(r)}>
+                                Assign
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={processingId === r.id}
+                                onClick={() => void markProcessed(r.id)}
+                              >
+                                {processingId === r.id ? 'Saving…' : 'Mark processed'}
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -253,6 +498,135 @@ export default function StandaloneUploadsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Assign upload to CS Summary application</DialogTitle>
+            <DialogDescription>
+              Link this standalone upload into an application so staff can work it from the portal instead of downloading from intake.
+            </DialogDescription>
+          </DialogHeader>
+
+          {assignRow ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border p-3">
+                <div className="text-sm font-medium">{assignRow.memberName}</div>
+                <div className="text-xs text-muted-foreground">
+                  DOB: {assignRow.memberBirthdate || '—'} • Plan: {assignRow.healthPlan || 'Other/Unknown'} • Doc: {assignRow.documentType}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">1) Lookup member (last name prefix)</div>
+                <Input
+                  placeholder="Type last name (e.g., Garcia)"
+                  value={memberSearch}
+                  onChange={(e) => setMemberSearch(e.target.value)}
+                />
+
+                <div className="rounded-lg border max-h-48 overflow-auto">
+                  {memberLoading ? (
+                    <div className="p-3 text-sm text-muted-foreground">Searching…</div>
+                  ) : memberResults.length === 0 ? (
+                    <div className="p-3 text-sm text-muted-foreground">No results.</div>
+                  ) : (
+                    <div className="divide-y">
+                      {memberResults.map((m) => {
+                        const isSelected = selectedMember?.clientId2 === m.clientId2;
+                        return (
+                          <button
+                            key={m.clientId2}
+                            type="button"
+                            className={`w-full text-left p-3 hover:bg-muted ${isSelected ? 'bg-muted' : ''}`}
+                            onClick={() => void loadApplicationsForMember(m)}
+                          >
+                            <div className="text-sm font-medium">
+                              {m.firstName} {m.lastName}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              ID: {m.clientId2} • {m.healthPlan || 'Unknown'} • {m.status || '—'}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="text-xs text-muted-foreground">
+                  MRN: <span className="font-medium text-foreground">{selectedMemberMrn || '—'}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">2) Assign into an existing application (matched by MRN)</div>
+                <div className="rounded-lg border max-h-48 overflow-auto">
+                  {appsLoading ? (
+                    <div className="p-3 text-sm text-muted-foreground">Loading applications…</div>
+                  ) : apps.length === 0 ? (
+                    <div className="p-3 text-sm text-muted-foreground">No applications found for this MRN.</div>
+                  ) : (
+                    <div className="divide-y">
+                      {apps.map((a) => {
+                        const key = `${a.source}:${a.userId || 'admin'}:${a.applicationId}`;
+                        const isSelected = selectedAppKey === key;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            className={`w-full text-left p-3 hover:bg-muted ${isSelected ? 'bg-muted' : ''}`}
+                            onClick={() => setSelectedAppKey(key)}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-sm font-medium truncate">{a.memberName}</div>
+                              <Badge variant="secondary">{a.source === 'admin' ? 'Admin' : 'User'}</Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              App: {a.applicationId} • {a.healthPlan || '—'} • {a.status || '—'}
+                              {a.userId ? ` • userId: ${a.userId}` : ''}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {assignedOpenUrl ? (
+                <div className="rounded-lg border p-3 bg-green-50 border-green-200">
+                  <div className="text-sm font-medium text-green-900">Assigned successfully</div>
+                  <div className="text-xs text-green-900/80">
+                    Open the application:
+                    {' '}
+                    <a className="underline" href={assignedOpenUrl}>
+                      {assignedOpenUrl}
+                    </a>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setAssignOpen(false)} disabled={assigning}>
+              Close
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => void assignToApplication('new')}
+              disabled={assigning}
+              title="Creates an admin CS Summary application (if needed) and links this upload into it."
+            >
+              {assigning ? 'Assigning…' : 'Create new CS Summary app & assign'}
+            </Button>
+            <Button onClick={() => void assignToApplication('existing')} disabled={assigning || !selectedAppKey}>
+              {assigning ? 'Assigning…' : 'Assign to selected app'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

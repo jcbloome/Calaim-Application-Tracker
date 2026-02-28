@@ -30,6 +30,36 @@ export default function SWLoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // If we're coming from a user/admin session, force a fresh SW login.
+  // This prevents the SW portal from reusing user credentials (and vice versa).
+  useEffect(() => {
+    const safeLocalStorageGet = (key: string) => {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    };
+    const safeLocalStorageRemove = (key: string) => {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        // ignore
+      }
+    };
+
+    if (authLoading) return;
+    if (!currentUser) return;
+
+    const stored = safeLocalStorageGet('calaim_session_type');
+    if (stored && stored !== 'sw') {
+      safeLocalStorageRemove('calaim_session_type');
+      clearStoredSwLoginDay();
+      fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
+      auth.signOut().catch(() => null);
+    }
+  }, [authLoading, currentUser]);
+
   // If already signed in and has SW claim, redirect to portal.
   // On first visit while logged out, we skip any SW verification and just show the form.
   useEffect(() => {

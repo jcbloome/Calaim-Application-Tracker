@@ -62,17 +62,46 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isUserLoading) {
-      return;
-    }
-    if (user) {
-      if (isAdmin) {
-        router.push('/admin');
-      } else {
-        router.push('/applications');
+    const safeLocalStorageGet = (key: string) => {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
       }
-    }
-  }, [user, isUserLoading, isAdmin, router]);
+    };
+    const safeLocalStorageRemove = (key: string) => {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        // ignore
+      }
+    };
+
+    if (isUserLoading) return;
+
+    const run = async () => {
+      // If we're coming from an SW session, force a fresh user login.
+      // This prevents the user portal from reusing SW credentials.
+      const stored = safeLocalStorageGet('calaim_session_type');
+      if (stored === 'sw' && auth?.currentUser) {
+        safeLocalStorageRemove('calaim_session_type');
+        // best-effort: clear SW server session cookie (if present)
+        fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
+        await auth.signOut().catch(() => null);
+        return;
+      }
+
+      if (user) {
+        if (isAdmin) {
+          router.push('/admin');
+        } else {
+          router.push('/applications');
+        }
+      }
+    };
+
+    void run();
+  }, [user, isUserLoading, isAdmin, router, auth]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
