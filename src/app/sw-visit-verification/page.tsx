@@ -383,7 +383,6 @@ export default function SWVisitVerification() {
     lastSyncAt?: string | null;
     lastMode?: string | null;
   } | null>(null);
-  const [confirmFreshWithin15, setConfirmFreshWithin15] = useState(false);
   const [monthStatuses, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
   const [loadingMonthStatuses, setLoadingMonthStatuses] = useState(false);
   const [editingVisitId, setEditingVisitId] = useState<string | null>(null);
@@ -398,6 +397,23 @@ export default function SWVisitVerification() {
     return new Date().toISOString().slice(0, 10);
   }, [questionnaire.visitDate]);
 
+  const getIdToken = useCallback(async () => {
+    try {
+      const current = (auth as any)?.currentUser;
+      const tok = await current?.getIdToken?.();
+      if (tok) return String(tok);
+    } catch {
+      // ignore
+    }
+    try {
+      const tok = await (user as any)?.getIdToken?.();
+      if (tok) return String(tok);
+    } catch {
+      // ignore
+    }
+    return '';
+  }, [auth, user]);
+
   const refreshDraftVisits = useCallback(async () => {
     if (!user || !isSocialWorker || !selectedRCFE?.id) {
       setDraftVisitsByMemberId({});
@@ -405,7 +421,7 @@ export default function SWVisitVerification() {
     }
     setLoadingDraftVisits(true);
     try {
-      const idToken = await (user as any)?.getIdToken?.();
+      const idToken = await getIdToken();
       if (!idToken) throw new Error('Not signed in');
       const res = await fetch(
         `/api/sw-visits/draft-candidates?rcfeId=${encodeURIComponent(String(selectedRCFE.id))}&claimDay=${encodeURIComponent(
@@ -439,7 +455,7 @@ export default function SWVisitVerification() {
     if (!user) return;
     setIsExportingMonth(true);
     try {
-      const idToken = await (user as any)?.getIdToken?.();
+      const idToken = await getIdToken();
       if (!idToken) throw new Error('Not signed in');
       const res = await fetch('/api/sw-visits/monthly-export', {
         method: 'POST',
@@ -514,7 +530,7 @@ export default function SWVisitVerification() {
     } finally {
       setIsExportingMonth(false);
     }
-  }, [exportMonth, toast, user]);
+  }, [exportMonth, getIdToken, toast, user]);
 
   // Update socialWorkerId when user data becomes available
   useEffect(() => {
@@ -546,7 +562,6 @@ export default function SWVisitVerification() {
           setRcfeList(data.rcfeList || []);
           setMembersOnHold(data.membersOnHold || 0);
           setMembersCacheStatus(data.cacheStatus || null);
-          setConfirmFreshWithin15(false);
 
           console.log(`✅ Loaded ${data.totalRCFEs} RCFEs with ${data.totalMembers} assigned members`);
           if (data.membersOnHold > 0) {
@@ -588,7 +603,8 @@ export default function SWVisitVerification() {
     [isSocialWorker, isLoading, toast, user]
   );
 
-  const handleSignOut = useCallback(async (target: string = '/sw-login') => {
+  const handleSignOut = useCallback(async (target: unknown = '/sw-login') => {
+    const nextTarget = typeof target === 'string' ? target : '/sw-login';
     try {
       if (auth) await auth.signOut();
     } catch {
@@ -599,7 +615,7 @@ export default function SWVisitVerification() {
     } catch {
       // ignore
     }
-    router.push(target);
+    router.push(nextTarget);
   }, [auth, router]);
 
   // Daily SW login enforcement: force re-login on a new day (and at midnight).
@@ -648,9 +664,11 @@ export default function SWVisitVerification() {
                      questionnaire.rcfeAssessment.careQuality +
                      questionnaire.rcfeAssessment.overallRating;
     
-    const totalScore = wellbeingScore + satisfactionScore + rcfeScore;
-    const maxScore = nonResponsive ? 25 : 75;
-    const lowScoreThreshold = Math.round(maxScore * 0.4); // 40%
+    const rawTotal = wellbeingScore + satisfactionScore + rcfeScore;
+    const rawMax = nonResponsive ? 25 : 75;
+    // Normalize to 0–100 for easier interpretation.
+    const totalScore = rawMax > 0 ? Math.max(0, Math.min(100, Math.round((rawTotal / rawMax) * 100))) : 0;
+    const lowScoreThreshold = 40; // 40%
     
     // Auto-flag conditions
     const flagged = totalScore < lowScoreThreshold ||
@@ -683,7 +701,7 @@ export default function SWVisitVerification() {
   const openExistingVisitForEdit = useCallback(
     async (visitId: string) => {
       if (!user) return;
-      const idToken = await (user as any)?.getIdToken?.();
+      const idToken = await getIdToken();
       if (!idToken) {
         toast({ title: 'Please sign in again', description: 'No active session found.', variant: 'destructive' });
         return;
@@ -709,7 +727,7 @@ export default function SWVisitVerification() {
       setQuestionStep(1);
       setCurrentStep('questionnaire');
     },
-    [toast, user]
+    [getIdToken, toast, user]
   );
 
   const handleMemberSelect = (member: Member) => {
@@ -854,7 +872,7 @@ export default function SWVisitVerification() {
     if (!user) return;
     setLoadingMonthStatuses(true);
     try {
-      const idToken = await (user as any)?.getIdToken?.();
+      const idToken = await getIdToken();
       if (!idToken) throw new Error('Not signed in');
       const res = await fetch('/api/sw-visits/monthly-export', {
         method: 'POST',
@@ -887,7 +905,7 @@ export default function SWVisitVerification() {
     } finally {
       setLoadingMonthStatuses(false);
     }
-  }, [currentMonthKey, user]);
+  }, [currentMonthKey, getIdToken, user]);
 
   useEffect(() => {
     if (!isSocialWorker) return;
@@ -927,7 +945,7 @@ export default function SWVisitVerification() {
 
     setIsLoading(true);
     try {
-      const idToken = await (user as any)?.getIdToken?.();
+      const idToken = await getIdToken();
       if (!idToken) throw new Error('Not signed in');
 
       const res = await fetch('/api/sw-visits/draft-delete', {
@@ -1011,7 +1029,7 @@ export default function SWVisitVerification() {
     } finally {
       setIsLoading(false);
     }
-  }, [questionnaire.visitId, questionnaire.memberId, questionnaire.socialWorkerId, refreshDraftVisits, selectedMember, toast, user]);
+  }, [getIdToken, questionnaire.visitId, questionnaire.memberId, questionnaire.socialWorkerId, refreshDraftVisits, selectedMember, toast, user]);
 
   // Form validation functions
   const validateCurrentQuestion = () => {
@@ -1186,15 +1204,6 @@ export default function SWVisitVerification() {
   }, [membersCacheStatus]);
 
   const submitQuestionnaire = async () => {
-    if (cacheFreshness.isStale && !confirmFreshWithin15) {
-      toast({
-        title: "Please confirm data freshness",
-        description: "Your assignments cache is older than 15 minutes. Refresh assignments, then confirm before saving the draft.",
-        variant: "destructive"
-      });
-      return;
-    }
-
     // Validate all required fields before submission
     const validationErrors = validateCompleteForm();
     if (validationErrors.length > 0) {
@@ -1255,7 +1264,7 @@ export default function SWVisitVerification() {
       }
 
       const isEditing = Boolean(editingVisitId) && String(editingVisitId) === String(submitData.visitId);
-      const idToken = await (user as any)?.getIdToken?.();
+      const idToken = await getIdToken();
       if (!idToken) throw new Error('Not signed in');
 
       const response = await fetch('/api/sw-visits/draft', {
@@ -1393,7 +1402,7 @@ export default function SWVisitVerification() {
               <div className="text-sm font-semibold text-foreground max-w-[160px] sm:max-w-[240px] truncate">
                 {swName}
               </div>
-              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+              <Button variant="ghost" size="sm" onClick={() => void handleSignOut()}>
                 <LogOut className="h-4 w-4 mr-2" />
                 Sign Out
               </Button>
@@ -2259,22 +2268,22 @@ export default function SWVisitVerification() {
                   <div className="bg-gray-50 p-4 rounded-lg space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="font-medium">Total Score:</span>
-                      <Badge variant={questionnaire.visitSummary.totalScore >= 50 ? "default" : "destructive"}>
-                        {questionnaire.visitSummary.totalScore} / 75
+                      <Badge variant={questionnaire.visitSummary.totalScore >= 70 ? "default" : "destructive"}>
+                        {questionnaire.visitSummary.totalScore} / 100
                       </Badge>
                     </div>
                     
                     <div className="flex items-center justify-between">
                       <span className="font-medium">Quality Rating:</span>
                       <span className={`font-medium ${
-                        questionnaire.visitSummary.totalScore >= 60 ? 'text-green-600' :
-                        questionnaire.visitSummary.totalScore >= 50 ? 'text-yellow-600' :
-                        questionnaire.visitSummary.totalScore >= 40 ? 'text-orange-600' :
+                        questionnaire.visitSummary.totalScore >= 80 ? 'text-green-600' :
+                        questionnaire.visitSummary.totalScore >= 70 ? 'text-yellow-600' :
+                        questionnaire.visitSummary.totalScore >= 60 ? 'text-orange-600' :
                         'text-red-600'
                       }`}>
-                        {questionnaire.visitSummary.totalScore >= 60 ? 'Excellent' :
-                         questionnaire.visitSummary.totalScore >= 50 ? 'Good' :
-                         questionnaire.visitSummary.totalScore >= 40 ? 'Fair' :
+                        {questionnaire.visitSummary.totalScore >= 80 ? 'Excellent' :
+                         questionnaire.visitSummary.totalScore >= 70 ? 'Good' :
+                         questionnaire.visitSummary.totalScore >= 60 ? 'Fair' :
                          'Needs Attention'}
                       </span>
                     </div>
@@ -2285,49 +2294,6 @@ export default function SWVisitVerification() {
                         <span className="font-medium">This visit has been flagged for review</span>
                       </div>
                     )}
-                  </div>
-
-                  <div className={`rounded-lg border p-4 ${cacheFreshness.isStale ? 'bg-amber-50 border-amber-200' : 'bg-white'}`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <div className="text-sm font-medium">Assignments cache freshness</div>
-                        <div className="text-xs text-muted-foreground">
-                          Last update:{' '}
-                          {cacheFreshness.lastUpdate
-                            ? cacheFreshness.lastUpdate.toLocaleString()
-                            : 'Unknown (sync not available)'}
-                          {cacheFreshness.ageMinutes != null ? ` • ~${cacheFreshness.ageMinutes} min ago` : ''}
-                        </div>
-                        {cacheFreshness.isStale ? (
-                          <div className="text-xs text-amber-700">
-                            Your assignments cache is older than 15 minutes. Refresh assignments, then confirm before saving this draft.
-                          </div>
-                        ) : null}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => fetchAssignedRCFEs()}
-                        disabled={isLoadingRCFEs}
-                      >
-                        {isLoadingRCFEs ? 'Refreshing…' : 'Refresh assignments'}
-                      </Button>
-                    </div>
-
-                    {cacheFreshness.isStale ? (
-                      <label className="mt-3 flex items-start gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={confirmFreshWithin15}
-                          onChange={(e) => setConfirmFreshWithin15(e.target.checked)}
-                          className="mt-1 h-4 w-4"
-                        />
-                        <span>
-                          I confirm I refreshed assignments and the last update is within 15 minutes (or I understand data may be stale).
-                        </span>
-                      </label>
-                    ) : null}
                   </div>
 
                   <div className="rounded-lg border bg-white p-4">
@@ -2422,18 +2388,13 @@ export default function SWVisitVerification() {
               ) : (
                 <Button 
                   onClick={submitQuestionnaire}
-                  disabled={isLoading || validateCompleteForm().length > 0 || (cacheFreshness.isStale && !confirmFreshWithin15)}
+                  disabled={isLoading || validateCompleteForm().length > 0}
                   className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
                 >
                   {isLoading ? (
                     <>
                       <Clock className="h-4 w-4 mr-2 animate-spin" />
                       Saving...
-                    </>
-                  ) : cacheFreshness.isStale && !confirmFreshWithin15 ? (
-                    <>
-                      <AlertTriangle className="h-4 w-4 mr-2" />
-                      Confirm Freshness to Save
                     </>
                   ) : validateCompleteForm().length > 0 ? (
                     <>
@@ -2891,7 +2852,7 @@ export default function SWVisitVerification() {
                               submittedAt: new Date().toISOString()
                             };
 
-                            const idToken = await (user as any)?.getIdToken?.();
+                            const idToken = await getIdToken();
                             const headers: Record<string, string> = { 'Content-Type': 'application/json' };
                             if (idToken) headers.authorization = `Bearer ${idToken}`;
                             const response = await fetch('/api/sw-visits/sign-off', {
