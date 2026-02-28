@@ -19,7 +19,10 @@ export function SWTopNav({ className }: { className?: string }) {
   const pathname = usePathname() || '/';
 
   return (
-    <nav className={cn('-mx-2 flex items-center gap-1 overflow-x-auto whitespace-nowrap px-2 py-1', className)} aria-label="Social Worker navigation">
+    <nav
+      className={cn('flex items-center gap-1 overflow-x-auto whitespace-nowrap py-1', className)}
+      aria-label="Social Worker navigation"
+    >
       {links.map((l) => {
         const active =
           l.href === '/sw-portal'

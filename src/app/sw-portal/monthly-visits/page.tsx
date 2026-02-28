@@ -236,7 +236,6 @@ export default function SWMonthlyVisitsPage() {
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="w-full sm:w-[180px]">
-            <div className="text-xs text-muted-foreground mb-1">Month</div>
             <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
           </div>
           <Button variant="outline" onClick={() => window.print()}>

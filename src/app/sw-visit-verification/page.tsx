@@ -31,6 +31,7 @@ import {
   ArrowLeft,
   ArrowRight,
   RotateCcw,
+  Trash2,
   Home,
   Shield,
   Users,
@@ -911,6 +912,107 @@ export default function SWVisitVerification() {
     });
   };
 
+  const deleteCurrentDraft = useCallback(async () => {
+    if (!user) return;
+    const visitId = String(questionnaire.visitId || '').trim();
+    if (!visitId) return;
+
+    const ok =
+      typeof window !== 'undefined'
+        ? window.confirm(
+            'Delete this draft questionnaire?\n\nThis will permanently remove the saved draft so you can start over.'
+          )
+        : false;
+    if (!ok) return;
+
+    setIsLoading(true);
+    try {
+      const idToken = await (user as any)?.getIdToken?.();
+      if (!idToken) throw new Error('Not signed in');
+
+      const res = await fetch('/api/sw-visits/draft-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ visitId }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to delete draft (${res.status})`);
+      }
+
+      // Clear editing state and start a fresh draft for this member.
+      setEditingVisitId(null);
+      if (selectedMember) {
+        const socialWorkerId = user?.email || user?.displayName || user?.uid || questionnaire.socialWorkerId || 'unknown';
+        const memberKey = selectedMember.id || selectedMember.name || questionnaire.memberId;
+        setQuestionnaire({
+          visitId: `visit-${Date.now()}`,
+          memberId: memberKey || `member-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          memberName: selectedMember.name,
+          socialWorkerId,
+          rcfeId: selectedMember.rcfeId,
+          rcfeName: selectedMember.rcfeName,
+          rcfeAddress: selectedMember.rcfeAddress,
+          visitDate: new Date().toISOString().split('T')[0],
+          memberRoomNumber: '',
+          memberSignoff: { acknowledged: false, signatureName: '', signedAt: '' },
+          meetingLocation: { location: '', otherLocation: '', notes: '' },
+          memberWellbeing: { physicalHealth: 0, mentalHealth: 0, socialEngagement: 0, overallMood: 0, notes: '' },
+          careSatisfaction: {
+            staffAttentiveness: 0,
+            mealQuality: 0,
+            cleanlinessOfRoom: 0,
+            activitiesPrograms: 0,
+            overallSatisfaction: 0,
+            notes: '',
+          },
+          memberConcerns: {
+            hasConcerns: null,
+            nonResponsive: false,
+            nonResponsiveReason: '',
+            nonResponsiveDetails: '',
+            concernTypes: {
+              medical: false,
+              staff: false,
+              safety: false,
+              food: false,
+              social: false,
+              financial: false,
+              other: false,
+            },
+            urgencyLevel: 'low',
+            detailedConcerns: '',
+            actionRequired: false,
+          },
+          rcfeAssessment: {
+            facilityCondition: 0,
+            staffProfessionalism: 0,
+            safetyCompliance: 0,
+            careQuality: 0,
+            overallRating: 0,
+            notes: '',
+            flagForReview: false,
+          },
+          visitSummary: { totalScore: 0, flagged: false },
+        });
+      }
+      setQuestionStep(1);
+      setCurrentStep('questionnaire');
+
+      void refreshDraftVisits();
+
+      toast({ title: 'Draft deleted', description: 'Draft questionnaire removed. You can start over now.' });
+    } catch (e: any) {
+      toast({
+        title: 'Delete failed',
+        description: e?.message || 'Could not delete this draft.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [questionnaire.visitId, questionnaire.memberId, questionnaire.socialWorkerId, refreshDraftVisits, selectedMember, toast, user]);
+
   // Form validation functions
   const validateCurrentQuestion = () => {
     const nonResponsive = Boolean(questionnaire.memberConcerns?.nonResponsive);
@@ -1273,22 +1375,22 @@ export default function SWVisitVerification() {
       {/* Header */}
       <div className="bg-card border-b sticky top-0 z-40">
         <div className="container mx-auto px-4 py-2 sm:px-6">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-4 min-w-0">
-              <Link href="/sw-portal" className="shrink-0">
-                <Image
-                  src="/calaimlogopdf.png"
-                  alt="Connect CalAIM Logo"
-                  width={240}
-                  height={67}
-                  className="w-44 sm:w-48 h-auto object-contain"
-                  priority
-                />
-              </Link>
-            </div>
+          <div className="flex items-center gap-3 overflow-x-auto whitespace-nowrap">
+            <Link href="/sw-portal" className="shrink-0">
+              <Image
+                src="/calaimlogopdf.png"
+                alt="Connect CalAIM Logo"
+                width={240}
+                height={67}
+                className="w-36 sm:w-44 h-auto object-contain"
+                priority
+              />
+            </Link>
 
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-sm font-semibold text-foreground truncate">
+            <SWTopNav className="shrink-0" />
+
+            <div className="ml-auto shrink-0 flex items-center gap-3">
+              <div className="text-sm font-semibold text-foreground max-w-[160px] sm:max-w-[240px] truncate">
                 {swName}
               </div>
               <Button variant="ghost" size="sm" onClick={handleSignOut}>
@@ -1296,10 +1398,6 @@ export default function SWVisitVerification() {
                 Sign Out
               </Button>
             </div>
-          </div>
-
-          <div className="pt-1">
-            <SWTopNav className="w-full" />
           </div>
         </div>
       </div>
@@ -1654,6 +1752,19 @@ export default function SWVisitVerification() {
                       <RotateCcw className="h-4 w-4 mr-2" />
                       Restart
                     </Button>
+                    {editingVisitId ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void deleteCurrentDraft()}
+                        disabled={isLoading}
+                        className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete draft
+                      </Button>
+                    ) : null}
                     <Badge variant="outline">
                       Question {questionStep} of 6
                     </Badge>
