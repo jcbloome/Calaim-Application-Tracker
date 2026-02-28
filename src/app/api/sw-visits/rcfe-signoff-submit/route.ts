@@ -47,8 +47,19 @@ export async function POST(req: NextRequest) {
     const staffTitle = String(body?.staffTitle || '').trim();
     const signature = String(body?.signature || '').trim();
     const signedAtIso = String(body?.signedAt || '').trim() || new Date().toISOString();
-    const geolocation = body?.geolocation && typeof body.geolocation === 'object' ? body.geolocation : null;
-    const locationVerified = Boolean(geolocation?.latitude && geolocation?.longitude);
+    const geoRaw = body?.geolocation && typeof body.geolocation === 'object' ? body.geolocation : null;
+    const geoLat = geoRaw ? Number((geoRaw as any)?.latitude) : NaN;
+    const geoLng = geoRaw ? Number((geoRaw as any)?.longitude) : NaN;
+    const geoAcc = geoRaw ? Number((geoRaw as any)?.accuracy) : NaN;
+    const geolocation =
+      Number.isFinite(geoLat) && Number.isFinite(geoLng)
+        ? ({
+            latitude: geoLat,
+            longitude: geoLng,
+            ...(Number.isFinite(geoAcc) ? { accuracy: geoAcc } : {}),
+          } as const)
+        : null;
+    const locationVerified = Boolean(geolocation);
 
     if (!rcfeId) return NextResponse.json({ success: false, error: 'rcfeId is required' }, { status: 400 });
     if (!claimDay) {
@@ -326,6 +337,7 @@ export async function POST(req: NextRequest) {
               signOffId,
               rcfeStaffName: staffName,
               rcfeStaffTitle: staffTitle,
+              rcfeStaffGeolocation: geolocation,
               claimId,
               claimMonth: visitMonth,
               claimStatus: 'submitted',
@@ -406,6 +418,8 @@ export async function POST(req: NextRequest) {
       claimDay,
       totalVisits: visits.length,
       status: 'submitted',
+      locationVerified,
+      geolocation,
     });
   } catch (error: any) {
     console.error('❌ Error in rcfe signoff submit:', error);

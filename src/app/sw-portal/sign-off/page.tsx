@@ -58,7 +58,7 @@ export default function SWSignOffPage() {
   const [staffTitle, setStaffTitle] = useState('');
   const [signature, setSignature] = useState('');
   const [signedAt, setSignedAt] = useState<string>(() => new Date().toISOString());
-  const [geolocation, setGeolocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [geolocation, setGeolocation] = useState<{ latitude: number; longitude: number; accuracy?: number } | null>(null);
 
   const swEmail = String((user as any)?.email || '').trim().toLowerCase();
   const swUid = String((user as any)?.uid || '').trim();
@@ -149,7 +149,11 @@ export default function SWSignOffPage() {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 12_000 });
       });
-      setGeolocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+      setGeolocation({
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : undefined,
+      });
       toast({ title: 'Location captured', description: 'Location will be attached to the sign-off.' });
     } catch {
       toast({ title: 'Location not captured', description: 'You can still sign off without location verification.' });
@@ -390,10 +394,16 @@ export default function SWSignOffPage() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-xs text-muted-foreground">
               {geolocation ? (
-                <span className="inline-flex items-center gap-1">
-                  <MapPin className="h-3.5 w-3.5" />
-                  Location captured
-                </span>
+                <div className="space-y-1">
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin className="h-3.5 w-3.5" />
+                    Location captured
+                  </span>
+                  <div className="text-xs text-muted-foreground">
+                    Geo-stamp: Lat {geolocation.latitude.toFixed(5)} • Lng {geolocation.longitude.toFixed(5)}
+                    {typeof geolocation.accuracy === 'number' ? ` • ±${Math.round(geolocation.accuracy)}m` : ''}
+                  </div>
+                </div>
               ) : (
                 'Location not captured (optional)'
               )}

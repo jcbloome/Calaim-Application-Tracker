@@ -48,6 +48,11 @@ interface MemberVisitQuestionnaire {
   rcfeAddress: string;
   visitDate: string;
   memberRoomNumber: string;
+  memberSignoff: {
+    acknowledged: boolean;
+    signatureName: string;
+    signedAt: string;
+  };
   
   meetingLocation: {
     location: string;
@@ -518,6 +523,11 @@ export default function SWVisitVerification() {
     rcfeAddress: '',
     visitDate: new Date().toISOString().split('T')[0],
     memberRoomNumber: '',
+    memberSignoff: {
+      acknowledged: false,
+      signatureName: '',
+      signedAt: '',
+    },
     
     meetingLocation: {
       location: '',
@@ -747,6 +757,7 @@ export default function SWVisitVerification() {
       rcfeName: member.rcfeName,
       rcfeAddress: member.rcfeAddress,
       memberRoomNumber: '',
+      memberSignoff: { acknowledged: false, signatureName: '', signedAt: '' },
     }));
     setQuestionStep(1);
     setCurrentStep('questionnaire');
@@ -774,6 +785,11 @@ export default function SWVisitVerification() {
       rcfeAddress: selectedMember.rcfeAddress,
       visitDate: new Date().toISOString().split('T')[0],
       memberRoomNumber: '',
+      memberSignoff: {
+        acknowledged: false,
+        signatureName: '',
+        signedAt: '',
+      },
       meetingLocation: {
         location: '',
         otherLocation: '',
@@ -1041,6 +1057,10 @@ export default function SWVisitVerification() {
     
     if (questionnaire.rcfeAssessment.overallRating === 0) {
       errors.push("Overall rating is required");
+    }
+
+    if (questionnaire.memberSignoff?.acknowledged && !String(questionnaire.memberSignoff?.signatureName || '').trim()) {
+      errors.push("Member signature name is required (or uncheck member sign-off)");
     }
     
     // Note: Social worker observations are captured in rcfeAssessment.notes
@@ -2169,7 +2189,7 @@ export default function SWVisitVerification() {
                         </div>
                         {cacheFreshness.isStale ? (
                           <div className="text-xs text-amber-700">
-                            Your assignments cache is older than 15 minutes. Refresh assignments, then confirm before submitting this visit.
+                            Your assignments cache is older than 15 minutes. Refresh assignments, then confirm before saving this draft.
                           </div>
                         ) : null}
                       </div>
@@ -2196,6 +2216,75 @@ export default function SWVisitVerification() {
                           I confirm I refreshed assignments and the last update is within 15 minutes (or I understand data may be stale).
                         </span>
                       </label>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-lg border bg-white p-4">
+                    <div className="text-sm font-semibold text-slate-900">Member sign-off (optional)</div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      If the member is able, they can acknowledge this questionnaire with a typed signature.
+                    </div>
+
+                    <label className="mt-3 flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(questionnaire.memberSignoff?.acknowledged)}
+                        onChange={(e) =>
+                          setQuestionnaire((prev) => ({
+                            ...prev,
+                            memberSignoff: {
+                              ...prev.memberSignoff,
+                              acknowledged: e.target.checked,
+                            },
+                          }))
+                        }
+                        className="mt-1 h-4 w-4"
+                      />
+                      <span>Member acknowledged this visit/questionnaire</span>
+                    </label>
+
+                    {questionnaire.memberSignoff?.acknowledged ? (
+                      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium">Member signature (type full name)</label>
+                          <Input
+                            value={String(questionnaire.memberSignoff?.signatureName || '')}
+                            onChange={(e) =>
+                              setQuestionnaire((prev) => ({
+                                ...prev,
+                                memberSignoff: {
+                                  ...prev.memberSignoff,
+                                  signatureName: e.target.value,
+                                  signedAt: prev.memberSignoff?.signedAt || new Date().toISOString(),
+                                },
+                              }))
+                            }
+                            placeholder="Type full name"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium">Signed at</label>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <Input value={String(questionnaire.memberSignoff?.signedAt || '')} readOnly />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="w-full sm:w-auto"
+                              onClick={() =>
+                                setQuestionnaire((prev) => ({
+                                  ...prev,
+                                  memberSignoff: {
+                                    ...prev.memberSignoff,
+                                    signedAt: new Date().toISOString(),
+                                  },
+                                }))
+                              }
+                            >
+                              Set time to now
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
                     ) : null}
                   </div>
                   
@@ -2228,12 +2317,12 @@ export default function SWVisitVerification() {
                   {isLoading ? (
                     <>
                       <Clock className="h-4 w-4 mr-2 animate-spin" />
-                      Submitting...
+                      Saving...
                     </>
                   ) : cacheFreshness.isStale && !confirmFreshWithin15 ? (
                     <>
                       <AlertTriangle className="h-4 w-4 mr-2" />
-                      Confirm Freshness to Submit
+                      Confirm Freshness to Save
                     </>
                   ) : validateCompleteForm().length > 0 ? (
                     <>
@@ -2243,7 +2332,7 @@ export default function SWVisitVerification() {
                   ) : (
                     <>
                       <Send className="h-4 w-4 mr-2" />
-                      Submit Visit
+                      Save Draft
                     </>
                   )}
                 </Button>
