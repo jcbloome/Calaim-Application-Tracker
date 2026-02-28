@@ -59,6 +59,8 @@ export default function SWSignOffPage() {
   const [signature, setSignature] = useState('');
   const [signedAt, setSignedAt] = useState<string>(() => new Date().toISOString());
   const [geolocation, setGeolocation] = useState<{ latitude: number; longitude: number; accuracy?: number } | null>(null);
+  const [geoAddress, setGeoAddress] = useState<string>('');
+  const [loadingGeoAddress, setLoadingGeoAddress] = useState(false);
 
   const swEmail = String((user as any)?.email || '').trim().toLowerCase();
   const swUid = String((user as any)?.uid || '').trim();
@@ -159,6 +161,38 @@ export default function SWSignOffPage() {
       toast({ title: 'Location not captured', description: 'You can still sign off without location verification.' });
     }
   };
+
+  useEffect(() => {
+    if (!geolocation) {
+      setGeoAddress('');
+      setLoadingGeoAddress(false);
+      return;
+    }
+
+    const ctrl = new AbortController();
+    setLoadingGeoAddress(true);
+    void (async () => {
+      try {
+        const qs = new URLSearchParams({
+          lat: String(geolocation.latitude),
+          lng: String(geolocation.longitude),
+        });
+        const res = await fetch(`/api/geo/reverse?${qs.toString()}`, { signal: ctrl.signal });
+        const data = await res.json().catch(() => ({} as any));
+        if (!ctrl.signal.aborted && res.ok && data?.success && String(data?.address || '').trim()) {
+          setGeoAddress(String(data.address).trim());
+        } else if (!ctrl.signal.aborted) {
+          setGeoAddress('');
+        }
+      } catch {
+        if (!ctrl.signal.aborted) setGeoAddress('');
+      } finally {
+        if (!ctrl.signal.aborted) setLoadingGeoAddress(false);
+      }
+    })();
+
+    return () => ctrl.abort();
+  }, [geolocation?.latitude, geolocation?.longitude]);
 
   const canSubmit = selectedVisits.length > 0 && staffName.trim() && signature.trim() && !submitting;
 
@@ -406,7 +440,15 @@ export default function SWSignOffPage() {
                     Location captured
                   </span>
                   <div className="text-xs text-muted-foreground">
-                    Geo-stamp: Lat {geolocation.latitude.toFixed(5)} • Lng {geolocation.longitude.toFixed(5)}
+                    {geoAddress ? (
+                      <>Address: {geoAddress}</>
+                    ) : loadingGeoAddress ? (
+                      <>Looking up address…</>
+                    ) : (
+                      <>
+                        Geo-stamp: Lat {geolocation.latitude.toFixed(5)} • Lng {geolocation.longitude.toFixed(5)}
+                      </>
+                    )}
                     {typeof geolocation.accuracy === 'number' ? ` • ±${Math.round(geolocation.accuracy)}m` : ''}
                   </div>
                 </div>
