@@ -154,6 +154,26 @@ export async function POST(req: NextRequest) {
       flagged: Boolean(v?.flagged || v?.raw?.visitSummary?.flagged),
     }));
 
+    // Hard-block duplicate submissions for same member/month (e.g., duplicate draft questionnaires).
+    const memberIds = completedVisits.map((v) => String(v.memberId || '').trim()).filter(Boolean);
+    if (memberIds.length > 0) {
+      const unique = new Set(memberIds);
+      if (unique.size !== memberIds.length) {
+        const dupMembers = completedVisits
+          .filter((v, idx) => memberIds.indexOf(v.memberId) !== idx)
+          .map((v) => String(v.memberName || v.memberId || '').trim())
+          .filter(Boolean);
+        const line = dupMembers.length > 0 ? ` Duplicates: ${Array.from(new Set(dupMembers)).join(', ')}` : '';
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Duplicate questionnaires for the same member/month cannot be submitted.${line}`,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const attestationText = `I acknowledge that ${socialWorkerName} is present at this facility today. This does not confirm individual member visits.`;
 
     const signOffRef = adminDb.collection('sw_signoff_records').doc();

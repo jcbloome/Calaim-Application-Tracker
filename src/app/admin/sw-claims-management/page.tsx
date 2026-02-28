@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
@@ -91,6 +91,8 @@ export default function SWClaimsManagementPage() {
   const [filteredClaims, setFilteredClaims] = useState<ClaimSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedClaim, setSelectedClaim] = useState<ClaimSubmission | null>(null);
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [showAllClaims, setShowAllClaims] = useState(false);
   const [selectedClaimVisits, setSelectedClaimVisits] = useState<any[]>([]);
   const [loadingSelectedClaimVisits, setLoadingSelectedClaimVisits] = useState(false);
   const [selectedClaimVisitsError, setSelectedClaimVisitsError] = useState<string | null>(null);
@@ -185,6 +187,11 @@ export default function SWClaimsManagementPage() {
   useEffect(() => {
     setAdminActionNote(String(selectedClaim?.reviewNotes || '').trim());
   }, [selectedClaim?.id]);
+
+  const openClaimReview = (claim: ClaimSubmission) => {
+    setSelectedClaim(claim);
+    setReviewDialogOpen(true);
+  };
 
   useEffect(() => {
     const claim = selectedClaim;
@@ -700,6 +707,13 @@ export default function SWClaimsManagementPage() {
   // Get unique social workers for filter
   const socialWorkers = [...new Set(claims.map(claim => claim.socialWorkerEmail))];
 
+  const recentSubmittedClaims = useMemo(() => {
+    const eligible = claims.filter((c) => c.status !== 'draft' && c.status !== 'rejected');
+    const submitted = eligible.filter((c) => String(c.status || '').toLowerCase() === 'submitted');
+    const toMs = (d: any) => (d instanceof Date ? d.getTime() : 0);
+    return [...submitted].sort((a, b) => (toMs(b.submittedAt) || toMs(b.claimDate)) - (toMs(a.submittedAt) || toMs(a.claimDate))).slice(0, 12);
+  }, [claims]);
+
   // Show loading while checking admin status
   if (!isSuperAdmin) {
     return (
@@ -787,6 +801,219 @@ export default function SWClaimsManagementPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Claim Review{selectedClaim ? ` - ${selectedClaim.socialWorkerName}` : ''}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedClaim
+                ? `${format(selectedClaim.claimDate, 'MMMM d, yyyy')} • Total: $${Number(selectedClaim.totalAmount || 0).toFixed(2)}`
+                : 'Review claim details.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedClaim ? (
+            <div className="space-y-6">
+              {/* Claim Details */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h4 className="font-semibold mb-2">Claim Information</h4>
+                  <div className="space-y-1 text-sm">
+                    <div>Social Worker: {selectedClaim.socialWorkerName}</div>
+                    <div>Email: {selectedClaim.socialWorkerEmail}</div>
+                    <div>Date: {format(selectedClaim.claimDate, 'MMMM d, yyyy')}</div>
+                    <div>Status: {getStatusBadge(selectedClaim.status)}</div>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-semibold mb-2">Financial Summary</h4>
+                  <div className="space-y-1 text-sm">
+                    <div>
+                      Member Visits: {selectedClaim.memberVisits.length} × $45 = ${Number(selectedClaim.totalMemberVisitFees || 0).toFixed(2)}
+                    </div>
+                    <div>Gas Reimbursement: ${Number(selectedClaim.gasReimbursement || 0).toFixed(2)}</div>
+                    <div className="font-semibold">Total: ${Number(selectedClaim.totalAmount || 0).toFixed(2)}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Line items (payables) */}
+              <div>
+                <h4 className="font-semibold mb-3">Line items</h4>
+                <div className="rounded-lg border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date visited</TableHead>
+                        <TableHead>Member</TableHead>
+                        <TableHead>Home</TableHead>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Notes</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedClaim.memberVisits.map((visit) => (
+                        <TableRow key={visit.id}>
+                          <TableCell className="whitespace-nowrap">{format(visit.visitDate, 'MM/dd/yyyy')}</TableCell>
+                          <TableCell className="font-medium">{visit.memberName}</TableCell>
+                          <TableCell className="min-w-[220px]">
+                            <div className="font-medium">{visit.rcfeName}</div>
+                            <div className="text-xs text-muted-foreground">{visit.rcfeAddress}</div>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">{visit.visitTime || '—'}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{visit.notes ? visit.notes : '—'}</TableCell>
+                          <TableCell className="text-right font-medium">$45.00</TableCell>
+                        </TableRow>
+                      ))}
+
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-sm text-muted-foreground">
+                          Gas reimbursement
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          ${Number(selectedClaim.gasReimbursement || 0).toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-sm font-semibold">
+                          Total
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-semibold">
+                          ${Number(selectedClaim.totalAmount || 0).toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Visits: {selectedClaim.memberVisits.length} × $45 = ${Number(selectedClaim.totalMemberVisitFees || 0).toFixed(2)}
+                </div>
+              </div>
+
+              {/* Questionnaires */}
+              <div>
+                <h4 className="font-semibold mb-3">Questionnaires (from visit records)</h4>
+                {loadingSelectedClaimVisits ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading questionnaires…
+                  </div>
+                ) : selectedClaimVisitsError ? (
+                  <Alert variant="destructive">
+                    <AlertTitle>Unable to load questionnaires</AlertTitle>
+                    <AlertDescription>{selectedClaimVisitsError}</AlertDescription>
+                  </Alert>
+                ) : selectedClaimVisits.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No visit records found for this claim.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {selectedClaimVisits.map((v: any) => (
+                      <div key={String(v?.visitId || v?.id || '')}>{renderQuestionnaireBlock(v)}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Notes */}
+              {selectedClaim.notes ? (
+                <div>
+                  <h4 className="font-semibold mb-2">Additional Notes</h4>
+                  <p className="text-sm bg-muted p-3 rounded">{selectedClaim.notes}</p>
+                </div>
+              ) : null}
+
+              {/* Action Buttons */}
+              <div className="pt-4 border-t space-y-3">
+                <div className="text-sm text-muted-foreground">
+                  {selectedClaim.status === 'submitted' ? (
+                    <div>
+                      This claim is <span className="font-semibold text-foreground">Submitted</span>. Review it, then either request correction or approve for
+                      payment processing.
+                    </div>
+                  ) : selectedClaim.status === 'needs_correction' ? (
+                    <div>
+                      This claim is <span className="font-semibold text-foreground">Needs correction</span>. The Social Worker should revise and resubmit based on
+                      your note.
+                    </div>
+                  ) : selectedClaim.status === 'reviewed' ? (
+                    <div>
+                      This claim is <span className="font-semibold text-foreground">Reviewed</span>. Approve for payment processing when ready.
+                    </div>
+                  ) : selectedClaim.status === 'ready_for_payment' || selectedClaim.status === 'approved' ? (
+                    <div>
+                      This claim is <span className="font-semibold text-foreground">Ready for payment</span>. Mark it as Paid once payment is sent.
+                    </div>
+                  ) : selectedClaim.status === 'paid' ? (
+                    <div>
+                      This claim is <span className="font-semibold text-foreground">Paid</span>.
+                    </div>
+                  ) : selectedClaim.status === 'rejected' ? (
+                    <div>
+                      This claim is <span className="font-semibold text-foreground">Rejected</span>.
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Admin note (optional)</div>
+                  <Textarea
+                    value={adminActionNote}
+                    onChange={(e) => setAdminActionNote(e.target.value)}
+                    placeholder="Optional: reason for approval/rejection, payment note, or override explanation."
+                    rows={3}
+                  />
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {selectedClaim.status === 'submitted' ? (
+                    <>
+                      <Button onClick={() => updateClaimStatus(selectedClaim.id, 'reviewed', adminActionNote)} className="bg-slate-800 hover:bg-slate-900">
+                        <CheckCircle className="mr-2 h-4 w-4" />
+                        Mark reviewed
+                      </Button>
+                      <Button onClick={() => updateClaimStatus(selectedClaim.id, 'needs_correction', adminActionNote)} variant="destructive">
+                        <XCircle className="mr-2 h-4 w-4" />
+                        Needs correction
+                      </Button>
+                      <Button onClick={() => updateClaimStatus(selectedClaim.id, 'ready_for_payment', adminActionNote)} className="bg-green-600 hover:bg-green-700">
+                        <CheckCircle className="mr-2 h-4 w-4" />
+                        Approve for payment
+                      </Button>
+                    </>
+                  ) : null}
+
+                  {selectedClaim.status === 'reviewed' || selectedClaim.status === 'needs_correction' ? (
+                    <Button onClick={() => updateClaimStatus(selectedClaim.id, 'ready_for_payment', adminActionNote)} className="bg-green-600 hover:bg-green-700">
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Approve for payment
+                    </Button>
+                  ) : null}
+
+                  {selectedClaim.status === 'ready_for_payment' || selectedClaim.status === 'approved' ? (
+                    <Button onClick={() => updateClaimStatus(selectedClaim.id, 'paid', adminActionNote)} className="bg-emerald-700 hover:bg-emerald-800">
+                      <DollarSign className="mr-2 h-4 w-4" />
+                      Mark as Paid
+                    </Button>
+                  ) : null}
+
+                  {selectedClaim.status === 'paid' ? (
+                    <Button onClick={() => updateClaimStatus(selectedClaim.id, 'ready_for_payment', adminActionNote)} variant="outline">
+                      Mark as Unpaid
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">Select a claim to review.</div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
@@ -855,6 +1082,46 @@ export default function SWClaimsManagementPage() {
         </Card>
       </div>
 
+      {/* Recently submitted */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle>Recently submitted</CardTitle>
+            <CardDescription>One-line view. Expand to see full list & filters.</CardDescription>
+          </div>
+          <Button variant="outline" onClick={() => setShowAllClaims((v) => !v)}>
+            {showAllClaims ? 'Hide all claims' : 'Show all claims'}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {recentSubmittedClaims.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No recently submitted claims found.</div>
+          ) : (
+            <div className="divide-y rounded-md border">
+              {recentSubmittedClaims.map((c) => (
+                <div key={c.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">
+                      {c.socialWorkerName} • {format(c.claimDate, 'MMM d, yyyy')} • {c.memberVisits.length} visit(s) • ${Number(c.totalAmount || 0).toFixed(2)}
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">{c.socialWorkerEmail}</div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {getStatusBadge(c.status)}
+                    <Button variant="outline" size="sm" onClick={() => openClaimReview(c)}>
+                      <Eye className="mr-2 h-4 w-4" />
+                      Review
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {showAllClaims ? (
+        <>
       {/* Filters */}
       <Card>
         <CardHeader>
@@ -1000,253 +1267,10 @@ export default function SWClaimsManagementPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => setSelectedClaim(claim)}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            Review
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-                          <DialogHeader>
-                            <DialogTitle>Claim Review - {claim.socialWorkerName}</DialogTitle>
-                            <DialogDescription>
-                              {format(claim.claimDate, 'MMMM d, yyyy')} • Total: ${claim.totalAmount}
-                            </DialogDescription>
-                          </DialogHeader>
-                          
-                          {selectedClaim && (
-                            <div className="space-y-6">
-                              {/* Claim Details */}
-                              <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                  <h4 className="font-semibold mb-2">Claim Information</h4>
-                                  <div className="space-y-1 text-sm">
-                                    <div>Social Worker: {selectedClaim.socialWorkerName}</div>
-                                    <div>Email: {selectedClaim.socialWorkerEmail}</div>
-                                    <div>Date: {format(selectedClaim.claimDate, 'MMMM d, yyyy')}</div>
-                                    <div>Status: {getStatusBadge(selectedClaim.status)}</div>
-                                  </div>
-                                </div>
-                                <div>
-                                  <h4 className="font-semibold mb-2">Financial Summary</h4>
-                                  <div className="space-y-1 text-sm">
-                                    <div>Member Visits: {selectedClaim.memberVisits.length} × $45 = ${selectedClaim.totalMemberVisitFees}</div>
-                                    <div>Gas Reimbursement: ${selectedClaim.gasReimbursement}</div>
-                                    <div className="font-semibold">Total: ${selectedClaim.totalAmount}</div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Line items (payables) */}
-                              <div>
-                                <h4 className="font-semibold mb-3">Line items</h4>
-                                <div className="rounded-lg border overflow-hidden">
-                                  <Table>
-                                    <TableHeader>
-                                      <TableRow>
-                                        <TableHead>Date visited</TableHead>
-                                        <TableHead>Member</TableHead>
-                                        <TableHead>Home</TableHead>
-                                        <TableHead>Time</TableHead>
-                                        <TableHead>Notes</TableHead>
-                                        <TableHead className="text-right">Amount</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {selectedClaim.memberVisits.map((visit) => (
-                                        <TableRow key={visit.id}>
-                                          <TableCell className="whitespace-nowrap">
-                                            {format(visit.visitDate, 'MM/dd/yyyy')}
-                                          </TableCell>
-                                          <TableCell className="font-medium">{visit.memberName}</TableCell>
-                                          <TableCell className="min-w-[220px]">
-                                            <div className="font-medium">{visit.rcfeName}</div>
-                                            <div className="text-xs text-muted-foreground">{visit.rcfeAddress}</div>
-                                          </TableCell>
-                                          <TableCell className="whitespace-nowrap">{visit.visitTime || '—'}</TableCell>
-                                          <TableCell className="text-sm text-muted-foreground">
-                                            {visit.notes ? visit.notes : '—'}
-                                          </TableCell>
-                                          <TableCell className="text-right font-medium">$45.00</TableCell>
-                                        </TableRow>
-                                      ))}
-
-                                      <TableRow>
-                                        <TableCell colSpan={5} className="text-sm text-muted-foreground">
-                                          Gas reimbursement
-                                        </TableCell>
-                                        <TableCell className="text-right font-medium">
-                                          ${Number(selectedClaim.gasReimbursement || 0).toFixed(2)}
-                                        </TableCell>
-                                      </TableRow>
-
-                                      <TableRow>
-                                        <TableCell colSpan={5} className="text-sm font-semibold">
-                                          Total
-                                        </TableCell>
-                                        <TableCell className="text-right text-sm font-semibold">
-                                          ${Number(selectedClaim.totalAmount || 0).toFixed(2)}
-                                        </TableCell>
-                                      </TableRow>
-                                    </TableBody>
-                                  </Table>
-                                </div>
-                                <div className="mt-2 text-xs text-muted-foreground">
-                                  Visits: {selectedClaim.memberVisits.length} × $45 = ${Number(selectedClaim.totalMemberVisitFees || 0).toFixed(2)}
-                                </div>
-                              </div>
-
-                              {/* Questionnaires */}
-                              <div>
-                                <h4 className="font-semibold mb-3">Questionnaires (from visit records)</h4>
-                                {loadingSelectedClaimVisits ? (
-                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    Loading questionnaires…
-                                  </div>
-                                ) : selectedClaimVisitsError ? (
-                                  <Alert variant="destructive">
-                                    <AlertTitle>Unable to load questionnaires</AlertTitle>
-                                    <AlertDescription>{selectedClaimVisitsError}</AlertDescription>
-                                  </Alert>
-                                ) : selectedClaimVisits.length === 0 ? (
-                                  <div className="text-sm text-muted-foreground">No visit records found for this claim.</div>
-                                ) : (
-                                  <div className="space-y-4">
-                                    {selectedClaimVisits.map((v: any) => (
-                                      <div key={String(v?.visitId || v?.id || '')}>{renderQuestionnaireBlock(v)}</div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Notes */}
-                              {selectedClaim.notes && (
-                                <div>
-                                  <h4 className="font-semibold mb-2">Additional Notes</h4>
-                                  <p className="text-sm bg-muted p-3 rounded">{selectedClaim.notes}</p>
-                                </div>
-                              )}
-
-                              {/* Action Buttons */}
-                              <div className="pt-4 border-t space-y-3">
-                                <div className="text-sm text-muted-foreground">
-                                  {selectedClaim.status === 'draft' ? (
-                                    <div>
-                                      This claim is <span className="font-semibold text-foreground">Draft</span>. The Social Worker has not submitted it yet.
-                                      <div className="mt-1 text-xs">
-                                        Next step: Social Worker goes to <span className="font-semibold text-foreground">SW Portal → Submit Claims</span>, selects the draft claim, and submits it.
-                                      </div>
-                                    </div>
-                                  ) : selectedClaim.status === 'submitted' ? (
-                                    <div>
-                                      This claim is <span className="font-semibold text-foreground">Submitted</span>. Review it, then either request correction or approve for payment processing.
-                                    </div>
-                                  ) : selectedClaim.status === 'needs_correction' ? (
-                                    <div>
-                                      This claim is <span className="font-semibold text-foreground">Needs correction</span>. The Social Worker should revise and resubmit based on your note.
-                                    </div>
-                                  ) : selectedClaim.status === 'reviewed' ? (
-                                    <div>
-                                      This claim is <span className="font-semibold text-foreground">Reviewed</span>. Approve for payment processing when ready.
-                                    </div>
-                                  ) : selectedClaim.status === 'ready_for_payment' || selectedClaim.status === 'approved' ? (
-                                    <div>
-                                      This claim is <span className="font-semibold text-foreground">Ready for payment</span>. Mark it as Paid once payment is sent.
-                                    </div>
-                                  ) : selectedClaim.status === 'paid' ? (
-                                    <div>
-                                      This claim is <span className="font-semibold text-foreground">Paid</span>.
-                                    </div>
-                                  ) : selectedClaim.status === 'rejected' ? (
-                                    <div>
-                                      This claim is <span className="font-semibold text-foreground">Rejected</span>.
-                                    </div>
-                                  ) : null}
-                                </div>
-
-                                <div className="space-y-2">
-                                  <div className="text-sm font-medium">Admin note (optional)</div>
-                                  <Textarea
-                                    value={adminActionNote}
-                                    onChange={(e) => setAdminActionNote(e.target.value)}
-                                    placeholder="Optional: reason for approval/rejection, payment note, or override explanation."
-                                    rows={3}
-                                  />
-                                </div>
-
-                                <div className="flex flex-wrap gap-2">
-                                  {selectedClaim.status === 'submitted' ? (
-                                    <>
-                                      <Button
-                                        onClick={() => updateClaimStatus(selectedClaim.id, 'reviewed', adminActionNote)}
-                                        className="bg-slate-800 hover:bg-slate-900"
-                                      >
-                                        <CheckCircle className="mr-2 h-4 w-4" />
-                                        Mark reviewed
-                                      </Button>
-                                      <Button
-                                        onClick={() => updateClaimStatus(selectedClaim.id, 'needs_correction', adminActionNote)}
-                                        variant="destructive"
-                                      >
-                                        <XCircle className="mr-2 h-4 w-4" />
-                                        Needs correction
-                                      </Button>
-                                      <Button
-                                        onClick={() => updateClaimStatus(selectedClaim.id, 'ready_for_payment', adminActionNote)}
-                                        className="bg-green-600 hover:bg-green-700"
-                                      >
-                                        <CheckCircle className="mr-2 h-4 w-4" />
-                                        Approve for payment
-                                      </Button>
-                                    </>
-                                  ) : null}
-
-                                  {selectedClaim.status === 'reviewed' || selectedClaim.status === 'needs_correction' ? (
-                                    <Button
-                                      onClick={() => updateClaimStatus(selectedClaim.id, 'ready_for_payment', adminActionNote)}
-                                      className="bg-green-600 hover:bg-green-700"
-                                    >
-                                      <CheckCircle className="mr-2 h-4 w-4" />
-                                      Approve for payment
-                                    </Button>
-                                  ) : null}
-
-                                  {selectedClaim.status === 'ready_for_payment' || selectedClaim.status === 'approved' ? (
-                                    <Button
-                                      onClick={() => updateClaimStatus(selectedClaim.id, 'paid', adminActionNote)}
-                                      className="bg-green-800 hover:bg-green-900"
-                                    >
-                                      <DollarSign className="mr-2 h-4 w-4" />
-                                      Mark as Paid
-                                    </Button>
-                                  ) : null}
-
-                                  {selectedClaim.status === 'paid' ? (
-                                    <Button
-                                      variant="outline"
-                                      onClick={() => updateClaimStatus(selectedClaim.id, 'ready_for_payment', adminActionNote)}
-                                    >
-                                      Mark as Unpaid
-                                    </Button>
-                                  ) : null}
-                                </div>
-                              </div>
-                              {selectedClaim.status === 'paid' ? (
-                                <div className="pt-3 text-sm text-muted-foreground">
-                                  Paid{selectedClaim.paidAt ? ` on ${format(selectedClaim.paidAt, 'MMM d, yyyy h:mm a')}` : ''}{' '}
-                                  {selectedClaim.paidBy ? `by ${selectedClaim.paidBy}` : ''}
-                                </div>
-                              ) : null}
-                            </div>
-                          )}
-                        </DialogContent>
-                      </Dialog>
+                        <Button variant="outline" size="sm" onClick={() => openClaimReview(claim)}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          Review
+                        </Button>
                       <Button
                         variant="destructive"
                         size="sm"
@@ -1265,6 +1289,8 @@ export default function SWClaimsManagementPage() {
           )}
         </CardContent>
       </Card>
+        </>
+      ) : null}
     </div>
   );
 }
