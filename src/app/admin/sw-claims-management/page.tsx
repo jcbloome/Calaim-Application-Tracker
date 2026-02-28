@@ -161,14 +161,12 @@ export default function SWClaimsManagementPage() {
         });
 
         setClaims(loadedClaims);
-        calculateSummary(loadedClaims);
         setIsLoading(false);
       },
       (error) => {
         console.error('Error loading claims:', error);
         toast({ variant: 'destructive', title: 'Error', description: 'Failed to load claims' });
         setClaims([]);
-        calculateSummary([]);
         setIsLoading(false);
       }
     );
@@ -348,6 +346,9 @@ export default function SWClaimsManagementPage() {
   const applyFilters = () => {
     let filtered = [...claims];
 
+    // Admin workflow starts at "submitted". Drafts are not needed for admin tracking.
+    filtered = filtered.filter((claim) => claim.status !== 'draft');
+
     // Status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter(claim => claim.status === statusFilter);
@@ -370,6 +371,8 @@ export default function SWClaimsManagementPage() {
     }
 
     setFilteredClaims(filtered);
+    // Summary cards should reflect the same filters as the table (so if Claims (0), cards show 0 too).
+    calculateSummary(filtered);
   };
 
   const selectedIds = Object.keys(selectedClaimIds).filter((k) => selectedClaimIds[k]);
@@ -423,7 +426,6 @@ export default function SWClaimsManagementPage() {
       const deleted: string[] = Array.isArray((data as any)?.deleted) ? (data as any).deleted : [];
       const remaining = claims.filter((c) => !deleted.includes(c.id));
       setClaims(remaining);
-      calculateSummary(remaining);
 
       setSelectedClaimIds((prev) => {
         const next = { ...prev };
@@ -494,7 +496,7 @@ export default function SWClaimsManagementPage() {
     });
   };
 
-  const calculateSummary = (claimsData: ClaimSubmission[]) => {
+  function calculateSummary(claimsData: ClaimSubmission[]) {
     const summary: ClaimSummary = {
       totalClaims: claimsData.length,
       totalAmount: claimsData.reduce((sum, claim) => sum + claim.totalAmount, 0),
@@ -509,7 +511,7 @@ export default function SWClaimsManagementPage() {
     };
     
     setSummary(summary);
-  };
+  }
 
   const renderDraftVisitDetails = (claim: ClaimSubmission) => {
     if (claim.status !== 'draft') return null;
@@ -876,8 +878,7 @@ export default function SWClaimsManagementPage() {
                   <SelectItem value="ready_for_payment">Ready for payment</SelectItem>
                   <SelectItem value="paid">Paid</SelectItem>
                   <SelectItem value="rejected">Rejected</SelectItem>
-                  <SelectItem value="draft">Draft (not submitted by SW)</SelectItem>
-                  <SelectItem value="all">All (includes drafts)</SelectItem>
+                  <SelectItem value="all">All</SelectItem>
                 </SelectContent>
               </Select>
             </div>
