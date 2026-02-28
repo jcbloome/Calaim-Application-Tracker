@@ -202,7 +202,6 @@ export default function SWLoginPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="your.email@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={isLoading}
@@ -217,7 +216,6 @@ export default function SWLoginPage() {
                   <Input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
-                    placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={isLoading}
