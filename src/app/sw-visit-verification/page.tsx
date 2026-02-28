@@ -1203,6 +1203,14 @@ export default function SWVisitVerification() {
     };
   }, [membersCacheStatus]);
 
+  const visitMonthLabel = useMemo(() => {
+    const raw = String(questionnaire.visitDate || '').trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
+    const d = new Date(`${raw}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+  }, [questionnaire.visitDate]);
+
   const submitQuestionnaire = async () => {
     // Validate all required fields before submission
     const validationErrors = validateCompleteForm();
@@ -1282,8 +1290,7 @@ export default function SWVisitVerification() {
         throw new Error(result.error || 'Submission failed');
       }
 
-      // Best-effort: refresh statuses and draft list.
-      void refreshMonthStatuses();
+      // Best-effort: refresh draft list.
       void refreshDraftVisits();
 
       if (!isEditing) {
@@ -2271,6 +2278,11 @@ export default function SWVisitVerification() {
                       <Badge variant={questionnaire.visitSummary.totalScore >= 70 ? "default" : "destructive"}>
                         {questionnaire.visitSummary.totalScore} / 100
                       </Badge>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Month:</span>
+                      <span className="text-sm text-muted-foreground">{visitMonthLabel || '—'}</span>
                     </div>
                     
                     <div className="flex items-center justify-between">
