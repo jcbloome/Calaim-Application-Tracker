@@ -47,9 +47,13 @@ export default function SWRosterPage() {
   const [facilities, setFacilities] = useState<RosterFacility[]>([]);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  const [statusMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
+  const [statusMonth, setStatusMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [monthStatuses, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
   const [loadingMonthStatuses, setLoadingMonthStatuses] = useState(false);
+  const [claimLookupId, setClaimLookupId] = useState('');
+  const [claimLookupLoading, setClaimLookupLoading] = useState(false);
+  const [claimLookupError, setClaimLookupError] = useState<string | null>(null);
+  const [claimLookupResult, setClaimLookupResult] = useState<any | null>(null);
 
   const refreshRoster = useCallback(async () => {
     if (!user?.email) return;
@@ -112,6 +116,29 @@ export default function SWRosterPage() {
       setLoadingMonthStatuses(false);
     }
   }, [auth?.currentUser, auth, statusMonth]);
+
+  const lookupClaim = useCallback(async () => {
+    if (!auth?.currentUser) return;
+    const id = String(claimLookupId || '').trim();
+    if (!id) return;
+    setClaimLookupLoading(true);
+    setClaimLookupError(null);
+    setClaimLookupResult(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch(`/api/sw-claims/lookup?claimId=${encodeURIComponent(id)}`, {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Lookup failed (HTTP ${res.status})`);
+      setClaimLookupResult(data?.claim || null);
+    } catch (e: any) {
+      setClaimLookupError(e?.message || 'Claim lookup failed.');
+      setClaimLookupResult(null);
+    } finally {
+      setClaimLookupLoading(false);
+    }
+  }, [auth?.currentUser, auth, claimLookupId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -253,6 +280,16 @@ export default function SWRosterPage() {
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Status month</span>
+            <Input
+              className="w-[140px]"
+              type="month"
+              value={statusMonth}
+              onChange={(e) => setStatusMonth(String(e.target.value || '').trim())}
+              aria-label="Status month"
+            />
+          </div>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => void refreshRoster()} disabled={loading}>
             <RefreshCw className="h-4 w-4 mr-2" />
             {loading ? 'Refreshing…' : 'Refresh list'}
@@ -272,6 +309,63 @@ export default function SWRosterPage() {
           </Button>
         </div>
       </div>
+
+      <Card className="print:hidden">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Past claim status lookup</CardTitle>
+          <CardDescription>Search any past claim by Claim ID to see its current status.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input
+              value={claimLookupId}
+              onChange={(e) => setClaimLookupId(e.target.value)}
+              placeholder="Enter Claim ID (e.g., swClaim_...)"
+            />
+            <Button
+              className="w-full sm:w-auto"
+              variant="outline"
+              onClick={() => void lookupClaim()}
+              disabled={!claimLookupId.trim() || claimLookupLoading || !auth?.currentUser}
+            >
+              {claimLookupLoading ? 'Looking up…' : 'Lookup claim'}
+            </Button>
+          </div>
+          {claimLookupError ? <div className="text-sm text-destructive">{claimLookupError}</div> : null}
+          {claimLookupResult ? (
+            <div className="rounded-md border bg-slate-50 p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold">Status:</span>
+                <Badge variant="secondary">{String(claimLookupResult?.status || 'unknown')}</Badge>
+                {claimLookupResult?.paymentStatus ? (
+                  <Badge variant="secondary">Payment: {String(claimLookupResult?.paymentStatus)}</Badge>
+                ) : null}
+                {claimLookupResult?.reviewStatus ? (
+                  <Badge variant="secondary">Review: {String(claimLookupResult?.reviewStatus)}</Badge>
+                ) : null}
+              </div>
+              <div className="mt-2 grid gap-1 text-muted-foreground">
+                <div>
+                  <span className="font-medium text-slate-900">Claim:</span>{' '}
+                  <span className="font-mono break-all">{String(claimLookupResult?.claimId || '')}</span>
+                </div>
+                <div>
+                  <span className="font-medium text-slate-900">Month:</span> {String(claimLookupResult?.claimMonth || '—')}
+                  {claimLookupResult?.claimDay ? <span> • Day: {String(claimLookupResult?.claimDay)}</span> : null}
+                </div>
+                <div>
+                  <span className="font-medium text-slate-900">RCFE:</span> {String(claimLookupResult?.rcfeName || '—')}
+                </div>
+                {claimLookupResult?.totalAmount != null ? (
+                  <div>
+                    <span className="font-medium text-slate-900">Total:</span> ${Number(claimLookupResult?.totalAmount || 0).toFixed(2)}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card className="print:hidden">
         <CardHeader className="pb-3">
