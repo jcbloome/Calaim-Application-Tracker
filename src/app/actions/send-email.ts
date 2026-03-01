@@ -13,6 +13,7 @@ import NoteAssignmentEmail from '@/components/emails/NoteAssignmentEmail';
 import { CsSummaryReminderEmail, getCsSummaryReminderEmailText } from '@/components/emails/CsSummaryReminderEmail';
 import EligibilityCheckConfirmationEmail from '@/components/emails/EligibilityCheckConfirmationEmail';
 import EligibilityCheckResultEmail from '@/components/emails/EligibilityCheckResultEmail';
+import SwClaimReminderEmail, { type SwClaimReminderItem } from '@/components/emails/SwClaimReminderEmail';
 import * as admin from 'firebase-admin';
 
 // Note: Firebase Admin is initialized in a central file (e.g., src/ai/dev.ts).
@@ -102,6 +103,13 @@ interface EligibilityCheckResultPayload {
     checkId: string;
     result: 'eligible' | 'not-eligible';
     resultMessage: string;
+}
+
+interface SwClaimReminderPayload {
+    to: string;
+    socialWorkerName: string;
+    items: SwClaimReminderItem[];
+    portalUrl?: string;
 }
 
 async function getBccRecipients(): Promise<string[]> {
@@ -295,6 +303,40 @@ export const sendNoteAssignmentEmail = async (payload: NoteAssignmentPayload) =>
         console.error('Failed to send note assignment email:', error);
         throw error;
     }
+};
+
+export const sendSwClaimReminderEmail = async (payload: SwClaimReminderPayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const portalUrl = String(payload.portalUrl || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
+    const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
+    const items = Array.isArray(payload.items) ? payload.items : [];
+
+    const emailHtml = await renderAsync(
+        SwClaimReminderEmail({
+            socialWorkerName,
+            items,
+            portalUrl,
+        })
+    );
+
+    const { data, error } = await resend.emails.send({
+        from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
+        to: [to],
+        subject: 'Reminder: submit your CalAIM SW claim(s)',
+        html: emailHtml,
+    });
+
+    if (error) {
+        console.error('Resend SW Claim Reminder Error:', error);
+        throw new Error(error.message);
+    }
+
+    return data;
 };
 
 export const sendCsSummaryReminderEmail = async (payload: CsSummaryReminderPayload) => {

@@ -309,7 +309,7 @@ export default function SubmitClaimsPage() {
             <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
           </div>
           <Button asChild variant="outline">
-            <Link href="/sw-portal/monthly-visits">View visits</Link>
+              <Link href="/sw-portal/status-log">View status log</Link>
           </Button>
         </div>
       </div>

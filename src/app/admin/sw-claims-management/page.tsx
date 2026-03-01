@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
-import { collection, query, orderBy, limit, onSnapshot, doc, updateDoc, where, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, doc, where, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { 
   DollarSign, 
@@ -67,6 +67,9 @@ interface ClaimSubmission {
   readyForPaymentBy?: string;
   paidAt?: Date;
   paidBy?: string;
+  paymentStatus?: string;
+  claimPaid?: boolean;
+  claimPaidAt?: Date;
 }
 
 interface ClaimSummary {
@@ -97,11 +100,23 @@ export default function SWClaimsManagementPage() {
   const [loadingSelectedClaimVisits, setLoadingSelectedClaimVisits] = useState(false);
   const [selectedClaimVisitsError, setSelectedClaimVisitsError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<
-    'all' | 'draft' | 'submitted' | 'needs_correction' | 'reviewed' | 'ready_for_payment' | 'approved' | 'paid' | 'rejected'
+    | 'all'
+    | 'draft'
+    | 'submitted'
+    | 'needs_correction'
+    | 'reviewed'
+    | 'ready_for_payment'
+    | 'approved'
+    | 'paid'
+    | 'rejected'
+    // UI-only meta filters
+    | 'payment_queue'
+    | 'paid_any'
   >('submitted');
   const [socialWorkerFilter, setSocialWorkerFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedClaimIds, setSelectedClaimIds] = useState<Record<string, boolean>>({});
+  const [bulkUpdating, setBulkUpdating] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTargetIds, setDeleteTargetIds] = useState<string[]>([]);
   const [deleteReason, setDeleteReason] = useState('');
@@ -121,6 +136,12 @@ export default function SWClaimsManagementPage() {
     paidClaims: 0,
     paidAmount: 0
   });
+  const [claimEvents, setClaimEvents] = useState<any[]>([]);
+  const [loadingClaimEvents, setLoadingClaimEvents] = useState(false);
+  const [claimEventsError, setClaimEventsError] = useState<string | null>(null);
+  const [sendingReminders, setSendingReminders] = useState(false);
+  const [reminderError, setReminderError] = useState<string | null>(null);
+  const [reminderResult, setReminderResult] = useState<any | null>(null);
 
   useEffect(() => {
     if (!firestore) return;
@@ -158,6 +179,7 @@ export default function SWClaimsManagementPage() {
             submittedAt: toDate(data?.submittedAt),
             reviewedAt: toDate(data?.reviewedAt),
             paidAt: toDate(data?.paidAt),
+            claimPaidAt: toDate(data?.claimPaidAt),
             memberVisits,
           } as ClaimSubmission;
         });
@@ -180,6 +202,16 @@ export default function SWClaimsManagementPage() {
     applyFilters();
   }, [claims, statusFilter, socialWorkerFilter, monthFilter]);
 
+  const norm = (v: unknown) => String(v ?? '').trim().toLowerCase();
+  const isPaidLike = (c: ClaimSubmission) => {
+    if (c.status === 'paid') return true;
+    if (Boolean(c.claimPaid)) return true;
+    if (Boolean(c.paidAt)) return true;
+    if (norm((c as any)?.paymentStatus) === 'paid') return true;
+    return false;
+  };
+  const needsPaymentLike = (c: ClaimSubmission) => !isPaidLike(c) && (c.status === 'ready_for_payment' || c.status === 'approved');
+
   useEffect(() => {
     setDuplicateMonth(monthFilter);
   }, [monthFilter]);
@@ -187,6 +219,39 @@ export default function SWClaimsManagementPage() {
   useEffect(() => {
     setAdminActionNote(String(selectedClaim?.reviewNotes || '').trim());
   }, [selectedClaim?.id]);
+
+  useEffect(() => {
+    const claimId = String(selectedClaim?.id || '').trim();
+    if (!claimId || !adminUser) {
+      setClaimEvents([]);
+      setClaimEventsError(null);
+      setLoadingClaimEvents(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingClaimEvents(true);
+    setClaimEventsError(null);
+    setClaimEvents([]);
+    (async () => {
+      try {
+        const idToken = await adminUser.getIdToken();
+        const res = await fetch(`/api/admin/sw-claims/events?claimId=${encodeURIComponent(claimId)}&limit=100`, {
+          headers: { authorization: `Bearer ${idToken}` },
+        });
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load audit log (HTTP ${res.status})`);
+        const events = Array.isArray(data?.events) ? data.events : [];
+        if (!cancelled) setClaimEvents(events);
+      } catch (e: any) {
+        if (!cancelled) setClaimEventsError(e?.message || 'Failed to load audit log.');
+      } finally {
+        if (!cancelled) setLoadingClaimEvents(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [adminUser, selectedClaim?.id]);
 
   const openClaimReview = (claim: ClaimSubmission) => {
     setSelectedClaim(claim);
@@ -353,12 +418,15 @@ export default function SWClaimsManagementPage() {
   const applyFilters = () => {
     let filtered = [...claims];
 
-    // Admin workflow starts at "submitted". Drafts are not needed for admin tracking.
-    filtered = filtered.filter((claim) => claim.status !== 'draft');
-
     // Status filter
     if (statusFilter !== 'all') {
-      filtered = filtered.filter(claim => claim.status === statusFilter);
+      if (statusFilter === 'payment_queue') {
+        filtered = filtered.filter((claim) => needsPaymentLike(claim));
+      } else if (statusFilter === 'paid_any') {
+        filtered = filtered.filter((claim) => isPaidLike(claim));
+      } else {
+        filtered = filtered.filter((claim) => claim.status === statusFilter);
+      }
     }
 
     // Social worker filter
@@ -504,6 +572,8 @@ export default function SWClaimsManagementPage() {
   };
 
   function calculateSummary(claimsData: ClaimSubmission[]) {
+    const paidAny = (c: ClaimSubmission) => isPaidLike(c);
+    const needsPaymentAny = (c: ClaimSubmission) => needsPaymentLike(c);
     const summary: ClaimSummary = {
       totalClaims: claimsData.length,
       totalAmount: claimsData.reduce((sum, claim) => sum + claim.totalAmount, 0),
@@ -511,10 +581,10 @@ export default function SWClaimsManagementPage() {
       pendingAmount: claimsData.filter(c => c.status === 'submitted').reduce((sum, claim) => sum + claim.totalAmount, 0),
       needsCorrectionClaims: claimsData.filter(c => c.status === 'needs_correction').length,
       needsCorrectionAmount: claimsData.filter(c => c.status === 'needs_correction').reduce((sum, claim) => sum + claim.totalAmount, 0),
-      readyClaims: claimsData.filter(c => c.status === 'ready_for_payment' || c.status === 'approved').length,
-      readyAmount: claimsData.filter(c => c.status === 'ready_for_payment' || c.status === 'approved').reduce((sum, claim) => sum + claim.totalAmount, 0),
-      paidClaims: claimsData.filter(c => c.status === 'paid').length,
-      paidAmount: claimsData.filter(c => c.status === 'paid').reduce((sum, claim) => sum + claim.totalAmount, 0)
+      readyClaims: claimsData.filter((c) => needsPaymentAny(c)).length,
+      readyAmount: claimsData.filter((c) => needsPaymentAny(c)).reduce((sum, claim) => sum + claim.totalAmount, 0),
+      paidClaims: claimsData.filter((c) => paidAny(c)).length,
+      paidAmount: claimsData.filter((c) => paidAny(c)).reduce((sum, claim) => sum + claim.totalAmount, 0)
     };
     
     setSummary(summary);
@@ -536,11 +606,69 @@ export default function SWClaimsManagementPage() {
     );
   };
 
-  const updateClaimStatus = async (claimId: string, newStatus: ClaimSubmission['status'], reviewNotes?: string) => {
-    if (!firestore) return;
-    
+  const unsubmittedDraftClaimsForMonth = useMemo(() => {
+    const m = String(monthFilter || '').trim();
+    const inMonth = claims.filter((c: any) => {
+      const cm = String((c as any)?.claimMonth || '').trim();
+      if (cm) return cm === m;
+      const d = (c as any)?.claimDate instanceof Date ? (c as any).claimDate : null;
+      return d ? format(d, 'yyyy-MM') === m : false;
+    });
+    return inMonth.filter((c: any) => String(c?.status || '').trim().toLowerCase() === 'draft');
+  }, [claims, monthFilter]);
+
+  const selectDraftClaimsForMonth = () => {
+    const next: Record<string, boolean> = {};
+    unsubmittedDraftClaimsForMonth.forEach((c: any) => {
+      if (c?.id) next[String(c.id)] = true;
+    });
+    setSelectedClaimIds(next);
+    setReminderResult(null);
+    setReminderError(null);
+  };
+
+  const sendRemindersForSelectedDrafts = async () => {
+    if (!adminUser) return;
+    const selected = selectedIds;
+    if (selected.length === 0) {
+      toast({ variant: 'destructive', title: 'Nothing selected', description: 'Select one or more draft claims first.' });
+      return;
+    }
+    const selectedDraftIds = selected.filter((id) => {
+      const c = claims.find((x) => String((x as any)?.id || '').trim() === String(id).trim()) as any;
+      return String(c?.status || '').trim().toLowerCase() === 'draft';
+    });
+    if (selectedDraftIds.length === 0) {
+      toast({ variant: 'destructive', title: 'No draft claims selected', description: 'Reminders are only sent for draft (unsubmitted) claims.' });
+      return;
+    }
+    setSendingReminders(true);
+    setReminderError(null);
+    setReminderResult(null);
     try {
-      const claimRef = doc(firestore, 'sw-claims', claimId);
+      const idToken = await adminUser.getIdToken();
+      const res = await fetch('/api/admin/sw-claims/send-reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ claimIds: selectedDraftIds, onlyDraft: true }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to send reminders (HTTP ${res.status})`);
+      setReminderResult(data);
+      toast({
+        title: 'Reminders sent',
+        description: `Notified ${Number(data?.socialWorkersNotified || 0)} social worker(s).`,
+      });
+    } catch (e: any) {
+      setReminderError(e?.message || 'Failed to send reminders.');
+      toast({ variant: 'destructive', title: 'Reminder failed', description: e?.message || 'Please try again.' });
+    } finally {
+      setSendingReminders(false);
+    }
+  };
+
+  const updateClaimStatus = async (claimId: string, newStatus: ClaimSubmission['status'], reviewNotes?: string) => {
+    try {
       const actorLabel =
         String(adminUser?.displayName || adminUser?.email || '').trim()
         || 'Admin';
@@ -555,80 +683,15 @@ export default function SWClaimsManagementPage() {
         return;
       }
 
-      const updates: any = {
-        status: newStatus,
-        updatedAt: serverTimestamp(),
-        reviewNotes: notes,
-      };
-
-      if (newStatus === 'submitted') {
-        updates.submittedAt = serverTimestamp();
-        updates.submittedBy = actorLabel;
-        updates.submittedByAdmin = true;
-      } else if (
-        newStatus === 'reviewed' ||
-        newStatus === 'needs_correction' ||
-        newStatus === 'ready_for_payment' ||
-        newStatus === 'approved' ||
-        newStatus === 'rejected' ||
-        newStatus === 'paid'
-      ) {
-        updates.reviewedAt = serverTimestamp();
-        updates.reviewedBy = actorLabel;
-      }
-
-      if (newStatus === 'needs_correction') {
-        updates.correctionReason = notes;
-        updates.correctionRequestedAt = serverTimestamp();
-        updates.correctionRequestedBy = actorLabel;
-      } else if (newStatus === 'reviewed' || newStatus === 'ready_for_payment' || newStatus === 'paid') {
-        // Clear correction state when moving forward.
-        updates.correctionReason = null;
-        updates.correctionRequestedAt = null;
-        updates.correctionRequestedBy = null;
-      }
-
-      if (newStatus === 'ready_for_payment') {
-        updates.readyForPaymentAt = serverTimestamp();
-        updates.readyForPaymentBy = actorLabel;
-      }
-
-      if (newStatus === 'paid') {
-        updates.paidAt = serverTimestamp();
-        updates.claimPaid = true;
-        updates.paidBy = actorLabel;
-      }
-
-      await updateDoc(claimRef, updates);
-
-      // Propagate claim status to linked visit records
-      if (newStatus !== 'draft') {
-        const claim = claims.find((c) => c.id === claimId) as any;
-        const visitIdsFromDoc: string[] = Array.isArray(claim?.visitIds) ? claim.visitIds : [];
-        const visitIdsFromMemberVisits: string[] = Array.isArray(claim?.memberVisits)
-          ? claim.memberVisits.map((v: any) => String(v?.id || '').trim()).filter(Boolean)
-          : [];
-        const visitIds = Array.from(new Set([...visitIdsFromDoc, ...visitIdsFromMemberVisits]));
-
-        if (visitIds.length > 0) {
-          const batch = writeBatch(firestore);
-          visitIds.slice(0, 500).forEach((visitId) => {
-            const visitRef = doc(firestore, 'sw_visit_records', String(visitId));
-            batch.set(
-              visitRef,
-              {
-                claimId,
-                claimStatus: newStatus,
-                claimSubmitted: true,
-                ...(newStatus === 'paid' ? { claimPaid: true, claimPaidAt: serverTimestamp() } : {}),
-                updatedAt: serverTimestamp(),
-              },
-              { merge: true }
-            );
-          });
-          await batch.commit();
-        }
-      }
+      if (!adminUser) throw new Error('No admin session');
+      const idToken = await adminUser.getIdToken();
+      const res = await fetch('/api/admin/sw-claims/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ claimId, newStatus, reviewNotes: notes, actorLabel }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to update claim status');
 
       toast({
         title: 'Status Updated',
@@ -686,6 +749,9 @@ export default function SWClaimsManagementPage() {
       'Gas Reimbursement': claim.gasReimbursement,
       'Total Amount': claim.totalAmount,
       'Status': claim.status,
+      'Needs Payment': needsPaymentLike(claim) ? 'YES' : '',
+      'Paid': isPaidLike(claim) ? 'YES' : '',
+      'Paid At': claim.paidAt ? format(claim.paidAt, 'yyyy-MM-dd HH:mm') : '',
       'Submitted': claim.submittedAt ? format(claim.submittedAt, 'yyyy-MM-dd HH:mm') : '',
       'Notes': claim.notes || ''
     }));
@@ -713,6 +779,72 @@ export default function SWClaimsManagementPage() {
     const toMs = (d: any) => (d instanceof Date ? d.getTime() : 0);
     return [...submitted].sort((a, b) => (toMs(b.submittedAt) || toMs(b.claimDate)) - (toMs(a.submittedAt) || toMs(a.claimDate))).slice(0, 12);
   }, [claims]);
+
+  const quickSetFilter = (next: typeof statusFilter) => {
+    setShowAllClaims(true);
+    setStatusFilter(next);
+  };
+
+  const bulkUpdateStatus = async (params: { ids: string[]; newStatus: ClaimSubmission['status'] }) => {
+    if (!adminUser) return;
+    const ids = params.ids.map((x) => String(x || '').trim()).filter(Boolean);
+    if (ids.length === 0) return;
+    if (bulkUpdating) return;
+    setBulkUpdating(true);
+    try {
+      const idToken = await adminUser.getIdToken();
+      let ok = 0;
+      let fail = 0;
+      for (const claimId of ids) {
+        try {
+          const res = await fetch('/api/admin/sw-claims/update-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+            body: JSON.stringify({ claimId, newStatus: params.newStatus, reviewNotes: '' }),
+          });
+          const data = await res.json().catch(() => ({} as any));
+          if (!res.ok || !data?.success) throw new Error(data?.error || `Failed (${res.status})`);
+          ok += 1;
+        } catch (e) {
+          console.error('Bulk update failed:', e);
+          fail += 1;
+        }
+      }
+      toast({
+        title: 'Bulk update complete',
+        description: `Updated ${ok} claim(s) to ${String(params.newStatus).replace(/_/g, ' ')}${fail ? ` • ${fail} failed` : ''}`,
+      });
+      if (fail === 0) setSelectedClaimIds({});
+    } finally {
+      setBulkUpdating(false);
+    }
+  };
+
+  const getPaymentBadge = (claim: ClaimSubmission) => {
+    if (isPaidLike(claim)) {
+      const when = claim.paidAt ? format(claim.paidAt, 'MMM d, yyyy') : '';
+      return (
+        <div className="flex flex-col gap-1">
+          <Badge className="w-fit" variant="default">
+            Paid
+          </Badge>
+          {when ? <div className="text-xs text-muted-foreground whitespace-nowrap">{when}</div> : null}
+        </div>
+      );
+    }
+    if (needsPaymentLike(claim)) {
+      const when = claim.readyForPaymentAt ? format(claim.readyForPaymentAt, 'MMM d, yyyy') : '';
+      return (
+        <div className="flex flex-col gap-1">
+          <Badge className="w-fit" variant="secondary">
+            Needs payment
+          </Badge>
+          {when ? <div className="text-xs text-muted-foreground whitespace-nowrap">Ready: {when}</div> : null}
+        </div>
+      );
+    }
+    return <div className="text-xs text-muted-foreground whitespace-nowrap">—</div>;
+  };
 
   // Show loading while checking admin status
   if (!isSuperAdmin) {
@@ -914,6 +1046,56 @@ export default function SWClaimsManagementPage() {
                     {selectedClaimVisits.map((v: any) => (
                       <div key={String(v?.visitId || v?.id || '')}>{renderQuestionnaireBlock(v)}</div>
                     ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Audit log */}
+              <div>
+                <h4 className="font-semibold mb-3">Audit log</h4>
+                {loadingClaimEvents ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading audit log…
+                  </div>
+                ) : claimEventsError ? (
+                  <Alert variant="destructive">
+                    <AlertTitle>Unable to load audit log</AlertTitle>
+                    <AlertDescription>{claimEventsError}</AlertDescription>
+                  </Alert>
+                ) : claimEvents.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No audit events yet.</div>
+                ) : (
+                  <div className="rounded-lg border overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="whitespace-nowrap">Time</TableHead>
+                          <TableHead>Actor</TableHead>
+                          <TableHead className="whitespace-nowrap">Change</TableHead>
+                          <TableHead>Note</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {claimEvents.slice(0, 50).map((e: any) => (
+                          <TableRow key={String(e?.id || Math.random())}>
+                            <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                              {String(e?.createdAtIso || '').replace('T', ' ').replace('Z', ' UTC') || '—'}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {String(e?.actorName || e?.actorEmail || 'Admin')}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-sm">
+                              <span className="font-mono text-xs">{String(e?.fromStatus || '—')}</span> →{' '}
+                              <span className="font-mono text-xs">{String(e?.toStatus || '—')}</span>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {String(e?.notes || '').trim() ? String(e?.notes) : '—'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
               </div>
@@ -1139,12 +1321,16 @@ export default function SWClaimsManagementPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="payment_queue">Payment queue (unpaid)</SelectItem>
+                  <SelectItem value="paid_any">Paid (incl. legacy)</SelectItem>
                   <SelectItem value="submitted">Submitted (action needed)</SelectItem>
                   <SelectItem value="needs_correction">Needs correction</SelectItem>
                   <SelectItem value="reviewed">Reviewed</SelectItem>
                   <SelectItem value="ready_for_payment">Ready for payment</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
                   <SelectItem value="paid">Paid</SelectItem>
                   <SelectItem value="rejected">Rejected</SelectItem>
+                  <SelectItem value="draft">Draft (unsubmitted)</SelectItem>
                   <SelectItem value="all">All</SelectItem>
                 </SelectContent>
               </Select>
@@ -1207,13 +1393,86 @@ export default function SWClaimsManagementPage() {
               Tip: click “Select duplicates” then enter a delete reason and confirm.
             </div>
           </div>
+
+          <div className="mt-6 rounded-lg border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm font-semibold">Quick views</div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={() => quickSetFilter('submitted')}>Submitted</Button>
+                <Button variant="outline" size="sm" onClick={() => quickSetFilter('needs_correction')}>Needs correction</Button>
+                <Button variant="outline" size="sm" onClick={() => quickSetFilter('payment_queue')}>Payment queue</Button>
+                <Button variant="outline" size="sm" onClick={() => quickSetFilter('paid_any')}>Paid</Button>
+                <Button variant="outline" size="sm" onClick={() => quickSetFilter('draft')}>Drafts</Button>
+              </div>
+            </div>
+            <div className="mt-2 text-xs text-muted-foreground">
+              Payment queue shows <span className="font-medium">Ready / Approved</span> claims that are not yet marked paid.
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-lg border p-4">
+            <div className="text-sm font-semibold mb-2">Follow-up: unsubmitted SW claims (draft)</div>
+            <div className="text-sm text-muted-foreground">
+              These are claims with completed questionnaires/sign-off, but the Social Worker has not submitted the claim yet.
+            </div>
+            <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div className="text-sm">
+                Draft claims in <span className="font-semibold">{monthFilter}</span>: <span className="font-semibold">{unsubmittedDraftClaimsForMonth.length}</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={selectDraftClaimsForMonth} disabled={unsubmittedDraftClaimsForMonth.length === 0}>
+                  Select draft claims (month)
+                </Button>
+                <Button
+                  onClick={() => void sendRemindersForSelectedDrafts()}
+                  disabled={sendingReminders || selectedIds.length === 0}
+                >
+                  {sendingReminders ? 'Sending…' : `Send reminder email(s) (${selectedIds.length})`}
+                </Button>
+              </div>
+            </div>
+            {reminderError ? <div className="mt-2 text-sm text-destructive">{reminderError}</div> : null}
+            {reminderResult?.success ? (
+              <div className="mt-2 text-xs text-muted-foreground">
+                Notified {Number(reminderResult?.socialWorkersNotified || 0)} social worker(s). Eligible draft claims: {Number(reminderResult?.eligible || 0)}.
+              </div>
+            ) : null}
+          </div>
         </CardContent>
       </Card>
 
       {/* Claims Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Claims ({filteredClaims.length})</CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle>Claims ({filteredClaims.length})</CardTitle>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={exportToCsv} disabled={filteredClaims.length === 0}>
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={selectedIds.length === 0 || bulkUpdating}
+                onClick={() => bulkUpdateStatus({ ids: selectedIds, newStatus: 'ready_for_payment' })}
+                title={selectedIds.length === 0 ? 'Select one or more claims first' : 'Mark selected as Ready for payment'}
+              >
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Mark ready ({selectedIds.length})
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                disabled={selectedIds.length === 0 || bulkUpdating}
+                onClick={() => bulkUpdateStatus({ ids: selectedIds, newStatus: 'paid' })}
+                title={selectedIds.length === 0 ? 'Select one or more claims first' : 'Mark selected as Paid'}
+              >
+                <DollarSign className="mr-2 h-4 w-4" />
+                Mark paid ({selectedIds.length})
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -1235,6 +1494,7 @@ export default function SWClaimsManagementPage() {
                   <TableHead>Gas</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Payment</TableHead>
                   <TableHead>Submitted</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -1262,6 +1522,7 @@ export default function SWClaimsManagementPage() {
                     <TableCell>${claim.gasReimbursement}</TableCell>
                     <TableCell className="font-semibold">${claim.totalAmount}</TableCell>
                     <TableCell>{getStatusBadge(claim.status)}</TableCell>
+                    <TableCell>{getPaymentBadge(claim)}</TableCell>
                     <TableCell>
                       {claim.submittedAt ? format(claim.submittedAt, 'MMM d, yyyy') : '-'}
                     </TableCell>

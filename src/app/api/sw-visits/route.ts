@@ -5,6 +5,9 @@ import {
   getNotificationUrgency 
 } from '@/lib/visit-notifications';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 interface VisitSubmission {
   visitId: string;
   memberId: string;
@@ -463,6 +466,47 @@ export async function GET(req: NextRequest) {
       return !hold && !expired;
     });
 
+    const parseIsoDate = (value: unknown): Date | null => {
+      const raw = String(value ?? '').trim();
+      if (!raw) return null;
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return null;
+      return d;
+    };
+
+    const getWeekFlags = (member: any): { isNewAssignment: boolean; isHoldRemoved: boolean } => {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const weekStart = new Date(todayStart);
+      weekStart.setDate(weekStart.getDate() - 7);
+
+      const assignmentChangedAt =
+        parseIsoDate(
+          member?.assignmentChangedAt ??
+            member?.assignment_changed_at ??
+            member?.assignmentChanged ??
+            ''
+        ) || null;
+
+      const holdChangedAt =
+        parseIsoDate(member?.holdChangedAt ?? member?.hold_changed_at ?? '') || null;
+
+      const isRecent = (d: Date | null) =>
+        Boolean(d && d.getTime() >= weekStart.getTime() && d.getTime() <= todayStart.getTime());
+
+      const isNewAssignment = isRecent(assignmentChangedAt);
+
+      // Reactivated from hold this week (hold changed from a hold-like value to a non-hold value).
+      let isHoldRemoved = false;
+      if (isRecent(holdChangedAt)) {
+        const from = member?.holdChangedFrom ?? '';
+        const to = member?.holdChangedTo ?? '';
+        if (isHoldValue(from) && !isHoldValue(to)) isHoldRemoved = true;
+      }
+
+      return { isNewAssignment, isHoldRemoved };
+    };
+
     const normalizeKey = (value: unknown) =>
       String(value ?? '')
         .trim()
@@ -506,6 +550,8 @@ export async function GET(req: NextRequest) {
         };
       }
       
+      const weekFlags = getWeekFlags(member);
+
       acc[groupKey].members.push({
         id: String(member.Client_ID2 || member.client_ID2 || member.id || '').trim() || Math.random().toString(),
         name: String(member.memberName || '').trim() || `${member.memberFirstName || ''} ${member.memberLastName || ''}`.trim(),
@@ -513,7 +559,9 @@ export async function GET(req: NextRequest) {
         rcfeId: acc[groupKey].id,
         rcfeName: rcfeName,
         rcfeAddress: member.RCFE_Address || 'Address not available',
-        lastVisitDate: null // This would come from visit history
+        lastVisitDate: null, // This would come from visit history
+        isNewAssignment: weekFlags.isNewAssignment,
+        isHoldRemoved: weekFlags.isHoldRemoved,
       });
       
       return acc;

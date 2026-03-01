@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ClipboardCheck, FileBarChart, DollarSign, ListChecks, Users, BookOpenText } from 'lucide-react';
+import { ClipboardCheck, FileBarChart, DollarSign, Users, BookOpenText, CheckCircle2 } from 'lucide-react';
 
 export default function SWPortalPage() {
   return (
@@ -61,14 +61,14 @@ export default function SWPortalPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ListChecks className="h-5 w-5" />
-              Visits
+              <CheckCircle2 className="h-5 w-5" />
+              Status Log
             </CardTitle>
-            <CardDescription>See completed vs pending members</CardDescription>
+            <CardDescription>View status icons for this month or past months</CardDescription>
           </CardHeader>
           <CardContent>
             <Button asChild className="w-full" variant="outline">
-              <Link href="/sw-portal/monthly-visits">Open</Link>
+              <Link href="/sw-portal/status-log">Open</Link>
             </Button>
           </CardContent>
         </Card>

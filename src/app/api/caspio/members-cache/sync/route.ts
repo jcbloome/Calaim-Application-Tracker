@@ -614,6 +614,12 @@ export async function POST(req: NextRequest) {
           to: string;
           field: string;
         }> = [];
+        const holdChangeUpdates: Array<{
+          docRef: FirebaseFirestore.DocumentReference;
+          from: string;
+          to: string;
+          field: string;
+        }> = [];
         for (let idx = 0; idx < prepared.length; idx += 1) {
           const p = prepared[idx];
           const snap = existingSnaps[idx];
@@ -736,6 +742,16 @@ export async function POST(req: NextRequest) {
               field: String(swChange.key || '').trim(),
             });
           }
+
+          const holdChange = changes.find((c) => c.key === 'Hold_For_Social_Worker');
+          if (holdChange) {
+            holdChangeUpdates.push({
+              docRef: p.docRef,
+              from: String(holdChange.oldStr || '').trim(),
+              to: String(holdChange.newStr || '').trim(),
+              field: String(holdChange.key || '').trim(),
+            });
+          }
         }
 
         // Persist assignment change metadata back to the cache docs.
@@ -752,6 +768,27 @@ export async function POST(req: NextRequest) {
                   assignmentChangedFrom: u.from || null,
                   assignmentChangedTo: u.to || null,
                   assignmentChangedField: u.field || null,
+                },
+                { merge: true }
+              );
+            });
+            await ub.commit();
+          }
+        }
+
+        // Persist hold change metadata back to the cache docs (for "reactivated this week" roster badges).
+        if (holdChangeUpdates.length > 0) {
+          for (let j = 0; j < holdChangeUpdates.length; j += 400) {
+            const chunk = holdChangeUpdates.slice(j, j + 400);
+            const ub = adminDb.batch();
+            chunk.forEach((u) => {
+              ub.set(
+                u.docRef,
+                {
+                  holdChangedAt: now.toISOString(),
+                  holdChangedFrom: u.from || null,
+                  holdChangedTo: u.to || null,
+                  holdChangedField: u.field || null,
                 },
                 { merge: true }
               );

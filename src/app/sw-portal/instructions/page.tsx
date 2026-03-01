@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { MapPin, ClipboardCheck, Users, FileBarChart, DollarSign } from 'lucide-react';
+import { MapPin, ClipboardCheck, Users, FileBarChart, DollarSign, CheckCircle2 } from 'lucide-react';
 
 export default function SWInstructionsPage() {
   return (
@@ -33,15 +33,22 @@ export default function SWInstructionsPage() {
             <Badge variant="secondary">1</Badge>
             <span className="flex items-center gap-2">
               <Users className="h-4 w-4" />
-              SW Assignments (RCFEs + members)
+              Weekly Roster (SW Assignments)
             </span>
           </CardTitle>
-          <CardDescription>See your assigned RCFEs and the members at each RCFE.</CardDescription>
+          <CardDescription>Your worklist for the week: assigned RCFEs + members.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <ul className="list-disc pl-5 space-y-1 text-sm">
             <li>Open <strong>SW Assignments</strong> to view your RCFE list and member roster.</li>
-            <li>Use this list as your source of truth for which homes/members you’re assigned to visit.</li>
+            <li>
+              Look for indicators:
+              <ul className="list-disc pl-5 mt-1 space-y-1">
+                <li><strong>Needs action</strong>: the member still needs questionnaire, sign-off, or claim submission.</li>
+                <li><strong>NEW</strong>: newly assigned this week.</li>
+                <li><strong>HOLD REMOVED</strong>: recently reactivated from hold.</li>
+              </ul>
+            </li>
           </ul>
           <Button asChild variant="outline">
             <Link href="/sw-portal/roster">Open SW Assignments</Link>
@@ -58,13 +65,13 @@ export default function SWInstructionsPage() {
               Monthly Questionnaire (visit verification)
             </span>
           </CardTitle>
-          <CardDescription>Select an RCFE, then select a member to complete the short questionnaire.</CardDescription>
+          <CardDescription>Select an RCFE, then select members to complete the short questionnaire.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <ul className="list-disc pl-5 space-y-1 text-sm">
             <li>Select the RCFE you’re visiting.</li>
             <li>Select the member from the list to start or continue their questionnaire draft.</li>
-            <li>Complete the questionnaire and save the draft.</li>
+            <li>Complete the questionnaire. You can continue an existing draft if needed.</li>
           </ul>
           <Button asChild>
             <Link href="/sw-visit-verification">Start Monthly Questionnaire</Link>
@@ -94,11 +101,11 @@ export default function SWInstructionsPage() {
             <Badge variant="secondary">4</Badge>
             <span className="flex items-center gap-2">
               <FileBarChart className="h-4 w-4" />
-              RCFE staff Sign Off (visit attestation)
+              RCFE staff Sign Off (visit attestation + claim creation)
             </span>
           </CardTitle>
           <CardDescription>
-            When you’re done visiting members at the RCFE, request staff attestation and submit the claim.
+            When you’re done visiting members at the RCFE, request staff attestation (geolocated) to finalize visits and create the claim.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -108,7 +115,7 @@ export default function SWInstructionsPage() {
             <li>
               Capture geolocation at sign-off time. If location is blocked, sign-off may fail or be incomplete.
             </li>
-            <li>Submit questionnaires &amp; claim.</li>
+            <li>Submit to finalize the visit(s) and create the claim.</li>
           </ul>
           <Button asChild variant="outline">
             <Link href="/sw-portal/sign-off">Open Sign Off</Link>
@@ -122,18 +129,40 @@ export default function SWInstructionsPage() {
             <Badge variant="secondary">5</Badge>
             <span className="flex items-center gap-2">
               <DollarSign className="h-4 w-4" />
-              Submit Claims + track status
+              Submit Claims
             </span>
           </CardTitle>
-          <CardDescription>Submit from your list and track claim status (submitted vs not-submitted, etc.).</CardDescription>
+          <CardDescription>Submit draft claims for payment.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <ul className="list-disc pl-5 space-y-1 text-sm">
             <li>Go to <strong>Submit Claims</strong> to view items ready to submit.</li>
-            <li>Track claim status in the portal (e.g., submitted / not submitted / paid when available).</li>
+            <li>Submit the draft claim(s) for that month.</li>
           </ul>
           <Button asChild variant="outline">
             <Link href="/sw-portal/submit-claims">Open Submit Claims</Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">6</Badge>
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              Status Log (current month + past months)
+            </span>
+          </CardTitle>
+          <CardDescription>Verify completion and track claim status over time.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <ul className="list-disc pl-5 space-y-1 text-sm">
+            <li>Use the month picker to view questionnaire/sign-off/claim statuses for any month.</li>
+            <li>Use Claim ID lookup to check the current status of any past claim.</li>
+          </ul>
+          <Button asChild variant="outline">
+            <Link href="/sw-portal/status-log">Open Status Log</Link>
           </Button>
         </CardContent>
       </Card>
