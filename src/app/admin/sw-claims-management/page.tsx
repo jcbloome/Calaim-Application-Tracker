@@ -112,6 +112,9 @@ export default function SWClaimsManagementPage() {
     // UI-only meta filters
     | 'payment_queue'
     | 'paid_any'
+    | 'payment_queue_7'
+    | 'payment_queue_14'
+    | 'payment_queue_30'
   >('submitted');
   const [socialWorkerFilter, setSocialWorkerFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState(format(new Date(), 'yyyy-MM'));
@@ -211,6 +214,33 @@ export default function SWClaimsManagementPage() {
     return false;
   };
   const needsPaymentLike = (c: ClaimSubmission) => !isPaidLike(c) && (c.status === 'ready_for_payment' || c.status === 'approved');
+
+  const toMs = (d: any) => (d instanceof Date ? d.getTime() : 0);
+  const readyAtMs = (c: ClaimSubmission) => toMs(c.readyForPaymentAt) || toMs(c.reviewedAt) || toMs(c.submittedAt) || toMs(c.claimDate) || 0;
+  const readyAgeDays = (c: ClaimSubmission) => {
+    const ms = readyAtMs(c);
+    if (!ms) return 0;
+    const ageMs = Date.now() - ms;
+    return Math.max(0, Math.floor(ageMs / (1000 * 60 * 60 * 24)));
+  };
+
+  const paymentQueueBuckets = useMemo(() => {
+    const queue = claims.filter((c) => needsPaymentLike(c));
+    const b7 = queue.filter((c) => readyAgeDays(c) >= 7);
+    const b14 = queue.filter((c) => readyAgeDays(c) >= 14);
+    const b30 = queue.filter((c) => readyAgeDays(c) >= 30);
+    const sumAmount = (list: ClaimSubmission[]) => list.reduce((s, c) => s + Number(c.totalAmount || 0), 0);
+    return {
+      totalCount: queue.length,
+      totalAmount: sumAmount(queue),
+      d7Count: b7.length,
+      d7Amount: sumAmount(b7),
+      d14Count: b14.length,
+      d14Amount: sumAmount(b14),
+      d30Count: b30.length,
+      d30Amount: sumAmount(b30),
+    };
+  }, [claims]);
 
   useEffect(() => {
     setDuplicateMonth(monthFilter);
@@ -422,6 +452,12 @@ export default function SWClaimsManagementPage() {
     if (statusFilter !== 'all') {
       if (statusFilter === 'payment_queue') {
         filtered = filtered.filter((claim) => needsPaymentLike(claim));
+      } else if (statusFilter === 'payment_queue_7') {
+        filtered = filtered.filter((claim) => needsPaymentLike(claim) && readyAgeDays(claim) >= 7);
+      } else if (statusFilter === 'payment_queue_14') {
+        filtered = filtered.filter((claim) => needsPaymentLike(claim) && readyAgeDays(claim) >= 14);
+      } else if (statusFilter === 'payment_queue_30') {
+        filtered = filtered.filter((claim) => needsPaymentLike(claim) && readyAgeDays(claim) >= 30);
       } else if (statusFilter === 'paid_any') {
         filtered = filtered.filter((claim) => isPaidLike(claim));
       } else {
@@ -443,6 +479,16 @@ export default function SWClaimsManagementPage() {
       filtered = filtered.filter(claim => 
         claim.claimDate >= startDate && claim.claimDate <= endDate
       );
+    }
+
+    // When working the payment queue, show oldest first.
+    if (
+      statusFilter === 'payment_queue' ||
+      statusFilter === 'payment_queue_7' ||
+      statusFilter === 'payment_queue_14' ||
+      statusFilter === 'payment_queue_30'
+    ) {
+      filtered = [...filtered].sort((a, b) => readyAtMs(a) - readyAtMs(b));
     }
 
     setFilteredClaims(filtered);
@@ -844,6 +890,20 @@ export default function SWClaimsManagementPage() {
       );
     }
     return <div className="text-xs text-muted-foreground whitespace-nowrap">—</div>;
+  };
+
+  const getAgingBadge = (claim: ClaimSubmission) => {
+    if (!needsPaymentLike(claim)) return <div className="text-xs text-muted-foreground whitespace-nowrap">—</div>;
+    const days = readyAgeDays(claim);
+    const label = `${days}d`;
+    const variant =
+      days >= 30 ? 'destructive' : days >= 14 ? 'secondary' : days >= 7 ? 'outline' : 'outline';
+    const className = days >= 30 ? 'text-red-700' : days >= 14 ? 'text-amber-700' : 'text-slate-700';
+    return (
+      <Badge variant={variant as any} className={className}>
+        {label}
+      </Badge>
+    );
   };
 
   // Show loading while checking admin status
@@ -1322,6 +1382,9 @@ export default function SWClaimsManagementPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="payment_queue">Payment queue (unpaid)</SelectItem>
+                  <SelectItem value="payment_queue_7">Payment queue aging: 7+ days</SelectItem>
+                  <SelectItem value="payment_queue_14">Payment queue aging: 14+ days</SelectItem>
+                  <SelectItem value="payment_queue_30">Payment queue aging: 30+ days</SelectItem>
                   <SelectItem value="paid_any">Paid (incl. legacy)</SelectItem>
                   <SelectItem value="submitted">Submitted (action needed)</SelectItem>
                   <SelectItem value="needs_correction">Needs correction</SelectItem>
@@ -1401,12 +1464,59 @@ export default function SWClaimsManagementPage() {
                 <Button variant="outline" size="sm" onClick={() => quickSetFilter('submitted')}>Submitted</Button>
                 <Button variant="outline" size="sm" onClick={() => quickSetFilter('needs_correction')}>Needs correction</Button>
                 <Button variant="outline" size="sm" onClick={() => quickSetFilter('payment_queue')}>Payment queue</Button>
+                <Button variant="outline" size="sm" onClick={() => quickSetFilter('payment_queue_7')}>7+ days</Button>
+                <Button variant="outline" size="sm" onClick={() => quickSetFilter('payment_queue_14')}>14+ days</Button>
+                <Button variant="outline" size="sm" onClick={() => quickSetFilter('payment_queue_30')}>30+ days</Button>
                 <Button variant="outline" size="sm" onClick={() => quickSetFilter('paid_any')}>Paid</Button>
                 <Button variant="outline" size="sm" onClick={() => quickSetFilter('draft')}>Drafts</Button>
               </div>
             </div>
             <div className="mt-2 text-xs text-muted-foreground">
               Payment queue shows <span className="font-medium">Ready / Approved</span> claims that are not yet marked paid.
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-lg border p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">Payment queue aging (unpaid)</div>
+                <div className="text-xs text-muted-foreground">
+                  Aging is measured from <span className="font-medium">Ready for payment</span> (fallback: reviewed/submitted/claim date). Queue views sort <span className="font-medium">oldest first</span>.
+                </div>
+              </div>
+              <div className="text-right text-sm">
+                <div className="font-semibold">{paymentQueueBuckets.totalCount} total</div>
+                <div className="text-xs text-muted-foreground">${paymentQueueBuckets.totalAmount.toLocaleString()} unpaid</div>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <button
+                type="button"
+                className="rounded border p-3 text-left hover:bg-muted/40"
+                onClick={() => quickSetFilter('payment_queue_7')}
+              >
+                <div className="text-xs text-muted-foreground">7+ days</div>
+                <div className="text-lg font-semibold">{paymentQueueBuckets.d7Count}</div>
+                <div className="text-xs text-muted-foreground">${paymentQueueBuckets.d7Amount.toLocaleString()}</div>
+              </button>
+              <button
+                type="button"
+                className="rounded border p-3 text-left hover:bg-muted/40"
+                onClick={() => quickSetFilter('payment_queue_14')}
+              >
+                <div className="text-xs text-muted-foreground">14+ days</div>
+                <div className="text-lg font-semibold">{paymentQueueBuckets.d14Count}</div>
+                <div className="text-xs text-muted-foreground">${paymentQueueBuckets.d14Amount.toLocaleString()}</div>
+              </button>
+              <button
+                type="button"
+                className="rounded border p-3 text-left hover:bg-muted/40"
+                onClick={() => quickSetFilter('payment_queue_30')}
+              >
+                <div className="text-xs text-muted-foreground">30+ days</div>
+                <div className="text-lg font-semibold text-red-700">{paymentQueueBuckets.d30Count}</div>
+                <div className="text-xs text-muted-foreground">${paymentQueueBuckets.d30Amount.toLocaleString()}</div>
+              </button>
             </div>
           </div>
 
@@ -1495,6 +1605,7 @@ export default function SWClaimsManagementPage() {
                   <TableHead>Total</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Payment</TableHead>
+                  <TableHead className="whitespace-nowrap">Aging</TableHead>
                   <TableHead>Submitted</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -1523,6 +1634,7 @@ export default function SWClaimsManagementPage() {
                     <TableCell className="font-semibold">${claim.totalAmount}</TableCell>
                     <TableCell>{getStatusBadge(claim.status)}</TableCell>
                     <TableCell>{getPaymentBadge(claim)}</TableCell>
+                    <TableCell>{getAgingBadge(claim)}</TableCell>
                     <TableCell>
                       {claim.submittedAt ? format(claim.submittedAt, 'MMM d, yyyy') : '-'}
                     </TableCell>
