@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
     const staffName = String(body?.staffName || '').trim();
     const staffTitle = String(body?.staffTitle || '').trim();
     const signature = String(body?.signature || '').trim();
+    const attestRcfeStaffOnly = Boolean(body?.attestRcfeStaffOnly);
     const signedAtIso = String(body?.signedAt || '').trim() || new Date().toISOString();
     const geoRaw = body?.geolocation && typeof body.geolocation === 'object' ? body.geolocation : null;
     const geoLat = geoRaw ? Number((geoRaw as any)?.latitude) : NaN;
@@ -69,8 +70,17 @@ export async function POST(req: NextRequest) {
     if (selectedVisitIds.length === 0) {
       return NextResponse.json({ success: false, error: 'selectedVisitIds is required' }, { status: 400 });
     }
+    if (!attestRcfeStaffOnly) {
+      return NextResponse.json(
+        { success: false, error: 'Sign-off must be completed by RCFE staff/authorized representative.' },
+        { status: 400 }
+      );
+    }
     if (!staffName || !signature) {
       return NextResponse.json({ success: false, error: 'RCFE staff name and signature are required' }, { status: 400 });
+    }
+    if (!staffTitle) {
+      return NextResponse.json({ success: false, error: 'RCFE staff title is required' }, { status: 400 });
     }
     if (!geolocation) {
       return NextResponse.json(

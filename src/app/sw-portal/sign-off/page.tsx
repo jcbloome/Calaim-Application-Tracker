@@ -57,6 +57,7 @@ export default function SWSignOffPage() {
   const [visits, setVisits] = useState<CandidateVisit[]>([]);
   const [selectedVisitIds, setSelectedVisitIds] = useState<Record<string, boolean>>({});
 
+  const [attestRcfeStaffOnly, setAttestRcfeStaffOnly] = useState(false);
   const [staffName, setStaffName] = useState('');
   const [staffTitle, setStaffTitle] = useState('');
   const [signature, setSignature] = useState('');
@@ -192,7 +193,14 @@ export default function SWSignOffPage() {
     return () => ctrl.abort();
   }, [geolocation?.latitude, geolocation?.longitude]);
 
-  const canSubmit = selectedVisits.length > 0 && staffName.trim() && signature.trim() && Boolean(geolocation) && !submitting;
+  const canSubmit =
+    selectedVisits.length > 0 &&
+    attestRcfeStaffOnly &&
+    staffName.trim() &&
+    staffTitle.trim() &&
+    signature.trim() &&
+    Boolean(geolocation) &&
+    !submitting;
 
   const submitSignOff = async () => {
     if (!auth?.currentUser) {
@@ -214,6 +222,7 @@ export default function SWSignOffPage() {
         rcfeName: String(selectedRcfe?.name || '').trim(),
         claimDay,
         selectedVisitIds: selectedVisits.map((v) => String(v.visitId || '').trim()).filter(Boolean),
+        attestRcfeStaffOnly,
         staffName: staffName.trim(),
         staffTitle: staffTitle.trim(),
         signature: signature.trim(),
@@ -238,6 +247,7 @@ export default function SWSignOffPage() {
       setStaffName('');
       setStaffTitle('');
       setSignature('');
+      setAttestRcfeStaffOnly(false);
       setSignedAt(new Date().toISOString());
       setGeolocation(null);
       await loadCandidates();
@@ -418,12 +428,23 @@ export default function SWSignOffPage() {
         <CardHeader>
           <CardTitle className="text-base">RCFE staff signature</CardTitle>
           <CardDescription>
-            Staff acknowledges the Social Worker is present at this facility on this date. This does not confirm individual member visits.
+            RCFE staff acknowledges the Social Worker is present at this facility on this date. This does not confirm individual member visits.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-900">
             <span className="font-medium">Attestation:</span> I acknowledge that {swName} is present at this facility today.
+          </div>
+          <div className="rounded-lg border p-3 text-sm">
+            <label className="flex items-start gap-3">
+              <Checkbox checked={attestRcfeStaffOnly} onCheckedChange={(v) => setAttestRcfeStaffOnly(Boolean(v))} />
+              <div className="min-w-0">
+                <div className="font-medium">RCFE staff only</div>
+                <div className="text-xs text-muted-foreground">
+                  This sign-off must be completed by RCFE staff/authorized representative (not by members/residents).
+                </div>
+              </div>
+            </label>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
@@ -431,7 +452,7 @@ export default function SWSignOffPage() {
               <Input id="staffName" value={staffName} onChange={(e) => setStaffName(e.target.value)} placeholder="Full name" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="staffTitle">Staff title (optional)</Label>
+              <Label htmlFor="staffTitle">Staff title</Label>
               <Input id="staffTitle" value={staffTitle} onChange={(e) => setStaffTitle(e.target.value)} placeholder="Role / title" />
             </div>
             <div className="space-y-2 sm:col-span-2">
