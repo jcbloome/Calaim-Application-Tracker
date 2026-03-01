@@ -139,6 +139,14 @@ export default function SWClaimsManagementPage() {
     paidClaims: 0,
     paidAmount: 0
   });
+  const todayLocalDateInput = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const [agingAsOfDate, setAgingAsOfDate] = useState<string>(() => todayLocalDateInput());
   const [claimEvents, setClaimEvents] = useState<any[]>([]);
   const [loadingClaimEvents, setLoadingClaimEvents] = useState(false);
   const [claimEventsError, setClaimEventsError] = useState<string | null>(null);
@@ -217,10 +225,20 @@ export default function SWClaimsManagementPage() {
 
   const toMs = (d: any) => (d instanceof Date ? d.getTime() : 0);
   const readyAtMs = (c: ClaimSubmission) => toMs(c.readyForPaymentAt) || toMs(c.reviewedAt) || toMs(c.submittedAt) || toMs(c.claimDate) || 0;
+  const asOfMs = useMemo(() => {
+    const s = String(agingAsOfDate || '').trim();
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return Date.now();
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const da = Number(m[3]);
+    // Use local noon to avoid DST-midnight edge cases.
+    return new Date(y, mo - 1, da, 12, 0, 0, 0).getTime();
+  }, [agingAsOfDate]);
   const readyAgeDays = (c: ClaimSubmission) => {
     const ms = readyAtMs(c);
     if (!ms) return 0;
-    const ageMs = Date.now() - ms;
+    const ageMs = asOfMs - ms;
     return Math.max(0, Math.floor(ageMs / (1000 * 60 * 60 * 24)));
   };
 
@@ -797,6 +815,7 @@ export default function SWClaimsManagementPage() {
       'Status': claim.status,
       'Needs Payment': needsPaymentLike(claim) ? 'YES' : '',
       'Paid': isPaidLike(claim) ? 'YES' : '',
+      'Ready Age (days)': needsPaymentLike(claim) ? readyAgeDays(claim) : '',
       'Paid At': claim.paidAt ? format(claim.paidAt, 'yyyy-MM-dd HH:mm') : '',
       'Submitted': claim.submittedAt ? format(claim.submittedAt, 'yyyy-MM-dd HH:mm') : '',
       'Notes': claim.notes || ''
@@ -1487,6 +1506,19 @@ export default function SWClaimsManagementPage() {
               <div className="text-right text-sm">
                 <div className="font-semibold">{paymentQueueBuckets.totalCount} total</div>
                 <div className="text-xs text-muted-foreground">${paymentQueueBuckets.totalAmount.toLocaleString()} unpaid</div>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div className="max-w-sm">
+                <div className="text-xs text-muted-foreground">Aging as-of date</div>
+                <Input
+                  type="date"
+                  value={agingAsOfDate}
+                  onChange={(e) => setAgingAsOfDate(e.target.value)}
+                />
+              </div>
+              <div className="text-xs text-muted-foreground">
+                As-of: <span className="font-medium">{agingAsOfDate || '—'}</span>
               </div>
             </div>
             <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
