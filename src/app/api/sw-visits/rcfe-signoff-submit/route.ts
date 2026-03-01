@@ -72,6 +72,15 @@ export async function POST(req: NextRequest) {
     if (!staffName || !signature) {
       return NextResponse.json({ success: false, error: 'RCFE staff name and signature are required' }, { status: 400 });
     }
+    if (!geolocation) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Geolocation is required for sign-off. Please allow location permissions and verify location.',
+        },
+        { status: 400 }
+      );
+    }
 
     const adminModule = await import('@/firebase-admin');
     const admin = adminModule.default;

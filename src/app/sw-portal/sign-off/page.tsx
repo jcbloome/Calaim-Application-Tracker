@@ -70,16 +70,7 @@ export default function SWSignOffPage() {
   const swName = String((socialWorkerData as any)?.displayName || (user as any)?.displayName || swEmail || 'Social Worker').trim();
 
   const selectedVisits = useMemo(() => visits.filter((v) => selectedVisitIds[String(v.visitId || '').trim()]), [selectedVisitIds, visits]);
-  const anyFlaggedSelected = useMemo(() => selectedVisits.some((v) => Boolean(v.flagged)), [selectedVisits]);
-
-  const invoiceTotals = useMemo(() => {
-    const visitFeeRate = 45;
-    const gasAmount = 20;
-    const count = selectedVisits.length;
-    const visitTotal = count * visitFeeRate;
-    const gas = count > 0 ? gasAmount : 0;
-    return { count, visitFeeRate, gasAmount, visitTotal, gas, total: visitTotal + gas };
-  }, [selectedVisits.length]);
+  // Kept as derived data placeholder for future UI (e.g. flagged warnings).
 
   const loadRcfes = useCallback(async () => {
     if (!swEmail) return;
@@ -161,7 +152,11 @@ export default function SWSignOffPage() {
       });
       toast({ title: 'Location captured', description: 'Location will be attached to the sign-off.' });
     } catch {
-      toast({ title: 'Location not captured', description: 'You can still sign off without location verification.' });
+      toast({
+        title: 'Location required',
+        description: 'Please allow location permissions to submit sign-off.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -197,7 +192,7 @@ export default function SWSignOffPage() {
     return () => ctrl.abort();
   }, [geolocation?.latitude, geolocation?.longitude]);
 
-  const canSubmit = selectedVisits.length > 0 && staffName.trim() && signature.trim() && !submitting;
+  const canSubmit = selectedVisits.length > 0 && staffName.trim() && signature.trim() && Boolean(geolocation) && !submitting;
 
   const submitSignOff = async () => {
     if (!auth?.currentUser) {
@@ -205,6 +200,10 @@ export default function SWSignOffPage() {
       return;
     }
     if (!canSubmit) return;
+    if (!geolocation) {
+      toast({ title: 'Location required', description: 'Please verify location before submitting.', variant: 'destructive' });
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -463,25 +462,17 @@ export default function SWSignOffPage() {
                   </div>
                 </div>
               ) : (
-                'Location not captured (optional)'
+                <span className="text-destructive">Location required to submit</span>
               )}
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Button className="w-full sm:w-auto" type="button" variant="outline" onClick={verifyLocation}>
                 <MapPin className="h-4 w-4 mr-2" />
-                Verify location (optional)
+                Verify location (required)
               </Button>
               <Button className="w-full sm:w-auto" type="button" onClick={() => void setSignedAt(new Date().toISOString())} variant="outline">
                 Set time to now
               </Button>
-            </div>
-          </div>
-
-          <div className="rounded-lg border bg-slate-50 p-3 text-sm">
-            <div className="font-semibold">Invoice preview</div>
-            <div className="mt-1 text-muted-foreground">
-              {invoiceTotals.count} × ${invoiceTotals.visitFeeRate} + ${invoiceTotals.gas} gas = <span className="font-semibold text-foreground">${invoiceTotals.total}</span>
-              {anyFlaggedSelected ? ' (includes flagged member(s))' : ''}
             </div>
           </div>
 
