@@ -52,6 +52,8 @@ export default function SWSignOffPage() {
     return /^\d{4}-\d{2}-\d{2}$/.test(fromQs) ? fromQs : todayKeyUtc();
   });
 
+  const selectedRcfe = useMemo(() => rcfes.find((r) => String(r.id || '').trim() === rcfeId) || null, [rcfeId, rcfes]);
+
   const [visits, setVisits] = useState<CandidateVisit[]>([]);
   const [selectedVisitIds, setSelectedVisitIds] = useState<Record<string, boolean>>({});
 
@@ -142,8 +144,6 @@ export default function SWSignOffPage() {
     if (!rcfeId) return;
     void loadCandidates();
   }, [claimDay, isSocialWorker, loadCandidates, rcfeId, swLoading]);
-
-  const selectedRcfe = useMemo(() => rcfes.find((r) => String(r.id || '').trim() === rcfeId) || null, [rcfeId, rcfes]);
 
   const verifyLocation = async () => {
     if (!navigator?.geolocation) {

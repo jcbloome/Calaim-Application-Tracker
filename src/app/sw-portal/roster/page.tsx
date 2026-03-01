@@ -5,11 +5,11 @@ import Link from 'next/link';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuth } from '@/firebase';
-import { Loader2, Printer, Search, Building2, MapPin, Users, Sparkles, RefreshCw, ClipboardCheck, FileBarChart, DollarSign } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Loader2, Printer, Search, Building2, MapPin, Users, Sparkles, RefreshCw, ClipboardCheck, CheckCircle2, Circle } from 'lucide-react';
 
 type RosterMember = {
   id: string;
@@ -185,18 +185,24 @@ export default function SWRosterPage() {
 
   const claimDayDefault = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
-  const renderVisitStatus = (s?: MonthVisitStatus) => {
-    if (!s?.visitId) return <Badge variant="outline">Not completed</Badge>;
-    if (s.claimPaid || String(s.claimStatus || '').toLowerCase() === 'paid') {
-      return <Badge className="bg-emerald-600 hover:bg-emerald-600">Paid</Badge>;
-    }
-    const status = String(s.claimStatus || '').trim().toLowerCase();
-    if (s.claimSubmitted || ['submitted', 'approved', 'rejected'].includes(status)) {
-      const label = status ? status[0].toUpperCase() + status.slice(1) : 'Submitted';
-      return <Badge className="bg-blue-600 hover:bg-blue-600">{label}</Badge>;
-    }
-    if (s.signedOff) return <Badge className="bg-green-600 hover:bg-green-600">Signed off</Badge>;
-    return <Badge className="bg-amber-500 hover:bg-amber-500">Needs sign-off</Badge>;
+  const statusFlags = (s?: MonthVisitStatus) => {
+    const visitId = String(s?.visitId || '').trim();
+    const completed = Boolean(visitId);
+    const claimStatus = String(s?.claimStatus || '').trim().toLowerCase();
+    const paid = Boolean(s?.claimPaid) || claimStatus === 'paid';
+    const submitted = paid || Boolean(s?.claimSubmitted) || ['submitted', 'approved', 'rejected'].includes(claimStatus);
+    const signedOff = Boolean(s?.signedOff);
+    return { completed, signedOff, submitted, paid, claimId: String(s?.claimId || '').trim() || '' };
+  };
+
+  const renderStatusIcon = (params: { on: boolean; label: string }) => {
+    const Icon = params.on ? CheckCircle2 : Circle;
+    const color = params.on ? 'text-emerald-600' : 'text-slate-300';
+    return (
+      <span className="inline-flex items-center justify-center" title={params.label} aria-label={params.label}>
+        <Icon className={`h-5 w-5 ${color}`} />
+      </span>
+    );
   };
 
   if (isLoading) {
@@ -229,7 +235,7 @@ export default function SWRosterPage() {
         <div>
           <h1 className="text-3xl font-bold">Weekly Roster</h1>
           <p className="text-muted-foreground">
-            A compact list of your assigned RCFEs and members, with quick status + actions.
+            A compact list of your assigned RCFEs and members, with quick status indicators.
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge variant="secondary" className="gap-1">
@@ -347,16 +353,18 @@ export default function SWRosterPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-[220px]">Member</TableHead>
-                    <TableHead className="min-w-[140px]">Visit / claim status</TableHead>
+                    <TableHead className="min-w-[92px] text-center">Questionnaire</TableHead>
+                    <TableHead className="min-w-[92px] text-center">Signed off</TableHead>
+                    <TableHead className="min-w-[110px] text-center">Claim submitted</TableHead>
+                    <TableHead className="min-w-[80px] text-center">Paid</TableHead>
                     <TableHead className="min-w-[180px]">Claim ID</TableHead>
-                    <TableHead className="min-w-[240px] text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredFacilities.map((f) => (
                     <>
                       <TableRow key={`rcfe-${f.id}`} className="bg-slate-50">
-                        <TableCell colSpan={4}>
+                        <TableCell colSpan={6}>
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
@@ -380,26 +388,10 @@ export default function SWRosterPage() {
                               </div>
                             </div>
                             <div className="flex flex-wrap gap-2 sm:justify-end">
-                              <Button asChild size="sm">
+                              <Button asChild size="sm" variant="outline">
                                 <Link href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id))}`}>
                                   <ClipboardCheck className="h-4 w-4 mr-2" />
-                                  Questionnaire
-                                </Link>
-                              </Button>
-                              <Button asChild size="sm" variant="outline">
-                                <Link
-                                  href={`/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(f.id))}&claimDay=${encodeURIComponent(
-                                    claimDayDefault
-                                  )}`}
-                                >
-                                  <FileBarChart className="h-4 w-4 mr-2" />
-                                  Sign off
-                                </Link>
-                              </Button>
-                              <Button asChild size="sm" variant="outline">
-                                <Link href="/sw-portal/submit-claims">
-                                  <DollarSign className="h-4 w-4 mr-2" />
-                                  Claims
+                                  Select RCFE
                                 </Link>
                               </Button>
                             </div>
@@ -408,6 +400,7 @@ export default function SWRosterPage() {
                       </TableRow>
                       {(f.members || []).map((m) => {
                         const s = monthStatuses[String(m.id || '').trim()];
+                        const flags = statusFlags(s);
                         return (
                           <TableRow key={`${f.id}-${m.id}`}>
                             <TableCell className="min-w-0">
@@ -421,31 +414,26 @@ export default function SWRosterPage() {
                                 ) : null}
                               </div>
                             </TableCell>
-                            <TableCell>{renderVisitStatus(s)}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {s?.claimId ? <span className="font-mono text-xs break-all">{s.claimId}</span> : '—'}
+                            <TableCell className="text-center">
+                              {renderStatusIcon({ on: flags.completed, label: flags.completed ? 'Questionnaire completed' : 'Questionnaire not completed' })}
                             </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex flex-wrap justify-end gap-2">
-                                <Button asChild size="sm" variant="outline">
-                                  <Link
-                                    href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id))}&memberId=${encodeURIComponent(
-                                      String(m.id)
-                                    )}`}
-                                  >
-                                    Open
-                                  </Link>
-                                </Button>
-                                <Button asChild size="sm" variant="outline">
-                                  <Link
-                                    href={`/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(f.id))}&claimDay=${encodeURIComponent(
-                                      claimDayDefault
-                                    )}`}
-                                  >
-                                    Sign off
-                                  </Link>
-                                </Button>
-                              </div>
+                            <TableCell className="text-center">
+                              {renderStatusIcon({
+                                on: flags.completed && flags.signedOff,
+                                label: flags.completed && flags.signedOff ? 'Signed off' : 'Not signed off',
+                              })}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {renderStatusIcon({
+                                on: flags.completed && flags.submitted,
+                                label: flags.completed && flags.submitted ? 'Claim submitted' : 'Claim not submitted',
+                              })}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {renderStatusIcon({ on: flags.completed && flags.paid, label: flags.completed && flags.paid ? 'Claim paid' : 'Not paid' })}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {flags.claimId ? <span className="font-mono text-xs break-all">{flags.claimId}</span> : '—'}
                             </TableCell>
                           </TableRow>
                         );
@@ -456,6 +444,86 @@ export default function SWRosterPage() {
               </Table>
             </div>
           </div>
+        ) : null}
+
+        {/* Weekly assignment log: quick scan list with status icons */}
+        {hasLoadedOnce && facilities.length > 0 ? (
+          <Card className="print:hidden">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Weekly assignment log</CardTitle>
+              <CardDescription>All members assigned this week, with simple status icons.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <details className="rounded-md border bg-slate-50 p-3">
+                <summary className="cursor-pointer select-none text-sm font-medium text-slate-900">
+                  View log ({totals.facilityCount} RCFEs, {totals.memberCount} members)
+                </summary>
+                <div className="mt-3 space-y-3">
+                  {filteredFacilities.map((f) => (
+                    <div key={`log-${f.id}`} className="rounded-md bg-white p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-semibold truncate">{f.name}</div>
+                          <div className="text-xs text-muted-foreground break-words">{formatAddressLine(f) || f.address || '—'}</div>
+                        </div>
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id))}`}>
+                            <ClipboardCheck className="h-4 w-4 mr-2" />
+                            Select RCFE
+                          </Link>
+                        </Button>
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {(f.members || []).map((m) => {
+                          const s = monthStatuses[String(m.id || '').trim()];
+                          const flags = statusFlags(s);
+                          return (
+                            <div key={`log-${f.id}-${m.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="truncate text-sm font-medium">{m.name}</span>
+                                  {m.isNewAssignment ? (
+                                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                                      <Sparkles className="h-3.5 w-3.5" />
+                                      NEW
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3 text-xs">
+                                <div className="flex items-center gap-1">
+                                  {renderStatusIcon({ on: flags.completed, label: flags.completed ? 'Questionnaire completed' : 'Questionnaire not completed' })}
+                                  <span className="text-muted-foreground">Q</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  {renderStatusIcon({
+                                    on: flags.completed && flags.signedOff,
+                                    label: flags.completed && flags.signedOff ? 'Signed off' : 'Not signed off',
+                                  })}
+                                  <span className="text-muted-foreground">S</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  {renderStatusIcon({
+                                    on: flags.completed && flags.submitted,
+                                    label: flags.completed && flags.submitted ? 'Claim submitted' : 'Claim not submitted',
+                                  })}
+                                  <span className="text-muted-foreground">C</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  {renderStatusIcon({ on: flags.completed && flags.paid, label: flags.completed && flags.paid ? 'Claim paid' : 'Not paid' })}
+                                  <span className="text-muted-foreground">P</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </CardContent>
+          </Card>
         ) : null}
       </div>
     </div>
