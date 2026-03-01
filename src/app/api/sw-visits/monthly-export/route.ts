@@ -142,6 +142,7 @@ export async function POST(request: NextRequest) {
         flagged: Boolean(v?.flagged),
         signedOff: Boolean(v?.signedOff),
         claimId: String(v?.claimId || '').trim(),
+        claimNumber: String(v?.claimNumber || '').trim(),
         claimStatus: String(v?.claimStatus || '').trim() || 'draft',
         claimSubmitted: Boolean(v?.claimSubmitted),
         claimPaid: Boolean(v?.claimPaid),

@@ -6,6 +6,7 @@ import { useSocialWorker } from '@/hooks/use-social-worker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuth } from '@/firebase';
 import { Badge } from '@/components/ui/badge';
@@ -36,6 +37,7 @@ type MonthVisitStatus = {
   claimSubmitted: boolean;
   claimPaid: boolean;
   claimId?: string;
+  claimNumber?: string;
 };
 
 export default function SWStatusLogPage() {
@@ -57,6 +59,11 @@ export default function SWStatusLogPage() {
   const [claimLookupLoading, setClaimLookupLoading] = useState(false);
   const [claimLookupError, setClaimLookupError] = useState<string | null>(null);
   const [claimLookupResult, setClaimLookupResult] = useState<any | null>(null);
+
+  const [claimDetailOpen, setClaimDetailOpen] = useState(false);
+  const [claimDetailLoading, setClaimDetailLoading] = useState(false);
+  const [claimDetailError, setClaimDetailError] = useState<string | null>(null);
+  const [claimDetailResult, setClaimDetailResult] = useState<any | null>(null);
 
   const refreshRoster = useCallback(async () => {
     if (!user?.email) return;
@@ -104,6 +111,7 @@ export default function SWStatusLogPage() {
           claimSubmitted: Boolean(r?.claimSubmitted),
           claimPaid: Boolean(r?.claimPaid),
           claimId: String(r?.claimId || '').trim() || undefined,
+          claimNumber: String(r?.claimNumber || '').trim() || undefined,
         };
       });
       setMonthStatuses(map);
@@ -138,11 +146,64 @@ export default function SWStatusLogPage() {
     }
   }, [auth?.currentUser, auth, claimLookupId]);
 
+  const openClaimDetail = useCallback(
+    async (params: { id: string }) => {
+      if (!auth?.currentUser) return;
+      const id = String(params.id || '').trim();
+      if (!id) return;
+      setClaimDetailOpen(true);
+      setClaimDetailLoading(true);
+      setClaimDetailError(null);
+      setClaimDetailResult(null);
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const res = await fetch(`/api/sw-claims/lookup?claimId=${encodeURIComponent(id)}`, {
+          headers: { authorization: `Bearer ${idToken}` },
+        });
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok || !data?.success) throw new Error(data?.error || `Lookup failed (HTTP ${res.status})`);
+        setClaimDetailResult(data?.claim || null);
+      } catch (e: any) {
+        setClaimDetailError(e?.message || 'Claim lookup failed.');
+        setClaimDetailResult(null);
+      } finally {
+        setClaimDetailLoading(false);
+      }
+    },
+    [auth]
+  );
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isSocialWorker) return;
+    // Auto-load roster on entry; this page's table depends on current assignments.
+    if (!hasLoadedOnce && !loadingRoster) {
+      void refreshRoster();
+      return;
+    }
+    // Auto-load statuses once roster has loaded.
+    if (hasLoadedOnce) void refreshMonthStatuses();
+  }, [hasLoadedOnce, isLoading, isSocialWorker, loadingRoster, refreshMonthStatuses, refreshRoster]);
+
   useEffect(() => {
     if (isLoading) return;
     if (!isSocialWorker) return;
     if (!hasLoadedOnce) return;
-    void refreshMonthStatuses();
+    // Auto-refresh statuses periodically so claim status changes show up.
+    let stopped = false;
+    const run = async () => {
+      if (stopped) return;
+      if (document.visibilityState !== 'visible') return;
+      await refreshMonthStatuses();
+    };
+    const onFocus = () => void run();
+    window.addEventListener('focus', onFocus);
+    const interval = window.setInterval(() => void run(), 90_000);
+    return () => {
+      stopped = true;
+      window.removeEventListener('focus', onFocus);
+      window.clearInterval(interval);
+    };
   }, [hasLoadedOnce, isLoading, isSocialWorker, refreshMonthStatuses]);
 
   const filteredFacilities = useMemo(() => {
@@ -236,7 +297,7 @@ export default function SWStatusLogPage() {
           </div>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => void refreshRoster()} disabled={loadingRoster}>
             <RefreshCw className="h-4 w-4 mr-2" />
-            {loadingRoster ? 'Refreshing…' : 'Refresh roster'}
+            {loadingRoster ? 'Refreshing…' : 'Refresh assignments'}
           </Button>
           <Button
             className="w-full sm:w-auto"
@@ -245,7 +306,7 @@ export default function SWStatusLogPage() {
             disabled={loadingMonthStatuses || !hasLoadedOnce}
           >
             <RefreshCw className="h-4 w-4 mr-2" />
-            {loadingMonthStatuses ? 'Refreshing…' : 'Refresh statuses'}
+            {loadingMonthStatuses ? 'Refreshing…' : 'Refresh statuses (optional)'}
           </Button>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => window.print()}>
             <Printer className="h-4 w-4 mr-2" />
@@ -257,14 +318,14 @@ export default function SWStatusLogPage() {
       <Card className="print:hidden">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Past claim status lookup</CardTitle>
-          <CardDescription>Search any past claim by Claim ID to see its current status.</CardDescription>
+          <CardDescription>Search any past claim by Claim # or Claim ID to see its current status.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Input
               value={claimLookupId}
               onChange={(e) => setClaimLookupId(e.target.value)}
-              placeholder="Enter Claim ID (e.g., swClaim_...)"
+              placeholder="Enter Claim # (e.g., SW-202603-000123) or Claim ID (swClaim_...)"
             />
             <Button
               className="w-full sm:w-auto"
@@ -290,8 +351,10 @@ export default function SWStatusLogPage() {
               </div>
               <div className="mt-2 grid gap-1 text-muted-foreground">
                 <div>
-                  <span className="font-medium text-slate-900">Claim:</span>{' '}
-                  <span className="font-mono break-all">{String(claimLookupResult?.claimId || '')}</span>
+                  <span className="font-medium text-slate-900">Claim #:</span>{' '}
+                  <span className="font-mono break-all">{String(claimLookupResult?.claimNumber || '—')}</span>
+                  <span className="text-xs text-muted-foreground"> • </span>
+                  <span className="text-xs text-muted-foreground font-mono break-all">{String(claimLookupResult?.claimId || '')}</span>
                 </div>
                 <div>
                   <span className="font-medium text-slate-900">Month:</span> {String(claimLookupResult?.claimMonth || '—')}
@@ -363,8 +426,8 @@ export default function SWStatusLogPage() {
                     <TableHead className="min-w-[92px] text-center">Signed off</TableHead>
                     <TableHead className="min-w-[110px] text-center">Claim submitted</TableHead>
                     <TableHead className="min-w-[80px] text-center">Paid</TableHead>
-                    <TableHead className="min-w-[180px]">Claim ID</TableHead>
-                    <TableHead className="min-w-[120px] text-right">Open</TableHead>
+                    <TableHead className="min-w-[180px]">Claim #</TableHead>
+                    <TableHead className="min-w-[210px] text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -429,19 +492,41 @@ export default function SWStatusLogPage() {
                               {renderStatusIcon({ on: flags.completed && flags.claimPaid, label: flags.completed && flags.claimPaid ? 'Claim paid' : 'Not paid' })}
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground">
-                              {flags.claimId ? <span className="font-mono text-xs break-all">{flags.claimId}</span> : '—'}
+                              {flags.claimNumber ? (
+                                <div className="grid gap-1">
+                                  <span className="font-mono text-xs break-all">{flags.claimNumber}</span>
+                                  {flags.claimId ? (
+                                    <span className="font-mono text-[10px] break-all text-muted-foreground">{flags.claimId}</span>
+                                  ) : null}
+                                </div>
+                              ) : flags.claimId ? (
+                                <span className="font-mono text-xs break-all">{flags.claimId}</span>
+                              ) : (
+                                '—'
+                              )}
                             </TableCell>
                             <TableCell className="text-right">
-                              <Button asChild size="sm" variant="outline">
-                                <Link
-                                  href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id))}&memberId=${encodeURIComponent(
-                                    String(m.id)
-                                  )}`}
-                                >
-                                  <ClipboardCheck className="h-4 w-4 mr-2" />
-                                  Open
-                                </Link>
-                              </Button>
+                              <div className="flex flex-wrap justify-end gap-2">
+                                {flags.claimId || flags.claimNumber ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => void openClaimDetail({ id: flags.claimId || flags.claimNumber })}
+                                  >
+                                    Open claim
+                                  </Button>
+                                ) : null}
+                                <Button asChild size="sm" variant="outline">
+                                  <Link
+                                    href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id))}&memberId=${encodeURIComponent(
+                                      String(m.id)
+                                    )}`}
+                                  >
+                                    <ClipboardCheck className="h-4 w-4 mr-2" />
+                                    Questionnaire
+                                  </Link>
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -454,6 +539,56 @@ export default function SWStatusLogPage() {
           </div>
         ) : null}
       </div>
+
+      <Dialog open={claimDetailOpen} onOpenChange={setClaimDetailOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Claim details</DialogTitle>
+            <DialogDescription>Read-only status details for bookkeeping and follow-up.</DialogDescription>
+          </DialogHeader>
+          {claimDetailLoading ? (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : claimDetailError ? (
+            <div className="text-sm text-destructive">{claimDetailError}</div>
+          ) : claimDetailResult ? (
+            <div className="grid gap-2 text-sm">
+              <div>
+                <span className="font-semibold">Claim #:</span>{' '}
+                <span className="font-mono break-all">{String(claimDetailResult?.claimNumber || '—')}</span>
+              </div>
+              <div className="text-xs text-muted-foreground font-mono break-all">{String(claimDetailResult?.claimId || '')}</div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Badge variant="secondary">Status: {String(claimDetailResult?.status || 'unknown')}</Badge>
+                {claimDetailResult?.reviewStatus ? (
+                  <Badge variant="secondary">Review: {String(claimDetailResult?.reviewStatus)}</Badge>
+                ) : null}
+                {claimDetailResult?.paymentStatus ? (
+                  <Badge variant="secondary">Payment: {String(claimDetailResult?.paymentStatus)}</Badge>
+                ) : null}
+              </div>
+              <div className="text-muted-foreground">
+                <span className="font-medium text-slate-900">Month:</span> {String(claimDetailResult?.claimMonth || '—')}
+                {claimDetailResult?.claimDay ? <span> • Day: {String(claimDetailResult?.claimDay)}</span> : null}
+              </div>
+              <div className="text-muted-foreground">
+                <span className="font-medium text-slate-900">RCFE:</span> {String(claimDetailResult?.rcfeName || '—')}
+              </div>
+              {claimDetailResult?.totalAmount != null ? (
+                <div className="text-muted-foreground">
+                  <span className="font-medium text-slate-900">Total:</span> ${Number(claimDetailResult?.totalAmount || 0).toFixed(2)}
+                </div>
+              ) : null}
+              {claimDetailResult?.visitCount != null ? (
+                <div className="text-muted-foreground">
+                  <span className="font-medium text-slate-900">Visits:</span> {Number(claimDetailResult?.visitCount || 0)}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">No claim loaded.</div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

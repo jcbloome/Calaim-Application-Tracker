@@ -199,6 +199,7 @@ export async function POST(req: NextRequest) {
 
     const signOffRef = adminDb.collection('sw_signoff_records').doc();
     const signOffId = signOffRef.id;
+    let createdClaimNumber = '';
 
     // Transaction: locks + signoff record + claim + finalize visits
     try {
@@ -209,6 +210,24 @@ export async function POST(req: NextRequest) {
           const existingStatus = String((claimSnap.data() as any)?.status || '').trim();
           throw new Error(`CLAIM_ALREADY_EXISTS:${existingStatus || 'exists'}`);
         }
+
+        // Human-friendly claim number for bookkeeping (month-based sequence).
+        const counterRef = adminDb.collection('sw_counters').doc(`sw_claim_number_${visitMonth}`);
+        const counterSnap = await tx.get(counterRef);
+        const curNextRaw = (counterSnap.exists ? (counterSnap.data() as any)?.next : null) ?? 1;
+        const curNext = Number(curNextRaw);
+        const seq = Number.isFinite(curNext) && curNext > 0 ? Math.floor(curNext) : 1;
+        const claimNumber = `SW-${visitMonth.replace('-', '')}-${String(seq).padStart(6, '0')}`;
+        createdClaimNumber = claimNumber;
+        tx.set(
+          counterRef,
+          {
+            month: visitMonth,
+            next: seq + 1,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
 
         // Enforce monthly lock for each member.
         const lockRefs = visits.map((v) =>
@@ -270,6 +289,7 @@ export async function POST(req: NextRequest) {
           signedByTitle: staffTitle,
           signedAt: signedAtIso,
           locationVerified,
+          claimNumber,
           updatedAtIso: nowIso,
         };
 
@@ -286,6 +306,9 @@ export async function POST(req: NextRequest) {
         tx.set(
           claimRef,
           {
+            claimNumber,
+            claimSequence: seq,
+            claimSequenceMonth: visitMonth,
             socialWorkerUid: uid,
             socialWorkerEmail: email,
             socialWorkerName,
@@ -338,6 +361,8 @@ export async function POST(req: NextRequest) {
             socialWorkerUid: uid,
             socialWorkerEmail: email,
             socialWorkerName,
+            claimId,
+            claimNumber,
             claimDay,
             visitIds: selectedVisitIds,
             completedVisits,
@@ -393,6 +418,7 @@ export async function POST(req: NextRequest) {
               rcfeStaffTitle: staffTitle,
               rcfeStaffGeolocation: geolocation,
               claimId,
+              claimNumber,
               claimMonth: visitMonth,
               claimStatus: 'submitted',
               claimSubmitted: true,
@@ -467,6 +493,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       claimId,
+      claimNumber: createdClaimNumber || undefined,
       signOffId,
       rcfeId,
       claimDay,

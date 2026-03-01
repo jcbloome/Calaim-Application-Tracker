@@ -5,6 +5,7 @@ export type SwMonthVisitStatusLike = {
   claimSubmitted?: unknown;
   claimPaid?: unknown;
   claimId?: unknown;
+  claimNumber?: unknown;
 };
 
 export type SwVisitStatusFlags = {
@@ -15,6 +16,7 @@ export type SwVisitStatusFlags = {
   needsAction: boolean;
   nextAction: 'questionnaire' | 'signoff' | 'submit-claim' | 'none';
   claimId: string;
+  claimNumber: string;
 };
 
 const norm = (v: unknown) => String(v ?? '').trim().toLowerCase();
@@ -55,6 +57,7 @@ export function computeSwVisitStatusFlags(s?: SwMonthVisitStatusLike | null): Sw
     needsAction,
     nextAction,
     claimId: String(s?.claimId ?? '').trim(),
+    claimNumber: String(s?.claimNumber ?? '').trim(),
   };
 }
 

@@ -10,8 +10,8 @@ type LookupResponse =
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const claimId = String(searchParams.get('claimId') || '').trim();
-    if (!claimId) {
+    const q = String(searchParams.get('claimId') || '').trim();
+    if (!q) {
       return NextResponse.json<LookupResponse>({ success: false, error: 'claimId is required' }, { status: 400 });
     }
 
@@ -36,9 +36,29 @@ export async function GET(req: NextRequest) {
       return NextResponse.json<LookupResponse>({ success: false, error: 'Invalid token' }, { status: 401 });
     }
 
-    const claimRef = adminDb.collection('sw-claims').doc(claimId);
-    const snap = await claimRef.get();
-    if (!snap.exists) {
+    const claimsCol = adminDb.collection('sw-claims');
+    let snap: any | null = null;
+    let claimId = '';
+
+    // Prefer direct lookup for internal doc IDs.
+    if (q.startsWith('swClaim_')) {
+      const docSnap = await claimsCol.doc(q).get();
+      if (docSnap.exists) {
+        snap = docSnap;
+        claimId = String(docSnap.id || q).trim();
+      }
+    }
+
+    // Fallback: human-friendly Claim # lookup.
+    if (!snap) {
+      const qs = await claimsCol.where('claimNumber', '==', q).limit(1).get();
+      if (!qs.empty) {
+        snap = qs.docs[0];
+        claimId = String(snap.id || '').trim();
+      }
+    }
+
+    if (!snap) {
       return NextResponse.json<LookupResponse>({ success: false, error: 'Claim not found' }, { status: 404 });
     }
 
@@ -54,7 +74,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json<LookupResponse>({
       success: true,
       claim: {
-        claimId: String(snap.id || claimId).trim(),
+        claimId: String(claimId || snap.id || q).trim(),
+        claimNumber: String(claim?.claimNumber || '').trim() || undefined,
         status: String(claim?.status || '').trim() || 'unknown',
         reviewStatus: String(claim?.reviewStatus || '').trim() || undefined,
         paymentStatus: String(claim?.paymentStatus || '').trim() || undefined,
