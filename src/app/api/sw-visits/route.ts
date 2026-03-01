@@ -463,19 +463,40 @@ export async function GET(req: NextRequest) {
       return !hold && !expired;
     });
 
-    // Group by RCFE
+    const normalizeKey = (value: unknown) =>
+      String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const pickRcfeRegisteredId = (member: any): string => {
+      const raw =
+        member?.RCFE_Registered_ID ??
+        member?.rcfeRegisteredId ??
+        member?.RCFE_RegisteredID ??
+        member?.rcfe_registered_id ??
+        '';
+      const v = String(raw ?? '').trim();
+      return v;
+    };
+
+    // Group by RCFE (prefer RCFE_Registered_ID to avoid name collisions)
     const rcfeGroups = assignedMembers.reduce((acc, member) => {
-      const rcfeKey = member.RCFE_Name || 'Unknown RCFE';
-      if (!acc[rcfeKey]) {
+      const rcfeName = String(member.RCFE_Name || member.rcfeName || '').trim() || 'Unknown RCFE';
+      const registeredId = pickRcfeRegisteredId(member);
+      const groupKey = registeredId ? `rid:${registeredId}` : `name:${normalizeKey(rcfeName) || 'unknown'}`;
+      if (!acc[groupKey]) {
         const city = String(member.RCFE_City || member.MemberCity || member.Member_City || '').trim() || null;
         const zip = String(member.RCFE_Zip || '').trim() || null;
         const administrator =
           String(member.RCFE_Administrator || member.rcfeAdministrator || '').trim() || null;
         const administratorPhone =
           String(member.RCFE_Administrator_Phone || member.rcfeAdministratorPhone || '').trim() || null;
-        acc[rcfeKey] = {
-          id: `rcfe-${rcfeKey.toLowerCase().replace(/\s+/g, '-')}`,
-          name: rcfeKey,
+        acc[groupKey] = {
+          id: registeredId || `rcfe-${normalizeKey(rcfeName).replace(/\s+/g, '-')}`,
+          name: rcfeName,
           address: member.RCFE_Address || 'Address not available',
           city,
           zip,
@@ -485,12 +506,12 @@ export async function GET(req: NextRequest) {
         };
       }
       
-      acc[rcfeKey].members.push({
+      acc[groupKey].members.push({
         id: String(member.Client_ID2 || member.client_ID2 || member.id || '').trim() || Math.random().toString(),
         name: String(member.memberName || '').trim() || `${member.memberFirstName || ''} ${member.memberLastName || ''}`.trim(),
         room: 'Room TBD', // This would come from RCFE data if available
-        rcfeId: acc[rcfeKey].id,
-        rcfeName: rcfeKey,
+        rcfeId: acc[groupKey].id,
+        rcfeName: rcfeName,
         rcfeAddress: member.RCFE_Address || 'Address not available',
         lastVisitDate: null // This would come from visit history
       });

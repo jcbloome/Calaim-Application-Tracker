@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ClipboardCheck, FileBarChart, DollarSign, ListChecks, Users } from 'lucide-react';
+import { ClipboardCheck, FileBarChart, DollarSign, ListChecks, Users, BookOpenText } from 'lucide-react';
 
 export default function SWPortalPage() {
   return (
@@ -16,6 +16,20 @@ export default function SWPortalPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BookOpenText className="h-5 w-5" />
+              Instructions
+            </CardTitle>
+            <CardDescription>How to complete visits, sign-off, and submit claims</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild className="w-full" variant="outline">
+              <Link href="/sw-portal/instructions">Open</Link>
+            </Button>
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -34,9 +48,9 @@ export default function SWPortalPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Assigned Members
+              SW Assignments
             </CardTitle>
-            <CardDescription>View members assigned to you by RCFE</CardDescription>
+            <CardDescription>View your RCFEs and assigned members</CardDescription>
           </CardHeader>
           <CardContent>
             <Button asChild className="w-full" variant="outline">

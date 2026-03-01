@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
 
     const body = (await req.json().catch(() => ({}))) as any;
     const rcfeId = String(body?.rcfeId || '').trim();
+    const requestedRcfeName = String(body?.rcfeName || '').trim();
     const claimDay = toDayKey(body?.claimDay || '');
     const selectedVisitIds: string[] = Array.isArray(body?.selectedVisitIds)
       ? body.selectedVisitIds.map((v: any) => String(v || '').trim()).filter(Boolean)
@@ -108,13 +109,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'One or more selected visits were not found' }, { status: 404 });
     }
 
+    const norm = (value: unknown) =>
+      String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+
     const invalid = visits.find((v) => {
       const owner = String(v?.socialWorkerEmail || '').trim().toLowerCase();
       if (owner && owner !== email) return true;
       const status = String(v?.status || '').trim().toLowerCase();
       if (status !== 'draft') return true;
       const vRcfeId = String(v?.rcfeId || '').trim();
-      if (vRcfeId !== rcfeId) return true;
+      if (vRcfeId !== rcfeId) {
+        // Backward-compat: older drafts used a slug rcfeId. Allow matching by rcfeName only for legacy ids.
+        const legacy = vRcfeId.startsWith('rcfe-');
+        const nameMatch = requestedRcfeName && norm(v?.rcfeName) === norm(requestedRcfeName);
+        if (!(legacy && nameMatch)) return true;
+      }
       const vDay = toDayKey(v?.claimDay || v?.visitDate || '');
       if (vDay !== claimDay) return true;
       if (Boolean(v?.signedOff)) return true;

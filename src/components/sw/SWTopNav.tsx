@@ -4,12 +4,13 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { ClipboardCheck, ListChecks, FileBarChart, DollarSign, Users, Home } from 'lucide-react';
+import { ClipboardCheck, ListChecks, FileBarChart, DollarSign, Users, Home, BookOpenText } from 'lucide-react';
 
 const links = [
   { href: '/sw-portal', label: 'Menu', icon: Home },
+  { href: '/sw-portal/instructions', label: 'Instructions', icon: BookOpenText },
   { href: '/sw-visit-verification', label: 'Monthly Questionnaire', icon: ClipboardCheck },
-  { href: '/sw-portal/roster', label: 'Assigned Members', icon: Users },
+  { href: '/sw-portal/roster', label: 'SW Assignments', icon: Users },
   { href: '/sw-portal/monthly-visits', label: 'Visits', icon: ListChecks },
   { href: '/sw-portal/sign-off', label: 'Sign Off', icon: FileBarChart },
   { href: '/sw-portal/submit-claims', label: 'Submit Claims', icon: DollarSign },

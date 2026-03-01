@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const rcfeId = String(searchParams.get('rcfeId') || '').trim();
+    const rcfeNameQ = String(searchParams.get('rcfeName') || '').trim();
     const claimDay = String(searchParams.get('claimDay') || '').trim().slice(0, 10);
 
     if (!rcfeId) {
@@ -64,11 +65,22 @@ export async function GET(req: NextRequest) {
       return Number.isFinite(ms) ? ms : 0;
     };
 
+    const norm = (value: unknown) =>
+      String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+
     const matches = snap.docs
       .map((d) => (d.data() as any) || {})
       .filter((v: any) => {
         const vRcfeId = String(v?.rcfeId || '').trim();
-        if (vRcfeId !== rcfeId) return false;
+        if (vRcfeId !== rcfeId) {
+          // Backward-compat: older drafts used a slug rcfeId. Allow matching by rcfeName only for legacy ids.
+          const legacy = vRcfeId.startsWith('rcfe-');
+          const nameMatch = rcfeNameQ && norm(v?.rcfeName) === norm(rcfeNameQ);
+          if (!(legacy && nameMatch)) return false;
+        }
         const status = String(v?.status || '').trim().toLowerCase();
         if (status !== 'draft') return false;
         const day = toDayKey(v?.claimDay || v?.visitDate || v?.completedAt || v?.submittedAt);

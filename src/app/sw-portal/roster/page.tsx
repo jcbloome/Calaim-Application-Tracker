@@ -1,12 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Loader2, Printer, Search, Building2, MapPin, Users, Sparkles, RefreshCw } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useAuth } from '@/firebase';
+import { Loader2, Printer, Search, Building2, MapPin, Users, Sparkles, RefreshCw, ClipboardCheck, FileBarChart, DollarSign } from 'lucide-react';
 
 type RosterMember = {
   id: string;
@@ -21,17 +24,32 @@ type RosterFacility = {
   city?: string;
   zip?: string;
   county?: string;
+  administrator?: string | null;
+  administratorPhone?: string | null;
   members: RosterMember[];
+};
+
+type MonthVisitStatus = {
+  visitId: string;
+  signedOff: boolean;
+  claimStatus: string;
+  claimSubmitted: boolean;
+  claimPaid: boolean;
+  claimId?: string;
 };
 
 export default function SWRosterPage() {
   const { user, isSocialWorker, isLoading } = useSocialWorker();
+  const auth = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [facilities, setFacilities] = useState<RosterFacility[]>([]);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [statusMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
+  const [monthStatuses, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
+  const [loadingMonthStatuses, setLoadingMonthStatuses] = useState(false);
 
   const refreshRoster = useCallback(async () => {
     if (!user?.email) return;
@@ -56,6 +74,44 @@ export default function SWRosterPage() {
       setLoading(false);
     }
   }, [user?.email]);
+
+  const refreshMonthStatuses = useCallback(async () => {
+    if (!auth?.currentUser) {
+      setMonthStatuses({});
+      return;
+    }
+    setLoadingMonthStatuses(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/sw-visits/monthly-export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ month: statusMonth, dedupeByMemberMonth: true }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load monthly statuses (${res.status})`);
+      const rows: any[] = Array.isArray(data?.rows) ? data.rows : [];
+      const map: Record<string, MonthVisitStatus> = {};
+      rows.forEach((r) => {
+        const memberId = String(r?.memberId || '').trim();
+        if (!memberId) return;
+        map[memberId] = {
+          visitId: String(r?.visitId || '').trim(),
+          signedOff: Boolean(r?.signedOff),
+          claimStatus: String(r?.claimStatus || 'draft').trim(),
+          claimSubmitted: Boolean(r?.claimSubmitted),
+          claimPaid: Boolean(r?.claimPaid),
+          claimId: String(r?.claimId || '').trim() || undefined,
+        };
+      });
+      setMonthStatuses(map);
+    } catch {
+      // best-effort only: roster should still be usable without statuses
+      setMonthStatuses({});
+    } finally {
+      setLoadingMonthStatuses(false);
+    }
+  }, [auth?.currentUser, auth, statusMonth]);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +140,13 @@ export default function SWRosterPage() {
       cancelled = true;
     };
   }, [isLoading, isSocialWorker, user]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isSocialWorker) return;
+    if (!hasLoadedOnce) return;
+    void refreshMonthStatuses();
+  }, [hasLoadedOnce, isLoading, isSocialWorker, refreshMonthStatuses]);
 
   const filteredFacilities = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -120,6 +183,22 @@ export default function SWRosterPage() {
     return [addr, tail].filter(Boolean).join(', ');
   }, []);
 
+  const claimDayDefault = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  const renderVisitStatus = (s?: MonthVisitStatus) => {
+    if (!s?.visitId) return <Badge variant="outline">Not completed</Badge>;
+    if (s.claimPaid || String(s.claimStatus || '').toLowerCase() === 'paid') {
+      return <Badge className="bg-emerald-600 hover:bg-emerald-600">Paid</Badge>;
+    }
+    const status = String(s.claimStatus || '').trim().toLowerCase();
+    if (s.claimSubmitted || ['submitted', 'approved', 'rejected'].includes(status)) {
+      const label = status ? status[0].toUpperCase() + status.slice(1) : 'Submitted';
+      return <Badge className="bg-blue-600 hover:bg-blue-600">{label}</Badge>;
+    }
+    if (s.signedOff) return <Badge className="bg-green-600 hover:bg-green-600">Signed off</Badge>;
+    return <Badge className="bg-amber-500 hover:bg-amber-500">Needs sign-off</Badge>;
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -150,7 +229,7 @@ export default function SWRosterPage() {
         <div>
           <h1 className="text-3xl font-bold">Weekly Roster</h1>
           <p className="text-muted-foreground">
-            A compact, PDF-friendly list of members assigned to each home (RCFE).
+            A compact list of your assigned RCFEs and members, with quick status + actions.
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge variant="secondary" className="gap-1">
@@ -164,12 +243,22 @@ export default function SWRosterPage() {
             {lastSync ? (
               <span>Cache last updated: {lastSync}</span>
             ) : null}
+            <span>• Status month: {statusMonth}</span>
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => void refreshRoster()} disabled={loading}>
             <RefreshCw className="h-4 w-4 mr-2" />
             {loading ? 'Refreshing…' : 'Refresh list'}
+          </Button>
+          <Button
+            className="w-full sm:w-auto"
+            variant="outline"
+            onClick={() => void refreshMonthStatuses()}
+            disabled={loadingMonthStatuses || !hasLoadedOnce}
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            {loadingMonthStatuses ? 'Refreshing…' : 'Refresh statuses'}
           </Button>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => window.print()}>
             <Printer className="h-4 w-4 mr-2" />
@@ -250,40 +339,124 @@ export default function SWRosterPage() {
           ))}
         </div>
 
-        {/* Screen: card view (always) */}
-        {filteredFacilities.map((f) => (
-          <Card key={f.id} className="break-inside-avoid print:hidden">
-            <CardHeader className="pb-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-1">
-                  <CardTitle className="text-lg">{f.name}</CardTitle>
-                  <CardDescription className="flex items-start gap-2">
-                    <MapPin className="h-4 w-4 mt-0.5" />
-                    <span>{formatAddressLine(f) || f.address}</span>
-                  </CardDescription>
-                </div>
-                <Badge variant="secondary">{(f.members || []).length} member(s)</Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {(f.members || []).map((m) => (
-                  <div key={m.id} className="rounded-md border border-border px-3 py-2 text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate">{m.name}</span>
-                      {m.isNewAssignment ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
-                          <Sparkles className="h-3.5 w-3.5" />
-                          NEW
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+        {/* Screen: compact roster table */}
+        {filteredFacilities.length > 0 ? (
+          <div className="rounded-lg border bg-white print:hidden">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[220px]">Member</TableHead>
+                    <TableHead className="min-w-[140px]">Visit / claim status</TableHead>
+                    <TableHead className="min-w-[180px]">Claim ID</TableHead>
+                    <TableHead className="min-w-[240px] text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredFacilities.map((f) => (
+                    <>
+                      <TableRow key={`rcfe-${f.id}`} className="bg-slate-50">
+                        <TableCell colSpan={4}>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="font-semibold truncate max-w-full">{f.name}</div>
+                                <Badge variant="secondary">{(f.members || []).length} member(s)</Badge>
+                              </div>
+                              <div className="mt-1 flex items-start gap-2 text-xs text-muted-foreground min-w-0">
+                                <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                                <span className="min-w-0 break-words">{formatAddressLine(f) || f.address || '—'}</span>
+                              </div>
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                Admin: {String(f.administrator || '—')}{' '}
+                                {f.administratorPhone ? (
+                                  <span className="ml-1">
+                                    •{' '}
+                                    <a className="underline-offset-2 hover:underline" href={`tel:${String(f.administratorPhone).replace(/[^\d+]/g, '')}`}>
+                                      {String(f.administratorPhone)}
+                                    </a>
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2 sm:justify-end">
+                              <Button asChild size="sm">
+                                <Link href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id))}`}>
+                                  <ClipboardCheck className="h-4 w-4 mr-2" />
+                                  Questionnaire
+                                </Link>
+                              </Button>
+                              <Button asChild size="sm" variant="outline">
+                                <Link
+                                  href={`/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(f.id))}&claimDay=${encodeURIComponent(
+                                    claimDayDefault
+                                  )}`}
+                                >
+                                  <FileBarChart className="h-4 w-4 mr-2" />
+                                  Sign off
+                                </Link>
+                              </Button>
+                              <Button asChild size="sm" variant="outline">
+                                <Link href="/sw-portal/submit-claims">
+                                  <DollarSign className="h-4 w-4 mr-2" />
+                                  Claims
+                                </Link>
+                              </Button>
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {(f.members || []).map((m) => {
+                        const s = monthStatuses[String(m.id || '').trim()];
+                        return (
+                          <TableRow key={`${f.id}-${m.id}`}>
+                            <TableCell className="min-w-0">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="min-w-0 truncate font-medium">{m.name}</span>
+                                {m.isNewAssignment ? (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                                    <Sparkles className="h-3.5 w-3.5" />
+                                    NEW
+                                  </span>
+                                ) : null}
+                              </div>
+                            </TableCell>
+                            <TableCell>{renderVisitStatus(s)}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {s?.claimId ? <span className="font-mono text-xs break-all">{s.claimId}</span> : '—'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <Button asChild size="sm" variant="outline">
+                                  <Link
+                                    href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id))}&memberId=${encodeURIComponent(
+                                      String(m.id)
+                                    )}`}
+                                  >
+                                    Open
+                                  </Link>
+                                </Button>
+                                <Button asChild size="sm" variant="outline">
+                                  <Link
+                                    href={`/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(f.id))}&claimDay=${encodeURIComponent(
+                                      claimDayDefault
+                                    )}`}
+                                  >
+                                    Sign off
+                                  </Link>
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

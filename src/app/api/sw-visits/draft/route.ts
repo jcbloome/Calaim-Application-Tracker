@@ -116,6 +116,7 @@ export async function POST(req: NextRequest) {
 
     const memberId = String(visitData?.memberId || '').trim();
     const rcfeId = String(visitData?.rcfeId || '').trim();
+    const rcfeName = String(visitData?.rcfeName || '').trim();
 
     // Enforce portal rules (same as submit): Authorized, not on Hold, and (for Kaiser) not past auth end.
     try {
@@ -197,6 +198,12 @@ export async function POST(req: NextRequest) {
     let ref = adminDb.collection('sw_visit_records').doc(effectiveVisitId);
     let existingSnap = await ref.get();
 
+    const norm = (value: unknown) =>
+      String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+
     // Enforce "one draft per member per day" by reusing an existing draft (best-effort; avoids composite indexes).
     if (!existingSnap.exists && memberId && rcfeId && claimDay) {
       try {
@@ -212,7 +219,12 @@ export async function POST(req: NextRequest) {
             const vStatus = String(v?.status || '').trim().toLowerCase();
             if (vStatus !== 'draft') return false;
             if (Boolean(v?.signedOff)) return false;
-            if (String(v?.rcfeId || '').trim() !== rcfeId) return false;
+            const vRcfeId = String(v?.rcfeId || '').trim();
+            if (vRcfeId !== rcfeId) {
+              const legacy = vRcfeId.startsWith('rcfe-');
+              const nameMatch = rcfeName && norm(v?.rcfeName) === norm(rcfeName);
+              if (!(legacy && nameMatch)) return false;
+            }
             if (String(v?.memberId || '').trim() !== memberId) return false;
             const day = toDayKey(v?.claimDay || v?.visitDate || v?.completedAt || v?.submittedAt);
             return day === claimDay;

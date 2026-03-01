@@ -42,10 +42,10 @@ export function useSocialWorker() {
         return;
       }
 
+      let claimedSocialWorker = false;
       try {
         // Fast-path: trust token claim if present (set by `/api/auth/sw-session`),
         // but still try to load/resolve a friendly display name from Firestore/Caspio sync.
-        let claimedSocialWorker = false;
         try {
           const tokenResult = await user.getIdTokenResult();
           const claims = (tokenResult?.claims || {}) as Record<string, any>;
@@ -203,9 +203,29 @@ export function useSocialWorker() {
                 console.warn('Failed to migrate social worker doc to UID:', migrationError);
               }
             } else {
-              setIsSocialWorker(false);
-              setSocialWorkerData(null);
-              setStatus('not-found');
+              if (claimedSocialWorker) {
+                const displayNameResolved = await resolveDisplayName({ email: normalizedEmail || user.email });
+                setSocialWorkerData({
+                  uid: user.uid,
+                  email: normalizedEmail || String(user.email || '').trim(),
+                  displayName: displayNameResolved,
+                  role: 'social_worker',
+                  isActive: true,
+                  createdAt: new Date(),
+                  createdBy: 'system',
+                  permissions: {
+                    visitVerification: true,
+                    memberQuestionnaire: true,
+                    claimsSubmission: true,
+                  },
+                });
+                setIsSocialWorker(true);
+                setStatus('active');
+              } else {
+                setIsSocialWorker(false);
+                setSocialWorkerData(null);
+                setStatus('not-found');
+              }
             }
           }
         } else {
@@ -235,9 +255,32 @@ export function useSocialWorker() {
         }
       } catch (error) {
         console.error('Error checking social worker status:', error);
-        setIsSocialWorker(false);
-        setSocialWorkerData(null);
-        setStatus('error');
+        if (claimedSocialWorker) {
+          // If the token claim says SW but Firestore lookups fail (e.g., rules / transient errors),
+          // keep the SW session active to avoid redirect loops.
+          const email = String(user?.email || '').trim().toLowerCase();
+          const displayName = String(user?.displayName || user?.email || 'Social Worker').trim() || 'Social Worker';
+          setSocialWorkerData({
+            uid: user.uid,
+            email,
+            displayName,
+            role: 'social_worker',
+            isActive: true,
+            createdAt: new Date(),
+            createdBy: 'system',
+            permissions: {
+              visitVerification: true,
+              memberQuestionnaire: true,
+              claimsSubmission: true,
+            },
+          });
+          setIsSocialWorker(true);
+          setStatus('active');
+        } else {
+          setIsSocialWorker(false);
+          setSocialWorkerData(null);
+          setStatus('error');
+        }
       } finally {
         setIsLoading(false);
       }

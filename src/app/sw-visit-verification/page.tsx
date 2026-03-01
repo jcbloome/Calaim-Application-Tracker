@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -190,9 +190,14 @@ export default function SWVisitVerification() {
   const { toast } = useToast();
   const auth = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   
   // Track visit verification access
   useAutoTrackPortalAccess('visit-verification');
+
+  const deepLinkMemberAppliedRef = useRef(false);
+  const deepLinkRcfeId = useMemo(() => String(searchParams?.get('rcfeId') || '').trim(), [searchParams]);
+  const deepLinkMemberId = useMemo(() => String(searchParams?.get('memberId') || '').trim(), [searchParams]);
   
   const [currentStep, setCurrentStep] = useState<'select-rcfe' | 'select-member' | 'questionnaire' | 'sign-off' | 'visit-completed'>('select-rcfe');
   const [selectedRCFE, setSelectedRCFE] = useState<RCFE | null>(null);
@@ -443,7 +448,7 @@ export default function SWVisitVerification() {
       const res = await fetch(
         `/api/sw-visits/draft-candidates?rcfeId=${encodeURIComponent(String(selectedRCFE.id))}&claimDay=${encodeURIComponent(
           claimDayKey
-        )}`,
+        )}&rcfeName=${encodeURIComponent(String(selectedRCFE.name || ''))}`,
         { headers: { authorization: `Bearer ${idToken}` } }
       );
       const data = await res.json().catch(() => null);
@@ -798,6 +803,36 @@ export default function SWVisitVerification() {
     setQuestionStep(1);
     setCurrentStep('questionnaire');
   };
+
+  // Deep-link support (used by the SW roster): auto-select RCFE and optionally a member.
+  useEffect(() => {
+    const wantsLink = Boolean(deepLinkRcfeId || deepLinkMemberId);
+    if (!wantsLink) return;
+    if (!Array.isArray(rcfeList) || rcfeList.length === 0) return;
+
+    let targetRcfe: RCFE | null =
+      deepLinkRcfeId ? (rcfeList.find((r) => String(r?.id || '').trim() === deepLinkRcfeId) as any) || null : null;
+
+    if (!targetRcfe && deepLinkMemberId) {
+      targetRcfe =
+        (rcfeList.find((r: any) => Array.isArray(r?.members) && r.members.some((m: any) => String(m?.id || '').trim() === deepLinkMemberId)) as any) ||
+        null;
+    }
+
+    if (targetRcfe && (!selectedRCFE || String(selectedRCFE.id || '').trim() !== String(targetRcfe.id || '').trim())) {
+      handleRCFESelect(targetRcfe);
+      return;
+    }
+
+    if (deepLinkMemberId && selectedRCFE && !deepLinkMemberAppliedRef.current) {
+      const members = Array.isArray(selectedRCFE.members) ? selectedRCFE.members : [];
+      const targetMember = members.find((m) => String((m as any)?.id || '').trim() === deepLinkMemberId) || null;
+      if (targetMember) {
+        deepLinkMemberAppliedRef.current = true;
+        handleMemberSelect(targetMember as any);
+      }
+    }
+  }, [deepLinkMemberId, deepLinkRcfeId, rcfeList, selectedRCFE]);
 
   const restartQuestionnaire = async () => {
     if (!selectedMember) return;

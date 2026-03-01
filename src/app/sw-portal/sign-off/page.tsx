@@ -106,7 +106,9 @@ export default function SWSignOffPage() {
     try {
       const idToken = await auth.currentUser.getIdToken();
       const res = await fetch(
-        `/api/sw-visits/draft-candidates?rcfeId=${encodeURIComponent(rcfeId)}&claimDay=${encodeURIComponent(claimDay)}`,
+        `/api/sw-visits/draft-candidates?rcfeId=${encodeURIComponent(rcfeId)}&claimDay=${encodeURIComponent(
+          claimDay
+        )}&rcfeName=${encodeURIComponent(String(selectedRcfe?.name || ''))}`,
         { headers: { authorization: `Bearer ${idToken}` } }
       );
       const data = await res.json().catch(() => ({} as any));
@@ -126,7 +128,7 @@ export default function SWSignOffPage() {
     } finally {
       setLoadingVisits(false);
     }
-  }, [auth?.currentUser, auth, claimDay, rcfeId]);
+  }, [auth?.currentUser, auth, claimDay, rcfeId, selectedRcfe?.name]);
 
   useEffect(() => {
     if (swLoading) return;
@@ -210,6 +212,7 @@ export default function SWSignOffPage() {
       const idToken = await auth.currentUser.getIdToken();
       const payload = {
         rcfeId,
+        rcfeName: String(selectedRcfe?.name || '').trim(),
         claimDay,
         selectedVisitIds: selectedVisits.map((v) => String(v.visitId || '').trim()).filter(Boolean),
         staffName: staffName.trim(),
