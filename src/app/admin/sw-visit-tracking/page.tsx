@@ -33,6 +33,10 @@ import { useAuth } from '@/firebase';
 interface VisitRecord {
   id: string;
   visitId: string;
+  memberId?: string;
+  rcfeId?: string;
+  socialWorkerEmail?: string;
+  socialWorkerUid?: string;
   socialWorkerName: string;
   memberName: string;
   memberRoomNumber?: string;
@@ -81,6 +85,8 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
   const [geoResolvedByVisit, setGeoResolvedByVisit] = useState<Record<string, { address?: string; status: 'idle' | 'loading' | 'error' }>>({});
   const [deletingVisitId, setDeletingVisitId] = useState<string | null>(null);
   const [deleteReasonByVisitId, setDeleteReasonByVisitId] = useState<Record<string, string>>({});
+  const [overrideReasonByVisitId, setOverrideReasonByVisitId] = useState<Record<string, string>>({});
+  const [overridingVisitId, setOverridingVisitId] = useState<string | null>(null);
   const [showRawByVisitId, setShowRawByVisitId] = useState<Record<string, boolean>>({});
   const [analyticsMonth, setAnalyticsMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [swMonthlySummary, setSwMonthlySummary] = useState<null | {
@@ -192,9 +198,16 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
   const loadTrackingData = async () => {
     setLoading(true);
     try {
+      if (!auth?.currentUser) {
+        setVisitRecords([]);
+        return;
+      }
+      const idToken = await auth.currentUser.getIdToken();
       // Load real visit records (Firestore-backed)
       const days = dateFilter === 'all' ? '30' : dateFilter;
-      const visitsResponse = await fetch(`/api/sw-visits/records?days=${encodeURIComponent(days)}`);
+      const visitsResponse = await fetch(`/api/sw-visits/records?days=${encodeURIComponent(days)}`, {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
       if (visitsResponse.ok) {
         const visitsData = await visitsResponse.json().catch(() => ({}));
         const visitsRaw = Array.isArray((visitsData as any)?.visits) ? (visitsData as any).visits : [];
@@ -209,6 +222,10 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
           ...v,
           id: String(v?.id || v?.visitId || ''),
           visitId: String(v?.visitId || v?.id || ''),
+          memberId: String(v?.memberId || '').trim() || undefined,
+          rcfeId: String(v?.rcfeId || '').trim() || undefined,
+          socialWorkerEmail: String(v?.socialWorkerEmail || '').trim() || undefined,
+          socialWorkerUid: String(v?.socialWorkerUid || '').trim() || undefined,
           socialWorkerName: String(v?.socialWorkerName || v?.socialWorkerId || ''),
           memberName: String(v?.memberName || ''),
           memberRoomNumber: String(v?.memberRoomNumber || v?.raw?.memberRoomNumber || '').trim() || undefined,
@@ -237,6 +254,59 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
       console.error('Error loading tracking data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const overrideSignoffAndSubmitClaim = async (seedVisit: VisitRecord) => {
+    if (!auth?.currentUser) return;
+    const reason = String(overrideReasonByVisitId[seedVisit.visitId] || '').trim();
+    if (!reason) {
+      alert('Override reason is required.');
+      return;
+    }
+    const ok = typeof window !== 'undefined'
+      ? window.confirm(
+          `ADMIN OVERRIDE: Mark sign-off complete and submit claim?\n\nMember: ${seedVisit.memberName}\nSW: ${seedVisit.socialWorkerName}\nRCFE: ${seedVisit.rcfeName}\nDate: ${seedVisit.visitDate}\n\nReason: ${reason}\n\nThis will submit a claim and cannot be undone.`
+        )
+      : false;
+    if (!ok) return;
+
+    setOverridingVisitId(seedVisit.visitId);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      // Submit the entire SW+RCFE+day group currently in the table to avoid duplicate gas fees.
+      const sameGroupVisitIds = visitRecords
+        .filter((v) => {
+          if (Boolean(v.claimSubmitted) || Boolean(v.claimPaid)) return false;
+          const sameRcfe = String(v.rcfeId || '').trim() && String(seedVisit.rcfeId || '').trim()
+            ? String(v.rcfeId || '').trim() === String(seedVisit.rcfeId || '').trim()
+            : String(v.rcfeName || '').trim() === String(seedVisit.rcfeName || '').trim();
+          const sameSw =
+            String(v.socialWorkerEmail || '').trim() && String(seedVisit.socialWorkerEmail || '').trim()
+              ? String(v.socialWorkerEmail || '').trim() === String(seedVisit.socialWorkerEmail || '').trim()
+              : String(v.socialWorkerName || '').trim() === String(seedVisit.socialWorkerName || '').trim();
+          const sameDay = String(v.visitDate || '').slice(0, 10) === String(seedVisit.visitDate || '').slice(0, 10);
+          return sameRcfe && sameSw && sameDay;
+        })
+        .map((v) => String(v.visitId || v.id || '').trim())
+        .filter(Boolean);
+
+      const res = await fetch('/api/admin/sw-visits/override-signoff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          visitIds: sameGroupVisitIds.length > 0 ? sameGroupVisitIds : [seedVisit.visitId],
+          reason,
+        }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed (${res.status})`);
+      setOverrideReasonByVisitId((prev) => ({ ...prev, [seedVisit.visitId]: '' }));
+      await loadTrackingData();
+    } catch (e: any) {
+      alert(e?.message || 'Failed to override sign-off.');
+    } finally {
+      setOverridingVisitId(null);
     }
   };
 
@@ -643,6 +713,31 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
                                 </div>
                               </div>
                             </div>
+
+                            {!visit.signedOff && !visit.claimSubmitted && !visit.claimPaid ? (
+                              <div className="rounded-lg border bg-amber-50 p-3 space-y-2">
+                                <div className="text-sm font-semibold text-amber-900">Admin override (no RCFE staff available)</div>
+                                <div className="text-xs text-amber-900/80">
+                                  This will create an admin sign-off record and auto-submit the SW claim for this RCFE/day group.
+                                </div>
+                                <Input
+                                  value={overrideReasonByVisitId[visit.visitId] ?? ''}
+                                  onChange={(e) =>
+                                    setOverrideReasonByVisitId((prev) => ({ ...prev, [visit.visitId]: e.target.value }))
+                                  }
+                                  placeholder="Override reason (required)"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => void overrideSignoffAndSubmitClaim(visit)}
+                                  disabled={overridingVisitId === visit.visitId}
+                                >
+                                  {overridingVisitId === visit.visitId ? 'Overriding…' : 'Override sign-off + submit claim'}
+                                </Button>
+                              </div>
+                            ) : null}
 
                             <div className="rounded-lg border bg-muted/30 p-3">
                               <div className="flex items-center justify-between gap-3">
