@@ -46,8 +46,9 @@ const resolveRole = async (email: string, role?: string) => {
   // If the caller provides an explicit role, treat it as authoritative.
   if (role === 'sw') return 'sw';
   if (role === 'user') return 'user';
+  if (role === 'admin') return 'admin';
 
-  let resolvedRole: 'sw' | 'user' = 'user';
+  let resolvedRole: 'sw' | 'user' | 'admin' = 'user';
   if (resolvedRole !== 'sw') {
     try {
       const swSnapshot = await adminDb
@@ -65,7 +66,7 @@ const resolveRole = async (email: string, role?: string) => {
   return resolvedRole;
 };
 
-const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user') => {
+const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user' | 'admin') => {
   try {
     // Use our custom token flow (Resend email + /reset-password?token=...).
     // This avoids Firebase Auth "email action link" generation (IdentityToolkit/serviceusage),
@@ -94,7 +95,7 @@ const buildResetUrl = async (baseUrl: string, email: string, role: 'sw' | 'user'
     }
 
     const resetPath = '/reset-password';
-    return `${baseUrl}${resetPath}?token=${encodeURIComponent(token)}&role=${encodeURIComponent(role)}`;
+    return `${baseUrl}${resetPath}?token=${encodeURIComponent(token)}&role=${encodeURIComponent(String(role))}`;
   } catch (error: any) {
     const message = error?.message || 'Failed to generate password reset link';
     throw new Error(message);

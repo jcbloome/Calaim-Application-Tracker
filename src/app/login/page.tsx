@@ -149,6 +149,34 @@ export default function LoginPage() {
         emailVerified: userCredential.user.emailVerified
       });
 
+      // If this account has admin access, immediately establish admin session context
+      // (cookie + custom claims) and switch session type to prevent portal isolation issues.
+      try {
+        const idToken = await userCredential.user.getIdToken();
+        const sessionResponse = await fetch('/api/auth/admin-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken }),
+        });
+        if (sessionResponse.ok) {
+          try {
+            localStorage.removeItem('calaim_session_type');
+            localStorage.setItem('calaim_session_type', 'admin');
+            localStorage.removeItem('calaim_admin_context');
+          } catch {
+            // ignore
+          }
+          // Force refresh to pick up the new custom claims.
+          await userCredential.user.getIdToken(true);
+          enhancedToast.success('Admin access detected', 'Redirecting to the admin portal…');
+          router.replace('/admin');
+          setIsLoading(false);
+          return;
+        }
+      } catch {
+        // If the user isn't an admin, admin-session will fail. Ignore and continue as a normal user.
+      }
+
       // Track the login event
       console.log('🔍 User Login Debug: Tracking login event');
       await trackLogin(firestore, userCredential.user, 'User');

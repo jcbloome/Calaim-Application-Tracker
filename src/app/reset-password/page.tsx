@@ -24,7 +24,9 @@ function ResetPasswordContent() {
   const emailParam = searchParams.get('email');
   const hasResetParams = Boolean(token || oobCode);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'sw' | 'user'>(roleParam === 'sw' ? 'sw' : 'user');
+  const [role, setRole] = useState<'sw' | 'user' | 'admin'>(
+    roleParam === 'sw' ? 'sw' : roleParam === 'admin' ? 'admin' : 'user'
+  );
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -57,7 +59,7 @@ function ResetPasswordContent() {
   }, [hasResetParams, emailParam, email]);
 
   useEffect(() => {
-    setRole(roleParam === 'sw' ? 'sw' : 'user');
+    setRole(roleParam === 'sw' ? 'sw' : roleParam === 'admin' ? 'admin' : 'user');
   }, [roleParam]);
   // No pre-validation: render the reset form immediately when `oobCode` or `token` is present.
   // The submit actions (`confirmPasswordReset` or token-confirm API) are the authoritative validators.
@@ -163,7 +165,7 @@ function ResetPasswordContent() {
 
       // Send user to login after reset
       setTimeout(() => {
-        window.location.href = role === 'sw' ? '/sw-login' : '/login';
+        window.location.href = role === 'sw' ? '/sw-login' : role === 'admin' ? '/admin/login' : '/login';
       }, 1500);
 
     } catch (error: any) {
@@ -194,7 +196,7 @@ function ResetPasswordContent() {
                     Reset email sent. Please check your inbox.
                   </p>
                   <Button asChild className="w-full">
-                    <a href={role === 'sw' ? '/sw-login' : '/login'}>Return to Login</a>
+                    <a href={role === 'sw' ? '/sw-login' : role === 'admin' ? '/admin/login' : '/login'}>Return to Login</a>
                   </Button>
                 </div>
               ) : (

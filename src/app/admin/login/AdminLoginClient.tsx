@@ -267,7 +267,7 @@ export default function AdminLoginClient() {
             </form>
 
             <div className="mt-6 pt-4 border-t border-gray-200 text-center">
-              <Link href="/reset-password" className="text-sm text-primary hover:underline">
+              <Link href="/reset-password?role=admin" className="text-sm text-primary hover:underline">
                 Forgot your password?
               </Link>
             </div>

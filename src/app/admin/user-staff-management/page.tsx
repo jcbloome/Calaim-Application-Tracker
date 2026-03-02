@@ -23,6 +23,13 @@ const managementTools = [
     icon: UserCheck,
     href: '/admin/sw-user-management',
     color: 'text-green-600'
+  },
+  {
+    title: 'Registered Users',
+    description: 'Search, audit, disable, or delete user accounts (Super Admin only)',
+    icon: Users,
+    href: '/admin/registered-users',
+    color: 'text-slate-700'
   }
 ];
 
