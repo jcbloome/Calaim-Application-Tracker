@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,6 +38,8 @@ type MonthVisitStatus = {
   claimPaid: boolean;
   claimId?: string;
   claimNumber?: string;
+  claimDay?: string;
+  serviceLineId?: string;
 };
 
 export default function SWStatusLogPage() {
@@ -64,6 +66,11 @@ export default function SWStatusLogPage() {
   const [claimDetailLoading, setClaimDetailLoading] = useState(false);
   const [claimDetailError, setClaimDetailError] = useState<string | null>(null);
   const [claimDetailResult, setClaimDetailResult] = useState<any | null>(null);
+
+  const [visitDetailOpen, setVisitDetailOpen] = useState(false);
+  const [visitDetailLoading, setVisitDetailLoading] = useState(false);
+  const [visitDetailError, setVisitDetailError] = useState<string | null>(null);
+  const [visitDetailResult, setVisitDetailResult] = useState<any | null>(null);
 
   const refreshRoster = useCallback(async () => {
     if (!user?.email) return;
@@ -112,6 +119,8 @@ export default function SWStatusLogPage() {
           claimPaid: Boolean(r?.claimPaid),
           claimId: String(r?.claimId || '').trim() || undefined,
           claimNumber: String(r?.claimNumber || '').trim() || undefined,
+          claimDay: String(r?.date || '').trim() || undefined,
+          serviceLineId: String(r?.serviceLineId || '').trim() || undefined,
         };
       });
       setMonthStatuses(map);
@@ -168,6 +177,33 @@ export default function SWStatusLogPage() {
         setClaimDetailResult(null);
       } finally {
         setClaimDetailLoading(false);
+      }
+    },
+    [auth]
+  );
+
+  const openVisitDetail = useCallback(
+    async (params: { visitId: string }) => {
+      if (!auth?.currentUser) return;
+      const visitId = String(params.visitId || '').trim();
+      if (!visitId) return;
+      setVisitDetailOpen(true);
+      setVisitDetailLoading(true);
+      setVisitDetailError(null);
+      setVisitDetailResult(null);
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const res = await fetch(`/api/sw-visits/visit?visitId=${encodeURIComponent(visitId)}`, {
+          headers: { authorization: `Bearer ${idToken}` },
+        });
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load visit (HTTP ${res.status})`);
+        setVisitDetailResult(data?.visit || null);
+      } catch (e: any) {
+        setVisitDetailError(e?.message || 'Failed to load visit.');
+        setVisitDetailResult(null);
+      } finally {
+        setVisitDetailLoading(false);
       }
     },
     [auth]
@@ -231,6 +267,26 @@ export default function SWStatusLogPage() {
     const memberCount = facilities.reduce((sum, f) => sum + (Array.isArray(f.members) ? f.members.length : 0), 0);
     return { facilityCount, memberCount };
   }, [facilities]);
+
+  const humanServiceLineId = useCallback((params: { claimDay?: string; memberName: string; memberId: string }) => {
+    const day = String(params.claimDay || '').trim();
+    const m = day.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const datePart = m ? `${m[2]}_${m[3]}_${m[1]}` : (day ? day.replace(/-/g, '_') : 'UNKNOWN_DATE');
+
+    const name = String(params.memberName || '').trim().replace(/\s+/g, ' ');
+    const parts = name.split(' ').filter(Boolean);
+    const last = parts.length >= 2 ? parts[parts.length - 1] : (parts[0] || 'UNKNOWN_LAST');
+    const first = parts.length >= 2 ? parts.slice(0, -1).join('_') : 'UNKNOWN_FIRST';
+
+    const safe = (s: string) =>
+      String(s || '')
+        .trim()
+        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+    const memberId = safe(String(params.memberId || '').trim() || 'UNKNOWN_ID');
+    return `${datePart}_${safe(last)}_${safe(first)}_(${memberId})`;
+  }, []);
 
   const renderStatusIcon = (params: { on: boolean; label: string }) => {
     const Icon = params.on ? CheckCircle2 : Circle;
@@ -432,7 +488,7 @@ export default function SWStatusLogPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredFacilities.map((f) => (
-                    <>
+                    <Fragment key={`facility-${String(f.id || '').trim() || f.name}`}>
                       <TableRow key={`rcfe-${f.id}`} className="bg-slate-50">
                         <TableCell colSpan={7}>
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -492,18 +548,19 @@ export default function SWStatusLogPage() {
                               {renderStatusIcon({ on: flags.completed && flags.claimPaid, label: flags.completed && flags.claimPaid ? 'Claim paid' : 'Not paid' })}
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground">
-                              {flags.claimNumber ? (
-                                <div className="grid gap-1">
-                                  <span className="font-mono text-xs break-all">{flags.claimNumber}</span>
-                                  {flags.claimId ? (
-                                    <span className="font-mono text-[10px] break-all text-muted-foreground">{flags.claimId}</span>
-                                  ) : null}
-                                </div>
-                              ) : flags.claimId ? (
-                                <span className="font-mono text-xs break-all">{flags.claimId}</span>
-                              ) : (
-                                '—'
-                              )}
+                              <div className="grid gap-1">
+                                <span className="font-mono text-xs break-all">
+                                  {String(s?.serviceLineId || '').trim() ||
+                                    humanServiceLineId({
+                                      claimDay: s?.claimDay,
+                                      memberName: String(m.name || '').trim(),
+                                      memberId: String(m.id || '').trim(),
+                                    })}
+                                </span>
+                                {flags.claimId ? (
+                                  <span className="font-mono text-[10px] break-all text-muted-foreground">{flags.claimId}</span>
+                                ) : null}
+                              </div>
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex flex-wrap justify-end gap-2">
@@ -516,22 +573,28 @@ export default function SWStatusLogPage() {
                                     Open claim
                                   </Button>
                                 ) : null}
-                                <Button asChild size="sm" variant="outline">
-                                  <Link
-                                    href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id))}&memberId=${encodeURIComponent(
-                                      String(m.id)
-                                    )}`}
-                                  >
-                                    <ClipboardCheck className="h-4 w-4 mr-2" />
-                                    Questionnaire
-                                  </Link>
-                                </Button>
+                                {flags.completed && s?.visitId ? (
+                                  <Button size="sm" variant="outline" onClick={() => void openVisitDetail({ visitId: String(s.visitId) })}>
+                                    View questionnaire
+                                  </Button>
+                                ) : (
+                                  <Button asChild size="sm" variant="outline">
+                                    <Link
+                                      href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id))}&memberId=${encodeURIComponent(
+                                        String(m.id)
+                                      )}`}
+                                    >
+                                      <ClipboardCheck className="h-4 w-4 mr-2" />
+                                      Questionnaire
+                                    </Link>
+                                  </Button>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
                         );
                       })}
-                    </>
+                    </Fragment>
                   ))}
                 </TableBody>
               </Table>
@@ -539,6 +602,51 @@ export default function SWStatusLogPage() {
           </div>
         ) : null}
       </div>
+
+      <Dialog open={visitDetailOpen} onOpenChange={setVisitDetailOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Questionnaire (view only)</DialogTitle>
+            <DialogDescription>This is the submitted visit record. Editing is disabled.</DialogDescription>
+          </DialogHeader>
+          {visitDetailLoading ? (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : visitDetailError ? (
+            <div className="text-sm text-destructive">{visitDetailError}</div>
+          ) : visitDetailResult ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 text-sm">
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">Member</div>
+                  <div className="font-semibold break-words">{String(visitDetailResult?.memberName || '—')}</div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">RCFE</div>
+                  <div className="font-semibold break-words">{String(visitDetailResult?.rcfeName || '—')}</div>
+                  <div className="text-xs text-muted-foreground break-words">{String(visitDetailResult?.rcfeAddress || '').trim()}</div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">Visit date</div>
+                  <div className="font-semibold">{String(visitDetailResult?.visitDate || '').slice(0, 10) || '—'}</div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">Status</div>
+                  <div className="font-semibold">{String(visitDetailResult?.status || '—')}</div>
+                </div>
+              </div>
+
+              <div className="rounded border p-3">
+                <div className="text-xs text-muted-foreground">Raw questionnaire (JSON)</div>
+                <pre className="mt-2 max-h-[340px] overflow-auto whitespace-pre-wrap break-words text-xs">
+                  {JSON.stringify(visitDetailResult?.raw || visitDetailResult || {}, null, 2)}
+                </pre>
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">No visit loaded.</div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={claimDetailOpen} onOpenChange={setClaimDetailOpen}>
         <DialogContent className="max-w-lg">

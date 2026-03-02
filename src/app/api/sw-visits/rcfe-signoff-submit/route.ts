@@ -27,6 +27,27 @@ const shortHash = (value: string): string => {
   return crypto.createHash('sha1').update(String(value || ''), 'utf8').digest('hex').slice(0, 10);
 };
 
+const safeToken = (value: unknown): string => {
+  return String(value ?? '')
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+};
+
+const toServiceLineId = (params: { claimDay: string; memberName: string; memberId: string }) => {
+  const day = String(params.claimDay || '').trim();
+  const m = day.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const datePart = m ? `${m[2]}_${m[3]}_${m[1]}` : safeToken(day || 'UNKNOWN_DATE');
+
+  const name = String(params.memberName || '').trim().replace(/\s+/g, ' ');
+  const parts = name.split(' ').filter(Boolean);
+  const last = parts.length >= 2 ? parts[parts.length - 1] : (parts[0] || 'UNKNOWN_LAST');
+  const first = parts.length >= 2 ? parts.slice(0, -1).join('_') : 'UNKNOWN_FIRST';
+
+  const memberId = safeToken(params.memberId || 'UNKNOWN_ID') || 'UNKNOWN_ID';
+  return `${datePart}_${safeToken(last)}_${safeToken(first)}_(${memberId})`;
+};
+
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('authorization') || '';
@@ -412,6 +433,11 @@ export async function POST(req: NextRequest) {
           const flagReasons = shouldNotify ? generateFlagReasons(raw) : [];
 
           const visitRef = adminDb.collection('sw_visit_records').doc(visitId);
+          const serviceLineId = toServiceLineId({
+            claimDay,
+            memberName: String(v?.memberName || '').trim(),
+            memberId: String(v?.memberId || '').trim(),
+          });
           tx.set(
             visitRef,
             {
@@ -429,6 +455,7 @@ export async function POST(req: NextRequest) {
               rcfeStaffGeolocation: geolocation,
               claimId,
               claimNumber,
+              serviceLineId,
               claimMonth: visitMonth,
               claimStatus: 'submitted',
               claimSubmitted: true,

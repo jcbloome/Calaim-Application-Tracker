@@ -143,6 +143,7 @@ export async function POST(request: NextRequest) {
         signedOff: Boolean(v?.signedOff),
         claimId: String(v?.claimId || '').trim(),
         claimNumber: String(v?.claimNumber || '').trim(),
+        serviceLineId: String(v?.serviceLineId || '').trim(),
         claimStatus: String(v?.claimStatus || '').trim() || 'draft',
         claimSubmitted: Boolean(v?.claimSubmitted),
         claimPaid: Boolean(v?.claimPaid),
