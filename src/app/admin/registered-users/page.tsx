@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, RefreshCw, Search, ShieldAlert, Trash2, Ban, CheckCircle2, Eye } from 'lucide-react';
+import { Loader2, RefreshCw, Search, ShieldAlert, Trash2, Ban, CheckCircle2, Eye, History } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +12,9 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+type AccountKind = 'staff' | 'social_worker' | 'user' | 'unknown';
 
 type ListedUser = {
   uid: string;
@@ -21,6 +24,7 @@ type ListedUser = {
   createdAt: string | null;
   lastSignInAt: string | null;
   providerIds: string[];
+  kind?: AccountKind;
 };
 
 type UserDetailsResult = {
@@ -44,6 +48,7 @@ export default function RegisteredUsersPage() {
   const [loadingList, setLoadingList] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [kindFilter, setKindFilter] = useState<'all' | AccountKind>('all');
   const [users, setUsers] = useState<ListedUser[]>([]);
   const [pageToken, setPageToken] = useState<string | null>(null);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
@@ -54,7 +59,6 @@ export default function RegisteredUsersPage() {
   const [detail, setDetail] = useState<UserDetailsResult | null>(null);
 
   const [actionLoadingUid, setActionLoadingUid] = useState<string | null>(null);
-  const [actionReason, setActionReason] = useState('');
   const [actionMode, setActionMode] = useState<'disable' | 'enable' | 'delete'>('disable');
 
   useEffect(() => {
@@ -94,15 +98,36 @@ export default function RegisteredUsersPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return users;
     return users.filter((u) => {
+      if (kindFilter !== 'all') {
+        const k = (u.kind || 'unknown') as AccountKind;
+        if (k !== kindFilter) return false;
+      }
+      if (!q) return true;
       return (
         String(u.email || '').toLowerCase().includes(q) ||
         String(u.displayName || '').toLowerCase().includes(q) ||
         String(u.uid || '').toLowerCase().includes(q)
       );
     });
-  }, [users, query]);
+  }, [users, query, kindFilter]);
+
+  const kindCounts = useMemo(() => {
+    const counts: Record<AccountKind, number> = { staff: 0, social_worker: 0, user: 0, unknown: 0 };
+    users.forEach((u) => {
+      const k = (u.kind || 'unknown') as AccountKind;
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    return counts;
+  }, [users]);
+
+  const kindBadge = (kind: AccountKind | undefined) => {
+    const k = (kind || 'unknown') as AccountKind;
+    if (k === 'staff') return <Badge className="bg-blue-600 hover:bg-blue-600 text-white">Staff/Admin</Badge>;
+    if (k === 'social_worker') return <Badge className="bg-purple-600 hover:bg-purple-600 text-white">Social Worker</Badge>;
+    if (k === 'user') return <Badge className="bg-slate-600 hover:bg-slate-600 text-white">User</Badge>;
+    return <Badge variant="secondary">Unknown</Badge>;
+  };
 
   const openDetails = async (u: ListedUser) => {
     if (!auth?.currentUser) return;
@@ -131,11 +156,15 @@ export default function RegisteredUsersPage() {
 
   const runAction = async (u: ListedUser, mode: 'disable' | 'enable' | 'delete') => {
     if (!auth?.currentUser) return;
-    const reason = String(actionReason || '').trim();
-    if ((mode === 'disable' || mode === 'delete') && !reason) {
-      alert('Reason is required.');
-      return;
-    }
+    const needsReason = mode === 'disable' || mode === 'delete';
+    const reason = needsReason
+      ? String(
+          typeof window !== 'undefined'
+            ? window.prompt(`Reason required to ${mode === 'delete' ? 'delete' : 'freeze'} this user:`, '')
+            : ''
+        ).trim()
+      : '';
+    if (needsReason && !reason) return;
     const ok =
       typeof window !== 'undefined'
         ? window.confirm(
@@ -156,7 +185,6 @@ export default function RegisteredUsersPage() {
       });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data?.success) throw new Error(data?.error || `Failed (HTTP ${res.status})`);
-      setActionReason('');
       await loadUsers();
       if (detail?.user?.uid === u.uid) {
         setDetail((prev) => (prev ? { ...prev, user: { ...prev.user, disabled: mode === 'disable' ? true : mode === 'enable' ? false : prev.user.disabled } } : prev));
@@ -193,6 +221,18 @@ export default function RegisteredUsersPage() {
             <Search className="h-4 w-4 text-muted-foreground" />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search email, name, or UID…" className="w-[320px]" />
           </div>
+          <Select value={kindFilter} onValueChange={(v) => setKindFilter(v as any)}>
+            <SelectTrigger className="w-[220px]">
+              <SelectValue placeholder="Filter by type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All types</SelectItem>
+              <SelectItem value="staff">Staff/Admin ({kindCounts.staff})</SelectItem>
+              <SelectItem value="social_worker">Social Workers ({kindCounts.social_worker})</SelectItem>
+              <SelectItem value="user">Application Users ({kindCounts.user})</SelectItem>
+              <SelectItem value="unknown">Unknown ({kindCounts.unknown})</SelectItem>
+            </SelectContent>
+          </Select>
           <Button variant="outline" onClick={() => void loadUsers({ reset: true })} disabled={loadingList}>
             <RefreshCw className="h-4 w-4 mr-2" />
             {loadingList ? 'Refreshing…' : 'Refresh'}
@@ -213,7 +253,7 @@ export default function RegisteredUsersPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Users</CardTitle>
           <CardDescription>
-            Showing {filtered.length} of {users.length} loaded
+            Showing {filtered.length} of {users.length} loaded • Staff/Admin {kindCounts.staff} • SW {kindCounts.social_worker} • Users {kindCounts.user}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -223,6 +263,7 @@ export default function RegisteredUsersPage() {
                 <TableRow>
                   <TableHead className="min-w-[240px]">Email</TableHead>
                   <TableHead className="min-w-[200px]">Name</TableHead>
+                  <TableHead className="min-w-[150px]">Type</TableHead>
                   <TableHead className="min-w-[120px]">Status</TableHead>
                   <TableHead className="min-w-[220px]">Created</TableHead>
                   <TableHead className="min-w-[220px]">Last sign-in</TableHead>
@@ -234,6 +275,7 @@ export default function RegisteredUsersPage() {
                   <TableRow key={u.uid}>
                     <TableCell className="font-mono text-xs break-all">{u.email || '—'}</TableCell>
                     <TableCell className="break-words">{u.displayName || '—'}</TableCell>
+                    <TableCell>{kindBadge(u.kind)}</TableCell>
                     <TableCell>
                       {u.disabled ? <Badge variant="secondary">Disabled</Badge> : <Badge className="bg-emerald-600 hover:bg-emerald-600">Active</Badge>}
                     </TableCell>
@@ -245,15 +287,19 @@ export default function RegisteredUsersPage() {
                           <Eye className="h-4 w-4 mr-2" />
                           View
                         </Button>
+                        <Button size="sm" variant="outline" onClick={() => void openDetails(u)}>
+                          <History className="h-4 w-4 mr-2" />
+                          History
+                        </Button>
                         {u.disabled ? (
                           <Button size="sm" variant="outline" disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'enable')}>
                             <CheckCircle2 className="h-4 w-4 mr-2" />
-                            Enable
+                            Unfreeze
                           </Button>
                         ) : (
                           <Button size="sm" variant="outline" disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'disable')}>
                             <Ban className="h-4 w-4 mr-2" />
-                            Disable
+                            Freeze
                           </Button>
                         )}
                         <Button size="sm" variant="destructive" disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'delete')}>
@@ -266,7 +312,7 @@ export default function RegisteredUsersPage() {
                 ))}
                 {filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-10">
+                    <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-10">
                       No users match your search.
                     </TableCell>
                   </TableRow>
@@ -337,13 +383,9 @@ export default function RegisteredUsersPage() {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm">Admin action</CardTitle>
-                    <CardDescription>Reason is required for disable/delete</CardDescription>
+                    <CardDescription>Freeze/delete will prompt for a reason</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    <div className="space-y-1">
-                      <Label>Reason</Label>
-                      <Input value={actionReason} onChange={(e) => setActionReason(e.target.value)} placeholder="Required for disable/delete" />
-                    </div>
                     <div className="flex flex-wrap gap-2">
                       <Button
                         size="sm"
@@ -351,7 +393,7 @@ export default function RegisteredUsersPage() {
                         disabled={actionLoadingUid === detail.user.uid}
                         onClick={() => void runAction(detail.user, detail.user.disabled ? 'enable' : 'disable')}
                       >
-                        {detail.user.disabled ? 'Enable' : 'Disable'}
+                        {detail.user.disabled ? 'Unfreeze' : 'Freeze'}
                       </Button>
                       <Button
                         size="sm"
