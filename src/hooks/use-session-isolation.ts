@@ -117,6 +117,18 @@ export function useSessionIsolation(currentSessionType: SessionType, options?: {
       // If switching between portals, force logout (fresh login required),
       // except for admin -> user which is allowed for assist-mode flows.
       if (storedSessionType && storedSessionType !== newSessionType && auth.currentUser) {
+        // If the user is on the login route for the destination portal, allow the
+        // transition (they are explicitly logging in) and just record the new session type.
+        const isLoginRouteForDestination =
+          (newSessionType === 'admin' && pathname === '/admin/login') ||
+          (newSessionType === 'sw' && pathname === '/sw-login') ||
+          (newSessionType === 'user' && pathname === '/login');
+        if (isLoginRouteForDestination) {
+          safeLocalStorageSet('calaim_session_type', newSessionType);
+          if (newSessionType !== 'admin') safeLocalStorageRemove('calaim_admin_context');
+          return;
+        }
+
         // If user is switching from admin -> user, don't force a second login.
         // Clear admin-only context and record the new session type.
         if (storedSessionType === 'admin' && newSessionType === 'user') {

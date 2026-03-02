@@ -115,6 +115,16 @@ export default function SWLoginPage() {
 
     try {
       const normalizedEmail = email.trim().toLowerCase();
+
+      // Ensure session isolation doesn't immediately sign us out after auth state flips.
+      try {
+        localStorage.removeItem('calaim_session_type');
+        localStorage.setItem('calaim_session_type', 'sw');
+        localStorage.removeItem('calaim_admin_context');
+      } catch {
+        // ignore
+      }
+
       // Sign in with Firebase Auth
       const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
 
