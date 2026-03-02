@@ -122,6 +122,15 @@ export default function LoginPage() {
     }
 
     try {
+      // Ensure session isolation doesn't sign us out right after auth state flips.
+      try {
+        localStorage.removeItem('calaim_session_type');
+        localStorage.setItem('calaim_session_type', 'user');
+        localStorage.removeItem('calaim_admin_context');
+      } catch {
+        // ignore
+      }
+
       console.log('🔍 User Login Debug: Checking current user');
       if (auth.currentUser) {
         console.log('🔍 User Login Debug: Signing out current user', { currentUser: auth.currentUser.email });

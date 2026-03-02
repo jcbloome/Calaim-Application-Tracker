@@ -102,6 +102,10 @@ export default function AdminLoginClient() {
       safeLocalStorageRemove('calaim_admin_context');
       safeSessionStorageClear();
 
+      // Mark the current session as admin early (before auth state flips) to prevent
+      // session isolation from signing out on the first redirect.
+      safeLocalStorageSet('calaim_session_type', 'admin');
+
       const isRealDesktop =
         typeof window !== 'undefined' &&
         Boolean((window as any).desktopNotifications) &&
@@ -177,9 +181,6 @@ export default function AdminLoginClient() {
         title: 'Sign In Successful!',
         description: 'Redirecting to admin panel...',
       });
-
-      // Mark the current session as admin so `useSessionIsolation` doesn't force logout on /admin routes.
-      safeLocalStorageSet('calaim_session_type', 'admin');
 
       const redirectTo = searchParams.get('redirect');
       const safeRedirect = redirectTo && redirectTo.startsWith('/')
