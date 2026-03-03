@@ -19,7 +19,8 @@ type EraRow = {
   source_line: string;
 };
 
-const AMOUNT_RE = /(?<!\d)(\d{1,3}(?:,\d{3})*\.\d{2})(?!\d)/g;
+// Capture amounts like 123.45, -123.45, or (123.45)
+const AMOUNT_RE = /(?<!\d)(-?\d{1,3}(?:,\d{3})*\.\d{2}|\(\d{1,3}(?:,\d{3})*\.\d{2}\))(?!\d)/g;
 const PROC_RE = /\b(H2022|T2038)\b/i;
 
 const toIsoFromMmddyy = (mmddyy: string) => {
@@ -103,8 +104,23 @@ function parseServiceDatesFromProcLine(line: string, remitDate: string | null) {
 
 const toNum = (v?: string | null) => {
   if (!v) return null;
-  const n = Number(String(v).replace(/,/g, ""));
-  return Number.isFinite(n) ? n : null;
+  const raw = String(v).trim();
+  const isParen = raw.startsWith("(") && raw.endsWith(")");
+  const cleaned = raw.replace(/[(),]/g, "");
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return null;
+  return isParen ? -Math.abs(n) : n;
+};
+
+const gatherAmounts = (lines: string[], idx: number) => {
+  const out: string[] = [];
+  for (let j = idx; j < Math.min(lines.length, idx + 3); j++) {
+    const ln = String(lines[j] || "");
+    for (const mm of ln.matchAll(AMOUNT_RE)) {
+      if (mm?.[1]) out.push(String(mm[1]));
+    }
+  }
+  return out;
 };
 
 async function requireSuperAdmin(auth: any) {
@@ -191,7 +207,8 @@ export const parseEraPdfFromStorage = onCall(
         icn: null as string | null,
       };
 
-      for (const ln of lines) {
+      for (let i = 0; i < lines.length; i++) {
+        const ln = lines[i];
         if (/^\s*NAME\b/i.test(ln)) {
           const parsed = extractNameHicAcntIcn(ln);
           current = { member_name: parsed.name || "", hic: parsed.hic, medi: parsed.medi, acnt: parsed.acnt, icn: parsed.icn };
@@ -202,7 +219,7 @@ export const parseEraPdfFromStorage = onCall(
         const proc = String(m[1]).toUpperCase();
         if (proc !== "H2022" && proc !== "T2038") continue;
 
-        const amounts = Array.from(ln.matchAll(AMOUNT_RE)).map((mm) => mm?.[1]).filter(Boolean);
+        const amounts = gatherAmounts(lines, i);
         const billed = amounts.length >= 1 ? toNum(amounts[0]) : null;
         const allowed = amounts.length >= 2 ? toNum(amounts[1]) : null;
         const paid = amounts.length >= 1 ? toNum(amounts[amounts.length - 1]) : null;
@@ -223,7 +240,7 @@ export const parseEraPdfFromStorage = onCall(
           billed,
           allowed,
           paid,
-          source_line: ln,
+          source_line: [lines[i], lines[i + 1], lines[i + 2]].filter(Boolean).join(" | "),
         });
       }
     }
