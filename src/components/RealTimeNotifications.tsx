@@ -183,7 +183,7 @@ export function RealTimeNotifications() {
             : 'Priority items';
       const message =
         chatNotes.length > 0 && priorityNotes.length === 0
-          ? (count === 1 ? '1 unread chat message' : `${count} unread chat messages`)
+          ? 'Unread chat messages'
           : (count === 1 ? '1 priority item pending' : `${count} priority items pending`);
 
       window.desktopNotifications.setPillSummary({
