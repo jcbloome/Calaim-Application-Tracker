@@ -90,6 +90,19 @@ export function ReviewNotificationPoller() {
       const seen = readSeen(user.uid);
       // Use server API (Admin SDK) so web notifications work regardless of Firestore client rules.
       let intervalSeconds = DEFAULT_POLL_SECONDS;
+      if (isRealDesktop && window.desktopNotifications?.getState) {
+        try {
+          const st = await window.desktopNotifications.getState();
+          const effectivePaused = Boolean((st as any)?.effectivePaused);
+          if (effectivePaused) {
+            // While Electron is snoozed/paused, fully hide the review pill and skip popups.
+            window.desktopNotifications?.setReviewPillSummary?.({ count: 0, openPanel: false, notes: [] });
+            return intervalSeconds;
+          }
+        } catch {
+          // ignore
+        }
+      }
       let reviewPrefs: any = null;
       let tasks: any[] = [];
       try {

@@ -162,6 +162,8 @@ export function RealTimeNotifications() {
   const desktopChatOpenPanelRef = useRef(false);
   const desktopOpenPanelHoldUntilMsRef = useRef(0);
 
+  const desktopEffectivePaused = Boolean(desktopState?.effectivePaused);
+
   const emitDesktopPill = useCallback((params?: { openPanel?: boolean }) => {
     try {
       if (typeof window === 'undefined') return;
@@ -199,9 +201,38 @@ export function RealTimeNotifications() {
     }
   }, []);
 
+  const clearDesktopIndicators = useCallback(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      window.desktopNotifications?.setPendingCount?.(0);
+      window.desktopNotifications?.setChatPendingCount?.(0);
+      window.desktopNotifications?.setPillSummary?.({ count: 0, openPanel: false, notes: [] });
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     firestoreRef.current = firestore;
   }, [firestore]);
+
+  // When Electron is snoozed/paused, suppress all desktop counters + pill entirely.
+  // When it resumes, restore counts from the current unread refs.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!window.desktopNotifications) return;
+    if (desktopEffectivePaused) {
+      clearDesktopIndicators();
+      return;
+    }
+    try {
+      window.desktopNotifications?.setPendingCount?.(desktopPriorityPillRef.current?.length || 0);
+      window.desktopNotifications?.setChatPendingCount?.(desktopChatPillRef.current?.length || 0);
+    } catch {
+      // ignore
+    }
+    emitDesktopPill({ openPanel: false });
+  }, [clearDesktopIndicators, desktopEffectivePaused, emitDesktopPill]);
 
   // Chat-only messages are handled in the dedicated chat window, but we still track an unread count
   // for Electron tray badge purposes. We also surface chat through the same Electron pill UI.
@@ -264,7 +295,7 @@ export function RealTimeNotifications() {
         try {
           // Electron: update tray chat count (handled by main process).
           if (window.desktopNotifications?.setChatPendingCount && unread !== prev.count) {
-            window.desktopNotifications.setChatPendingCount(unread);
+            window.desktopNotifications.setChatPendingCount(desktopEffectivePaused ? 0 : unread);
           }
         } catch {
           // ignore
@@ -279,7 +310,11 @@ export function RealTimeNotifications() {
           // The desktop app will auto-minimize after it expands.
           desktopOpenPanelHoldUntilMsRef.current = Date.now() + 4000;
         }
-        emitDesktopPill();
+        if (desktopEffectivePaused) {
+          clearDesktopIndicators();
+        } else {
+          emitDesktopPill();
+        }
       },
       () => {
         try {
@@ -292,12 +327,16 @@ export function RealTimeNotifications() {
         chatUnreadRef.current = { initialized: true, count: 0 };
         desktopChatPillRef.current = [];
         desktopOpenPanelHoldUntilMsRef.current = 0;
-        emitDesktopPill();
+        if (desktopEffectivePaused) {
+          clearDesktopIndicators();
+        } else {
+          emitDesktopPill();
+        }
       }
     );
 
     return () => unsub();
-  }, [emitDesktopPill, firestore, user?.email, user?.displayName, user?.uid]);
+  }, [clearDesktopIndicators, desktopEffectivePaused, emitDesktopPill, firestore, user?.email, user?.displayName, user?.uid]);
 
   // Super Admin global toggles for web in-app notifications (stored in system_settings/notifications).
   useEffect(() => {
@@ -723,13 +762,19 @@ export function RealTimeNotifications() {
 
           if (window.desktopNotifications?.setPendingCount) {
             const desktopPending = sortedPending.filter((n) => isDesktopPriority(n.priority));
-            window.desktopNotifications.setPendingCount(desktopPending.length);
+            window.desktopNotifications.setPendingCount(desktopEffectivePaused ? 0 : desktopPending.length);
           }
 
           if (sortedPending.length === 0) {
             if (summaryNotificationIdRef.current) {
               removeNotification(summaryNotificationIdRef.current);
               summaryNotificationIdRef.current = null;
+            }
+            desktopPriorityPillRef.current = [];
+            if (desktopEffectivePaused) {
+              clearDesktopIndicators();
+            } else {
+              emitDesktopPill({ openPanel: false });
             }
             return;
           }
@@ -814,6 +859,31 @@ export function RealTimeNotifications() {
               removeNotification(summaryNotificationIdRef.current);
               summaryNotificationIdRef.current = null;
             }
+            // Even when web popups are suppressed (quiet hours / user pause / Electron snooze),
+            // keep Electron pill/tray state accurate so it disappears when counts go to zero.
+            if (desktopEffectivePaused) {
+              clearDesktopIndicators();
+            } else if (window.desktopNotifications?.setPillSummary) {
+              const desktopPending = sortedPending.filter((n) => isDesktopPriority(n.priority));
+              const desktopCount = desktopPending.length;
+              const desktopTitle = desktopCount === 1 ? 'Priority note' : 'Priority notes';
+              desktopPriorityPillRef.current = desktopPending.map((note) => ({
+                kind: 'note',
+                source: note.source,
+                clientId2: note.clientId2,
+                title: sanitizeFieldLabel(note.title) || desktopTitle,
+                message: sanitizeNoteMessage(note.message) || sanitizeFieldLabel(note.message) || '',
+                author: sanitizeFieldLabel(note.senderName) || undefined,
+                recipientName: recipientLabel,
+                memberName: sanitizeFieldLabel(note.memberName) || undefined,
+                timestamp: note.timestamp?.toLocaleString?.() || undefined,
+                noteId: note.id,
+                senderId: note.senderId,
+                replyUrl: note.id ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}` : undefined,
+                actionUrl: note.id ? `/admin/my-notes?noteId=${encodeURIComponent(note.id)}` : '/admin/my-notes',
+              }));
+              emitDesktopPill({ openPanel: false });
+            }
             return;
           }
           latestSummaryRef.current = {
@@ -849,7 +919,9 @@ export function RealTimeNotifications() {
             followUpNoteId: highlightNote?.id
           };
 
-          if (window.desktopNotifications?.setPillSummary) {
+          if (desktopEffectivePaused) {
+            clearDesktopIndicators();
+          } else if (window.desktopNotifications?.setPillSummary) {
             const desktopPending = sortedPending.filter((n) => isDesktopPriority(n.priority));
             const desktopCount = desktopPending.length;
             const desktopHighlight = desktopPending[0] || null;
